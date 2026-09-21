@@ -2678,9 +2678,12 @@ def _snaptrade_tenant_id_for_account(acc_row):
 def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
     """When the numbers on the page were last pulled from the broker.
 
-    Returns ``(as_of_date, stale_days)``. Dates are America/New_York
-    session dates. ``(None, None)`` means hide the strip — better than a
-    date that does not describe the accounts the trader is looking at.
+    Returns ``(as_of_date, stale_days, oldest_account)``. Dates are
+    America/New_York session dates. ``(None, None, None)`` means hide
+    the strip — better than a date that does not describe the accounts
+    the trader is looking at. ``as_of_date`` is the newest live pull.
+    ``oldest_account`` is set only when another account in the same
+    cluster is older.
 
     Rules:
     - Broken connections are ignored (they have a reconnect banner).
@@ -2689,10 +2692,12 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
       ``snaptrade_accounts`` row used to let idle Robinhood say "Aug 27"
       on a page of Monday marks.
     - Among remaining stamps, drop laggards more than
-      ``_FRESHNESS_LAG_DAYS`` behind the newest pull, then take the
-      oldest of that cluster. One Thursday Robinhood must not freeze a
-      Monday Schwab book; two accounts that both pulled this session
-      still report the earlier of those pulls.
+      ``_FRESHNESS_LAG_DAYS`` behind the newest pull. The headline date
+      is the **newest** pull in that cluster, so one account a day
+      behind does not make the whole book look stale. The third return
+      value is that older stamp when it differs (label it "oldest
+      account"), else None. A Thursday Robinhood still cannot freeze a
+      Monday Schwab book.
     """
     rows = [
         r for r in (get_snaptrade_accounts(user_id) or [])
@@ -2702,7 +2707,7 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
         wanted = {str(t) for t in tenant_ids if t}
         snap_wanted = {t for t in wanted if t.startswith("snaptrade:")}
         if not snap_wanted:
-            return None, None
+            return None, None, None
         by_tid = {}
         for r in rows:
             tid = _snaptrade_tenant_id_for_account(r)
@@ -2710,7 +2715,7 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
                 by_tid[tid] = r
         if any(t not in by_tid or by_tid[t].get("holdings_last_successful_sync") is None
                for t in snap_wanted):
-            return None, None
+            return None, None, None
         rows = [by_tid[t] for t in snap_wanted]
 
     stamps = []
@@ -2722,13 +2727,15 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
         if d is not None:
             stamps.append(d)
     if not stamps:
-        return None, None
+        return None, None, None
     newest = max(stamps)
     clustered = [d for d in stamps if (newest - d).days <= _FRESHNESS_LAG_DAYS]
-    as_of = min(clustered) if clustered else newest
+    as_of = max(clustered) if clustered else newest
+    oldest = min(clustered) if clustered else as_of
+    oldest_account = oldest if oldest != as_of else None
     today = today or _et_today()
     days = (today - as_of).days
-    return as_of, (days if days >= 0 else 0)
+    return as_of, (days if days >= 0 else 0), oldest_account
 
 
 def post_close_broker_tenant_ids(user_id, *, now=None):
@@ -2798,6 +2805,7 @@ def post_close_broker_tenant_ids(user_id, *, now=None):
 _EMPTY_FRESHNESS = {
     "broker_data_as_of": None,
     "broker_data_stale_days": None,
+    "broker_data_oldest": None,
 }
 
 
@@ -2819,11 +2827,12 @@ def _inject_broker_data_freshness():
         except Exception:
             from app.models import get_tenant_ids_for_user
             tenant_ids = get_tenant_ids_for_user(current_user.id)
-        as_of, stale_days = broker_data_freshness(
+        as_of, stale_days, oldest = broker_data_freshness(
             current_user.id, tenant_ids=tenant_ids)
         return {
             "broker_data_as_of": as_of,
             "broker_data_stale_days": stale_days,
+            "broker_data_oldest": oldest,
         }
     except Exception:
         return dict(_EMPTY_FRESHNESS)

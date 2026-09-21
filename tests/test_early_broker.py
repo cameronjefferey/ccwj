@@ -155,12 +155,13 @@ def test_note_template_renders_promo_and_stays_hidden_for_js():
                 "promo_code": "EARLYMIRROR",
                 "trial_days": 180,
                 "trial_months": 6,
+                "offer": "If you subscribe, 6 months of Pro is included before the first charge.",
             },
         )
-    assert "If you choose to subscribe, 6 months of Pro will be included free." in html
+    assert "If you subscribe, 6 months of Pro is included before the first charge." in html
     assert "first handful of users" in html
-    assert "Robinhood data" in html
-    assert "thank you for your patience" in html
+    assert "bring in Robinhood" in html
+    assert "Thank you for your patience while we calibrate." in html
     assert "EARLYMIRROR" not in html
     assert "Have a CSV" not in html
     assert "SnapTrade" not in html
@@ -180,12 +181,13 @@ def test_note_template_omits_promo_chip_when_unset():
                 "promo_code": None,
                 "trial_days": 180,
                 "trial_months": 6,
+                "offer": "If you subscribe, 6 months of Pro is included before the first charge.",
             },
         )
     assert "early Vanguard user" not in html
     assert "6 months of Pro, free." not in html
-    assert "If you choose to subscribe, 6 months of Pro will be included free." in html
-    assert "bring in Vanguard data" in html
+    assert "If you subscribe, 6 months of Pro is included before the first charge." in html
+    assert "bring in Vanguard" in html
     assert 'id="ht-early-promo"' not in html
 
 

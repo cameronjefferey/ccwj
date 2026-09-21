@@ -99,6 +99,97 @@ def _account_label_filter(account_name, tenant_id=None):
 app.add_template_filter(_account_label_filter, name="account_label")
 
 
+def friendly_timestamp(value, tz_name=None):
+    """Render a database timestamp as a short local time.
+
+    ``2026-09-20 22:36:46.361388+00:00`` becomes
+    ``Sep 20, 2026, 6:36 PM EDT`` in America/New_York, otherwise a UTC
+    clock time. Unparseable values pass through so a bad cell does not
+    blank the row.
+    """
+    from datetime import datetime, timezone
+
+    if value is None or value == "":
+        return ""
+    dt = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ""
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text
+    if not isinstance(dt, datetime):
+        return value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    zone_label = "UTC"
+    shown = dt.astimezone(timezone.utc)
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+            shown = dt.astimezone(ZoneInfo(tz_name))
+            zone_label = shown.tzname() or tz_name
+        except Exception:
+            shown = dt.astimezone(timezone.utc)
+            zone_label = "UTC"
+    hour = shown.strftime("%I").lstrip("0") or "12"
+    return f"{shown.strftime('%b')} {shown.day}, {shown.year}, {hour}:{shown.strftime('%M %p')} {zone_label}"
+
+
+def _viewer_profile():
+    """Signed-in user's profile, once per request. None when logged out."""
+    from flask import g, has_request_context
+
+    if not has_request_context():
+        return None
+    cached = getattr(g, "_viewer_profile", "__unset__")
+    if cached != "__unset__":
+        return cached
+    cached = None
+    try:
+        from flask_login import current_user
+        if getattr(current_user, "is_authenticated", False):
+            from app.models import get_user_profile
+            cached = get_user_profile(current_user.id)
+    except Exception:
+        cached = None
+    g._viewer_profile = cached
+    return cached
+
+
+def _friendly_time_filter(value):
+    tz_name = None
+    try:
+        profile = _viewer_profile()
+        if profile:
+            tz_name = profile.get("timezone")
+    except Exception:
+        tz_name = None
+    return friendly_timestamp(value, tz_name)
+
+
+app.add_template_filter(_friendly_time_filter, name="friendly_time")
+
+
+def history_window_label(days) -> str:
+    """1825 → ``5 years``. Anything else stays in days."""
+    try:
+        n = int(days)
+    except (TypeError, ValueError):
+        return ""
+    if n >= 365 and n % 365 == 0:
+        years = n // 365
+        return "1 year" if years == 1 else f"{years} years"
+    if n == 1:
+        return "1 day"
+    return f"{n} days"
+
+
+app.add_template_filter(history_window_label, name="history_window")
+
+
 from app.utils import earnings_follower_url as _earnings_follower_url
 
 app.add_template_global(_earnings_follower_url, name="earnings_follower_url")
@@ -154,6 +245,7 @@ def _inject_feature_flags():
             "price_annual_equiv": None,
             "ai_billing_enabled": False,
             "price_ai": None,
+            "compact_tables": False,
         }
 
     is_admin_user = False
@@ -288,6 +380,14 @@ def _inject_feature_flags():
         ai_billing_enabled = False
         price_ai = None
 
+    compact_tables = False
+    try:
+        if current_user.is_authenticated:
+            _prof = _viewer_profile() or {}
+            compact_tables = bool(_prof.get("compact_tables"))
+    except Exception:
+        compact_tables = False
+
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
         "earnings_follower_enabled": current_app.config.get("EARNINGS_FOLLOWER_ENABLED", True),
@@ -315,6 +415,7 @@ def _inject_feature_flags():
         "price_annual_equiv": price_annual_equiv,
         "ai_billing_enabled": ai_billing_enabled,
         "price_ai": price_ai,
+        "compact_tables": compact_tables,
     }
 
 

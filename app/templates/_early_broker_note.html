@@ -63,10 +63,9 @@
 <div id="ht-early-broker-note" class="early-broker-note mb-3" role="note" hidden
      data-broker="{{ early_broker.broker_key }}">
     <div class="note-body">
-        {% if early_broker.trial_months %}
-        <span class="note-kicker">If you choose to subscribe, {{ early_broker.trial_months }} months of Pro will be included free.</span>
-        You're one of the first handful of users to bring in {{ early_broker.broker_name }} data.
-        As we calibrate our systems, thank you for your patience.
+        {% if early_broker.offer %}
+        <p class="note-kicker">{{ early_broker.offer }}</p>
+        <p class="mb-0">You're one of the first handful of users to bring in {{ early_broker.broker_name }}. Thank you for your patience while we calibrate.</p>
         {% elif early_broker.promo_code %}
         <span class="note-kicker">A thank-you for bringing {{ early_broker.broker_name }} in.</span>
         You're one of the first handful of users. Use

@@ -57,19 +57,38 @@
 {% endblock %}
 
 {% block content %}
+{% if pricing_story is not defined %}
+{% set pricing_story = {
+    "title": "Every feature, free for 30 days. No credit card.",
+    "lead": "Connect a broker and get your full trading profile in minutes. Your data stays readable forever — the subscription is for keeping the mirror live.",
+    "freeze_bullet": "After day 30, everything stays readable — daily updates pause until you subscribe",
+    "show_freeze_explainer": true
+} %}
+{% endif %}
 <div class="row justify-content-center">
     <div class="col-lg-10">
         <div class="pricing-hero">
-            <h1>Every feature, free for 30 days. No credit card.</h1>
-            <p class="lead">Connect a broker and get your full trading profile in minutes. Your data stays readable forever &mdash; the subscription is for keeping the mirror <em>live</em>.</p>
+            <h1>{{ pricing_story.title }}</h1>
+            <p class="lead">{{ pricing_story.lead }}</p>
         </div>
 
         <div class="row g-4 justify-content-center mb-5">
             <div class="col-md-6 col-lg-4">
                 <div class="pricing-card featured">
                     <span class="badge-top">{{ trial_card.badge if trial_card else "Start here" }}</span>
+                    {% if trial_card and trial_card.badge == "Your plan" %}
+                    <h3>Beta</h3>
+                    <div class="price">$0</div>
+                    {% elif trial_card and trial_card.badge == "Included" %}
+                    <h3>Included</h3>
+                    <div class="price">Pro</div>
+                    {% elif trial_card and trial_card.badge == "Trial ended" %}
+                    <h3>Readable</h3>
+                    <div class="price">$0</div>
+                    {% else %}
                     <h3>Full-access trial</h3>
                     <div class="price">$0</div>
+                    {% endif %}
                     <div class="price-note">{{ trial_card.note if trial_card else "30 days from your first data — no card required" }}</div>
                     <ul>
                         <li>Complete history analyzed on day one</li>
@@ -79,7 +98,7 @@
                         <li>Position reviews &amp; trader profile</li>
                         <li>Unlimited accounts, broker sync or CSV</li>
                         <li>AI Insights with Flash &amp; Haiku</li>
-                        <li>After day 30, everything stays readable &mdash; daily updates pause until you subscribe</li>
+                        <li>{{ pricing_story.freeze_bullet }}</li>
                     </ul>
                     {% if current_user.is_authenticated %}
                         {# The card reflects THIS user's actual plan state
@@ -134,7 +153,10 @@
                         <input type="hidden" name="period" value="annual">
                         <button type="submit" class="btn btn-outline-primary w-100">Pay yearly &mdash; ${{ price_annual }}</button>
                     </form>
-                    <p class="text-muted small mt-2 mb-0">Cancel any time. Your data stays readable either way.</p>
+                    {% if subscribe_offer %}
+                    <p class="text-muted small mt-2 mb-0">{{ subscribe_offer }}</p>
+                    {% endif %}
+                    <p class="text-muted small mt-2 mb-0">You aren't subscribed yet. After you subscribe, the Stripe billing portal is where you change the card or cancel. Your data stays readable either way.</p>
                     {% else %}
                     <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-primary btn-lg w-100">Start free, subscribe later</a>
                     <p class="text-muted small mt-2 mb-0">Try the full product for 30 days first &mdash; no card.</p>
@@ -165,7 +187,7 @@
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-primary btn-lg w-100">Unlock ${{ price_ai }}/mo</button>
                         </form>
-                        <p class="text-muted small mt-2 mb-0">Cancel any time from the billing portal.</p>
+                        <p class="text-muted small mt-2 mb-0">After you subscribe, manage or cancel the add-on in the billing portal.</p>
                         {% else %}
                         <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-primary btn-lg w-100">Start free, add AI later</a>
                         <p class="text-muted small mt-2 mb-0">Flash and Haiku are included with Insights. Upgrade when you want Pro-class models.</p>
@@ -177,11 +199,18 @@
             </div>
         </div>
 
+        {% if pricing_story.show_freeze_explainer %}
         <div class="text-center text-muted small mb-4" style="max-width: 640px; margin: 0 auto;">
             <p class="mb-1"><strong>Why the mirror freezes instead of locking:</strong> your history is yours to read, always.
             But the daily record — option marks, execution verdicts, account deltas — only accrues while connected,
             and time away is a permanent gap in it. That's the honest trade.</p>
         </div>
+        {% elif trial_card and trial_card.badge == "Your plan" %}
+        <div class="text-center text-muted small mb-4" style="max-width: 640px; margin: 0 auto;">
+            <p class="mb-1"><strong>Beta doesn't freeze.</strong> Your mirror keeps updating at no charge.
+            If you subscribe and later cancel, you return to this free beta.</p>
+        </div>
+        {% endif %}
 
         <p class="text-center text-muted small">
             Have questions? <a href="{{ url_for('faq') }}">Check our FAQ</a> or <a href="{{ url_for('contact') }}">reach out</a>.

@@ -75,7 +75,7 @@
                 <div id="faq-history-depth" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
                         Not the life of the account, and not 5 years. We request the longest
-                        window the aggregator allows (up to 1825 days); each broker only returns
+                        window the aggregator allows (up to 5 years); each broker only returns
                         what it still has on file. For Schwab that is typically about 1&ndash;2 years
                         of trades. Daily account-value charts start even later &mdash; the first day
                         we captured an end-of-day balance, which is after you connected, not when
@@ -116,8 +116,9 @@
                         (Fidelity, Vanguard, Robinhood, Interactive Brokers, Alpaca,
                         Wealthsimple, and more) via SnapTrade. If we haven't fitted
                         a given brokerage into our models yet, SnapTrade still
-                        connects it. The first handful of users get six months of
-                        Pro included free if they subscribe, while we calibrate.
+                        connects it. If you are one of the first handful and you
+                        subscribe, 6 months of Pro is included before the first charge,
+                        while we calibrate.
                         <br><br>
                         Per-broker CSV export steps live on
                         <a href="{{ url_for('upload') }}">Upload</a> &mdash; Schwab
@@ -180,7 +181,7 @@
                         <br><br>
                         You can also ask follow-up questions about your own trading patterns. Every answer is grounded in your data &mdash; observations only, not recommendations.
                         <br><br>
-                        Flash and Haiku are included. Gemini Pro, Claude Sonnet, and Claude Opus are part of the <a href="{{ url_for('pricing') }}">HappyTrader AI add-on</a>.
+                        Flash and Haiku are included. Gemini 2.5 Pro, Claude Sonnet, and Claude Opus are part of the <a href="{{ url_for('pricing') }}">HappyTrader AI add-on</a>.
                     </div>
                 </div>
             </div>
@@ -218,7 +219,7 @@
                 </h3>
                 <div id="faq-cost" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Every feature is free for your first 30 days &mdash; no credit card. After that your account doesn't lock: everything you built stays readable forever, but daily syncing pauses until you subscribe. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free). HappyTrader AI is an optional ${{ price_ai or '9.99' }}/month add-on for the higher-tier Insights models. Cancel either any time. See the <a href="{{ url_for('pricing') }}">pricing page</a> for the full picture.
+                        New accounts get every feature free for 30 days from the first broker sync or CSV upload &mdash; no credit card. After that the mirror stays readable and daily syncing pauses until you subscribe. People already on the grandfathered beta stay free, with no expiry. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free). If you are one of the first people to connect a brokerage we are still calibrating, subscribing includes 6 months of Pro before the first charge. After you subscribe, the Stripe billing portal is where you change the card or cancel. HappyTrader AI is an optional ${{ price_ai or '9.99' }}/month add-on (Gemini 2.5 Pro, Claude Sonnet, and Claude Opus). See the <a href="{{ url_for('pricing') }}">pricing page</a> for the story that matches your account.
                     </div>
                 </div>
             </div>

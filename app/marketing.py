@@ -120,11 +120,27 @@ def pricing():
     except Exception:
         trial_card = None
 
+    from app.plan import pricing_story
+
+    subscribe_offer = None
+    try:
+        if current_user.is_authenticated:
+            from app.early_broker import subscribe_offer_for_user
+
+            prior_status = (subscription or {}).get("status") if subscription else None
+            subscribe_offer = subscribe_offer_for_user(
+                current_user.id, prior_subscription_status=prior_status,
+            )
+    except Exception:
+        subscribe_offer = None
+
     return render_template(
         "pricing.html",
         title="Pricing",
         subscription=subscription,
         trial_card=trial_card,
+        pricing_story=pricing_story(trial_card),
+        subscribe_offer=subscribe_offer,
     )
 
 

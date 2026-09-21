@@ -164,6 +164,81 @@
 
     /* Quick action grid */
     .qa-grid { display: flex; flex-wrap: wrap; gap: .6rem; }
+
+    /* Dark mode: these cards are not Bootstrap .card, so the theme used to
+       leave white surfaces under inherited light ink (plan name vanished)
+       and paint .table with the dark table variables inside them. */
+    [data-bs-theme="dark"] .atlas { background: transparent; color: var(--ht-ink); }
+    [data-bs-theme="dark"] .atlas-card,
+    [data-bs-theme="dark"] .sync-card,
+    [data-bs-theme="dark"] .stat-tile,
+    [data-bs-theme="dark"] .ht-group-card {
+        background: var(--ht-surface);
+        border-color: var(--ht-line);
+        color: var(--ht-ink);
+    }
+    [data-bs-theme="dark"] .atlas-card strong,
+    [data-bs-theme="dark"] .id-name,
+    [data-bs-theme="dark"] .sync-card .sync-title,
+    [data-bs-theme="dark"] .stat-tile .n,
+    [data-bs-theme="dark"] .ht-group-card h3,
+    [data-bs-theme="dark"] .id-email,
+    [data-bs-theme="dark"] .ht-group-card .members {
+        color: var(--ht-ink);
+    }
+    [data-bs-theme="dark"] .atlas-card-h,
+    [data-bs-theme="dark"] .atlas-label,
+    [data-bs-theme="dark"] .atlas-hint,
+    [data-bs-theme="dark"] .sync-card .sync-sub,
+    [data-bs-theme="dark"] .stat-tile .l,
+    [data-bs-theme="dark"] .id-handle,
+    [data-bs-theme="dark"] .conn-meta {
+        color: var(--ht-muted);
+    }
+    [data-bs-theme="dark"] .atlas-nav .nav-link { color: var(--ht-muted); }
+    [data-bs-theme="dark"] .atlas-nav .nav-link:hover,
+    [data-bs-theme="dark"] .atlas-nav .nav-link.active {
+        background: var(--ht-surface);
+        color: var(--ht-ink);
+        border-color: var(--ht-line);
+    }
+    [data-bs-theme="dark"] .atlas .table {
+        --bs-table-bg: transparent;
+        --bs-table-color: var(--ht-ink);
+        --bs-table-border-color: var(--ht-line);
+        --bs-table-striped-bg: transparent;
+        --bs-table-hover-bg: var(--ht-hover);
+        color: var(--ht-ink);
+        background: transparent;
+    }
+    [data-bs-theme="dark"] .atlas .table-light,
+    [data-bs-theme="dark"] .atlas .table thead,
+    [data-bs-theme="dark"] .atlas .table thead th {
+        --bs-table-bg: transparent;
+        --bs-table-color: var(--ht-muted);
+        background: transparent;
+        color: var(--ht-muted);
+    }
+    [data-bs-theme="dark"] .account-badge {
+        background: var(--ht-hover);
+        border-color: var(--ht-line);
+        color: var(--ht-ink);
+    }
+    [data-bs-theme="dark"] .ht-pick-chip {
+        background: var(--ht-hover);
+        border-color: var(--ht-line);
+        color: var(--ht-ink);
+    }
+    [data-bs-theme="dark"] .ht-pick-chip.is-on {
+        background: #e2e8f0;
+        color: #0f172a;
+        border-color: #e2e8f0;
+    }
+    [data-bs-theme="dark"] .btn-sync-ghost {
+        background: transparent;
+        border-color: var(--ht-line);
+        color: var(--ht-ink) !important;
+    }
 </style>
 {% endblock %}
 
@@ -183,10 +258,10 @@
             </div>
             <div class="col-lg-4 d-flex justify-content-lg-end">
                 <div class="atlas-stat-row">
-                    <div class="atlas-stat"><div class="n">{{ accounts|length }}</div><div class="l">Accounts</div></div>
+                    <div class="atlas-stat"><div class="n">{{ account_count }}</div><div class="l">Accounts</div></div>
                     <div class="atlas-stat"><div class="n">{{ recent_uploads|length }}</div><div class="l">Uploads</div></div>
-                    {% if snaptrade_connected %}
-                    <div class="atlas-stat"><div class="n">✓</div><div class="l">Broker</div></div>
+                    {% if snaptrade_enabled %}
+                    <div class="atlas-stat"><div class="n">{{ broker_count }}</div><div class="l">Brokers</div></div>
                     {% endif %}
                 </div>
             </div>
@@ -239,11 +314,11 @@
             {# At-a-glance counts — each links to where you manage it #}
             <div class="stat-tiles mb-3">
                 <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
-                    <div class="n">{{ accounts|length }}</div><div class="l">Accounts</div>
+                    <div class="n">{{ account_count }}</div><div class="l">Accounts</div>
                 </a>
                 {% if snaptrade_enabled %}
                 <a class="stat-tile" href="{{ url_for('snaptrade_accounts_page') }}">
-                    <div class="n">{{ _snaptrade_accounts|length }}</div><div class="l">Brokers</div>
+                    <div class="n">{{ broker_count }}</div><div class="l">Brokers</div>
                 </a>
                 {% endif %}
                 <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
@@ -282,7 +357,7 @@
                         <div>
                             <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
                             <span class="small text-body-secondary ms-1">{{ a.broker_slug | title }}</span>
-                            {% if a.last_sync_at %}<div class="conn-meta">Last refresh {{ a.last_sync_at }}</div>{% endif %}
+                            {% if a.last_sync_at %}<div class="conn-meta">Last refresh {{ a.last_sync_at | friendly_time }}</div>{% endif %}
                         </div>
                         {% if a.connection_broken_at %}
                         <span class="pill pill-danger"><span class="dot"></span> Reconnect needed</span>
@@ -360,9 +435,9 @@
                     <div class="atlas-card-h">Profile</div>
                     <div class="atlas-card-b">
                         <div class="atlas-field mb-0">
-                            <label class="atlas-label">Display name</label>
-                            <input type="text" class="form-control form-control-lg" name="display_name" maxlength="80"
-                                   value="{{ profile_row.display_name or '' }}" placeholder="{{ current_user.username }}">
+                            <label class="atlas-label" for="display_name">Display name</label>
+                            <input type="text" class="form-control form-control-lg" id="display_name" name="display_name" maxlength="80"
+                                   value="{{ profile_row.display_name or '' }}" placeholder="How should we address you?" autocomplete="nickname">
                             <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code>.</p>
                         </div>
                     </div>
@@ -373,8 +448,12 @@
                     <div class="atlas-card-b">
                         <div class="row g-3">
                             <div class="col-md-6 atlas-field">
-                                <label class="atlas-label">Timezone</label>
-                                <input type="text" class="form-control" name="timezone" value="{{ profile_row.timezone or 'America/New_York' }}" placeholder="America/New_York">
+                                <label class="atlas-label" for="timezone">Timezone</label>
+                                <select class="form-select" id="timezone" name="timezone">
+                                    {% for zone in timezone_choices %}
+                                    <option value="{{ zone }}" {% if (profile_row.timezone or 'America/New_York') == zone %}selected{% endif %}>{{ zone }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
                             <div class="col-md-6 atlas-field">
                                 <label class="atlas-label">Week starts</label>
@@ -397,6 +476,7 @@
                                 <div class="form-check form-switch mt-2 pt-1">
                                     <input class="form-check-input" type="checkbox" name="compact_tables" id="ct" {% if profile_row.compact_tables %}checked{% endif %}>
                                     <label class="form-check-label" for="ct">Prefer tighter tables</label>
+                                    <p class="atlas-hint mb-0">Less padding on data tables across the app.</p>
                                 </div>
                             </div>
                         </div>
@@ -496,7 +576,11 @@
                         </button>
                     </form>
                     {% else %}
-                    <p class="atlas-hint mb-3">${{ price_monthly }}/month, or ${{ price_annual }}/year (${{ price_annual_equiv }}/month &mdash; two months free). Cancel any time; your data stays readable either way.</p>
+                    <p class="atlas-hint mb-2">${{ price_monthly }}/month, or ${{ price_annual }}/year (${{ price_annual_equiv }}/month &mdash; two months free).</p>
+                    {% if subscribe_offer %}
+                    <p class="atlas-hint mb-2">{{ subscribe_offer }}</p>
+                    {% endif %}
+                    <p class="atlas-hint mb-3">You aren't subscribed yet, so there is no billing portal to open. After you subscribe, Stripe's portal is where you change the card, switch monthly or yearly, or cancel. Your data stays readable either way.</p>
                     <div class="d-flex flex-wrap gap-2">
                         <form method="POST" action="{{ url_for('billing_checkout') }}">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -532,7 +616,7 @@
                 <div class="atlas-card-b">
                     {% if subscription and subscription.ai_is_paying %}
                     <p class="mb-1"><strong>Add-on active{% if subscription.ai_amount %} &mdash; ${{ subscription.ai_amount }}/month{% endif %}</strong></p>
-                    <p class="atlas-hint mb-3">Gemini Pro, Claude Sonnet, and Claude Opus on Insights and Ask AI. Flash and Haiku stay included.</p>
+                    <p class="atlas-hint mb-3">Gemini 2.5 Pro, Claude Sonnet, and Claude Opus on Insights and Ask AI. Flash and Haiku stay included.</p>
                     {% if subscription.has_customer %}
                     <form method="POST" action="{{ url_for('billing_portal') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -543,7 +627,7 @@
                     </form>
                     {% endif %}
                     {% elif ai_billing_enabled %}
-                    <p class="atlas-hint mb-3">Unlock Gemini Pro, Claude Sonnet, and Claude Opus on Insights. Flash and Haiku stay included. ${{ price_ai }}/month, cancel any time.</p>
+                    <p class="atlas-hint mb-3">Unlock Gemini 2.5 Pro, Claude Sonnet, and Claude Opus on Insights. Flash and Haiku stay included. ${{ price_ai }}/month. After you subscribe, cancel any time in the billing portal.</p>
                     <form method="POST" action="{{ url_for('billing_checkout_ai') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-primary"
@@ -574,7 +658,7 @@
                         <ul class="mb-0 ps-3 mt-1">
                             <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>
                             <li><strong>Within a few hours:</strong> recent trade history (sometimes up to 24h for the very first sync).</li>
-                            <li><strong>Not the life of the account.</strong> We request up to {{ snaptrade_full_history_lookback_days }} days; each broker only returns what it still has on file. Schwab typically sends about 1&ndash;2 years of trades, not 5 years and not the account open date. Daily values start the first day we captured a snapshot.</li>
+                            <li><strong>Not the life of the account.</strong> We request up to {{ snaptrade_full_history_lookback_days | history_window }}; each broker only returns what it still has on file. Schwab typically sends about 1&ndash;2 years of trades, not 5 years and not the account open date. Daily values start the first day we captured a snapshot.</li>
                         </ul>
                         <div class="mt-2">
                             If trades aren't visible right away, sync again later &mdash; the broker
@@ -692,6 +776,7 @@
                             </label>
                             {% endfor %}
                         </div>
+                        <p id="group-composer-error" class="text-danger small mb-2" hidden></p>
                         <div class="d-flex flex-wrap gap-2 align-items-end">
                             <div class="flex-grow-1" style="min-width:12rem;">
                                 <label class="atlas-label" for="group_name">Name</label>
@@ -711,10 +796,28 @@
                     </form>
                     <script>
                     (function () {
-                        document.querySelectorAll('#group-composer .ht-pick-chip input').forEach(function (inp) {
+                        var form = document.getElementById('group-composer');
+                        if (!form) return;
+                        form.querySelectorAll('.ht-pick-chip input').forEach(function (inp) {
                             inp.addEventListener('change', function () {
                                 inp.closest('.ht-pick-chip').classList.toggle('is-on', inp.checked);
                             });
+                        });
+                        form.addEventListener('submit', function (ev) {
+                            var any = form.querySelector('input[name="tenant_id"]:checked');
+                            var nameEl = form.querySelector('[name="group_name"]');
+                            var name = (nameEl && nameEl.value || '').trim();
+                            var err = document.getElementById('group-composer-error');
+                            if (any && name) {
+                                if (err) err.hidden = true;
+                                return;
+                            }
+                            ev.preventDefault();
+                            if (!err) return;
+                            err.hidden = false;
+                            err.textContent = any
+                                ? 'Name the group.'
+                                : 'Click at least one account, then name the group.';
                         });
                     })();
                     </script>
@@ -767,7 +870,7 @@
                             <thead class="table-light"><tr><th class="ps-3">Account</th><th>History</th><th>Positions</th><th class="pe-3">When</th></tr></thead>
                             <tbody>
                                 {% for u in recent_uploads %}
-                                <tr><td class="ps-3">{{ u.account_name | account_label(u.tenant_id) }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at }}</td></tr>
+                                <tr><td class="ps-3">{{ u.account_name | account_label(u.tenant_id) }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at | friendly_time }}</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -830,9 +933,15 @@
             <div class="atlas-card">
                 <div class="atlas-card-h">Password</div>
                 <div class="atlas-card-b">
+                    <p class="atlas-hint mb-3">Two-factor sign-in and passkeys aren't available yet. Password recovery uses the email above.</p>
                     <form method="POST" action="{{ url_for('profile', tab='security') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="action" value="change_password">
+                        <div class="mb-3">
+                            <label class="form-label" for="pw_username">Username</label>
+                            <input type="text" class="form-control" id="pw_username" name="username"
+                                   value="{{ current_user.username }}" autocomplete="username" readonly>
+                        </div>
                         <div class="mb-3"><label class="form-label" for="pw_current">Current</label>
                             <div class="input-group">
                                 <input type="password" class="form-control" id="pw_current" name="current_password" required autocomplete="current-password">

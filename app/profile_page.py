@@ -39,6 +39,75 @@ _DEFAULT_ROUTE_LABELS = {
     "accounts": "Accounts",
 }
 
+# Common IANA zones for the Preferences select. A stored zone that isn't
+# in this list is still offered so the saved value stays visible.
+COMMON_TIMEZONES = (
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Phoenix",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "Pacific/Honolulu",
+    "America/Toronto",
+    "America/Vancouver",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Berlin",
+    "Asia/Kolkata",
+    "Asia/Singapore",
+    "Asia/Hong_Kong",
+    "Asia/Tokyo",
+    "Australia/Sydney",
+    "UTC",
+)
+
+
+def normalize_timezone(raw):
+    """Return a real IANA zone name, or None when the value isn't one."""
+    name = (raw or "").strip() or "America/New_York"
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(name)
+    except Exception:
+        return None
+    return name
+
+
+def timezone_choices(current):
+    cur = (current or "").strip()
+    zones = list(COMMON_TIMEZONES)
+    if cur and cur not in zones:
+        zones.insert(0, cur)
+    return zones
+
+
+def profile_header_counts(snaptrade_accounts, legacy_accounts):
+    """Settings chips: live SnapTrade accounts, and distinct brokers.
+
+    ``legacy_accounts`` is the old ``user_accounts`` label list. It still
+    holds phantom nicknames after a rename, so it is only the fallback
+    when this user has no SnapTrade rows (CSV-only). The aggregator slug
+    ``snaptrade`` is not a broker. PR #114 (draft) counts CSV-only manuals
+    beside live SnapTrade rows; this header does not, so a SnapTrade-only
+    book matches and a mixed book should follow that PR when it lands.
+    """
+    from app.early_broker import broker_key
+
+    rows = list(snaptrade_accounts or [])
+    if rows:
+        account_count = len(rows)
+    else:
+        account_count = len(list(legacy_accounts or []))
+    brokers = set()
+    for row in rows:
+        raw = (row.get("broker_slug") or "").strip()
+        key = broker_key(raw)
+        if not key or key == "snaptrade":
+            continue
+        brokers.add(key)
+    return account_count, len(brokers)
+
 
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
@@ -153,7 +222,10 @@ def profile():
                 return redirect(url_for("profile", tab="notifications"))
 
             display_name = (request.form.get("display_name") or "").strip() or None
-            timezone = (request.form.get("timezone") or "America/New_York").strip() or "America/New_York"
+            timezone = normalize_timezone(request.form.get("timezone"))
+            if not timezone:
+                flash("Pick a timezone from the list.", "danger")
+                return redirect(url_for("profile", tab="preferences"))
             week_starts_monday = request.form.get("week_starts_monday") == "on"
             default_route = (request.form.get("default_route") or "weekly_review").strip()
             if default_route not in _ALLOWED_DEFAULT_ROUTE:
@@ -239,6 +311,8 @@ def profile():
         snaptrade_enabled = False
         snaptrade_accounts = []
 
+    account_count, broker_count = profile_header_counts(snaptrade_accounts, accounts)
+
     routes = sorted(_ALLOWED_DEFAULT_ROUTE)
     if not app.config.get("INSIGHTS_ENABLED", True):
         routes = [r for r in routes if r != "insights"]
@@ -258,14 +332,30 @@ def profile():
     except Exception:
         pass
 
+    subscribe_offer = None
+    try:
+        from app.early_broker import subscribe_offer_for_user
+
+        prior_status = (subscription or {}).get("status") if subscription else None
+        subscribe_offer = subscribe_offer_for_user(
+            current_user.id, prior_subscription_status=prior_status,
+        )
+    except Exception:
+        subscribe_offer = None
+
+    saved_tz = (profile_row or {}).get("timezone") or "America/New_York"
     return render_template(
         "profile.html",
         title="Settings",
         tab=tab,
         plan_state=plan_state_value,
         subscription=subscription,
+        subscribe_offer=subscribe_offer,
         profile_row=profile_row,
         accounts=accounts,
+        account_count=account_count,
+        broker_count=broker_count,
+        timezone_choices=timezone_choices(saved_tz),
         recent_uploads=recent_uploads,
         group_tenant_choices=group_tenant_choices,
         editing_group=editing_group,

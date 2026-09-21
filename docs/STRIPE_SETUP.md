@@ -207,6 +207,18 @@ the trial ends. Override the length with `EARLY_BROKER_TRIAL_DAYS` (set `0` to
 disable). Checkout still has `allow_promotion_codes: True` if you later create
 a matching Stripe promotion code and set `EARLY_BROKER_PROMO_CODE`.
 
+Every subscribe surface quotes the same sentence (`subscribe_offer_sentence`):
+"If you subscribe, 6 months of Pro is included before the first charge."
+That is not the 30-day no-card reverse trial, and it is not grandfathered beta.
+
+Checkout Sessions set `branding_settings.display_name` to HappyTrader plus
+submit `custom_text`. The shared Stripe account's **Dashboard business name**
+can still render as `earningsfollower` in the Checkout header when the API
+version ignores `branding_settings` — rename that in Stripe Dashboard →
+Settings → Business details / Branding. Do not rename Products or Prices via
+the API; charges stay on the existing HappyTrader price IDs. Success and
+cancel URLs already use `APP_BASE_URL` (default `https://happytrader.me`).
+
 ## Related
 
 - `app/billing.py` — checkout, portal, success reconcile, webhook

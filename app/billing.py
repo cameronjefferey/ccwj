@@ -274,6 +274,69 @@ def _base_url() -> str:
     return app_base_url()
 
 
+# Per-session Checkout branding. The live Stripe account is shared with
+# EarningsFollower, so the Dashboard business name can still read
+# "earningsfollower" until someone renames it there. These fields are the
+# levers Checkout Session.create actually accepts; they do not rename
+# Products or Prices (that would touch what customers are charged).
+_CHECKOUT_BRANDING = {
+    "display_name": "HappyTrader",
+    "background_color": "#0f172a",
+    "button_color": "#2563eb",
+    "border_style": "rounded",
+}
+
+
+def apply_checkout_branding(kwargs: dict, *, trial_days=None, description="HappyTrader Pro") -> dict:
+    """Stamp HappyTrader onto a Checkout Session payload.
+
+    ``success_url`` / ``cancel_url`` stay on this app (``_base_url``,
+    default https://happytrader.me). ``branding_settings.display_name``
+    is the per-session business name. ``custom_text`` names HappyTrader
+    next to the pay button, and repeats the early-broker trial sentence
+    when this session will actually attach ``trial_period_days``.
+    """
+    from app.early_broker import subscribe_offer_sentence
+
+    branded = dict(kwargs)
+    branded["branding_settings"] = dict(_CHECKOUT_BRANDING)
+    offer = subscribe_offer_sentence(trial_days)
+    if offer:
+        message = f"{description}. {offer} Cancel any time in the billing portal."
+    else:
+        message = (
+            f"{description}. After you subscribe, the billing portal is where "
+            "you change the card or cancel."
+        )
+    branded["custom_text"] = {"submit": {"message": message}}
+    sub = dict(branded.get("subscription_data") or {})
+    sub.setdefault("description", description)
+    branded["subscription_data"] = sub
+    return branded
+
+
+def _create_checkout_session(stripe_sdk, kwargs: dict):
+    """Create a Checkout Session, retrying once if branding is rejected.
+
+    Older API versions 400 on ``branding_settings``. Dropping only that
+    key keeps checkout working; the Dashboard business name then stays
+    whatever Stripe has on the shared account (often "earningsfollower").
+    """
+    try:
+        return stripe_sdk.checkout.Session.create(**kwargs)
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "branding_settings" not in msg and "branding" not in msg:
+            raise
+        app.logger.warning(
+            "Stripe rejected Checkout branding_settings; the Dashboard "
+            "business name may still say earningsfollower: %s",
+            exc,
+        )
+        slim = {k: v for k, v in kwargs.items() if k != "branding_settings"}
+        return stripe_sdk.checkout.Session.create(**slim)
+
+
 # ---------------------------------------------------------------------------
 # Postgres state (see _migrate_users_stripe_columns in app/models.py)
 # ---------------------------------------------------------------------------
@@ -977,9 +1040,11 @@ def billing_checkout():
             current_user.id,
             prior_subscription_status=row.get("subscription_status"),
         )
-        if kwargs["subscription_data"].get("trial_period_days"):
+        trial_days = kwargs["subscription_data"].get("trial_period_days")
+        if trial_days:
             # Don't stack a typed coupon on top of the 6-month thank-you.
             kwargs["allow_promotion_codes"] = False
+        kwargs = apply_checkout_branding(kwargs, trial_days=trial_days)
         if customer_id:
             kwargs["customer"] = customer_id
             kwargs["customer_update"] = {"address": "auto", "name": "auto"}
@@ -987,7 +1052,7 @@ def billing_checkout():
             email = (getattr(current_user, "email", "") or "").strip()
             if email:
                 kwargs["customer_email"] = email
-        session_obj = stripe_sdk.checkout.Session.create(**kwargs)
+        session_obj = _create_checkout_session(stripe_sdk, kwargs)
     except Exception as exc:
         app.logger.exception("Stripe checkout create failed: %s", exc)
         flash(
@@ -1051,6 +1116,7 @@ def billing_checkout_ai():
             "subscription_data": {"metadata": {"user_id": str(current_user.id)}},
             "metadata": {"user_id": str(current_user.id)},
         }
+        kwargs = apply_checkout_branding(kwargs, description="HappyTrader AI")
         if customer_id:
             kwargs["customer"] = customer_id
             kwargs["customer_update"] = {"address": "auto", "name": "auto"}
@@ -1058,7 +1124,7 @@ def billing_checkout_ai():
             email = (getattr(current_user, "email", "") or "").strip()
             if email:
                 kwargs["customer_email"] = email
-        session_obj = stripe_sdk.checkout.Session.create(**kwargs)
+        session_obj = _create_checkout_session(stripe_sdk, kwargs)
     except Exception as exc:
         app.logger.exception("Stripe AI checkout create failed: %s", exc)
         flash(
