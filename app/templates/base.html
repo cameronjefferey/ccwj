@@ -42,6 +42,26 @@
             } catch (e) { /* localStorage unavailable */ }
         })();
     </script>
+    {% if current_user.is_authenticated %}
+    {# Capture beforeinstallprompt before nav.js (defer) runs. preventDefault
+       only on signed-in pages, which own the Account → Install app button.
+       Swallowing the event on logged-out pages would hide the browser's
+       own install UI with nothing to replace it. #}
+    <script>
+        (function () {
+            try {
+                var standalone = window.matchMedia("(display-mode: standalone)").matches
+                    || window.navigator.standalone === true;
+                if (standalone) document.documentElement.classList.add("ht-pwa-installed");
+            } catch (e) { /* matchMedia unavailable */ }
+            window.__htDeferredInstall = null;
+            window.addEventListener("beforeinstallprompt", function (e) {
+                e.preventDefault();
+                window.__htDeferredInstall = e;
+            });
+        })();
+    </script>
+    {% endif %}
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -146,6 +166,24 @@
         .kpi-value { font-size: 1.5rem; font-weight: 700; }
         .navbar .dropdown-menu { border: none; box-shadow: 0 4px 20px rgba(0,0,0,.2); }
         .navbar .dropdown-menu-dark .dropdown-item:hover { background: rgba(255,255,255,.1); }
+        /* Account → Install app is a button (no href="#"). Match the
+           anchor dropdown items; the browser's button defaults otherwise
+           shrink-wrap the label and paint a gray face. */
+        .navbar .dropdown-menu button.dropdown-item {
+            width: 100%;
+            text-align: left;
+            border: 0;
+            background: transparent;
+            font: inherit;
+            cursor: pointer;
+            color: rgba(255, 255, 255, .85);
+        }
+        .navbar .dropdown-menu button.dropdown-item:hover,
+        .navbar .dropdown-menu button.dropdown-item:focus {
+            color: #fff;
+            background: rgba(255,255,255,.1);
+        }
+        html.ht-pwa-installed #ht-install-item { display: none !important; }
         /* Guest auth — same lift + shadow on Sign In and Sign Up */
         .navbar .btn.btn-auth-nav {
             font-weight: 600;
@@ -848,10 +886,12 @@
                         <li>
                             <a class="dropdown-item {% if ep == 'get_started' %}active{% endif %}" href="{{ url_for('get_started') }}">Get started</a>
                         </li>
-                        {# Revealed by nav.js when the browser fires
-                           beforeinstallprompt (Android/desktop Chrome). #}
-                        <li class="d-none" id="ht-install-item">
-                            <a class="dropdown-item" href="#" id="ht-install-link">Install app</a>
+                        {# Button, not href="#". nav.js calls beforeinstallprompt
+                           when the browser has one; otherwise it opens
+                           #htInstallModal. Hidden once the app is installed
+                           (html.ht-pwa-installed, set in <head>). #}
+                        <li id="ht-install-item">
+                            <button type="button" class="dropdown-item" id="ht-install-link">Install app</button>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
@@ -1128,6 +1168,32 @@
         <span aria-hidden="true">💬</span>
         <span>Send feedback</span>
     </button>
+
+    {% if current_user.is_authenticated %}
+    {# Shown by nav.js when Account → Install app has no beforeinstallprompt
+       to hand to the browser (iOS Safari, desktop Safari, Firefox, or a
+       Chromium that refused the native dialog). #}
+    <div class="modal fade" id="htInstallModal" tabindex="-1" aria-labelledby="htInstallModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="htInstallModalLabel">Install HappyTrader</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">Add HappyTrader to your home screen or desktop so it opens like an app.</p>
+                    <p class="mb-0" data-ht-install-help="ios">In Safari, tap Share, then Add to Home Screen.</p>
+                    <p class="mb-0 d-none" data-ht-install-help="safari">In Safari, choose Share, then Add to Dock.</p>
+                    <p class="mb-0 d-none" data-ht-install-help="chromium">Use the install icon in the address bar, or open the browser menu and choose Install HappyTrader.</p>
+                    <p class="mb-0 d-none" data-ht-install-help="other">Open HappyTrader in Chrome, Edge, or Safari, then use Account → Install app.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Got it</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="modal fade" id="htFeedbackModal" tabindex="-1" aria-labelledby="htFeedbackModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
