@@ -5,6 +5,7 @@ view passes ``title``. These routes used to omit it, so the tab read
 "HappyTrader" on /positions, /accounts, and /position/<symbol>.
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -144,3 +145,15 @@ document.addEventListener("DOMContentLoaded", function () {
     assert 'id="empty-case">Showing 0|empty-shown|pager-hidden|visible-0' in dom
     assert 'id="partial-case">Showing 1 of 2 on this page|empty-hidden|pager-shown|visible-1' in dom
     assert 'id="cleared-case">Showing 1-2 of 26|empty-hidden|pager-shown|visible-2' in dom
+
+
+def test_open_position_header_says_opened_not_as_of():
+    """An open one-buy holding is not dated like a finished trade.
+
+    CRWD had a single Sep 11 buy and was still in the broker snapshot.
+    The hero said Open and "as of Sep 11", which is also how the nav
+    dates broker data.
+    """
+    html = Path("app/templates/position_detail.html").read_text()
+    assert "opened {{ kpis.first_trade|human_date }}" in html
+    assert "as of {{ kpis.first_trade|human_date }}" not in html

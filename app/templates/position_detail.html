@@ -225,8 +225,13 @@
                 <span class="text-white-50 small">{{ kpis.total_trades }} trade{% if kpis.total_trades != 1 %}s{% endif %}</span>
                 {% if kpis.first_trade and kpis.last_trade %}
                 <span class="text-white-50 small">
-                    {% if kpis.first_trade[:10] == kpis.last_trade[:10] %}
-                    as of {{ kpis.first_trade|human_date }}
+                    {% if overall_status == 'Open' %}
+                    opened {{ kpis.first_trade|human_date }}
+                    {%- if kpis.first_trade[:10] != kpis.last_trade[:10] %}
+                    · last fill {{ kpis.last_trade|human_date }}
+                    {%- endif %}
+                    {% elif kpis.first_trade[:10] == kpis.last_trade[:10] %}
+                    on {{ kpis.first_trade|human_date }}
                     {% else %}
                     {{ kpis.first_trade|human_date }} &mdash; {{ kpis.last_trade|human_date }}
                     {% endif %}
