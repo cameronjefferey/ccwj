@@ -366,6 +366,70 @@ def test_merge_falls_through_when_summary_has_dividend_strategy_for_account():
     assert float(r["total_pnl"]) == 18861.15
 
 
+def test_merge_does_not_repeat_stock_already_inside_covered_call():
+    """A simple covered call is one strategy row.
+
+    The stock's realized gain is already inside positions_summary's
+    Covered Call total (stock + call). Closed equity legs must not
+    become a second Buy and Hold row for the same shares.
+    """
+    summary = pd.DataFrame([
+        _summary_row("Schwab Account", "Covered Call", "Closed", 1824.16, symbol="SMTC"),
+    ])
+    closed_legs = pd.DataFrame([{
+        "account": "Schwab Account",
+        "strategy": "Covered Call",
+        "total_pnl": -1416.34,
+        "premium_received": 1124.32,
+        "premium_paid": 0.0,
+        "days_in_trade": 21,
+        "open_date": pd.to_datetime(["2026-08-20"])[0],
+        "close_date": pd.to_datetime(["2026-09-10"])[0],
+    }])
+    closed_equity = pd.DataFrame([{
+        "account": "Schwab Account",
+        "session_id": 1,
+        "open_date": pd.to_datetime(["2026-08-20"])[0],
+        "close_date": pd.to_datetime(["2026-09-10"])[0],
+        "realized_pnl": 3240.50,
+        "status": "Closed",
+        "description": "Equity Sold",
+    }])
+    out = _merge_position_strategy_breakdown(
+        "SMTC", summary, closed_legs, closed_equity,
+    )
+    assert list(out["strategy"]) == ["Covered Call"]
+    assert float(out.iloc[0]["total_pnl"]) == 1824.16
+
+
+def test_merge_still_adds_stock_when_only_the_option_is_in_the_mart():
+    """A naked option in the mart does not explain a separate stock lot."""
+    summary = pd.DataFrame([
+        _summary_row("Schwab Account", "Naked Call", "Closed", -500.0, symbol="SMTC"),
+    ])
+    closed_legs = pd.DataFrame([{
+        "account": "Schwab Account",
+        "strategy": "Naked Call",
+        "total_pnl": -500.0,
+        "premium_received": 0.0,
+        "premium_paid": 500.0,
+        "days_in_trade": 10,
+        "open_date": pd.to_datetime(["2026-08-20"])[0],
+        "close_date": pd.to_datetime(["2026-09-10"])[0],
+    }])
+    closed_equity = pd.DataFrame([{
+        "account": "Schwab Account",
+        "session_id": 1,
+        "realized_pnl": 1000.0,
+        "status": "Closed",
+        "description": "Equity Sold",
+    }])
+    out = _merge_position_strategy_breakdown(
+        "SMTC", summary, closed_legs, closed_equity,
+    )
+    assert set(out["strategy"]) == {"Naked Call", "Buy and Hold"}
+
+
 def test_supplement_skips_buy_and_hold_when_mart_has_dividend_same_symbol():
     """
     Regression: positions_summary emits strategy 'Dividend' while
