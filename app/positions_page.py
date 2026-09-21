@@ -397,6 +397,7 @@ DEFAULT_QUERY = """
 """
 
 ERROR_DEFAULTS = dict(
+    title="Positions",
     error="",
     rows=[],
     symbol_rows=[],

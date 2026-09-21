@@ -207,6 +207,29 @@ def _positions_kpi(html):
 # --- Bug regressions -------------------------------------------------
 
 
+def test_positions_page_title(routed_app):
+    """The positions list used to render a bare <title>HappyTrader</title>."""
+    r = routed_app.get("/positions")
+    assert r.status_code == 200
+    html = r.data.decode()
+    assert "<title>Positions - HappyTrader</title>" in html
+    assert 'data-ht-search="#symbolTable"' in html
+    assert 'data-ht-search="#positionsTable"' in html
+    assert 'id="symbolSearchEmpty"' in html
+    assert "No results match this search." in html
+
+
+def test_impossible_symbol_filter_has_empty_state_and_no_pager(routed_app):
+    """A symbol that isn't in the book must not leave a blank table or a
+    stale "Showing 1-25 of N" footer."""
+    r = routed_app.get("/positions?symbol=ZZZZZ")
+    assert r.status_code == 200
+    html = r.data.decode()
+    assert "No positions match the selected filters." in html
+    assert "Showing 1-" not in html
+    assert 'id="positionsTable"' not in html
+
+
 def test_hero_chips_track_filter_strategy(routed_app):
     """Filter to Long Call → chips must drop. Long Call has 1 Open +
     1 Closed in fixture; sum must agree with body KPI. Pre-fix this was

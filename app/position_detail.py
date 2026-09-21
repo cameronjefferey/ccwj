@@ -1891,7 +1891,7 @@ def position_detail(symbol):
     except Exception as exc:
         return render_template(
             "position_detail.html",
-            title=f"{symbol} position",
+            title=symbol,
             symbol=symbol,
             error=str(exc),
             first_visit=False,
@@ -3232,7 +3232,7 @@ def position_detail(symbol):
     open_strategy_names = unique_open_strategy_names(strategy_rows)
     resp = make_response(render_template(
         "position_detail.html",
-        title=f"{symbol} position",
+        title=symbol,
         symbol=symbol,
         open_strategy_names=open_strategy_names,
         kpis=kpis,

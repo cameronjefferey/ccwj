@@ -610,7 +610,7 @@ def accounts():
     except Exception as exc:
         return render_template(
             "accounts.html",
-            title="Account performance",
+            title="Accounts — Performance",
             error=str(exc),
             kpis={},
             summary_chart_json="{}",
@@ -1001,7 +1001,7 @@ def accounts():
 
     return render_template(
         "accounts.html",
-        title="Account performance",
+        title="Accounts — Performance",
         kpis=kpis,
         summary_chart_json=json.dumps(summary_chart),
         strategy_chart_json=json.dumps(strategy_chart),

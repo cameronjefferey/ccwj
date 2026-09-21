@@ -457,7 +457,9 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="fw-bold mb-0">Performance by Symbol</h6>
             <input type="text" id="symbolSearch" class="form-control form-control-sm"
-                   style="max-width:240px" placeholder="Search symbols...">
+                   style="max-width:240px" placeholder="Search symbols..."
+                   data-ht-search="#symbolTable" data-ht-empty="#symbolSearchEmpty"
+                   aria-controls="symbolTable">
         </div>
 
         {# Strategy badge color map (shared) #}
@@ -569,6 +571,9 @@
                 </tbody>
             </table>
         </div>
+        <p id="symbolSearchEmpty" class="ht-search-empty text-muted text-center py-4 mb-0 d-none" role="status">
+            No results match this search.
+        </p>
     </div>
 </div>
 {% endif %}
@@ -579,7 +584,9 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="fw-bold mb-0">Strategy Detail</h6>
             <input type="text" id="tableSearch" class="form-control form-control-sm"
-                   style="max-width:240px" placeholder="Search...">
+                   style="max-width:240px" placeholder="Search..."
+                   data-ht-search="#positionsTable" data-ht-empty="#strategySearchEmpty"
+                   data-ht-pager="#strategyPager" aria-controls="positionsTable">
         </div>
 
         {% if rows %}
@@ -704,9 +711,12 @@
                 </tbody>
             </table>
         </div>
+        <p id="strategySearchEmpty" class="ht-search-empty text-muted text-center py-4 mb-0 d-none" role="status">
+            No results match this search.
+        </p>
         {% if total_pages > 1 %}
-        <nav class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
-            <span class="text-muted small">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
+        <nav id="strategyPager" class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+            <span class="text-muted small" data-page-label data-unfiltered="Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {{ 'disabled' if page <= 1 }}">
                     <a class="page-link" href="{{ scoped_url('positions', page=page-1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
@@ -809,23 +819,8 @@
     });
     {% endif %}
 
-    /* ── Table Search (generic helper) ────────────────────────── */
-    function bindSearch(inputId, tableId) {
-        var input = document.getElementById(inputId);
-        if (!input) return;
-        input.addEventListener('input', function () {
-            var q = this.value.toLowerCase();
-            var rows = document.querySelectorAll('#' + tableId + ' tbody tr');
-            rows.forEach(function (row) {
-                row.style.display = row.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
-            });
-        });
-    }
-    bindSearch('symbolSearch', 'symbolTable');
-    bindSearch('tableSearch', 'positionsTable');
-
-    /* Table sorting is handled globally by static/js/tables.js
-       (th.sortable + td[data-val]). */
+    /* Table search + sorting live in static/js/tables.js
+       (input[data-ht-search], th.sortable + td[data-val]). */
 
     // Status dropdown label update
     var statusDropdown = document.getElementById('statusDropdown');
