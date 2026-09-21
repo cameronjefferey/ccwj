@@ -260,7 +260,8 @@
             <div class="section-label">Exit Timing Profile</div>
             <p class="mb-3" style="font-size:.9rem; color:#475569; line-height:1.5">
                 How much profit you leave on the table by holding past the optimal exit point.
-                Computed from daily option mark-to-market snapshots.
+                Computed from daily option mark-to-market snapshots, captured since August 2026.
+                Contracts closed before that cannot be scored.
             </p>
 
             {% set et = coaching.exit_timing %}
@@ -286,8 +287,8 @@
                 </div>
                 <div class="signal-card">
                     <div class="signal-label">Data Coverage</div>
-                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#6c757d"> / {{ coaching.total_closed }}</span></div>
-                    <div class="signal-meta">{{ coaching.pct_reliable }}% of contracts have reliable data</div>
+                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#6c757d"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
+                    <div class="signal-meta">{{ coaching.pct_reliable }}% of contracts since daily marks began</div>
                 </div>
             </div>
 
@@ -297,7 +298,7 @@
                 <div>
                     <div class="strat-name">{{ s.strategy_label or s.strategy }}</div>
                     <div class="strat-stats">
-                        {{ s.trades }} of {{ s.total_closed }} trades with data &middot;
+                        {{ s.trades }} of {{ s.total_closed }} trades since marks began &middot;
                         {{ "{:.0f}".format(s.days_past_peak) }}d past peak
                         {% if s.account_count is defined and s.account_count > 1 %}&middot; {{ s.account_count }} accounts{% endif %}
                         {% if s.pct_premium_captured > 0 %}&middot; {{ "{:.0f}".format(s.pct_premium_captured) }}% premium captured{% endif %}

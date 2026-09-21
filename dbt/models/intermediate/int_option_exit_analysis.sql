@@ -16,8 +16,16 @@
       - pnl_given_back: how much profit was surrendered by not closing at peak
       - giveback_pct: pnl_given_back as a % of peak
       - held_past_peak_days: how many days you held after the optimal exit
-      - snapshot_density: ratio of snapshot days to hold days (1.0 = every day)
-      - data_reliable: true when density >= 50% and at least 3 snapshots
+      - snapshot_density: ratio of snapshots to hold days (1.0 = every day).
+        Same-day round-trips (days_in_trade = 0) use 1 as the hold length so
+        intra-day marks count as full coverage of that session.
+      - data_reliable: true when density >= 40% and at least 2 snapshots.
+        A 1-day hold with open+close marks is a complete daily curve; the
+        old floor of 3 snapshots silently dropped overnight round-trips.
+      - in_marks_window: close_date is on/after the first captured option
+        mark (SCD2 history began 2026-08-04). Contracts outside this window
+        can never be data_reliable — coverage % must use this denominator,
+        not lifetime closed, or a long trade history reads as "3% coverage."
 
     Contracts with sparse snapshots are flagged so downstream consumers
     can exclude or de-weight them — the peak might have been missed.
@@ -118,21 +126,27 @@ select
     pd.peak_date,
     coalesce(ps.snapshot_count, 0)        as snapshot_count,
 
-    -- Snapshot density: what fraction of hold days have a snapshot
+    -- Snapshot density: what fraction of hold days have a snapshot.
+    -- greatest(days_in_trade, 1) so same-day (0 DTE) expiries with
+    -- intra-day marks are density 4.0, not 0.
     case
-        when c.days_in_trade > 0 and ps.snapshot_count is not null
-        then round(ps.snapshot_count / c.days_in_trade, 2)
+        when ps.snapshot_count is not null
+        then round(ps.snapshot_count / greatest(c.days_in_trade, 1), 2)
         else 0
     end as snapshot_density,
 
-    -- Reliable = enough snapshots to trust the peak detection
+    -- Reliable = dense enough curve to trust the peak. Two snapshots
+    -- cover a 1-day hold; a 30-day hold with 2 snaps is density 0.07
+    -- and stays unreliable. Same-day holds with >=2 intra-day marks pass.
     case
-        when ps.snapshot_count >= 3
-             and c.days_in_trade > 0
-             and (ps.snapshot_count / c.days_in_trade) >= 0.4
+        when ps.snapshot_count >= 2
+             and (ps.snapshot_count / greatest(c.days_in_trade, 1)) >= 0.4
         then true
         else false
     end as data_reliable,
+
+    -- Eligible for marks-based scoring (coverage denominator).
+    (c.close_date >= mw.marks_start) as in_marks_window,
 
     date_diff(pd.peak_date, c.open_date, day) as days_open_to_peak,
     date_diff(c.close_date, pd.peak_date, day) as days_held_past_peak,
@@ -169,6 +183,10 @@ select
     end as optimal_exit
 
 from contracts c
+cross join (
+    -- First captured option mark; older contracts can never be reliable.
+    select min(date) as marks_start from {{ ref('int_option_marks_daily') }}
+) mw
 left join peak_stats ps
     on c.account = ps.account
     and (c.user_id is not distinct from ps.user_id)

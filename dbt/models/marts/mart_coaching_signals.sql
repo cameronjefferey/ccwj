@@ -16,8 +16,9 @@
     remain left joins and may be sparse per row.
 
     Only exit_stats rows use data_reliable = true (>=40% snapshot density
-    and >=3 snapshots); that filter is intentionally not applied to DTE buckets
-    (see comments on those CTEs).
+    and >=2 snapshots); that filter is intentionally not applied to DTE buckets
+    (see comments on those CTEs). Coverage % uses eligible_closed (contracts
+    whose close_date sits in the option-marks window), not lifetime total_closed.
 */
 
 with exit_stats as (
@@ -26,6 +27,8 @@ with exit_stats as (
         snapshots) so giveback / days-past-peak are not driven by sparse MTM.
         This is a data-quality gate, not a statistical minimum like the
         having sum(num_trades) >= 3 used in dte_performance for bucket stability.
+        eligible_closed = contracts whose hold overlapped captured marks
+        (in_marks_window); that is the coverage denominator.
     */
     select
         account,
@@ -33,6 +36,7 @@ with exit_stats as (
         tenant_id,
         strategy,
         count(*)                                                as total_closed,
+        countif(in_marks_window)                                as eligible_closed,
         countif(data_reliable)                                  as reliable_contracts,
         round(avg(case when data_reliable then giveback_pct end), 1)
                                                                 as avg_giveback_pct,
@@ -54,10 +58,13 @@ with exit_stats as (
                                                                 as avg_actual_pnl,
         round(sum(case when data_reliable then pnl_given_back else 0 end), 2)
                                                                 as total_pnl_given_back,
-        -- Data coverage: what fraction of closed contracts have reliable data
+        -- Coverage vs the marks window, not lifetime closed. Daily option
+        -- marks only exist from 2026-08-04; scoring 12 reliable / 407
+        -- lifetime reads as a 3% pipeline failure when ~90% of in-window
+        -- contracts actually qualify.
         round(safe_divide(
             countif(data_reliable),
-            nullif(count(*), 0)
+            nullif(countif(in_marks_window), 0)
         ) * 100, 0)                                             as pct_contracts_reliable
     from {{ ref('int_option_exit_analysis') }}
     group by 1, 2, 3, 4
@@ -207,6 +214,7 @@ select
     b.strategy,
 
     coalesce(e.total_closed, 0)                 as total_closed,
+    coalesce(e.eligible_closed, 0)              as eligible_closed,
     coalesce(e.reliable_contracts, 0)           as reliable_contracts,
     coalesce(e.pct_contracts_reliable, 0)       as pct_contracts_reliable,
     e.avg_giveback_pct,

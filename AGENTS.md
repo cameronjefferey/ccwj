@@ -1073,7 +1073,11 @@ ungraded (NULL delta). (2) the MARKS RECORD (peak capture / giveback via
 `int_option_exit_analysis`, now a TABLE — it's read at request time by
 insights + weekly_review), gated per-contract on `data_reliable` and
 strengthening automatically as `int_option_marks_daily` coverage accrues.
-Surfaces: Trader Profile "Execution review" card (gated ≥5 graded
+Insights **Data Coverage** is reliable / contracts held since marks began
+(August 2026), never reliable / lifetime closed — that denominator made a
+working pipeline look like 3% coverage. `data_reliable` is density ≥40%
+with ≥2 snapshots (`greatest(days_in_trade,1)` so same-day 0DTE marks
+count). Surfaces: Trader Profile "Execution review" card (gated ≥5 graded
 contracts — the "after X days of data" promise), Position review mirror
 sentences (≥2 graded), and day-row verdicts ("After the fact: …")
 appended to the completing close's headline via the `exit_notes`
