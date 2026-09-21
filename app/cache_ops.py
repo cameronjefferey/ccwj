@@ -379,7 +379,8 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
     # Overview (close-based landing page) — full batch so /overview/below hits too.
     batch = build_daily_review_batch(
         tenant_filter, today, this_week,
-        trades_as_of=session_date, moves_as_of=session_date)
+        trades_as_of=session_date, moves_as_of=session_date,
+        attribution_week=_iso_week_start(session_date))
     overview_dfs = _bq_parallel(client, batch)
     _, rewound_trade_query = _review_session_cutoff_and_trade_query(
         tenant_filter, today, market_session, session_date, overview_dfs)

@@ -100,6 +100,7 @@
                     <div class="watch-sym">{{ d.symbol }}{% if d.source != 'calendar' %}<span class="watch-badge" title="Guessed from past cadence — not a declared date">projected</span>{% endif %}{% if d.subsector %}<span class="watch-badge">{{ d.subsector }}</span>{% endif %}</div>
                     <div class="watch-meta">
                         {% if d.last_amount_per_share %}${{ "%.2f"|format(d.last_amount_per_share) }} last{% endif %}
+                        {% if d.shares_held %} · {{ '{:,.0f}'.format(d.shares_held) }} shares held{% endif %}
                         {% if d.source != 'calendar' and d.median_spacing_days %}&middot; ~{{ d.median_spacing_days }}d cadence{% endif %}
                     </div>
                 </div>
@@ -112,7 +113,7 @@
                        when we don't have both a last amount and a share count
                        (e.g. calendar-only symbols with no cadence history yet). #}
                     {% if d.est_income %}
-                    <div class="text-positive" style="font-weight:600;" title="${{ '%.2f'|format(d.last_amount_per_share) }}/share &times; {{ '{:,.0f}'.format(d.shares_held) }} shares held">
+                    <div class="text-positive" style="font-weight:600;" title="${{ '%.2f'|format(d.last_amount_per_share) }}/share &times; {{ '{:,.0f}'.format(d.shares_held) }} shares held in this view. Every share, not the uncovered covered-call lots on Today.">
                         est. +${{ "{:,.2f}".format(d.est_income) }}
                     </div>
                     {% endif %}
