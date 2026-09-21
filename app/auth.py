@@ -22,7 +22,7 @@ from app.models import (
     record_login_attempt,
     unsubscribe_user_by_token,
 )
-from app.utils import demo_block_writes, safe_internal_next
+from app.utils import demo_block_writes, is_demo_user, safe_internal_next
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -103,10 +103,26 @@ def _landing_endpoint(prof) -> str:
     return _LANDING.get(dr, "weekly_review")
 
 
+def _release_shared_demo_session() -> bool:
+    """Log out the shared demo account so an auth page can render.
+
+    ``/demo/start`` signs the visitor in as the shared ``demo`` user.
+    ``/login`` and ``/signup`` treat every authenticated session as
+    already inside the app and redirect to Overview. That trapped the
+    demo banner's "Create your own account" button — and a typed
+    ``/login`` or ``/signup`` — back on Overview. A real account still
+    bounces. Returns True when a demo session was cleared.
+    """
+    if not is_demo_user():
+        return False
+    logout_user()
+    return True
+
+
 @app.route("/login", methods=["GET", "POST"])
 @limiter.limit("20 per minute")
 def login():
-    if current_user.is_authenticated:
+    if current_user.is_authenticated and not _release_shared_demo_session():
         dest = safe_internal_next(request.args.get("next"))
         if dest:
             return redirect(dest)
@@ -202,7 +218,7 @@ def signup():
     if not app.config.get("SIGNUP_ENABLED", True):
         abort(404)
 
-    if current_user.is_authenticated:
+    if current_user.is_authenticated and not _release_shared_demo_session():
         return redirect(url_for("weekly_review"))
 
     invite_required = bool(app.config.get("SIGNUP_INVITE_CODE", ""))
