@@ -62,94 +62,23 @@ SECTORS_QUERY = """
 """
 
 
-@app.route("/industries")
-@login_required
-def industries_legacy():
-    """Backward-compatible redirect for the old /industries URL. The page
-    moved to /sectors when we renamed industry → subsector."""
-    return redirect(url_for("sectors", **request.args.to_dict(flat=True)), code=301)
+def _sector_rollups(df: pd.DataFrame) -> dict:
+    """Roll a tenant-scoped positions frame into the sector cards.
 
-
-@app.route("/sectors")
-@login_required
-def sectors():
-    bounce = _redirect_if_no_accounts()
-    if bounce:
-        return bounce
-    client = get_bigquery_client()
-    user_accounts = _user_account_list()
-    selected_account = request.args.get("account", "")
-    tenant_ids = _tenants_for_scope(selected_account)
-    tenant_filter = _tenant_sql_and(tenant_ids)
-
-    try:
-        from app.query_cache import cached_query_df
-        df = cached_query_df(
-            client, SECTORS_QUERY.format(tenant_filter=tenant_filter),
-            label="sectors",
-        )
-    except Exception as exc:
-        return render_template(
-            "sectors.html",
-            error=str(exc),
-            sectors=[],
-            sector_rows=[],
-            subsector_rows=[],
-            subsectors_by_sector={},
-            unknown_count=0,
-            kpis={},
-            accounts=[],
-            selected_account="",
-        )
-
-    df = _df_normalize_account_column(df)
-    df = _filter_df_by_tenant_ids(df, tenant_ids)
-    # tenant scope already narrowed to the selected account's tenant_id
-
-    for col in (
-        "total_pnl", "realized_pnl", "unrealized_pnl",
-        "total_premium_received", "total_dividend_income", "total_return",
-        "num_individual_trades", "num_winners", "num_losers",
-    ):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-    for col in ("sector", "subsector"):
-        if col in df.columns:
-            df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
-
-    accounts_for_filter = (
-        sorted(user_accounts)
-        if user_accounts
-        else (sorted(df["account"].dropna().unique().tolist()) if not df.empty else [])
-    )
-
-    if df.empty:
-        return render_template(
-            "sectors.html",
-            error=None,
-            sectors=[],
-            sector_rows=[],
-            subsector_rows=[],
-            subsectors_by_sector={},
-            unknown_count=0,
-            kpis={
-                "total_pnl": 0.0, "realized_pnl": 0.0, "unrealized_pnl": 0.0,
-                "num_subsectors": 0, "num_symbols": 0, "num_trades": 0,
-                "win_rate": 0.0,
-            },
-            accounts=accounts_for_filter,
-            selected_account=selected_account,
-        )
-
+    ``kpis['num_subsectors']`` counts (sector, subsector) pairs — the rows
+    the cards list. ``nunique()`` on the subsector column counts each name
+    once, so the header reads lower than the sum of the cards whenever one
+    label (often Unknown) sits under two sectors.
+    """
     overall_winners = int(df["num_winners"].sum())
     overall_losers = int(df["num_losers"].sum())
     overall_closed = overall_winners + overall_losers
+    subsector_pairs = int(df.groupby(["sector", "subsector"], dropna=False).ngroups)
     kpis = {
         "total_pnl": float(df["total_pnl"].sum()),
         "realized_pnl": float(df["realized_pnl"].sum()),
         "unrealized_pnl": float(df["unrealized_pnl"].sum()),
-        "num_subsectors": int(df["subsector"].nunique()),
+        "num_subsectors": subsector_pairs,
         "num_symbols": int(df.groupby(["account", "symbol"]).ngroups),
         "num_trades": int(df["num_individual_trades"].sum()),
         "win_rate": (overall_winners / overall_closed) if overall_closed else 0.0,
@@ -274,15 +203,106 @@ def sectors():
         .sum()
     )
 
+    return {
+        "kpis": kpis,
+        "sectors": sectors_list,
+        "sector_rows": sector_rows,
+        "subsector_rows": subsector_rows,
+        "subsectors_by_sector": subsectors_by_sector,
+        "unknown_count": unknown_count,
+    }
+
+
+@app.route("/industries")
+@login_required
+def industries_legacy():
+    """Backward-compatible redirect for the old /industries URL. The page
+    moved to /sectors when we renamed industry → subsector."""
+    return redirect(url_for("sectors", **request.args.to_dict(flat=True)), code=301)
+
+
+@app.route("/sectors")
+@login_required
+def sectors():
+    bounce = _redirect_if_no_accounts()
+    if bounce:
+        return bounce
+    client = get_bigquery_client()
+    user_accounts = _user_account_list()
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
+    tenant_filter = _tenant_sql_and(tenant_ids)
+
+    try:
+        from app.query_cache import cached_query_df
+        df = cached_query_df(
+            client, SECTORS_QUERY.format(tenant_filter=tenant_filter),
+            label="sectors",
+        )
+    except Exception as exc:
+        return render_template(
+            "sectors.html",
+            error=str(exc),
+            sectors=[],
+            sector_rows=[],
+            subsector_rows=[],
+            subsectors_by_sector={},
+            unknown_count=0,
+            kpis={},
+            accounts=[],
+            selected_account="",
+        )
+
+    df = _df_normalize_account_column(df)
+    df = _filter_df_by_tenant_ids(df, tenant_ids)
+    # tenant scope already narrowed to the selected account's tenant_id
+
+    for col in (
+        "total_pnl", "realized_pnl", "unrealized_pnl",
+        "total_premium_received", "total_dividend_income", "total_return",
+        "num_individual_trades", "num_winners", "num_losers",
+    ):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    for col in ("sector", "subsector"):
+        if col in df.columns:
+            df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+
+    accounts_for_filter = (
+        sorted(user_accounts)
+        if user_accounts
+        else (sorted(df["account"].dropna().unique().tolist()) if not df.empty else [])
+    )
+
+    if df.empty:
+        return render_template(
+            "sectors.html",
+            error=None,
+            sectors=[],
+            sector_rows=[],
+            subsector_rows=[],
+            subsectors_by_sector={},
+            unknown_count=0,
+            kpis={
+                "total_pnl": 0.0, "realized_pnl": 0.0, "unrealized_pnl": 0.0,
+                "num_subsectors": 0, "num_symbols": 0, "num_trades": 0,
+                "win_rate": 0.0,
+            },
+            accounts=accounts_for_filter,
+            selected_account=selected_account,
+        )
+
+    roll = _sector_rollups(df)
     return render_template(
         "sectors.html",
         error=None,
-        sectors=sectors_list,
-        sector_rows=sector_rows,
-        subsector_rows=subsector_rows,
-        subsectors_by_sector=subsectors_by_sector,
-        unknown_count=unknown_count,
-        kpis=kpis,
+        sectors=roll["sectors"],
+        sector_rows=roll["sector_rows"],
+        subsector_rows=roll["subsector_rows"],
+        subsectors_by_sector=roll["subsectors_by_sector"],
+        unknown_count=roll["unknown_count"],
+        kpis=roll["kpis"],
         accounts=accounts_for_filter,
         selected_account=selected_account,
     )

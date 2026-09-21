@@ -536,6 +536,10 @@ Tenant isolation: row-level query results go through `_filter_df_by_accounts(...
 
 Symbol links in the concentration list preserve the selected account filter (`?account=`).
 
+**Symbols vs positions (Sep 2026).** `mart_strategy_performance.num_symbols` is distinct tickers inside one account. Summing it across accounts counts position groups (account × symbol × strategy) — the grain `/positions` calls Positions. Cards and the strategy hero use `_population_label`: unique tickers are "symbols" (`STRATEGY_SYMBOL_GRAIN_QUERY` / the concentration list); the summed count is "positions", and it is only shown when the two differ. Fit-matrix row/column "sym" is `nunique` on the raw frame, not the sum of per-cell counts.
+
+The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Strategy names stick left and the strategy total sticks right so a wide sector slice stays usable. The metric toggle (Total Return / Per trade / Win rate / Edge) rewrites cell values and the row, column, and grand totals in the same unit.
+
 **Still could be stronger:** richer narrative on the cards, less request-time SQL (pre-aggregate symbol tables in dbt), DTE breakdown moved fully into the warehouse.
 ### Accounts (`/accounts`) — two views
 **Status: Working. One surface for per-account performance AND value/composition.**
@@ -635,6 +639,8 @@ and `tests/test_wealth_chart.py`.
 
 ### Sectors (`/sectors`)
 **Status: Working. Sector / industry rollups (`app/sectors_page.py`).**
+
+The header "Subsectors" count is `(sector, subsector)` pairs (`_sector_rollups`), the same rows the cards list. A name-level `nunique()` under-counts when one label (often Unknown) sits under two sectors.
 
 ### Earnings Watch (`/earnings`)
 **Status: Working. Upcoming earnings on held symbols (`app/earnings_page.py`);**

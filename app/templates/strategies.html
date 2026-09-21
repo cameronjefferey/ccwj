@@ -186,7 +186,7 @@
     <p class="strat-hero-headline">{{ focus_strategy.strategy }}</p>
     <p class="strat-hero-sub">
         {{ focus_strategy.num_trades }} trade{{ 's' if focus_strategy.num_trades != 1 else '' }}
-        across {{ focus_strategy.num_symbols }} symbol{{ 's' if focus_strategy.num_symbols != 1 else '' }}.
+        across <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ focus_strategy.population_label }}</span>.
         {% if focus_strategy.first_trade_date and focus_strategy.last_trade_date %}
         Active {{ focus_strategy.first_trade_date }} &mdash; {{ focus_strategy.last_trade_date }}.
         {% endif %}
@@ -424,12 +424,10 @@
         </div>
         {% endif %}
     </div>
-    {% if focus_concentration.symbol_count > (focus_concentration.contributors|length + focus_concentration.drags|length) %}
     <p class="small text-muted mb-0 mt-3">
-        {{ focus_concentration.symbol_count }} symbols in this strategy ·
+        {{ focus_strategy.population_label }} in this strategy ·
         <a href="{{ scoped_url('positions', strategy=focus_strategy.strategy) }}">see all on Positions</a>
     </p>
-    {% endif %}
 </div>
 {% endif %}
 
@@ -481,7 +479,8 @@
             <div>
                 <div class="strat-card-name">{{ s.strategy or 'Unclassified' }}</div>
                 <div class="strat-card-meta">
-                    {{ s.num_trades }} trades &middot; {{ s.num_symbols }} symbol{{ 's' if s.num_symbols != 1 else '' }}
+                    {{ s.num_trades }} trades &middot;
+                    <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ s.population_label }}</span>
                 </div>
             </div>
             <span class="trend-badge {{ s.trend_signal }}">

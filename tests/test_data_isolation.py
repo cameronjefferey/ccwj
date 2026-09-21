@@ -1067,3 +1067,37 @@ class TestStrategyFitMatrixBuilder:
         assert "Energy" in soft_sectors
         # Sanity: the Unknown cells are still IN the matrix (just not narrated).
         assert "Unknown" in m["col_labels"]
+
+    def test_row_and_column_symbol_counts_are_unique_names(self):
+        """A ticker in two sectors is one symbol on the strategy row, not two.
+
+        Summing each cell's nunique made the matrix disagree with the
+        strategy detail's unique-symbol count whenever a name spanned columns.
+        The same name under two strategies is one symbol in that column.
+        """
+        from app.routes import _build_strategy_fit_matrix
+        df = self._df([
+            {"account": "Ira", "symbol": "AAPL", "strategy": "Covered Call",
+             "sector": "Technology", "total_pnl": 100, "realized_pnl": 100,
+             "unrealized_pnl": 0, "num_individual_trades": 2,
+             "num_winners": 1, "num_losers": 1},
+            {"account": "Sara", "symbol": "AAPL", "strategy": "Covered Call",
+             "sector": "Technology", "total_pnl": 40, "realized_pnl": 40,
+             "unrealized_pnl": 0, "num_individual_trades": 1,
+             "num_winners": 1, "num_losers": 0},
+            {"account": "Ira", "symbol": "AAPL", "strategy": "Covered Call",
+             "sector": "Unknown", "total_pnl": 10, "realized_pnl": 10,
+             "unrealized_pnl": 0, "num_individual_trades": 1,
+             "num_winners": 1, "num_losers": 0},
+            {"account": "Ira", "symbol": "MSFT", "strategy": "Long Call",
+             "sector": "Technology", "total_pnl": -20, "realized_pnl": -20,
+             "unrealized_pnl": 0, "num_individual_trades": 1,
+             "num_winners": 0, "num_losers": 1},
+        ])
+        m = _build_strategy_fit_matrix(df, col_field="sector")
+        # Two accounts, two sectors — still one ticker.
+        assert int(m["row_totals"]["Covered Call"]["num_symbols"]) == 1
+        assert int(m["cells"]["Covered Call"]["Technology"]["num_symbols"]) == 1
+        # AAPL (Covered Call) and MSFT (Long Call) — two names in Technology,
+        # not 1+1 summed from the cells in a way that double-counts AAPL.
+        assert int(m["col_totals"]["Technology"]["num_symbols"]) == 2

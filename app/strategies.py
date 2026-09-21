@@ -52,6 +52,21 @@ WHERE 1=1 {tenant_filter}
 ORDER BY total_return DESC
 """
 
+# Unique tickers per strategy. mart_strategy_performance.num_symbols is
+# distinct symbols inside ONE account; summing it across accounts counts
+# position groups (account × symbol × strategy) — the grain /positions
+# calls "Positions", not unique symbols.
+STRATEGY_SYMBOL_GRAIN_QUERY = """
+SELECT
+  strategy,
+  symbol,
+  account,
+  tenant_id
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE strategy IS NOT NULL AND TRIM(strategy) != ''
+  {tenant_filter}
+"""
+
 STRATEGY_TREND_QUERY = """
 SELECT
   account,
@@ -292,6 +307,59 @@ def _strategy_concentration(pos_df, top_n=5):
     }
 
 
+def _population_label(num_symbols, num_positions) -> str:
+    """Label unique tickers vs position groups so the two counts never share a word.
+
+    ``num_positions`` is the sum of per-account distinct symbols from
+    ``mart_strategy_performance`` — one per account × symbol × strategy,
+    the same grain /positions calls "Positions". ``num_symbols`` is unique
+    tickers across those accounts (None when that count isn't available).
+    When they match, one number is enough.
+    """
+    positions = int(num_positions or 0)
+    pos_word = "position" if positions == 1 else "positions"
+    if num_symbols is None:
+        return f"{positions} {pos_word}"
+    symbols = int(num_symbols)
+    sym_word = "symbol" if symbols == 1 else "symbols"
+    if symbols == positions:
+        return f"{symbols} {sym_word}"
+    return f"{symbols} {sym_word} · {positions} {pos_word}"
+
+
+def _unique_symbols_by_strategy(symbol_df):
+    """``{strategy: n_unique_symbols}``, or None when the frame can't be trusted.
+
+    An empty / column-less frame means the lookup failed. Returning None
+    keeps the page from claiming every strategy has 0 symbols.
+    """
+    if symbol_df is None or "symbol" not in getattr(symbol_df, "columns", []):
+        return None
+    if "strategy" not in symbol_df.columns or symbol_df.empty:
+        return None
+    work = symbol_df.copy()
+    work["symbol"] = work["symbol"].fillna("").astype(str).str.strip()
+    work["strategy"] = work["strategy"].fillna("").astype(str).str.strip()
+    work = work[(work["symbol"] != "") & (work["strategy"] != "")]
+    if work.empty:
+        return None
+    return work.groupby("strategy")["symbol"].nunique().astype(int).to_dict()
+
+
+def _apply_focus_symbol_count(focus: dict, symbol_count) -> None:
+    """Prefer the focus drill-in's unique-symbol count over the card grain.
+
+    The concentration list is one row per ticker. Its count is the number
+    the detail page is already showing, so the hero must use it too.
+    """
+    if not focus or symbol_count is None:
+        return
+    focus["num_symbols"] = int(symbol_count)
+    focus["population_label"] = _population_label(
+        focus["num_symbols"], focus.get("num_positions")
+    )
+
+
 def _strategy_narrative(summary, strategies_list, trend_data):
     """Process-focused narrative: trend-aware, not just lifetime scoreboard."""
     if not summary or not strategies_list:
@@ -449,6 +517,18 @@ def strategies():
         if df.empty:
             return render_template("strategies.html", **context)
 
+        unique_symbols = None
+        try:
+            sym_df = cached_query_df(
+                client,
+                STRATEGY_SYMBOL_GRAIN_QUERY.format(tenant_filter=tenant_filter),
+                label="strategy_symbols",
+            )
+            sym_df = _filter_df_by_tenant_ids(sym_df, tenant_ids)
+            unique_symbols = _unique_symbols_by_strategy(sym_df)
+        except Exception:
+            app.logger.exception("strategy unique-symbol lookup failed")
+
         # Disambiguating label map so several physical accounts sharing a
         # base label (e.g. multiple "Schwab Account"s) read distinctly.
         from app.routes import _tenant_label_map_for_user
@@ -488,6 +568,8 @@ def strategies():
             "num_losers": "sum",
             "dividend_income": "sum",
             "total_return": "sum",
+            # Per-account distinct symbols, summed. That is position groups
+            # (account × symbol), not unique tickers. See _population_label.
             "num_symbols": "sum",
             "first_trade_date": "min",
             "last_trade_date": "max",
@@ -598,6 +680,11 @@ def strategies():
 
             strat_name = row["strategy"]
             signal = latest_trend.get(strat_name, "stable")
+            num_positions = int(row["num_symbols"] or 0)
+            num_symbols = (
+                None if unique_symbols is None
+                else int(unique_symbols.get(strat_name, 0))
+            )
 
             # Build sparkline data: last 6 months of win rate
             sparkline = []
@@ -631,7 +718,9 @@ def strategies():
                 "wr_signal": wr_signal,
                 "premium_received": round(float(row["premium_received"] or 0), 2),
                 "premium_paid": round(float(row["premium_paid"] or 0), 2),
-                "num_symbols": int(row["num_symbols"] or 0),
+                "num_positions": num_positions,
+                "num_symbols": num_symbols,
+                "population_label": _population_label(num_symbols, num_positions),
                 "is_selected": bool(selected_strategy and strat_name == selected_strategy),
                 "trend_signal": signal,
                 "recent_wr_3m": recent_wr_3m.get(strat_name),
@@ -786,6 +875,15 @@ def strategies():
                     pos_df = _filter_df_by_tenant_ids(pos_df, tenant_ids)
                     if not pos_df.empty:
                         context["focus_concentration"] = _strategy_concentration(pos_df)
+                        _apply_focus_symbol_count(
+                            context.get("focus_strategy"),
+                            context["focus_concentration"]["symbol_count"],
+                        )
+                        focus = context.get("focus_strategy") or {}
+                        for s in context["strategies"]:
+                            if s.get("strategy") == focus.get("strategy"):
+                                s["num_symbols"] = focus.get("num_symbols")
+                                s["population_label"] = focus.get("population_label")
                 except Exception:
                     app.logger.exception("strategy positions_summary drill-in failed")
 

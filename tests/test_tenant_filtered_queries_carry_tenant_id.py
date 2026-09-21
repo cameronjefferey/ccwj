@@ -49,6 +49,7 @@ FILTERED_QUERIES = [
     ("app.positions_page", "POSITIONS_TAG_STRAT_QUERY"),
     ("app.sectors_page", "SECTORS_QUERY"),
     ("app.strategies", "STRATEGY_PERFORMANCE_QUERY"),
+    ("app.strategies", "STRATEGY_SYMBOL_GRAIN_QUERY"),
     ("app.strategies", "STRATEGY_TREND_QUERY"),
     ("app.strategies", "STRATEGY_POSITIONS_QUERY"),
     ("app.strategies", "STRATEGY_TYPE_BREAKDOWN_QUERY"),

@@ -253,31 +253,42 @@ def _build_strategy_fit_matrix(
         })
     cell_symbols_map = {k: v[:5] for k, v in cell_symbols_map.items()}
 
+    # "sym" on the row/column is unique tickers, matching the strategy
+    # detail page. Summing each cell's nunique double-counts a name that
+    # spans two columns (a symbol in two sectors, or one underlying across
+    # two DTE buckets).
+    row_sym = df.groupby("strategy", dropna=False)["symbol"].nunique()
+    col_sym = df.groupby(col_field, dropna=False)["symbol"].nunique()
+
     row_totals_agg = (
-        cell_agg.groupby("strategy")
+        cell_agg.groupby("strategy", dropna=False)
         .agg(
             total_pnl=("total_pnl", "sum"),
             num_trades=("num_trades", "sum"),
             num_winners=("num_winners", "sum"),
             num_losers=("num_losers", "sum"),
-            num_symbols=("num_symbols", "sum"),
         )
         .reset_index()
+    )
+    row_totals_agg["num_symbols"] = (
+        row_totals_agg["strategy"].map(row_sym).fillna(0).astype(int)
     )
     rclosed = row_totals_agg["num_winners"] + row_totals_agg["num_losers"]
     row_totals_agg["win_rate"] = (row_totals_agg["num_winners"] / rclosed.replace(0, pd.NA)).fillna(0)
     row_totals = {r["strategy"]: r for r in row_totals_agg.to_dict(orient="records")}
 
     col_totals_agg = (
-        cell_agg.groupby(col_field)
+        cell_agg.groupby(col_field, dropna=False)
         .agg(
             total_pnl=("total_pnl", "sum"),
             num_trades=("num_trades", "sum"),
             num_winners=("num_winners", "sum"),
             num_losers=("num_losers", "sum"),
-            num_symbols=("num_symbols", "sum"),
         )
         .reset_index()
+    )
+    col_totals_agg["num_symbols"] = (
+        col_totals_agg[col_field].map(col_sym).fillna(0).astype(int)
     )
     cclosed = col_totals_agg["num_winners"] + col_totals_agg["num_losers"]
     col_totals_agg["win_rate"] = (col_totals_agg["num_winners"] / cclosed.replace(0, pd.NA)).fillna(0)
