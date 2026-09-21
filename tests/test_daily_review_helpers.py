@@ -1817,6 +1817,24 @@ class TestDailyReviewBatchIncludesTodayTrades:
         assert "today_trades" in OVERVIEW_CORE_KEYS
 
 
+    def test_attribution_week_follows_the_close_not_calendar_monday(self):
+        # Monday Sep 21 looking at Friday Sep 18. Calendar ISO Monday is
+        # Sep 21 (still ahead of the close). The scorecard must use
+        # Monday Sep 14, the week of the session on screen.
+        friday = date(2026, 9, 18)
+        monday_of_close = date(2026, 9, 14)
+        calendar_monday = date(2026, 9, 21)
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            date(2026, 9, 21), calendar_monday,
+            trades_as_of=friday, attribution_week=monday_of_close)
+        assert "2026-09-14" in batch["attribution"]
+        assert "2026-09-21" not in batch["attribution"]
+        week_params = {
+            p.name: p.value for p in batch["weekly_trades"][1].query_parameters
+        }
+        assert week_params["week_start"] == calendar_monday
+
     def test_options_moves_does_not_scan_all_symbols_prices(self):
         batch = build_daily_review_batch(
             "AND tenant_id IN ('snaptrade:abc')",
@@ -2370,4 +2388,19 @@ class TestCoveredCallsWithoutShort:
         from app.weekly_review import build_today_batch
         batch = build_today_batch("", date(2026, 8, 31))
         assert "cc_unwritten" in batch
+
+    def test_today_heading_and_overview_share_basis_are_labeled(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        today = (root / "app/templates/today.html").read_text()
+        assert 'class="tt-cc-heading"' in today
+        assert "those lots only" in today
+        assert "Here are your covered call positions" not in today
+        below = (root / "app/templates/_overview_below.html").read_text()
+        assert "shares held" in below
+        filters = (root / "app/templates/_account_scope_filters.html").read_text()
+        assert "addEventListener" not in filters
+        assert "scope-filters.js" in filters
+        base = (root / "app/templates/base.html").read_text()
+        assert "js/scope-filters.js" in base
 

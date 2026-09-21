@@ -189,7 +189,9 @@ callers don't break.
 What's working:
 - Session hero: date kicker (no page name), **Overview** headline, then a
  **Your book** strip (close value / vs prior close / vs 1w / % invested),
- plus market context and that session's fill count. Session P&amp;L is in
+ plus market context (trailing 1-week SPY/QQQ, same window as the
+ snapshot benchmark row — not the ISO-week minimum close, which reads
+ +0.0% on Monday and on down weeks) and that session's fill count. Session P&amp;L is in
  the book row, not the headline.
 - Session trades: every fill dated the **review session** from `stg_history`
  (`DAY_TRADES_QUERY`, shared with the time-machine day page), plus option
@@ -228,7 +230,7 @@ What's working:
 - Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
-- Position / strategy / sector / subsector scorecards (performance by account). The account scorecard is **lifetime P&amp;L for currently-open positions plus anything closed since this ISO week's Monday** (dividends on those rows are lifetime too) — not a week-to-date clock. Copy names the Monday, not "this week's result".
+- Position / strategy / sector / subsector scorecards (performance by account). The account scorecard is **lifetime P&amp;L for currently-open positions plus anything closed since the Monday of the close on screen** (Friday's session → that Friday's Monday, not calendar-today's ISO Monday, which is still ahead of the close on Monday morning). Dividends on those rows are lifetime too — not a week-to-date clock. Copy names that Monday, not "this week's result". Ex-div share counts are every share held in the current scope; Today's "No short call open" list is uncovered covered-call lots only.
 - Trader Profile teaser under the strip: unique currently-held symbols (same grain as the strip), not "open positions".
 - Execution Review: verdicts that matured in the **last 7 days**, labeled as such — not "this week".
 

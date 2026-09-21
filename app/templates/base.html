@@ -1228,6 +1228,7 @@
     <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
     {% if current_user.is_authenticated %}
     <script defer src="{{ url_for('static', filename='js/nav.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/scope-filters.js') }}"></script>
     {% endif %}
     <script>
         document.querySelectorAll('#navContent .nav-link, #navContent .dropdown-item').forEach(function(link) {

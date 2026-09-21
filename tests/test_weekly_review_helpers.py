@@ -14,7 +14,9 @@ from app.weekly_review import (
     _build_calendar_grid,
     _build_week_diary,
     _classify_expiring_moneyness,
+    _market_line_source,
     _neutral_market_line,
+    _snapshot_placeholder_labels,
 )
 
 
@@ -202,6 +204,54 @@ class TestNeutralMarketLine:
         s = _neutral_market_line({"spy_week_pct": -0.8, "qqq_week_pct": None})
         assert "-0.8%" in s
         assert "QQQ" not in s
+
+    def test_names_the_trailing_week_not_the_iso_week(self):
+        s = _neutral_market_line({"spy_week_pct": 1.2, "qqq_week_pct": 1.5})
+        assert "vs 1 week" in s
+        assert "this week" not in s
+
+    def test_benchmark_week_overrides_iso_week_zero(self):
+        # Monday with one bar: MIN(close) since ISO Monday equals the
+        # latest close, so the old hero line was SPY +0.0% · QQQ +0.0%
+        # while the snapshot table showed the real trailing week.
+        market = {"spy_week_pct": 0.0, "qqq_week_pct": 0.0, "spy_ytd_pct": 8.0}
+        bench = [
+            {"symbol": "SPY", "label": "S&P 500", "week_pct": 1.8},
+            {"symbol": "QQQ", "label": "Nasdaq 100", "week_pct": -0.4},
+        ]
+        src = _market_line_source(market, bench)
+        s = _neutral_market_line(src)
+        assert "SPY +1.8%" in s
+        assert "QQQ -0.4%" in s
+        assert src["spy_ytd_pct"] == 8.0
+
+    def test_falls_back_to_iso_week_when_benchmark_has_no_week(self):
+        market = {"spy_week_pct": 0.6, "qqq_week_pct": None}
+        src = _market_line_source(market, [{"symbol": "SPY", "week_pct": None}])
+        assert _neutral_market_line(src) == _neutral_market_line(market)
+
+
+class TestSnapshotPlaceholderScope:
+    def test_filtered_scope_drops_other_accounts(self):
+        labels = ["Crypto", "Kids", "Retirement"]
+        label_to_tid = {"Crypto": "t-crypto", "Kids": "t-kids", "Retirement": "t-ret"}
+        out = _snapshot_placeholder_labels(
+            labels, label_to_tid, ["t-crypto"], seen_accounts=set())
+        assert out == ["Crypto"]
+
+    def test_seen_snapshot_is_not_repeated(self):
+        out = _snapshot_placeholder_labels(
+            ["Crypto", "Kids"],
+            {"Crypto": "t-crypto", "Kids": "t-kids"},
+            ["t-crypto", "t-kids"],
+            seen_accounts={"Crypto"},
+        )
+        assert out == ["Kids"]
+
+    def test_admin_unscoped_keeps_every_label(self):
+        out = _snapshot_placeholder_labels(
+            ["Crypto", "Kids"], {"Crypto": "t-crypto"}, None, set())
+        assert out == ["Crypto", "Kids"]
 
 
 class TestWeekDiary:

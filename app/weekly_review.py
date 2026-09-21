@@ -1656,6 +1656,32 @@ def _iso_week_start(d):
     return d - timedelta(days=d.weekday())
 
 
+def _snapshot_placeholder_labels(display_labels, label_to_tid, tenant_ids, seen_accounts):
+    """Account labels that still need a snapshot row on Overview.
+
+    ``display_labels`` is every account the user owns. The snapshot query
+    is already limited to the resolved tenant scope. Filling a placeholder
+    for every owned label put the other accounts back on a filtered page
+    (all 7 rows after choosing one group or one account).
+
+    ``tenant_ids is None`` is the admin unscoped read — keep every label.
+    A label with no tenant id is skipped once a scope is in effect.
+    """
+    seen = set(seen_accounts or [])
+    scoped = None if tenant_ids is None else {str(t) for t in tenant_ids if t}
+    label_to_tid = label_to_tid or {}
+    out = []
+    for label in display_labels or []:
+        if label in seen:
+            continue
+        if scoped is not None:
+            tid = label_to_tid.get(label)
+            if not tid or str(tid) not in scoped:
+                continue
+        out.append(label)
+    return out
+
+
 def _date_in_user_tz(tz_name: str) -> date:
     """Today’s calendar date in the user’s profile timezone (defaults to New York)."""
     raw = (tz_name or "").strip() or "America/New_York"
@@ -2160,8 +2186,41 @@ def _build_behavior_sentence(review, behavior_mirror, mode):
     return f"{trades_closed} trades closed — building the baseline you'll be compared to."
 
 
+def _market_line_source(market, benchmark_snapshot):
+    """Week % for the hero line.
+
+    The snapshot benchmark row is a trailing ~7 calendar days (latest
+    close vs the close on or before that date minus 7 days) — the same
+    number as "vs 1 week" under the account table. ``MARKET_PERF_QUERY``
+    instead uses ``MIN(close)`` since the ISO Monday. That quotient is
+    0.0% whenever the latest close is the week's low: a Monday with one
+    bar, and any down week. Prefer the benchmark row so the hero and the
+    table cannot disagree. Fall back to the ISO-week frame only when the
+    benchmark row has no week %.
+    """
+    bench = {}
+    for row in benchmark_snapshot or []:
+        sym = str(row.get("symbol") or "").upper()
+        pct = row.get("week_pct")
+        if sym == "SPY":
+            bench["spy_week_pct"] = pct
+        elif sym == "QQQ":
+            bench["qqq_week_pct"] = pct
+    if bench.get("spy_week_pct") is None and bench.get("qqq_week_pct") is None:
+        return market
+    merged = dict(market or {})
+    for key, pct in bench.items():
+        if pct is not None:
+            merged[key] = pct
+    return merged
+
+
 def _neutral_market_line(market):
-    """Neutral one-liner about market context. No 'beating'/'trailing' judgment."""
+    """Neutral one-liner about market context. No 'beating'/'trailing' judgment.
+
+    "vs 1 week" matches the account-snapshot benchmark row (trailing week),
+    not the ISO week that starts on calendar Monday.
+    """
     if not market:
         return None
     spy = market.get("spy_week_pct")
@@ -2173,7 +2232,7 @@ def _neutral_market_line(market):
         parts.append(f"QQQ {'+' if qqq >= 0 else ''}{qqq:.1f}%")
     if not parts:
         return None
-    return f"Market context this week: {' · '.join(parts)}."
+    return f"Market context, vs 1 week: {' · '.join(parts)}."
 
 
 def _build_week_diary(*, week_start, today, trades, daily_changes, expiring_options):
@@ -3848,7 +3907,7 @@ def _review_session_cutoff_and_trade_query(
 
 
 def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
-                             moves_as_of=None):
+                             moves_as_of=None, attribution_week=None):
     """The tenant-scoped core of the Overview (close-based) parallel batch.
 
     Shared by the ``weekly_review`` view and the post-rebuild cache warmer
@@ -3861,7 +3920,15 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
     ``trades_as_of`` / ``moves_as_of`` are the last completed session
     (snapshot cutoff). Defaults to ``today`` so existing callers/tests keep
     their meaning.
+
+    ``attribution_week`` is the Monday of that session, used only by the
+    Performance-by-Account scorecard. It is not calendar today's ISO
+    Monday — on Monday morning that Monday is still ahead of Friday's
+    close, and the scorecard copy would name a future date. Weekly
+    trades, the calendar, and the ISO-week market query stay on
+    ``this_week``.
     """
+    scorecard_week = attribution_week or this_week
     cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
     cal_end = this_week + timedelta(days=4)
 
@@ -3910,7 +3977,7 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
         "today_trades": _day_trades_spec(
             tenant_filter, trades_as_of or today),
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
-            tenant_filter=tenant_filter, week_start=this_week.isoformat()),
+            tenant_filter=tenant_filter, week_start=scorecard_week.isoformat()),
         "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
         "market_perf": (MARKET_PERF_QUERY, market_perf_cfg),
         # Execution verdicts (int_option_exit_quality): early closes whose
@@ -4002,12 +4069,20 @@ def _today_delay_copy(market_session):
 
 
 def _apply_overview_below(context, batch, *, today, this_week, market_today,
-                          snap_cutoff, tenant_ids):
+                          snap_cutoff, tenant_ids, scorecard_week=None):
     """Watch list / execution / heatmap / scorecards / trades-this-week.
 
     Shared by the full Overview render and the deferred ``overview_below``
     fragment so the two cannot drift.
+
+    ``this_week`` is calendar today's ISO Monday (trades-this-week, with
+    the prior-week fallback). ``scorecard_week`` is the Monday of the
+    close on screen. The scorecard copy reads ``context['week_start']``,
+    which this function sets to ``scorecard_week``.
     """
+    if scorecard_week is None:
+        scorecard_week = this_week
+    context["week_start"] = scorecard_week
     from app.routes import _tenant_label_map_for_user
 
     try:
@@ -4079,7 +4154,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
         attr_df = batch.get("attribution", pd.DataFrame())
         label_map = _tenant_label_map_for_user(current_user.id)
         ab = _build_account_breakdown(
-            attr_df, label_map=label_map, week_start=this_week,
+            attr_df, label_map=label_map, week_start=scorecard_week,
         )
         basis = ab.get("basis")
         if basis and basis.get("days"):
@@ -4237,12 +4312,19 @@ def weekly_review():
         market_today = _date_in_user_tz("America/New_York")
         session_date = _snapshot_as_of_date(
             today, market_session, et_today=market_today)
+        # Scorecard window is the Monday of the close on screen, not
+        # calendar today's ISO Monday. On Monday morning ``this_week`` is
+        # still ahead of Friday's close ("closed since Mon 21" under a
+        # Friday Sep 18 header).
+        scorecard_week = _iso_week_start(session_date)
         context["review_date"] = session_date
         context["review_is_today"] = False
+        context["week_start"] = scorecard_week
 
         full_batch = build_daily_review_batch(
             tenant_filter, today, this_week,
-            trades_as_of=session_date, moves_as_of=session_date)
+            trades_as_of=session_date, moves_as_of=session_date,
+            attribution_week=scorecard_week)
         # The skeleton's X-HT-Full fetch is the round-trip the user stares
         # at. Drop watch/heatmap/scorecards/week-trades from that request
         # and fill them in via /overview/below (same query-cache keys the
@@ -4311,6 +4393,14 @@ def weekly_review():
                 rewound.get("today_trades", pd.DataFrame()), tenant_ids)
         session_date = snap_cutoff
         context["review_date"] = snap_cutoff
+        if snap_cutoff:
+            # Keep the scorecard Monday on the date the hero actually
+            # names. A same-week rewind does not change the Monday, so
+            # the attribution SQL (built from the nominal session) still
+            # matches. A cross-week rewind is rare; the copy follows the
+            # date on screen.
+            scorecard_week = _iso_week_start(snap_cutoff)
+            context["week_start"] = scorecard_week
         context["overview_pending_date"] = _overview_pending_session(
             today, market_session, snap_cutoff, et_today=market_today)
         context["overview_pending_banner"] = _overview_pending_banner(
@@ -4327,16 +4417,22 @@ def weekly_review():
             this_week, today, prefetched_df=batch.get("market_perf"))
         context["market_session"] = market_session
         context["market_open_today"] = context["market_session"]["state"] == "open"
-        context["market_neutral_line"] = _neutral_market_line(context.get("market"))
 
         # Benchmark snapshot (index 1d / 1w / 1m %) — sits under the account
         # snapshot Total so each period's account move has a market baseline.
+        # The hero line uses this trailing-week % (same number as the
+        # S&P 500 / Nasdaq 100 row). The ISO-week MIN(close) query is
+        # 0.0% on a Monday with one bar and on any down week.
         try:
             context["benchmark_snapshot"] = _build_benchmark_snapshot(
                 batch.get("benchmark_snapshot", pd.DataFrame())
             )
         except Exception as e:
             app.logger.warning("Benchmark snapshot processing failed: %s", e)
+        context["market_neutral_line"] = _neutral_market_line(
+            _market_line_source(
+                context.get("market"), context.get("benchmark_snapshot"))
+        )
 
         # ── Account value (cash / invested split) ─────────────────────
         # ``live_av_by_label`` is the per-account live total used as a
@@ -4469,28 +4565,31 @@ def weekly_review():
             # construction (colliding broker labels get a ••<uuid tail>
             # suffix), so this inversion is safe.
             label_to_tid = {v: k for k, v in (_tenant_label_map or {}).items()}
+            # Only accounts in the resolved scope. Filling every owned
+            # label listed all 7 accounts after a group or account Apply.
+            placeholders = _snapshot_placeholder_labels(
+                display_labels, label_to_tid, tenant_ids, seen_accounts)
+            for label in placeholders:
+                # Fallback to the live broker balance so a freshly
+                # connected account shows its value immediately
+                # instead of "—" until the snapshot mart captures
+                # its first daily row. Deltas stay blank (no history
+                # yet); today_is_live flags the UI to label it.
+                live_val = live_av_by_label.get(label)
+                context["today_snapshots_by_account"].append({
+                    "account": label,
+                    "tenant_id": label_to_tid.get(label),
+                    "today_value": live_val,
+                    "today_date": None,
+                    "today_is_live": live_val is not None,
+                    "comparisons": {
+                        "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                        "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                        "month": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
+                    },
+                    "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
+                })
             if display_labels:
-                for label in display_labels:
-                    if label not in seen_accounts:
-                        # Fallback to the live broker balance so a freshly
-                        # connected account shows its value immediately
-                        # instead of "—" until the snapshot mart captures
-                        # its first daily row. Deltas stay blank (no history
-                        # yet); today_is_live flags the UI to label it.
-                        live_val = live_av_by_label.get(label)
-                        context["today_snapshots_by_account"].append({
-                            "account": label,
-                            "tenant_id": label_to_tid.get(label),
-                            "today_value": live_val,
-                            "today_date": None,
-                            "today_is_live": live_val is not None,
-                            "comparisons": {
-                                "day": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                                "week": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                                "month": {"base_date": None, "delta": None, "delta_pct": None, "has_data": False},
-                            },
-                            "vs_week_start": {"delta": None, "delta_pct": None, "has_data": False, "base_date": this_week},
-                        })
                 acct_order = {a: i for i, a in enumerate(display_labels)}
                 context["today_snapshots_by_account"].sort(
                     key=lambda s: acct_order.get(s["account"], 999)
@@ -4563,6 +4662,7 @@ def weekly_review():
                 today=today, this_week=this_week,
                 market_today=market_today, snap_cutoff=snap_cutoff,
                 tenant_ids=tenant_ids,
+                scorecard_week=scorecard_week,
             )
             today_syms = {s.upper() for s in (fills.get("symbols") or []) if s}
             for row in (context.get("trades_this_week") or {}).get("trades") or []:
@@ -4661,11 +4761,12 @@ def overview_below():
     market_session = _us_market_session()
     market_today = _date_in_user_tz("America/New_York")
     session_date = _snapshot_as_of_date(today, market_session, et_today=market_today)
+    scorecard_week = _iso_week_start(session_date)
 
     context = {
         "today": today,
         "review_date": session_date,
-        "week_start": this_week,
+        "week_start": scorecard_week,
         "accounts": user_accounts or [],
         "selected_account": selected_account,
         "selected_tenant": request.args.get("tenant") or None,
@@ -4698,7 +4799,8 @@ def overview_below():
         client = get_bigquery_client()
         full = build_daily_review_batch(
             tenant_filter, today, this_week,
-            trades_as_of=session_date, moves_as_of=session_date)
+            trades_as_of=session_date, moves_as_of=session_date,
+            attribution_week=scorecard_week)
         # positions is a core key; include it here so expiring-options on
         # the watch list can rebuild (L2 hit from the core request).
         keys = set(OVERVIEW_BELOW_KEYS) | {"positions", "today_trades"}
@@ -4728,6 +4830,7 @@ def overview_below():
             today=today, this_week=this_week,
             market_today=market_today, snap_cutoff=snap_cutoff,
             tenant_ids=tenant_ids,
+            scorecard_week=scorecard_week,
         )
         fills = _split_day_fills(
             batch.get("today_trades", pd.DataFrame()),

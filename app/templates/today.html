@@ -157,7 +157,8 @@
     {% set _ccu = covered_call_unwritten %}
     {% if session_is_live and _ccu and _ccu.rows %}
     <div class="tt-cc">
-        <p class="tt-cc-label">Here are your covered call positions with no short call open:</p>
+        <div class="tt-cc-heading">No short call open</div>
+        <p class="tt-cc-label">Covered-call lots with no short call open. Counts are those lots only (at least 100 shares), not every share held.</p>
         <ol class="tt-cc-list">
             {% for r in _ccu.rows %}
             <li>
