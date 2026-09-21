@@ -59,6 +59,7 @@
 
     /* Table */
     #positionsTable th { white-space: nowrap; }
+    #positionsTable th.sortable a { color: inherit; text-decoration: none; }
     #positionsTable td { white-space: nowrap; }
     /* Sortable-header + row-click styles are global (see static/js/tables.js). */
 
@@ -166,19 +167,19 @@
             <div class="hero-kpi">
                 <div class="label">Total Return</div>
                 <div class="value {{ 'pos' if kpis.total_return >= 0 else 'neg' }}">
-                    ${{ "{:,.0f}".format(kpis.total_return) }}
+                    {{ money(kpis.total_return, 0) }}
                 </div>
             </div>
             <div class="hero-kpi">
                 <div class="label">Realized</div>
                 <div class="value {{ 'pos' if kpis.realized_pnl >= 0 else 'neg' }}">
-                    ${{ "{:,.0f}".format(kpis.realized_pnl) }}
+                    {{ money(kpis.realized_pnl, 0) }}
                 </div>
             </div>
             <div class="hero-kpi">
                 <div class="label">Unrealized</div>
                 <div class="value {{ 'pos' if kpis.unrealized_pnl >= 0 else 'neg' }}">
-                    ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
+                    {{ money(kpis.unrealized_pnl, 0) }}
                 </div>
             </div>
             {% if kpis.dividend_income and kpis.dividend_income|round(2) != 0 %}
@@ -186,13 +187,13 @@
                 <div class="label">Dividends</div>
                 <div class="value {{ 'pos' if kpis.dividend_income >= 0 else 'neg' }}"
                      title="Cash dividends received. Total Return = Realized + Unrealized + Dividends.">
-                    ${{ "{:,.0f}".format(kpis.dividend_income) }}
+                    {{ money(kpis.dividend_income, 0) }}
                 </div>
             </div>
             {% endif %}
             <div class="hero-kpi">
                 <div class="label">Win Rate</div>
-                <div class="value">{{ "{:.0%}".format(kpis.win_rate) }}</div>
+                <div class="value">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</div>
             </div>
         </div>
         {% endif %}
@@ -393,7 +394,7 @@
 <div class="ht-statbar mb-3">
     <div class="ht-stat">
         <span class="ht-stat-l">Premium Collected</span>
-        <span class="ht-stat-v text-positive">${{ "{:,.0f}".format(kpis.premium_collected) }}</span>
+        <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected, 0) }}</span>
     </div>
     <div class="ht-stat">
         <span class="ht-stat-l">Positions</span>
@@ -533,26 +534,26 @@
                         </td>
                         <td data-val="{{ row.total_pnl }}"
                             class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-bold">
-                            ${{ "{:,.2f}".format(row.total_pnl) }}
+                            {{ money(row.total_pnl) }}
                         </td>
                         <td data-val="{{ row.realized_pnl }}"
                             class="{{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.realized_pnl) }}
+                            {{ money(row.realized_pnl) }}
                         </td>
                         <td data-val="{{ row.unrealized_pnl }}"
                             class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                            {{ money(row.unrealized_pnl) }}
                         </td>
                         <td data-val="{{ row.total_dividend_income }}"
                             class="{% if (row.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
                             {% if (row.total_dividend_income or 0) != 0 %}
-                            ${{ "{:,.2f}".format(row.total_dividend_income) }}
+                            {{ money(row.total_dividend_income) }}
                             {% else %}
                             &mdash;
                             {% endif %}
                         </td>
-                        <td data-val="{{ row.win_rate }}">
-                            {{ "{:.0%}".format(row.win_rate) }}
+                        <td data-val="{{ row.win_rate if (row.num_winners or 0) + (row.num_losers or 0) else '' }}">
+                            {{ win_rate_label(row.win_rate, row.num_winners, row.num_losers) }}
                         </td>
                         <td data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
                         <td data-val="{{ row.num_winners }}">
@@ -561,7 +562,7 @@
                             <span class="text-negative">{{ row.num_losers | int }}</span>
                         </td>
                         <td data-val="{{ row.total_premium_received }}" class="text-positive">
-                            ${{ "{:,.2f}".format(row.total_premium_received) }}
+                            {{ money(row.total_premium_received) }}
                         </td>
                     </tr>
                     {% endfor %}
@@ -583,28 +584,31 @@
 
         {% if rows %}
         <div class="table-responsive">
-            <table class="table table-hover table-sm align-middle mb-0" id="positionsTable">
+            {% macro pos_sort(col) -%}
+            {{ scoped_url('positions', page=1, sort=col, dir=sort_next[col], strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}
+            {%- endmacro %}
+            <table class="table table-hover table-sm align-middle mb-0" id="positionsTable" data-server-sort="1">
                 <thead class="table-light">
                     <tr>
-                        <th class="sortable" data-sort="str" data-m="hide">Account</th>
-                        <th class="sortable" data-sort="str">Strategy</th>
-                        <th class="sortable" data-sort="str" data-m="hide">Status</th>
-                        <th class="sortable" data-sort="num"
+                        <th class="sortable {% if sort_key == 'account' %}{{ sort_dir }}{% endif %}" data-sort="str" data-m="hide"><a href="{{ pos_sort('account') }}">Account</a></th>
+                        <th class="sortable {% if sort_key == 'strategy' %}{{ sort_dir }}{% endif %}" data-sort="str"><a href="{{ pos_sort('strategy') }}">Strategy</a></th>
+                        <th class="sortable {% if sort_key == 'status' %}{{ sort_dir }}{% endif %}" data-sort="str" data-m="hide"><a href="{{ pos_sort('status') }}">Status</a></th>
+                        <th class="sortable {% if sort_key == 'total_return' %}{{ sort_dir }}{% endif %}" data-sort="num"
                             title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">
-                            Total Return
+                            <a href="{{ pos_sort('total_return') }}">Total Return</a>
                         </th>
-                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
-                        <th class="sortable" data-sort="num" data-m="hide"
+                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('realized') }}">Realized</a></th>
+                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('unrealized') }}">Unrealized</a></th>
+                        <th class="sortable {% if sort_key == 'dividends' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"
                             title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">
-                            Dividends
+                            <a href="{{ pos_sort('dividends') }}">Dividends</a>
                         </th>
-                        <th class="sortable" data-sort="num" data-m="hide">Win Rate</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Trades</th>
-                        <th class="sortable" data-sort="num" data-m="hide">W / L</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Avg P&amp;L</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Avg Days</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
+                        <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('win_rate') }}">Win Rate</a></th>
+                        <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('trades') }}">Trades</a></th>
+                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W / L</a></th>
+                        <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
+                        <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_days') }}">Avg Days</a></th>
+                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('premium') }}">Premium</a></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -660,26 +664,26 @@
                         </td>
                         <td data-val="{{ row.total_pnl }}"
                             class="{{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-bold">
-                            ${{ "{:,.2f}".format(row.total_pnl) }}
+                            {{ money(row.total_pnl) }}
                         </td>
                         <td data-val="{{ row.realized_pnl }}"
                             class="{{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.realized_pnl) }}
+                            {{ money(row.realized_pnl) }}
                         </td>
                         <td data-val="{{ row.unrealized_pnl }}"
                             class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                            {{ money(row.unrealized_pnl) }}
                         </td>
                         <td data-val="{{ row.total_dividend_income }}"
                             class="{% if (row.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
                             {% if (row.total_dividend_income or 0) != 0 %}
-                            ${{ "{:,.2f}".format(row.total_dividend_income) }}
+                            {{ money(row.total_dividend_income) }}
                             {% else %}
                             &mdash;
                             {% endif %}
                         </td>
-                        <td data-val="{{ row.win_rate }}">
-                            {{ "{:.0%}".format(row.win_rate) }}
+                        <td data-val="{{ row.win_rate if (row.num_winners or 0) + (row.num_losers or 0) else '' }}">
+                            {{ win_rate_label(row.win_rate, row.num_winners, row.num_losers) }}
                         </td>
                         <td data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
                         <td data-val="{{ row.num_winners }}">
@@ -689,11 +693,11 @@
                         </td>
                         <td data-val="{{ row.avg_pnl_per_trade }}"
                             class="{{ 'text-positive' if row.avg_pnl_per_trade >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.avg_pnl_per_trade) }}
+                            {{ money(row.avg_pnl_per_trade) }}
                         </td>
                         <td data-val="{{ row.avg_days_in_trade }}">{{ "{:,.0f}".format(row.avg_days_in_trade) if row.avg_days_in_trade is not none else '—' }}</td>
                         <td data-val="{{ row.total_premium_received }}" class="text-positive">
-                            ${{ "{:,.2f}".format(row.total_premium_received) }}
+                            {{ money(row.total_premium_received) }}
                         </td>
                     </tr>
                     {% endfor %}
@@ -705,11 +709,11 @@
             <span class="text-muted small">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {{ 'disabled' if page <= 1 }}">
-                    <a class="page-link" href="{{ scoped_url('positions', page=page-1, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
+                    <a class="page-link" href="{{ scoped_url('positions', page=page-1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
                 </li>
                 <li class="page-item disabled"><span class="page-link">Page {{ page }} of {{ total_pages }}</span></li>
                 <li class="page-item {{ 'disabled' if page >= total_pages }}">
-                    <a class="page-link" href="{{ scoped_url('positions', page=page+1, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
+                    <a class="page-link" href="{{ scoped_url('positions', page=page+1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
                 </li>
             </ul>
         </nav>

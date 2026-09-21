@@ -1601,13 +1601,11 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
             start_d = None
 
     end_d = date.today()
-    if start_d is None:
-        start_d = end_d - timedelta(days=1) if end_d > date(2000, 1, 2) else end_d
-    if start_d > end_d:
+    if start_d is None or start_d > end_d:
         start_d = end_d
-    if start_d == end_d:
-        start_d = end_d - timedelta(days=1) if end_d > date(2000, 1, 2) else end_d
-
+    # Two x values so Chart.js draws a segment. Repeating the real open
+    # date — never the day before. A snapshot-only book (BTC opened the
+    # day it was synced) was ramping $0 → full P&L from yesterday.
     d0, d1 = str(start_d), str(end_d)
 
     p0, p1 = None, None

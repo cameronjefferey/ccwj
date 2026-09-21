@@ -435,6 +435,33 @@ def _is_option(symbol_obj: Mapping) -> bool:
     return False
 
 
+def _crypto_pair_base(symbol: str) -> str:
+    """BTC-USD / BTCUSD / BTC/USD → BTC when the base is a known crypto.
+
+    Coinbase activities often carry the pair while the position snapshot
+    is the bare ticker, so history never joined the holding (0 trades,
+    no review, no raw log). USDC itself is a base and is left alone.
+    Option OSI symbols (spaces, or longer than a pair) are not rewritten.
+    """
+    raw = str(symbol or "").strip().upper()
+    if not raw or raw in CRYPTO_SYMBOLS:
+        return raw
+    if " " in raw or len(raw) > 12:
+        return raw
+    for sep in ("-", "/"):
+        if sep in raw:
+            base, _, quote = raw.partition(sep)
+            if quote in ("USD", "USDT", "USDC") and base in CRYPTO_SYMBOLS:
+                return base
+            return raw
+    for quote in ("USDT", "USDC", "USD"):
+        if raw.endswith(quote) and len(raw) > len(quote):
+            base = raw[: -len(quote)]
+            if base in CRYPTO_SYMBOLS:
+                return base
+    return raw
+
+
 def _underlying_from_symbol(symbol_obj: Mapping) -> str:
     if not isinstance(symbol_obj, Mapping):
         return ""
@@ -445,7 +472,7 @@ def _underlying_from_symbol(symbol_obj: Mapping) -> str:
             u = u.get("raw_symbol") or u.get("symbol") or ""
         u = u or option_symbol.get("ticker") or ""
         if u:
-            return str(u).strip().upper()
+            return _crypto_pair_base(str(u).strip().upper())
     inner = symbol_obj.get("symbol") if isinstance(symbol_obj.get("symbol"), Mapping) else symbol_obj
     raw = (
         inner.get("raw_symbol")
@@ -454,7 +481,7 @@ def _underlying_from_symbol(symbol_obj: Mapping) -> str:
         or symbol_obj.get("ticker")
         or ""
     )
-    return str(raw).strip().upper()
+    return _crypto_pair_base(str(raw).strip().upper())
 
 
 def _description_from_symbol(symbol_obj: Mapping) -> str:

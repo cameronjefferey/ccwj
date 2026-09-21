@@ -245,6 +245,27 @@ amount_signed as (
             else c.amount_raw
         end as amount
     from cleaned c
+),
+
+-- Pair tickers (BTC-USD, BTCUSD) collapse onto the bare crypto symbol
+-- the snapshot already uses, so fills join the holding. See
+-- macros/crypto_pair_base.sql. Options keep their OSI trade_symbol.
+crypto_norm as (
+    select
+        a.* except (trade_symbol, underlying_symbol),
+        case
+            when a.instrument_type in ('Call', 'Put') then a.trade_symbol
+            else coalesce(ct.symbol, a.trade_symbol)
+        end as trade_symbol,
+        coalesce(cu.symbol, a.underlying_symbol) as underlying_symbol
+    from amount_signed a
+    left join {{ ref('stg_crypto_symbols') }} cu
+        on cu.symbol = {{ crypto_pair_base_expr('a.underlying_symbol') }}
+       and cu.symbol != ''
+    left join {{ ref('stg_crypto_symbols') }} ct
+        on a.instrument_type not in ('Call', 'Put')
+       and ct.symbol = {{ crypto_pair_base_expr('a.trade_symbol') }}
+       and ct.symbol != ''
 )
 
 select
@@ -252,7 +273,7 @@ select
     trade_date, action_raw, action, trade_symbol, underlying_symbol,
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
-from amount_signed
+from crypto_norm
 -- CURRENCY_USD / CUSIP-shaped tickers are FX conversion noise, not trades.
 -- Deposits and withdrawals ship with a NULL Symbol. ``NULL !=
 -- 'CURRENCY_USD'`` is UNKNOWN in SQL, so the old predicate silently

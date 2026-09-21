@@ -48,9 +48,12 @@ from app.models import User, is_admin
 _IMPERSONATOR_KEY = "_impersonator_id"
 
 
-def _fmt_money(v):
-    """Format a number as `$1,234.56`. Handles None, NaN, ints, and big numbers
-    without lapsing into scientific notation."""
+def _fmt_money(v, decimals=2):
+    """Format a number as `$1,234.56` (or `-$1,234.56`).
+
+    The sign sits in front of the dollar sign. ``"${:,.2f}".format`` on a
+    negative prints `$-1,234.56`. ``decimals=0`` is the whole-dollar hero.
+    """
     if v is None:
         return "—"
     try:
@@ -59,9 +62,14 @@ def _fmt_money(v):
         return "—"
     if f != f:  # NaN
         return "—"
+    try:
+        places = int(decimals)
+    except (TypeError, ValueError):
+        places = 2
+    spec = "{:,.%df}" % places
     if f < 0:
-        return "-${:,.2f}".format(-f)
-    return "${:,.2f}".format(f)
+        return "-$" + spec.format(-f)
+    return "$" + spec.format(f)
 
 
 # Make money() available in admin_audit.html (and any other admin template).
