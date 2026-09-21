@@ -25,6 +25,7 @@ from app.routes import (
     _tenant_sql_and,
     _filter_df_by_tenant_ids,
     _user_account_list,
+    _scope_keep_kwargs,
 )
 from app.utils import demo_block_writes
 from app.llm import (
@@ -433,6 +434,219 @@ def _strip_md_for_brief(s: str) -> str:
     return s.replace("**", "").replace("*", "")
 
 
+# A strategy row needs this many reliable contracts before it is a card.
+# Below that, the account-level average is too noisy to label.
+_MIN_RELIABLE_FOR_STRATEGY_ROW = 3
+
+# "4 of 391 closed contracts" in a saved narration. Small "N of M" phrases
+# (a single example trade) are not coverage claims.
+_COVERAGE_CITE_RE = re.compile(
+    r"(\d[\d,]*)\s+of\s+(\d[\d,]*)\s+(?:closed\s+)?contracts",
+    re.IGNORECASE,
+)
+
+
+def _strategy_label(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "Other Option"
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return "Other Option"
+    return text
+
+
+def _rollup_exit_signals(signals_df):
+    """One exit-timing row per strategy name.
+
+    ``mart_coaching_signals`` is grained by (account, strategy). The
+    Insights "By Strategy" list used to print that grain directly, so two
+    accounts that both trade Covered Calls showed up as two rows with the
+    same label and different stats. Dollars sum. Giveback and days past
+    peak are weighted by reliable contracts so a 9-contract account does
+    not count the same as a 4-contract account.
+    """
+    if signals_df is None or getattr(signals_df, "empty", True):
+        return []
+
+    grouped = {}
+    for _, r in signals_df.iterrows():
+        name = _strategy_label(r.get("strategy"))
+        g = grouped.setdefault(name, {
+            "strategy": name,
+            "giveback_weighted": 0.0,
+            "days_weighted": 0.0,
+            "weight": 0,
+            "pnl_given_back": 0.0,
+            "trades": 0,
+            "total_closed": 0,
+            "premium_weighted": 0.0,
+            "premium_weight": 0,
+            "accounts": set(),
+            "best_dte_bucket": None,
+            "best_dte_win_rate": 0.0,
+            "best_dte_trades": 0,
+            "worst_dte_bucket": None,
+            "worst_dte_win_rate": 0.0,
+            "worst_dte_trades": 0,
+        })
+        n = int(r.get("reliable_contracts") or 0)
+        closed = int(r.get("total_closed") or 0)
+        g["trades"] += n
+        g["total_closed"] += closed
+        g["pnl_given_back"] += float(r.get("total_pnl_given_back") or 0)
+        g["giveback_weighted"] += float(r.get("avg_giveback_pct") or 0) * n
+        g["days_weighted"] += float(r.get("avg_days_held_past_peak") or 0) * n
+        g["weight"] += n
+        account = r.get("account")
+        if account is not None and not (isinstance(account, float) and pd.isna(account)):
+            label = str(account).strip()
+            if label:
+                g["accounts"].add(label)
+        prem = float(r.get("avg_pct_premium_captured") or 0)
+        if prem:
+            g["premium_weighted"] += prem * max(n, 1)
+            g["premium_weight"] += max(n, 1)
+        bt = int(float(r.get("best_dte_trades") or 0))
+        best_bucket = r.get("best_dte_bucket")
+        if best_bucket and not (isinstance(best_bucket, float) and pd.isna(best_bucket)):
+            if bt >= g["best_dte_trades"]:
+                g["best_dte_bucket"] = str(best_bucket)
+                g["best_dte_win_rate"] = float(r.get("best_dte_win_rate") or 0)
+                g["best_dte_trades"] = bt
+        wt = int(float(r.get("worst_dte_trades") or 0))
+        worst_bucket = r.get("worst_dte_bucket")
+        if worst_bucket and not (isinstance(worst_bucket, float) and pd.isna(worst_bucket)):
+            if wt >= g["worst_dte_trades"]:
+                g["worst_dte_bucket"] = str(worst_bucket)
+                g["worst_dte_win_rate"] = float(r.get("worst_dte_win_rate") or 0)
+                g["worst_dte_trades"] = wt
+
+    rows = []
+    for g in grouped.values():
+        if g["trades"] < _MIN_RELIABLE_FOR_STRATEGY_ROW:
+            continue
+        weight = g["weight"] or 1
+        rows.append({
+            "strategy": g["strategy"],
+            "giveback_pct": g["giveback_weighted"] / weight,
+            "days_past_peak": g["days_weighted"] / weight,
+            "pnl_given_back": g["pnl_given_back"],
+            "trades": g["trades"],
+            "total_closed": g["total_closed"],
+            "pct_reliable": (
+                100.0 * g["trades"] / g["total_closed"] if g["total_closed"] else 0
+            ),
+            "pct_premium_captured": (
+                g["premium_weighted"] / g["premium_weight"] if g["premium_weight"] else 0
+            ),
+            "account_count": len(g["accounts"]),
+            "best_dte_bucket": g["best_dte_bucket"],
+            "best_dte_win_rate": g["best_dte_win_rate"],
+            "best_dte_trades": g["best_dte_trades"],
+            "worst_dte_bucket": g["worst_dte_bucket"],
+            "worst_dte_win_rate": g["worst_dte_win_rate"],
+            "worst_dte_trades": g["worst_dte_trades"],
+        })
+    rows.sort(key=lambda row: row["pnl_given_back"], reverse=True)
+    return rows
+
+
+def _exit_timing_headlines(rows, reliable_contracts, total_closed):
+    """The four numbers on the Exit Timing cards.
+
+    Giveback and days-past-peak are the unweighted mean of the strategy
+    rows the page lists (same formula the template used to recompute).
+    Coverage stays book-wide: contracts below the per-strategy minimum
+    still count in "15 of 410".
+    """
+    if not rows:
+        return None
+    n = len(rows)
+    total_closed = int(total_closed or 0)
+    reliable_contracts = int(reliable_contracts or 0)
+    return {
+        "total_given_back": float(sum(r["pnl_given_back"] for r in rows)),
+        "avg_giveback": float(sum(r["giveback_pct"] for r in rows) / n),
+        "avg_days": float(sum(r["days_past_peak"] for r in rows) / n),
+        "reliable_contracts": reliable_contracts,
+        "total_closed": total_closed,
+        "pct_reliable": (
+            round(reliable_contracts / total_closed * 100, 0) if total_closed else 0
+        ),
+    }
+
+
+def _format_exit_timing_brief(headlines, rows):
+    """Plain-text copy of the live cards. Ask AI must quote this block."""
+    lines = [
+        "CANONICAL EXIT TIMING (these are the live Insights cards. "
+        "Quote these figures exactly. Do not recompute a different total, "
+        "giveback percent, coverage count, or strategy name.):",
+        f"- Total left on table: ${headlines['total_given_back']:,.0f}",
+        f"- Avg giveback: {headlines['avg_giveback']:.0f}% of peak profit",
+        f"- Avg days past peak: {headlines['avg_days']:.0f}",
+        (
+            f"- Data coverage: {headlines['reliable_contracts']} of "
+            f"{headlines['total_closed']} closed contracts "
+            f"({headlines['pct_reliable']:.0f}%)"
+        ),
+        (
+            "BY STRATEGY (exit-timing order, profit left on the table. "
+            "This is not the Strategies page, which ranks by lifetime P&L. "
+            "Use these names as written — do not rename a row.):"
+        ),
+    ]
+    for s in rows:
+        accounts = ""
+        if int(s.get("account_count") or 0) > 1:
+            accounts = f", {int(s['account_count'])} accounts combined"
+        lines.append(
+            f"- {s['strategy']}: ${s['pnl_given_back']:,.0f} left on table, "
+            f"{s['giveback_pct']:.0f}% giveback, "
+            f"{s['days_past_peak']:.0f} days past peak, "
+            f"{s['trades']} of {s['total_closed']} trades with daily marks"
+            f"{accounts}."
+        )
+    return "\n".join(lines)
+
+
+def analysis_coverage_conflict(text, reliable, total):
+    """Return the first coverage cite that disagrees with the live cards.
+
+    Saved narrations say "4 of 391 closed contracts" long after the cards
+    have moved to 15 of 410. Small example counts are ignored.
+    """
+    if not text or not total:
+        return None
+    live_rel = int(reliable or 0)
+    live_tot = int(total or 0)
+    for match in _COVERAGE_CITE_RE.finditer(str(text)):
+        cited_rel = int(match.group(1).replace(",", ""))
+        cited_tot = int(match.group(2).replace(",", ""))
+        if cited_tot < 20:
+            continue
+        if cited_rel != live_rel or cited_tot != live_tot:
+            return {
+                "cited_reliable": cited_rel,
+                "cited_total": cited_tot,
+                "live_reliable": live_rel,
+                "live_total": live_tot,
+            }
+    return None
+
+
+def _insights_scope_narrowed():
+    """True when the request is a group, account, or tenant slice.
+
+    The saved AI Analysis is one row per user (the whole book). A narrowed
+    page must not show that text next to scoped cards.
+    """
+    try:
+        return bool(_scope_keep_kwargs())
+    except Exception:
+        return False
+
+
 # ------------------------------------------------------------------
 # Coaching brief builder — the core differentiator
 # ------------------------------------------------------------------
@@ -456,6 +670,7 @@ def _build_coaching_brief(client, tenant_ids):
         "total_closed": 0,
         "reliable_contracts": 0,
         "pct_reliable": 0,
+        "exit_timing": None,
     }
 
     disco_cards = []
@@ -499,7 +714,6 @@ def _build_coaching_brief(client, tenant_ids):
                 if col in signals_df.columns:
                     signals_df[col] = pd.to_numeric(signals_df[col], errors="coerce").fillna(0)
 
-            total_given_back = float(signals_df["total_pnl_given_back"].sum())
             total_closed = int(signals_df["total_closed"].sum())
             reliable_contracts = int(signals_df["reliable_contracts"].sum())
             pct_reliable = round(reliable_contracts / total_closed * 100, 0) if total_closed > 0 else 0
@@ -508,64 +722,40 @@ def _build_coaching_brief(client, tenant_ids):
             coaching_data["reliable_contracts"] = reliable_contracts
             coaching_data["pct_reliable"] = pct_reliable
 
-            # Exit timing section
-            exit_lines = []
-            if reliable_contracts > 0:
-                avg_gb = float(signals_df["avg_giveback_pct"].mean())
-                avg_days = float(signals_df["avg_days_held_past_peak"].mean())
-                exit_lines.append(
-                    f"- Based on {reliable_contracts} closed options with sufficient daily snapshot data "
-                    f"({pct_reliable:.0f}% of {total_closed} total closed), "
-                    f"you give back an average of {avg_gb:.0f}% of peak profit."
-                )
-                exit_lines.append(
-                    f"- Total profit left on the table: ${total_given_back:,.0f}.")
-                exit_lines.append(
-                    f"- Average days held past peak: {avg_days:.1f}.")
+            # Same rows and headline numbers the template cards render.
+            # Do not also emit the unfiltered account-grain sum — that
+            # second total is what Ask AI used to quote instead of the cards.
+            strat_rows = _rollup_exit_signals(signals_df)
+            coaching_data["signals"] = strat_rows
+            headlines = _exit_timing_headlines(
+                strat_rows, reliable_contracts, total_closed,
+            )
+            coaching_data["exit_timing"] = headlines
+            if headlines:
+                sections.append(_format_exit_timing_brief(headlines, strat_rows))
 
-                strat_rows = []
-                for _, r in signals_df.iterrows():
-                    if int(r.get("reliable_contracts", 0)) >= 3:
-                        strat_rows.append({
-                            "strategy": r["strategy"],
-                            "giveback_pct": float(r["avg_giveback_pct"]),
-                            "days_past_peak": float(r["avg_days_held_past_peak"]),
-                            "pnl_given_back": float(r["total_pnl_given_back"]),
-                            "trades": int(r["reliable_contracts"]),
-                            "total_closed": int(r["total_closed"]),
-                            "pct_reliable": float(r["pct_contracts_reliable"]),
-                            "pct_premium_captured": float(r.get("avg_pct_premium_captured") or 0),
-                        })
-                        coaching_data["signals"].append(strat_rows[-1])
-
-                strat_rows.sort(key=lambda x: x["giveback_pct"], reverse=True)
-                for s in strat_rows[:3]:
-                    exit_lines.append(
-                        f"  - {s['strategy']}: {s['giveback_pct']:.0f}% giveback, "
-                        f"{s['days_past_peak']:.0f} days past peak, "
-                        f"${s['pnl_given_back']:,.0f} left on table "
-                        f"({s['trades']} reliable trades)."
-                    )
-
-            if exit_lines:
-                sections.append("EXIT TIMING PROFILE\n" + "\n".join(exit_lines))
-
-            # DTE sweet spots
+            # DTE sweet spots — one line per strategy, from the rolled-up
+            # row, so two accounts cannot publish two different "Covered Call"
+            # win-rate stories.
             dte_lines = []
-            for _, r in signals_df.iterrows():
-                best_b = r.get("best_dte_bucket")
-                worst_b = r.get("worst_dte_bucket")
-                strat = r.get("strategy", "")
+            for s in strat_rows:
+                best_b = s.get("best_dte_bucket")
+                worst_b = s.get("worst_dte_bucket")
                 if best_b and worst_b and best_b != worst_b:
-                    bwr = float(r.get("best_dte_win_rate", 0))
-                    wwr = float(r.get("worst_dte_win_rate", 0))
+                    bwr = float(s.get("best_dte_win_rate") or 0)
+                    wwr = float(s.get("worst_dte_win_rate") or 0)
                     if bwr - wwr >= 15:
                         dte_lines.append(
-                            f"- {strat}: best at {best_b} ({bwr:.0f}% WR), "
-                            f"worst at {worst_b} ({wwr:.0f}% WR)."
+                            f"- {s['strategy']}: best at {best_b} ({bwr:.0f}% WR, "
+                            f"{int(s.get('best_dte_trades') or 0)} trades), "
+                            f"worst at {worst_b} ({wwr:.0f}% WR). "
+                            f"Win rate by tenor, separate from the giveback dollars above."
                         )
             if dte_lines:
-                sections.append("DTE SWEET SPOTS\n" + "\n".join(dte_lines[:5]))
+                sections.append(
+                    "DTE WIN RATES (not giveback, not the Strategies page ranking)\n"
+                    + "\n".join(dte_lines[:5])
+                )
 
     except Exception as exc:
         app.logger.warning("insights: DTE sweet-spots section failed (prompt degrades): %s", exc)
@@ -723,7 +913,7 @@ def _build_prompt_data(df):
         if dividend_income else ""
     )
 
-    return f"""PORTFOLIO OVERVIEW
+    return f"""PORTFOLIO OVERVIEW (lifetime P&L by strategy — a different ranking from CANONICAL EXIT TIMING; do not use these dollars or this order when answering about giveback, coverage, or profit left on the table)
 - Symbols: {num_symbols}, Trades: {total_trades}, Range: {first_date} to {last_date}
 - Return: ${total_return:,.2f} (realized ${realized:,.2f}, unrealized ${unrealized:,.2f}{div_line})
 - Win rate: {overall_win_rate:.1%} ({total_winners}W / {total_losers}L)
@@ -789,6 +979,15 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
   (no "revenge trading", "tilt", "FOMO", etc.).
 - Do NOT recommend changing position sizes or strategies.
 
+CANONICAL EXIT TIMING (when present) is the live Insights cards. Those
+dollars, percents, coverage counts, and strategy names are the only
+exit-timing figures you may cite. Do not average the rows into a new
+percent, do not add a second "left on the table" total, and do not rename
+a strategy (a row labeled Covered Call stays Covered Call). BY STRATEGY
+ranks profit left on the table. The Strategies page ranks lifetime P&L.
+Do not mix those rankings. DTE WIN RATES are win rates by tenor, not
+giveback.
+
 IMPORTANT: Start with a 2-sentence summary under "## Summary" that captures
 the single most important behavioral insight. Then write the full analysis."""
 
@@ -828,7 +1027,18 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
 - Quote observation_text verbatim when relevant to the question.
 - Do NOT add severity labels ("HIGH", "MEDIUM", "ALERT").
 - Do NOT speculate about psychological state or motive.
-- Do NOT recommend changing size or strategy."""
+- Do NOT recommend changing size or strategy.
+
+CANONICAL EXIT TIMING (when present) is the live Insights cards. Quote
+those dollars, percents, coverage counts, and strategy names exactly.
+Do not recompute a different total, giveback percent, or coverage.
+Do not rename a strategy row. BY STRATEGY ranks profit left on the table;
+PORTFOLIO OVERVIEW ranks lifetime P&L. Do not answer an exit-timing
+question with the portfolio ranking, and do not answer a P&L question
+with the giveback ranking, without saying which one you are using.
+
+PRIOR ANALYSIS is an older narration. If any figure in it disagrees with
+CANONICAL EXIT TIMING, ignore the prior figure."""
 
 
 def _call_coach(data_text, model_key=None, allow_paid=False):
@@ -926,7 +1136,11 @@ def _prior_analysis_brief(user_id):
         return None
     if len(text) > 3000:
         text = text[:3000].rstrip() + "\n[truncated]"
-    return "PRIOR ANALYSIS:\n" + text
+    return (
+        "PRIOR ANALYSIS (older narration — coverage and dollars here can "
+        "disagree with the live cards. If any figure disagrees with "
+        "CANONICAL EXIT TIMING, ignore the prior figure):\n" + text
+    )
 
 
 def _ask_brief(coaching_text, portfolio_text, weekly_text,
@@ -945,39 +1159,57 @@ def _ask_brief(coaching_text, portfolio_text, weekly_text,
     return "\n\n".join(parts) if parts else None
 
 
-def _md_to_html(md_text):
-    """Simple markdown-to-HTML for Gemini output."""
-    lines = md_text.split("\n")
+_MD_HEADING_RE = re.compile(r"^(#{1,3})\s+(.*?)\s*$")
+
+
+def _md_inline(text):
+    """Escape, then restore **bold**. Asterisks are not HTML-special."""
+    escaped = str(markupsafe.escape(text))
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+
+
+def _md_to_html(md_text, compact_headings=False):
+    """Simple markdown-to-HTML for model output.
+
+    ``compact_headings`` is the Ask AI thread: ``#`` / ``##`` become a
+    small label, not a page-sized ``h2``. The saved analysis keeps ``h2``
+    so "## Summary" still reads as a section.
+    """
+    lines = (md_text or "").split("\n")
     html_lines = []
     in_list = False
 
+    def _close_list():
+        nonlocal in_list
+        if in_list:
+            html_lines.append("</ul>")
+            in_list = False
+
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("## "):
-            if in_list:
-                html_lines.append("</ul>")
-                in_list = False
-            html_lines.append(f"<h2>{markupsafe.escape(stripped[3:])}</h2>")
+        heading = _MD_HEADING_RE.match(stripped)
+        if heading:
+            _close_list()
+            title = _md_inline(heading.group(2))
+            if compact_headings:
+                html_lines.append(f'<div class="ask-md-heading">{title}</div>')
+            else:
+                level = len(heading.group(1))
+                tag = "h2" if level <= 2 else "h3"
+                html_lines.append(f"<{tag}>{title}</{tag}>")
             continue
         if stripped.startswith("- ") or stripped.startswith("* "):
             if not in_list:
                 html_lines.append("<ul>")
                 in_list = True
-            item = stripped[2:]
-            item = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', item)
-            html_lines.append(f"<li>{item}</li>")
+            html_lines.append(f"<li>{_md_inline(stripped[2:])}</li>")
             continue
-        if in_list:
-            html_lines.append("</ul>")
-            in_list = False
+        _close_list()
         if not stripped:
             continue
-        text = markupsafe.escape(stripped)
-        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', str(text))
-        html_lines.append(f"<p>{text}</p>")
+        html_lines.append(f"<p>{_md_inline(stripped)}</p>")
 
-    if in_list:
-        html_lines.append("</ul>")
+    _close_list()
     return markupsafe.Markup("\n".join(html_lines))
 
 
@@ -1054,11 +1286,13 @@ def insights():
         ask_thread.append({
             "role": msg.get("role"),
             "content": content,
-            "html": _md_to_html(content) if msg.get("role") == "assistant" else None,
+            "html": (
+                _md_to_html(content, compact_headings=True)
+                if msg.get("role") == "assistant" else None
+            ),
         })
 
-    if cached:
-        cached["full_analysis_html"] = _md_to_html(cached["full_analysis"])
+    scope_narrowed = _insights_scope_narrowed()
 
     # Load deterministic coaching data for the template
     coaching_data = {
@@ -1071,12 +1305,22 @@ def insights():
         "total_closed": 0,
         "reliable_contracts": 0,
         "pct_reliable": 0,
+        "exit_timing": None,
     }
     try:
         client = get_bigquery_client()
         _, coaching_data = _build_coaching_brief(client, tenant_ids)
     except Exception as exc:
         app.logger.warning("insights: coaching brief failed (page renders without coach data): %s", exc)
+
+    insight_conflict = None
+    if cached and not scope_narrowed:
+        cached["full_analysis_html"] = _md_to_html(cached.get("full_analysis") or "")
+        insight_conflict = analysis_coverage_conflict(
+            cached.get("full_analysis") or cached.get("summary") or "",
+            coaching_data.get("reliable_contracts"),
+            coaching_data.get("total_closed"),
+        )
 
     return render_template(
         "insights.html",
@@ -1092,6 +1336,8 @@ def insights():
         accounts=accounts,
         selected_account=selected_account,
         coaching=coaching_data,
+        scope_narrowed=scope_narrowed,
+        insight_conflict=insight_conflict,
     )
 
 
@@ -1112,7 +1358,16 @@ def generate_insights():
     selected_account = request.args.get("account", "")
     user_accounts = _get_user_accounts(selected_account)
     tenant_ids = _get_tenant_scope(selected_account)
-    redir = url_for("insights", account=selected_account) if selected_account else url_for("insights")
+    redir = url_for("insights", **_scope_keep_kwargs())
+    # The saved analysis is one whole-book row. Regenerating under a group
+    # or account filter would replace it with a slice. The filtered page
+    # hides that write-up instead.
+    if _insights_scope_narrowed():
+        flash(
+            "AI Analysis is saved for your whole book. Clear the filter to regenerate it.",
+            "info",
+        )
+        return redirect(redir)
 
     # If the generate form carried a model choice, persist it (validated)
     # so this and future generations / Q&A use it.
@@ -1262,22 +1517,33 @@ def insights_ask():
             app.logger.warning("insights: weekly-context section failed (coach answers without it): %s", exc)
 
         execution_text = _execution_brief_text(client, tenant_ids)
-        prior_text = _prior_analysis_brief(current_user.id)
+        # A narrowed filter must not answer from the whole-book narration.
+        prior_text = None if _insights_scope_narrowed() else _prior_analysis_brief(current_user.id)
         brief_text = _ask_brief(
             coaching_text, portfolio_text, weekly_text,
             execution_text=execution_text, prior_text=prior_text,
         )
         if not brief_text:
+            if _insights_scope_narrowed():
+                return jsonify({
+                    "error": "Nothing in this filter to answer from.",
+                }), 400
             return jsonify({"error": "No data available to answer questions."}), 400
 
         allow_paid = user_can_use_paid_llm(current_user.id)
         model_key = resolved_user_model_key(
             current_user.id, get_user_llm_model(current_user.id),
         )
-        history = [
-            {"role": m.get("role"), "content": m.get("content")}
-            for m in get_insight_messages(current_user.id, limit=_ASK_THREAD_LIMIT)
-        ]
+        # A filtered page answers from the scoped brief only. The saved
+        # thread is whole-book and would reintroduce the numbers the
+        # filter just hid.
+        history = []
+        if not _insights_scope_narrowed():
+            history = [
+                {"role": m.get("role"), "content": m.get("content")}
+                for m in get_insight_messages(
+                    current_user.id, limit=_ASK_THREAD_LIMIT)
+            ]
         answer_md, error = _call_coach_question(
             brief_text, question,
             model_key=model_key,
@@ -1289,7 +1555,10 @@ def insights_ask():
 
         append_insight_message(current_user.id, "user", question, model_key)
         append_insight_message(current_user.id, "assistant", answer_md, model_key)
-        return jsonify({"answer_html": str(_md_to_html(answer_md)), "error": None})
+        return jsonify({
+            "answer_html": str(_md_to_html(answer_md, compact_headings=True)),
+            "error": None,
+        })
 
     except Exception as exc:
         return jsonify({"error": f"Could not process question: {exc}"}), 500
@@ -1308,7 +1577,7 @@ def insights_ask_clear():
         request.headers.get("X-Requested-With", "") == "XMLHttpRequest"
     ):
         return jsonify({"ok": True})
-    return redirect(url_for("insights"))
+    return redirect(url_for("insights", **_scope_keep_kwargs()))
 
 
 def _ai_addon_enabled():

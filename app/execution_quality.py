@@ -245,11 +245,19 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         })
 
     # 4. Expiry discipline (no counterfactual needed — it happened).
+    # kept_at_expiry is the single dollar the profile "Kept at expiry"
+    # fact must reuse. The fill-replay fingerprint sums contract cash and
+    # can disagree with realized_pnl by fees; this page shows both cards.
+    kept_at_expiry = None
     if "close_type" in df.columns:
         expired = df[df["close_type"].isin(["Expired", "ExpiredOTM"])
                      & (df["direction"] == "Sold") & (df["realized_pnl"] > 0)]
         if len(expired) >= 2:
             kept = float(expired["realized_pnl"].sum())
+            kept_at_expiry = {
+                "dollars": kept,
+                "contracts": int(len(expired)),
+            }
             findings.append({
                 "label": "Held to expiry",
                 "value": f"{_money(kept)} kept",
@@ -327,6 +335,7 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         "findings": findings,
         "examples": examples,
         "pending_note": pending_note,
+        "kept_at_expiry": kept_at_expiry,
     }
 
 

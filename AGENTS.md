@@ -1397,7 +1397,12 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   re-entered — each linking to the position page whose history proves
   the claim), a per-style scoreboard (income/directional/stock ×
   positions, profitable count, P&L), and YEAR-BY-YEAR rows computed
-  straight from fills. CONSISTENCY INVARIANT: yearly premium sums STO
+  straight from fills. The header's trade days sum each symbol's active
+  days; year rows say calendar days (each date once) and new symbols
+  (first year in the profile), which add up to the header symbol count.
+  Profile "Kept at expiry" reuses Execution Review's
+  `kept_at_expiry` realized-P&L total when that card is on the page.
+  CONSISTENCY INVARIANT: yearly premium sums STO
   credits from fills, so the fingerprint's `premium_collected` must
   count a roll's open leg too (recorded in the roll branch; pinned by
   `test_roll_open_leg_counts_as_premium_collected`) — otherwise the

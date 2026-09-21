@@ -151,8 +151,10 @@ def test_profile_summary_buckets_and_copy():
     # Rolls: 1 of 2 never tested; the other sidestepped $400.
     assert f["Rolls never tested"]["value"] == "1 of 2"
     assert "$400" in f["Rolls never tested"]["detail"]
-    # Expiry discipline: $215 kept across 2 contracts.
+    # Expiry discipline: $215 kept across 2 contracts. The profile
+    # "Kept at expiry" fact reuses this same dollar.
     assert f["Held to expiry"]["value"] == "$215 kept"
+    assert out["kept_at_expiry"] == {"dollars": 215.0, "contracts": 2}
     # Marks still accumulating (no data_reliable rows) → note, no finding.
     assert "Peak capture" not in f
     assert "still accumulating" in out["pending_note"]
