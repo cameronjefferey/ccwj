@@ -1982,6 +1982,136 @@ class TestReviewSessionDates:
         assert cutoff == self.thursday
         assert trade_query is None
 
+    def test_deferred_overview_rewinds_heatmap_and_trade_highlights(self, monkeypatch):
+        """The skeleton's /overview/below fragment must use the hero's close.
+
+        Tuesday's nominal recap is Monday, but movers only prove Friday. The
+        deferred heatmap cutoff and its fill-derived highlights must both
+        rewind to Friday instead of contradicting the already-rewound hero.
+        """
+        from types import SimpleNamespace
+
+        import app.routes as routes
+        import app.weekly_review as weekly_review
+        from app import app
+
+        tuesday = date(2026, 9, 1)
+        monday = date(2026, 8, 31)
+        friday = date(2026, 8, 28)
+        tenant_id = "snaptrade:abc"
+        observed = {"parallel_calls": []}
+
+        all_keys = (
+            set(weekly_review.OVERVIEW_BELOW_KEYS)
+            | {
+                "positions", "today_trades",
+                "today_moves", "today_options_moves",
+            }
+        )
+        monkeypatch.setattr(
+            weekly_review,
+            "build_daily_review_batch",
+            lambda *args, **kwargs: {key: key for key in all_keys},
+        )
+
+        monday_fills = pd.DataFrame({
+            "tenant_id": [tenant_id],
+            "account": ["Main"],
+            "underlying_symbol": ["MONDAY_FILL"],
+        })
+        friday_fills = pd.DataFrame({
+            "tenant_id": [tenant_id],
+            "account": ["Main"],
+            "underlying_symbol": ["FRIDAY_FILL"],
+        })
+
+        def fake_parallel(_client, queries):
+            observed["parallel_calls"].append(set(queries))
+            if set(queries) == {"today_trades"}:
+                _sql, cfg = queries["today_trades"]
+                params = {p.name: p.value for p in cfg.query_parameters}
+                assert params["day"] == friday
+                return {"today_trades": friday_fills.copy()}
+
+            assert "today_moves" in queries
+            assert "today_options_moves" in queries
+            frames = {key: pd.DataFrame() for key in queries}
+            frames["today_moves"] = pd.DataFrame({
+                "tenant_id": [tenant_id],
+                "account": ["Main"],
+                "today_date": [friday],
+            })
+            frames["today_trades"] = monday_fills.copy()
+            return frames
+
+        monkeypatch.setattr(weekly_review, "_bq_parallel", fake_parallel)
+        monkeypatch.setattr(
+            weekly_review, "_filter_df_by_tenant_ids",
+            lambda df, _tenant_ids: df,
+        )
+        monkeypatch.setattr(
+            weekly_review, "_build_open_position_strip",
+            lambda *_args, **_kwargs: ([], []),
+        )
+        monkeypatch.setattr(
+            weekly_review, "_us_market_session",
+            lambda: {"state": "after_hours"},
+        )
+        monkeypatch.setattr(
+            weekly_review, "_date_in_user_tz", lambda _tz: tuesday,
+        )
+        monkeypatch.setattr(
+            weekly_review, "get_user_profile",
+            lambda _uid: {"timezone": "America/New_York"},
+        )
+        monkeypatch.setattr(
+            weekly_review, "get_bigquery_client", lambda: object(),
+        )
+        monkeypatch.setattr(
+            weekly_review, "_tenants_for_scope", lambda _account: [tenant_id],
+        )
+        monkeypatch.setattr(
+            weekly_review, "_tenant_sql_and",
+            lambda _tenant_ids: f"AND tenant_id IN ('{tenant_id}')",
+        )
+        monkeypatch.setattr(
+            weekly_review, "_user_account_list", lambda: ["Main"],
+        )
+        monkeypatch.setattr(
+            weekly_review, "current_user", SimpleNamespace(id=9),
+        )
+        monkeypatch.setattr(
+            routes, "_redirect_if_no_accounts", lambda: None,
+        )
+        monkeypatch.setattr(
+            routes, "_tenant_label_map_for_user",
+            lambda _uid: {tenant_id: "Main"},
+        )
+
+        def fake_apply(_context, _batch, **kwargs):
+            observed["snap_cutoff"] = kwargs["snap_cutoff"]
+
+        def fake_split(frame, **_kwargs):
+            observed["highlight_symbols"] = frame["underlying_symbol"].tolist()
+            return {"symbols": observed["highlight_symbols"]}
+
+        monkeypatch.setattr(
+            weekly_review, "_apply_overview_below", fake_apply,
+        )
+        monkeypatch.setattr(weekly_review, "_split_day_fills", fake_split)
+        monkeypatch.setattr(
+            weekly_review, "render_template",
+            lambda _template, **context: context,
+        )
+
+        with app.test_request_context("/overview/below"):
+            context = weekly_review.overview_below.__wrapped__()
+
+        assert context["review_date"] == friday
+        assert observed["snap_cutoff"] == friday
+        assert observed["highlight_symbols"] == ["FRIDAY_FILL"]
+        assert len(observed["parallel_calls"]) == 2
+
     def test_snapshot_cutoff_never_after_user_today(self):
         assert _snapshot_as_of_date(
             self.thursday, {"state": "pre_market"}, et_today=self.friday
