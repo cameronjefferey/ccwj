@@ -296,26 +296,88 @@
   }
 
   /* ── 3. PWA install affordance ───────────────────────────────── */
-  // Chrome (Android/desktop) fires beforeinstallprompt when the app is
-  // installable; stash it and reveal "Install app" in the Account menu.
-  // iOS Safari never fires this — installs happen via Share → Add to
-  // Home Screen, which needs no affordance here.
-  var deferredInstall = null;
+  // Account → Install app is a <button>, not href="#".
+  // Chromium stashes beforeinstallprompt (also captured early in base.html
+  // <head> as window.__htDeferredInstall) and prompt() runs on click.
+  // Browsers that never fire the event — iOS, desktop Safari, Firefox —
+  // open #htInstallModal with the steps for that platform. The item is
+  // hidden once the site is already running as an installed app.
+  var deferredInstall = window.__htDeferredInstall || null;
+
+  function pwaAlreadyInstalled() {
+    try {
+      if (window.matchMedia("(display-mode: standalone)").matches) return true;
+    } catch (err) { /* matchMedia unavailable */ }
+    return window.navigator.standalone === true;
+  }
+
+  function hideInstallItem() {
+    document.documentElement.classList.add("ht-pwa-installed");
+    var item = document.getElementById("ht-install-item");
+    if (item) item.classList.add("d-none");
+  }
+
+  function installHelpKind() {
+    var ua = navigator.userAgent || "";
+    var iOS = /iPad|iPhone|iPod/.test(ua) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (iOS) return "ios";
+    var safari = /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Android/.test(ua);
+    if (safari) return "safari";
+    if (/Chrome|Chromium|Edg|OPR/.test(ua)) return "chromium";
+    return "other";
+  }
+
+  function showInstallHelp() {
+    var modalEl = document.getElementById("htInstallModal");
+    if (!modalEl || typeof bootstrap === "undefined" || !bootstrap.Modal) return;
+    var kind = installHelpKind();
+    var nodes = modalEl.querySelectorAll("[data-ht-install-help]");
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      node.classList.toggle("d-none", node.getAttribute("data-ht-install-help") !== kind);
+    }
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+
+  if (pwaAlreadyInstalled()) hideInstallItem();
+
   window.addEventListener("beforeinstallprompt", function (e) {
     e.preventDefault();
     deferredInstall = e;
-    var item = document.getElementById("ht-install-item");
-    if (item) item.classList.remove("d-none");
+    window.__htDeferredInstall = e;
   });
+  window.addEventListener("appinstalled", function () {
+    deferredInstall = null;
+    window.__htDeferredInstall = null;
+    hideInstallItem();
+  });
+
   var installLink = document.getElementById("ht-install-link");
   if (installLink) {
     installLink.addEventListener("click", function (e) {
       e.preventDefault();
-      if (!deferredInstall) return;
-      deferredInstall.prompt();
-      deferredInstall = null;
-      var item = document.getElementById("ht-install-item");
-      if (item) item.classList.add("d-none");
+      var promptEvent = deferredInstall;
+      if (promptEvent && typeof promptEvent.prompt === "function") {
+        try {
+          var pending = promptEvent.prompt();
+          deferredInstall = null;
+          window.__htDeferredInstall = null;
+          if (pending && typeof pending.catch === "function") {
+            pending.catch(function () { showInstallHelp(); });
+          }
+        } catch (err) {
+          showInstallHelp();
+          return;
+        }
+        if (promptEvent.userChoice && typeof promptEvent.userChoice.then === "function") {
+          promptEvent.userChoice.then(function (result) {
+            if (result && result.outcome === "accepted") hideInstallItem();
+          }).catch(function () { showInstallHelp(); });
+        }
+        return;
+      }
+      showInstallHelp();
     });
   }
 
