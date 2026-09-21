@@ -14,6 +14,10 @@
     .ts-hero h1 { font-size: 2rem; font-weight: 800; margin: .35rem 0 .4rem; }
     .ts-hero .ts-sub { color: #cbd5e1; font-size: 1rem; }
     .ts-hero .ts-sub strong { color: #fff; }
+    .ts-hero .ts-hero-note {
+        color: #94a3b8; font-size: .82rem; line-height: 1.45;
+        margin: .55rem auto 0; max-width: 36rem;
+    }
 
     .ts-card { border: 0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
     .ts-card h2 { font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; color: #6b7280; font-weight: 700; margin-bottom: .85rem; }
@@ -31,8 +35,10 @@
     .ts-era-year { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
     .ts-era-title { font-weight: 700; }
     .ts-era-line { color: #64748b; font-size: .88rem; margin-top: .1rem; }
+    .ts-era-note { color: #64748b; font-size: .85rem; margin: -.25rem 0 .75rem; line-height: 1.45; }
     [data-bs-theme="dark"] .ts-era { border-bottom-color: #1f2a3f; }
-    [data-bs-theme="dark"] .ts-era-line { color: #94a3b8; }
+    [data-bs-theme="dark"] .ts-era-line,
+    [data-bs-theme="dark"] .ts-era-note { color: #94a3b8; }
 
     .ts-standouts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: .9rem; }
     a.ts-standout {
@@ -158,6 +164,7 @@
         {% set _held = novel.hero_counts.open_held if novel.hero_counts.open_held is defined else novel.hero_counts.open_stories %}
         {% if _held %} &middot; <strong>{{ _held }}</strong> currently held{% endif %}
     </div>
+    <p class="ts-hero-note">Trade days add each symbol's active days. Three names on one session are three trade days.</p>
     {% else %}
     <h1>Trader Profile</h1>
     <div class="ts-sub">Once your trade history syncs, this page builds a complete profile of how you trade.</div>
@@ -345,6 +352,7 @@
 {% if novel.eras %}
 <div class="card ts-card p-4 mb-4">
     <h2>Year by year</h2>
+    <p class="ts-era-note">New symbols are names that first appear in the profile that year. They add up to the header count. Calendar days count each date once, so a year runs lower than the header's trade days.</p>
     {% for e in novel.eras %}
     <div class="ts-era">
         <div class="ts-era-year">{{ e.year }}</div>

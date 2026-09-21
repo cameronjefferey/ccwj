@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from app.models import (
+    _correct_group_display_names,
     _norm_account_group_name,
     create_account_group,
     delete_account_group,
@@ -45,6 +46,19 @@ def test_norm_group_name_trims_and_rejects_empty():
         _norm_account_group_name("   ")
     with pytest.raises(ValueError):
         _norm_account_group_name("x" * 41)
+
+
+def test_crytpo_group_chip_displays_as_crypto():
+    groups = [
+        {"id": 3, "name": "Crytpo", "tenant_ids": ["snaptrade:bbb"]},
+        {"id": 1, "name": "Kids", "tenant_ids": []},
+    ]
+    shown = _correct_group_display_names(groups)
+    assert [g["name"] for g in shown] == ["Crypto", "Kids"]
+    # A user who already has Crypto keeps the misspelled row distinct.
+    both = groups + [{"id": 4, "name": "Crypto", "tenant_ids": []}]
+    kept = _correct_group_display_names(both)
+    assert [g["name"] for g in kept] == ["Crytpo", "Kids", "Crypto"]
 
 
 def test_requested_group_ids_comma_and_repeated():

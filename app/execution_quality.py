@@ -270,7 +270,9 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
     # 4. Expiry discipline (no counterfactual needed — it happened).
     # Same ledger as the profile "Kept at expiry" fact (held_to_expiry_kept).
     n_expired, kept = held_to_expiry_kept(df)
+    kept_at_expiry = None
     if n_expired >= 2:
+        kept_at_expiry = {"dollars": kept, "contracts": n_expired}
         findings.append({
             "label": "Held to expiry",
             "value": f"{_money(kept)} kept",
@@ -348,6 +350,7 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         "findings": findings,
         "examples": examples,
         "pending_note": pending_note,
+        "kept_at_expiry": kept_at_expiry,
     }
 
 

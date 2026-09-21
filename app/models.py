@@ -575,6 +575,7 @@ def init_db():
     _migrate_users_stripe_columns()
     _migrate_users_ai_addon_columns()
     _migrate_insight_messages_table()
+    _migrate_account_group_crytpo_typo()
     _migrate_uploads_tenant_id_column()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
@@ -747,6 +748,49 @@ def _migrate_users_ai_addon_columns():
         execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_subscription_price_id TEXT")
     except Exception as exc:
         _log.warning("users AI-addon columns migration skipped: %s", exc)
+
+
+def _migrate_account_group_crytpo_typo():
+    """Rename the known 'Crytpo' group typo to 'Crypto'.
+
+    Skips a user who already has a group named Crypto — the unique index
+    is (user_id, LOWER(name)). Idempotent.
+    """
+    try:
+        execute(
+            """
+            UPDATE account_groups AS g
+            SET name = 'Crypto'
+            WHERE LOWER(g.name) = 'crytpo'
+              AND NOT EXISTS (
+                  SELECT 1 FROM account_groups AS other
+                  WHERE other.user_id = g.user_id
+                    AND LOWER(other.name) = 'crypto'
+              )
+            """
+        )
+    except Exception as exc:
+        _log.warning("account group Crytpo rename skipped: %s", exc)
+
+
+def _correct_group_display_names(groups):
+    """Show 'Crytpo' as 'Crypto' unless this user already has a Crypto group.
+
+    The chip reads the stored name. Correcting it here covers Insights,
+    Trader Profile, and Settings even before the startup rename runs, and
+    leaves a real second group distinguishable when both names exist.
+    """
+    lowered = {(g.get("name") or "").strip().lower() for g in groups}
+    if "crypto" in lowered:
+        return list(groups)
+    out = []
+    for g in groups:
+        name = g.get("name") or ""
+        if name.strip().lower() == "crytpo":
+            g = dict(g)
+            g["name"] = "Crypto"
+        out.append(g)
+    return out
 
 
 def _migrate_insight_messages_table():
@@ -1719,7 +1763,7 @@ def list_account_groups(user_id):
             "name": row.get("name") or "",
             "tenant_ids": tids,
         })
-    return out
+    return _correct_group_display_names(out)
 
 
 def create_account_group(user_id, name):

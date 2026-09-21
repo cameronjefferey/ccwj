@@ -132,6 +132,12 @@
         border-bottom: 2px solid #e9ecef;
     }
     .insights-content h2:first-child { margin-top: 0; }
+    .insights-content h3 {
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-top: 1.25rem;
+        margin-bottom: .5rem;
+    }
     /* Ask replies sit in a 320px scroller. Page-sized h2s overflow it. */
     #coachThread h2,
     #coachThread h3 {
@@ -150,6 +156,34 @@
     .insights-content li { margin-bottom: .4rem; line-height: 1.6; }
     .insights-content strong { color: #1a1a2e; }
     .insights-meta { font-size: .78rem; color: #6c757d; }
+    .insights-stale {
+        background: #fff7ed;
+        border: 1px solid #fdba74;
+        border-radius: 10px;
+        padding: .75rem .9rem;
+        font-size: .85rem;
+        line-height: 1.45;
+        color: #9a3412;
+        margin-bottom: .9rem;
+    }
+    #coachThread .ask-md-heading {
+        font-size: .95rem;
+        font-weight: 650;
+        line-height: 1.35;
+        margin: .85rem 0 .3rem;
+        letter-spacing: 0;
+    }
+    #coachThread h1, #coachThread h2, #coachThread h3 {
+        font-size: .95rem;
+        font-weight: 650;
+        line-height: 1.35;
+        margin: .85rem 0 .3rem;
+        padding: 0;
+        border: none;
+        letter-spacing: 0;
+    }
+    #coachThread p { margin-bottom: .45rem; }
+    #coachThread ul { margin-bottom: .45rem; padding-left: 1.1rem; }
 
     .generate-card {
         border: 2px dashed #ced4da;
@@ -229,9 +263,10 @@
                 Computed from daily option mark-to-market snapshots.
             </p>
 
-            {% set total_given_back = coaching.signals|map(attribute='pnl_given_back')|sum %}
-            {% set avg_giveback = coaching.signals|map(attribute='giveback_pct')|sum / coaching.signals|length %}
-            {% set avg_days = coaching.signals|map(attribute='days_past_peak')|sum / coaching.signals|length %}
+            {% set et = coaching.exit_timing %}
+            {% set total_given_back = et.total_given_back if et else (coaching.signals|map(attribute='pnl_given_back')|sum) %}
+            {% set avg_giveback = et.avg_giveback if et else (coaching.signals|map(attribute='giveback_pct')|sum / coaching.signals|length) %}
+            {% set avg_days = et.avg_days if et else (coaching.signals|map(attribute='days_past_peak')|sum / coaching.signals|length) %}
 
             <div class="signal-grid">
                 <div class="signal-card">
@@ -264,6 +299,7 @@
                     <div class="strat-stats">
                         {{ s.trades }} of {{ s.total_closed }} trades with data &middot;
                         {{ "{:.0f}".format(s.days_past_peak) }}d past peak
+                        {% if s.account_count is defined and s.account_count > 1 %}&middot; {{ s.account_count }} accounts{% endif %}
                         {% if s.pct_premium_captured > 0 %}&middot; {{ "{:.0f}".format(s.pct_premium_captured) }}% premium captured{% endif %}
                     </div>
                 </div>
@@ -320,6 +356,14 @@
         </div>
         {% endif %}
 
+        {% elif scope_narrowed %}
+        <div class="coaching-section">
+            <div class="section-label">Nothing in this filter</div>
+            <p class="mb-0" style="font-size:.9rem; color:#475569; line-height:1.5">
+                Discovery Lab and Exit Timing need closed option contracts with daily marks.
+                This group or account doesn't have any, so those cards are empty here.
+            </p>
+        </div>
         {% endif %}{# end coaching.has_data #}
 
 
@@ -385,9 +429,32 @@
         </div>
         {% endif %}
 
-        {% if insight %}
+        {% if scope_narrowed %}
+        <div class="coaching-section">
+            <div class="section-label">AI Analysis</div>
+            <p class="mb-0" style="font-size:.9rem; color:#475569; line-height:1.5">
+                The saved analysis covers your whole book, so it isn't shown under this filter.
+                {% if coaching and coaching.has_data %}
+                The cards above are this filter's record.
+                {% else %}
+                Clear the filter to read the whole-book write-up.
+                {% endif %}
+            </p>
+        </div>
+        {% endif %}
+
+        {% if insight and not scope_narrowed %}
         <div class="coaching-section" style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0;">
             <div class="section-label">AI Analysis</div>
+            {% if insight_conflict %}
+            <div class="insights-stale">
+                This write-up cites {{ insight_conflict.cited_reliable }} of {{ insight_conflict.cited_total }} contracts.
+                The cards above are current: {{ insight_conflict.live_reliable }} of {{ insight_conflict.live_total }}.
+                Regenerate to narrate the current cards.
+            </div>
+            {% else %}
+            <p class="insights-meta mb-2">The cards above are recomputed on each visit. This narration can lag them until you regenerate.</p>
+            {% endif %}
             <div class="insights-content" style="box-shadow:none; padding:0; background:transparent;">
                 {{ insight.full_analysis_html }}
             </div>
@@ -406,9 +473,10 @@
                 {% endif %}
             </div>
         </div>
+        {% endif %}
 
-        {# ── Ask AI ── #}
-        {% if gemini_available and not is_demo_user %}
+        {# ── Ask AI — scoped to the active filter; hidden until a whole-book analysis exists when unfiltered ── #}
+        {% if (insight or scope_narrowed) and gemini_available and not is_demo_user %}
         <div class="coaching-section">
             <div class="section-label">Ask AI</div>
             <p class="small text-muted mb-3">
@@ -435,13 +503,13 @@
                        placeholder="e.g. 'Which DTE buckets seem strongest in my data?'" required>
                 <button type="submit" class="btn btn-sm btn-primary">Ask</button>
             </form>
-            <form id="coachClearForm" method="POST" action="{{ url_for('insights_ask_clear') }}" class="mt-2">
+            <form id="coachClearForm" method="POST" action="{{ url_for('insights_ask_clear') }}{% if scope_query_string %}?{{ scope_query_string }}{% endif %}" class="mt-2">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-link btn-sm text-muted px-0">Clear conversation</button>
             </form>
             <div id="coachError" class="text-danger small mt-2" style="display:none;"></div>
         </div>
-        {% elif is_demo_user %}
+        {% elif (insight or scope_narrowed) and is_demo_user %}
         <div class="coaching-section">
             <div class="section-label">Ask AI</div>
             <p class="text-muted small mb-0 fst-italic">
@@ -449,9 +517,7 @@
                 about your own trading.
             </p>
         </div>
-        {% endif %}
-
-        {% elif gemini_available %}
+        {% elif not scope_narrowed and gemini_available %}
         <div class="generate-card">
             <h5>Get Your Behavioral Insights Report</h5>
             <div class="mx-auto mb-4" style="max-width: 480px;">
@@ -481,7 +547,7 @@
             {% endif %}
         </div>
 
-        {% else %}
+        {% elif not scope_narrowed %}
         <div class="generate-card">
             <h5>AI Insights is warming up</h5>
             <p>
@@ -569,7 +635,7 @@
     const coachError = document.getElementById('coachError');
 
     if (coachForm && coachInput && coachThread) {
-        const coachUrl = '{{ url_for("insights_ask", account=selected_account) if selected_account else url_for("insights_ask") }}';
+        const coachUrl = '{{ url_for("insights_ask") }}{% if scope_query_string %}?{{ scope_query_string }}{% endif %}';
         coachForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const q = coachInput.value.trim();

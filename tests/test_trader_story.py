@@ -1,11 +1,14 @@
 """The trader novel (/story, app/trader_story.py): book building,
 style classification, and novel composition from synthetic fills."""
 
+import re
 from datetime import date
 
 import pandas as pd
 
+from app.position_story import _money
 from app.trader_story import (
+    align_kept_at_expiry,
     build_book,
     classify_style,
     compose_novel,
@@ -119,6 +122,7 @@ def test_eras_one_row_per_year_with_new_names_and_premium():
     assert [e["year"] for e in eras] == [2024, 2025]
     assert eras[0]["title"] == "First year of activity"
     assert "2 new symbols" in eras[0]["line"]
+    assert "calendar days" in eras[0]["line"]
     assert "$100 premium collected" in eras[0]["line"]
     assert "$500 placed on long options" in eras[0]["line"]
     assert "1 new symbol" in eras[1]["line"]
@@ -148,6 +152,57 @@ def test_busiest_day_requires_a_real_cluster():
     fact = _busiest_day(burst)
     assert fact["value"] == "Jun 3, 2024"
     assert fact["detail"] == "6 fills across 6 symbols"
+
+
+def _new_symbol_count(line):
+    match = re.search(r"(\d+) new symbol", line)
+    return int(match.group(1)) if match else 0
+
+
+def test_eras_new_symbols_follow_the_profile_book():
+    """A fill the story engine never narrates must not inflate new symbols.
+
+    Year rows then add up to the header symbol count. Calendar days stay
+    a different unit from the header's per-symbol trade days.
+    """
+    extra = _trades([
+        (date(2024, 4, 1), "ZZZ", "journal", "Cash Event", "", 0, 0.0, 50.0),
+    ])
+    mixed = pd.concat([_BOOK_TRADES, extra], ignore_index=True)
+    book = build_book(mixed, None, None, _BOOK_SUMMARY)
+    assert "ZZZ" not in book
+    eras = _build_eras(mixed, book)
+    assert sum(_new_symbol_count(e["line"]) for e in eras) == len(book)
+    assert "ZZZ" not in " ".join(e["line"] for e in eras)
+    unscoped = _build_eras(mixed)
+    assert sum(_new_symbol_count(e["line"]) for e in unscoped) == len(book) + 1
+
+
+def test_align_kept_at_expiry_uses_execution_realized_pnl():
+    novel = {
+        "profile": {
+            "facts": [{
+                "label": "Kept at expiry",
+                "value": "$99,558",
+                "tone": "pos",
+                "detail": "143 short contracts rode to worthless expiry",
+            }],
+        },
+    }
+    execution = {"kept_at_expiry": {"dollars": 99634, "contracts": 143}}
+    align_kept_at_expiry(novel, execution)
+    fact = novel["profile"]["facts"][0]
+    assert fact["value"] == _money(99634)
+    assert "143 short contracts" in fact["detail"]
+    # No execution card → the fingerprint dollar stays.
+    other = {
+        "profile": {"facts": [{
+            "label": "Kept at expiry", "value": "$99,558",
+            "tone": "pos", "detail": "fill cash",
+        }]},
+    }
+    align_kept_at_expiry(other, None)
+    assert other["profile"]["facts"][0]["value"] == "$99,558"
 
 
 def test_compose_novel_shape():

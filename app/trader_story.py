@@ -329,22 +329,60 @@ def _placed_trades_df(trades_df):
     return trades_df[~trades_df["action"].astype(str).isin(_NOT_PLACED_TRADE_ACTIONS)]
 
 
-def _build_eras(trades_df):
-    """One narrative row per calendar year, computed straight from fills."""
-    df = _placed_trades_df(trades_df)
-    if df is None or df.empty:
-        return []
-    df = df.copy()
-    df["_d"] = pd.to_datetime(df["trade_date"], errors="coerce")
-    df = df.dropna(subset=["_d"])
-    if df.empty:
-        return []
-    df["_year"] = df["_d"].dt.year
-    df["_sym"] = df["symbol"].astype(str).str.strip().str.upper()
-    df["_amt"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+def _build_eras(trades_df, book=None):
+    """One narrative row per calendar year, computed straight from fills.
 
-    first_year_by_sym = df.groupby("_sym")["_year"].min()
-    years = sorted(df["_year"].unique())
+    ``book`` is the profile's symbol universe (symbols that produced a
+    story). New-symbol counts then add up to the header symbol count.
+    Fills the story engine does not narrate (a journal with no chapters)
+    used to add a symbol the header never counted.
+
+    "Calendar days" is each date once. The header's "trade days" add up
+    each symbol's active days, so three names on one session are three
+    trade days and one calendar day.
+    """
+    df = _placed_trades_df(trades_df)
+    new_by_year = {}
+    if book:
+        allowed = {str(sym).strip().upper() for sym in book if str(sym).strip()}
+        for entry in book.values():
+            first = entry.get("first")
+            if not first:
+                continue
+            new_by_year[first.year] = new_by_year.get(first.year, 0) + 1
+    else:
+        allowed = None
+
+    if df is None or df.empty:
+        df = pd.DataFrame(columns=["trade_date", "symbol", "action", "amount"])
+    else:
+        df = df.copy()
+    df["_d"] = pd.to_datetime(df["trade_date"], errors="coerce") if "trade_date" in df.columns else pd.Series(dtype="datetime64[ns]")
+    df = df.dropna(subset=["_d"])
+    if not df.empty:
+        df["_year"] = df["_d"].dt.year
+        df["_sym"] = df["symbol"].astype(str).str.strip().str.upper()
+        if allowed is not None:
+            df = df[df["_sym"].isin(allowed)]
+        df["_amt"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+    else:
+        df["_year"] = pd.Series(dtype="int64")
+        df["_sym"] = pd.Series(dtype="object")
+        df["_amt"] = pd.Series(dtype="float64")
+
+    if df.empty and not new_by_year:
+        return []
+
+    if not book:
+        first_year_by_sym = (
+            df.groupby("_sym")["_year"].min() if not df.empty else {}
+        )
+        new_by_year = {}
+        if len(getattr(first_year_by_sym, "index", [])):
+            for _sym, y in first_year_by_sym.items():
+                new_by_year[int(y)] = new_by_year.get(int(y), 0) + 1
+
+    years = sorted(set(df["_year"].unique() if not df.empty else []) | set(new_by_year))
     per_year = {}
     for y in years:
         g = df[df["_year"] == y]
@@ -357,8 +395,8 @@ def _build_eras(trades_df):
         top = g["_sym"].value_counts()
         per_year[y] = {
             "fills": len(g),
-            "trade_days": int(g["_d"].dt.date.nunique()),
-            "new_symbols": int((first_year_by_sym == y).sum()),
+            "trade_days": int(g["_d"].dt.date.nunique()) if len(g) else 0,
+            "new_symbols": int(new_by_year.get(y, 0)),
             "premium": premium,
             "risk": risk,
             "top_symbol": top.index[0] if len(top) else "",
@@ -385,7 +423,7 @@ def _build_eras(trades_df):
         else:
             title = "Steady activity"
         bits = [
-            f"{p['fills']:,} fills over {p['trade_days']} trading days",
+            f"{p['fills']:,} fills over {p['trade_days']} calendar days",
             f"{p['new_symbols']} new symbol{'s' if p['new_symbols'] != 1 else ''}",
         ]
         if p["premium"] > 1:
@@ -530,19 +568,51 @@ def _profile_symbol_count(summary_df, fallback=0):
         return 0
 
 
-def align_kept_at_expiry(profile, execution_df):
-    """Overwrite the profile fact with the execution-review ledger.
+def align_kept_at_expiry(profile_or_novel, execution):
+    """Make "Kept at expiry" match the execution-review ledger.
 
-    Fingerprint fill-cash and ``int_option_exit_quality.realized_pnl``
-    count the same contracts and disagree by fees. When the ledger has
-    a sample, both cards use it.
+    A dataframe is the contract list (profile fact is updated from
+    ``held_to_expiry_kept``). A summary dict is the already-graded
+    execution card (``kept_at_expiry`` dollars and count).
     """
+    from app.position_story import _money
+
+    if isinstance(execution, dict):
+        novel = profile_or_novel
+        if not novel:
+            return novel
+        kept = execution.get("kept_at_expiry")
+        if not kept:
+            return novel
+        try:
+            dollars = float(kept.get("dollars") or 0)
+            contracts = int(kept.get("contracts") or 0)
+        except (TypeError, ValueError):
+            return novel
+        if contracts < 2 or dollars <= 0:
+            return novel
+        facts = (novel.get("profile") or {}).get("facts") or []
+        row = {
+            "label": "Kept at expiry",
+            "value": _money(dollars),
+            "tone": "pos",
+            "detail": (
+                f"{contracts} short contracts rode to worthless expiry — "
+                f"you kept every dollar"
+            ),
+        }
+        for i, fact in enumerate(facts):
+            if fact.get("label") == "Kept at expiry":
+                facts[i] = row
+                break
+        return novel
+
+    profile = profile_or_novel
     if not profile:
         return profile
     from app.execution_quality import held_to_expiry_kept
-    from app.position_story import _money
 
-    n, kept = held_to_expiry_kept(execution_df)
+    n, kept = held_to_expiry_kept(execution)
     if n < 2:
         return profile
     fact = {
@@ -606,7 +676,7 @@ def compose_novel(book, trades_df):
             "since": first_day.strftime("%B %Y") if first_day else "",
         },
         "profile": _compose_profile(totals, _busiest_day(trades_df)),
-        "eras": _build_eras(trades_df),
+        "eras": _build_eras(trades_df, book),
         "standouts": _build_standouts(book),
         "scoreboard": _build_scoreboard(book),
         "open_stories": open_stories,
@@ -696,6 +766,8 @@ def trader_story():
             # with a known expiry outcome), so young accounts see the
             # profile without half-baked grades.
             context["novel"]["execution"] = summarize_execution(execution_df)
+            align_kept_at_expiry(
+                context["novel"], context["novel"]["execution"])
             tz_name = None
             try:
                 from app.models import get_user_profile
