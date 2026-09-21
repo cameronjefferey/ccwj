@@ -126,6 +126,29 @@ def _prep(df):
     return out
 
 
+def held_to_expiry_kept(df):
+    """Short contracts carried to a worthless expiry.
+
+    ``(count, dollars_kept)`` from warehouse ``realized_pnl`` (net cash).
+    The profile "Kept at expiry" fact and the execution-review
+    "Held to expiry" finding both read this so the same contracts cannot
+    show two dollar amounts (fill cash vs net cash differed by fees).
+    """
+    df = _prep(df)
+    if df.empty or "close_type" not in df.columns or "realized_pnl" not in df.columns:
+        return 0, 0.0
+    if "direction" not in df.columns:
+        return 0, 0.0
+    expired = df[
+        df["close_type"].isin(["Expired", "ExpiredOTM"])
+        & (df["direction"] == "Sold")
+        & (df["realized_pnl"] > 0)
+    ]
+    if expired.empty:
+        return 0, 0.0
+    return int(len(expired)), float(expired["realized_pnl"].sum())
+
+
 def _contract_label(row):
     """"$200 call (exp Jun 18 '26)" — display handle for one contract."""
     try:
@@ -245,18 +268,16 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         })
 
     # 4. Expiry discipline (no counterfactual needed — it happened).
-    if "close_type" in df.columns:
-        expired = df[df["close_type"].isin(["Expired", "ExpiredOTM"])
-                     & (df["direction"] == "Sold") & (df["realized_pnl"] > 0)]
-        if len(expired) >= 2:
-            kept = float(expired["realized_pnl"].sum())
-            findings.append({
-                "label": "Held to expiry",
-                "value": f"{_money(kept)} kept",
-                "tone": "pos",
-                "detail": (f"{len(expired)} short contracts carried all the "
-                           f"way to worthless expiry."),
-            })
+    # Same ledger as the profile "Kept at expiry" fact (held_to_expiry_kept).
+    n_expired, kept = held_to_expiry_kept(df)
+    if n_expired >= 2:
+        findings.append({
+            "label": "Held to expiry",
+            "value": f"{_money(kept)} kept",
+            "tone": "pos",
+            "detail": (f"{n_expired} short contracts carried all the "
+                       f"way to worthless expiry."),
+        })
 
     # 5. Rolling self-comparison — the mirror compares you to you, and
     #    this is the number that moves week to week. Per-contract average

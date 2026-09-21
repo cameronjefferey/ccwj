@@ -99,6 +99,75 @@ def _account_label_filter(account_name, tenant_id=None):
 app.add_template_filter(_account_label_filter, name="account_label")
 
 
+def _account_mask_filter(raw):
+    from app.linked_accounts import format_account_mask
+    return format_account_mask(raw)
+
+
+app.add_template_filter(_account_mask_filter, name="account_mask")
+
+
+def friendly_timestamp(value, tz_name=None):
+    """Render a database timestamp as a short local time.
+
+    ``2026-09-20 22:36:46.361388+00:00`` becomes
+    ``Sep 20, 2026, 6:36 PM EDT`` in America/New_York, otherwise a UTC
+    clock time.
+    Unparseable values pass through so a bad cell does not blank the row.
+    """
+    from datetime import datetime, timezone
+
+    if value is None or value == "":
+        return ""
+    dt = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ""
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text
+    if not isinstance(dt, datetime):
+        return value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    zone_label = "UTC"
+    shown = dt.astimezone(timezone.utc)
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+            shown = dt.astimezone(ZoneInfo(tz_name))
+            zone_label = shown.tzname() or tz_name
+        except Exception:
+            shown = dt.astimezone(timezone.utc)
+            zone_label = "UTC"
+    hour = shown.strftime("%I").lstrip("0") or "12"
+    return f"{shown.strftime('%b')} {shown.day}, {shown.year}, {hour}:{shown.strftime('%M %p')} {zone_label}"
+
+
+def _friendly_time_filter(value):
+    tz_name = None
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            cached = getattr(g, "_viewer_tz_name", "__unset__")
+            if cached == "__unset__":
+                from flask_login import current_user
+                cached = None
+                if current_user.is_authenticated:
+                    from app.models import get_user_profile
+                    cached = (get_user_profile(current_user.id) or {}).get("timezone")
+                g._viewer_tz_name = cached
+            tz_name = cached
+    except Exception:
+        tz_name = None
+    return friendly_timestamp(value, tz_name)
+
+
+app.add_template_filter(_friendly_time_filter, name="friendly_time")
+
+
 from app.utils import earnings_follower_url as _earnings_follower_url
 
 app.add_template_global(_earnings_follower_url, name="earnings_follower_url")

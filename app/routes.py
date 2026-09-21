@@ -21,7 +21,7 @@ SQL and/or _filter_df_by_tenant_ids on the frame — see
 .cursor/rules/bigquery-tenant-isolation.mdc.
 """
 
-from flask import request, redirect, url_for, flash
+from flask import g, request, redirect, url_for, flash
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_login import current_user
 from app import app
@@ -593,6 +593,87 @@ def scoped_url(endpoint, **values):
 app.add_template_global(scoped_url)
 
 
+_PERF_RANGE_TO_VALUE = {
+    "1M": "30",
+    "3M": "90",
+    "6M": "180",
+    "1Y": "365",
+    "ALL": "all",
+    "YTD": "ytd",
+}
+_VALUE_RANGE_TO_PERF = {v: k for k, v in _PERF_RANGE_TO_VALUE.items()}
+
+
+def accounts_view_range(target_view, current=None):
+    """Map a Performance range token onto Value, and the other way around.
+
+    The two views grew different query keys (``6M`` vs ``180``). The view
+    toggle has to carry the same window or a 6-month Performance page
+    opens Value on the 180-day default by accident — and ``1M`` falls
+    through to that same default.
+    """
+    if current is None:
+        try:
+            current = request.args.get("range") or ""
+        except Exception:
+            current = ""
+    raw = str(current or "").strip()
+    key = raw.upper()
+    low = raw.lower()
+    if str(target_view or "").lower() == "value":
+        if key in _PERF_RANGE_TO_VALUE:
+            return _PERF_RANGE_TO_VALUE[key]
+        if low in _VALUE_RANGE_TO_PERF or low in (
+            "30", "90", "180", "365", "all", "ytd",
+        ):
+            return low
+        return "180"
+    if low in _VALUE_RANGE_TO_PERF:
+        return _VALUE_RANGE_TO_PERF[low]
+    if key in _PERF_RANGE_TO_VALUE:
+        return key
+    return "ALL"
+
+
+app.add_template_global(accounts_view_range)
+
+
+_UNKNOWN_SCOPE_FLASH = (
+    "That account isn't on your profile. "
+    "Nothing is shown until you pick an account you own."
+)
+
+
+def _unknown_scope_result():
+    """Fail closed on an explicit tenant the user does not own.
+
+    Showing every account made a bad ``?tenant=`` look like "All". Flash
+    once per request — pages resolve scope more than once.
+    """
+    try:
+        if not getattr(g, "_ht_unknown_scope_flashed", False):
+            flash(_UNKNOWN_SCOPE_FLASH, "warning")
+            g._ht_unknown_scope_flashed = True
+    except Exception:
+        pass
+    return []
+
+
+def _tenant_ids_for_queries(display_ids):
+    """SQL scope that does not change when the URL filters one account.
+
+    Non-admin reads always use the full owned set so ``/accounts`` and
+    ``/accounts?tenants=<one>`` share one warehouse cache entry. The page
+    slices to ``display_ids`` in pandas. A filtered URL must not serve an
+    older mart generation than the unfiltered URL. Admins keep the display
+    scope in SQL — an unscoped admin read is the whole warehouse.
+    """
+    owned = _user_tenant_list()
+    if owned is None:
+        return display_ids
+    return list(owned)
+
+
 def _scope_filter_options(
     account_groups,
     selected_group_ids,
@@ -709,16 +790,18 @@ def _tenants_for_scope(selected_account=None):
       2. ``?tenants=<tid>,<tid>`` — multi-account on/off toggle set (the
          Position Detail account toggles). A SUBSET of the user's owned
          tenants; validated the same way as ``?tenant=`` so a URL can
-         never widen tenancy. Any tenant not owned is dropped; if none of
-         the requested ids are owned we fall through to safe defaults.
+         never widen tenancy. Any tenant not owned is dropped. If every
+         requested id is unowned, the scope is empty (and the page says
+         so) — it does not silently become "all accounts".
       3. ``?account=<label>`` (legacy alias) — matches a base label OR a
          disambiguated label (e.g. "Schwab Account (\u2022\u20226342)").
          A bare colliding base label still selects all matching tenants
-         for backward compatibility.
+         for backward compatibility. An unknown label still falls back
+         to all owned accounts.
       4. No selection → admin: ``None`` (no SQL filter); user: all owned.
 
-    Unknown selections fall back to all of the user's tenants (same safe
-    default as the v2 design doc).
+    An explicit ``?tenant=`` / ``?tenants=`` that matches nothing the
+    user owns is empty, not the full book.
 
     ``?groups=<id>,<id>`` is an additive label filter (union of members)
     applied after the account/tenant resolution above. Unknown group ids
@@ -746,7 +829,7 @@ def _tenants_for_scope(selected_account=None):
         ]
         if requested_tenant in owned:
             return _apply_group_scope([requested_tenant], uid)
-        # Not owned → ignore the param and fall through to safe defaults.
+        return _unknown_scope_result()
 
     # 1b. Multi-tenant addressing (?tenants=) — account on/off toggles
     #     and the account-filter multi-select. Encodes "show these
@@ -763,7 +846,7 @@ def _tenants_for_scope(selected_account=None):
         allowed = [t for t in requested if t in owned]
         if allowed:
             return _apply_group_scope(list(dict.fromkeys(allowed)), uid)
-        # None owned → ignore the param and fall through to safe defaults.
+        return _unknown_scope_result()
 
     if admin and not selected:
         return _apply_group_scope(None, uid)

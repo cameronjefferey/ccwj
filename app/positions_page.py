@@ -636,6 +636,7 @@ def positions():
         # rather than the generic "no accounts linked" copy.
         ctx["user_accounts"] = user_accounts or []
         ctx["view_accounts"] = user_accounts or []
+        ctx["title"] = "Positions"
         return render_template("positions.html", **ctx)
 
     # ------------------------------------------------------------------
@@ -909,6 +910,7 @@ def positions():
 
     return render_template(
         "positions.html",
+        title="Positions",
         rows=rows,
         symbol_rows=symbol_rows,
         kpis=kpis,

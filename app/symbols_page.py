@@ -92,15 +92,47 @@ def api_nav_symbols():
     palette costs ~nothing after the first open."""
     tenant_ids = _tenants_for_scope(request.args.get("account", ""))
     tenant_filter = _tenant_sql_and(tenant_ids)
+    accounts = _nav_account_entries()
     try:
         client = get_bigquery_client()
         df = cached_query_df(client, NAV_SYMBOLS_QUERY.format(tenant_filter=tenant_filter))
     except Exception as exc:
         app.logger.warning("nav symbols query failed: %s", exc)
-        return jsonify({"symbols": []})
+        return jsonify({"symbols": [], "accounts": accounts})
     out = []
     for _, r in df.iterrows():
         sym = str(r.get("symbol") or "").strip()
         if sym:
             out.append({"s": sym, "open": bool(int(r.get("has_open") or 0))})
-    return jsonify({"symbols": out})
+    return jsonify({"symbols": out, "accounts": accounts})
+
+
+def _nav_account_entries():
+    """Nicknames for Cmd+K. One row per live SnapTrade account."""
+    from urllib.parse import quote
+
+    try:
+        from app.linked_accounts import profile_account_rows
+        from app.models import get_broker_tenants_for_user, get_snaptrade_accounts, is_admin
+        from app.routes import _disambiguated_tenant_labels
+        from flask_login import current_user
+
+        if is_admin(current_user.username):
+            return []
+        tenant_rows = get_broker_tenants_for_user(current_user.id) or []
+        labels = _disambiguated_tenant_labels(tenant_rows)
+        snap = get_snaptrade_accounts(current_user.id) or []
+        entries = profile_account_rows(snap, tenant_rows, labels)
+    except Exception as exc:
+        app.logger.warning("nav account nicknames failed: %s", exc)
+        return []
+    out = []
+    for entry in entries:
+        label = str(entry.get("label") or "").strip()
+        tid = str(entry.get("tenant_id") or "").strip()
+        if label and tid:
+            out.append({
+                "s": label,
+                "href": "/accounts?tenant=" + quote(tid, safe=":"),
+            })
+    return out

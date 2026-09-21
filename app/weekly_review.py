@@ -153,13 +153,25 @@ WITH prices AS (
       AND date >= @ytd_start
       AND close_price IS NOT NULL AND close_price > 0
 ),
-week_bounds AS (
+week_prior AS (
+    -- Last close BEFORE the window. MIN(close) inside the window is the
+    -- same print as the latest close when the window is a single Monday
+    -- session, which renders SPY +0.0% on a page whose 1-week column is
+    -- the trailing seven days.
     SELECT symbol,
-           MIN(CASE WHEN date >= @week_start THEN close_price END) AS week_open,
-           MAX(CASE WHEN date >= @week_start THEN date END) AS week_last_date
+           ARRAY_AGG(close_price ORDER BY date DESC LIMIT 1)[SAFE_OFFSET(0)] AS prior_close
     FROM prices
-    WHERE date >= @week_start
+    WHERE date < @week_start
     GROUP BY symbol
+),
+week_bounds AS (
+    SELECT p.symbol,
+           COALESCE(wp.prior_close, MIN(p.close_price)) AS week_open,
+           MAX(p.date) AS week_last_date
+    FROM prices p
+    LEFT JOIN week_prior wp USING (symbol)
+    WHERE p.date >= @week_start
+    GROUP BY p.symbol, wp.prior_close
 ),
 ytd_bounds AS (
     SELECT symbol,

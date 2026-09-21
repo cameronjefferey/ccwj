@@ -41,7 +41,7 @@ from app.llm_access import user_can_use_paid_llm
 
 COACHING_SIGNALS_QUERY = """
 SELECT
-    account, strategy,
+    account, tenant_id, strategy,
     total_closed, reliable_contracts, pct_contracts_reliable,
     avg_giveback_pct, avg_pnl_given_back, avg_days_held_past_peak,
     optimal_exit_rate, avg_pct_premium_captured, avg_actual_pnl,
@@ -433,6 +433,45 @@ def _strip_md_for_brief(s: str) -> str:
     return s.replace("**", "").replace("*", "")
 
 
+def strategy_display_label(name, account, tenant_id, name_counts, tenant_labels=None):
+    """Keep a duplicated strategy name attached to its account.
+
+    ``mart_coaching_signals`` is one row per (account, strategy). Two
+    Covered Call books (different giveback) must not render as the same
+    label. Unique names stay bare.
+    """
+    label_name = (name or "").strip()
+    if not label_name:
+        return ""
+    if (name_counts or {}).get(label_name, 0) <= 1:
+        return label_name
+    account_label = ""
+    if tenant_labels and tenant_id:
+        account_label = (
+            tenant_labels.get(tenant_id)
+            or tenant_labels.get(str(tenant_id))
+            or ""
+        )
+    account_label = (account_label or account or "").strip()
+    if account_label:
+        return f"{label_name} · {account_label}"
+    return label_name
+
+
+def _coaching_tenant_labels():
+    """Nickname map for the signed-in user. Empty when there is no request."""
+    try:
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return {}
+        from app.models import get_broker_tenants_for_user
+        from app.routes import _disambiguated_tenant_labels
+        rows = get_broker_tenants_for_user(current_user.id) or []
+        return _disambiguated_tenant_labels(rows)
+    except Exception:
+        return {}
+
+
 # ------------------------------------------------------------------
 # Coaching brief builder — the core differentiator
 # ------------------------------------------------------------------
@@ -489,7 +528,8 @@ def _build_coaching_brief(client, tenant_ids):
 
     # 1. Coaching signals per strategy
     try:
-        signals_df = batch.get("coach_signals", pd.DataFrame())
+        signals_df = _filter_df_by_tenant_ids(
+            batch.get("coach_signals", pd.DataFrame()), tenant_ids)
         if not signals_df.empty:
             coaching_data["has_data"] = True
             for col in ["avg_giveback_pct", "avg_pnl_given_back", "avg_days_held_past_peak",
@@ -528,6 +568,8 @@ def _build_coaching_brief(client, tenant_ids):
                     if int(r.get("reliable_contracts", 0)) >= 3:
                         strat_rows.append({
                             "strategy": r["strategy"],
+                            "account": r.get("account") or "",
+                            "tenant_id": r.get("tenant_id") or "",
                             "giveback_pct": float(r["avg_giveback_pct"]),
                             "days_past_peak": float(r["avg_days_held_past_peak"]),
                             "pnl_given_back": float(r["total_pnl_given_back"]),
@@ -538,10 +580,21 @@ def _build_coaching_brief(client, tenant_ids):
                         })
                         coaching_data["signals"].append(strat_rows[-1])
 
+                from collections import Counter
+                tenant_labels = _coaching_tenant_labels()
+                name_counts = Counter(
+                    str(s.get("strategy") or "") for s in strat_rows
+                )
+                for s in strat_rows:
+                    s["strategy_label"] = strategy_display_label(
+                        s.get("strategy"), s.get("account"), s.get("tenant_id"),
+                        name_counts, tenant_labels,
+                    )
+
                 strat_rows.sort(key=lambda x: x["giveback_pct"], reverse=True)
                 for s in strat_rows[:3]:
                     exit_lines.append(
-                        f"  - {s['strategy']}: {s['giveback_pct']:.0f}% giveback, "
+                        f"  - {s['strategy_label']}: {s['giveback_pct']:.0f}% giveback, "
                         f"{s['days_past_peak']:.0f} days past peak, "
                         f"${s['pnl_given_back']:,.0f} left on table "
                         f"({s['trades']} reliable trades)."
@@ -552,10 +605,18 @@ def _build_coaching_brief(client, tenant_ids):
 
             # DTE sweet spots
             dte_lines = []
+            from collections import Counter as _Counter
+            _dte_counts = _Counter(
+                str(r.get("strategy") or "") for _, r in signals_df.iterrows()
+            )
+            _dte_labels = _coaching_tenant_labels()
             for _, r in signals_df.iterrows():
                 best_b = r.get("best_dte_bucket")
                 worst_b = r.get("worst_dte_bucket")
-                strat = r.get("strategy", "")
+                strat = strategy_display_label(
+                    r.get("strategy", ""), r.get("account"), r.get("tenant_id"),
+                    _dte_counts, _dte_labels,
+                )
                 if best_b and worst_b and best_b != worst_b:
                     bwr = float(r.get("best_dte_win_rate", 0))
                     wwr = float(r.get("worst_dte_win_rate", 0))
@@ -945,36 +1006,52 @@ def _ask_brief(coaching_text, portfolio_text, weekly_text,
     return "\n\n".join(parts) if parts else None
 
 
+def _inline_md(text):
+    """Escape, then allow ``**bold**`` only."""
+    escaped = str(markupsafe.escape(text))
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+
+
+def _heading_parts(stripped):
+    """``(level, text)`` for a markdown ATX heading, or ``(None, None)``."""
+    for level, prefix in ((3, "### "), (2, "## "), (1, "# ")):
+        if stripped.startswith(prefix):
+            return level, stripped[len(prefix):]
+    return None, None
+
+
 def _md_to_html(md_text):
-    """Simple markdown-to-HTML for Gemini output."""
-    lines = md_text.split("\n")
+    """Simple markdown-to-HTML for model output.
+
+    ``#``, ``##``, and ``###`` all become headings (longest prefix first).
+    List items are escaped the same way paragraphs are.
+    """
+    lines = (md_text or "").split("\n")
     html_lines = []
     in_list = False
 
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("## "):
+        level, heading = _heading_parts(stripped)
+        if level:
             if in_list:
                 html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f"<h2>{markupsafe.escape(stripped[3:])}</h2>")
+            tag = "h3" if level >= 3 else "h2" if level == 2 else "h2"
+            html_lines.append(f"<{tag}>{markupsafe.escape(heading)}</{tag}>")
             continue
         if stripped.startswith("- ") or stripped.startswith("* "):
             if not in_list:
                 html_lines.append("<ul>")
                 in_list = True
-            item = stripped[2:]
-            item = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', item)
-            html_lines.append(f"<li>{item}</li>")
+            html_lines.append(f"<li>{_inline_md(stripped[2:])}</li>")
             continue
         if in_list:
             html_lines.append("</ul>")
             in_list = False
         if not stripped:
             continue
-        text = markupsafe.escape(stripped)
-        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', str(text))
-        html_lines.append(f"<p>{text}</p>")
+        html_lines.append(f"<p>{_inline_md(stripped)}</p>")
 
     if in_list:
         html_lines.append("</ul>")

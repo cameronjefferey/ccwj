@@ -44,9 +44,9 @@
    the "Value & composition" view). #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Accounts view">
     <a class="btn btn-primary" aria-current="page"
-       href="{{ scoped_url('accounts') }}">Performance</a>
+       href="{{ scoped_url('accounts', range=selected_range or 'ALL') }}">Performance</a>
     <a class="btn btn-outline-secondary"
-       href="{{ scoped_url('accounts', view='value') }}">Value &amp; composition</a>
+       href="{{ scoped_url('accounts', view='value', range=accounts_view_range('value', selected_range or 'ALL')) }}">Value &amp; composition</a>
 </div>
 
 {% if kpis and (selected_range or 'ALL') == 'ALL' %}
@@ -102,7 +102,8 @@
           style="{{ '' if (selected_range or 'ALL') != 'ALL' else 'display:none;' }}">
         Realized, dividends and the charts reflect this window. Breakdown tables
         show lifetime results for positions active in the window.
-        Account value, cash, invested &amp; current unrealized are always &ldquo;as of now.&rdquo;
+        Account value, cash, and invested match Value &amp; composition
+        (last settled close). Unrealized is the open book and does not follow this time frame.
     </span>
 </div>
 {% endif %}
@@ -115,7 +116,7 @@
    "Lifetime" / "This period" so the row itself announces that it moved,
    not just the individual card labels. ── #}
 {% if kpis %}
-<div class="text-muted small fw-semibold mb-2">As of now</div>
+<div class="text-muted small fw-semibold mb-2">{{ kpis.as_of_label or 'As of now' }}</div>
 <div class="row g-3 mb-3">
     <div class="col">
         <div class="card kpi-card p-3 text-center">
@@ -497,6 +498,13 @@
         return out;
     }
 
+    function shortAxisDate(label) {
+        var text = String(label || "");
+        var d = new Date(text.length === 10 ? text + "T00:00:00" : text);
+        if (isNaN(d.getTime())) return text;
+        return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
     function money(v) {
         return (v < 0 ? '-' : '+') + '$' +
             Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -520,7 +528,7 @@
                 var cls = net >= 0 ? 'text-positive' : 'text-negative';
                 readout.innerHTML = 'P&amp;L ' + RANGE_LABELS[key] + ': ' +
                     '<strong class="' + cls + '">' + money(net) + '</strong>' +
-                    (rebase ? ' <span class="text-muted">(re-based to $0 on ' + summaryData.dates[sIdx] + ')</span>' : '');
+                    (rebase ? ' <span class="text-muted">(re-based to $0 on ' + shortAxisDate(summaryData.dates[sIdx]) + ')</span>' : '');
             }
         }
 
@@ -775,7 +783,7 @@
                     tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
                 },
                 scales: {
-                    x: { ticks: { maxTicksLimit: 14, maxRotation: 45 }, grid: { display: false } },
+                    x: { ticks: { maxTicksLimit: 14, maxRotation: 45, callback: function (v) { return shortAxisDate(this.getLabelForValue(v)); } }, grid: { display: false } },
                     y: {
                         ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
                         grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }
@@ -809,7 +817,7 @@
                     tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
                 },
                 scales: {
-                    x: { ticks: { maxTicksLimit: 14, maxRotation: 45 }, grid: { display: false } },
+                    x: { ticks: { maxTicksLimit: 14, maxRotation: 45, callback: function (v) { return shortAxisDate(this.getLabelForValue(v)); } }, grid: { display: false } },
                     y: {
                         ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
                         grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }

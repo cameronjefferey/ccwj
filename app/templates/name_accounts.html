@@ -62,8 +62,9 @@
                 <div class="na-row">
                     <div class="na-who">
                         <div class="name">{{ c.account_name }}</div>
-                        {% if c.account_number_masked %}
-                        <div class="meta">••••{{ c.account_number_masked[-4:] }}</div>
+                        {% set mask = c.account_number_masked | account_mask %}
+                        {% if mask %}
+                        <div class="meta">{{ mask }}</div>
                         {% elif c.broker_slug %}
                         <div class="meta">{{ c.broker_slug|title }}</div>
                         {% endif %}

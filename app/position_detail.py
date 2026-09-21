@@ -1275,6 +1275,146 @@ def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
     return queries
 
 
+def unique_open_strategy_names(strategy_rows):
+    """Open strategy labels, one each.
+
+    Strategy rows are per account. Four accounts in Buy and Hold used to
+    read "Buy and Hold, Buy and Hold, Buy and Hold, Buy and Hold".
+    """
+    names = []
+    seen = set()
+    for row in strategy_rows or []:
+        if str((row or {}).get("status") or "") != "Open":
+            continue
+        name = str(row.get("strategy") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def attach_open_leg_dates(current_positions, sessions_list):
+    """Fill Opened / Days on open position-leg rows from the session.
+
+    ``int_enriched_current`` has no open date. The matching open session
+    in ``int_position_legs`` already carries ``open_date`` and ``days_held``.
+    Closed stays blank — the position is still open.
+    """
+    sessions = list(sessions_list or [])
+    for p in current_positions or []:
+        tid = str(p.get("tenant_id") or "")
+        leg = p.get("leg_num")
+        candidates = []
+        for s in sessions:
+            if leg is not None and s.get("display_leg") != leg:
+                continue
+            s_tid = str(s.get("tenant_id") or "")
+            if tid and s_tid and s_tid != tid:
+                continue
+            candidates.append(s)
+        opens = [
+            s for s in candidates
+            if str(s.get("status") or "").strip().lower() == "open"
+        ]
+        sess = opens[-1] if opens else (candidates[-1] if candidates else None)
+        if not sess:
+            p["open_date"] = ""
+            p["close_date"] = ""
+            p["days_held"] = None
+            continue
+        od = str(sess.get("open_date") or "")[:10]
+        p["open_date"] = od
+        status = str(sess.get("status") or "").strip().lower()
+        if status == "open":
+            p["close_date"] = ""
+        else:
+            p["close_date"] = str(sess.get("last_trade_date") or "")[:10]
+        try:
+            p["days_held"] = int(sess.get("days_held"))
+        except (TypeError, ValueError):
+            p["days_held"] = None
+    return current_positions
+
+
+def collapse_raw_trade_log(trades):
+    """Drop display-duplicate rows in the raw transaction log.
+
+    Two kinds show up on the same day for one coupon:
+
+    * an identical DRIP buy written twice (same tenant, date, qty, amount)
+    * an ``other`` cash line (qty ~ 0) beside a ``dividend`` of the same
+      dollars — an unmapped broker label for the coupon that is already
+      on the dividend row
+
+    Distinct fills (different qty, amount, or description) stay.
+    """
+    if not trades:
+        return []
+
+    def _num(v, default=0.0):
+        try:
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return default
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+
+    def _date(v):
+        return str(v or "")[:10]
+
+    def _action(row):
+        if row.get("is_dividend_reinvestment"):
+            return "dividend_reinvest"
+        return str(row.get("action") or "").strip().lower()
+
+    kept = []
+    seen = set()
+    for row in trades:
+        qty = _num(row.get("quantity"))
+        amt = round(_num(row.get("amount")), 2)
+        key = (
+            str(row.get("tenant_id") or ""),
+            _date(row.get("trade_date")),
+            _action(row),
+            str(row.get("symbol") or row.get("trade_symbol") or "").strip().upper(),
+            round(qty, 4),
+            amt,
+            " ".join(str(row.get("description") or "").split()).lower(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(row)
+
+    dividend_amounts = set()
+    for row in kept:
+        if _action(row) != "dividend":
+            continue
+        dividend_amounts.add((
+            str(row.get("tenant_id") or ""),
+            _date(row.get("trade_date")),
+            str(row.get("symbol") or "").strip().upper(),
+            round(_num(row.get("amount")), 2),
+        ))
+    if not dividend_amounts:
+        return kept
+
+    out = []
+    for row in kept:
+        if _action(row) == "other" and abs(_num(row.get("quantity"))) < 1e-6:
+            sig = (
+                str(row.get("tenant_id") or ""),
+                _date(row.get("trade_date")),
+                str(row.get("symbol") or "").strip().upper(),
+                round(_num(row.get("amount")), 2),
+            )
+            if sig in dividend_amounts:
+                continue
+        out.append(row)
+    return out
+
+
 @app.route("/position/<symbol>")
 @login_required
 @skeleton_page
@@ -1343,6 +1483,7 @@ def position_detail(symbol):
     except Exception as exc:
         return render_template(
             "position_detail.html",
+            title=f"{symbol} — Position",
             symbol=symbol,
             error=str(exc),
             first_visit=False,
@@ -2227,6 +2368,7 @@ def position_detail(symbol):
             (_tenant_labels.get(_tid) if _tid else None)
             or _norm_account_label(_t.get("account"))
         )
+    trades = collapse_raw_trade_log(trades)
 
     # Current positions
     current_positions = current_df.to_dict(orient="records") if not current_df.empty else []
@@ -2410,9 +2552,21 @@ def position_detail(symbol):
             o["equity_partial_ix"] = i
             o["equity_partial_n"] = n
     for p in current_positions:
-        # Open positions belong to the latest open session
-        open_sessions = [s for s in sessions_list if str(s.get("status", "")).strip().lower() == "open"]
+        # Open positions belong to the latest open session for this tenant
+        # when one exists; otherwise the latest open session on the symbol.
+        tid = str(p.get("tenant_id") or "")
+        open_sessions = [
+            s for s in sessions_list
+            if str(s.get("status", "")).strip().lower() == "open"
+            and (not tid or not str(s.get("tenant_id") or "") or str(s.get("tenant_id")) == tid)
+        ]
+        if not open_sessions:
+            open_sessions = [
+                s for s in sessions_list
+                if str(s.get("status", "")).strip().lower() == "open"
+            ]
         p["leg_num"] = open_sessions[-1]["display_leg"] if open_sessions else (sessions_list[-1]["display_leg"] if sessions_list else None)
+    attach_open_leg_dates(current_positions, sessions_list)
 
     # ── Option matrices (DTE × Strike Distance heatmap) ──
     # (tenant scope already narrowed matrix_df to the selected account's tenant)
@@ -2682,9 +2836,12 @@ def position_detail(symbol):
     if _stats is not None:
         _stats.add_step("compute", (time.perf_counter() - _compute_t0) * 1000.0)
     _render_t0 = time.perf_counter()
+    open_strategy_names = unique_open_strategy_names(strategy_rows)
     resp = make_response(render_template(
         "position_detail.html",
+        title=f"{symbol} — Position",
         symbol=symbol,
+        open_strategy_names=open_strategy_names,
         kpis=kpis,
         overall_status=overall_status,
         strategy_rows=strategy_rows,

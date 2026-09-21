@@ -132,6 +132,20 @@
         border-bottom: 2px solid #e9ecef;
     }
     .insights-content h2:first-child { margin-top: 0; }
+    /* Ask replies sit in a 320px scroller. Page-sized h2s overflow it. */
+    #coachThread h2,
+    #coachThread h3 {
+        font-size: 1.05rem;
+        font-weight: 700;
+        line-height: 1.35;
+        margin: .85rem 0 .35rem;
+        padding-bottom: 0;
+        border-bottom: 0;
+    }
+    #coachThread h2:first-child,
+    #coachThread h3:first-child { margin-top: 0; }
+    #coachThread p { margin-bottom: .45rem; }
+    #coachThread ul { margin-bottom: .45rem; padding-left: 1.15rem; }
     .insights-content ul { padding-left: 1.25rem; }
     .insights-content li { margin-bottom: .4rem; line-height: 1.6; }
     .insights-content strong { color: #1a1a2e; }
@@ -246,7 +260,7 @@
             {% for s in coaching.signals %}
             <div class="strat-row">
                 <div>
-                    <div class="strat-name">{{ s.strategy }}</div>
+                    <div class="strat-name">{{ s.strategy_label or s.strategy }}</div>
                     <div class="strat-stats">
                         {{ s.trades }} of {{ s.total_closed }} trades with data &middot;
                         {{ "{:.0f}".format(s.days_past_peak) }}d past peak

@@ -106,6 +106,7 @@
 
   var overlay = null, input = null, list = null;
   var symbols = null; // [{s, open}]
+  var accounts = null; // [{s, href}]
   var results = [];
   var selected = 0;
 
@@ -114,7 +115,7 @@
     overlay.id = "ht-palette";
     overlay.innerHTML =
       '<div class="ht-palette-box" role="dialog" aria-label="Quick switcher">' +
-      '  <input type="text" class="ht-palette-input" placeholder="Jump to a symbol or page…" ' +
+      '  <input type="text" class="ht-palette-input" placeholder="Jump to a symbol, account, or page…" ' +
       '         aria-label="Search" autocomplete="off" spellcheck="false">' +
       '  <div class="ht-palette-list" role="listbox"></div>' +
       '  <div class="ht-palette-hint">↑↓ navigate · Enter open · Esc close</div>' +
@@ -142,8 +143,12 @@
         var cached = sessionStorage.getItem(SYMBOL_CACHE_KEY);
         if (cached) {
           var parsed = JSON.parse(cached);
-          if (parsed && parsed.ts && Date.now() - parsed.ts < 10 * 60 * 1000) {
-            symbols = parsed.symbols || [];
+          // A payload from before nicknames shipped has no accounts array.
+          // Refetch so Cmd+K can find "Keeley" instead of serving that cache.
+          if (parsed && parsed.ts && Date.now() - parsed.ts < 10 * 60 * 1000
+              && Array.isArray(parsed.symbols) && Array.isArray(parsed.accounts)) {
+            symbols = parsed.symbols;
+            accounts = parsed.accounts;
             return Promise.resolve(symbols);
           }
         }
@@ -153,17 +158,18 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         symbols = (j && j.symbols) || [];
+        accounts = (j && j.accounts) || [];
         if (SYMBOL_CACHE_KEY) {
           try {
             sessionStorage.setItem(
               SYMBOL_CACHE_KEY,
-              JSON.stringify({ ts: Date.now(), symbols: symbols })
+              JSON.stringify({ ts: Date.now(), symbols: symbols, accounts: accounts })
             );
           } catch (err) { /* quota — palette still works this page-load */ }
         }
         return symbols;
       })
-      .catch(function () { symbols = []; return symbols; });
+      .catch(function () { symbols = []; accounts = []; return symbols; });
   }
 
   function score(name, q) {
@@ -192,6 +198,10 @@
         var sc = score(x.s, q);
         if (sc >= 0) scored.push({ sc: sc - (x.open ? 0.5 : 0), item: { s: x.s, href: "/position/" + encodeURIComponent(x.s), kind: x.open ? "open" : "closed" } });
       });
+      (accounts || []).forEach(function (a) {
+        var sc = score(a.s, q);
+        if (sc >= 0) scored.push({ sc: sc + 0.1, item: { s: a.s, href: a.href, kind: "account" } });
+      });
       PAGES.forEach(function (p) {
         var sc = score(p.s, q);
         if (sc >= 0) scored.push({ sc: sc + 0.25, item: p });
@@ -214,7 +224,7 @@
         '<span class="ht-palette-name"></span><span class="ht-palette-kind"></span>';
       row.querySelector(".ht-palette-name").textContent = it.s;
       row.querySelector(".ht-palette-kind").textContent =
-        it.kind === "open" ? "open position" : it.kind === "closed" ? "position" : "page";
+        it.kind === "open" ? "open position" : it.kind === "closed" ? "position" : it.kind === "account" ? "account" : "page";
       row.addEventListener("mouseenter", function () { setSelected(i); });
       row.addEventListener("mousedown", function (e) { e.preventDefault(); setSelected(i); go(); });
       list.appendChild(row);
@@ -241,7 +251,9 @@
     if (!it) return;
     closePalette();
     startProgress();
-    window.location.href = withScope(it.href);
+    // A nickname already names one account. Carrying the current group
+    // filter can drop that account out of the intersection.
+    window.location.href = it.kind === "account" ? it.href : withScope(it.href);
   }
 
   function openPalette() {

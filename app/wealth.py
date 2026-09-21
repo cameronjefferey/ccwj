@@ -178,16 +178,23 @@ def _collapse_wealth_daily_duplicate_grain(df: pd.DataFrame) -> pd.DataFrame:
 def _resolve_range(arg_value, default_days):
     """Parse a ?range=... query arg into (start, end) dates.
 
-    Accepts ``"30"``/``"90"``/``"365"``/``"all"`` plus a sane default.
-    Anything unparseable falls back to ``default_days``. End date is
-    always today so charts include the latest snapshot.
+    Accepts Value tokens (``30``/``90``/``180``/``365``/``all``/``ytd``)
+    and the Performance tokens the view toggle forwards
+    (``1m``/``3m``/``6m``/``1y``). Anything unparseable falls back to
+    ``default_days``. End date is always today so charts include the
+    latest snapshot.
     """
     end = date.today()
     raw = (arg_value or "").strip().lower()
+    aliases = {"1m": 30, "3m": 90, "6m": 180, "1y": 365}
     if raw == "all":
         # Snapshot spines are months-to-a-couple-years, not a lifetime
         # archive. A 10y window is larger than any spine we have.
         return end - timedelta(days=365 * 10), end
+    if raw == "ytd":
+        return date(end.year, 1, 1), end
+    if raw in aliases:
+        return end - timedelta(days=aliases[raw]), end
     if raw.isdigit():
         n = max(1, min(int(raw), 365 * 10))
         return end - timedelta(days=n), end
@@ -236,6 +243,42 @@ def _value_as_of_cutoff(user_today=None, market_session=None):
     # Pin et_today to the same day so tests (and a caller that already
     # knows the viewer's date) don't mix a frozen user_today with wall-clock ET.
     return _snapshot_as_of_date(today, session, et_today=today)
+
+
+def settled_book_value(df, cutoff):
+    """Latest ``mart_wealth_daily`` totals on or before ``cutoff``.
+
+    Performance and Value & composition both read this row so "account
+    value" is the last settled close, not the live broker snapshot.
+    Returns ``None`` when the frame has no ``account_value`` column or
+    no dated rows — the caller keeps the broker-balance fallback.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return None
+    if "account_value" not in getattr(df, "columns", []) or "date" not in df.columns:
+        return None
+    work = _drop_dates_after(df, cutoff)
+    if work is None or work.empty:
+        return None
+    work = work.copy()
+    work["date"] = pd.to_datetime(work["date"], errors="coerce")
+    work = work[work["date"].notna()]
+    if work.empty:
+        return None
+    latest = work["date"].max()
+    day = work[work["date"] == latest]
+    def _sum(col):
+        if col not in day.columns:
+            return 0.0
+        return float(pd.to_numeric(day[col], errors="coerce").fillna(0).sum())
+    as_of = latest.date() if hasattr(latest, "date") else latest
+    return {
+        "account_value": _sum("account_value"),
+        "cash": _sum("cash_value"),
+        "equity": _sum("equity_value"),
+        "options": _sum("option_value"),
+        "as_of": as_of,
+    }
 
 
 def _drop_dates_after(df, cutoff):
@@ -619,20 +662,27 @@ def render_wealth_view():
         if matched is not None:
             selected_account = matched
 
-    tenant_ids = _tenants_for_scope(selected_account or None)
+    display_ids = _tenants_for_scope(selected_account or None)
+    # Same SQL as the unfiltered page. Pandas slices to the URL so a
+    # ?tenants= filter cannot read a different warehouse generation.
+    from app.routes import _tenant_ids_for_queries
+    query_ids = _tenant_ids_for_queries(display_ids)
+    tenant_ids = display_ids
     wealth_no_match = _wealth_no_match(
         selected_raw, user_accounts, tenant_ids, has_tenant_param,
     )
 
-    start_date, end_date = _resolve_range(range_arg, default_days=180)
-    tenant_filter = _tenant_sql_and(tenant_ids)
+    from app.routes import accounts_view_range
+    selected_value_range = accounts_view_range("value", range_arg or "180")
+    start_date, end_date = _resolve_range(selected_value_range, default_days=180)
+    tenant_filter = _tenant_sql_and(query_ids)
 
     picker_accounts = sorted(user_accounts) if user_accounts else []
 
     context = {
         "title": "Accounts — Value & composition",
         "selected_account": selected_account,
-        "selected_range": (range_arg or "180").lower(),
+        "selected_range": selected_value_range,
         "exclude_transfers": exclude_transfers,
         # Linked labels for the picker; admins also get names seen in BQ
         # once the query succeeds.
