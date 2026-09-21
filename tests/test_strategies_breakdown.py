@@ -5,7 +5,13 @@ import math
 import pandas as pd
 import pytest
 
-from app.strategies import _focus_breakdown_rows, _strategy_concentration
+from app.strategies import (
+    _apply_focus_symbol_count,
+    _focus_breakdown_rows,
+    _population_label,
+    _strategy_concentration,
+    _unique_symbols_by_strategy,
+)
 
 
 def test_focus_breakdown_empty_when_no_signals():
@@ -111,6 +117,53 @@ def test_concentration_collapses_duplicate_symbols():
     # QTUM is more than the net book — share can exceed 100%.
     book = 20000 + 19363.88 + 36158 - 5000
     assert qt["share_pct"] == pytest.approx(round(39363.88 / book * 100, 1))
+
+
+def test_population_label_splits_symbols_from_positions():
+    """Audit: Covered Call said 52 symbols on the card and 39 on the detail.
+
+    52 is account × symbol position groups (what /positions counts).
+    39 is unique tickers. They must not share the word "symbols".
+    """
+    assert _population_label(39, 52) == "39 symbols · 52 positions"
+    assert _population_label(53, 65) == "53 symbols · 65 positions"
+    assert _population_label(39, 39) == "39 symbols"
+    assert _population_label(1, 1) == "1 symbol"
+    assert _population_label(1, 2) == "1 symbol · 2 positions"
+    assert _population_label(None, 52) == "52 positions"
+    assert _population_label(None, 1) == "1 position"
+
+
+def test_unique_symbols_collapse_across_accounts():
+    df = pd.DataFrame(
+        [
+            {"strategy": "Covered Call", "symbol": "AAPL", "account": "Ira"},
+            {"strategy": "Covered Call", "symbol": "AAPL", "account": "Sara"},
+            {"strategy": "Covered Call", "symbol": "MSFT", "account": "Ira"},
+            {"strategy": "Long Call", "symbol": "NVDA", "account": "Ira"},
+            {"strategy": "Covered Call", "symbol": "  ", "account": "Ira"},
+        ]
+    )
+    counts = _unique_symbols_by_strategy(df)
+    assert counts["Covered Call"] == 2
+    assert counts["Long Call"] == 1
+    assert _unique_symbols_by_strategy(pd.DataFrame()) is None
+    assert _unique_symbols_by_strategy(pd.DataFrame({"strategy": ["Covered Call"]})) is None
+
+
+def test_focus_symbol_count_rewrites_the_hero_label():
+    focus = {
+        "strategy": "Covered Call",
+        "num_positions": 52,
+        "num_symbols": None,
+        "population_label": "52 positions",
+    }
+    _apply_focus_symbol_count(focus, 39)
+    assert focus["num_symbols"] == 39
+    assert focus["population_label"] == "39 symbols · 52 positions"
+    _apply_focus_symbol_count({}, 3)
+    _apply_focus_symbol_count(focus, None)
+    assert focus["num_symbols"] == 39
 
 
 def test_concentration_empty_and_nan():

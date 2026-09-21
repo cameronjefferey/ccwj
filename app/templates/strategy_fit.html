@@ -166,12 +166,51 @@
     .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
     .visibility-toggles .form-check { font-size: .78rem; color: #475569; }
 
-    .fit-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1rem; margin-bottom: 1rem; overflow: hidden; }
-
-    .fit-table-wrap { overflow-x: auto; }
+    .fit-card {
+        background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05);
+        padding: 1rem; margin-bottom: 1rem;
+        /* The card used to grow with the table (min-content width) and then
+           overflow:hidden clipped Healthcare / the strategy total with no
+           scrollbar in view. Keep the card at the viewport and scroll inside. */
+        max-width: 100%;
+        min-width: 0;
+        overflow: hidden;
+    }
+    .fit-scroll-hint {
+        display: flex; align-items: center; gap: .4rem;
+        font-size: .75rem; color: #334155; font-weight: 600;
+        margin: -.25rem 0 .55rem;
+    }
+    .fit-scroll-hint[hidden] { display: none !important; }
+    .fit-scroll-hint .chev {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.35rem; height: 1.35rem; border-radius: 999px;
+        background: #0f172a; color: #fff; font-size: .8rem; line-height: 1;
+    }
+    .fit-table-wrap {
+        overflow: auto;
+        max-width: 100%;
+        max-height: 72vh;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        scrollbar-gutter: stable;
+        scrollbar-width: auto;
+        scrollbar-color: #475569 #e2e8f0;
+    }
+    .fit-table-wrap::-webkit-scrollbar { height: 12px; width: 12px; }
+    .fit-table-wrap::-webkit-scrollbar-thumb {
+        background: #475569; border-radius: 8px; border: 2px solid #e2e8f0;
+    }
+    .fit-table-wrap::-webkit-scrollbar-track { background: #e2e8f0; }
     table.fit {
-        width: 100%; border-collapse: separate; border-spacing: 3px;
+        width: max-content;
+        min-width: 100%;
+        border-collapse: separate;
+        border-spacing: 3px;
         font-size: .82rem;
+    }
+    @media (max-width: 720px) {
+        .fit-table-wrap { max-height: 62vh; }
     }
     table.fit th, table.fit td { padding: .5rem .55rem; vertical-align: top; }
     table.fit thead th {
@@ -181,9 +220,17 @@
         border-radius: 6px;
         text-align: center;
         white-space: nowrap;
-        position: sticky; top: 0; z-index: 1;
+        position: sticky; top: 0; z-index: 3;
     }
-    table.fit thead th.row-head { text-align: left; background: transparent; }
+    table.fit thead th.row-head {
+        text-align: left; background: #fff;
+        position: sticky; left: 0; z-index: 4;
+        box-shadow: 2px 0 0 #e2e8f0;
+    }
+    table.fit thead th.totals {
+        position: sticky; right: 0; z-index: 4;
+        box-shadow: -2px 0 0 #0f172a;
+    }
     table.fit thead th a { color: inherit; text-decoration: none; display: block; }
     table.fit thead th a:hover { color: #2563eb; }
     table.fit thead th .col-pnl {
@@ -201,6 +248,13 @@
     table.fit tbody th.strategy {
         text-align: left; background: #fafafa; border-radius: 6px;
         white-space: nowrap; font-weight: 700; color: #0f172a; min-width: 140px;
+        position: sticky; left: 0; z-index: 2;
+        box-shadow: 2px 0 0 #e7e5e4;
+    }
+    table.fit tbody tr:not(.totals-row) > td.total-cell,
+    table.fit tr.totals-row > td.total-cell.grand {
+        position: sticky; right: 0; z-index: 2;
+        box-shadow: -2px 0 0 rgba(15, 23, 42, .35);
     }
     table.fit tbody th.strategy .row-meta {
         display: block; font-size: .65rem; color: #64748b; font-weight: 500; margin-top: .1rem;
@@ -210,6 +264,10 @@
         text-align: right; border-radius: 6px;
         font-variant-numeric: tabular-nums; min-width: 90px;
         cursor: default; transition: transform .08s ease, opacity .12s ease;
+    }
+    @media (max-width: 720px) {
+        table.fit td.cell { min-width: 72px; }
+        table.fit tbody th.strategy { min-width: 108px; }
     }
     table.fit td.cell.has-data { cursor: pointer; }
     table.fit td.cell.has-data:hover { transform: scale(1.03); box-shadow: 0 3px 8px rgba(0,0,0,.1); z-index: 1; position: relative; }
@@ -272,6 +330,13 @@
         font-size: .72rem; color: #64748b; margin-top: .6rem;
     }
     .fit-legend .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: .35rem; }
+
+    [data-bs-theme="dark"] .fit-card { background: #151e30; }
+    [data-bs-theme="dark"] .fit-table-wrap { border-color: #1f2a3f; scrollbar-color: #8fa0b5 #1c2942; }
+    [data-bs-theme="dark"] .fit-scroll-hint { color: #cbd5e1; }
+    [data-bs-theme="dark"] table.fit thead th.row-head { background: #151e30; box-shadow: 2px 0 0 #1f2a3f; }
+    [data-bs-theme="dark"] table.fit tbody th.strategy { background: #151e30; color: #e2e8f0; box-shadow: 2px 0 0 #1f2a3f; }
+    [data-bs-theme="dark"] table.fit tr.totals-row th.strategy { background: #1e293b; }
 
     .fit-empty { padding: 2rem; text-align: center; color: #64748b; }
 
@@ -615,8 +680,12 @@
 </p>
 {% endif %}
 
+<p class="fit-scroll-hint" id="fitScrollHint" hidden>
+    <span class="chev" aria-hidden="true">↔</span>
+    Scroll sideways to see every {{ dim_label|lower }}. Strategy names and the total stay pinned.
+</p>
 <div class="fit-card hide-unknown" id="fitCard">
-    <div class="fit-table-wrap">
+    <div class="fit-table-wrap" id="fitTableWrap">
     <table class="fit" id="fitTable"
         data-baseline-expectancy="{{ baseline_expectancy }}"
         data-baseline-win-rate="{{ baseline_win_rate }}"
@@ -627,17 +696,23 @@
             <tr>
                 <th class="row-head">Strategy ↓ &nbsp;/ &nbsp;{{ dim_label }} →</th>
                 {% for col in col_labels %}
-                <th class="{% if col == 'Unknown' %}col-unknown{% endif %}">
+                {% set ct = col_totals.get(col) %}
+                <th class="{% if col == 'Unknown' %}col-unknown{% endif %}"
+                    {% if ct %}
+                    data-total-pnl="{{ ct.total_pnl }}"
+                    data-num-trades="{{ ct.num_trades | int }}"
+                    data-win-rate="{{ ct.win_rate }}"
+                    data-num-closed="{{ (ct.num_winners + ct.num_losers) | int }}"
+                    {% endif %}>
                     {% if dim == 'sector' %}
                     <a href="{{ scoped_url('strategies', view='fit', sector=col) }}"
                        title="Drill into {{ col }} subsectors">{{ col }}</a>
                     {% else %}
                     {{ col }}
                     {% endif %}
-                    {% set ct = col_totals.get(col) %}
                     {% if ct %}
                     <span class="col-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">${{ "{:,.0f}".format(ct.total_pnl) }}</span>
-                    <span class="col-meta">
+                    <span class="col-meta" title="Unique symbols in this {{ dim_label|lower }}">
                         {{ ct.num_symbols }} sym ·
                         {% if (ct.num_winners + ct.num_losers) > 0 %}{{ "{:.0%}".format(ct.win_rate) }} win{% else %}—{% endif %}
                     </span>
@@ -659,7 +734,7 @@
                     {% if is_equity_na %}
                     <span class="equity-badge" title="This strategy has no option contracts, so {{ dim_label }} doesn't apply.">N/A · equity</span>
                     {% elif rt %}
-                    <span class="row-meta">
+                    <span class="row-meta" title="Unique symbols in this strategy">
                         {{ rt.num_symbols | int }} sym
                         {% if (rt.num_winners + rt.num_losers) > 0 %}
                         · {{ "{:.0%}".format(rt.win_rate) }} win
@@ -704,7 +779,11 @@
                 {% if is_equity_na %}
                 <td class="cell na">N/A</td>
                 {% elif rt %}
-                <td class="total-cell">
+                <td class="total-cell"
+                    data-total-pnl="{{ rt.total_pnl }}"
+                    data-num-trades="{{ rt.num_trades | int }}"
+                    data-win-rate="{{ rt.win_rate }}"
+                    data-num-closed="{{ (rt.num_winners + rt.num_losers) | int }}">
                     <span class="cell-pnl {% if rt.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
                         {% if rt.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(rt.total_pnl) }}
                     </span>
@@ -724,7 +803,11 @@
                 {% for col in col_labels %}
                     {% set ct = col_totals.get(col) %}
                     {% if ct %}
-                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}">
+                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}"
+                        data-total-pnl="{{ ct.total_pnl }}"
+                        data-num-trades="{{ ct.num_trades | int }}"
+                        data-win-rate="{{ ct.win_rate }}"
+                        data-num-closed="{{ (ct.num_winners + ct.num_losers) | int }}">
                         <span class="cell-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
                             {% if ct.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(ct.total_pnl) }}
                         </span>
@@ -738,7 +821,11 @@
                     {% endif %}
                 {% endfor %}
                 {% if grand_total %}
-                <td class="total-cell grand">
+                <td class="total-cell grand"
+                    data-total-pnl="{{ grand_total.total_pnl }}"
+                    data-num-trades="{{ grand_total.num_trades | int }}"
+                    data-win-rate="{{ grand_total.win_rate }}"
+                    data-num-closed="{{ (grand_total.num_winners + grand_total.num_losers) | int }}">
                     <span class="cell-pnl {% if grand_total.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
                         {% if grand_total.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(grand_total.total_pnl) }}
                     </span>
@@ -884,12 +971,58 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
         td.style.color = color.txt;
     }
 
+    // Row, column, and grand totals follow the same metric as the cells.
+    // They used to stay in absolute dollars (and the win-rate toggle left
+    // them in return units) because only td.cell was rewritten.
+    function renderTotal(host, metric) {
+        var label = host.querySelector('.cell-pnl, .col-pnl');
+        if (!label) return;
+        var totalPnl = parseFloat(host.dataset.totalPnl);
+        if (isNaN(totalPnl)) return;
+        var trades = parseInt(host.dataset.numTrades, 10) || 0;
+        var winRate = parseFloat(host.dataset.winRate);
+        if (isNaN(winRate)) winRate = 0;
+        var closed = parseInt(host.dataset.numClosed, 10) || 0;
+        var text = '—';
+        var pos = null;
+        if (metric === 'total_pnl') {
+            text = fmtMoney(totalPnl);
+            pos = totalPnl >= 0;
+        } else if (metric === 'expectancy') {
+            if (trades > 0) {
+                var exp = totalPnl / trades;
+                text = fmtMoney(exp, Math.abs(exp) < 100 ? 2 : 0) + '/t';
+                pos = exp >= 0;
+            }
+        } else if (metric === 'win_rate') {
+            if (closed > 0) {
+                text = fmtPct(winRate);
+                pos = winRate >= 0.5;
+            }
+        } else if (metric === 'edge') {
+            if (trades > 0) {
+                var edge = (totalPnl / trades) - baseExpectancy;
+                text = fmtMoney(edge, Math.abs(edge) < 100 ? 2 : 0);
+                pos = edge >= 0;
+            }
+        }
+        label.textContent = text;
+        label.classList.remove('pos', 'neg');
+        if (pos === true) label.classList.add('pos');
+        else if (pos === false) label.classList.add('neg');
+    }
+
     function applyMetric(metric) {
         document.querySelectorAll('#metricToggle button').forEach(function (b) {
             b.classList.toggle('active', b.dataset.metric === metric);
         });
         document.querySelectorAll('#fitTable td.cell').forEach(function (td) {
             renderCell(td, metric);
+        });
+        document.querySelectorAll(
+            '#fitTable td.total-cell[data-total-pnl], #fitTable thead th[data-total-pnl]'
+        ).forEach(function (el) {
+            renderTotal(el, metric);
         });
     }
 
@@ -1066,6 +1199,15 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
     }
 
     applyMetric('total_pnl');
+
+    var wrap = document.getElementById('fitTableWrap');
+    var hint = document.getElementById('fitScrollHint');
+    function syncScrollHint() {
+        if (!wrap || !hint) return;
+        hint.hidden = wrap.scrollWidth <= wrap.clientWidth + 2;
+    }
+    syncScrollHint();
+    window.addEventListener('resize', syncScrollHint);
 
     // AI insight expand/collapse — collapsed by default to keep the page
     // scannable; users opt in to the full bullets.
