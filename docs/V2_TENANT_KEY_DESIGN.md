@@ -41,6 +41,12 @@ preserve the invariants below.
    - `"snaptrade:bed78305-a764-4c4d-b4c7-fe59e391f661"` (Fidelity)
    - `"snaptrade:7456275292a8a909ce7cd7423d9abc910a82d72b284d65138bd2d9b59397cde7"` (Schwab via SnapTrade)
 3. **`tenant_id` is broker-stable, never recycled, never minted by us.**
+   SnapTrade generates a new account UUID if a connection is deleted and
+   re-added. In that lifecycle case, the first SnapTrade UUID remains the
+   canonical tenant key and the new transport account row maps back to it via
+   `snaptrade_accounts.tenant_id`. `institution_account_id` is used to prove
+   that continuity when the brokerage supplies it; ambiguous reconnects fail
+   closed rather than creating a second readable warehouse partition.
 4. **`tenant_id` is the join key in the warehouse.** `account_name`
    stays in the seeds as an informational display string. `user_id`
    stays in the seeds as informational metadata. Neither is the join
@@ -76,7 +82,10 @@ Total shape  := utf-8 string, max ~128 chars. Globally unique by
 - **Collision-proof across Postgres resets.** Drop the
   `broker_tenants` table tomorrow and recreate it: re-syncs from
   SnapTrade produce the EXACT SAME `tenant_id` strings. Seed rows on
-  disk still link to live broker_tenants rows. No drift possible.
+  disk still link to live broker_tenants rows while the SnapTrade connection
+  remains active. Deleted/re-added connections use the persisted canonical
+  mapping described above because SnapTrade explicitly rotates their account
+  UUIDs.
 - **No fan-out per user.** One physical broker account → one
   `tenant_id`. If parent + child both connect to the same brokerage,
   they're two SnapTrade users, two SnapTrade connections, two
@@ -102,6 +111,7 @@ CREATE TABLE broker_tenants (
     account_name       TEXT NOT NULL,           -- display string e.g. "Fidelity ••••6342"
     account_mask       TEXT,                    -- last-4 if known
     broker_label       TEXT,                    -- which broker this is (Schwab, Fidelity, etc.)
+    institution_account_id TEXT,                -- stable broker identity when supplied
     snaptrade_connection_id TEXT,               -- SnapTrade brokerageAuthorization UUID
     connection_status  TEXT DEFAULT 'active',   -- 'active' | 'disabled' | 'pending_reconnect'
     connection_broken_at TIMESTAMP,             -- set when SnapTrade webhook says disabled
@@ -166,6 +176,7 @@ def get_or_create_broker_tenant(
     account_name: str,
     account_mask: str | None = None,
     broker_label: str | None = None,
+    institution_account_id: str | None = None,
     snaptrade_connection_id: str | None = None,
 ) -> str:
     """Returns the tenant_id ('<broker_slug>:<broker_uuid>').
@@ -461,6 +472,7 @@ tenant_id = get_or_create_broker_tenant(
     account_name=snaptrade_account.name,    # "Fidelity ••••6342"
     account_mask=last4(snaptrade_account.number),
     broker_label=snaptrade_account.brokerage_authorization.brokerage.name,
+    institution_account_id=snaptrade_account.institution_account_id,
     snaptrade_connection_id=snaptrade_account.brokerage_authorization.id,
 )
 

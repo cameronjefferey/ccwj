@@ -329,6 +329,8 @@ def init_db():
             id                          SERIAL PRIMARY KEY,
             user_id                     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             snaptrade_account_id        TEXT NOT NULL,
+            tenant_id                   TEXT,
+            institution_account_id      TEXT,
             broker_slug                 TEXT NOT NULL,
             account_number_masked       TEXT,
             account_name                TEXT NOT NULL,
@@ -392,9 +394,9 @@ def init_db():
         #
         # broker_uuid comes verbatim from the broker (SnapTrade
         # AccountSimple.id). It is NEVER minted, transformed, hashed,
-        # or re-cased in transit. That property is what makes tenant_id
-        # collision-proof across Postgres resets, dataset re-creates,
-        # and user-id renumbers.
+        # or re-cased in transit. If SnapTrade rotates that UUID after a
+        # deleted/re-added connection, this first UUID remains canonical and
+        # snaptrade_accounts.tenant_id maps the new transport row back to it.
         #
         # The (broker_slug, broker_uuid) UNIQUE constraint enforces the
         # "one physical broker account → one tenant_id" invariant. The
@@ -411,6 +413,7 @@ def init_db():
             account_name              TEXT NOT NULL,
             account_mask              TEXT,
             broker_label              TEXT,
+            institution_account_id    TEXT,
             snaptrade_connection_id   TEXT,
             connection_status         TEXT NOT NULL DEFAULT 'active',
             connection_broken_at      TIMESTAMPTZ,
@@ -562,6 +565,7 @@ def init_db():
     _migrate_snaptrade_holdings_sync_column()
     _migrate_snaptrade_snapshot_sync_generation()
     _migrate_snaptrade_early_broker_cohort()
+    _migrate_snaptrade_tenant_identity_columns()
     _migrate_broker_account_id_columns()
     _migrate_onboarding_responses_v2()
     _migrate_user_profiles_email_prefs()
@@ -979,6 +983,44 @@ def _migrate_snaptrade_early_broker_cohort():
             _log.info("early_broker_cohort backfill stamped %s account row(s)", n)
     except Exception as e:
         _log.warning("early_broker_cohort backfill skipped: %s", e)
+
+
+def _migrate_snaptrade_tenant_identity_columns():
+    """Persist the canonical warehouse tenant across deleted/re-added connections.
+
+    SnapTrade account UUIDs change when a connection is deleted and recreated.
+    ``tenant_id`` maps the current transport account row back to the original
+    warehouse partition; ``institution_account_id`` is SnapTrade's stable
+    institution-provided identity when the brokerage supplies one.
+    """
+    for table, column in (
+        ("snaptrade_accounts", "tenant_id TEXT"),
+        ("snaptrade_accounts", "institution_account_id TEXT"),
+        ("broker_tenants", "institution_account_id TEXT"),
+    ):
+        try:
+            execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")
+        except Exception as exc:
+            _log.warning("%s identity migration skipped: %s", table, exc)
+    try:
+        execute(
+            "UPDATE snaptrade_accounts sa SET tenant_id = bt.tenant_id "
+            "FROM broker_tenants bt "
+            "WHERE sa.tenant_id IS NULL "
+            "AND bt.user_id = sa.user_id "
+            "AND bt.tenant_id = 'snaptrade:' || sa.snaptrade_account_id"
+        )
+        execute(
+            "UPDATE broker_tenants bt SET "
+            "account_mask = COALESCE(bt.account_mask, sa.account_number_masked), "
+            "broker_label = COALESCE(bt.broker_label, sa.broker_slug), "
+            "updated_at = NOW() "
+            "FROM snaptrade_accounts sa "
+            "WHERE sa.user_id = bt.user_id AND sa.tenant_id = bt.tenant_id "
+            "AND (bt.account_mask IS NULL OR bt.broker_label IS NULL)"
+        )
+    except Exception as exc:
+        _log.warning("SnapTrade tenant identity backfill skipped: %s", exc)
 
 
 def _migrate_schwab_display_nickname_column():
@@ -1407,6 +1449,7 @@ def get_or_create_broker_tenant(
     account_name,
     account_mask=None,
     broker_label=None,
+    institution_account_id=None,
     snaptrade_connection_id=None,
 ):
     """Idempotent upsert for ``broker_tenants``. Returns ``tenant_id``.
@@ -1436,11 +1479,13 @@ def get_or_create_broker_tenant(
         raise ValueError("account_name is required")
     mask = (account_mask or "").strip() or None
     broker_lbl = (broker_label or "").strip() or None
+    institution_id = (institution_account_id or "").strip() or None
     snap_conn = (snaptrade_connection_id or "").strip() or None
 
     row = fetch_one(
         "SELECT tenant_id, user_id, account_name, account_mask, broker_label, "
-        "snaptrade_connection_id FROM broker_tenants WHERE tenant_id = %s",
+        "institution_account_id, snaptrade_connection_id "
+        "FROM broker_tenants WHERE tenant_id = %s",
         (tenant_id,),
     )
     if row:
@@ -1460,6 +1505,12 @@ def get_or_create_broker_tenant(
         if broker_lbl and broker_lbl != (row.get("broker_label") or ""):
             updates.append("broker_label = %s")
             params.append(broker_lbl)
+        prior_institution_id = (row.get("institution_account_id") or "").strip()
+        if institution_id and prior_institution_id and institution_id != prior_institution_id:
+            raise ValueError("institution_account_id conflicts with the canonical tenant")
+        if institution_id and not prior_institution_id:
+            updates.append("institution_account_id = %s")
+            params.append(institution_id)
         if snap_conn and snap_conn != (row.get("snaptrade_connection_id") or ""):
             updates.append("snaptrade_connection_id = %s")
             params.append(snap_conn)
@@ -1477,13 +1528,14 @@ def get_or_create_broker_tenant(
     execute(
         "INSERT INTO broker_tenants "
         "(tenant_id, user_id, broker_slug, broker_uuid, account_name, "
-        " account_mask, broker_label, snaptrade_connection_id) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+        " account_mask, broker_label, institution_account_id, "
+        " snaptrade_connection_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (tenant_id) DO UPDATE SET updated_at = NOW() "
         "WHERE broker_tenants.user_id = EXCLUDED.user_id",
         (
             tenant_id, int(user_id), slug, uuid_part, label,
-            mask, broker_lbl, snap_conn,
+            mask, broker_lbl, institution_id, snap_conn,
         ),
     )
     # Close the SELECT→INSERT race: a concurrent different user may have
@@ -1542,7 +1594,7 @@ def get_broker_tenant(tenant_id):
         return None
     return fetch_one(
         "SELECT tenant_id, user_id, broker_slug, broker_uuid, "
-        "account_name, account_mask, broker_label, "
+        "account_name, account_mask, broker_label, institution_account_id, "
         "snaptrade_connection_id, connection_status, "
         "connection_broken_at, first_sync_completed, display_nickname, "
         "created_at, updated_at FROM broker_tenants WHERE tenant_id = %s",
@@ -1613,7 +1665,7 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
         return []
     sql = (
         "SELECT tenant_id, user_id, broker_slug, broker_uuid, "
-        "account_name, account_mask, broker_label, "
+        "account_name, account_mask, broker_label, institution_account_id, "
         "snaptrade_connection_id, connection_status, "
         "connection_broken_at, first_sync_completed, display_nickname, "
         "created_at, updated_at FROM broker_tenants "
@@ -1838,6 +1890,50 @@ def clear_tenant_connection_broken(tenant_id):
         "WHERE tenant_id = %s",
         (str(tenant_id),),
     )
+
+
+def reactivate_snaptrade_tenant(
+    user_id,
+    tenant_id,
+    *,
+    account_name,
+    account_mask=None,
+    broker_label=None,
+    institution_account_id=None,
+    snaptrade_connection_id=None,
+):
+    """Attach a recreated SnapTrade connection to an existing tenant.
+
+    Ownership is checked in the UPDATE predicate and again through RETURNING.
+    The tenant key itself never changes, preserving warehouse and account-group
+    continuity while transport account/authorization UUIDs rotate.
+    """
+    row = execute_returning(
+        "UPDATE broker_tenants SET "
+        "account_mask = COALESCE(account_mask, NULLIF(%s, '')), "
+        "broker_label = COALESCE(broker_label, NULLIF(%s, '')), "
+        "institution_account_id = COALESCE(institution_account_id, NULLIF(%s, '')), "
+        "snaptrade_connection_id = COALESCE(NULLIF(%s, ''), snaptrade_connection_id), "
+        "connection_status = 'active', connection_broken_at = NULL, "
+        "updated_at = NOW() "
+        "WHERE tenant_id = %s AND user_id = %s AND broker_slug = 'snaptrade' "
+        "AND (NULLIF(%s, '') IS NULL OR institution_account_id IS NULL "
+        "OR institution_account_id = NULLIF(%s, '')) "
+        "RETURNING tenant_id",
+        (
+            (account_mask or "").strip(),
+            (broker_label or "").strip(),
+            (institution_account_id or "").strip(),
+            (snaptrade_connection_id or "").strip(),
+            str(tenant_id),
+            int(user_id),
+            (institution_account_id or "").strip(),
+            (institution_account_id or "").strip(),
+        ),
+    )
+    if not row:
+        raise ValueError("SnapTrade tenant ownership could not be established")
+    return row["tenant_id"]
 
 
 def mark_tenant_first_sync_completed(tenant_id):
@@ -2243,6 +2339,9 @@ def upsert_snaptrade_account(
     user_id,
     snaptrade_account_id,
     *,
+    tenant_id,
+    institution_account_id=None,
+    display_nickname=None,
     broker_slug,
     account_number_masked,
     account_name,
@@ -2257,10 +2356,20 @@ def upsert_snaptrade_account(
     """
     execute(
         """INSERT INTO snaptrade_accounts
-           (user_id, snaptrade_account_id, broker_slug, account_number_masked,
-            account_name, updated_at)
-           VALUES (%s, %s, %s, %s, %s, NOW())
+           (user_id, snaptrade_account_id, tenant_id, institution_account_id,
+            display_nickname, broker_slug, account_number_masked, account_name,
+            updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
            ON CONFLICT (user_id, snaptrade_account_id) DO UPDATE SET
+               tenant_id             = EXCLUDED.tenant_id,
+               institution_account_id = COALESCE(
+                   snaptrade_accounts.institution_account_id,
+                   EXCLUDED.institution_account_id
+               ),
+               display_nickname       = COALESCE(
+                   snaptrade_accounts.display_nickname,
+                   EXCLUDED.display_nickname
+               ),
                broker_slug           = EXCLUDED.broker_slug,
                account_number_masked = EXCLUDED.account_number_masked,
                account_name          = EXCLUDED.account_name,
@@ -2274,6 +2383,9 @@ def upsert_snaptrade_account(
         (
             user_id,
             snaptrade_account_id,
+            tenant_id,
+            (institution_account_id or "").strip() or None,
+            (display_nickname or "").strip() or None,
             broker_slug,
             account_number_masked,
             account_name,
@@ -2292,7 +2404,8 @@ def get_snaptrade_accounts(user_id):
     if user_id is None:
         return []
     return fetch_all(
-        "SELECT id, snaptrade_account_id, broker_slug, account_number_masked, "
+        "SELECT id, snaptrade_account_id, tenant_id, institution_account_id, "
+        "broker_slug, account_number_masked, "
         "account_name, display_nickname, first_sync_completed, last_sync_at, "
         "holdings_last_successful_sync, "
         "last_sync_error, connection_broken_at, brokerage_authorization_id, "
@@ -2306,7 +2419,8 @@ def get_snaptrade_accounts(user_id):
 def get_snaptrade_account(user_id, snaptrade_account_id):
     """Return one SnapTrade account row, or None."""
     return fetch_one(
-        "SELECT id, snaptrade_account_id, broker_slug, account_number_masked, "
+        "SELECT id, snaptrade_account_id, tenant_id, institution_account_id, "
+        "broker_slug, account_number_masked, "
         "account_name, display_nickname, first_sync_completed, last_sync_at, "
         "holdings_last_successful_sync, "
         "last_sync_error, connection_broken_at, brokerage_authorization_id, "
@@ -2338,6 +2452,42 @@ def set_snaptrade_brokerage_authorization_id(user_id, snaptrade_account_id, auth
     except Exception as exc:
         _log.warning("set_snaptrade_brokerage_authorization_id failed: %s", exc)
         return False
+
+
+def record_snaptrade_account_identity(
+    user_id,
+    snaptrade_account_id,
+    *,
+    tenant_id,
+    institution_account_id=None,
+):
+    """Backfill stable identity from account-detail responses during sync."""
+    institution_id = (institution_account_id or "").strip() or None
+    if institution_id:
+        tenant_row = execute_returning(
+            "UPDATE broker_tenants SET "
+            "institution_account_id = COALESCE(institution_account_id, %s), "
+            "updated_at = NOW() WHERE tenant_id = %s AND user_id = %s "
+            "AND (institution_account_id IS NULL OR institution_account_id = %s) "
+            "RETURNING tenant_id",
+            (institution_id, tenant_id, user_id, institution_id),
+        )
+        if not tenant_row:
+            raise ValueError("institution account identity conflicts with tenant")
+    account_row = execute_returning(
+        "UPDATE snaptrade_accounts SET tenant_id = %s, "
+        "institution_account_id = COALESCE(institution_account_id, %s), "
+        "updated_at = NOW() "
+        "WHERE user_id = %s AND snaptrade_account_id = %s "
+        "AND (%s IS NULL OR institution_account_id IS NULL "
+        "OR institution_account_id = %s) RETURNING id",
+        (
+            tenant_id, institution_id, user_id, snaptrade_account_id,
+            institution_id, institution_id,
+        ),
+    )
+    if not account_row:
+        raise ValueError("SnapTrade account identity could not be persisted")
 
 
 def stamp_snaptrade_force_refresh_attempt(user_id, snaptrade_account_id):
@@ -2404,7 +2554,10 @@ def update_snaptrade_account_nickname(user_id, snaptrade_account_id, nickname):
         return False
     # Dual write to broker_tenants — v2 read paths use this column.
     try:
-        tenant_id = build_tenant_id(SNAPTRADE_BROKER_SLUG, snaptrade_account_id)
+        row = get_snaptrade_account(user_id, snaptrade_account_id)
+        tenant_id = (
+            (row.get("tenant_id") or "").strip() if row else ""
+        ) or build_tenant_id(SNAPTRADE_BROKER_SLUG, snaptrade_account_id)
         update_broker_tenant_display_nickname(user_id, tenant_id, label)
     except Exception as exc:
         _log.warning(
@@ -2649,7 +2802,8 @@ def list_all_snaptrade_accounts():
     Returns the same column set as ``get_snaptrade_accounts`` plus
     ``user_id`` so the CLI knows whose secret to fetch."""
     return fetch_all(
-        "SELECT user_id, id, snaptrade_account_id, broker_slug, "
+        "SELECT user_id, id, snaptrade_account_id, tenant_id, "
+        "institution_account_id, broker_slug, "
         "account_number_masked, account_name, display_nickname, "
         "first_sync_completed, last_sync_error, connection_broken_at "
         "FROM snaptrade_accounts ORDER BY user_id, created_at",
