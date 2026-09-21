@@ -17,6 +17,7 @@ from app.models import (
     User,
     create_account_group,
     delete_account_group,
+    count_uploads_for_user,
     get_accounts_for_user,
     get_broker_tenants_for_user,
     get_uploads_for_user,
@@ -185,6 +186,10 @@ def profile():
             profile_row = {**prof, "default_route": "weekly_review"}
     accounts = get_accounts_for_user(current_user.id)
     recent_uploads = get_uploads_for_user(current_user.id)
+    try:
+        upload_count = count_uploads_for_user(current_user.id)
+    except Exception:
+        upload_count = len(recent_uploads or [])
 
     group_tenant_choices = []
     try:
@@ -233,11 +238,14 @@ def profile():
 
         snaptrade_enabled = _snaptrade_enabled_fn()
         snaptrade_accounts = _get_snaptrade_accounts(current_user.id) or []
+        from app.linked_accounts import distinct_broker_names
+        broker_names = distinct_broker_names(snaptrade_accounts)
         snaptrade_routine_lookback_days = int(_snap_routine_fn())
         snaptrade_full_history_lookback_days = int(_snap_full_days)
     except Exception:
         snaptrade_enabled = False
         snaptrade_accounts = []
+        broker_names = []
 
     routes = sorted(_ALLOWED_DEFAULT_ROUTE)
     if not app.config.get("INSIGHTS_ENABLED", True):
@@ -258,6 +266,11 @@ def profile():
     except Exception:
         pass
 
+    # Readable broker tenants, not the legacy user_accounts label list.
+    # Fall back to SnapTrade rows if the tenant read failed closed to [].
+    account_count = len(group_tenant_choices or [])
+    if account_count == 0 and snaptrade_accounts:
+        account_count = len(snaptrade_accounts)
     return render_template(
         "profile.html",
         title="Settings",
@@ -266,6 +279,9 @@ def profile():
         subscription=subscription,
         profile_row=profile_row,
         accounts=accounts,
+        account_count=account_count,
+        broker_count=len(broker_names or []),
+        upload_count=upload_count,
         recent_uploads=recent_uploads,
         group_tenant_choices=group_tenant_choices,
         editing_group=editing_group,

@@ -17,6 +17,7 @@ from app.models import (
     remove_account_for_user,
     record_upload, get_uploads_for_user, count_uploads_for_user,
     get_or_create_broker_tenant, get_broker_tenants_for_user,
+    get_broker_tenant,
     delete_broker_tenant, MANUAL_BROKER_SLUG,
 )
 from app.utils import demo_block_writes
@@ -2041,11 +2042,20 @@ def upload():
         # list unscoped BigQuery account labels — picking a nickname/label
         # used to mint a new manual tenant instead of attaching to the
         # SnapTrade account the user thought they selected.
-        account_choices = _csv_upload_account_choices(
-            get_broker_tenants_for_user(current_user.id) or [],
+        tenant_rows = get_broker_tenants_for_user(current_user.id) or []
+        account_choices = _csv_upload_account_choices(tenant_rows)
+        from app.linked_accounts import linked_account_entries
+        from app.routes import _disambiguated_tenant_labels
+        linked_accounts = linked_account_entries(
+            tenant_rows, _disambiguated_tenant_labels(tenant_rows),
         )
         accounts = sorted(set(user_accounts))
         recent_uploads = get_uploads_for_user(current_user.id)
+        try:
+            from app.snaptrade import snaptrade_enabled as _snaptrade_enabled_fn
+            snaptrade_enabled = bool(_snaptrade_enabled_fn())
+        except Exception:
+            snaptrade_enabled = False
         # "Complete this account" (snaptrade_accounts.html) deep-links here
         # with ?tenant=<tenant_id> so the picker lands pre-selected instead
         # of making the user re-find the account they just clicked from.
@@ -2057,6 +2067,8 @@ def upload():
         return render_template(
             "upload.html", title="Upload Data",
             accounts=accounts,
+            linked_accounts=linked_accounts,
+            snaptrade_enabled=snaptrade_enabled,
             account_choices=account_choices,
             recent_uploads=recent_uploads,
             github_upload_enabled=seed_writes_enabled,
@@ -2475,10 +2487,33 @@ def api_sync_overview_ready():
 @app.route("/unclaim-account", methods=["POST"])
 @login_required
 def unclaim_account():
-    """Unlink an account from the current user."""
+    """Remove a CSV-only account, or a legacy label, from this profile.
+
+    SnapTrade tenants are not deleted here. Removing a nickname from the
+    old ``user_accounts`` list used to hide a live connection from this
+    page while leaving it connected — and the reverse, a stale masked
+    name, was the only thing the button could reach.
+    """
     blocked = demo_block_writes("removing accounts from your profile")
     if blocked:
         return blocked
+    tenant_id = (request.form.get("unclaim_tenant_id") or "").strip()
+    if tenant_id:
+        row = get_broker_tenant(tenant_id)
+        if not row or int(row.get("user_id") or -1) != int(current_user.id):
+            flash("That account is not on your profile.", "danger")
+            return redirect(url_for("upload"))
+        slug = (row.get("broker_slug") or "").strip().lower()
+        if slug != MANUAL_BROKER_SLUG and not tenant_id.startswith("manual:"):
+            flash(
+                "Broker connections are removed from Accounts & data.",
+                "info",
+            )
+            return redirect(url_for("profile", tab="account"))
+        delete_broker_tenant(tenant_id)
+        label = row.get("display_nickname") or row.get("account_name") or tenant_id
+        flash(f"Account \"{label}\" removed from your profile.", "info")
+        return redirect(url_for("upload"))
     account_name = request.form.get("unclaim_account_name", "").strip()
     if not account_name:
         flash("No account selected to remove.", "danger")

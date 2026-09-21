@@ -153,13 +153,25 @@ WITH prices AS (
       AND date >= @ytd_start
       AND close_price IS NOT NULL AND close_price > 0
 ),
-week_bounds AS (
+week_prior AS (
+    -- Last close BEFORE the window. MIN(close) inside the window is the
+    -- same print as the latest close when the window is a single Monday
+    -- session, which renders SPY +0.0% on a page whose 1-week column is
+    -- the trailing seven days.
     SELECT symbol,
-           MIN(CASE WHEN date >= @week_start THEN close_price END) AS week_open,
-           MAX(CASE WHEN date >= @week_start THEN date END) AS week_last_date
+           ARRAY_AGG(close_price ORDER BY date DESC LIMIT 1)[SAFE_OFFSET(0)] AS prior_close
     FROM prices
-    WHERE date >= @week_start
+    WHERE date < @week_start
     GROUP BY symbol
+),
+week_bounds AS (
+    SELECT p.symbol,
+           COALESCE(wp.prior_close, MIN(p.close_price)) AS week_open,
+           MAX(p.date) AS week_last_date
+    FROM prices p
+    LEFT JOIN week_prior wp USING (symbol)
+    WHERE p.date >= @week_start
+    GROUP BY p.symbol, wp.prior_close
 ),
 ytd_bounds AS (
     SELECT symbol,
@@ -2105,6 +2117,35 @@ def _build_behavior_sentence(review, behavior_mirror, mode):
     if trades_closed == 1:
         return "One trade closed — building the baseline you'll be compared to."
     return f"{trades_closed} trades closed — building the baseline you'll be compared to."
+
+
+def _align_market_week_with_benchmark(market, snapshot):
+    """Use the snapshot table's trailing-week % in the header line.
+
+    The header used to quote the ISO week of calendar today. Overview
+    recaps the last completed session, and the benchmark row under the
+    book is a trailing 7 days — on a Monday those two windows disagree
+    (header +0.0%, table +1.35%).
+    """
+    if not snapshot:
+        return market
+    aligned = dict(market or {})
+    keys = {"SPY": "spy_week_pct", "QQQ": "qqq_week_pct"}
+    changed = False
+    for row in snapshot:
+        sym = str((row or {}).get("symbol") or "").upper()
+        key = keys.get(sym)
+        pct = (row or {}).get("week_pct")
+        if not key or pct is None:
+            continue
+        try:
+            aligned[key] = float(pct)
+        except (TypeError, ValueError):
+            continue
+        changed = True
+    if changed:
+        return aligned
+    return market
 
 
 def _neutral_market_line(market):
@@ -4282,6 +4323,9 @@ def weekly_review():
             )
         except Exception as e:
             app.logger.warning("Benchmark snapshot processing failed: %s", e)
+        context["market"] = _align_market_week_with_benchmark(
+            context.get("market"), context.get("benchmark_snapshot"))
+        context["market_neutral_line"] = _neutral_market_line(context.get("market"))
 
         # ── Account value (cash / invested split) ─────────────────────
         # ``live_av_by_label`` is the per-account live total used as a

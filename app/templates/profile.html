@@ -183,10 +183,10 @@
             </div>
             <div class="col-lg-4 d-flex justify-content-lg-end">
                 <div class="atlas-stat-row">
-                    <div class="atlas-stat"><div class="n">{{ accounts|length }}</div><div class="l">Accounts</div></div>
-                    <div class="atlas-stat"><div class="n">{{ recent_uploads|length }}</div><div class="l">Uploads</div></div>
-                    {% if snaptrade_connected %}
-                    <div class="atlas-stat"><div class="n">✓</div><div class="l">Broker</div></div>
+                    <div class="atlas-stat"><div class="n">{{ account_count }}</div><div class="l">Accounts</div></div>
+                    <div class="atlas-stat"><div class="n">{{ upload_count }}</div><div class="l">Uploads</div></div>
+                    {% if snaptrade_enabled %}
+                    <div class="atlas-stat"><div class="n">{{ broker_count }}</div><div class="l">Brokers</div></div>
                     {% endif %}
                 </div>
             </div>
@@ -239,15 +239,15 @@
             {# At-a-glance counts — each links to where you manage it #}
             <div class="stat-tiles mb-3">
                 <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
-                    <div class="n">{{ accounts|length }}</div><div class="l">Accounts</div>
+                    <div class="n">{{ account_count }}</div><div class="l">Accounts</div>
                 </a>
                 {% if snaptrade_enabled %}
                 <a class="stat-tile" href="{{ url_for('snaptrade_accounts_page') }}">
-                    <div class="n">{{ _snaptrade_accounts|length }}</div><div class="l">Brokers</div>
+                    <div class="n">{{ broker_count }}</div><div class="l">Brokers</div>
                 </a>
                 {% endif %}
                 <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
-                    <div class="n">{{ recent_uploads|length }}</div><div class="l">Uploads</div>
+                    <div class="n">{{ upload_count }}</div><div class="l">Uploads</div>
                 </a>
             </div>
 
@@ -282,7 +282,7 @@
                         <div>
                             <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
                             <span class="small text-body-secondary ms-1">{{ a.broker_slug | title }}</span>
-                            {% if a.last_sync_at %}<div class="conn-meta">Last refresh {{ a.last_sync_at }}</div>{% endif %}
+                            {% if a.last_sync_at %}<div class="conn-meta">Last refresh {{ a.last_sync_at | friendly_time }}</div>{% endif %}
                         </div>
                         {% if a.connection_broken_at %}
                         <span class="pill pill-danger"><span class="dot"></span> Reconnect needed</span>
@@ -767,7 +767,7 @@
                             <thead class="table-light"><tr><th class="ps-3">Account</th><th>History</th><th>Positions</th><th class="pe-3">When</th></tr></thead>
                             <tbody>
                                 {% for u in recent_uploads %}
-                                <tr><td class="ps-3">{{ u.account_name | account_label(u.tenant_id) }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at }}</td></tr>
+                                <tr><td class="ps-3">{{ u.account_name | account_label(u.tenant_id) }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at | friendly_time }}</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>

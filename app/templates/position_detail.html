@@ -267,21 +267,18 @@
 
 {# ── Position Narrative (open = snapshot; history = all trades) ── #}
 {% if kpis %}
-{% set open_strats = strategy_rows | selectattr('status', 'equalto', 'Open') | list if strategy_rows else [] %}
 <div class="mb-4 p-4 narrative-card">
     {% if overall_status == 'Open' %}
     <p class="narrative mb-2" style="font-size:1.05rem; line-height:1.7;">
         <span class="text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">Open</span><br>
         Your current <strong>{{ symbol }}</strong> book
-        {% if open_strats|length == 1 %}
-        is <strong>{{ open_strats[0].strategy }}</strong>
-        {% elif open_strats|length > 1 %}
-        is split across
-        {% for s in open_strats %}<strong>{{ s.strategy }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
+        {% if open_strategy_names|length == 1 %}
+        is <strong>{{ open_strategy_names[0] }}</strong>.
+        {% elif open_strategy_names|length > 1 %}
+        is split across {% for name in open_strategy_names %}<strong>{{ name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}.
         {% else %}
-        is open
+        is open.
         {% endif %}
-        .
         {% if kpis.unrealized_pnl >= 0 %}
         You’re <strong class="text-positive">up ${{ "{:,.2f}".format(kpis.unrealized_pnl) }}</strong> unrealized
         {% else %}
@@ -301,9 +298,9 @@
         {%- endif -%}
         {%- if kpis.total_trades > 0 -%}
         : <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}
-        {%- if kpis.num_winners + kpis.num_losers > 0 -%}
+        {% if kpis.num_winners + kpis.num_losers > 0 %}
         (closed legs: <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong>)
-        {%- endif -%}.
+        {% endif %}.
         {%- else -%}.
         {%- endif %}
         {% if kpis.avg_days > 0 %}Average time in trade (where we have it): {{ kpis.avg_days|int }} days.{% endif %}
@@ -1041,9 +1038,9 @@
                     <td class="text-muted small">{{ p.instrument_type }}</td>
                     <td class="text-muted small">{{ p.account_display or (p.account | account_label(p.tenant_id)) }}</td>
                     <td class="text-end">{{ p.quantity | int if p.quantity is defined and p.quantity else '' }}</td>
-                    <td class="text-nowrap"></td>
-                    <td class="text-nowrap"></td>
-                    <td class="text-end text-muted"></td>
+                    <td class="text-nowrap">{{ p.open_date or '' }}</td>
+                    <td class="text-nowrap">{{ p.close_date or '' }}</td>
+                    <td class="text-end text-muted">{% if p.open_date and p.days_held is not none %}{{ p.days_held }}{% endif %}</td>
                     <td class="text-end">${{ "{:,.2f}".format(p.cost_basis) }}</td>
                     <td class="text-end">${{ "{:,.2f}".format(p.market_value) }}</td>
                     <td class="text-end fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">

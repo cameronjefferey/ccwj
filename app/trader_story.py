@@ -510,6 +510,60 @@ def _busiest_day(trades_df):
     }
 
 
+def _profile_symbol_count(summary_df, fallback=0):
+    """Distinct symbols in ``positions_summary``.
+
+    The position tab strip, Get Started, and Sectors count this grain.
+    The review book only includes symbols with a narratable chapter, so
+    ``len(book)`` under-counts the same trader (131 vs 140).
+    """
+    if summary_df is not None and not getattr(summary_df, "empty", True):
+        if "symbol" in summary_df.columns:
+            syms = summary_df["symbol"].astype(str).str.strip()
+            syms = syms[syms.str.len() > 0]
+            n = int(syms.str.upper().nunique())
+            if n:
+                return n
+    try:
+        return int(fallback or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def align_kept_at_expiry(profile, execution_df):
+    """Overwrite the profile fact with the execution-review ledger.
+
+    Fingerprint fill-cash and ``int_option_exit_quality.realized_pnl``
+    count the same contracts and disagree by fees. When the ledger has
+    a sample, both cards use it.
+    """
+    if not profile:
+        return profile
+    from app.execution_quality import held_to_expiry_kept
+    from app.position_story import _money
+
+    n, kept = held_to_expiry_kept(execution_df)
+    if n < 2:
+        return profile
+    fact = {
+        "label": "Kept at expiry",
+        "value": _money(kept),
+        "tone": "pos",
+        "detail": (f"{n} short contracts rode to "
+                   f"worthless expiry — you kept every dollar"),
+    }
+    facts = list(profile.get("facts") or [])
+    for i, row in enumerate(facts):
+        if row.get("label") == "Kept at expiry":
+            facts[i] = fact
+            profile["facts"] = facts
+            return profile
+    if n >= 3:
+        facts.append(fact)
+        profile["facts"] = facts[:6]
+    return profile
+
+
 def _open_held_symbol_count(summary_df):
     """Unique currently-held symbols from the story summary rollup.
 
@@ -634,6 +688,9 @@ def trader_story():
             held = _open_held_symbol_count(summary_df)
             context["novel"]["hero_counts"]["open_held"] = held
             context["novel"]["open_held"] = held
+            context["novel"]["hero_counts"]["stories"] = _profile_symbol_count(
+                summary_df, context["novel"]["hero_counts"].get("stories"))
+            align_kept_at_expiry(context["novel"].get("profile"), execution_df)
             # Execution review: the same record, graded. None until the
             # account clears the data-sufficiency gate (>= 5 contracts
             # with a known expiry outcome), so young accounts see the

@@ -159,8 +159,11 @@
         .navbar .btn.btn-auth-nav:active { transform: translateY(0); }
 
         /* Floating feedback button (closed-beta channel for testers). */
+        /* Clear the last row of card buttons when the page is scrolled
+           to the end. The button stays fixed; content can scroll past it. */
+        body { padding-bottom: 4.5rem; }
         .ht-feedback-fab {
-            position: fixed; right: 18px; bottom: 18px; z-index: 1080;
+            position: fixed; right: 18px; bottom: 18px; z-index: 1030;
             background: #1a1a2e; color: #fff;
             padding: .55rem 1rem; border-radius: 999px;
             border: 0; font-weight: 600; font-size: .85rem;
@@ -851,7 +854,7 @@
                         {# Revealed by nav.js when the browser fires
                            beforeinstallprompt (Android/desktop Chrome). #}
                         <li class="d-none" id="ht-install-item">
-                            <a class="dropdown-item" href="#" id="ht-install-link">Install app</a>
+                            <button type="button" class="dropdown-item" id="ht-install-link">Install app</button>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>

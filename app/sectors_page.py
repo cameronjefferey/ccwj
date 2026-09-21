@@ -91,6 +91,7 @@ def sectors():
     except Exception as exc:
         return render_template(
             "sectors.html",
+            title="Sectors",
             error=str(exc),
             sectors=[],
             sector_rows=[],
@@ -127,6 +128,7 @@ def sectors():
     if df.empty:
         return render_template(
             "sectors.html",
+            title="Sectors",
             error=None,
             sectors=[],
             sector_rows=[],
@@ -150,7 +152,9 @@ def sectors():
         "realized_pnl": float(df["realized_pnl"].sum()),
         "unrealized_pnl": float(df["unrealized_pnl"].sum()),
         "num_subsectors": int(df["subsector"].nunique()),
-        "num_symbols": int(df.groupby(["account", "symbol"]).ngroups),
+        "num_symbols": int(
+            df["symbol"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().str.upper().nunique()
+        ) if "symbol" in df.columns else 0,
         "num_trades": int(df["num_individual_trades"].sum()),
         "win_rate": (overall_winners / overall_closed) if overall_closed else 0.0,
     }
@@ -276,6 +280,7 @@ def sectors():
 
     return render_template(
         "sectors.html",
+        title="Sectors",
         error=None,
         sectors=sectors_list,
         sector_rows=sector_rows,

@@ -37,6 +37,15 @@
         border-color: #dee2e6;
         background: #f8f9fa;
     }
+    #submitBtn:disabled,
+    #submitBtn[disabled] {
+        opacity: .55;
+        cursor: not-allowed;
+        background-color: #94a3b8;
+        border-color: #94a3b8;
+        color: #fff;
+        box-shadow: none;
+    }
     .file-name {
         font-weight: 600;
         color: #198754;
@@ -368,7 +377,7 @@
                             <td class="ps-3">{{ u.account_name | account_label(u.tenant_id) }}</td>
                             <td>{{ "{:,}".format(u.history_rows) }}</td>
                             <td>{{ "{:,}".format(u.current_rows) }}</td>
-                            <td class="pe-3 text-muted">{{ u.uploaded_at }}</td>
+                            <td class="pe-3 text-muted">{{ u.uploaded_at | friendly_time }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -381,25 +390,30 @@
         <hr class="my-5">
         <h4 class="fw-bold mb-3">My Accounts</h4>
         <p class="text-muted small mb-3">
-            You can only view data for accounts linked to your profile.
-            Uploading data for an account automatically links it. You can remove
-            accounts from your list below.
+            These are the accounts connected to your profile — the same list
+            as Settings. A CSV upload attaches to one of them. CSV-only
+            accounts can be removed here. Broker connections are managed on
+            <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>.
         </p>
 
         <div class="row g-4">
             <div class="col-md-6">
                 <div class="card border-0 shadow-sm p-3" style="border-radius:12px">
                     <h6 class="fw-bold mb-2">Linked Accounts</h6>
-                    {% if accounts %}
+                    {% if linked_accounts %}
                     <ul class="list-group list-group-flush">
-                        {% for acct in accounts %}
+                        {% for acct in linked_accounts %}
                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                            {{ acct | account_label }}
+                            {{ acct.label }}
+                            {% if acct.removable %}
                             <form method="POST" action="{{ url_for('unclaim_account') }}" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="unclaim_account_name" value="{{ acct }}">
+                                <input type="hidden" name="unclaim_tenant_id" value="{{ acct.tenant_id }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
                             </form>
+                            {% elif snaptrade_enabled %}
+                            <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-sm btn-outline-secondary">Manage</a>
+                            {% endif %}
                         </li>
                         {% endfor %}
                     </ul>
