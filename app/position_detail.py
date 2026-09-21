@@ -944,6 +944,14 @@ def _merge_position_strategy_breakdown(
 
     extra: list[dict] = []
 
+    def _acct_sum(df, acct, col):
+        if df is None or getattr(df, "empty", True):
+            return 0.0
+        if "account" not in getattr(df, "columns", []) or col not in df.columns:
+            return 0.0
+        mask = df["account"].astype(str).str.strip() == acct
+        return float(pd.to_numeric(df.loc[mask, col], errors="coerce").fillna(0).sum())
+
     if closed_legs_df is not None and not closed_legs_df.empty and "strategy" in closed_legs_df.columns:
         g = closed_legs_df.copy()
         g = g[g["strategy"].notna() & (g["strategy"].astype(str).str.strip() != "")]
@@ -980,6 +988,24 @@ def _merge_position_strategy_breakdown(
             # — one "Dividend" with $16k divs, one synthetic "Buy and Hold"
             # with $0 divs — and they'd look like separate strategies.
             if acct in equity_covered_accounts:
+                continue
+            # A covered call or wheel already books the stock inside that
+            # strategy row. positions_summary's Covered Call total is
+            # stock plus the call, so a second Buy and Hold row repeats
+            # the stock (SMTC: $3,240.50 beside the $1,824.16 covered
+            # call). Skip when those stock dollars are already explained
+            # by the mart total, minus the option legs and any dividends
+            # attributed to the strategy.
+            equity_pnl = (
+                float(pd.to_numeric(sub["realized_pnl"], errors="coerce").fillna(0).sum())
+                if "realized_pnl" in sub.columns else 0.0
+            )
+            explained = (
+                _acct_sum(summary_df, acct, "total_pnl")
+                - _acct_sum(closed_legs_df, acct, "total_pnl")
+                - _acct_sum(summary_df, acct, "total_dividend_income")
+            )
+            if abs(explained - equity_pnl) <= 1.0:
                 continue
             extra.append(_row_from_equity_group(acct, "Buy and Hold", sub))
             existing.add((acct, "Buy and Hold"))
