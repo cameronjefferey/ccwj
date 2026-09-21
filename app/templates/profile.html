@@ -282,7 +282,11 @@
                         <div>
                             <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
                             <span class="small text-body-secondary ms-1">{{ a.broker_slug | title }}</span>
-                            {% if a.last_sync_at %}<div class="conn-meta">Last refresh {{ a.last_sync_at | friendly_time }}</div>{% endif %}
+                            {% if a.holdings_last_successful_sync %}
+                            <div class="conn-meta">Broker data as of {{ a.holdings_last_successful_sync.strftime('%b %-d, %Y') }}</div>
+                            {% elif a.last_sync_at %}
+                            <div class="conn-meta">Last refresh {{ a.last_sync_at | friendly_time }}</div>
+                            {% endif %}
                         </div>
                         {% if a.connection_broken_at %}
                         <span class="pill pill-danger"><span class="dot"></span> Reconnect needed</span>

@@ -28,6 +28,7 @@ from app.routes import (
     _bq_parallel,
     _parse_date,
     _tags_for_leg_range,
+    _tenant_ids_for_queries,
     _tenant_label_map_for_user,
     _tenants_for_scope,
     _user_account_list,
@@ -86,7 +87,9 @@ ACCOUNT_DIVIDEND_EVENTS_QUERY = """
 # predates transfer capture the query fails, the frame comes back
 # column-less, and the card simply hides itself.
 NET_DEPOSITS_QUERY = """
-    SELECT tenant_id, account, user_id, date, net_deposit_today, fees_today
+    SELECT tenant_id, account, user_id, date,
+           account_value, cash_value, equity_value, option_value,
+           net_deposit_today, fees_today
     FROM `ccwj-dbt.analytics.mart_wealth_daily`
     WHERE 1=1 {tenant_filter}
     ORDER BY date
@@ -569,13 +572,18 @@ def accounts():
     user_accounts = _user_account_list()
     selected_account = request.args.get("account", "")
     account_scope_query = _accounts_scope_query(request.args)
-    tenant_ids = _tenants_for_scope(selected_account)
-    tenant_filter = _tenant_sql_and(tenant_ids)
+    display_ids = _tenants_for_scope(selected_account)
+    # Full owned set in SQL so /accounts and /accounts?tenants=<one> share
+    # one warehouse cache entry. Pandas slices to the URL below — filtering
+    # must not change one account's P&L.
+    query_ids = _tenant_ids_for_queries(display_ids)
+    tenant_ids = display_ids
+    tenant_filter = _tenant_sql_and(query_ids)
 
     # Time frame filter. P&L-earned KPI cards are period deltas; breakdown
     # tables use the range to choose active positions but show coherent
-    # lifetime financial totals. Point-in-time cards (Account Value / Cash /
-    # Invested / current Unrealized) always reflect "now". ALL is the default.
+    # lifetime financial totals. Account value / cash / invested use the
+    # same settled close as Value & composition. ALL is the default.
     selected_range = (request.args.get("range", "ALL") or "ALL").upper()
     if selected_range not in ACCOUNTS_VALID_RANGES:
         selected_range = "ALL"
@@ -602,7 +610,7 @@ def accounts():
     except Exception as exc:
         return render_template(
             "accounts.html",
-            title="Accounts",
+            title="Account performance",
             error=str(exc),
             kpis={},
             summary_chart_json="{}",
@@ -788,6 +796,24 @@ def accounts():
 
     history_since = _account_created_for_scope(tenant_ids)
 
+    # Account value, cash, and invested come from the same settled
+    # mart_wealth_daily row Value & composition publishes. The live
+    # broker snapshot (stg_account_balances) is only the fallback when
+    # that mart has no account_value column yet.
+    value_as_of_label = "As of now"
+    try:
+        from app.wealth import _fmt_as_of, _value_as_of_cutoff, settled_book_value
+        book = settled_book_value(nd_df, _value_as_of_cutoff())
+        if book is not None:
+            account_value = float(book["account_value"])
+            cash_balance = float(book["cash"])
+            invested_value = account_value - cash_balance
+            value_as_of_label = "As of " + _fmt_as_of(book["as_of"])
+    except Exception as exc:
+        app.logger.warning(
+            "Settled account value unavailable, using broker balances: %s", exc,
+        )
+
     kpis = {
         "account_value": account_value,
         "cash_balance": cash_balance,
@@ -800,6 +826,7 @@ def accounts():
         "has_transfers": abs(net_deposits_lifetime) > 0.005,
         "fees": round(fees_lifetime, 2),
         "has_fees": abs(fees_lifetime) > 0.005,
+        "as_of_label": value_as_of_label,
     }
 
     # ------------------------------------------------------------------
@@ -813,9 +840,9 @@ def accounts():
     strategy_map = _primary_strategy_map(strat_summary_df, strat_class_df)
     strategy_from_daily = {}
     try:
-        chart_tenant_ids = _tenants_for_scope(selected_account)
         built = accounts_chart_payload(
-            client, chart_tenant_ids, current_df, strategy_map,
+            client, query_ids, current_df, strategy_map,
+            display_tenant_ids=display_ids,
         )
         summary_chart = {
             k: built.get(k, [])
@@ -974,7 +1001,7 @@ def accounts():
 
     return render_template(
         "accounts.html",
-        title="Accounts",
+        title="Account performance",
         kpis=kpis,
         summary_chart_json=json.dumps(summary_chart),
         strategy_chart_json=json.dumps(strategy_chart),
@@ -1026,11 +1053,16 @@ def accounts_query_batch(tenant_filter, *, include_trades=False):
     return queries
 
 
-def accounts_chart_payload(client, tenant_ids, current_df, strategy_map):
+def accounts_chart_payload(
+    client, tenant_ids, current_df, strategy_map, display_tenant_ids=None,
+):
     """Build (or cache-hit) the Accounts P&L chart payload.
 
+    ``tenant_ids`` is the SQL scope (the full owned set for a non-admin).
+    ``display_tenant_ids`` is the URL slice. The warehouse read stays on
+    one cache key; the chart series is the accounts on the page.
     Same ``cached_payload`` key the view uses so a warmer run is a hit on
-    the next /accounts load.
+    the next /accounts load when the visible set is the query set.
     """
     chart_tenant_filter = _tenant_sql_and(tenant_ids)
     chart_df = cached_query_df(
@@ -1038,7 +1070,8 @@ def accounts_chart_payload(client, tenant_ids, current_df, strategy_map):
         CHART_DATA_ALL_QUERY.format(tenant_filter=chart_tenant_filter),
         label="acct_chart_df",
     )
-    chart_df = _filter_df_by_tenant_ids(chart_df, tenant_ids)
+    visible = tenant_ids if display_tenant_ids is None else display_tenant_ids
+    chart_df = _filter_df_by_tenant_ids(chart_df, visible)
     with timed("acct_chart"):
         return cached_payload(
             (
@@ -1060,8 +1093,10 @@ def accounts_chart_payload(client, tenant_ids, current_df, strategy_map):
 def accounts_breakdown_fragment():
     client = get_bigquery_client()
     selected_account = request.args.get("account", "")
-    tenant_ids = _tenants_for_scope(selected_account)
-    tenant_filter = _tenant_sql_and(tenant_ids)
+    display_ids = _tenants_for_scope(selected_account)
+    query_ids = _tenant_ids_for_queries(display_ids)
+    tenant_ids = display_ids
+    tenant_filter = _tenant_sql_and(query_ids)
 
     selected_range = (request.args.get("range", "ALL") or "ALL").upper()
     if selected_range not in ACCOUNTS_VALID_RANGES:

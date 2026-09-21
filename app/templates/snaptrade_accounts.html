@@ -266,39 +266,39 @@
                     {% if show_label %}
                     <div class="label">{{ c.account_name }}</div>
                     {% endif %}
-                    {% if c.account_number_masked %}
-                    <div class="num">••••{{ c.account_number_masked[-4:] }}</div>
+                    {% set mask = c.account_number_masked | account_mask %}
+                    {% if mask %}
+                    <div class="num">{{ mask }}</div>
                     {% endif %}
                 </div>
                 <form method="POST" action="{{ url_for('snaptrade_account_nickname') }}" class="nick">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
                     <input type="text" name="nickname" maxlength="80"
-                           class="form-control form-control-sm"
+                           class="form-control form-control-sm nick-input"
                            placeholder="Add a nickname"
                            value="{{ c.display_nickname or '' }}"
+                           data-original="{{ c.display_nickname or '' }}"
                            aria-label="Nickname for {{ c.account_name }}">
-                    <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary nick-save" disabled>Save</button>
                 </form>
                 <div class="meta">
                     {% if c.connection_broken_at %}
                     {# The loud action lives in the group banner above; keep a
                        quiet per-account marker so the row's state is still clear. #}
                     <span class="needs-reconnect-note">Paused — reconnect above</span>
-                    {% elif c.first_sync_completed %}
-                    <span class="badge text-bg-light">Synced before</span>
-                    {% else %}
-                    <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
-                    {% endif %}
-                    {# Honest "broker data as of" — SnapTrade's OWN holdings sync
-                       time (when SnapTrade last pulled fresh data FROM the broker),
-                       NOT when we last read its cache. This is the timestamp the
-                       trader should trust for "how current is this?". #}
-                    {% if c.holdings_last_successful_sync %}
-                    <div class="freshness small text-body-secondary mt-1"
-                         title="When SnapTrade last pulled fresh holdings from your broker. This is the data's true 'as of' time, not when we last checked.">
+                    {% elif c.holdings_last_successful_sync %}
+                    {# Same holdings stamp as the nav strip and Settings.
+                       "Synced before" sat next to this date and read as a
+                       dangling label. #}
+                    <div class="freshness small text-body-secondary"
+                         title="When SnapTrade last pulled fresh holdings from your broker.">
                         Broker data as of {{ c.holdings_last_successful_sync.strftime('%b %-d, %Y') }}
                     </div>
+                    {% elif c.first_sync_completed %}
+                    <span class="badge text-bg-light">Synced</span>
+                    {% else %}
+                    <span class="badge text-bg-warning-subtle text-warning-emphasis">First sync pending</span>
                     {% endif %}
                 </div>
                 {# "Sync now" now ALWAYS asks SnapTrade to repoll the broker for
@@ -343,7 +343,7 @@
                         <p class="small text-body-secondary mb-2">
                             We don't have a CSV parser for {{ c.broker_slug|title if c.broker_slug else 'this broker' }}
                             yet, so pre-window history can't be backfilled here.
-                            <a href="{{ url_for('upload') }}#export-other">Request it</a> and we'll use it to
+                            <a href="{{ url_for('upload', tenant='snaptrade:' ~ c.snaptrade_account_id) }}">Request it</a> and we'll use it to
                             decide which broker to parse next.
                         </p>
                         {% endif %}
@@ -389,4 +389,25 @@
         <a href="{{ url_for('profile', tab='account') }}">← Back to Accounts &amp; data</a>
     </p>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  document.querySelectorAll("form.nick").forEach(function (form) {
+    var input = form.querySelector("input[name=nickname]");
+    var btn = form.querySelector("button.nick-save");
+    if (!input || !btn) return;
+    var original = input.getAttribute("data-original") || "";
+    function sync() {
+      var dirty = input.value !== original;
+      btn.disabled = !dirty;
+      btn.classList.toggle("btn-primary", dirty);
+      btn.classList.toggle("btn-outline-secondary", !dirty);
+    }
+    input.addEventListener("input", sync);
+    sync();
+  });
+})();
+</script>
 {% endblock %}

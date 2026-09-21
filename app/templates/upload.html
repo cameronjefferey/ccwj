@@ -165,7 +165,7 @@
         </p>
         <div class="broker-export-list">
             {% for broker in csv_export_brokers|default([]) %}
-            <details class="broker-export" id="export-{{ broker.slug }}"{% if broker.ready %} open{% endif %}>
+            <details class="broker-export" id="export-{{ broker.slug }}"{% if open_broker_slug %}{% if broker.slug == open_broker_slug %} open{% endif %}{% elif broker.ready %} open{% endif %}>
                 <summary>
                     {{ broker.name }}
                     {% if broker.ready %}

@@ -2805,22 +2805,17 @@ _EMPTY_FRESHNESS = {
 def _inject_broker_data_freshness():
     """Global "broker data as of" strip. Hidden when we cannot date the
     accounts on the page (incomplete SnapTrade stamps, CSV-only, etc.).
-    Best-effort; never breaks a render."""
+
+    The strip is the whole book, not the URL filter. Scoping it to
+    ``?tenants=`` made the same nav say Sep 20 on All and Sep 21 on
+    Keeley. Best-effort; never breaks a render."""
     try:
         from flask import g as _g
         if getattr(_g, "_ht_skeleton", False):
             return dict(_EMPTY_FRESHNESS)
         if not getattr(current_user, "is_authenticated", False):
             return dict(_EMPTY_FRESHNESS)
-        tenant_ids = None
-        try:
-            from app.routes import _tenants_for_scope
-            tenant_ids = _tenants_for_scope()
-        except Exception:
-            from app.models import get_tenant_ids_for_user
-            tenant_ids = get_tenant_ids_for_user(current_user.id)
-        as_of, stale_days = broker_data_freshness(
-            current_user.id, tenant_ids=tenant_ids)
+        as_of, stale_days = broker_data_freshness(current_user.id)
         return {
             "broker_data_as_of": as_of,
             "broker_data_stale_days": stale_days,

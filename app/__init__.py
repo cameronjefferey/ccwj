@@ -99,6 +99,14 @@ def _account_label_filter(account_name, tenant_id=None):
 app.add_template_filter(_account_label_filter, name="account_label")
 
 
+def _account_mask_filter(raw):
+    from app.linked_accounts import format_account_mask
+    return format_account_mask(raw)
+
+
+app.add_template_filter(_account_mask_filter, name="account_mask")
+
+
 def friendly_timestamp(value, tz_name=None):
     """Render a database timestamp as a short local time.
 

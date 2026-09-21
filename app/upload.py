@@ -49,6 +49,7 @@ CSV_EXPORT_BROKERS = (
     {"slug": "interactive", "name": "Interactive Brokers", "ready": False},
     {"slug": "alpaca", "name": "Alpaca", "ready": False},
     {"slug": "wealthsimple", "name": "Wealthsimple", "ready": False},
+    {"slug": "coinbase", "name": "Coinbase", "ready": False},
 )
 
 
@@ -1258,6 +1259,49 @@ def _commit_git_paths(path_contents, message):
     return True, None, marker, False
 
 
+def schwab_csv_allowed(user_id, tenant_id):
+    """Reject a Schwab CSV aimed at a known non-Schwab SnapTrade account.
+
+    Manual tenants and unknown institutions stay allowed. A SnapTrade
+    lookup error fails open so a database blip does not block Schwab
+    uploads. Coinbase (and Fidelity, etc.) return False.
+    """
+    from app.linked_accounts import institution_accepts_schwab_csv
+
+    tid = (tenant_id or "").strip()
+    if not tid or not tid.startswith("snaptrade:"):
+        return True
+    aid = tid.split(":", 1)[1].strip()
+    if not aid:
+        return True
+    try:
+        from app.models import get_snaptrade_account
+        row = get_snaptrade_account(user_id, aid)
+    except Exception:
+        return True
+    if not row:
+        return True
+    return institution_accepts_schwab_csv(row.get("broker_slug"))
+
+
+def schwab_picker_choices(rows):
+    """Account rows the Schwab CSV form may preselect.
+
+    Coinbase and other institutions stay off this dropdown. They have
+    their own "not yet" section instead of being fed to the Schwab parser.
+    """
+    from app.linked_accounts import institution_accepts_schwab_csv
+
+    out = []
+    for row in rows or []:
+        inst = row.get("institution") or ""
+        tid = str(row.get("tenant_id") or "")
+        manual = bool(row.get("removable")) or tid.startswith("manual:")
+        if manual or institution_accepts_schwab_csv(inst):
+            out.append(row)
+    return out
+
+
 def _csv_upload_account_choices(tenants):
     """Build the CSV upload picker: ``{tenant_id, label}`` in display order.
 
@@ -2043,12 +2087,25 @@ def upload():
         # used to mint a new manual tenant instead of attaching to the
         # SnapTrade account the user thought they selected.
         tenant_rows = get_broker_tenants_for_user(current_user.id) or []
-        account_choices = _csv_upload_account_choices(tenant_rows)
-        from app.linked_accounts import linked_account_entries
-        from app.routes import _disambiguated_tenant_labels
-        linked_accounts = linked_account_entries(
-            tenant_rows, _disambiguated_tenant_labels(tenant_rows),
+        from app.linked_accounts import (
+            csv_broker_slug,
+            linked_account_entries,
+            profile_account_rows,
         )
+        from app.routes import _disambiguated_tenant_labels
+        labels = _disambiguated_tenant_labels(tenant_rows)
+        try:
+            from app.models import get_snaptrade_accounts
+            snap_rows = get_snaptrade_accounts(current_user.id) or []
+            linked_accounts = profile_account_rows(snap_rows, tenant_rows, labels)
+        except Exception:
+            snap_rows = None
+            linked_accounts = linked_account_entries(tenant_rows, labels)
+        # Schwab form lists Schwab + CSV-only accounts. A ?tenant= for
+        # Coinbase must not preselect inside the Schwab parser.
+        account_choices = schwab_picker_choices(linked_accounts)
+        if not account_choices and snap_rows is None:
+            account_choices = _csv_upload_account_choices(tenant_rows)
         accounts = sorted(set(user_accounts))
         recent_uploads = get_uploads_for_user(current_user.id)
         try:
@@ -2060,9 +2117,20 @@ def upload():
         # with ?tenant=<tenant_id> so the picker lands pre-selected instead
         # of making the user re-find the account they just clicked from.
         preselect_tenant = request.args.get("tenant", "").strip()
-        if preselect_tenant and not any(
+        open_broker_slug = ""
+        matched = next(
+            (c for c in linked_accounts if c.get("tenant_id") == preselect_tenant),
+            None,
+        )
+        if preselect_tenant and matched is None:
+            preselect_tenant = ""
+        elif matched and not any(
             c.get("tenant_id") == preselect_tenant for c in account_choices
         ):
+            open_broker_slug = csv_broker_slug(matched.get("institution"))
+            known = {b["slug"] for b in CSV_EXPORT_BROKERS}
+            if open_broker_slug not in known:
+                open_broker_slug = ""
             preselect_tenant = ""
         return render_template(
             "upload.html", title="Upload Data",
@@ -2074,6 +2142,7 @@ def upload():
             github_upload_enabled=seed_writes_enabled,
             csv_export_brokers=CSV_EXPORT_BROKERS,
             preselect_tenant=preselect_tenant,
+            open_broker_slug=open_broker_slug,
         )
 
     # ------------------------------------------------------------------
@@ -2133,6 +2202,13 @@ def upload():
     if acct_err:
         flash(acct_err, "danger")
         return redirect(url_for("upload"))
+    if not schwab_csv_allowed(current_user.id, tenant_id):
+        flash(
+            "That account isn't a Schwab account. CSV upload currently "
+            "parses Schwab's export only.",
+            "warning",
+        )
+        return redirect(url_for("upload", tenant=tenant_id))
 
     # ------------------------------------------------------------------
     # Sharing labels across users is allowed — tenant isolation is

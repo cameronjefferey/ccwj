@@ -192,11 +192,14 @@ def profile():
         upload_count = len(recent_uploads or [])
 
     group_tenant_choices = []
+    tenant_rows = []
+    tenant_labels = {}
     try:
         from app.routes import _disambiguated_tenant_labels
 
         tenant_rows = get_broker_tenants_for_user(current_user.id) or []
         labels = _disambiguated_tenant_labels(tenant_rows)
+        tenant_labels = labels
         group_tenant_choices = [
             {
                 "tenant_id": row.get("tenant_id"),
@@ -238,14 +241,18 @@ def profile():
 
         snaptrade_enabled = _snaptrade_enabled_fn()
         snaptrade_accounts = _get_snaptrade_accounts(current_user.id) or []
-        from app.linked_accounts import distinct_broker_names
+        from app.linked_accounts import distinct_broker_names, profile_account_rows
         broker_names = distinct_broker_names(snaptrade_accounts)
+        profile_rows = profile_account_rows(
+            snaptrade_accounts, tenant_rows, tenant_labels,
+        )
         snaptrade_routine_lookback_days = int(_snap_routine_fn())
         snaptrade_full_history_lookback_days = int(_snap_full_days)
     except Exception:
         snaptrade_enabled = False
         snaptrade_accounts = []
         broker_names = []
+        profile_rows = []
 
     routes = sorted(_ALLOWED_DEFAULT_ROUTE)
     if not app.config.get("INSIGHTS_ENABLED", True):
@@ -266,11 +273,13 @@ def profile():
     except Exception:
         pass
 
-    # Readable broker tenants, not the legacy user_accounts label list.
-    # Fall back to SnapTrade rows if the tenant read failed closed to [].
-    account_count = len(group_tenant_choices or [])
-    if account_count == 0 and snaptrade_accounts:
-        account_count = len(snaptrade_accounts)
+    # One row per live SnapTrade account (plus CSV-only manuals). Orphan
+    # broker_tenants / leftover user_accounts labels are not extra accounts.
+    # If the SnapTrade read failed, fall back to readable tenants.
+    if snaptrade_accounts or profile_rows:
+        account_count = len(profile_rows)
+    else:
+        account_count = len(group_tenant_choices or [])
     return render_template(
         "profile.html",
         title="Settings",
