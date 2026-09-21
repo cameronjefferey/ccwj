@@ -123,6 +123,80 @@ def test_exit_timing_rollup_merges_same_strategy_across_accounts():
     assert "do not rename" in brief.lower()
 
 
+def test_coaching_brief_collapses_covered_call_across_accounts(monkeypatch):
+    """The page list is the rollup, not one card per mart row.
+
+    PR #117 tested ``_rollup_exit_signals`` and left
+    ``_build_coaching_brief`` appending every (account, strategy) row.
+    Live By Strategy kept two Covered Call cards ($5,441 at 0% and
+    $4,379 at 95%). Both rows share the generic Schwab display name;
+    the section is one card per strategy name.
+    """
+    df = pd.DataFrame([
+        _signal_row(
+            account="Schwab Account", tenant_id="snaptrade:aaaaaaaa",
+        ),
+        _signal_row(
+            account="Schwab Account", tenant_id="snaptrade:bbbbbbbb",
+            reliable_contracts=4, total_closed=101,
+            total_pnl_given_back=4379, avg_giveback_pct=95,
+            avg_days_held_past_peak=3,
+        ),
+        _signal_row(
+            strategy="Long Call", account="Schwab Account",
+            tenant_id="snaptrade:aaaaaaaa", reliable_contracts=2,
+            total_closed=40, total_pnl_given_back=13766,
+            avg_giveback_pct=5, avg_days_held_past_peak=1,
+        ),
+    ])
+
+    def fake_parallel(client, specs):
+        assert "coach_signals" in specs
+        return {"coach_signals": df}
+
+    monkeypatch.setattr("app.routes._bq_parallel", fake_parallel)
+
+    from app import app as flask_app
+    with flask_app.app_context():
+        brief, data = insights._build_coaching_brief(
+            None, ["snaptrade:aaaaaaaa", "snaptrade:bbbbbbbb"],
+        )
+
+    signals = data["signals"]
+    assert [s["strategy"] for s in signals] == ["Covered Call"]
+    assert signals[0]["strategy_label"] == "Covered Call"
+    assert "·" not in signals[0]["strategy_label"]
+    assert signals[0]["account_count"] == 2
+    assert signals[0]["trades"] == 13
+    assert signals[0]["total_closed"] == 178
+    assert signals[0]["pnl_given_back"] == 5441 + 4379
+    assert round(signals[0]["giveback_pct"], 1) == round(380 / 13, 1)
+    # The 2-contract Long Call stays off the card list but in coverage.
+    assert data["reliable_contracts"] == 15
+    assert data["total_closed"] == 218
+    assert data["exit_timing"]["reliable_contracts"] == 15
+    assert data["exit_timing"]["total_closed"] == 218
+    assert brief.count("Covered Call:") == 1
+    assert "Covered Call ·" not in brief
+    assert "2 accounts combined" in brief
+    assert "Long Call" not in brief
+
+    from jinja2 import Environment
+    from pathlib import Path
+    src = Path(__file__).resolve().parents[1].joinpath(
+        "app/templates/insights.html"
+    ).read_text()
+    start = src.index("{% for s in coaching.signals %}")
+    end = src.index("{% endfor %}", start) + len("{% endfor %}")
+    html = Environment().from_string(src[start:end]).render(coaching=data)
+    assert html.count('class="strat-name"') == 1
+    assert "Covered Call" in html
+    assert "Covered Call ·" not in html
+    assert "13 of 178" in html
+    assert "$9,820" in html
+    assert "2 accounts" in html
+
+
 def test_stale_analysis_coverage_disagrees_with_live_cards():
     text = "only 4 of 391 closed contracts have sufficient daily snapshot data"
     conflict = insights.analysis_coverage_conflict(text, 15, 410)

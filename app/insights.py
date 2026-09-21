@@ -435,11 +435,12 @@ def _strip_md_for_brief(s: str) -> str:
 
 
 def strategy_display_label(name, account, tenant_id, name_counts, tenant_labels=None):
-    """Keep a duplicated strategy name attached to its account.
+    """Attach an account nickname when the same strategy name is repeated.
 
-    ``mart_coaching_signals`` is one row per (account, strategy). Two
-    Covered Call books (different giveback) must not render as the same
-    label. Unique names stay bare.
+    Exit Timing "By Strategy" does not use this. Those cards collapse
+    through ``_rollup_exit_signals`` — two Covered Call books are one
+    row, not "Covered Call" twice and not "Covered Call · Schwab Account"
+    twice when both accounts share that display name.
     """
     label_name = (name or "").strip()
     if not label_name:
@@ -459,21 +460,8 @@ def strategy_display_label(name, account, tenant_id, name_counts, tenant_labels=
     return label_name
 
 
-def _coaching_tenant_labels():
-    """Nickname map for the signed-in user. Empty when there is no request."""
-    try:
-        from flask_login import current_user
-        if not current_user.is_authenticated:
-            return {}
-        from app.models import get_broker_tenants_for_user
-        from app.routes import _disambiguated_tenant_labels
-        rows = get_broker_tenants_for_user(current_user.id) or []
-        return _disambiguated_tenant_labels(rows)
-    except Exception:
-        return {}
-
-# A strategy row needs this many reliable contracts before it is a card.
-# Below that, the account-level average is too noisy to label.
+# A strategy card needs this many reliable contracts after accounts are
+# combined. Below that, the average is too noisy to label.
 _MIN_RELIABLE_FOR_STRATEGY_ROW = 3
 
 # "4 of 391 closed contracts" in a saved narration. Small "N of M" phrases
@@ -520,6 +508,7 @@ def _rollup_exit_signals(signals_df):
             "premium_weighted": 0.0,
             "premium_weight": 0,
             "accounts": set(),
+            "tenants": set(),
             "best_dte_bucket": None,
             "best_dte_win_rate": 0.0,
             "best_dte_trades": 0,
@@ -538,8 +527,13 @@ def _rollup_exit_signals(signals_df):
         account = r.get("account")
         if account is not None and not (isinstance(account, float) and pd.isna(account)):
             label = str(account).strip()
-            if label:
+            if label and label.lower() != "nan":
                 g["accounts"].add(label)
+        tenant = r.get("tenant_id")
+        if tenant is not None and not (isinstance(tenant, float) and pd.isna(tenant)):
+            tid = str(tenant).strip()
+            if tid and tid.lower() != "nan":
+                g["tenants"].add(tid)
         prem = float(r.get("avg_pct_premium_captured") or 0)
         if prem:
             g["premium_weighted"] += prem * max(n, 1)
@@ -577,7 +571,10 @@ def _rollup_exit_signals(signals_df):
             "pct_premium_captured": (
                 g["premium_weighted"] / g["premium_weight"] if g["premium_weight"] else 0
             ),
-            "account_count": len(g["accounts"]),
+            # Prefer tenant ids. Two Schwab accounts often share the
+            # display label "Schwab Account", which would count as one.
+            "account_count": len(g["tenants"]) if g["tenants"] else len(g["accounts"]),
+            "strategy_label": g["strategy"],
             "best_dte_bucket": g["best_dte_bucket"],
             "best_dte_win_rate": g["best_dte_win_rate"],
             "best_dte_trades": g["best_dte_trades"],
@@ -761,40 +758,9 @@ def _build_coaching_brief(client, tenant_ids):
             coaching_data["reliable_contracts"] = reliable_contracts
             coaching_data["pct_reliable"] = pct_reliable
 
-            # Same rows and headline numbers the template cards render.
-            # Do not also emit the unfiltered account-grain sum — that
-            # second total is what Ask AI used to quote instead of the cards.
-            strat_rows = []
-            for _, r in signals_df.iterrows():
-                if int(r.get("reliable_contracts", 0) or 0) < 3:
-                    continue
-                strat_rows.append({
-                    "strategy": r.get("strategy"),
-                    "account": r.get("account") or "",
-                    "tenant_id": r.get("tenant_id") or "",
-                    "giveback_pct": float(r.get("avg_giveback_pct") or 0),
-                    "days_past_peak": float(r.get("avg_days_held_past_peak") or 0),
-                    "pnl_given_back": float(r.get("total_pnl_given_back") or 0),
-                    "trades": int(r.get("reliable_contracts") or 0),
-                    "total_closed": int(r.get("total_closed") or 0),
-                    "pct_reliable": float(r.get("pct_contracts_reliable") or 0),
-                    "pct_premium_captured": float(r.get("avg_pct_premium_captured") or 0),
-                    "best_dte_bucket": None if r.get("best_dte_bucket") is None else r.get("best_dte_bucket"),
-                    "best_dte_win_rate": float(r.get("best_dte_win_rate") or 0),
-                    "best_dte_trades": int(float(r.get("best_dte_trades") or 0)),
-                    "worst_dte_bucket": None if r.get("worst_dte_bucket") is None else r.get("worst_dte_bucket"),
-                    "worst_dte_win_rate": float(r.get("worst_dte_win_rate") or 0),
-                    "worst_dte_trades": int(float(r.get("worst_dte_trades") or 0)),
-                })
-            from collections import Counter
-            tenant_labels = _coaching_tenant_labels()
-            name_counts = Counter(str(s.get("strategy") or "") for s in strat_rows)
-            for s in strat_rows:
-                s["strategy_label"] = strategy_display_label(
-                    s.get("strategy"), s.get("account"), s.get("tenant_id"),
-                    name_counts, tenant_labels,
-                )
-            strat_rows.sort(key=lambda x: x["pnl_given_back"], reverse=True)
+            # One card per strategy name. The mart is (account, strategy);
+            # the template, Regenerate, and Ask AI all read this list.
+            strat_rows = _rollup_exit_signals(signals_df)
             coaching_data["signals"] = strat_rows
             headlines = _exit_timing_headlines(
                 strat_rows, reliable_contracts, total_closed,
