@@ -54,6 +54,28 @@ FROM `ccwj-dbt.analytics.mart_coaching_signals`
 ORDER BY total_pnl_given_back DESC
 """
 
+# Coverage denominator is contracts held in the option-marks window
+# (close_date >= first captured mark), not lifetime closed. Reads
+# int_option_exit_analysis directly so this card is correct even before
+# mart_coaching_signals.eligible_closed has been rebuilt. Projects
+# tenant_id for the fail-closed DataFrame filter.
+EXIT_COVERAGE_QUERY = """
+WITH marks AS (
+  SELECT MIN(date) AS marks_start
+  FROM `ccwj-dbt.analytics.int_option_marks_daily`
+)
+SELECT
+    e.tenant_id,
+    e.strategy,
+    COUNT(*) AS total_closed,
+    COUNTIF(e.close_date >= m.marks_start) AS eligible_closed,
+    COUNTIF(e.data_reliable) AS reliable_contracts
+FROM `ccwj-dbt.analytics.int_option_exit_analysis` e
+CROSS JOIN marks m
+{where}
+GROUP BY 1, 2
+"""
+
 RECENT_EXITS_QUERY = """
 SELECT
     trade_symbol, underlying_symbol, strategy, direction,
@@ -682,6 +704,79 @@ def _insights_scope_narrowed():
         return False
 
 
+def _exit_coverage(signals_df):
+    """Coverage vs the option-marks window, not lifetime closed.
+
+    Daily marks only exist from 2026-08-04. Dividing reliable contracts
+    by lifetime closed (12 / 407) made a working pipeline look 3% healthy.
+    ``eligible_closed`` is the in-window count; fall back to total_closed
+    only if the mart has not been rebuilt with the new column yet.
+    """
+    if signals_df is None or signals_df.empty:
+        return 0, 0, 0
+    reliable = int(signals_df["reliable_contracts"].sum())
+    if "eligible_closed" in signals_df.columns:
+        eligible = int(signals_df["eligible_closed"].sum())
+    else:
+        eligible = int(signals_df["total_closed"].sum())
+    pct = round(reliable / eligible * 100, 0) if eligible > 0 else 0
+    return reliable, eligible, int(pct)
+
+
+def _weighted_avg(frame, value_col, weight_col):
+    w = frame[weight_col].sum()
+    if w <= 0:
+        return 0.0
+    return float((frame[value_col] * frame[weight_col]).sum() / w)
+
+
+def _strategy_exit_rows(signals_df, coverage_df=None):
+    """Collapse (account × tenant × strategy) to one row per strategy.
+
+    The mart is tenant-grained, so two Schwab accounts both labeled
+    Covered Call used to render as duplicate rows (6 of 74 and 4 of 101).
+
+    ``coverage_df`` supplies the marks-window denominator (eligible_closed)
+    so "10 of 18" is in-window contracts, not lifetime.
+    """
+    if signals_df is None or signals_df.empty:
+        return []
+    cov_by_strat = None
+    if coverage_df is not None and not coverage_df.empty:
+        cov_by_strat = coverage_df.groupby("strategy", sort=False).agg(
+            eligible_closed=("eligible_closed", "sum"),
+            reliable_contracts=("reliable_contracts", "sum"),
+        )
+    rows = []
+    for strategy, g in signals_df.groupby("strategy", sort=False):
+        if cov_by_strat is not None and strategy in cov_by_strat.index:
+            reliable = int(cov_by_strat.loc[strategy, "reliable_contracts"])
+            eligible = int(cov_by_strat.loc[strategy, "eligible_closed"])
+        else:
+            reliable = int(g["reliable_contracts"].sum())
+            denom_col = (
+                "eligible_closed" if "eligible_closed" in g.columns
+                else "total_closed"
+            )
+            eligible = int(g[denom_col].sum())
+        if reliable < _MIN_RELIABLE_FOR_STRATEGY_ROW:
+            continue
+        rows.append({
+            "strategy": strategy,
+            "giveback_pct": _weighted_avg(g, "avg_giveback_pct", "reliable_contracts"),
+            "days_past_peak": _weighted_avg(
+                g, "avg_days_held_past_peak", "reliable_contracts"),
+            "pnl_given_back": float(g["total_pnl_given_back"].sum()),
+            "trades": reliable,
+            "total_closed": eligible,
+            "pct_reliable": round(reliable / eligible * 100, 0) if eligible > 0 else 0,
+            "pct_premium_captured": _weighted_avg(
+                g, "avg_pct_premium_captured", "reliable_contracts"),
+        })
+    rows.sort(key=lambda x: x["giveback_pct"], reverse=True)
+    return rows
+
+
 # ------------------------------------------------------------------
 # Coaching brief builder — the core differentiator
 # ------------------------------------------------------------------
@@ -693,6 +788,7 @@ def _build_coaching_brief(client, tenant_ids):
     contains the raw data for deterministic rendering in the template.
     """
     where = _tenant_sql_filter(tenant_ids)
+    coverage_where = _tenant_sql_filter(tenant_ids, col="e.tenant_id")
     tenant_and = _tenant_sql_and(tenant_ids)
     sections = []
     coaching_data = {
@@ -703,6 +799,7 @@ def _build_coaching_brief(client, tenant_ids):
         "discovery_headline": None,
         "has_data": False,
         "total_closed": 0,
+        "eligible_closed": 0,
         "reliable_contracts": 0,
         "pct_reliable": 0,
         "exit_timing": None,
@@ -725,6 +822,7 @@ def _build_coaching_brief(client, tenant_ids):
     s_and = _tenant_sql_and(tenant_ids, col="s.tenant_id")
     batch_specs = {
         "coach_signals": COACHING_SIGNALS_QUERY.format(where=where),
+        "coach_coverage": EXIT_COVERAGE_QUERY.format(where=coverage_where),
         "coach_exits": (RECENT_EXITS_QUERY.format(tenant_filter=tenant_and), exits_cfg),
         "coach_discovery": _DISCOVERY_SQL.format(
             tenant_clause=e_and if e_and else "",
@@ -750,20 +848,51 @@ def _build_coaching_brief(client, tenant_ids):
                 if col in signals_df.columns:
                     signals_df[col] = pd.to_numeric(signals_df[col], errors="coerce").fillna(0)
 
-            total_closed = int(signals_df["total_closed"].sum())
-            reliable_contracts = int(signals_df["reliable_contracts"].sum())
-            pct_reliable = round(reliable_contracts / total_closed * 100, 0) if total_closed > 0 else 0
+            coverage_df = batch.get("coach_coverage", pd.DataFrame())
+            coverage_df = _filter_df_by_tenant_ids(coverage_df, tenant_ids)
+            for col in ["total_closed", "eligible_closed", "reliable_contracts"]:
+                if col in coverage_df.columns:
+                    coverage_df[col] = pd.to_numeric(
+                        coverage_df[col], errors="coerce").fillna(0)
+            eligible_by_key = {}
+            if not coverage_df.empty and "eligible_closed" in coverage_df.columns:
+                for _, c in coverage_df.iterrows():
+                    eligible_by_key[(
+                        str(c.get("tenant_id") or ""),
+                        str(c.get("strategy") or ""),
+                    )] = int(c.get("eligible_closed") or 0)
 
-            coaching_data["total_closed"] = total_closed
+            total_given_back = float(signals_df["total_pnl_given_back"].sum())
+            coverage_src = coverage_df if not coverage_df.empty else signals_df
+            reliable_contracts, eligible_closed, pct_reliable = _exit_coverage(
+                coverage_src)
+
+            coaching_data["total_closed"] = int(signals_df["total_closed"].sum())
+            coaching_data["eligible_closed"] = eligible_closed
             coaching_data["reliable_contracts"] = reliable_contracts
             coaching_data["pct_reliable"] = pct_reliable
 
             # One card per strategy name. The mart is (account, strategy);
             # the template, Regenerate, and Ask AI all read this list.
             strat_rows = _rollup_exit_signals(signals_df)
+            if eligible_by_key:
+                window_by_strategy = {}
+                for (_tid, strategy), n in eligible_by_key.items():
+                    window_by_strategy[strategy] = window_by_strategy.get(strategy, 0) + n
+                for s in strat_rows:
+                    window = window_by_strategy.get(str(s.get("strategy") or ""))
+                    if window is None:
+                        continue
+                    s["total_closed"] = window
+                    trades = int(s.get("trades") or 0)
+                    s["pct_reliable"] = (
+                        round(trades / window * 100, 0) if window else 0
+                    )
             coaching_data["signals"] = strat_rows
             headlines = _exit_timing_headlines(
-                strat_rows, reliable_contracts, total_closed,
+                strat_rows,
+                reliable_contracts,
+                eligible_closed or coaching_data["total_closed"],
             )
             coaching_data["exit_timing"] = headlines
             if headlines:
@@ -969,11 +1098,15 @@ strikes, expirations, position sizes, or strategies; describe the patterns
 the data shows.
 
 IMPORTANT — DATA COVERAGE: The signals are computed only from contracts with
-sufficient daily snapshot data (at least 40% of hold days covered, minimum 3
-snapshots). The data will tell you how many contracts qualified. If coverage
-is low (e.g., "15 of 40 contracts"), acknowledge that the patterns are based
-on a subset and may become clearer as more daily data accumulates. Do NOT
-present partial-coverage findings as definitive.
+sufficient daily snapshot data (at least 40% of hold days covered, minimum 2
+snapshots) that closed since daily option marks began (August 2026). The
+denominator is that marks window, not lifetime closed — a trader with years
+of history will have many contracts that can never be scored. The data will
+tell you how many contracts qualified. If coverage is low (e.g., "15 of 40
+contracts since marks began"), acknowledge that the patterns are based on a
+subset and may become clearer as more daily data accumulates. Do NOT present
+partial-coverage findings as definitive. Do NOT treat a small numerator over
+a large lifetime closed count as a data-quality failure.
 
 DISCOVERY LAB (when present): These are deterministic contrasts surfaced only
 because we reconstruct daily unrealized curves — e.g., weekday clustering of
@@ -1335,6 +1468,7 @@ def insights():
         "discoveries": [],
         "discovery_headline": None,
         "total_closed": 0,
+        "eligible_closed": 0,
         "reliable_contracts": 0,
         "pct_reliable": 0,
         "exit_timing": None,
@@ -1351,7 +1485,7 @@ def insights():
         insight_conflict = analysis_coverage_conflict(
             cached.get("full_analysis") or cached.get("summary") or "",
             coaching_data.get("reliable_contracts"),
-            coaching_data.get("total_closed"),
+            coaching_data.get("eligible_closed") or coaching_data.get("total_closed"),
         )
 
     return render_template(
