@@ -141,21 +141,29 @@ def _patched_models(monkeypatch):
         "broken_cleared": [],
         "sync_attempts": [],
         "holdings_synced": [],
+        "snapshot_generations": [],
     }
 
-    monkeypatch.setattr(_snap, "mark_snaptrade_first_sync_completed",
-                        lambda u, a: record["first_sync_marked"].append((u, a)))
-    monkeypatch.setattr(_snap, "mark_snaptrade_connection_broken",
-                        lambda u, a: record["broken_marked"].append((u, a)))
-    monkeypatch.setattr(_snap, "clear_snaptrade_connection_broken",
-                        lambda u, a: record["broken_cleared"].append((u, a)))
+    def _begin_snapshot(u, a):
+        generation = len(record["snapshot_generations"]) + 1
+        record["snapshot_generations"].append((u, a, generation))
+        return generation
 
-    def _record_attempt(u, a, *, error=None):
+    monkeypatch.setattr(_snap, "begin_snaptrade_snapshot_sync", _begin_snapshot)
+    monkeypatch.setattr(_snap, "mark_snaptrade_first_sync_completed",
+                        lambda u, a, **_k: record["first_sync_marked"].append((u, a)))
+    monkeypatch.setattr(_snap, "mark_snaptrade_connection_broken",
+                        lambda u, a, **_k: record["broken_marked"].append((u, a)))
+    monkeypatch.setattr(_snap, "clear_snaptrade_connection_broken",
+                        lambda u, a, **_k: record["broken_cleared"].append((u, a)))
+
+    def _record_attempt(u, a, *, error=None, snapshot_generation=None):
         record["sync_attempts"].append((u, a, error))
     monkeypatch.setattr(_snap, "record_snaptrade_sync_attempt", _record_attempt)
 
     monkeypatch.setattr(_snap, "record_snaptrade_holdings_sync",
-                        lambda u, a, when: record["holdings_synced"].append((u, a, when)))
+                        lambda u, a, when, **_k:
+                        record["holdings_synced"].append((u, a, when)))
 
     return record
 
@@ -425,6 +433,15 @@ def _ok_run_sync(extra=None):
         ),
         (
             {
+                "github_pushed": False,
+                "github_no_changes": True,
+                "snapshot_superseded": True,
+            },
+            False,
+            True,
+        ),
+        (
+            {
                 "history_rows": 0,
                 "current_rows": 5,
                 "github_pushed": True,
@@ -495,6 +512,9 @@ def test_sync_one_marks_first_sync_only_after_completed_durable_history(
         extra.get("github_pushed") or extra.get("github_no_changes")
     )
     should_start_trial = not bool(extra.get("deferred")) and seed_write_confirmed
+    should_start_trial = should_start_trial and not bool(
+        extra.get("snapshot_superseded")
+    )
     assert bool(trial_started) is should_start_trial
     if should_succeed:
         assert _patched_models["broken_cleared"] == [(9, "abc")]
@@ -505,6 +525,64 @@ def test_sync_one_marks_first_sync_only_after_completed_durable_history(
         assert _patched_models["sync_attempts"][0][2].startswith(
             "seed_write_failed:"
         )
+
+
+def test_sync_one_carries_reserved_generation_to_deferred_seed_batch(
+    monkeypatch, _patched_models,
+):
+    monkeypatch.setattr(
+        _snap, "get_snaptrade_user",
+        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+
+    def _fake_run_sync(*args, **kwargs):
+        return _ok_run_sync({
+            "deferred": True,
+            "account_name": "X",
+            "tenant_id": "snaptrade:abc",
+            "history_df": None,
+            "current_df": object(),
+            "balances_df": None,
+            "skip_history": True,
+            "snapshot_generation": kwargs["snapshot_generation"],
+        })
+
+    monkeypatch.setattr(_snap, "_run_sync", _fake_run_sync)
+    res = _snap._sync_one_connection(
+        9,
+        {"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+        defer_push=True,
+    )
+
+    assert _patched_models["snapshot_generations"] == [(9, "abc", 1)]
+    assert res["frames"]["snapshot_account_id"] == "abc"
+    assert res["frames"]["snapshot_generation"] == 1
+
+
+def test_snapshot_generation_helpers_use_atomic_postgres_counter(monkeypatch):
+    writes = []
+    reads = []
+    monkeypatch.setattr(
+        _models,
+        "execute_returning",
+        lambda sql, params: writes.append((sql, params))
+        or {"snapshot_sync_generation": 7},
+    )
+    monkeypatch.setattr(
+        _models,
+        "fetch_one",
+        lambda sql, params: reads.append((sql, params))
+        or {"snapshot_sync_generation": 7},
+    )
+
+    generation = _models.begin_snaptrade_snapshot_sync(9, "abc")
+    assert generation == 7
+    assert "nextval(" in writes[0][0]
+    assert _models.snaptrade_snapshot_generation_is_current(9, "abc", 7)
+    assert not _models.snaptrade_snapshot_generation_is_current(9, "abc", 6)
+    assert reads[0][1] == (9, "abc")
 
 
 def test_sync_one_force_refresh_calls_broker_repoll(monkeypatch, _patched_models):
@@ -1450,6 +1528,43 @@ def test_record_sync_attempt_updates_last_at_and_error(monkeypatch):
         assert "last_sync_error = %s" in sql
     assert spy.calls[0][1] == (None, 7, "abc")
     assert spy.calls[1][1] == ("boom", 7, "abc")
+
+
+def test_sync_health_updates_are_fenced_by_snapshot_generation(monkeypatch):
+    """A slow older fetch must not clear or replace a newer sync's health."""
+    spy = _ExecuteSpy()
+    monkeypatch.setattr(_models, "execute", spy)
+
+    _models.record_snaptrade_sync_attempt(
+        7, "abc", error="boom", snapshot_generation=9,
+    )
+    _models.clear_snaptrade_connection_broken(
+        7, "abc", snapshot_generation=9,
+    )
+    _models.record_snaptrade_holdings_sync(
+        7, "abc", "2026-09-13T10:00:00Z", snapshot_generation=9,
+    )
+
+    assert len(spy.calls) == 3
+    for sql, params in spy.calls:
+        assert "snapshot_sync_generation = %s" in sql
+        assert params[-1] == 9
+    assert "GREATEST(" in spy.calls[2][0]
+
+
+def test_broken_transition_is_generation_fenced(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        _models,
+        "execute_returning",
+        lambda sql, params: calls.append((sql, params)) or None,
+    )
+
+    assert not _models.mark_snaptrade_connection_broken(
+        7, "abc", snapshot_generation=9,
+    )
+    assert "snapshot_sync_generation = %s" in calls[0][0]
+    assert calls[0][1] == (7, "abc", 9)
 
 
 def test_cron_account_rows_include_disabled_debounce_state(monkeypatch):

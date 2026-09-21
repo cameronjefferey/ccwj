@@ -40,6 +40,7 @@ from app import app
 from app.models import (
     User,
     add_account_for_user,
+    begin_snaptrade_snapshot_sync,
     clear_snaptrade_connection_broken,
     get_snaptrade_account,
     get_snaptrade_accounts,
@@ -54,6 +55,7 @@ from app.models import (
     remove_snaptrade_user,
     save_snaptrade_user,
     set_snaptrade_brokerage_authorization_id,
+    snaptrade_snapshot_generation_is_current,
     stamp_snaptrade_force_refresh_attempt,
     update_snaptrade_account_nickname,
     upsert_snaptrade_account,
@@ -1381,12 +1383,35 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         )
         return out
 
+    snapshot_generation = None
+    if not history_only:
+        try:
+            # Reserve ordering before any broker snapshot read. Seed writers
+            # later accept positions/balances and health metadata only while
+            # no newer fetch has started for this account.
+            snapshot_generation = begin_snaptrade_snapshot_sync(
+                user_id, snaptrade_account_id,
+            )
+            if snapshot_generation is None:
+                raise RuntimeError(
+                    "Could not reserve SnapTrade snapshot write generation."
+                )
+        except Exception as exc:
+            out["error"] = "snapshot_ordering_unavailable"
+            app.logger.warning(
+                "SnapTrade sync could not reserve snapshot generation "
+                "user_id=%s account=%s: %s",
+                user_id, snaptrade_account_id, exc,
+            )
+            return out
+
     snap = get_snaptrade_user(user_id)
     client = _get_snaptrade_client()
     if not snap or not client:
         out["error"] = "session_expired"
         record_snaptrade_sync_attempt(
             user_id, snaptrade_account_id, error="session_expired",
+            snapshot_generation=snapshot_generation,
         )
         return out
 
@@ -1423,6 +1448,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             defer_push=defer_push,
             skip_activities=skip_activities,
             history_only=history_only,
+            snapshot_generation=snapshot_generation,
         )
         # A successful SnapTrade read is not yet a completed first sync:
         # SnapTrade's authoritative transaction-status flag must confirm that
@@ -1432,16 +1458,21 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         # multi-year activities archive is ready.
         # Deferred cron pushes are marked by the batch caller only after its
         # single commit succeeds.
-        seed_write_confirmed = bool(
+        write_landed = bool(
             result.get("github_pushed") or result.get("github_no_changes")
         )
+        snapshot_superseded = bool(result.get("snapshot_superseded"))
+        # A newer fetch owns the snapshot slot. History may still have
+        # landed, but this generation must not start the trial clock or
+        # flip first-sync — and it is not a failed write to retry.
+        seed_write_confirmed = write_landed and not snapshot_superseded
         no_seed_write_required = (
             result.get("github_skip_reason")
             == "history_only_no_new_trades"
         )
         if (
             not result.get("deferred")
-            and not seed_write_confirmed
+            and not write_landed
             and not no_seed_write_required
         ):
             # A broker read is not a successful sync until the normalized
@@ -1460,6 +1491,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             )
             record_snaptrade_sync_attempt(
                 user_id, snaptrade_account_id, error=sync_error,
+                snapshot_generation=snapshot_generation,
             )
             record_snaptrade_sync_observation(
                 user_id, snaptrade_account_id,
@@ -1484,9 +1516,18 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             and seed_write_confirmed
             and history_ready
         ):
-            mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id)
-        clear_snaptrade_connection_broken(user_id, snaptrade_account_id)
-        record_snaptrade_sync_attempt(user_id, snaptrade_account_id, error=None)
+            mark_snaptrade_first_sync_completed(
+                user_id, snaptrade_account_id,
+                snapshot_generation=snapshot_generation,
+            )
+        clear_snaptrade_connection_broken(
+            user_id, snaptrade_account_id,
+            snapshot_generation=snapshot_generation,
+        )
+        record_snaptrade_sync_attempt(
+            user_id, snaptrade_account_id, error=None,
+            snapshot_generation=snapshot_generation,
+        )
         # Reverse trial: the 30-day clock starts at FIRST DATA, not merely
         # after a successful broker read. Deferred cron reads have not written
         # their batch yet, so the caller starts the clock only after that
@@ -1502,6 +1543,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         record_snaptrade_holdings_sync(
             user_id, snaptrade_account_id,
             result.get("holdings_last_successful_sync"),
+            snapshot_generation=snapshot_generation,
         )
         # Append a per-run observation row (CLOSE-BASED REPORTING Phase 3):
         # full history of how late after the close SnapTrade's
@@ -1524,6 +1566,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             "github_seed_push_skipped": bool(result.get("github_seed_push_skipped")),
             "github_skip_reason": result.get("github_skip_reason"),
             "github_no_changes": bool(result.get("github_no_changes")),
+            "snapshot_superseded": bool(result.get("snapshot_superseded")),
             "transactions_initial_sync_completed": history_ready,
         })
         # Deferred-push mode: carry the normalized frames back so the batch
@@ -1539,6 +1582,8 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
                 "balances_df": result.get("balances_df"),
                 "skip_history": bool(result.get("skip_history")),
                 "user_id": user_id,
+                "snapshot_account_id": snaptrade_account_id,
+                "snapshot_generation": result.get("snapshot_generation"),
             }
         # data_ready email fires after the warehouse rebuild flushes the
         # cache (app/cache_ops.py), not here — seed write is not yet
@@ -1597,6 +1642,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             record_snaptrade_sync_attempt(
                 user_id, snaptrade_account_id,
                 error=f"connection_broken_pending:{endpoint}",
+                snapshot_generation=snapshot_generation,
             )
             record_snaptrade_sync_observation(
                 user_id, snaptrade_account_id,
@@ -1611,9 +1657,13 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             user_id, snaptrade_account_id, broker_slug, first_done,
             endpoint, type(orig).__name__, str(orig)[:500],
         )
-        mark_snaptrade_connection_broken(user_id, snaptrade_account_id)
+        mark_snaptrade_connection_broken(
+            user_id, snaptrade_account_id,
+            snapshot_generation=snapshot_generation,
+        )
         record_snaptrade_sync_attempt(
             user_id, snaptrade_account_id, error=f"connection_broken:{endpoint}",
+            snapshot_generation=snapshot_generation,
         )
         record_snaptrade_sync_observation(
             user_id, snaptrade_account_id,
@@ -1628,6 +1678,7 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         )
         record_snaptrade_sync_attempt(
             user_id, snaptrade_account_id, error=str(exc)[:500],
+            snapshot_generation=snapshot_generation,
         )
         record_snaptrade_sync_observation(
             user_id, snaptrade_account_id,
@@ -1881,7 +1932,8 @@ def _brokerage_authorization_disabled(client, snap, acc_row, *, user_id):
 
 
 def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False,
-              skip_activities=False, history_only=False):
+              skip_activities=False, history_only=False,
+              snapshot_generation=None):
     """Pull activities + positions + balances from SnapTrade,
     normalize, push to GitHub seeds.
 
@@ -2116,6 +2168,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "transactions_initial_sync_completed":
                 _transactions_initial_sync_completed(account_summary),
             "holdings_last_successful_sync": _holdings_last_successful_sync_dt(account_summary),
+            "snapshot_generation": snapshot_generation,
         }
 
     github_pushed = False
@@ -2123,6 +2176,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     github_head_sha = None
     github_skip_reason = None
     github_no_changes = False
+    snapshot_superseded = False
 
     from app.upload import _upload_github_config_ok, merge_and_push_seeds
 
@@ -2172,6 +2226,8 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             tenant_id=tenant_id,
             skip_history=skip_history,
             balances_df=None if push_history_only else balances_df,
+            snapshot_account_id=snaptrade_account_id,
+            snapshot_generation=snapshot_generation,
         )
         # "Pushed" means a commit (and therefore a dbt build) actually
         # happened. A no-op merge (identical seed) reports ok=True but pushes
@@ -2181,6 +2237,15 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         github_error = err if not ok else None
         if github_no_changes:
             github_skip_reason = "no_changes"
+        if snapshot_generation is not None:
+            # A newer fetch can start while this call waits for or completes
+            # the short seed write. Conservatively withhold first-sync/trial
+            # durability credit when this generation no longer owns the
+            # snapshot slot; that newer fetch will receive the credit if it
+            # commits.
+            snapshot_superseded = not snaptrade_snapshot_generation_is_current(
+                user_id, snaptrade_account_id, snapshot_generation,
+            )
 
     return {
         "history_rows": 0 if skip_history else len(history_df),
@@ -2192,6 +2257,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         "github_seed_push_skipped": not ok_cfg,
         "github_skip_reason": github_skip_reason,
         "github_no_changes": bool(github_no_changes),
+        "snapshot_superseded": snapshot_superseded,
         "transactions_initial_sync_completed":
             _transactions_initial_sync_completed(account_summary),
         # Honest "broker data as of" — SnapTrade's OWN holdings sync timestamp

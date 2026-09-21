@@ -334,6 +334,7 @@ def init_db():
             account_name                TEXT NOT NULL,
             display_nickname            TEXT,
             first_sync_completed        BOOLEAN NOT NULL DEFAULT FALSE,
+            snapshot_sync_generation    BIGINT NOT NULL DEFAULT 0,
             last_sync_at                TIMESTAMPTZ,
             holdings_last_successful_sync TIMESTAMPTZ,
             last_sync_error             TEXT,
@@ -559,6 +560,7 @@ def init_db():
     _migrate_users_email_column()
     _migrate_snaptrade_force_refresh_columns()
     _migrate_snaptrade_holdings_sync_column()
+    _migrate_snaptrade_snapshot_sync_generation()
     _migrate_snaptrade_early_broker_cohort()
     _migrate_broker_account_id_columns()
     _migrate_onboarding_responses_v2()
@@ -925,6 +927,31 @@ def _migrate_snaptrade_holdings_sync_column():
     except Exception as e:
         _log.warning(
             "snaptrade_accounts holdings_last_successful_sync migration skipped: %s", e,
+        )
+
+
+def _migrate_snaptrade_snapshot_sync_generation():
+    """Idempotent optimistic-ordering token for broker snapshot writes.
+
+    A sync reserves a generation before calling SnapTrade. Seed writers accept
+    positions/balances only while that generation is still current, so a slow
+    older fetch cannot replace a newer snapshot after waiting on the shared
+    seed-store write lock.
+    """
+    try:
+        execute(
+            "CREATE SEQUENCE IF NOT EXISTS "
+            "snaptrade_snapshot_sync_generation_seq"
+        )
+        execute(
+            "ALTER TABLE snaptrade_accounts "
+            "ADD COLUMN IF NOT EXISTS snapshot_sync_generation "
+            "BIGINT NOT NULL DEFAULT 0"
+        )
+    except Exception as e:
+        _log.warning(
+            "snaptrade_accounts snapshot_sync_generation migration skipped: %s",
+            e,
         )
 
 
@@ -2334,15 +2361,22 @@ def stamp_snaptrade_force_refresh_attempt(user_id, snaptrade_account_id):
         return False
 
 
-def mark_snaptrade_first_sync_completed(user_id, snaptrade_account_id):
+def mark_snaptrade_first_sync_completed(
+    user_id, snaptrade_account_id, *, snapshot_generation=None,
+):
     """Flip the per-row first-sync flag after a successful pull. Same
     semantic as ``mark_schwab_first_sync_completed`` — newly added
     accounts default to full-history on their first sync; subsequent
     syncs use the routine lookback window."""
+    where_generation = ""
+    params = [user_id, snaptrade_account_id]
+    if snapshot_generation is not None:
+        where_generation = " AND snapshot_sync_generation = %s"
+        params.append(snapshot_generation)
     execute(
         "UPDATE snaptrade_accounts SET first_sync_completed = TRUE, updated_at = NOW() "
-        "WHERE user_id = %s AND snaptrade_account_id = %s",
-        (user_id, snaptrade_account_id),
+        f"WHERE user_id = %s AND snaptrade_account_id = %s{where_generation}",
+        tuple(params),
     )
 
 
@@ -2380,19 +2414,62 @@ def update_snaptrade_account_nickname(user_id, snaptrade_account_id, nickname):
     return True
 
 
-def record_snaptrade_sync_attempt(user_id, snaptrade_account_id, *, error=None):
+def record_snaptrade_sync_attempt(
+    user_id, snaptrade_account_id, *, error=None, snapshot_generation=None,
+):
     """Stamp ``last_sync_at`` and (optionally) ``last_sync_error`` for the
     given account. Pass ``error=None`` on success to clear any prior
     error message; pass a string to record a failure for the UI."""
+    where_generation = ""
+    params = [error, user_id, snaptrade_account_id]
+    if snapshot_generation is not None:
+        where_generation = " AND snapshot_sync_generation = %s"
+        params.append(snapshot_generation)
     execute(
         "UPDATE snaptrade_accounts "
         "SET last_sync_at = NOW(), last_sync_error = %s, updated_at = NOW() "
-        "WHERE user_id = %s AND snaptrade_account_id = %s",
-        (error, user_id, snaptrade_account_id),
+        f"WHERE user_id = %s AND snaptrade_account_id = %s{where_generation}",
+        tuple(params),
     )
 
 
-def record_snaptrade_holdings_sync(user_id, snaptrade_account_id, when):
+def begin_snaptrade_snapshot_sync(user_id, snaptrade_account_id):
+    """Reserve and return the ordering generation for one snapshot fetch."""
+    row = execute_returning(
+        "UPDATE snaptrade_accounts "
+        "SET snapshot_sync_generation = nextval("
+        "        'snaptrade_snapshot_sync_generation_seq'"
+        "    ), "
+        "    updated_at = NOW() "
+        "WHERE user_id = %s AND snaptrade_account_id = %s "
+        "RETURNING snapshot_sync_generation",
+        (user_id, snaptrade_account_id),
+    )
+    if not row:
+        return None
+    return int(row["snapshot_sync_generation"])
+
+
+def snaptrade_snapshot_generation_is_current(
+    user_id, snaptrade_account_id, generation,
+):
+    """Whether no newer snapshot fetch has started for this account."""
+    if generation is None:
+        return True
+    row = fetch_one(
+        "SELECT snapshot_sync_generation FROM snaptrade_accounts "
+        "WHERE user_id = %s AND snaptrade_account_id = %s",
+        (user_id, snaptrade_account_id),
+    )
+    return bool(
+        row
+        and int(row["snapshot_sync_generation"]) == int(generation)
+    )
+
+
+def record_snaptrade_holdings_sync(
+    user_id, snaptrade_account_id, when, *, snapshot_generation=None,
+):
     """Persist SnapTrade's own ``holdings.last_successful_sync`` — the
     honest "broker data as of" timestamp surfaced in the UI.
 
@@ -2403,11 +2480,20 @@ def record_snaptrade_holdings_sync(user_id, snaptrade_account_id, when):
     if when is None:
         return False
     try:
+        where_generation = ""
+        params = [when, when, user_id, snaptrade_account_id]
+        if snapshot_generation is not None:
+            where_generation = " AND snapshot_sync_generation = %s"
+            params.append(snapshot_generation)
         execute(
             "UPDATE snaptrade_accounts "
-            "SET holdings_last_successful_sync = %s, updated_at = NOW() "
-            "WHERE user_id = %s AND snaptrade_account_id = %s",
-            (when, user_id, snaptrade_account_id),
+            "SET holdings_last_successful_sync = GREATEST("
+            "        COALESCE(holdings_last_successful_sync, %s), %s"
+            "    ), "
+            "    updated_at = NOW() "
+            f"WHERE user_id = %s AND snaptrade_account_id = %s"
+            f"{where_generation}",
+            tuple(params),
         )
         return True
     except Exception as exc:
@@ -2454,7 +2540,9 @@ def record_snaptrade_sync_observation(
         return False
 
 
-def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
+def mark_snaptrade_connection_broken(
+    user_id, snaptrade_account_id, *, snapshot_generation=None,
+):
     """Flag a SnapTrade account as needing reconnection (broker grant
     revoked, broker side error, etc). Idempotent on the timestamp so
     the banner does not reset on every cron run.
@@ -2466,20 +2554,22 @@ def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
     boolean is a cheap early-out for the common already-broken case.
     """
     try:
-        prior = fetch_one(
-            "SELECT connection_broken_at FROM snaptrade_accounts "
-            "WHERE user_id = %s AND snaptrade_account_id = %s",
-            (user_id, snaptrade_account_id),
-        )
-        was_broken = bool(prior and prior.get("connection_broken_at"))
-        execute(
+        where_generation = ""
+        params = [user_id, snaptrade_account_id]
+        if snapshot_generation is not None:
+            where_generation = " AND snapshot_sync_generation = %s"
+            params.append(snapshot_generation)
+        transitioned = execute_returning(
             "UPDATE snaptrade_accounts "
-            "SET connection_broken_at = COALESCE(connection_broken_at, NOW()), "
+            "SET connection_broken_at = NOW(), "
             "    updated_at = NOW() "
-            "WHERE user_id = %s AND snaptrade_account_id = %s",
-            (user_id, snaptrade_account_id),
+            "WHERE user_id = %s AND snaptrade_account_id = %s "
+            "  AND connection_broken_at IS NULL"
+            f"{where_generation} "
+            "RETURNING id",
+            tuple(params),
         )
-        if not was_broken:
+        if transitioned:
             try:
                 from app.ops_notify import notify_event
                 notify_event(
@@ -2489,15 +2579,22 @@ def mark_snaptrade_connection_broken(user_id, snaptrade_account_id):
                 )
             except Exception:
                 pass
-        return not was_broken
+        return bool(transitioned)
     except Exception as exc:
         _log.warning("mark_snaptrade_connection_broken failed: %s", exc)
         return False
 
 
-def clear_snaptrade_connection_broken(user_id, snaptrade_account_id):
+def clear_snaptrade_connection_broken(
+    user_id, snaptrade_account_id, *, snapshot_generation=None,
+):
     """Clear connection-break state after reconnect, fix webhook, or sync."""
     try:
+        where_generation = ""
+        params = [user_id, snaptrade_account_id]
+        if snapshot_generation is not None:
+            where_generation = " AND snapshot_sync_generation = %s"
+            params.append(snapshot_generation)
         execute(
             "UPDATE snaptrade_accounts "
             "SET connection_broken_at = NULL, "
@@ -2506,8 +2603,9 @@ def clear_snaptrade_connection_broken(user_id, snaptrade_account_id):
             "        ELSE last_sync_error "
             "    END, "
             "    updated_at = NOW() "
-            "WHERE user_id = %s AND snaptrade_account_id = %s",
-            (user_id, snaptrade_account_id),
+            f"WHERE user_id = %s AND snaptrade_account_id = %s"
+            f"{where_generation}",
+            tuple(params),
         )
     except Exception as exc:
         _log.warning("clear_snaptrade_connection_broken failed: %s", exc)

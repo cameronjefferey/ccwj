@@ -278,6 +278,23 @@ def test_holdings_sync_retries_on_exception(monkeypatch):
     assert calls["n"] == 2, "a raised exception must also be retried"
 
 
+def test_holdings_sync_does_not_hold_seed_lock_across_broker_fetch(monkeypatch):
+    """Optimistic snapshot generations fence stale writes without blocking
+    every other account's seed work during SnapTrade network calls."""
+    from app import db as _db
+
+    _wire_holdings_sync(
+        monkeypatch,
+        lambda *_a, **_k: {"ok": True, "history_rows": 0, "current_rows": 0},
+    )
+
+    def _unexpected_lock(_key):
+        raise AssertionError("webhook worker held seed lock around broker fetch")
+
+    monkeypatch.setattr(_db, "advisory_lock", _unexpected_lock)
+    webhooks._run_snaptrade_holdings_sync(9, "acc-1")
+
+
 def test_holdings_sync_stops_after_max_attempts(monkeypatch):
     monkeypatch.setattr(webhooks, "_WEBHOOK_SYNC_MAX_ATTEMPTS", 3)
     calls = {"n": 0}
