@@ -464,6 +464,17 @@ def _inject_feature_flags():
     }
 
 
+@app.context_processor
+def _inject_reddit_pixel():
+    """PageVisit on /start, SignUp on the next page after signup. No-op
+    when REDDIT_PIXEL_ID is unset."""
+    try:
+        from app.campaign import reddit_pixel_context
+        return reddit_pixel_context()
+    except Exception:
+        return {"reddit_pixel_id": "", "reddit_pixel_event": ""}
+
+
 # Behind Render / other reverse proxies: trust X-Forwarded-* so request.host /
 # request.scheme / url_for(..., _external=True) match the public URL.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)

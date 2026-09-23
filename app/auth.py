@@ -288,6 +288,11 @@ def signup():
         user = User.get_by_username(username)
         login_user(user, remember=False)
         try:
+            from app.campaign import stamp_signup
+            stamp_signup(user.id if user else None)
+        except Exception:
+            pass
+        try:
             from app.ops_notify import notify_event
             notify_event("signup", username=username)
         except Exception:

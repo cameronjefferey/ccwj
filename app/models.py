@@ -574,6 +574,7 @@ def init_db():
     _migrate_users_plan_columns()
     _migrate_users_stripe_columns()
     _migrate_users_ai_addon_columns()
+    _migrate_campaign_attribution()
     _migrate_insight_messages_table()
     _migrate_account_group_crytpo_typo()
     _migrate_uploads_tenant_id_column()
@@ -748,6 +749,54 @@ def _migrate_users_ai_addon_columns():
         execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_subscription_price_id TEXT")
     except Exception as exc:
         _log.warning("users AI-addon columns migration skipped: %s", exc)
+
+
+def _migrate_campaign_attribution():
+    """Idempotent: /start visit cookie is stamped onto the user at signup.
+
+    campaign_events is the funnel (visit, signup click, demo click, signup).
+    The user columns are the durable "where did this person come from" mark.
+    user_id is intentionally not a foreign key so the funnel row survives
+    an account delete.
+    """
+    try:
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS acquisition_source TEXT")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS acquisition_campaign TEXT")
+        execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS acquisition_content TEXT")
+        execute(
+            """
+            CREATE TABLE IF NOT EXISTS campaign_events (
+                id            BIGSERIAL PRIMARY KEY,
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                event         TEXT NOT NULL,
+                visit_id      TEXT NOT NULL,
+                user_id       INTEGER,
+                utm_source    TEXT,
+                utm_campaign  TEXT,
+                utm_content   TEXT,
+                referrer      TEXT
+            )
+            """
+        )
+        execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_campaign_events_created
+            ON campaign_events (created_at DESC)
+            """
+        )
+        execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_campaign_events_campaign
+            ON campaign_events (utm_campaign, utm_content, created_at DESC)
+            """
+        )
+        # A local table from an earlier draft used session_id and had no
+        # visit_id. CREATE TABLE IF NOT EXISTS does not add columns, so
+        # both names are added and the funnel reads whichever is filled.
+        execute("ALTER TABLE campaign_events ADD COLUMN IF NOT EXISTS visit_id TEXT")
+        execute("ALTER TABLE campaign_events ADD COLUMN IF NOT EXISTS session_id TEXT")
+    except Exception as exc:
+        _log.warning("campaign attribution migration skipped: %s", exc)
 
 
 def _migrate_account_group_crytpo_typo():
@@ -3857,11 +3906,11 @@ def mark_feedback_resolved(feedback_id: int, resolved: bool = True) -> bool:
 # ------------------------------------------------------------------
 #
 # Captured during the first SnapTrade sync on /sync/processing as a
-# multi-section wizard (~13 questions, 3-5 min to complete — matches the
+# multi-section wizard (~10 questions, a few minutes — matches the
 # dbt build window). Storage is a single JSONB blob per user so the form
 # can grow / shrink / rename questions without a schema migration. The
-# only contract is "user_id → JSON object". Required-key validation
-# lives in the route layer (``app/routes.py:submit_onboarding_why_here``).
+# only contract is "user_id → JSON object". Every question is optional;
+# the route saves whatever was answered, including an empty object.
 #
 # Stored only for now; not yet used to personalize copy. Long-term these
 # answers anchor the mirror back at the trader's stated goal — see
@@ -3876,11 +3925,11 @@ _MAX_ONBOARDING_BLOB_BYTES = 16384  # 16 KB
 def save_onboarding_response(*, user_id: int, answers: dict) -> bool:
     """Upsert one onboarding response per user.
 
-    ``answers`` is the full per-user blob (dict). Caller (route layer)
-    is responsible for validating required keys and trimming free-text
-    inputs. Returns True on success.
+    ``answers`` is the full per-user blob (dict). An empty dict is a
+    finished survey with every question skipped. Caller (route layer)
+    trims free-text inputs. Returns True on success.
     """
-    if not user_id or not isinstance(answers, dict) or not answers:
+    if not user_id or not isinstance(answers, dict):
         return False
     try:
         blob = json.dumps(answers, ensure_ascii=False, separators=(",", ":"))

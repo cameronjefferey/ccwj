@@ -514,6 +514,7 @@ def build_admin_overview():
         })
 
     last_event = _q1("SELECT MAX(created_at) AS ts FROM usage_events")
+    campaign = _campaign_funnel()
 
     return {
         "generated_at": datetime.now(timezone.utc),
@@ -540,4 +541,57 @@ def build_admin_overview():
         "brokers": brokers,
         "signups": list(reversed(signups)),
         "recent": recent,
+        "campaign_funnel": campaign["rows"],
+        "campaign_names": campaign["names"],
+        "campaign_filter": campaign["campaign"],
+        "creative_filter": campaign["creative"],
+    }
+
+
+def _campaign_funnel():
+    """Last 30 days of /start, one row per campaign × creative.
+
+    Connected counts a signup user who has any broker_tenants row — SnapTrade
+    or a CSV upload. The table is the whole point of the ad: a signup that
+    never links is not a win. ?campaign= and ?creative= narrow the rows.
+    """
+    from app.campaign import filter_funnel_events, summarize_funnel
+
+    events = _q(
+        """
+        SELECT event,
+               COALESCE(visit_id, session_id) AS visit_id,
+               user_id, utm_campaign, utm_content
+        FROM campaign_events
+        WHERE created_at > NOW() - INTERVAL '30 days'
+        """
+    )
+    names = sorted({
+        (row.get("utm_campaign") or "").strip() or "(none)"
+        for row in events
+    })
+    campaign = (request.args.get("campaign") or "").strip()
+    creative = (request.args.get("creative") or "").strip()
+    filtered = filter_funnel_events(events, campaign=campaign, creative=creative)
+    signup_ids = [
+        row.get("user_id")
+        for row in filtered
+        if row.get("event") == "signup" and row.get("user_id")
+    ]
+    connected: set = set()
+    if signup_ids:
+        linked = _q(
+            """
+            SELECT DISTINCT user_id
+            FROM broker_tenants
+            WHERE user_id = ANY(%s)
+            """,
+            (signup_ids,),
+        )
+        connected = {row.get("user_id") for row in linked if row.get("user_id")}
+    return {
+        "rows": summarize_funnel(filtered, connected),
+        "names": names,
+        "campaign": campaign,
+        "creative": creative,
     }

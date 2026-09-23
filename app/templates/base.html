@@ -765,6 +765,13 @@
         }
     </style>
     {% block head %}{% endblock %}
+    {% if reddit_pixel_id and reddit_pixel_event %}
+    <script>
+    !function(w,d){if(!w.rdt){var p=w.rdt=function(){p.sendEvent?p.sendEvent.apply(p,arguments):p.callQueue.push(arguments)};p.callQueue=[];var t=d.createElement("script");t.src="https://www.redditstatic.com/ads/pixel.js";t.async=!0;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(t,s)}}(window,document);
+    rdt('init', {{ reddit_pixel_id|tojson }});
+    rdt('track', {{ reddit_pixel_event|tojson }});
+    </script>
+    {% endif %}
 </head>
 <body{% if compact_tables %} class="ht-compact"{% endif %}>
     {% if session.get('_impersonator_id') %}

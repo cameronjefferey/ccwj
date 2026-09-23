@@ -89,6 +89,52 @@
     </div>
 </div>
 
+<div class="ov-card">
+    <h2>Campaign funnel</h2>
+    <p class="ov-note">Last 30 days on /start. Visits are one landing per ad, not a refresh. Connected is a signup who linked a broker or uploaded a CSV. A signup that never links is not a win.</p>
+    {% if campaign_names|length > 1 or campaign_filter or creative_filter %}
+    <p class="ov-muted mb-2">
+        <a href="{{ url_for('admin_overview') }}">All</a>
+        {% for name in campaign_names %}
+        · <a href="{{ url_for('admin_overview', campaign=name) }}">{{ name }}</a>
+        {% endfor %}
+        {% if campaign_filter or creative_filter %}
+        <span> — showing {{ campaign_filter or 'any campaign' }}{% if creative_filter %} / {{ creative_filter }}{% endif %}</span>
+        {% endif %}
+    </p>
+    {% endif %}
+    {% if campaign_funnel %}
+    <table class="ov-table">
+        <thead>
+            <tr>
+                <th>Campaign</th>
+                <th>Creative</th>
+                <th class="text-end">Visits</th>
+                <th class="text-end">Signup clicks</th>
+                <th class="text-end">Demo clicks</th>
+                <th class="text-end">Signups</th>
+                <th class="text-end">Connected</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in campaign_funnel %}
+        <tr>
+            <td><a href="{{ url_for('admin_overview', campaign=row.campaign) }}">{{ row.campaign }}</a></td>
+            <td><a href="{{ url_for('admin_overview', campaign=row.campaign, creative=row.creative) }}">{{ row.creative }}</a></td>
+            <td class="text-end">{{ row.visits }}</td>
+            <td class="text-end">{{ row.signup_clicks }}</td>
+            <td class="text-end">{{ row.demo_clicks }}</td>
+            <td class="text-end">{{ row.signups }}{% if row.signup_rate is not none %} <span class="ov-muted">({{ row.signup_rate }}%)</span>{% endif %}</td>
+            <td class="text-end">{{ row.connected }}{% if row.connect_rate is not none %} <span class="ov-muted">({{ row.connect_rate }}%)</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="ov-muted mb-0">No campaign visits yet. Ads should land on /start.</p>
+    {% endif %}
+</div>
+
 <div class="ov-grid">
     <div class="ov-card">
         <h2>What needs attention</h2>
