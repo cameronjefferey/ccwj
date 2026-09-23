@@ -66,7 +66,7 @@ FEATURES = {
     },
     "multi-account": {
         "title": "Multi-account",
-        "subtitle": "Track all your Schwab accounts in one place.",
+        "subtitle": "Track every brokerage account in one place.",
         "demo_partial": "features/_demo_multiaccount.html",
         "value_bullets": [
             "IRA, taxable, joint—see portfolio-wide metrics and per-account breakdowns.",
@@ -603,12 +603,14 @@ def healthz_db():
 @app.route("/get-started")
 @login_required
 def get_started():
-    """One onboarding surface (Aug 2026 surface audit).
+    """Broker-first onboarding.
 
-    Checklist while the user is still connecting/waiting for data; once
-    warehouse rows exist it flips to the former /first-look "here's what
-    we found" trading profile. The post-upload and post-sync processing
-    pages land here (via the /first-look 301).
+    No SnapTrade brokerage yet: Connect brokerage is the primary action,
+    skip-to-overview is secondary, and CSV is a quiet link for older
+    history. Already connected, with warehouse rows: the former
+    /first-look profile, plus Connect another account. Connected but
+    still waiting on data: a manage path with Connect another account
+    prominent. /first-look 301s here.
     """
     tenant_ids = get_tenant_ids_for_user(current_user.id) or []
     has_uploaded = len(tenant_ids) > 0
@@ -634,16 +636,6 @@ def get_started():
                 current_user.id, exc,
             )
 
-    if has_data:
-        # Data has landed — show the "here's what we found" profile
-        # (former /first-look). Falls through to the checklist when the
-        # profile can't be built (transient BQ failure). Deferred import:
-        # first_look imports from app.routes at module load.
-        from app.first_look import render_first_look_view
-        rendered = render_first_look_view()
-        if rendered is not None:
-            return rendered
-
     snaptrade_enabled = False
     snaptrade_connected = False
     snaptrade_full_history_days = 1825
@@ -665,6 +657,15 @@ def get_started():
             "get_started snaptrade enable check failed for user_id=%s: %s",
             current_user.id, exc,
         )
+
+    # A connected user with warehouse rows still gets the trading profile.
+    # No brokerage yet — including CSV-only — stays on the broker-first
+    # empty state instead of that dense profile.
+    if snaptrade_connected and has_data:
+        from app.first_look import render_first_look_view
+        rendered = render_first_look_view()
+        if rendered is not None:
+            return rendered
 
     from app.early_broker import early_broker_notice_for_user
     return render_template(

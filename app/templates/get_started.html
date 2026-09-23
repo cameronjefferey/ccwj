@@ -113,154 +113,121 @@
 
 {% block content %}
 
-{% macro export_instructions() %}
-<details class="gs-export">
-    <summary>How to export CSVs from your broker</summary>
-    <div class="step-block">
-        Schwab has step-by-step export instructions. Other brokers can be
-        requested from the same page.
-        <div class="mt-2">
-            <a href="{{ url_for('upload') }}">Open Upload &rarr; pick your brokerage</a>
-        </div>
-    </div>
-</details>
-{% endmacro %}
-
 <div class="row justify-content-center">
-    <div class="{% if snaptrade_enabled and not has_uploaded %}col-lg-11 col-xl-10{% else %}col-lg-8{% endif %}">
+    <div class="col-lg-8">
 
         {% include "_early_broker_note.html" %}
 
-        {% if has_uploaded and has_data %}
-        <div class="gs-done">
-            <h4>You're all set, {{ current_user.username }}.</h4>
-            <p>Your Trading Mirror is ready to read.</p>
-            <a href="{{ url_for('weekly_review') }}" class="btn btn-light fw-semibold px-4">Open Overview</a>
-        </div>
-        <p class="text-center text-muted small">
-            Re-upload anytime from <a href="{{ url_for('upload') }}">Upload</a>{% if snaptrade_enabled %} or manage broker connections in <a href="{{ url_for('profile', tab='account') }}">Account settings</a>{% endif %}.
-        </p>
-        {% else %}
-
+        {% if snaptrade_connected %}
+        {# Already linked. Profile (first_look) renders before this when
+           warehouse rows exist. This branch is the manage path while
+           data is still landing, or if that profile can't be built. #}
         <div class="gs-hero">
-            <h1>Welcome, {{ current_user.username }}</h1>
+            <h1>Your brokerages</h1>
             <p>
-                {% if snaptrade_enabled %}
-                Two ways to bring your trades in &mdash; connect your broker or upload CSVs. We'll do the rest.
-                {% else %}
-                Upload two CSVs from your broker and we'll start mirroring your trading.
-                {% endif %}
+                Welcome back, {{ current_user.username }}. Add another account,
+                or manage the ones already connected.
             </p>
         </div>
 
-        <div class="gs-step">
-            <span class="gs-step-num {% if has_uploaded %}gs-step-done{% else %}gs-step-pending{% endif %}">{% if has_uploaded %}&#10003;{% else %}1{% endif %}</span>
-            <div class="gs-step-body">
-
-                {% if has_uploaded %}
-                <h6>Data linked</h6>
-                <p class="lead-sub mb-2">Your trades are in. Re-upload anytime, or manage your broker connections in Account settings.</p>
-                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('upload') }}">Re-upload CSVs</a>
-                {% if snaptrade_enabled %}
-                <a class="btn btn-outline-secondary btn-sm ms-1" href="{{ url_for('profile', tab='account') }}">Account settings</a>
-                {% endif %}
-
-                {% else %}
-                <h6>Link your portfolio</h6>
-                <p class="lead-sub">Pick <strong>one</strong> path. You can always switch later.</p>
-
-                {% macro card_snaptrade() %}
-                <div class="gs-path featured">
-                    <div class="gs-label featured">Recommended</div>
-                    <h6>Connect your broker</h6>
-                    <p class="pitch">Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 others via SnapTrade.</p>
-                    <ul class="checklist">
-                        <li>As far back as the broker still has on file &mdash; often <strong>1&ndash;2 years for Schwab</strong>, not the life of the account</li>
-                        <li>Then a <strong>{{ snaptrade_routine_days|int }}&ndash;day</strong> rolling sync &mdash; no daily upload chore</li>
-                        <li>Read-only access &mdash; removable anytime</li>
-                    </ul>
-                    <div class="cta-row">
-                        {% if snaptrade_connected %}
-                        <a class="btn btn-success" href="{{ url_for('profile', tab='account') }}#snaptrade-sync">Continue sync &rarr;</a>
-                        <span class="text-success small ms-2">Connection saved</span>
-                        {% else %}
-                        <a class="btn btn-primary" href="{{ url_for('snaptrade_connect') }}">Connect a broker</a>
-                        {% endif %}
-                    </div>
-                    <p class="fine-print">
-                        <strong>You sign in on your broker's own page.</strong> SnapTrade hands HappyTrader a read-only pass &mdash; we never see your broker password.
-                    </p>
-                </div>
-                {% endmacro %}
-
-                {% macro card_csv(featured=false) %}
-                <div class="gs-path">
-                    <div class="gs-label">Manual</div>
-                    <h6>Upload CSVs</h6>
-                    <p class="pitch">Use this when broker sync didn't go back far enough &mdash; or if you don't want to connect a broker.</p>
-                    <ul class="checklist">
-                        <li>Schwab's own export can include years the aggregator never sent</li>
-                        <li>Works without enabling broker sync</li>
-                        <li>Re-upload to stay current if you aren't connected</li>
-                    </ul>
-                    <div class="cta-row">
-                        <a class="btn {% if featured %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('upload') }}">Upload CSVs</a>
-                    </div>
-                    {{ export_instructions() }}
-                </div>
-                {% endmacro %}
-
-                {% if snaptrade_enabled %}
-                <div class="gs-path-row dual">
-                    {{ card_snaptrade() }}
-                    {{ card_csv() }}
-                </div>
-                {% else %}
-                <div class="gs-path-row">
-                    {{ card_csv(featured=true) }}
-                </div>
-                <p class="gs-server-note">
-                    <strong>Want auto-sync?</strong> Ask your host to add SnapTrade credentials (<code>SNAPTRADE_CLIENT_ID</code> / <code>SNAPTRADE_CONSUMER_KEY</code>) and the connect flow will appear here.
-                </p>
-                {% endif %}
-                {% endif %}
+        <div class="gs-path featured mb-3">
+            <div class="gs-label featured">Add another</div>
+            <h6>Connect another account</h6>
+            <p class="pitch mb-2">
+                Schwab, Fidelity, Vanguard, Robinhood, IBKR, and others via SnapTrade.
+                Read-only &mdash; HappyTrader never stores your broker password.
+            </p>
+            <p class="pitch mb-3">{% include "_broker_sync_timing.html" %}</p>
+            <div class="cta-row d-flex flex-wrap gap-2">
+                <a class="btn btn-primary" href="{{ url_for('snaptrade_connect', return_to=url_for('get_started')) }}">Connect another account</a>
+                <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_accounts_page') }}">Manage accounts</a>
             </div>
         </div>
 
-        <div class="gs-step">
-            <span class="gs-step-num {% if has_data %}gs-step-done{% elif has_uploaded %}gs-step-pending{% else %}gs-step-waiting{% endif %}">{% if has_data %}&#10003;{% else %}2{% endif %}</span>
-            <div class="gs-step-body">
-                {% if has_data %}
-                <h6>Your data is processed</h6>
-                <p class="lead-sub mb-0">Trade-level analytics, strategy classification, and your behavioral baselines are computed and ready.</p>
-                {% elif has_uploaded %}
-                <h6>Crunching your trades&hellip;</h6>
-                <p class="lead-sub mb-2">Usually 15–40 minutes. If several accounts synced at once, yours waits in line. Refresh this page, or wait for the email that Overview is ready.</p>
-                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('get_started') }}">Refresh status</a>
-                {% else %}
-                <h6>We process your data</h6>
-                <p class="lead-sub mb-0">Once your files are in, the warehouse build usually takes 15–40 minutes. We classify strategies, compute trade-level P&amp;L, and email you when Overview is ready.</p>
-                {% endif %}
-            </div>
+        {% if has_data %}
+        <p class="text-muted small mb-3">Overview already has your trades.</p>
+        <a class="btn btn-outline-secondary" href="{{ url_for('weekly_review') }}">Open Overview</a>
+        {% elif has_uploaded %}
+        <p class="text-muted small mb-3">
+            Sync is in progress. After the broker sends data, building your profile usually takes 15–40 minutes.
+            Refresh this page, or wait for the email that Overview is ready.
+        </p>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('get_started') }}">Refresh status</a>
+        {% else %}
+        <p class="text-muted small mb-3">
+            Nothing has landed in the warehouse yet. {% include "_broker_sync_timing.html" %}
+        </p>
+        {% endif %}
+
+        <p class="text-muted small mt-4 mb-2">
+            Need older history? Broker sync is not a lifetime archive.
+            <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
+        </p>
+        <p class="mb-0">
+            <a href="{{ url_for('weekly_review') }}" class="text-muted small">Skip to overview</a>
+        </p>
+
+        {% elif snaptrade_enabled %}
+        <div class="gs-hero">
+            <h1>Connect your brokerage</h1>
+            <p>
+                Welcome, {{ current_user.username }}. The next step is a read-only
+                connection through SnapTrade. You sign in on your broker's page.
+                HappyTrader never stores your broker password.
+            </p>
         </div>
 
-        <div class="gs-step">
-            <span class="gs-step-num {% if has_data %}gs-step-done{% else %}gs-step-waiting{% endif %}">{% if has_data %}&#10003;{% else %}3{% endif %}</span>
-            <div class="gs-step-body">
-                {% if has_data %}
-                <h6>Your Trading Mirror is ready</h6>
-                <p class="lead-sub mb-2">Overview is the close-based recap &mdash; what you traded last session, what moved, and how every position / strategy / sector is doing in total. Today is the live session, with a delay disclaimer.</p>
-                <a class="btn btn-primary" href="{{ url_for('weekly_review') }}">Open Overview</a>
-                {% else %}
-                <h6>Open your Trading Mirror</h6>
-                <p class="lead-sub mb-0">You'll land on Overview &mdash; a behavioral mirror, not a P&amp;L dashboard. We compare you to <em>yourself</em>, not to other traders.</p>
-                {% endif %}
+        <div class="gs-path featured mb-3">
+            <div class="gs-label featured">Next step</div>
+            <h6>Connect brokerage</h6>
+            <p class="pitch">
+                Schwab, Fidelity, Vanguard, Robinhood, IBKR, and others.
+                As far back as the broker still has on file &mdash; often 1&ndash;2 years for Schwab, not the life of the account.
+            </p>
+            <p class="pitch">{% include "_broker_sync_timing.html" %} After that data arrives, building your profile usually takes 15–40 minutes.</p>
+            <div class="cta-row">
+                <a class="btn btn-primary btn-lg" href="{{ url_for('snaptrade_connect', return_to=url_for('get_started')) }}">Connect brokerage</a>
             </div>
+            <p class="fine-print mb-0">
+                You'll see a short explanation here first, then SnapTrade's connection window.
+                Cancel there and you come straight back. Nothing is connected until you finish.
+            </p>
         </div>
 
-        <div class="text-center mt-4">
-            <a href="{{ url_for('weekly_review') }}" class="text-muted small">Skip to home</a>
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-4">
+            <a class="btn btn-outline-secondary" href="{{ url_for('weekly_review') }}">I'll do this later</a>
+            <a href="{{ url_for('weekly_review') }}" class="text-muted small ms-1">Skip to overview</a>
         </div>
+
+        {% if has_data %}
+        <p class="text-muted small">A CSV is already in your mirror. Overview can show it while you connect.</p>
+        {% endif %}
+
+        <p class="text-muted small mb-0">
+            Need older history?
+            <a href="{{ url_for('upload') }}">Upload a CSV</a>
+            after connecting. That's the fallback for years the broker never sent, or a brokerage that doesn't sync yet.
+        </p>
+
+        {% else %}
+        <div class="gs-hero">
+            <h1>Welcome, {{ current_user.username }}</h1>
+            <p>Broker connect isn't available in this environment. Upload a CSV to start mirroring your trades.</p>
+        </div>
+        <div class="gs-path featured mb-3">
+            <div class="gs-label featured">Available now</div>
+            <h6>Upload a CSV</h6>
+            <p class="pitch">Schwab's web export can include history and current positions. Other brokers can be requested from the same page.</p>
+            <div class="cta-row">
+                <a class="btn btn-primary" href="{{ url_for('upload') }}">Upload a CSV</a>
+            </div>
+        </div>
+        <p class="gs-server-note">
+            <strong>Want broker sync?</strong> This server needs SnapTrade credentials (<code>SNAPTRADE_CLIENT_ID</code> / <code>SNAPTRADE_CONSUMER_KEY</code>). Connect will show up here once those are set.
+        </p>
+        <p class="mt-3 mb-0">
+            <a href="{{ url_for('weekly_review') }}" class="text-muted small">Skip to overview</a>
+        </p>
         {% endif %}
     </div>
 </div>

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{# Short stop before SnapTrade's hosted Connection Portal. Explains the
+   relationship, read-only access, and that cancelling comes back here. #}
+
+{% block head %}
+<style>
+    .portal-card {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 16px;
+        padding: 2rem 2.1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+    .portal-card h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: .75rem; }
+    .portal-card li { margin-bottom: .55rem; }
+    [data-bs-theme="dark"] .portal-card {
+        background: var(--ht-surface);
+        border-color: var(--ht-line);
+        color: var(--ht-ink);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="portal-card">
+            <h1>{% if reconnect_broker_label %}Reconnect {{ reconnect_broker_label }}{% else %}Connect your brokerage{% endif %}</h1>
+            <p class="text-muted">
+                HappyTrader uses <strong>SnapTrade</strong>, a separate connection service, to link your brokerage. You'll leave this page for their window, then come back.
+            </p>
+            <ul class="mb-4">
+                <li><strong>Read-only.</strong> The connection can see positions, balances, and trade history. It cannot place trades.</li>
+                <li><strong>Your broker password stays with your broker.</strong> You sign in on their page. HappyTrader does not store it.</li>
+                <li><strong>Timing.</strong> {% include "_broker_sync_timing.html" %}</li>
+                <li><strong>Cancel returns here.</strong> Closing the SnapTrade window without picking a brokerage does not connect anything.</li>
+            </ul>
+            <form method="POST" action="{{ url_for('snaptrade_connect') }}" class="d-flex flex-wrap gap-2 align-items-center">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="portal_confirmed" value="1">
+                {% if return_to %}
+                <input type="hidden" name="return_to" value="{{ return_to }}">
+                {% endif %}
+                {% if reconnect_authorization_id %}
+                <input type="hidden" name="reconnect_authorization_id" value="{{ reconnect_authorization_id }}">
+                {% endif %}
+                {% if reconnect_broker_label %}
+                <input type="hidden" name="reconnect_broker_label" value="{{ reconnect_broker_label }}">
+                {% endif %}
+                <button type="submit" class="btn btn-primary">Continue to SnapTrade</button>
+                <a href="{{ return_to or url_for('get_started') }}" class="btn btn-outline-secondary">Cancel</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

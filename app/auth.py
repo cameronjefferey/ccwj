@@ -212,6 +212,33 @@ def register_redirect():
     return redirect(url_for("signup"))
 
 
+def _render_signup_form(
+    invite_required,
+    *,
+    username="",
+    email="",
+    password="",
+    confirm="",
+    invite="",
+):
+    """Re-render signup with the values just submitted.
+
+    A redirect on validation failure drops every field (the password
+    mismatch bug). Passwords stay in the response only for this retry —
+    they are not stored.
+    """
+    return render_template(
+        "signup.html",
+        title="Sign Up",
+        invite_required=invite_required,
+        form_username=username,
+        form_email=email,
+        form_password=password,
+        form_confirm=confirm,
+        form_invite=invite,
+    )
+
+
 @app.route("/signup", methods=["GET", "POST"])
 @limiter.limit("10 per minute; 30 per hour", methods=["POST"])
 def signup():
@@ -230,59 +257,59 @@ def signup():
         invite = (request.form.get("invite_code", "") or "").strip()
         email_raw = request.form.get("email", "")
 
+        def _retry(message, category="danger"):
+            flash(message, category)
+            return _render_signup_form(
+                invite_required,
+                username=username,
+                email=(email_raw or "").strip(),
+                password=password,
+                confirm=confirm,
+                invite=invite,
+            )
+
         # Closed-beta gate: when SIGNUP_INVITE_CODE is set in the env, the
         # form value must match exactly. compare_digest avoids leaking the
         # code length via early-return timing.
         if invite_required:
             expected = app.config.get("SIGNUP_INVITE_CODE", "")
             if not invite or not hmac.compare_digest(invite, expected):
-                flash("That invite code isn't valid.", "danger")
-                return redirect(url_for("signup"))
+                return _retry("That invite code isn't valid.")
 
         if not username or not password:
-            flash("Username and password are required.", "danger")
-            return redirect(url_for("signup"))
+            return _retry("Username and password are required.")
 
         # Email is required for new accounts so testers always have a
         # self-service password recovery path. Existing pre-email rows in
         # Postgres keep working — we only enforce it on signup.
         email, email_err = _validate_email(email_raw)
         if email_err:
-            flash(email_err, "danger")
-            return redirect(url_for("signup"))
+            return _retry(email_err)
         if not email:
-            flash(
+            return _retry(
                 "Please add an email so you can recover your account if you "
                 "forget your password.",
-                "danger",
             )
-            return redirect(url_for("signup"))
         if User.get_by_email(email):
             # Generic message: don't confirm to a stranger which addresses
             # are signed up. They can recover via /forgot-password.
-            flash(
+            return _retry(
                 "That email is already in use. If it's yours, sign in or "
                 "use 'Forgot password' to recover.",
-                "danger",
             )
-            return redirect(url_for("signup"))
 
         if len(username) < 3:
-            flash("Username must be at least 3 characters.", "danger")
-            return redirect(url_for("signup"))
+            return _retry("Username must be at least 3 characters.")
 
         valid, err = _validate_password(password)
         if not valid:
-            flash(err, "danger")
-            return redirect(url_for("signup"))
+            return _retry(err)
 
         if password != confirm:
-            flash("Passwords do not match.", "danger")
-            return redirect(url_for("signup"))
+            return _retry("Passwords do not match.")
 
         if User.get_by_username(username):
-            flash("That username is already taken.", "danger")
-            return redirect(url_for("signup"))
+            return _retry("That username is already taken.")
 
         User.create(username, password, email=email)
         user = User.get_by_username(username)
@@ -294,6 +321,8 @@ def signup():
             pass
         _send_welcome_verification(user)
         flash("Welcome! You're signed in. Check your inbox to confirm your email.", "success")
+        # New accounts have no brokerage yet. /get-started is the
+        # broker-first connect screen (CSV is a quiet secondary there).
         accounts = get_accounts_for_user(user.id)
         if not accounts:
             next_page = url_for("get_started")
@@ -302,11 +331,7 @@ def signup():
             next_page = url_for(_landing_endpoint(prof))
         return redirect(next_page)
 
-    return render_template(
-        "signup.html",
-        title="Sign Up",
-        invite_required=invite_required,
-    )
+    return _render_signup_form(invite_required)
 
 
 @app.route("/logout", methods=["POST"])

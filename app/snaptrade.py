@@ -15,7 +15,7 @@ invariants apply automatically.
 Module structure mirrors ``app/schwab.py`` deliberately so callers,
 templates, and tests can pattern-match between the two:
 
-* ``snaptrade_connect``      — POST /snaptrade/connect (start)
+* ``snaptrade_connect``      — GET interstitial, POST /snaptrade/connect (start)
 * ``snaptrade_callback``     — GET  /snaptrade/callback (return)
 * ``snaptrade_accounts``     — GET  /snaptrade/accounts (multi-account UI)
 * ``snaptrade_sync``         — POST /snaptrade/sync (per-account or sync_all)
@@ -74,7 +74,7 @@ from app.snaptrade_normalize import (
     orders_to_history_df,
     positions_to_current_df,
 )
-from app.utils import demo_block_writes
+from app.utils import demo_block_writes, safe_internal_next
 from app.plan import plan_block_writes
 
 _log = logging.getLogger(__name__)
@@ -380,13 +380,50 @@ def _stable_account_name(broker_slug: str, account_number_masked: Optional[str])
 # Routes — connect / callback
 # ---------------------------------------------------------------------------
 
+def _connect_return_to() -> str:
+    """Where Cancel on the pre-portal screen should land."""
+    explicit = safe_internal_next(request.values.get("return_to"))
+    if explicit:
+        return explicit
+    try:
+        if get_snaptrade_accounts(current_user.id):
+            return url_for("snaptrade_accounts_page")
+    except Exception as exc:
+        _log.warning("connect return target lookup failed: %s", exc)
+    return url_for("get_started")
+
+
+def _portal_cancel_flash(had_existing: bool) -> None:
+    """Honest copy when the Connection Portal comes back with nothing new.
+
+    A cancel still hits ``/snaptrade/callback`` and SnapTrade lists the
+    accounts that were already linked. That used to flash "Connected N
+    accounts" and dump the user on name-now.
+    """
+    if had_existing:
+        flash(
+            "You closed the connection portal without adding a brokerage. "
+            "Your existing accounts are unchanged.",
+            "info",
+        )
+    else:
+        flash(
+            "No brokerage was connected. If you closed the portal, nothing "
+            "changed. If you finished signing in, the broker can take a few "
+            "minutes to show the new account — try Connect again shortly.",
+            "info",
+        )
+
+
 @app.route("/snaptrade/connect", methods=["GET", "POST"])
 @login_required
 def snaptrade_connect():
-    """Start a SnapTrade connection. Idempotent — re-registers the
-    HappyTrader user with SnapTrade if needed, then redirects them to
-    the SnapTrade-hosted Connection Portal where they pick a broker
-    and authenticate. SnapTrade redirects back to ``/snaptrade/callback``.
+    """Start a SnapTrade connection.
+
+    GET (and a POST that has not confirmed the interstitial) shows a short
+    in-app explanation, then a confirmed POST registers the user if needed
+    and redirects to the SnapTrade-hosted Connection Portal. SnapTrade
+    redirects back to ``/snaptrade/callback``.
 
     RECONNECT MODE: when the form carries ``reconnect_authorization_id``
     (a broken connection's SnapTrade brokerage-authorization UUID), we pass
@@ -412,6 +449,24 @@ def snaptrade_connect():
     reconnect_auth_id = (request.form.get("reconnect_authorization_id") or "").strip()
     reconnect_broker_label = (request.form.get("reconnect_broker_label") or "").strip()
     is_reconnect = bool(reconnect_auth_id or reconnect_broker_label)
+    confirmed = (
+        request.method == "POST"
+        and (request.form.get("portal_confirmed") or "").strip() == "1"
+    )
+    if not confirmed:
+        if not snaptrade_enabled():
+            flash(
+                "Multi-broker connect is not configured. Contact the administrator.",
+                "danger",
+            )
+            return redirect(url_for("profile", tab="account"))
+        return render_template(
+            "snaptrade_connect.html",
+            title="Connect your brokerage",
+            return_to=_connect_return_to(),
+            reconnect_authorization_id=reconnect_auth_id,
+            reconnect_broker_label=reconnect_broker_label,
+        )
     client = _get_snaptrade_client()
     if not client:
         flash("Multi-broker connect is not configured. Contact the administrator.", "danger")
@@ -579,17 +634,34 @@ def snaptrade_callback():
         )
         return redirect(url_for("snaptrade_accounts_page"))
 
+    existing_accounts = get_snaptrade_accounts(user_id) or []
+    prior_ids = {
+        str(row.get("snaptrade_account_id") or "")
+        for row in existing_accounts
+        if row.get("snaptrade_account_id")
+    }
+    remote_ids = {
+        str(acc.get("id") or "").strip()
+        for acc in (accounts or [])
+        if isinstance(acc, dict) and str(acc.get("id") or "").strip()
+    }
+    new_ids = remote_ids - prior_ids
+
     if not accounts:
-        flash(
-            "No accounts came back from the broker yet. The broker can take "
-            "a few minutes to surface new connections — try again shortly.",
-            "info",
-        )
+        # Empty list: the portal was closed, or a brand-new connection has
+        # not surfaced yet. Do not claim a successful connect.
+        _portal_cancel_flash(had_existing=bool(prior_ids))
+        return redirect(url_for("snaptrade_accounts_page"))
+
+    if not reconnect_label and not new_ids:
+        # Only accounts we already had. A cancel (or a no-op re-auth)
+        # must not flash "Connected N" or open the name-now step.
+        _portal_cancel_flash(had_existing=True)
         return redirect(url_for("snaptrade_accounts_page"))
 
     saved = 0
+    newly_saved = 0
     identity_conflicts = 0
-    existing_accounts = get_snaptrade_accounts(user_id) or []
     remote_account_ids = {
         str(acc.get("id") or "").strip()
         for acc in accounts
@@ -718,6 +790,8 @@ def snaptrade_callback():
             )
         add_account_for_user(user_id, account_name)
         saved += 1
+        if not existed:
+            newly_saved += 1
 
     if identity_conflicts:
         flash(
@@ -726,7 +800,7 @@ def snaptrade_callback():
             "before syncing that account.",
             "warning",
         )
-    if saved:
+    if saved and (reconnect_label or newly_saved):
         _kick_post_connect_sync(user_id)
         all_accounts = get_snaptrade_accounts(user_id) or []
         pending_first = any(
@@ -743,7 +817,7 @@ def snaptrade_callback():
             )
         else:
             flash(
-                f"Connected {saved} account{'s' if saved != 1 else ''}. "
+                f"Connected {newly_saved} account{'s' if newly_saved != 1 else ''}. "
                 "We're pulling your trade history now.",
                 "success",
             )
