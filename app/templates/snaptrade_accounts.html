@@ -353,6 +353,7 @@
                    the only parser that exists today), and an honest note that
                    pre-window positions are estimated, not fabricated. ── #}
                 {% set _is_schwab = c.broker_slug and 'schwab' in c.broker_slug|lower %}
+                {% set _tenant_id = c.tenant_id or ('snaptrade:' ~ c.snaptrade_account_id) %}
                 <details class="complete-account">
                     <summary>Complete this account</summary>
                     <div class="complete-account-body">
@@ -362,13 +363,13 @@
                             If you have an older Schwab CSV export, upload it here to fill in
                             the years before this account connected.
                         </p>
-                        <a href="{{ url_for('upload') }}?tenant=snaptrade:{{ c.snaptrade_account_id }}"
+                        <a href="{{ url_for('upload', tenant=_tenant_id) }}"
                            class="btn btn-sm btn-outline-primary">Upload older Schwab CSV</a>
                         {% else %}
                         <p class="small text-body-secondary mb-2">
                             We don't have a CSV parser for {{ c.broker_slug|title if c.broker_slug else 'this broker' }}
                             yet, so pre-window history can't be backfilled here.
-                            <a href="{{ url_for('upload', tenant='snaptrade:' ~ c.snaptrade_account_id) }}">Request it</a> and we'll use it to
+                            <a href="{{ url_for('upload', tenant=_tenant_id) }}">Request it</a> and we'll use it to
                             decide which broker to parse next.
                         </p>
                         {% endif %}
