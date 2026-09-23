@@ -7,52 +7,168 @@
 
 {% block head %}
 <style>
-    .pricing-hero {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        border-radius: 20px;
-        padding: 3rem;
-        color: #fff;
-        text-align: center;
-        margin-bottom: 2rem;
+    .pricing-page { max-width: 1080px; margin: 0 auto; padding: 2.5rem 0 1rem; }
+    .pricing-intro { text-align: center; max-width: 40rem; margin: 0 auto 2rem; }
+    .pricing-intro h1 {
+        font-size: clamp(1.75rem, 4vw, 2.75rem);
+        font-weight: 700;
+        letter-spacing: -.03em;
+        color: var(--ht-ink);
+        margin-bottom: .75rem;
     }
-    .pricing-hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: .5rem; }
-    .pricing-hero .lead { color: rgba(255,255,255,.9); margin-bottom: 0; }
+    .pricing-lead {
+        color: var(--ht-muted);
+        font-size: 1.125rem;
+        margin: 0;
+    }
+    .pricing-billing {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .6rem;
+        margin-bottom: 2.25rem;
+        cursor: pointer;
+        user-select: none;
+    }
+    .pricing-switch-input {
+        position: absolute;
+        opacity: 0;
+        width: 1px;
+        height: 1px;
+    }
+    .pricing-switch {
+        width: 44px;
+        height: 24px;
+        border-radius: 999px;
+        background: var(--ht-line);
+        position: relative;
+        flex: 0 0 auto;
+        transition: background .2s ease;
+    }
+    .pricing-switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
+        transition: transform .2s ease;
+    }
+    .pricing-switch-input:checked + .pricing-switch { background: var(--ht-ink); }
+    .pricing-switch-input:checked + .pricing-switch::after { transform: translateX(20px); }
+    .pricing-switch-input:focus-visible + .pricing-switch {
+        outline: 2px solid var(--ht-ink);
+        outline-offset: 3px;
+    }
+    .pricing-billing-label { font-weight: 600; color: var(--ht-ink); }
+    .pricing-save { color: var(--color-positive); }
+    .pricing-page[data-period="monthly"] .when-annual { display: none; }
+    .pricing-page[data-period="annual"] .when-monthly { display: none; }
     .pricing-card {
-        border: none;
-        border-radius: 16px;
-        box-shadow: 0 4px 24px rgba(0,0,0,.08);
-        padding: 2.5rem;
+        background: var(--ht-surface);
+        color: var(--ht-ink);
+        border: 1px solid var(--ht-line);
+        border-radius: 1rem;
+        padding: 1.75rem 1.5rem 1.5rem;
         text-align: center;
         height: 100%;
         position: relative;
-        transition: transform .2s, box-shadow .2s;
+        display: flex;
+        flex-direction: column;
     }
-    .pricing-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 30px rgba(0,0,0,.12);
+    .pricing-card.is-popular { border: 2px solid var(--ht-ink); }
+    @media (min-width: 992px) {
+        .pricing-card.is-popular { margin-top: -1rem; }
+        .pricing-card:not(.is-popular) { margin-top: 1rem; }
     }
-    .pricing-card.featured {
-        border: 2px solid #1a1a2e;
-        position: relative;
-    }
-    .pricing-card .badge-top {
+    .pricing-flag {
         position: absolute;
-        top: -10px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #1a1a2e;
-        color: #fff;
-        padding: .25rem .75rem;
-        border-radius: 20px;
+        top: 0;
+        right: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: .25rem;
+        background: var(--ht-ink);
+        color: var(--ht-surface);
         font-size: .75rem;
         font-weight: 600;
+        padding: .2rem .55rem;
+        border-bottom-left-radius: .75rem;
+        border-top-right-radius: 1rem;
     }
-    .pricing-card h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: .5rem; }
-    .pricing-card .price { font-size: 2.5rem; font-weight: 800; margin: 1rem 0; }
-    .pricing-card .price-note { font-size: .85rem; color: #6c757d; margin-bottom: 1.5rem; }
-    .pricing-card ul { list-style: none; padding: 0; margin: 0 0 1.5rem 0; text-align: left; }
-    .pricing-card li { padding: .4rem 0; padding-left: 1.5rem; position: relative; }
-    .pricing-card li::before { content: "✓"; color: #198754; font-weight: bold; position: absolute; left: 0; }
+    .pricing-card h3 {
+        font-size: .95rem;
+        font-weight: 600;
+        color: var(--ht-muted);
+        margin: .35rem 0 0;
+    }
+    .pricing-card .price {
+        font-size: 3rem;
+        font-weight: 800;
+        letter-spacing: -.03em;
+        color: var(--ht-ink);
+        line-height: 1;
+        margin: 1.25rem 0 .35rem;
+    }
+    .pricing-card .price .period {
+        font-size: .95rem;
+        font-weight: 600;
+        color: var(--ht-muted);
+        letter-spacing: 0;
+        margin-left: .15rem;
+    }
+    .pricing-billed {
+        font-size: .75rem;
+        color: var(--ht-muted);
+        margin-bottom: 1rem;
+    }
+    .pricing-card ul {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 .25rem;
+        text-align: left;
+    }
+    .pricing-card li {
+        display: flex;
+        align-items: flex-start;
+        gap: .5rem;
+        padding: .3rem 0;
+    }
+    .pricing-card li svg {
+        flex: 0 0 auto;
+        margin-top: .2rem;
+        color: var(--color-positive);
+    }
+    .pricing-card hr {
+        border: 0;
+        border-top: 1px solid var(--ht-line);
+        margin: 1rem 0;
+        margin-top: auto;
+        opacity: 1;
+    }
+    .pricing-card .btn {
+        width: 100%;
+        font-weight: 600;
+        letter-spacing: -.02em;
+    }
+    .pricing-card.is-popular .btn-primary {
+        background: var(--ht-ink);
+        border-color: var(--ht-ink);
+        color: var(--ht-surface);
+    }
+    .pricing-card.is-popular .btn-primary:hover {
+        background: var(--ht-label);
+        border-color: var(--ht-label);
+        color: var(--ht-surface);
+    }
+    .pricing-footnote {
+        color: var(--ht-muted);
+        font-size: .8rem;
+        margin: .75rem 0 0;
+    }
 </style>
 {% endblock %}
 
@@ -65,156 +181,184 @@
     "show_freeze_explainer": true
 } %}
 {% endif %}
-<div class="row justify-content-center">
-    <div class="col-lg-10">
-        <div class="pricing-hero">
-            <h1>{{ pricing_story.title }}</h1>
-            <p class="lead">{{ pricing_story.lead }}</p>
-        </div>
-
-        <div class="row g-4 justify-content-center mb-5">
-            <div class="col-md-6 col-lg-4">
-                <div class="pricing-card featured">
-                    <span class="badge-top">{{ trial_card.badge if trial_card else "Start here" }}</span>
-                    {% if trial_card and trial_card.badge == "Your plan" %}
-                    <h3>Beta</h3>
-                    <div class="price">$0</div>
-                    {% elif trial_card and trial_card.badge == "Included" %}
-                    <h3>Included</h3>
-                    <div class="price">Pro</div>
-                    {% elif trial_card and trial_card.badge == "Trial ended" %}
-                    <h3>Readable</h3>
-                    <div class="price">$0</div>
-                    {% else %}
-                    <h3>Full-access trial</h3>
-                    <div class="price">$0</div>
-                    {% endif %}
-                    <div class="price-note">{{ trial_card.note if trial_card else "30 days from your first data — no card required" }}</div>
-                    <ul>
-                        <li>Complete history analyzed on day one</li>
-                        <li>Overview, updated every close</li>
-                        <li>Daily option marks &amp; execution review</li>
-                        <li>Strategy auto-detection</li>
-                        <li>Position reviews &amp; trader profile</li>
-                        <li>Unlimited accounts, broker sync or CSV</li>
-                        <li>AI Insights with Flash &amp; Haiku</li>
-                        <li>{{ pricing_story.freeze_bullet }}</li>
-                    </ul>
-                    {% if current_user.is_authenticated %}
-                        {# The card reflects THIS user's actual plan state
-                           (trial_card_context in app/plan.py) rather than a
-                           generic "Start here" once they've connected data —
-                           see plan_status for the phrasing this mirrors. #}
-                        {% if trial_card and trial_card.cta_label %}
-                        <a href="{{ url_for(trial_card.cta_endpoint) }}" class="btn btn-outline-primary w-100">{{ trial_card.cta_label }}</a>
-                        {% elif not trial_card %}
-                        <a href="{{ url_for('get_started') }}" class="btn btn-outline-primary w-100">Connect your data</a>
-                        {% endif %}
-                    {% else %}
-                        {% if signup_enabled %}
-                        <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg w-100 mb-2">
-                            {% if signup_invite_required %}Sign Up (invite required){% else %}Start your 30 days{% endif %}
-                        </a>
-                        {% endif %}
-                        <a href="{{ url_for('demo_start') }}" class="btn btn-outline-primary w-100">Try Demo first</a>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-4">
-                <div class="pricing-card" id="pro-plan">
-                    <h3>Pro</h3>
-                    <div class="price">${{ price_monthly or '19.99' }}<span style="font-size:1rem;font-weight:600;">/mo</span></div>
-                    <div class="price-note">or ${{ price_annual or '199.99' }}/yr &mdash; ${{ price_annual_equiv or '16.67' }}/mo, two months free</div>
-                    <ul>
-                        <li>Everything in the trial, ongoing</li>
-                        <li>Daily marks record that compounds with tenure</li>
-                        <li>Verdicts that keep landing every expiry</li>
-                        <li>AI Insights with Flash &amp; Haiku included</li>
-                        <li>Weekly summary &amp; preview emails</li>
-                    </ul>
-                    {% if subscription and subscription.is_paying %}
-                    <form method="post" action="{{ url_for('billing_portal') }}" class="d-grid gap-2">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-success btn-lg w-100">Manage subscription</button>
-                    </form>
-                    <p class="text-muted small mt-2 mb-0">
-                        You're subscribed{% if subscription.renews_on %} &mdash;
-                        {% if subscription.cancel_at_period_end %}access until{% else %}renews{% endif %}
-                        {{ subscription.renews_on.strftime('%b %-d, %Y') }}{% endif %}.
-                    </p>
-                    {% elif current_user.is_authenticated %}
-                    <form method="post" action="{{ url_for('billing_checkout') }}" class="d-grid gap-2">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="period" value="monthly">
-                        <button type="submit" class="btn btn-primary btn-lg w-100">Subscribe ${{ price_monthly }}/mo</button>
-                    </form>
-                    <form method="post" action="{{ url_for('billing_checkout') }}" class="d-grid mt-2">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="period" value="annual">
-                        <button type="submit" class="btn btn-outline-primary w-100">Pay yearly &mdash; ${{ price_annual }}</button>
-                    </form>
-                    {% if subscribe_offer %}
-                    <p class="text-muted small mt-2 mb-0">{{ subscribe_offer }}</p>
-                    {% endif %}
-                    <p class="text-muted small mt-2 mb-0">You aren't subscribed yet. After you subscribe, the Stripe billing portal is where you change the card or cancel. Your data stays readable either way.</p>
-                    {% else %}
-                    <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-primary btn-lg w-100">Start free, subscribe later</a>
-                    <p class="text-muted small mt-2 mb-0">Try the full product for 30 days first &mdash; no card.</p>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="col-md-6 col-lg-4">
-                <div class="pricing-card" id="happytrader-ai" style="scroll-margin-top: 5rem;">
-                    <span class="badge-top">Add-on</span>
-                    <h3>HappyTrader AI</h3>
-                    <div class="price">${{ price_ai or '9.99' }}<span style="font-size:1rem;font-weight:600;">/mo</span></div>
-                    <div class="price-note">Unlocks the higher-tier models on AI Insights</div>
-                    <ul>
-                        <li>Gemini 2.5 Pro, Claude Sonnet, and Claude Opus</li>
-                        <li>Same Insights report and Ask AI chat, stronger narration</li>
-                        <li>Independent of Pro &mdash; cancel one without the other</li>
-                        <li>Flash and Haiku stay included either way</li>
-                    </ul>
-                    {% if ai_billing_enabled %}
-                        {% if subscription and subscription.ai_is_paying %}
-                        <form method="post" action="{{ url_for('billing_portal') }}" class="d-grid gap-2">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-success btn-lg w-100">Manage AI add-on</button>
-                        </form>
-                        <p class="text-muted small mt-2 mb-0">You're subscribed to HappyTrader AI.</p>
-                        {% elif current_user.is_authenticated %}
-                        <form method="post" action="{{ url_for('billing_checkout_ai') }}" class="d-grid gap-2">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-primary btn-lg w-100">Unlock ${{ price_ai }}/mo</button>
-                        </form>
-                        <p class="text-muted small mt-2 mb-0">After you subscribe, manage or cancel the add-on in the billing portal.</p>
-                        {% else %}
-                        <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-primary btn-lg w-100">Start free, add AI later</a>
-                        <p class="text-muted small mt-2 mb-0">Flash and Haiku are included with Insights. Upgrade when you want Pro-class models.</p>
-                        {% endif %}
-                    {% else %}
-                    <p class="text-muted small mb-0">The add-on isn't switched on yet. Flash and Haiku on Insights stay available.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        {% if pricing_story.show_freeze_explainer %}
-        <div class="text-center text-muted small mb-4" style="max-width: 640px; margin: 0 auto;">
-            <p class="mb-1"><strong>Why the mirror freezes instead of locking:</strong> your history is yours to read, always.
-            But the daily record — option marks, execution verdicts, account deltas — only accrues while connected,
-            and time away is a permanent gap in it. That's the honest trade.</p>
-        </div>
-        {% elif trial_card and trial_card.badge == "Your plan" %}
-        <div class="text-center text-muted small mb-4" style="max-width: 640px; margin: 0 auto;">
-            <p class="mb-1"><strong>Beta doesn't freeze.</strong> Your mirror keeps updating at no charge.
-            If you subscribe and later cancel, you return to this free beta.</p>
-        </div>
-        {% endif %}
-
-        <p class="text-center text-muted small">
-            Have questions? <a href="{{ url_for('faq') }}">Check our FAQ</a> or <a href="{{ url_for('contact') }}">reach out</a>.
-        </p>
+<div class="pricing-page" id="pricing-page" data-period="monthly">
+    <div class="pricing-intro">
+        <h1>{{ pricing_story.title }}</h1>
+        <p class="pricing-lead">{{ pricing_story.lead }}</p>
     </div>
+
+    <label class="pricing-billing">
+        <input type="checkbox" id="pricing-annual" class="pricing-switch-input" role="switch" aria-checked="false">
+        <span class="pricing-switch" aria-hidden="true"></span>
+        <span class="pricing-billing-label">Annual billing <span class="pricing-save">two months free</span></span>
+    </label>
+
+    <div class="row g-4 justify-content-center mb-4">
+        <div class="col-md-6 col-lg-4">
+            <div class="pricing-card">
+                <span class="pricing-flag">{{ trial_card.badge if trial_card else "Start here" }}</span>
+                {% if trial_card and trial_card.badge == "Your plan" %}
+                <h3>Beta</h3>
+                <div class="price">$0</div>
+                {% elif trial_card and trial_card.badge == "Included" %}
+                <h3>Included</h3>
+                <div class="price">Pro</div>
+                {% elif trial_card and trial_card.badge == "Trial ended" %}
+                <h3>Readable</h3>
+                <div class="price">$0</div>
+                {% else %}
+                <h3>Full-access trial</h3>
+                <div class="price">$0</div>
+                {% endif %}
+                <p class="pricing-billed">no card to start</p>
+                <ul>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Complete history analyzed on day one</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Overview, updated every close</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Daily option marks &amp; execution review</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Strategy auto-detection</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Position reviews &amp; trader profile</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Unlimited accounts, broker sync or CSV</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>AI Insights with Flash &amp; Haiku</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>{{ pricing_story.freeze_bullet }}</span></li>
+                </ul>
+                <hr>
+                {% if current_user.is_authenticated %}
+                    {% if trial_card and trial_card.cta_label %}
+                    <a href="{{ url_for(trial_card.cta_endpoint) }}" class="btn btn-outline-secondary">{{ trial_card.cta_label }}</a>
+                    {% elif not trial_card %}
+                    <a href="{{ url_for('get_started') }}" class="btn btn-outline-secondary">Connect your data</a>
+                    {% endif %}
+                {% else %}
+                    {% if signup_enabled %}
+                    <a href="{{ url_for('signup') }}" class="btn btn-outline-secondary mb-2">
+                        {% if signup_invite_required %}Sign Up (invite required){% else %}Start your 30 days{% endif %}
+                    </a>
+                    {% endif %}
+                    <a href="{{ url_for('demo_start') }}" class="btn btn-outline-secondary">Try Demo first</a>
+                {% endif %}
+                <p class="pricing-footnote">{{ trial_card.note if trial_card else "30 days from your first data — no card required" }}</p>
+            </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+            <div class="pricing-card is-popular" id="pro-plan">
+                <span class="pricing-flag">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 16.4 6.6 19.3l1-6.1L3.2 8.9l6.1-.9L12 2.5z"/></svg>
+                    Popular
+                </span>
+                <h3>Pro</h3>
+                <div class="price">
+                    <span class="when-monthly">${{ price_monthly or '19.99' }}</span>
+                    <span class="when-annual">${{ price_annual_equiv or '16.67' }}</span><span class="period">/ mo</span>
+                </div>
+                <p class="pricing-billed when-monthly">billed monthly</p>
+                <p class="pricing-billed when-annual">billed annually at ${{ price_annual or '199.99' }}</p>
+                <ul>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Everything in the trial, ongoing</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Daily marks record that compounds with tenure</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Verdicts that keep landing every expiry</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>AI Insights with Flash &amp; Haiku included</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Weekly summary &amp; preview emails</span></li>
+                </ul>
+                <hr>
+                {% if subscription and subscription.is_paying %}
+                <form method="post" action="{{ url_for('billing_portal') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-success">Manage subscription</button>
+                </form>
+                <p class="pricing-footnote">
+                    You're subscribed{% if subscription.renews_on %} &mdash;
+                    {% if subscription.cancel_at_period_end %}access until{% else %}renews{% endif %}
+                    {{ subscription.renews_on.strftime('%b %-d, %Y') }}{% endif %}.
+                </p>
+                {% elif current_user.is_authenticated %}
+                <form method="post" action="{{ url_for('billing_checkout') }}" class="when-monthly">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="period" value="monthly">
+                    <button type="submit" class="btn btn-primary">Subscribe ${{ price_monthly }}/mo</button>
+                </form>
+                <form method="post" action="{{ url_for('billing_checkout') }}" class="when-annual">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="period" value="annual">
+                    <button type="submit" class="btn btn-primary">Pay yearly &mdash; ${{ price_annual }}</button>
+                </form>
+                {% if subscribe_offer %}
+                <p class="pricing-footnote">{{ subscribe_offer }}</p>
+                {% endif %}
+                <p class="pricing-footnote">You aren't subscribed yet. After you subscribe, the Stripe billing portal is where you change the card or cancel. Your data stays readable either way.</p>
+                {% else %}
+                <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-primary">Start free, subscribe later</a>
+                <p class="pricing-footnote">Try the full product for 30 days first &mdash; no card.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+            <div class="pricing-card" id="happytrader-ai" style="scroll-margin-top: 5rem;">
+                <span class="pricing-flag">Add-on</span>
+                <h3>HappyTrader AI</h3>
+                <div class="price">${{ price_ai or '9.99' }}<span class="period">/ mo</span></div>
+                <p class="pricing-billed">billed monthly</p>
+                <ul>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Gemini 2.5 Pro, Claude Sonnet, and Claude Opus</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Same Insights report and Ask AI chat, stronger narration</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Independent of Pro &mdash; cancel one without the other</span></li>
+                    <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Flash and Haiku stay included either way</span></li>
+                </ul>
+                <hr>
+                {% if ai_billing_enabled %}
+                    {% if subscription and subscription.ai_is_paying %}
+                    <form method="post" action="{{ url_for('billing_portal') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-success">Manage AI add-on</button>
+                    </form>
+                    <p class="pricing-footnote">You're subscribed to HappyTrader AI.</p>
+                    {% elif current_user.is_authenticated %}
+                    <form method="post" action="{{ url_for('billing_checkout_ai') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-secondary">Unlock ${{ price_ai }}/mo</button>
+                    </form>
+                    <p class="pricing-footnote">After you subscribe, manage or cancel the add-on in the billing portal.</p>
+                    {% else %}
+                    <a href="{{ url_for('signup') if signup_enabled else url_for('login') }}" class="btn btn-outline-secondary">Start free, add AI later</a>
+                    <p class="pricing-footnote">Flash and Haiku are included with Insights. Upgrade when you want Pro-class models.</p>
+                    {% endif %}
+                {% else %}
+                <p class="pricing-footnote">The add-on isn't switched on yet. Flash and Haiku on Insights stay available.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if pricing_story.show_freeze_explainer %}
+    <div class="text-center mb-4" style="max-width: 640px; margin-left: auto; margin-right: auto;">
+        <p class="pricing-footnote"><strong>Why the mirror freezes instead of locking:</strong> your history is yours to read, always.
+        But the daily record — option marks, execution verdicts, account deltas — only accrues while connected,
+        and time away is a permanent gap in it. That's the honest trade.</p>
+    </div>
+    {% elif trial_card and trial_card.badge == "Your plan" %}
+    <div class="text-center mb-4" style="max-width: 640px; margin-left: auto; margin-right: auto;">
+        <p class="pricing-footnote"><strong>Beta doesn't freeze.</strong> Your mirror keeps updating at no charge.
+        If you subscribe and later cancel, you return to this free beta.</p>
+    </div>
+    {% endif %}
+
+    <p class="text-center pricing-footnote">
+        Have questions? <a href="{{ url_for('faq') }}">Check our FAQ</a> or <a href="{{ url_for('contact') }}">reach out</a>.
+    </p>
 </div>
+<script>
+(function () {
+    var root = document.getElementById("pricing-page");
+    var input = document.getElementById("pricing-annual");
+    if (!root || !input) return;
+    function apply() {
+        var annual = input.checked;
+        root.setAttribute("data-period", annual ? "annual" : "monthly");
+        input.setAttribute("aria-checked", annual ? "true" : "false");
+    }
+    input.addEventListener("change", apply);
+    apply();
+})();
+</script>
 {% endblock %}
