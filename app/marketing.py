@@ -10,7 +10,9 @@ Extracted verbatim from app/routes.py (routes.py refactor, Aug 2026).
 Routes register on import via @app.route — endpoint names unchanged.
 """
 
-from flask import render_template, request, redirect, url_for, Response, flash, abort
+from flask import (
+    abort, flash, g, make_response, redirect, render_template, request, Response, url_for,
+)
 from flask_login import login_required, current_user
 
 from app import app
@@ -311,46 +313,67 @@ def submit_feedback():
 # Onboarding survey (multi-section wizard during first sync wait)
 # ------------------------------------------------------------------
 #
-# Posted by the wizard on /sync/processing. Validates that every
-# required question has an answer, packages the form into a single
-# JSONB blob via save_onboarding_response, and returns JSON. The
+# Posted by the wizard on /sync/processing. Every question is optional:
+# whatever was answered is packaged into a single JSONB blob via
+# save_onboarding_response, and the route returns JSON. A blank submit
+# still saves (empty object) so the survey does not come back. The
 # form-side JS swaps to a thank-you note on success and clears the
 # "hold redirect" flag so the sync poll on the same page can take
 # the user to Daily Review.
 
-# Required radio/textarea keys the wizard MUST answer before submit.
-# Free-text "_other" siblings are optional and only saved when the
-# matching radio's value is "other". The list lives next to the route
-# (not in models.py) on purpose: the form's contract is a
-# request-layer concern, while the storage shape is a single JSONB
-# blob — see AGENTS.md note on JSONB-flexibility for this table.
-_ONBOARDING_REQUIRED_KEYS: tuple[str, ...] = (
+# Answer keys the wizard may post. None are required. Free-text "_other"
+# siblings are saved only when present. The list lives next to the route
+# (not in models.py) on purpose: the form's contract is a request-layer
+# concern, while the storage shape is a single JSONB blob — see AGENTS.md
+# note on JSONB-flexibility for this table.
+_ONBOARDING_ANSWER_KEYS: tuple[str, ...] = (
     "why_here",
-    "worth_paying_for",
+    "brokers",
     "trading_years",
     "primary_style",
     "trade_frequency",
     "position_count",
     "best_at",
     "worst_at",
-    "discipline_self",
-    "trade_notes",
-    "help_most",          # multi-select; at least one option required
-    "one_thing",          # textarea, min 10 non-whitespace chars
-    "comfort",
+    "help_most",
+    "one_thing",
 )
+
+# Checkbox groups. The form posts ``name="<key>[]"``.
+_ONBOARDING_MULTI_KEYS: frozenset[str] = frozenset({"brokers", "help_most"})
 
 # Optional adjunct keys — saved only when present and non-empty.
 _ONBOARDING_OPTIONAL_KEYS: tuple[str, ...] = (
     "why_here_other",
-    "worth_paying_for_other",
+    "brokers_other",
     "best_at_other",
     "worst_at_other",
     "help_most_other",
 )
 
 _ONBOARDING_MAX_FIELD_LEN = 1000
-_ONBOARDING_MIN_ONE_THING_LEN = 10
+
+
+@app.route("/dev/onboarding")
+def dev_onboarding_preview():
+    """Click through the first-sync survey without signing up or syncing.
+
+    Local Flask only (``app.debug``). Answers are not saved. 404 everywhere
+    else so this never ships as a public page.
+    """
+    if not app.debug:
+        abort(404)
+    return render_template(
+        "sync_processing.html",
+        title="Onboarding preview",
+        expected_minutes=25,
+        head_sha=None,
+        done_url=url_for("dev_onboarding_preview"),
+        show_onboarding=True,
+        connecting=False,
+        early_broker=None,
+        onboarding_preview=True,
+    )
 
 
 @app.route("/onboarding/why-here", methods=["POST"])
@@ -367,12 +390,12 @@ def submit_onboarding_why_here():
 
     answers: dict[str, object] = {}
 
-    # Required scalar fields (radios / textareas). ``help_most`` is
-    # the one multi-select; pull both bracketed and bare names so the
-    # form can use either ``name="help_most"`` or ``help_most[]``.
-    for key in _ONBOARDING_REQUIRED_KEYS:
-        if key == "help_most":
-            vals = request.form.getlist("help_most[]") or request.form.getlist("help_most")
+    # Scalar fields (radios / textareas) and checkbox groups. Every
+    # question is optional — a missing key is simply omitted. Multi-selects
+    # post as ``name="<key>[]"``; also accept the bare name.
+    for key in _ONBOARDING_ANSWER_KEYS:
+        if key in _ONBOARDING_MULTI_KEYS:
+            vals = request.form.getlist(f"{key}[]") or request.form.getlist(key)
             cleaned = [v.strip()[:_ONBOARDING_MAX_FIELD_LEN] for v in vals if v and v.strip()]
             if cleaned:
                 answers[key] = cleaned
@@ -381,24 +404,11 @@ def submit_onboarding_why_here():
             if v:
                 answers[key] = v[:_ONBOARDING_MAX_FIELD_LEN]
 
-    # Optional free-text adjuncts (the "Something else: ___" boxes).
+    # Free-text adjuncts (the "Something else: ___" boxes).
     for key in _ONBOARDING_OPTIONAL_KEYS:
         v = (request.form.get(key) or "").strip()
         if v:
             answers[key] = v[:_ONBOARDING_MAX_FIELD_LEN]
-
-    missing = [k for k in _ONBOARDING_REQUIRED_KEYS if not answers.get(k)]
-    one_thing = answers.get("one_thing")
-    if isinstance(one_thing, str) and len(one_thing.strip()) < _ONBOARDING_MIN_ONE_THING_LEN:
-        missing.append("one_thing")
-
-    if missing:
-        msg = "A couple of answers are still missing — finish those and resend."
-        payload = {"ok": False, "error": msg, "missing": missing}
-        if wants_json:
-            return payload, 400
-        flash(msg, "warning")
-        return redirect(request.referrer or url_for("index"))
 
     ok = save_onboarding_response(user_id=current_user.id, answers=answers)
     if not ok:
@@ -560,6 +570,42 @@ def index():
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
     return render_template("landing.html", title="Home")
+
+
+@app.route("/start")
+def campaign_start():
+    """Reddit (and any other) campaign landing page. Not the homepage.
+
+    Logged-in visitors go to Overview so a return click does not replay
+    the pitch. Anonymous visits are logged once per ad, not per refresh.
+    """
+    if current_user.is_authenticated:
+        return redirect(url_for("weekly_review"))
+    from app.campaign import attach_cookie, begin_visit, utm_query
+
+    g.campaign_pixel_event = "PageVisit"
+    attr = begin_visit()
+    resp = make_response(render_template(
+        "start.html",
+        title="Your broker shows the number",
+        utm_query=utm_query(request.args),
+    ))
+    return attach_cookie(resp, attr)
+
+
+@app.route("/start/go/<dest>")
+def campaign_go(dest):
+    """Count a Sign up or Demo click, then send them on."""
+    from app.campaign import CLICK_EVENTS, attach_cookie, log_click
+
+    event = CLICK_EVENTS.get(dest)
+    if event is None:
+        abort(404)
+    if dest == "signup" and not app.config.get("SIGNUP_ENABLED", True):
+        abort(404)
+    attr = log_click(event)
+    target = url_for("signup") if dest == "signup" else url_for("demo_start")
+    return attach_cookie(redirect(target), attr)
 
 
 @app.route("/healthz")

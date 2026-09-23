@@ -441,6 +441,19 @@ Known issues:
 
 There is no separate dashboard page — Overview is the authenticated home.
 
+### Campaign landing (`/start`, endpoint `campaign_start`)
+**Status: Working. Ad destination. Logged-in visitors redirect to Overview.**
+
+Separate from the homepage so a Reddit test can be measured on its own.
+Copy is the mirror (broker number vs the trade sequence), 30 days, no card.
+History is whatever the broker still has (often a year or two) plus an
+optional CSV — the page does not promise five years. Visits, signup clicks,
+demo clicks, and signups land in `campaign_events` (`app/campaign.py`); the
+cookie is stamped onto `users.acquisition_*` at signup. Admin overview shows
+the funnel, including who actually connected a broker or uploaded a CSV.
+`REDDIT_PIXEL_ID` adds PageVisit on `/start` and SignUp after signup.
+Checklist and creatives: `docs/REDDIT_ADS.md`.
+
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. The mirror across every symbol.**
 

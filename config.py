@@ -85,6 +85,11 @@ class Config:
         or ""
     ).rstrip("/")
 
+    # Reddit Ads pixel. Empty = no pixel. PageVisit on /start, SignUp on the
+    # page after a successful signup. First-party campaign_events stay the
+    # source of truth when the pixel is blocked.
+    REDDIT_PIXEL_ID = (os.environ.get("REDDIT_PIXEL_ID", "") or "").strip()
+
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))
     MAX_CONTENT_LENGTH = _max_mb * 1024 * 1024

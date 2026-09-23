@@ -67,22 +67,39 @@ def test_connect_processing_copy_and_overview_ready_poll():
     assert "Then we build Overview" not in html
 
 
-def test_onboarding_validation_scrolls_and_names_the_offending_question():
-    """Sep 2026 bug: a min-length error (e.g. the free-text 'one thing'
-    question) rendered its message in the shared banner AFTER every
-    question in the section, including the unrelated digest-email toggle
-    at the very bottom — looked like the wrong question was failing, and
-    the user couldn't find the actual offending field to fix it. Fix is
-    to scroll/focus the highlighted question and name it in the message."""
+def test_onboarding_questions_are_optional():
+    """Every survey question can be skipped. Next must not block on a
+    blank section, and a short free-text answer must not be rejected."""
     html = Path("app/templates/sync_processing.html").read_text()
+    assert 'class="ob-question" data-required' not in html
+    assert "data-min-len=" not in html
+    src = Path("app/marketing.py").read_text()
+    assert "_ONBOARDING_REQUIRED_KEYS" not in src
+    assert "still missing" not in src
+
+
+def test_onboarding_validation_scrolls_and_names_the_offending_question():
+    """A field error used to render in the shared banner after every
+    question in the section, including the email toggle, so it looked
+    like the wrong control had failed. The message now lives inside the
+    question that failed."""
+    html = Path("app/templates/sync_processing.html").read_text()
+    assert "function showFieldError(q, msg)" in html
+    assert 'note.className = "ob-q-error"' in html
+    assert "q.appendChild(note)" in html
     assert "function focusMissing(q)" in html
-    assert "scrollIntoView" in html
-    assert "function questionLabel(q)" in html
-    # The old generic message named nothing; the new one embeds the
-    # question's own label so it can't be misread as the last question.
+    assert "Needs at least " in html
+    assert "highlighted above" not in html
     assert "That last one needs at least" not in html
-    assert "questionLabel(q)" in html and "needs at least" in html
-    assert "focusMissing(q);" in html
+
+
+def test_dev_onboarding_preview_is_debug_only():
+    src = Path("app/marketing.py").read_text()
+    start = src.index("def dev_onboarding_preview")
+    body = src[start:src.index("\n@app.route", start)]
+    assert "if not app.debug:" in body
+    assert "abort(404)" in body
+    assert "onboarding_preview=True" in body
 
 
 def test_onboarding_holds_redirect_until_save_or_skip():

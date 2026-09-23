@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block meta_tags %}
+<meta name="robots" content="noindex">
+<meta name="description" content="HappyTrader reconstructs the trades behind the broker number. 30 days of the full product, no credit card. Read-only.">
+<meta property="og:description" content="Your broker shows the number. HappyTrader shows the trades behind it. 30 days, no card.">
+{% endblock %}
+
+{% block head %}
+<style>
+    body .start {
+        max-width: 42rem;
+        margin: 0 auto 2rem;
+    }
+    body .start-hero {
+        background: #1a1a2e;
+        color: #fff;
+        border-radius: 18px;
+        padding: 2.25rem 1.35rem 1.75rem;
+        margin-bottom: 1.75rem;
+    }
+    body .start-kicker {
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,.62);
+        margin: 0 0 .85rem;
+    }
+    body .start-hero h1 {
+        font-size: clamp(1.85rem, 7vw, 2.7rem);
+        font-weight: 800;
+        letter-spacing: -.035em;
+        line-height: 1.05;
+        color: #fff;
+        margin: 0 0 1rem;
+    }
+    body .start-lead {
+        font-size: 1.05rem;
+        line-height: 1.45;
+        color: rgba(255,255,255,.88);
+        margin: 0 0 1.35rem;
+    }
+    body .start-actions {
+        display: flex;
+        flex-direction: column;
+        gap: .65rem;
+    }
+    body .start-btn {
+        display: block;
+        text-align: center;
+        text-decoration: none;
+        font-weight: 700;
+        border-radius: 12px;
+        padding: .9rem 1.1rem;
+        font-size: 1rem;
+    }
+    body .start-btn-primary {
+        background: #fff;
+        color: #1a1a2e;
+    }
+    body .start-btn-primary:hover { color: #1a1a2e; }
+    body .start-btn-ghost {
+        background: transparent;
+        color: #fff;
+        border: 1px solid rgba(255,255,255,.45);
+    }
+    body .start-btn-ghost:hover { color: #fff; }
+    body .start-fine {
+        margin: .9rem 0 0;
+        font-size: .82rem;
+        color: rgba(255,255,255,.7);
+    }
+    body .start h2 {
+        font-size: 1.35rem;
+        letter-spacing: -.02em;
+        margin: 0 0 .35rem;
+        color: var(--ht-ink, #1c1917);
+    }
+    body .start-section { margin: 0 0 2.25rem; }
+    body .start-dek {
+        color: var(--ht-muted, #57534e);
+        font-size: .95rem;
+        margin: 0 0 1rem;
+    }
+    body .start-split {
+        display: grid;
+        gap: .75rem;
+    }
+    body .start-panel {
+        background: var(--ht-surface, #fff);
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 1rem 1.05rem 1.1rem;
+    }
+    body .start-panel .label {
+        font-size: .68rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--ht-muted, #78716c);
+        margin: 0 0 .65rem;
+    }
+    body .broker-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        padding: .7rem .15rem;
+        border-top: 1px solid #e7e5e4;
+        border-bottom: 1px solid #e7e5e4;
+        font-variant-numeric: tabular-nums;
+    }
+    body .broker-line .name { color: var(--ht-ink, #1c1917); font-weight: 600; }
+    body .broker-line .amt { color: #15803d; font-weight: 700; font-size: 1.15rem; }
+    body .start-example {
+        margin: .55rem 0 0;
+        font-size: .75rem;
+        color: var(--ht-muted, #78716c);
+    }
+    body .start-steps { list-style: none; margin: 0; padding: 0; }
+    body .start-steps li {
+        display: grid;
+        grid-template-columns: 1.7rem 1fr;
+        gap: .65rem;
+        align-items: start;
+        padding: .42rem 0;
+        color: var(--ht-ink, #1c1917);
+        font-size: .98rem;
+    }
+    body .step-n {
+        width: 1.7rem;
+        height: 1.7rem;
+        border-radius: 999px;
+        background: #1a1a2e;
+        color: #fff;
+        font-size: .78rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    body .start-caption {
+        margin: .85rem 0 0;
+        font-size: .95rem;
+        line-height: 1.45;
+        color: var(--ht-ink, #1c1917);
+    }
+    body .start-frame { margin: 0 0 1.35rem; }
+    body .start-shot {
+        background: var(--ht-surface, #fff);
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        overflow: hidden;
+    }
+    body .start-shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+    body .start-frame p {
+        margin: .55rem .15rem 0;
+        font-size: .92rem;
+        color: var(--ht-muted, #57534e);
+    }
+    body .start-how {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: .85rem;
+    }
+    body .start-how li {
+        display: grid;
+        grid-template-columns: 1.7rem 1fr;
+        gap: .7rem;
+    }
+    body .start-how strong { display: block; color: var(--ht-ink, #1c1917); }
+    body .start-how span { color: var(--ht-muted, #57534e); font-size: .92rem; }
+    body .start-close {
+        background: #1a1a2e;
+        color: #fff;
+        border-radius: 18px;
+        padding: 1.6rem 1.35rem 1.45rem;
+    }
+    body .start-close h2 { color: #fff; margin-bottom: .4rem; }
+    body .start-close .start-dek { color: rgba(255,255,255,.78); }
+    @media (min-width: 720px) {
+        body .start-hero { padding: 2.75rem 2.25rem 2rem; }
+        body .start-actions { flex-direction: row; }
+        body .start-btn { min-width: 11rem; }
+        body .start-split { grid-template-columns: 1fr 1.15fr; align-items: stretch; }
+    }
+    [data-bs-theme="dark"] body .start-panel,
+    [data-bs-theme="dark"] body .start-shot {
+        border-color: #334155;
+    }
+    [data-bs-theme="dark"] body .broker-line { border-color: #334155; }
+    [data-bs-theme="dark"] body .step-n { background: #e2e8f0; color: #0f172a; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="start">
+    <header class="start-hero">
+        <p class="start-kicker">Trading mirror</p>
+        <h1>Your broker shows the number. This shows the trades behind it.</h1>
+        <p class="start-lead">Wheels, rolls, covered calls, early closes — reconstructed from your own history. Compared with you. The market is context.</p>
+        <div class="start-actions">
+            {% if signup_enabled %}
+            <a class="start-btn start-btn-primary" href="{{ url_for('campaign_go', dest='signup', **utm_query) }}">See your trades</a>
+            {% endif %}
+            <a class="start-btn start-btn-ghost" href="{{ url_for('campaign_go', dest='demo', **utm_query) }}">Look at the demo</a>
+        </div>
+        <p class="start-fine">30 days of the full product. No credit card. The clock starts when the first sync or CSV lands.</p>
+        {% if signup_invite_required %}
+        <p class="start-fine">Signup is invite-only right now.</p>
+        {% endif %}
+    </header>
+
+    <section class="start-section">
+        <h2>The number, then the sequence</h2>
+        <p class="start-dek">One position. The broker stops at the total.</p>
+        <div class="start-split">
+            <div class="start-panel">
+                <p class="label">What the broker shows</p>
+                <div class="broker-line">
+                    <span class="name">Realized P&amp;L</span>
+                    <span class="amt">+$1,240</span>
+                </div>
+                <p class="start-example">Example. Not a result.</p>
+            </div>
+            <div class="start-panel">
+                <p class="label">What HappyTrader shows</p>
+                <ol class="start-steps">
+                    <li><span class="step-n">1</span><span>Sold the cash-secured put</span></li>
+                    <li><span class="step-n">2</span><span>Got assigned</span></li>
+                    <li><span class="step-n">3</span><span>Wrote calls</span></li>
+                    <li><span class="step-n">4</span><span>Rolled one</span></li>
+                    <li><span class="step-n">5</span><span>Closed one early</span></li>
+                </ol>
+            </div>
+        </div>
+        <p class="start-caption">The broker line is the score. The sequence is whether that close matched how you usually trade.</p>
+    </section>
+
+    <section class="start-section">
+        <h2>What you actually open</h2>
+        <div class="start-frame">
+            <div class="start-shot">
+                <img src="{{ url_for('static', filename='campaign/frame-overview.png') }}" alt="Overview of the last completed session: account value, what traded, and the day's movers.">
+            </div>
+            <p>Last close, including what you traded that session.</p>
+        </div>
+        <div class="start-frame">
+            <div class="start-shot">
+                <img src="{{ url_for('static', filename='campaign/frame-position.png') }}" alt="Position review for one symbol, with the day-by-day of rolls and assignments.">
+            </div>
+            <p>The chapter of one symbol. Rolls, assignments, the quiet weeks.</p>
+        </div>
+        <div class="start-frame">
+            <div class="start-shot">
+                <img src="{{ url_for('static', filename='campaign/frame-fit.png') }}" alt="Strategy fit matrix of covered calls, wheels, and spreads against the sectors you trade.">
+            </div>
+            <p>Where a strategy actually fits — covered calls, wheels, spreads — for you.</p>
+        </div>
+    </section>
+
+    <section class="start-section">
+        <h2>How it starts</h2>
+        <ol class="start-how">
+            <li>
+                <span class="step-n">1</span>
+                <div>
+                    <strong>Create an account. No card.</strong>
+                    <span>30 days of the full product. After that the mirror stays readable. Daily updates pause until you subscribe{% if price_monthly %} (${{ price_monthly }}/mo or ${{ price_annual }}/yr){% endif %}.</span>
+                </div>
+            </li>
+            <li>
+                <span class="step-n">2</span>
+                <div>
+                    <strong>Connect a broker, or upload a CSV.</strong>
+                    <span>Schwab, Fidelity, and the rest connect read-only. We reconstruct the trades the broker still has on file — often the last year or two. Daily balances start the day you connect. A CSV fills in older trades. It does not rebuild daily marks from before then.</span>
+                </div>
+            </li>
+            <li>
+                <span class="step-n">3</span>
+                <div>
+                    <strong>Read the mirror.</strong>
+                    <span>You, compared with you. SPY and QQQ sit next to the week as weather, not as a grade.</span>
+                </div>
+            </li>
+        </ol>
+    </section>
+
+    <section class="start-close">
+        <h2>See the trades behind the number.</h2>
+        <p class="start-dek">30 days. No card. Read-only. No trade ideas.</p>
+        <div class="start-actions">
+            {% if signup_enabled %}
+            <a class="start-btn start-btn-primary" href="{{ url_for('campaign_go', dest='signup', **utm_query) }}">See your trades</a>
+            {% endif %}
+            <a class="start-btn start-btn-ghost" href="{{ url_for('campaign_go', dest='demo', **utm_query) }}">Look at the demo</a>
+        </div>
+    </section>
+</div>
+{% endblock %}
