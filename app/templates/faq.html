@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block meta_tags %}
-<meta name="description" content="FAQ: How to export from Schwab, data security, supported brokers, multi-account tracking, and options strategy classification.">
-<meta property="og:description" content="FAQ: How to export from Schwab, data security, supported brokers, multi-account tracking, and options strategy classification.">
+<meta name="description" content="FAQ: Connecting a brokerage with SnapTrade, older CSV history, data security, supported brokers, and options strategy classification.">
+<meta property="og:description" content="FAQ: Connecting a brokerage with SnapTrade, older CSV history, data security, supported brokers, and options strategy classification.">
 {% endblock %}
 
 {% block head %}
@@ -52,17 +52,23 @@
             <div class="faq-item">
                 <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                     data-bs-target="#faq1" aria-expanded="false" aria-controls="faq1">
-                    How do I export my data from Schwab?
+                    How do I connect a brokerage?
                 </h3>
                 <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        <strong>Trade History:</strong> Log in at schwab.com → Accounts → History → Transactions.
-                        Select your account, set the filter to All Transactions, pick a date range, and click Export to download the CSV.
+                        Create an account, then choose <strong>Connect brokerage</strong>.
+                        HappyTrader opens a short explanation, then SnapTrade's connection window.
+                        You sign in on your broker's own page. Access is read-only, and HappyTrader never stores your broker password.
                         <br><br>
-                        <strong>Current Positions:</strong> Accounts → Positions → select your account → Export.
+                        {% include "_broker_sync_timing.html" %}
+                        Cancel in that window and you come back here with nothing new connected.
                         <br><br>
-                        Both files are optional &mdash; history, current positions, or both.
-                        We support Schwab's web export format (not thinkorswim).
+                        <strong>Older history (optional).</strong> Broker sync is not a lifetime archive.
+                        Schwab's web export can fill years SnapTrade never sent:
+                        Accounts → History → Transactions, filter All Transactions, Export CSV.
+                        Current positions: Accounts → Positions → Export.
+                        Upload that from <a href="{{ url_for('upload') }}">Upload</a> after you connect.
+                        We parse schwab.com's export, not thinkorswim.
                     </div>
                 </div>
             </div>
@@ -98,8 +104,8 @@
                 </h3>
                 <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Your trade data is processed and stored in Google BigQuery. We do not store brokerage passwords or have API access to your account—you export and upload CSVs manually.
-                        Passwords are hashed. We recommend using a strong, unique password for your HappyTrader account.
+                        Your trade data is processed and stored in Google BigQuery. Broker access goes through SnapTrade and is read-only. You sign in on your broker's page. HappyTrader does not store brokerage passwords. A CSV upload is optional, for older history the sync didn't include.
+                        Your HappyTrader password is hashed. Use a strong, unique one.
                     </div>
                 </div>
             </div>
@@ -111,18 +117,17 @@
                 </h3>
                 <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Right now CSV upload parses Charles Schwab's web export
-                        (schwab.com, not thinkorswim). You can connect other brokers
-                        (Fidelity, Vanguard, Robinhood, Interactive Brokers, Alpaca,
-                        Wealthsimple, and more) via SnapTrade. If we haven't fitted
-                        a given brokerage into our models yet, SnapTrade still
+                        Connect Schwab, Fidelity, Vanguard, Robinhood, Interactive Brokers,
+                        Alpaca, Wealthsimple, and more through SnapTrade. If we haven't
+                        fitted a given brokerage into our models yet, SnapTrade still
                         connects it. If you are one of the first handful and you
                         subscribe, 6 months of Pro is included before the first charge,
                         while we calibrate.
                         <br><br>
-                        Per-broker CSV export steps live on
-                        <a href="{{ url_for('upload') }}">Upload</a> &mdash; Schwab
-                        is ready; request any other brokerage from that page.
+                        CSV upload is the fallback for older history, and today it
+                        parses Charles Schwab's web export (schwab.com, not thinkorswim).
+                        Steps live on <a href="{{ url_for('upload') }}">Upload</a>.
+                        Request any other brokerage's CSV from that page.
                     </div>
                 </div>
             </div>
@@ -130,17 +135,16 @@
             <div class="faq-item">
                 <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
                     data-bs-target="#faq-schwab-connect" aria-expanded="false" aria-controls="faq-schwab-connect">
-                    Do I have to re-upload CSVs every day?
+                    Do I have to upload CSVs to get started?
                 </h3>
                 <div id="faq-schwab-connect" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        No. Once you've done one upload to get started, you can connect your broker
-                        via SnapTrade from your <strong>Account</strong> page and we'll pull new
-                        transactions on a schedule &mdash; no daily export needed.
+                        No. Connect your brokerage once through SnapTrade and we pull
+                        new transactions on a schedule &mdash; no daily export.
                         <br><br>
                         Broker sync is not a lifetime archive. If the aggregator didn't send years
                         you still have in schwab.com, export those and
-                        <a href="{{ url_for('upload') }}">upload the CSV</a> once.
+                        <a href="{{ url_for('upload') }}">upload the CSV</a> once, after connecting.
                         We never see your broker password.
                     </div>
                 </div>
@@ -153,7 +157,7 @@
                 </h3>
                 <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Yes. Upload data for each account and we'll track them separately. You can filter by account on Positions, Strategies, and other views. Portfolio-wide totals are shown on Overview.
+                        Yes. Connect each brokerage (or another account at the same broker) and we'll track them separately. You can filter by account on Positions, Strategies, and other views. Portfolio-wide totals are shown on Overview.
                     </div>
                 </div>
             </div>

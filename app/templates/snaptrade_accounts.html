@@ -191,12 +191,29 @@
     {% include "_early_broker_note.html" %}
 
     <div class="broker-card">
+        <h2>{% if accounts %}Add a broker or another account{% else %}Connect a brokerage{% endif %}</h2>
+        {% if snaptrade_enabled %}
+        <p class="empty-hint mb-2">
+            Opens the connection portal. Use this for a new brokerage, or
+            another account at a broker you already use. Read-only &mdash;
+            HappyTrader never stores your broker password.
+        </p>
+        <p class="empty-hint mb-3">{% include "_broker_sync_timing.html" %}</p>
+        <a class="btn btn-primary" href="{{ url_for('snaptrade_connect', return_to=url_for('snaptrade_accounts_page')) }}">Connect an account</a>
+        {% else %}
+        <p class="empty-hint">
+            Multi-broker connect is not configured in this environment.
+            Contact the administrator to enable SnapTrade.
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="broker-card">
         <h2>Connected accounts</h2>
 
         <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
             <strong>Trades can lag.</strong>
-            Positions and balances update when you sync. New trades often
-            take a few hours, and sometimes up to a day, to appear.
+            {% include "_broker_sync_timing.html" %}
             If a trade you just placed isn't here, check back later.
         </div>
 
@@ -387,26 +404,6 @@
         {% endfor %}
         {% else %}
         <p class="empty-hint">No brokerages connected yet through SnapTrade.</p>
-        {% endif %}
-    </div>
-
-    <div class="broker-card">
-        <h2>Add a broker or another account</h2>
-        {% if snaptrade_enabled %}
-        <p class="empty-hint mb-3">
-            Opens the connection portal. Use this for a new brokerage, or
-            another account at a broker you already use.
-        </p>
-
-        <form method="POST" action="{{ url_for('snaptrade_connect') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-primary">Connect an account</button>
-        </form>
-        {% else %}
-        <p class="empty-hint">
-            Multi-broker connect is not configured in this environment.
-            Contact the administrator to enable SnapTrade.
-        </p>
         {% endif %}
     </div>
 

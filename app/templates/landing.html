@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block meta_tags %}
-<meta name="description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, and AI insights—free.">
-<meta property="og:description" content="HappyTrader helps options traders see what's really working. Upload your Schwab CSV, get strategy auto-detection, performance charts, and AI insights—free.">
+<meta name="description" content="HappyTrader helps options traders see what's really working. Connect a brokerage, sync your accounts, and get strategy auto-detection, performance charts, and AI insights.">
+<meta property="og:description" content="HappyTrader helps options traders see what's really working. Connect a brokerage, sync your accounts, and get strategy auto-detection, performance charts, and AI insights.">
 {% endblock %}
 
 {% block head %}
@@ -170,29 +170,37 @@
 
 {# ── How it works ── #}
 <h2 class="section-title">How it works</h2>
-<div class="row g-4 mb-5">
+<div class="row g-4 mb-3">
     <div class="col-md-4">
         <div class="how-step">
             <div class="how-step-num">1</div>
-            <h6>Export from Schwab</h6>
-            <p>Download your trade history and current positions from schwab.com. Two CSV files, no API keys.</p>
+            <h6>Connect your brokerage</h6>
+            <p>Sign in through SnapTrade — Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only access. HappyTrader never stores your broker password.</p>
         </div>
     </div>
     <div class="col-md-4">
         <div class="how-step">
             <div class="how-step-num">2</div>
-            <h6>Upload to HappyTrader</h6>
-            <p>We classify every position—Covered Calls, CSPs, Wheels, spreads—and link it to your account.</p>
+            <h6>Sync your accounts</h6>
+            <p>{% include "_broker_sync_timing.html" %} We classify every position — Covered Calls, CSPs, Wheels, spreads — and link it to your account.</p>
         </div>
     </div>
     <div class="col-md-4">
         <div class="how-step">
             <div class="how-step-num">3</div>
-            <h6>Analyze &amp; improve</h6>
-            <p>See what's working, where you're losing, and get AI-powered suggestions to improve your process.</p>
+            <h6>See your trading profile</h6>
+            <p>See what's working, where you're losing, and get a mirror of your process — including AI-powered insights.</p>
         </div>
     </div>
 </div>
+<p class="text-center text-muted small mb-5">
+    Need older history? Broker sync is not a lifetime archive.
+    {% if current_user.is_authenticated %}
+    <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
+    {% else %}
+    You can upload a CSV after you connect.
+    {% endif %}
+</p>
 
 {# ── Features ── #}
 <h2 class="section-title">Built for options traders</h2>
@@ -274,7 +282,7 @@
                 </svg>
             </div>
             <h6>Multi-account</h6>
-            <p>Track all your Schwab accounts in one place. Portfolio-wide views plus per-account breakdowns.</p>
+            <p>Track every brokerage account in one place. Portfolio-wide views plus per-account breakdowns.</p>
         </a>
     </div>
 </div>
@@ -282,7 +290,7 @@
 {# ── CTA ── #}
 <div class="cta-section mb-5">
     <h3>Ready to see what's really working?</h3>
-    <p class="mb-0">Try the demo with sample data—no signup. Or create a free account to upload your own trades.</p>
+    <p class="mb-0">Try the demo — no signup. Or create a free account and connect a brokerage.</p>
     <div class="d-flex gap-3 justify-content-center flex-wrap">
         <a href="{{ url_for('demo_start') }}" class="btn btn-light btn-lg px-4 fw-semibold">Try Demo</a>
         {% if signup_enabled %}

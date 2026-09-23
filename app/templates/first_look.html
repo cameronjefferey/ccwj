@@ -69,6 +69,22 @@
     </p>
 </div>
 
+{% if connect_another %}
+<div class="fl-section d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div>
+        <div class="fw-bold mb-1" style="font-size:1.05rem;">Connect another account</div>
+        <p class="mb-0 text-muted">
+            Add another brokerage through SnapTrade. Read-only &mdash; HappyTrader never stores your broker password.
+            {% include "_broker_sync_timing.html" %}
+        </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-primary" href="{{ url_for('snaptrade_connect', return_to=url_for('get_started')) }}">Connect another account</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_accounts_page') }}">Manage accounts</a>
+    </div>
+</div>
+{% endif %}
+
 {# ── The headline stats ── #}
 <div class="fl-section">
     <h3>At a Glance</h3>

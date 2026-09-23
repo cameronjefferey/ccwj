@@ -686,11 +686,19 @@ demo excluded;
 logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
 ### Get Started (`/get-started`) — one onboarding surface
-**Status: Working.** Checklist while the user is connecting/waiting for
-data; once warehouse rows exist it flips to the former `/first-look`
-"here's what we found" trading profile (`render_first_look_view` in
-`app/first_look.py`; `/first-look` 301s here). The post-upload and
-post-sync processing pages land here on first data.
+**Status: Working. Broker-first (Sep 2026).** No SnapTrade brokerage yet:
+Connect brokerage is the primary CTA (pre-portal interstitial, then
+SnapTrade), "I'll do this later" / skip to Overview is secondary, and
+CSV is a quiet link for older history. A CSV-only user still sees that
+empty state rather than the dense profile. Already connected, with
+warehouse rows: the former `/first-look` profile (`render_first_look_view`
+in `app/first_look.py`) plus a prominent Connect another account.
+Connected but still waiting on data: manage accounts, with Connect
+another account first. `/first-look` 301s here. New signups land here.
+Cancelling the SnapTrade portal returns to `/snaptrade/accounts` with
+an honest "nothing new was connected" message — not name-now claiming
+"Connected N accounts". The post-upload and post-sync processing pages
+land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the
 background** (`_kick_post_connect_sync`) and sends the user to
@@ -719,8 +727,10 @@ Stripe promotion code before setting the env var (Checkout already
 allows promo codes).
 
 ### Upload (`/upload`)
-**Status: Working. CSV upload + SnapTrade sync entry points.**
-CSV upload parses Schwab's web export. History and current-positions
+**Status: Working. CSV is the older-history fallback; broker connect leads.**
+The page opens with Connect a brokerage (SnapTrade). CSV upload parses
+Schwab's web export for years the sync didn't include, or a brokerage
+that doesn't sync yet. History and current-positions
 files are both optional (upload either or both). The account picker is
 **tenant-addressed** (same nicknames as Positions, `option value` is
 `tenant_id`) so picking an existing account merges into that tenant —

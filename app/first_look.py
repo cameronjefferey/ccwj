@@ -388,10 +388,17 @@ def render_first_look_view():
         if not profile:
             return None
         from app.early_broker import early_broker_notice_for_user
+        connect_another = False
+        try:
+            from app.snaptrade import snaptrade_enabled as _snaptrade_enabled_fn
+            connect_another = bool(_snaptrade_enabled_fn())
+        except Exception:
+            connect_another = False
         return render_template(
             "first_look.html",
             title="Your Trading Profile",
             profile=profile,
+            connect_another=connect_another,
             early_broker=early_broker_notice_for_user(
                 getattr(current_user, "id", None)
             ),

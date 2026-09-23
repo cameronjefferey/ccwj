@@ -389,8 +389,10 @@ def pricing_story(trial_card):
     return {
         "title": "Every feature, free for 30 days. No credit card.",
         "lead": (
-            "Connect a broker and get your full trading profile in minutes. "
-            "Your data stays readable forever \u2014 the subscription is for keeping the mirror live."
+            "Connect a broker to start your mirror. Positions and balances "
+            "usually show up within minutes; trade history often takes a few "
+            "hours, and sometimes up to a day. Your data stays readable "
+            "forever \u2014 the subscription is for keeping the mirror live."
         ),
         "freeze_bullet": freeze_bullet,
         "show_freeze_explainer": True,
