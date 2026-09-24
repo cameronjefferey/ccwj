@@ -1485,11 +1485,12 @@ token list: `docs/VISUAL_BRAND.md`. Short version agents must follow:
   solid `#1a1a2e` (`--nav-bg`). No 3-stop night-sky gradient
   (`#1a1a2e → #16213e → #0f3460`) and no blue→purple progress bar.
   The progress bar is charcoal → copper.
-- **Warm canvas.** Light page background `#f7f5f2`. Cards and
-  `.ht-statbar` use `--ht-surface: #fffcf8` with a hairline
-  `--ht-line`, not a soft drop shadow. Dark canvas is `#12141a`;
-  dark cards are `--ht-surface: #1c1e26`. Marketing `.feature-card`
-  may keep a mild hover-lift.
+- **Neutral canvas.** Light page background `#f4f5f7`. Cards,
+  tables, and `.ht-statbar` use `--ht-surface: #ffffff` with a
+  hairline `--ht-line` (`#e5e7eb`), not a soft drop shadow and not a
+  cream fill. `#f7f5f2` / `#fffcf8` were tried and rejected. Dark
+  canvas is `#12141a`; dark cards are `--ht-surface: #1c1e26`.
+  Marketing `.feature-card` may keep a mild hover-lift.
 - **Strategy swatches are not the brand.** Covered Call / CSP / Wheel
   color maps (including CSP and Poor Man's Covered Call at `#6f42c1`)
   stay as data colors. Do not retint them to copper.
@@ -1511,7 +1512,8 @@ Agents restyling a page should match `docs/VISUAL_BRAND.md` and the
 tokens above. Do not drift back to an "AI SaaS" kit: no Inter, no
 Bootstrap purple or indigo (`#6f42c1`, `#7c3aed`, `#6366f1`, `#4338ca`)
 as a brand or AI accent, no night-sky gradients, no cool slate page
-fill (`#eef1f6`) or cool dark canvas (`#151e30` / `#0b1220`). Feature
+fill (`#eef1f6`), no cream page fill (`#f7f5f2` / `#fffcf8`),
+and no cool dark canvas (`#151e30` / `#0b1220`). Feature
 icon tints for AI / mirror use the copper wash
 `rgba(184,115,51,.14)`, not a purple blob. User-chosen profile accent
 presets (violet / teal / amber / rose / slate) are a settings control,

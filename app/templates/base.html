@@ -106,15 +106,16 @@
             --nav-bg: #1a1a2e;
             /* Ink / surface tokens — page style blocks must use these
                instead of hardcoded one-theme hexes. Inherit from <html
-               data-bs-theme>. Warm stone on a warm canvas. */
+               data-bs-theme>. Neutral gray page, white cards. A cream
+               page fill (#f7f5f2) was rejected — do not bring it back. */
             --ht-ink: #1c1917;
             --ht-label: #44403c;
             --ht-muted: #57534e;
             --ht-faint: #78716c;
-            --ht-surface: #fffcf8;
-            --ht-surface-2: #f3efe9;
-            --ht-line: #e6e0d6;
-            --ht-hover: #f3efe9;
+            --ht-surface: #ffffff;
+            --ht-surface-2: #f3f4f6;
+            --ht-line: #e5e7eb;
+            --ht-hover: #f3f4f6;
             --bs-primary: #b87333;
             --bs-primary-rgb: 184, 115, 51;
             --bs-link-color: #7a4a1e;
@@ -136,7 +137,7 @@
             --bs-link-hover-color: #f0d7b0;
         }
         body {
-            background: #f7f5f2;
+            background: #f4f5f7;
             font-family: "Public Sans", system-ui, sans-serif;
             color: var(--ht-ink);
         }
@@ -267,8 +268,8 @@
         /* Always-on broker data-freshness strip (under the navbar). Subtle
            when fresh, amber when data is going stale. */
         .data-freshness-strip {
-            background: #f3efe9;
-            border-bottom: 1px solid #e6e0d6;
+            background: var(--ht-surface-2);
+            border-bottom: 1px solid var(--ht-line);
             color: #57534e;
             font-size: .82rem;
             padding: .4rem 0;
@@ -398,7 +399,7 @@
             position: sticky; bottom: 0;
             display: flex; gap: .4rem;
             padding: .5rem .75rem .6rem;
-            border-top: 1px solid #e6e0d6;
+            border-top: 1px solid var(--ht-line);
             background: var(--ht-surface, #fff);
         }
         .ht-ms-apply-row .btn { flex: 1; }
@@ -408,8 +409,8 @@
            — high contrast so the current selection reads at a glance. */
         .seg-toggle {
             display: inline-flex; gap: 0;
-            background: #f3efe9; padding: 3px;
-            border-radius: 999px; border: 1px solid #e6e0d6;
+            background: var(--ht-surface-2); padding: 3px;
+            border-radius: 999px; border: 1px solid var(--ht-line);
         }
         .seg-toggle button,
         .seg-toggle a {
@@ -440,7 +441,7 @@
            working as an alias so we don't have to touch its template. */
         .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; }
         .fit-controls .lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: .25rem; display: block; }
-        .metric-toggle { display: inline-flex; gap: 0; background: #f3efe9; padding: 3px; border-radius: 999px; border: 1px solid #e6e0d6; }
+        .metric-toggle { display: inline-flex; gap: 0; background: var(--ht-surface-2); padding: 3px; border-radius: 999px; border: 1px solid var(--ht-line); }
         .metric-toggle button,
         .metric-toggle a { background: transparent; border: 0; color: #475569; padding: .35rem .85rem; border-radius: 999px; font-size: .75rem; font-weight: 600; cursor: pointer; transition: background .12s ease, color .12s ease; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; font-family: inherit; }
         .metric-toggle button.active,
@@ -498,7 +499,7 @@
         .ht-palette-empty { padding: 1rem; color: #78716c; font-size: .9rem; text-align: center; }
         .ht-palette-hint {
             padding: .5rem 1rem; font-size: .72rem; color: #78716c;
-            border-top: 1px solid #f3efe9; background: #fafafa;
+            border-top: 1px solid var(--ht-line); background: var(--ht-surface-2);
         }
         .navbar .ht-search-btn {
             background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
@@ -523,8 +524,8 @@
         }
 
         /* ── Design refresh (Sep 2026 de-AI pass) ──────────────────
-           One global layer that tightens the whole app: warm page
-           background so cards read as surfaces, Public Sans for UI,
+           One global layer that tightens the whole app: neutral gray
+           page so white cards read as surfaces, Public Sans for UI,
            IBM Plex Mono for numbers, hairline borders instead of soft
            shadows, denser card padding, bigger table type (tables ARE
            the content), and darker section labels. Every selector is
@@ -532,9 +533,10 @@
            in each page's own <style> block regardless of order. The
            dark-mode block below still out-ranks this layer via its
            [data-bs-theme] attribute selectors. Marketing .feature-card
-           keeps its own mild hover-lift. */
+           keeps its own mild hover-lift. Do not set the page fill back
+           to cream (#f7f5f2). */
         body {
-            background: #f7f5f2;
+            background: #f4f5f7;
             font-family: "Public Sans", system-ui, sans-serif;
             color: var(--ht-ink);
             -webkit-font-smoothing: antialiased;
