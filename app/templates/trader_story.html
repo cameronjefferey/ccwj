@@ -6,12 +6,12 @@
 {% block content %}
 <style>
     .ts-hero {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        background: #1a1a2e;
         border-radius: 14px; color: #fff; padding: 2rem 1.75rem;
         text-align: center;
     }
     .ts-hero .ts-kicker { font-size: .78rem; letter-spacing: 2px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
-    .ts-hero h1 { font-size: 2rem; font-weight: 800; margin: .35rem 0 .4rem; }
+    .ts-hero h1 { font-size: 2rem; font-weight: 700; margin: .35rem 0 .4rem; letter-spacing: -.01em; }
     .ts-hero .ts-sub { color: #cbd5e1; font-size: 1rem; }
     .ts-hero .ts-sub strong { color: #fff; }
     .ts-hero .ts-hero-note {
@@ -90,7 +90,7 @@
     .ts-era-title { font-weight: 700; }
     .ts-era-line { color: #64748b; font-size: .88rem; margin-top: .1rem; }
     .ts-era-note { color: #64748b; font-size: .85rem; margin: -.25rem 0 .75rem; line-height: 1.45; }
-    [data-bs-theme="dark"] .ts-era { border-bottom-color: #1f2a3f; }
+    [data-bs-theme="dark"] .ts-era { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .ts-era-line,
     [data-bs-theme="dark"] .ts-era-note { color: #94a3b8; }
 
@@ -246,7 +246,7 @@
     .ts-finding-value.pos { color: var(--color-positive); }
     .ts-finding-value.neg { color: var(--color-negative); }
     .ts-finding-detail { color: #64748b; font-size: .88rem; line-height: 1.45; }
-    [data-bs-theme="dark"] .ts-finding { border-bottom-color: #1f2a3f; }
+    [data-bs-theme="dark"] .ts-finding { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .ts-finding-detail { color: #94a3b8; }
     @media (max-width: 560px) {
         .ts-finding { grid-template-columns: 1fr auto; }
@@ -277,7 +277,7 @@
         margin-bottom: .5rem; transition: border-color .15s ease;
     }
     a.ts-watch:last-child { margin-bottom: 0; }
-    a.ts-watch:hover { border-color: #6366f1; }
+    a.ts-watch:hover { border-color: var(--color-mirror-ink); }
     [data-bs-theme="dark"] a.ts-watch { border-color: #24304a; }
     .ts-watch-top { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
     .ts-watch-sym { font-weight: 800; }

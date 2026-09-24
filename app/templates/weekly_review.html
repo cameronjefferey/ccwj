@@ -524,13 +524,13 @@
                         tenant=selected_tenant,
                         tenants=selected_tenants) }}"
        style="display:block; text-decoration:none; color:inherit;
-              border-left:3px solid #6366f1; border-radius:0 10px 10px 0;
-              background:linear-gradient(90deg, rgba(99,102,241,.07), rgba(99,102,241,.02));
+              border-left:3px solid var(--color-mirror-ink); border-radius:0 10px 10px 0;
+              background:rgba(184,115,51,.10);
               padding:.8rem 1rem;">
-        <span style="font-weight:700; color:#6366f1; font-size:.72rem; letter-spacing:.8px; text-transform:uppercase;">Your trading mirror</span>
+        <span style="font-weight:700; color:var(--color-mirror-ink); font-size:.72rem; letter-spacing:.8px; text-transform:uppercase;">Your trading mirror</span>
         <div style="margin-top:.15rem; font-size:.95rem;">
             {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
-            <span style="color:#6366f1; font-weight:600;">See your trader profile &rarr;</span>
+            <span style="color:var(--color-mirror-ink); font-weight:600;">See your trader profile &rarr;</span>
         </div>
     </a>
 </div>

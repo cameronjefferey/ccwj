@@ -66,56 +66,79 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Chart.js global theme defaults — must run after chart.js loads
-        // and before any page's inline chart script.
+        // and before any page's inline chart script. Tick labels use the
+        // numeric face; legends and titles stay in the UI face.
         (function () {
-            if (window.Chart &&
-                document.documentElement.getAttribute("data-bs-theme") === "dark") {
-                Chart.defaults.color = "#94a3b8";
-                Chart.defaults.borderColor = "rgba(148,163,184,.16)";
+            if (!window.Chart) return;
+            var sans = '"Public Sans", system-ui, sans-serif';
+            var mono = '"IBM Plex Mono", ui-monospace, monospace';
+            Chart.defaults.font.family = sans;
+            var scales = Chart.defaults.scales || {};
+            ["linear", "category", "time", "logarithmic", "radialLinear"].forEach(function (type) {
+                if (scales[type] && scales[type].ticks) {
+                    scales[type].ticks.font = Object.assign({}, scales[type].ticks.font || {}, { family: mono });
+                }
+            });
+            if (document.documentElement.getAttribute("data-bs-theme") === "dark") {
+                Chart.defaults.color = "#a8a29e";
+                Chart.defaults.borderColor = "rgba(168,162,158,.22)";
             }
         })();
     </script>
 
     <style>
         :root {
-            --color-positive: #2d8659;
-            --color-negative: #c0392b;
-            --color-mirror: #6f42c1;
+            /* Tape greens/reds — desaturated so P&L reads as print, not
+               Bootstrap success/danger. Still unambiguously green/red. */
+            --color-positive: #3f7d5c;
+            --color-negative: #b55249;
+            /* Brand accent: copper. Fills and icons use --color-mirror;
+               small text on light surfaces uses --color-mirror-ink
+               (the fill fails AA as body text on white). Dark mode
+               lightens the same hue. */
+            --color-mirror: #b87333;
+            --color-mirror-ink: #7a4a1e;
             --color-reflect: #1a1a2e;
-            --nav-bg: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            --nav-bg: #1a1a2e;
             /* Ink / surface tokens — page style blocks must use these
-               instead of hardcoded #0f172a / #94a3b8. Those two hexes
-               are each correct in only ONE theme: #94a3b8 is the dark
-               muted chip (illegible on white); #0f172a is light-mode
-               ink (illegible on the dark card). Inherit from <html
-               data-bs-theme>. */
-            --ht-ink: #0f172a;
-            --ht-label: #334155;
-            --ht-muted: #475569;
-            --ht-faint: #64748b;
-            --ht-surface: #ffffff;
-            --ht-surface-2: #f8fafc;
-            --ht-line: #e5e7eb;
-            --ht-hover: #f1f5f9;
+               instead of hardcoded one-theme hexes. Inherit from <html
+               data-bs-theme>. Warm stone on a warm canvas. */
+            --ht-ink: #1c1917;
+            --ht-label: #44403c;
+            --ht-muted: #57534e;
+            --ht-faint: #78716c;
+            --ht-surface: #fffcf8;
+            --ht-surface-2: #f3efe9;
+            --ht-line: #e6e0d6;
+            --ht-hover: #f3efe9;
+            --bs-primary: #b87333;
+            --bs-primary-rgb: 184, 115, 51;
+            --bs-link-color: #7a4a1e;
+            --bs-link-hover-color: #5e3816;
+            --bs-focus-ring-color: rgba(184, 115, 51, .35);
         }
         [data-bs-theme="dark"] {
-            --ht-ink: #e2e8f0;
-            --ht-label: #cbd5e1;
-            --ht-muted: #94a3b8;
-            --ht-faint: #64748b;
-            --ht-surface: #151e30;
-            --ht-surface-2: #10192b;
-            --ht-line: #1f2a3f;
-            --ht-hover: #1c2942;
+            --color-mirror: #e0b56a;
+            --color-mirror-ink: #e0b56a;
+            --ht-ink: #f4f0ea;
+            --ht-label: #d6d1c9;
+            --ht-muted: #a8a29e;
+            --ht-faint: #78716c;
+            --ht-surface: #1c1e26;
+            --ht-surface-2: #16181f;
+            --ht-line: #2e313a;
+            --ht-hover: #262932;
+            --bs-link-color: #e0b56a;
+            --bs-link-hover-color: #f0d7b0;
         }
         body {
-            background: #fafafa;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-            color: #2c3e50;
+            background: #f7f5f2;
+            font-family: "Public Sans", system-ui, sans-serif;
+            color: var(--ht-ink);
         }
         .navbar { background: var(--nav-bg) !important; }
         .navbar-brand { font-weight: 700; letter-spacing: .5px; }
@@ -130,13 +153,13 @@
         }
         .text-positive { color: var(--color-positive) !important; }
         .text-negative { color: var(--color-negative) !important; }
-        .text-mirror { color: var(--color-mirror) !important; }
+        .text-mirror { color: var(--color-mirror-ink) !important; }
 
         .narrative { font-size: 1.05rem; line-height: 1.7; color: #495057; }
         .narrative strong { color: #2c3e50; }
 
         .prompt-card {
-            background: #f8f4ff;
+            background: #f8f1e7;
             border-left: 4px solid var(--color-mirror);
             border-radius: 0 12px 12px 0;
             padding: 1.25rem 1.5rem;
@@ -144,7 +167,7 @@
         .prompt-card .prompt-q {
             font-size: 1.1rem;
             font-weight: 600;
-            color: var(--color-mirror);
+            color: var(--color-mirror-ink);
             margin-bottom: .5rem;
         }
 
@@ -156,12 +179,11 @@
         }
 
         .kpi-card {
-            border: none;
+            border: 1px solid var(--ht-line);
             border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,.06);
-            transition: transform .15s;
+            box-shadow: none;
         }
-        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.1); }
+        .kpi-card:hover { transform: none; box-shadow: none; }
         .kpi-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
         .kpi-value { font-size: 1.5rem; font-weight: 700; }
         .navbar .dropdown-menu { border: none; box-shadow: 0 4px 20px rgba(0,0,0,.2); }
@@ -222,14 +244,14 @@
         .ht-feedback-fab:focus-visible {
             width: auto; height: auto;
             padding: .55rem .95rem; gap: .45rem;
-            background: #0f3460; color: #fff; overflow: visible;
+            background: #2a2c38; color: #fff; overflow: visible;
         }
         .ht-feedback-fab:hover .ht-feedback-label,
         .ht-feedback-fab:focus-visible .ht-feedback-label {
             position: static; width: auto; height: auto; margin: 0;
             overflow: visible; clip: auto;
         }
-        .ht-feedback-fab:focus-visible { outline: 3px solid rgba(15,52,96,.35); outline-offset: 2px; }
+        .ht-feedback-fab:focus-visible { outline: 3px solid rgba(184,115,51,.55); outline-offset: 2px; }
         @media (min-width: 992px) {
             /* Bootstrap spacing utilities are !important, so the gutter
                has to be too — otherwise px-md-4 wins and the button sits
@@ -245,9 +267,9 @@
         /* Always-on broker data-freshness strip (under the navbar). Subtle
            when fresh, amber when data is going stale. */
         .data-freshness-strip {
-            background: #eef2f7;
-            border-bottom: 1px solid #dde3ec;
-            color: #4a5568;
+            background: #f3efe9;
+            border-bottom: 1px solid #e6e0d6;
+            color: #57534e;
             font-size: .82rem;
             padding: .4rem 0;
         }
@@ -376,7 +398,7 @@
             position: sticky; bottom: 0;
             display: flex; gap: .4rem;
             padding: .5rem .75rem .6rem;
-            border-top: 1px solid #e2e8f0;
+            border-top: 1px solid #e6e0d6;
             background: var(--ht-surface, #fff);
         }
         .ht-ms-apply-row .btn { flex: 1; }
@@ -386,8 +408,8 @@
            — high contrast so the current selection reads at a glance. */
         .seg-toggle {
             display: inline-flex; gap: 0;
-            background: #f1f5f9; padding: 3px;
-            border-radius: 999px; border: 1px solid #e2e8f0;
+            background: #f3efe9; padding: 3px;
+            border-radius: 999px; border: 1px solid #e6e0d6;
         }
         .seg-toggle button,
         .seg-toggle a {
@@ -418,7 +440,7 @@
            working as an alias so we don't have to touch its template. */
         .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; }
         .fit-controls .lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: .25rem; display: block; }
-        .metric-toggle { display: inline-flex; gap: 0; background: #f1f5f9; padding: 3px; border-radius: 999px; border: 1px solid #e2e8f0; }
+        .metric-toggle { display: inline-flex; gap: 0; background: #f3efe9; padding: 3px; border-radius: 999px; border: 1px solid #e6e0d6; }
         .metric-toggle button,
         .metric-toggle a { background: transparent; border: 0; color: #475569; padding: .35rem .85rem; border-radius: 999px; font-size: .75rem; font-weight: 600; cursor: pointer; transition: background .12s ease, color .12s ease; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; font-family: inherit; }
         .metric-toggle button.active,
@@ -443,9 +465,9 @@
            and form submits, cleared on pageshow. */
         #ht-progress {
             position: fixed; top: 0; left: 0; height: 3px; width: 0;
-            background: linear-gradient(90deg, #2563eb, #7c3aed);
+            background: linear-gradient(90deg, #1a1a2e, #b87333);
             z-index: 3000; opacity: 0; pointer-events: none;
-            box-shadow: 0 0 8px rgba(37, 99, 235, .55);
+            box-shadow: 0 0 8px rgba(184, 115, 51, .45);
         }
 
         /* Quick switcher (Cmd+K / "/") — static/js/nav.js */
@@ -470,13 +492,13 @@
             padding: .55rem .8rem; border-radius: 8px; cursor: pointer;
             font-size: .95rem;
         }
-        .ht-palette-item.active { background: #eff6ff; }
+        .ht-palette-item.active { background: #f8f1e7; }
         .ht-palette-name { font-weight: 600; color: #0f172a; }
-        .ht-palette-kind { font-size: .72rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .4px; }
-        .ht-palette-empty { padding: 1rem; color: #94a3b8; font-size: .9rem; text-align: center; }
+        .ht-palette-kind { font-size: .72rem; color: #78716c; text-transform: uppercase; letter-spacing: .4px; }
+        .ht-palette-empty { padding: 1rem; color: #78716c; font-size: .9rem; text-align: center; }
         .ht-palette-hint {
-            padding: .5rem 1rem; font-size: .72rem; color: #94a3b8;
-            border-top: 1px solid #f1f5f9; background: #fafafa;
+            padding: .5rem 1rem; font-size: .72rem; color: #78716c;
+            border-top: 1px solid #f3efe9; background: #fafafa;
         }
         .navbar .ht-search-btn {
             background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
@@ -500,32 +522,36 @@
             background: #fff; box-shadow: 0 1px 0 #e5e7eb;
         }
 
-        /* ── Design refresh (Aug 2026 overhaul) ─────────────────────
-           One global layer that tightens the whole app: real page
-           background so cards read as surfaces, Inter for crisper
-           numbers, denser card padding, bigger table type (tables ARE
+        /* ── Design refresh (Sep 2026 de-AI pass) ──────────────────
+           One global layer that tightens the whole app: warm page
+           background so cards read as surfaces, Public Sans for UI,
+           IBM Plex Mono for numbers, hairline borders instead of soft
+           shadows, denser card padding, bigger table type (tables ARE
            the content), and darker section labels. Every selector is
            body-prefixed so it out-ranks the bare class rules that live
            in each page's own <style> block regardless of order. The
            dark-mode block below still out-ranks this layer via its
-           [data-bs-theme] attribute selectors. */
+           [data-bs-theme] attribute selectors. Marketing .feature-card
+           keeps its own mild hover-lift. */
         body {
-            background: #eef1f6;
-            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            background: #f7f5f2;
+            font-family: "Public Sans", system-ui, sans-serif;
             color: var(--ht-ink);
             -webkit-font-smoothing: antialiased;
         }
-        /* No color here — headings must inherit (dark heroes, dark mode). */
+        /* No color here — headings must inherit (dark heroes, dark mode).
+           700 is the heaviest Public Sans weight we load. */
         body h1, body h2, body h3, body h4, body h5, body h6 {
             font-weight: 700; letter-spacing: -.01em;
         }
-        /* Cards become bordered surfaces instead of floating white-on-white. */
-        body .card,
+        /* Cards are bordered surfaces. Hairline, no drop shadow. */
+        body .card:not(.feature-card),
         body .review-section,
         body .chart-wrapper,
         body .narrative-card {
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+            border: 1px solid var(--ht-line);
+            box-shadow: none;
+            background-color: var(--ht-surface);
         }
         /* Density: Bootstrap's p-4 (1.5rem all around) is the single
            biggest source of "small text floating in a big box". A
@@ -536,7 +562,7 @@
         body .review-section { padding: 1.15rem 1.35rem; margin-bottom: 1rem; border-radius: 14px; }
         /* Section headers: readable anchors, not whispers. */
         body .section-label {
-            font-size: .74rem; font-weight: 800; letter-spacing: .9px;
+            font-size: .74rem; font-weight: 700; letter-spacing: .9px;
             color: var(--ht-label); margin-bottom: .65rem;
         }
         body .section-sub { font-size: .85rem; color: var(--ht-muted); }
@@ -558,17 +584,33 @@
            cell padding so equal specificity still wins. */
         body.ht-compact .table { font-size: .82rem; }
         body.ht-compact .table > :not(caption) > * > * { padding: .22rem .4rem; }
-        body tr[data-href]:hover > * { background: #f4f7fc; }
+        body tr[data-href]:hover > * { background: var(--ht-hover); }
         /* Muted text one step darker everywhere — #6c757d on white at
            .8rem was below comfortable contrast. */
-        body .text-muted { color: #5b6779 !important; }
+        body .text-muted { color: #57534e !important; }
+        /* Numbers that matter. Plex only loads through 600, so values
+           must not ask for 700/800 (the browser will faux-bold). */
+        .ht-num,
+        .font-mono-nums,
+        body .kpi-value,
+        body .ht-statbar .ht-stat-v,
+        body .kpi-mini .value,
+        body .income-value,
+        body .fl-stat .val,
+        body .pricing-card .price,
+        body .dd-money,
+        body .dd-delta {
+            font-family: "IBM Plex Mono", ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }
         /* Compact stat strip: one bordered row of label-over-value stats,
            replacing the old pattern of N huge cards each holding one
            number. Wraps on phones. */
         .ht-statbar {
             display: flex; flex-wrap: wrap; gap: .25rem 2.25rem;
-            background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(15,23,42,.05);
+            background: var(--ht-surface); border: 1px solid var(--ht-line); border-radius: 12px;
+            box-shadow: none;
             padding: .75rem 1.15rem;
         }
         .ht-statbar .ht-stat { display: flex; flex-direction: column; min-width: 0; }
@@ -577,12 +619,12 @@
             letter-spacing: .6px; color: var(--ht-muted);
         }
         .ht-statbar .ht-stat-v {
-            font-size: 1.2rem; font-weight: 800;
+            font-size: 1.2rem; font-weight: 600;
             font-variant-numeric: tabular-nums; line-height: 1.3;
         }
-        [data-bs-theme="dark"] .ht-statbar { background: #151e30; border-color: #1f2a3f; }
-        [data-bs-theme="dark"] .ht-statbar .ht-stat-l { color: #8fa0b5; }
-        [data-bs-theme="dark"] .ht-statbar .ht-stat-v { color: #f1f5f9; }
+        [data-bs-theme="dark"] .ht-statbar { background: var(--ht-surface); border-color: var(--ht-line); }
+        [data-bs-theme="dark"] .ht-statbar .ht-stat-l { color: var(--ht-muted); }
+        [data-bs-theme="dark"] .ht-statbar .ht-stat-v { color: var(--ht-ink); }
 
         /* ── Dark mode (Aug 2026) ───────────────────────────────────
            Opt-in via the navbar toggle (localStorage "ht-theme").
@@ -590,44 +632,44 @@
            these rules cover the app's hardcoded light surfaces. The
            attribute+class selectors out-rank the page style blocks'
            bare class rules, so order of <style> blocks doesn't matter. */
-        [data-bs-theme="dark"] body { background: #0b1220; color: #cbd5e1; }
+        [data-bs-theme="dark"] body { background: #12141a; color: #d6d1c9; }
         [data-bs-theme="dark"] .card,
-        [data-bs-theme="dark"] .stat-card { background-color: #151e30; color: #cbd5e1; }
+        [data-bs-theme="dark"] .stat-card { background-color: #1c1e26; color: #d6d1c9; }
         [data-bs-theme="dark"] .card,
         [data-bs-theme="dark"] .review-section,
         [data-bs-theme="dark"] .chart-wrapper,
-        [data-bs-theme="dark"] .narrative-card { border-color: #1f2a3f; }
-        [data-bs-theme="dark"] .table { color: #cbd5e1; }
-        [data-bs-theme="dark"] .table thead th { color: #8fa0b5; }
-        [data-bs-theme="dark"] .section-label { color: #8fa0b5; }
-        [data-bs-theme="dark"] .section-sub { color: #8fa0b5; }
+        [data-bs-theme="dark"] .narrative-card { border-color: #2e313a; }
+        [data-bs-theme="dark"] .table { color: #d6d1c9; }
+        [data-bs-theme="dark"] .table thead th { color: #a8a29e; }
+        [data-bs-theme="dark"] .section-label { color: #a8a29e; }
+        [data-bs-theme="dark"] .section-sub { color: #a8a29e; }
         [data-bs-theme="dark"] .kpi-label,
         [data-bs-theme="dark"] .kpi-mini .label,
-        [data-bs-theme="dark"] .snap-label { color: #8fa0b5; }
-        [data-bs-theme="dark"] tr[data-href]:hover > * { background: #1c2942; }
+        [data-bs-theme="dark"] .snap-label { color: #a8a29e; }
+        [data-bs-theme="dark"] tr[data-href]:hover > * { background: #262932; }
         /* Freshness strip + Position Detail leg pills stayed light-on-dark. */
-        [data-bs-theme="dark"] .data-freshness-strip { background: #243044; border-bottom-color: #334155; color: #e2e8f0; }
+        [data-bs-theme="dark"] .data-freshness-strip { background: #24262e; border-bottom-color: #3a3e48; color: #f4f0ea; }
         [data-bs-theme="dark"] .data-freshness-strip span,
-        [data-bs-theme="dark"] .data-freshness-strip .freshness-link { color: #e2e8f0; }
-        [data-bs-theme="dark"] .data-freshness-strip strong { color: #f8fafc; }
+        [data-bs-theme="dark"] .data-freshness-strip .freshness-link { color: #f4f0ea; }
+        [data-bs-theme="dark"] .data-freshness-strip strong { color: #f4f0ea; }
         [data-bs-theme="dark"] .data-freshness-strip .freshness-link:hover { color: #fff; }
         [data-bs-theme="dark"] .data-freshness-strip.is-stale { background: #3a2e12; border-bottom-color: #4a3a10; color: #fde68a; }
         [data-bs-theme="dark"] .data-freshness-strip.is-stale span,
         [data-bs-theme="dark"] .data-freshness-strip.is-stale strong,
         [data-bs-theme="dark"] .data-freshness-strip.is-stale .freshness-link { color: #fde68a; }
-        [data-bs-theme="dark"] .session-pill { background: #151e30; border-color: #33415e; color: #cbd5e1; }
-        [data-bs-theme="dark"] .session-pill:hover { border-color: #8fa0b5; }
-        [data-bs-theme="dark"] .session-pill.active { background: #1e2c47; color: #e2e8f0; }
+        [data-bs-theme="dark"] .session-pill { background: #1c1e26; border-color: #3a3e48; color: #d6d1c9; }
+        [data-bs-theme="dark"] .session-pill:hover { border-color: #a8a29e; }
+        [data-bs-theme="dark"] .session-pill.active { background: #2c2822; color: #f4f0ea; }
         [data-bs-theme="dark"] .session-pill.active.session-open { background: rgba(25,135,84,.18); color: #6ee7b7; border-color: #198754; }
-        [data-bs-theme="dark"] .session-pill.active.session-closed { background: #1c2942; color: #cbd5e1; border-color: #33415e; }
-        [data-bs-theme="dark"] .text-muted { color: #8fa0b5 !important; }
-        [data-bs-theme="dark"] .ht-sticky table thead th { background: #151e30; box-shadow: 0 1px 0 #283652; }
-        [data-bs-theme="dark"] .ht-palette-box { background: #151e30; }
-        [data-bs-theme="dark"] .ht-palette-input { background: #151e30; color: #e2e8f0; border-bottom-color: #283652; }
-        [data-bs-theme="dark"] .ht-palette-item.active { background: #1e2c47; }
-        [data-bs-theme="dark"] .ht-palette-name { color: #e2e8f0; }
-        [data-bs-theme="dark"] .ht-palette-hint { background: #10192b; border-top-color: #1f2a3f; }
-        [data-bs-theme="dark"] .sk-shimmer { background: #1c2942; }
+        [data-bs-theme="dark"] .session-pill.active.session-closed { background: #262932; color: #d6d1c9; border-color: #3a3e48; }
+        [data-bs-theme="dark"] .text-muted { color: #a8a29e !important; }
+        [data-bs-theme="dark"] .ht-sticky table thead th { background: #1c1e26; box-shadow: 0 1px 0 #343842; }
+        [data-bs-theme="dark"] .ht-palette-box { background: #1c1e26; }
+        [data-bs-theme="dark"] .ht-palette-input { background: #1c1e26; color: #f4f0ea; border-bottom-color: #343842; }
+        [data-bs-theme="dark"] .ht-palette-item.active { background: #2c2822; }
+        [data-bs-theme="dark"] .ht-palette-name { color: #f4f0ea; }
+        [data-bs-theme="dark"] .ht-palette-hint { background: #16181f; border-top-color: #2e313a; }
+        [data-bs-theme="dark"] .sk-shimmer { background: #262932; }
         [data-bs-theme="dark"] .sk-shimmer::after {
             background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
         }
@@ -635,22 +677,22 @@
            blocks; attribute selector wins on specificity). */
         [data-bs-theme="dark"] .snapshot-section,
         [data-bs-theme="dark"] .review-section,
-        [data-bs-theme="dark"] .dd-card { background: #151e30 !important; color: #cbd5e1; }
+        [data-bs-theme="dark"] .dd-card { background: #1c1e26 !important; color: #d6d1c9; }
         [data-bs-theme="dark"] .watch-block,
-        [data-bs-theme="dark"] .strip-card { background: #10192b; border-color: #283652; }
+        [data-bs-theme="dark"] .strip-card { background: #16181f; border-color: #343842; }
         [data-bs-theme="dark"] .watch-item:hover,
-        [data-bs-theme="dark"] .strip-card:hover { background: #1c2942; }
-        [data-bs-theme="dark"] .mover-row:hover { background: #1c2942; }
-        [data-bs-theme="dark"] .breakdown-table th { color: #8fa0b5; }
+        [data-bs-theme="dark"] .strip-card:hover { background: #262932; }
+        [data-bs-theme="dark"] .mover-row:hover { background: #262932; }
+        [data-bs-theme="dark"] .breakdown-table th { color: #a8a29e; }
         [data-bs-theme="dark"] .breakdown-table td,
-        [data-bs-theme="dark"] .dd-table td { border-bottom-color: #1f2a3f; }
+        [data-bs-theme="dark"] .dd-table td { border-bottom-color: #2e313a; }
         /* Daily Review snapshot table (hardcoded light grays in its own
            style block; these attribute rules out-rank them). */
         [data-bs-theme="dark"] .snapshot-table .acct-name { color: var(--ht-ink); }
         [data-bs-theme="dark"] .snapshot-table-row > div { border-bottom-color: var(--ht-line); }
-        [data-bs-theme="dark"] .snapshot-table-row.total > div { background: var(--ht-surface-2); border-top-color: #33415e; }
+        [data-bs-theme="dark"] .snapshot-table-row.total > div { background: var(--ht-surface-2); border-top-color: #3a3e48; }
         [data-bs-theme="dark"] .snapshot-table-row.total .acct-name { color: var(--ht-ink); }
-        [data-bs-theme="dark"] .snapshot-table-row.benchmark > div { background: #0e1626; }
+        [data-bs-theme="dark"] .snapshot-table-row.benchmark > div { background: #12141a; }
         [data-bs-theme="dark"] .snapshot-table .snap-cell-dash { color: var(--ht-faint); }
         /* Daily Review page-local ink was hardcoded for light cards.
            Dark mode flips .review-section to navy; these remap the
@@ -702,48 +744,48 @@
         [data-bs-theme="dark"] .breakdown-table tbody tr:hover,
         [data-bs-theme="dark"] .breakdown-table tr.totals-row td { background: var(--ht-surface-2); }
         [data-bs-theme="dark"] .since-card {
-            background: linear-gradient(135deg, #2a2109 0%, #151e30 100%);
+            background: linear-gradient(135deg, #2a2109 0%, #1c1e26 100%);
             border-color: #4a3a10;
         }
-        [data-bs-theme="dark"] .since-chip { background: #151e30; border-color: #33415e; color: var(--ht-ink); }
+        [data-bs-theme="dark"] .since-chip { background: #1c1e26; border-color: #3a3e48; color: var(--ht-ink); }
         /* Chart cards + Position Detail symbol tab strip. */
-        [data-bs-theme="dark"] .chart-wrapper { background: #151e30; }
-        [data-bs-theme="dark"] .sym-tabstrip { background: #0b1220; border-bottom-color: #1f2a3f; }
-        [data-bs-theme="dark"] .sym-tabstrip__search input { background: #151e30; border-color: #33415e; color: #e2e8f0; }
-        [data-bs-theme="dark"] .sym-tabstrip__search input:focus { background: #151e30; }
-        [data-bs-theme="dark"] .sym-tabstrip__sort { background: #1c2942; }
-        [data-bs-theme="dark"] .sym-tabstrip__sort button { color: #8fa0b5; }
-        [data-bs-theme="dark"] .sym-tabstrip__sort button.active { background: #33415e; color: #f1f5f9; }
-        [data-bs-theme="dark"] .sym-tab { background: #151e30; border-color: #1f2a3f; color: #cbd5e1; }
-        [data-bs-theme="dark"] .sym-tab:hover { background: #1c2942; color: #f1f5f9; }
-        [data-bs-theme="dark"] .sym-tab.active { background: #1e2c47; color: #f1f5f9; border-color: #4f46e5; }
+        [data-bs-theme="dark"] .chart-wrapper { background: #1c1e26; }
+        [data-bs-theme="dark"] .sym-tabstrip { background: #12141a; border-bottom-color: #2e313a; }
+        [data-bs-theme="dark"] .sym-tabstrip__search input { background: #1c1e26; border-color: #3a3e48; color: #f4f0ea; }
+        [data-bs-theme="dark"] .sym-tabstrip__search input:focus { background: #1c1e26; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort { background: #262932; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort button { color: #a8a29e; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort button.active { background: #3a3e48; color: #f4f0ea; }
+        [data-bs-theme="dark"] .sym-tab { background: #1c1e26; border-color: #2e313a; color: #d6d1c9; }
+        [data-bs-theme="dark"] .sym-tab:hover { background: #262932; color: #f4f0ea; }
+        [data-bs-theme="dark"] .sym-tab.active { background: #2c2822; color: #f4f0ea; border-color: #b87333; }
         [data-bs-theme="dark"] .sym-tabstrip__nav button,
-        [data-bs-theme="dark"] .sym-tabstrip__mobile button { background: #1c2942; border-color: #33415e; color: #cbd5e1; }
-        [data-bs-theme="dark"] .sym-tabstrip__mobile select { background: #151e30; border-color: #33415e; color: #e2e8f0; }
+        [data-bs-theme="dark"] .sym-tabstrip__mobile button { background: #262932; border-color: #3a3e48; color: #d6d1c9; }
+        [data-bs-theme="dark"] .sym-tabstrip__mobile select { background: #1c1e26; border-color: #3a3e48; color: #f4f0ea; }
         /* Wealth page KPI / income cards + generic value text. */
         [data-bs-theme="dark"] .kpi-card,
-        [data-bs-theme="dark"] .income-card { background: #151e30; border-color: #1f2a3f; }
+        [data-bs-theme="dark"] .income-card { background: #1c1e26; border-color: #2e313a; }
         [data-bs-theme="dark"] .kpi-value,
-        [data-bs-theme="dark"] .income-card .income-value { color: #f1f5f9; }
-        [data-bs-theme="dark"] .narrative { color: #cbd5e1; }
-        [data-bs-theme="dark"] .narrative strong { color: #f1f5f9; }
+        [data-bs-theme="dark"] .income-card .income-value { color: #f4f0ea; }
+        [data-bs-theme="dark"] .narrative { color: #d6d1c9; }
+        [data-bs-theme="dark"] .narrative strong { color: #f4f0ea; }
         /* Bootstrap's .table-light thead stays literally light in dark mode
            (it's a hardcoded variant, not theme-aware) — restyle it. */
         [data-bs-theme="dark"] .table-light,
         [data-bs-theme="dark"] .table-light > th,
         [data-bs-theme="dark"] .table-light > tr > th {
-            --bs-table-bg: #1b2740;
-            --bs-table-color: #cbd5e1;
-            background-color: #1b2740;
-            color: #cbd5e1;
+            --bs-table-bg: #24262e;
+            --bs-table-color: #d6d1c9;
+            background-color: #24262e;
+            color: #d6d1c9;
         }
         /* Story badges: pastel chips -> translucent on dark. */
         [data-bs-theme="dark"] .story-buy { background: rgba(37,99,235,.2); color: #93c5fd; }
         [data-bs-theme="dark"] .story-sell { background: rgba(220,38,38,.2); color: #fca5a5; }
-        [data-bs-theme="dark"] .story-lifecycle { background: rgba(124,58,237,.22); color: #c4b5fd; }
+        [data-bs-theme="dark"] .story-lifecycle { background: rgba(109,40,217,.22); color: #ddd6fe; }
         [data-bs-theme="dark"] .story-income { background: rgba(5,150,105,.2); color: #6ee7b7; }
-        [data-bs-theme="dark"] .story-detail { color: #94a3b8; }
-        [data-bs-theme="dark"] .story-day { border-bottom-color: #1f2a3f; }
+        [data-bs-theme="dark"] .story-detail { color: #78716c; }
+        [data-bs-theme="dark"] .story-day { border-bottom-color: #2e313a; }
         .ht-theme-btn {
             background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
             color: rgba(255,255,255,.75); border-radius: 8px;
@@ -1012,7 +1054,7 @@
 
     {% if current_user.is_authenticated and current_user.username == 'demo' %}
     <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
-         style="background: linear-gradient(90deg, #0d6efd 0%, #0a58ca 100%); color: #fff;">
+         style="background: #1a1a2e; color: #fff;">
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
             <span>
                 <strong>Demo mode &mdash; read-only.</strong>

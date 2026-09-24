@@ -32,6 +32,7 @@ Do not run r/wallstreetbets or r/investing.
 ## Creatives
 
 Square (1080×1080) and 4:5 (1080×1350). Files live in `app/static/campaign/ads/`.
+New creatives should follow `docs/VISUAL_BRAND.md`: Public Sans, flat navy `#1a1a2e`, copper `#b87333`. Not Inter, and not a purple or night-sky gradient.
 
 ### score
 
