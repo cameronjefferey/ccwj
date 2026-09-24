@@ -238,11 +238,12 @@ What's working:
 - Execution Review: verdicts that matured in the **last 7 days**, labeled as such — not "this week".
 
 ### Today (`/today`, endpoint `today_view`) — LIVE SESSION
-**Status: In-session last-trade / last-sync page with an always-on delay disclaimer.**
+**Status: In-session last-trade / last-sync page with an always-on delay disclaimer. Same dark hero bar as Overview.**
 
-This is the only surface allowed to say "today". Banner: numbers can lag the
-broker; they are not the official close (that's Overview). Nav sits in the
-same Overview dropdown. Weekend and pre-market are **not** a live session:
+This is the only surface allowed to say "today" as the live session. The hero
+line says the numbers can lag the broker and are not the official close
+(that's Overview). Nav sits in the same Overview dropdown. Weekend and
+pre-market are **not** a live session:
 do not replay Friday's close (or 24/7 crypto bars) as "today" — Overview
 already has the last completed session. `/today` then shows an empty
 "no live session" state.
@@ -487,7 +488,9 @@ Lists all positions with strategy tags, P&L, status. Links to position detail.
 Pagination in Python (`per_page = 25`).
 
 What's working:
-- Hero "X open / Y closed" chips **and** the "Across N accounts" line honor
+- Hero uses the same dark bar as Overview (brand and account filters).
+  Total return, realized, unrealized, and win rate sit in that bar.
+  "X open / Y closed" chips **and** the "Across N accounts" line honor
   every active filter (account,
   strategy, symbol, status, subsector, sector, date range). Pre-fix the
   chips read off the unfiltered df and lied about the body. "Open" is the

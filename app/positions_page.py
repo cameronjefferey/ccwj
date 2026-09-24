@@ -495,7 +495,7 @@ def _strategy_chart_rows(filtered):
         unrealized=g["unrealized_pnl"],
     )
     g["total"] = g["realized"] + g["unrealized"]
-    g = g.sort_values("total", ascending=True)
+    g = g.sort_values("total", ascending=False)
     return [
         {
             "strategy": (idx if idx is not None else "Unknown"),
