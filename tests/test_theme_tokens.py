@@ -76,7 +76,10 @@ def test_brand_fonts_and_copper_accent_not_inter_or_bootstrap_purple():
     assert "#7c3aed" not in base
     assert "linear-gradient(135deg, #1a1a2e 0%, #16213e" not in base
     assert "--nav-bg: #1a1a2e" in base
-    assert "background: #f7f5f2" in base
+    assert "background: #f4f5f7" in base
+    assert "background: #f7f5f2" not in base
+    assert "--ht-surface: #ffffff" in base
+    assert "--ht-surface: #fffcf8" not in base
 
     assert "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" not in landing
     assert "background: #1a1a2e" in landing

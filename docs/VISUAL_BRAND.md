@@ -27,15 +27,15 @@ Do not introduce Inter, Geist, Plus Jakarta Sans, Manrope, Space Grotesk, or Out
 | `--color-mirror` | `#b87333` | `#e0b56a` | Brand copper. Fills, icons, focus. |
 | `--color-mirror-ink` | `#7a4a1e` | `#e0b56a` | Accent text on a surface. The light fill fails AA as small text on white. |
 | `--nav-bg` / heroes | `#1a1a2e` | `#1a1a2e` | Flat charcoal navy. Not a gradient. |
-| Page background | `#f7f5f2` | `#12141a` | Warm off-white / warm charcoal canvas. |
-| `--ht-surface` | `#fffcf8` | `#1c1e26` | Cards, stat bars. |
-| `--ht-surface-2` | `#f3efe9` | `#16181f` | Inset strips. |
+| Page background | `#f4f5f7` | `#12141a` | Neutral gray page. White cards sit on it. |
+| `--ht-surface` | `#ffffff` | `#1c1e26` | Cards, stat bars, tables. |
+| `--ht-surface-2` | `#f3f4f6` | `#16181f` | Inset strips. |
 | `--ht-ink` | `#1c1917` | `#f4f0ea` | Primary text. |
 | `--ht-label` | `#44403c` | `#d6d1c9` | Section labels. |
 | `--ht-muted` | `#57534e` | `#a8a29e` | Secondary text. |
 | `--ht-faint` | `#78716c` | `#78716c` | Tertiary text. |
-| `--ht-line` | `#e6e0d6` | `#2e313a` | Hairline borders. |
-| `--ht-hover` | `#f3efe9` | `#262932` | Row hover. |
+| `--ht-line` | `#e5e7eb` | `#2e313a` | Hairline borders. |
+| `--ht-hover` | `#f3f4f6` | `#262932` | Row hover. |
 | `--color-positive` | `#3f7d5c` | same | P&L green. Desaturated tape, still clearly green. |
 | `--color-negative` | `#b55249` | same | P&L red. Desaturated tape, still clearly red. |
 
@@ -52,6 +52,7 @@ App cards use a hairline border and no drop shadow. Marketing `.feature-card` ma
 - Indigo SaaS chrome (`#6366f1`, `#4f46e5`, `#4338ca`, `#6d5dfc`) on AI cards, focus rings, or mirror callouts. Use copper.
 - A 3-stop night-sky gradient (`#1a1a2e` → `#16213e` → `#0f3460`) or a blue night-sky (`#0f172a` → `#1e3a8a`, `#1e1b4b` → `#4c1d95`).
 - Cool slate page fill `#eef1f6` or cool dark canvas `#151e30` / `#0b1220`.
+- A cream or warm-off-white page fill (`#f7f5f2`, `#fffcf8`, `#f3efe9`). It was tried and rejected. The page is neutral gray; cards are white. Copper washes on a single callout (`#f8f1e7`) are fine. The canvas is not.
 
 ## Leave alone
 
