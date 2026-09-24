@@ -295,6 +295,23 @@ class TestOverviewRadar:
     def test_empty_window_is_none(self):
         assert _overview_radar(date(2026, 9, 23), [], [], [], None) is None
 
+    def test_market_today_anchor_keeps_day_14_event_after_weekend(self):
+        review_close = date(2026, 9, 18)
+        market_today = date(2026, 9, 21)
+        option = {
+            "symbol": "XYZ",
+            "expiry": "2026-10-05",
+            "quantity": -1,
+            "option_type": "Call",
+            "strike": 100,
+            "unrealized_pnl": 25,
+        }
+        # The old settled-close anchor silently dropped this valid day-14
+        # event because it sat 17 days after Friday.
+        assert _overview_radar(review_close, [], [option], [], None) is None
+        radar = _overview_radar(market_today, [], [option], [], None)
+        assert radar["options"][0]["title"] == "XYZ $100 call expires"
+
 
 class TestSnapshotPlaceholderScope:
     def test_filtered_scope_drops_other_accounts(self):

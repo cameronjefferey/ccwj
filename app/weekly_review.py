@@ -2266,9 +2266,11 @@ def _overview_takeaway(day_pct, week_pct, benchmarks):
 
 
 def _overview_radar(start, earnings, options, dividends, pending, n_days=15):
-    """15-day radar for Overview. Columns start on ``start`` (the close
-    on screen). Events outside the window are omitted. Chips span up to
-    three days so the label fits, and stop at the window edge.
+    """15-day radar for Overview, anchored on the current ET market date.
+
+    The source lists are also forward-looking from today. Anchoring on the
+    older settled close would shorten their visible horizon every weekend or
+    pre-market and silently omit otherwise valid events near day 14.
     """
     start = _coerce_date(start)
     if start is None:
@@ -4403,7 +4405,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
         context["daily_calendar_no_query_rows"] = True
         context["calendar_grid"] = _build_calendar_grid({}, today)
     context["overview_radar"] = _overview_radar(
-        context.get("review_date") or today,
+        market_today,
         (context.get("upcoming_earnings_this_week") or [])
         + (context.get("upcoming_earnings_next_week") or []),
         context.get("expiring_options"),
