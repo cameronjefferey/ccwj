@@ -274,11 +274,21 @@ def _compose_profile(totals, busiest):
 
     facts = []
     if premium > 1:
-        facts.append({"label": "Income book", "value": _money(premium),
-                      "tone": "pos", "detail": income_detail})
+        facts.append({
+            "label": "Income book", "value": _money(premium),
+            "tone": "pos", "detail": income_detail,
+            "chips": list(short_bits),
+            "lead": "premium collected",
+        })
     if risk > 1:
-        facts.append({"label": "Directional book", "value": _money(risk),
-                      "tone": "", "detail": long_detail})
+        buy_chip = (f"{n_long} purchase{'s' if n_long != 1 else ''}"
+                    if n_long else "")
+        facts.append({
+            "label": "Directional book", "value": _money(risk),
+            "tone": "", "detail": long_detail,
+            "chips": [buy_chip] if buy_chip else [],
+            "lead": "placed at risk buying options",
+        })
 
     w = totals.get("contract_wins", 0)
     losses = totals.get("contract_losses", 0)
@@ -287,7 +297,8 @@ def _compose_profile(totals, busiest):
         facts.append({
             "label": "Contract record", "value": f"{w}W / {losses}L",
             "tone": "pos" if w >= losses else "neg",
-            "detail": f"{pct}% of the contracts you closed finished profitable",
+            "detail": f"{pct}% of the contracts you closed finished profitable.",
+            "meter": w / (w + losses),
         })
     if totals.get("expired_kept", 0) >= 3:
         facts.append({
@@ -295,7 +306,7 @@ def _compose_profile(totals, busiest):
             "value": _money(totals.get("expired_premium", 0.0)),
             "tone": "pos",
             "detail": (f"{totals['expired_kept']} short contracts rode to "
-                       f"worthless expiry — you kept every dollar"),
+                       f"worthless expiry. You kept every dollar."),
         })
     if totals.get("wheels_completed"):
         facts.append({
@@ -493,6 +504,10 @@ def _build_standouts(book):
           predicate=lambda e: e["stats"]["away_breaks"] >= 2,
           note=lambda e: (f"Fully closed and re-entered "
                           f"{e['stats']['away_breaks']} times."))
+    peak = max((abs(c["pnl"]) for c in cards), default=0.0) or 1.0
+    for card in cards:
+        share = abs(card["pnl"]) / peak
+        card["bar"] = 0 if share <= 0 else max(3, round(100 * share))
     return cards
 
 
@@ -597,8 +612,8 @@ def align_kept_at_expiry(profile_or_novel, execution):
             "value": _money(dollars),
             "tone": "pos",
             "detail": (
-                f"{contracts} short contracts rode to worthless expiry — "
-                f"you kept every dollar"
+                f"{contracts} short contracts rode to worthless expiry. "
+                f"You kept every dollar."
             ),
         }
         for i, fact in enumerate(facts):
@@ -620,7 +635,7 @@ def align_kept_at_expiry(profile_or_novel, execution):
         "value": _money(kept),
         "tone": "pos",
         "detail": (f"{n} short contracts rode to "
-                   f"worthless expiry — you kept every dollar"),
+                   f"worthless expiry. You kept every dollar."),
     }
     facts = list(profile.get("facts") or [])
     for i, row in enumerate(facts):

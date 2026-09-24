@@ -112,6 +112,8 @@ def test_standouts_best_seller_and_toughest_link_distinct_symbols():
     assert by_label["Top performer"]["symbol"] == "AAA"
     assert by_label["Top performer"]["pnl_text"].startswith("+")
     assert by_label["Largest loss"]["symbol"] == "CCC"
+    assert by_label["Top performer"]["bar"] == 100
+    assert by_label["Largest loss"]["bar"] < 100
     # No symbol appears on two cards.
     syms = [c["symbol"] for c in cards]
     assert len(syms) == len(set(syms))
@@ -217,7 +219,7 @@ def test_compose_novel_shape():
     labels = [f["label"] for f in profile["facts"]]
     assert "Income book" in labels
     for f in profile["facts"]:
-        assert set(f) == {"label", "value", "tone", "detail"}
+        assert {"label", "value", "tone", "detail"} <= set(f)
     assert "identity" not in novel and "chips" not in novel
     assert len(novel["eras"]) == 2
     assert novel["scoreboard"]
