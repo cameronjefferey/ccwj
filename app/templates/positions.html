@@ -1,31 +1,8 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
-    /* Hero (matches /position/<symbol> styling for consistency) */
-    .pos-hero {
-        background: #1a1a2e;
-        border-radius: 16px;
-        padding: 2rem 2.25rem;
-        color: #fff;
-        margin-bottom: 1.5rem;
-    }
-    .pos-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .15rem; }
-    .pos-hero .hero-sub { color: rgba(255,255,255,.8); font-size: .9rem; overflow-wrap: anywhere; }
-    .pos-hero .hero-main {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 1.25rem 1.75rem;
-        align-items: start;
-    }
-    .pos-hero .hero-copy { min-width: 0; }
-    .pos-hero .hero-kpis {
-        display: flex;
-        gap: 1.5rem;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-        flex-shrink: 0;
-    }
     .pos-hero .hero-chip {
         display: inline-flex; align-items: center; gap: .35rem;
         padding: .25rem .6rem; border-radius: 999px;
@@ -36,14 +13,6 @@
     .pos-hero .hero-chip .dot.open   { background: #22c55e; }
     .pos-hero .hero-chip .dot.closed { background: #9ca3af; }
     .pos-hero .hero-chip .dot.mixed  { background: #fbbf24; }
-    .pos-hero .hero-kpi .label {
-        font-size: .65rem; text-transform: uppercase; letter-spacing: .6px;
-        color: rgba(255,255,255,.7);
-    }
-    .pos-hero .hero-kpi .value { font-size: 1.25rem; font-weight: 700; color: #fff; }
-    .pos-hero .hero-kpi .value.pos { color: #4ade80; }
-    .pos-hero .hero-kpi .value.neg { color: #f87171; }
-
     /* Strategy color badges */
     .badge-strategy {
         font-size: .75rem;
@@ -81,22 +50,81 @@
         }
     }
 
-    .chart-wrapper {
-        background: #fff;
+    .pos-panel {
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
         border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
-        padding: 1.25rem;
+        padding: 1.1rem 1.25rem 1.15rem;
+        margin-bottom: 1rem;
     }
+    .pos-panel-head {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        gap: .75rem; margin-bottom: .85rem;
+    }
+    .pos-panel-head h2 {
+        margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--ht-ink);
+    }
+    .pos-panel-head p { margin: .15rem 0 0; font-size: .82rem; color: var(--ht-muted); }
+    .pos-filters .filter-bar { margin-bottom: 0; }
+    .pos-numbers.ht-statbar {
+        border: 0; box-shadow: none; padding: 0; background: transparent;
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: .5rem 1.25rem;
+    }
+    .pos-numbers .ht-stat-l {
+        text-transform: none; letter-spacing: 0; font-weight: 500;
+        font-size: .78rem; color: var(--ht-muted);
+    }
+    .pos-numbers .ht-stat-v { font-size: 1.35rem; font-weight: 600; }
+    .pos-wl-bar {
+        display: flex; height: 4px; border-radius: 999px; overflow: hidden;
+        margin-top: .35rem; background: #f3d6d3; max-width: 9rem;
+    }
+    .pos-wl-bar span:first-child { background: var(--color-positive); }
+    .pos-wl-bar span:last-child { background: #e7b2ad; }
+    .pos-legend { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .pos-legend span {
+        display: inline-flex; align-items: center; gap: .35rem;
+        border: 1px solid var(--ht-line); border-radius: 999px;
+        padding: .15rem .6rem; font-size: .75rem; color: var(--ht-label);
+    }
+    .pos-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .pos-legend .real { background: #4f6ef7; }
+    .pos-legend .unreal { background: #e09a2b; }
+    .pos-strat-row {
+        display: grid; grid-template-columns: 11.5rem 1fr 4.6rem;
+        gap: .6rem; align-items: center; margin: .28rem 0;
+    }
+    .pos-strat-name { font-size: .82rem; color: var(--ht-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pos-strat-track { position: relative; height: 14px; }
+    .pos-strat-zero {
+        position: absolute; top: -3px; bottom: -3px; width: 1px;
+        background: #c5c9d1; border-left: 1px dashed #9aa1ad;
+    }
+    .pos-strat-seg { position: absolute; top: 2px; height: 10px; border-radius: 2px; min-width: 1px; }
+    .pos-strat-seg.real { background: #4f6ef7; }
+    .pos-strat-seg.unreal { background: #e09a2b; }
+    .pos-strat-total {
+        text-align: right; font-size: .82rem; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    .pos-axis {
+        display: grid; margin-left: 12.1rem; margin-right: 5.2rem;
+        position: relative; height: 1.2rem; margin-top: .35rem;
+    }
+    .pos-axis span {
+        position: absolute; transform: translateX(-50%);
+        font-size: .7rem; color: var(--ht-muted); font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 860px) {
+        .pos-numbers.ht-statbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .pos-strat-row { grid-template-columns: 7.2rem 1fr 3.8rem; }
+        .pos-axis { margin-left: 7.8rem; margin-right: 4.4rem; }
+    }
+    [data-bs-theme="dark"] .pos-strat-zero { background: #4b5160; border-left-color: #6b7280; }
+    [data-bs-theme="dark"] .pos-wl-bar { background: #4a2a28; }
+    [data-bs-theme="dark"] .pos-wl-bar span:last-child { background: #7f3a36; }
 
-    @media (max-width: 640px) {
-        .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; }
-        .pos-hero h1 { font-size: 1.35rem; }
-        .pos-hero .hero-sub { font-size: .82rem; }
-        .pos-hero .hero-kpi .value { font-size: 1.05rem; }
-        .pos-hero .hero-kpi .label { font-size: .58rem; }
-        .pos-hero .hero-main { grid-template-columns: 1fr; }
-        .pos-hero .hero-kpis { justify-content: flex-start; }
-    }
 </style>
 {% endblock %}
 
@@ -116,89 +144,94 @@
 {% set _open_ct    = status_counts.Open    if status_counts else 0 %}
 {% set _closed_ct  = status_counts.Closed  if status_counts else 0 %}
 {% set _mixed_ct   = status_counts.Mixed   if status_counts else 0 %}
-<div class="pos-hero">
-    <div class="hero-main">
-        <div class="hero-copy">
-            <h1>Your Positions</h1>
-            <div class="hero-sub">
-                {% if _auth_acct_count == 0 %}
-                    No accounts linked yet &mdash;
-                    <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-white text-decoration-underline">connect your broker</a>
-                    or <a href="{{ url_for('upload') }}" class="text-white text-decoration-underline">upload trade history</a> to get started.
-                {% elif _view_acct_count == 1 %}
-                    {{ _view_accts[0] | account_label }}
-                    &middot; your current and historical options strategies.
-                {% elif _view_acct_count > 1 %}
-                    Across {{ _view_acct_count }} account{{ '' if _view_acct_count == 1 else 's' }}:
-                    {{ _view_accts | map('account_label') | join(', ') }}.
-                {% else %}
-                    No positions in this view.
-                {% endif %}
-            </div>
-            {% if _auth_acct_count > 0 %}
-            <div class="d-flex flex-wrap gap-2 mt-3">
-                <span class="hero-chip" title="Open rows in this list — one per account × symbol × strategy."><span class="dot open"></span>{{ _open_ct }} open</span>
-                {% if open_symbol_count is defined and open_symbol_count and open_symbol_count != _open_ct %}
-                <span class="hero-chip" title="Unique symbols currently held across those open rows.">{{ open_symbol_count }} symbols</span>
-                {% endif %}
-                <span class="hero-chip"><span class="dot closed"></span>{{ _closed_ct }} closed</span>
-                {% if _mixed_ct %}
-                <span class="hero-chip"><span class="dot mixed"></span>{{ _mixed_ct }} mixed</span>
-                {% endif %}
-                {% if date_filtered %}
-                    <span class="hero-chip">
-                        {% if selected_start_date and selected_end_date %}
-                            {{ selected_start_date }} &mdash; {{ selected_end_date }}
-                        {% elif selected_start_date %}
-                            since {{ selected_start_date }}
-                        {% else %}
-                            through {{ selected_end_date }}
-                        {% endif %}
-                    </span>
-                {% else %}
-                    <span class="hero-chip">All time</span>
-                {% endif %}
-            </div>
+<div class="review-hero pos-hero">
+    <div class="ov-bar">
+        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+        {% if (_auth_acct_count > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% with scope_account_options = user_accounts if user_accounts else accounts %}
+            {% include "_account_scope_filters.html" %}
+            {% endwith %}
+            {% if selected_symbol %}<input type="hidden" name="symbol" value="{{ selected_symbol }}">{% endif %}
+            {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
+            {% if selected_subsector %}<input type="hidden" name="subsector" value="{{ selected_subsector }}">{% endif %}
+            {% if selected_sector %}<input type="hidden" name="sector" value="{{ selected_sector }}">{% endif %}
+            {% if selected_tag %}<input type="hidden" name="tag" value="{{ selected_tag }}">{% endif %}
+            {% if selected_statuses %}{% for st in selected_statuses %}<input type="hidden" name="status" value="{{ st }}">{% endfor %}{% endif %}
+            {% if selected_start_date %}<input type="hidden" name="start_date" value="{{ selected_start_date }}">{% endif %}
+            {% if selected_end_date %}<input type="hidden" name="end_date" value="{{ selected_end_date }}">{% endif %}
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
             {% endif %}
-        </div>
-
-        {% if kpis and _auth_acct_count > 0 %}
-        <div class="hero-kpis">
-            <div class="hero-kpi">
-                <div class="label">Total Return</div>
-                <div class="value {{ 'pos' if kpis.total_return >= 0 else 'neg' }}">
-                    {{ money(kpis.total_return, 0) }}
-                </div>
-            </div>
-            <div class="hero-kpi">
-                <div class="label">Realized</div>
-                <div class="value {{ 'pos' if kpis.realized_pnl >= 0 else 'neg' }}">
-                    {{ money(kpis.realized_pnl, 0) }}
-                </div>
-            </div>
-            <div class="hero-kpi">
-                <div class="label">Unrealized</div>
-                <div class="value {{ 'pos' if kpis.unrealized_pnl >= 0 else 'neg' }}">
-                    {{ money(kpis.unrealized_pnl, 0) }}
-                </div>
-            </div>
-            {% if kpis.dividend_income and kpis.dividend_income|round(2) != 0 %}
-            <div class="hero-kpi">
-                <div class="label">Dividends</div>
-                <div class="value {{ 'pos' if kpis.dividend_income >= 0 else 'neg' }}"
-                     title="Cash dividends received. Total Return = Realized + Unrealized + Dividends.">
-                    {{ money(kpis.dividend_income, 0) }}
-                </div>
-            </div>
-            {% endif %}
-            <div class="hero-kpi">
-                <div class="label">Win Rate</div>
-                <div class="value">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</div>
-            </div>
-        </div>
+        </form>
         {% endif %}
     </div>
+    <p class="ov-date">
+        {% if date_filtered %}
+            {% if selected_start_date and selected_end_date %}{{ selected_start_date }} — {{ selected_end_date }}
+            {% elif selected_start_date %}since {{ selected_start_date }}
+            {% else %}through {{ selected_end_date }}{% endif %}
+        {% else %}All time{% endif %}
+    </p>
+    {% if kpis and _auth_acct_count > 0 %}
+    <div class="ov-top">
+        <div>
+            <div class="ov-k">Total return</div>
+            <div class="ov-big {% if kpis.total_return > 0 %}pos{% elif kpis.total_return < 0 %}neg{% endif %}">{% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">Realized</div>
+            <div class="ov-pct {% if kpis.realized_pnl > 0 %}pos{% elif kpis.realized_pnl < 0 %}neg{% endif %}">{% if kpis.realized_pnl > 0 %}+{% endif %}{{ money(kpis.realized_pnl, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">Unrealized</div>
+            <div class="ov-pct {% if kpis.unrealized_pnl > 0 %}pos{% elif kpis.unrealized_pnl < 0 %}neg{% endif %}">{% if kpis.unrealized_pnl > 0 %}+{% endif %}{{ money(kpis.unrealized_pnl, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">Win rate</div>
+            <div class="ov-big ov-invest">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</div>
+        </div>
+    </div>
+    {% endif %}
+    <p class="ov-line">
+        {% if _auth_acct_count == 0 %}
+            No accounts linked yet.
+            <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" style="color:#e6ebf5;">Connect your broker</a>
+            or <a href="{{ url_for('upload') }}" style="color:#e6ebf5;">upload trade history</a>.
+        {% elif _view_acct_count == 1 %}
+            {{ _view_accts[0] | account_label }}
+        {% elif _view_acct_count > 1 %}
+            Across {{ _view_acct_count }} accounts: {{ _view_accts | map('account_label') | join(', ') }}.
+        {% else %}
+            No positions in this view.
+        {% endif %}
+    </p>
+    {% if _auth_acct_count > 0 %}
+    <div class="ov-pills">
+        <span class="hero-chip" title="Open rows in this list — one per account × symbol × strategy."><span class="dot open"></span>{{ _open_ct }} open</span>
+        {% if open_symbol_count is defined and open_symbol_count and open_symbol_count != _open_ct %}
+        <span class="hero-chip" title="Unique symbols currently held across those open rows.">{{ open_symbol_count }} symbols</span>
+        {% endif %}
+        <span class="hero-chip"><span class="dot closed"></span>{{ _closed_ct }} closed</span>
+        {% if _mixed_ct %}
+        <span class="hero-chip"><span class="dot mixed"></span>{{ _mixed_ct }} mixed</span>
+        {% endif %}
+        {% if kpis and kpis.dividend_income and kpis.dividend_income|round(2) != 0 %}
+        <span class="hero-chip" title="Cash dividends. Total return is realized + unrealized + dividends.">Dividends {% if kpis.dividend_income > 0 %}+{% endif %}{{ money(kpis.dividend_income, 0) }}</span>
+        {% endif %}
+        {% if date_filtered %}
+        <span class="hero-chip">
+            {% if selected_start_date and selected_end_date %}{{ selected_start_date }} — {{ selected_end_date }}
+            {% elif selected_start_date %}since {{ selected_start_date }}
+            {% else %}through {{ selected_end_date }}{% endif %}
+        </span>
+        {% else %}
+        <span class="hero-chip">All time</span>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
+<!-- /pos-hero -->
 
 {# Empty-state copy splits two ways:
    * No data accounts AND no auth accounts → onboarding (connect your broker).
@@ -254,27 +287,14 @@
 {% include "_history_window_note.html" %}
 {% endif %}
 
-{# On phones the six stacked filter groups push the actual content a full
-   screen down — collapse them behind a toggle (always expanded on lg+). #}
-{% set _active_filters = [selected_account, selected_symbol, selected_strategy,
-                          selected_subsector, selected_tag,
-                          (selected_statuses if not _all_statuses else None),
-                          (selected_start_date or selected_end_date),
-                          selected_group_ids, selected_tenant_ids]
-                         | select | list | length %}
-<button class="btn btn-sm btn-outline-secondary d-lg-none mb-2" type="button"
-        data-bs-toggle="collapse" data-bs-target="#posFilters"
-        aria-expanded="false" aria-controls="posFilters">
-    Filters{% if _active_filters %} <span class="badge text-bg-dark ms-1">{{ _active_filters }}</span>{% endif %}
-</button>
-<form method="get" class="filter-bar collapse d-lg-flex" id="posFilters">
-    {# Picker lists the user's full (disambiguated) account set so several
-       physical accounts sharing a base label (e.g. multiple "Schwab
-       Account"s) are each independently selectable. ``user_accounts`` is
-       the auth list; admin (None) falls back to the data-derived list. #}
-    {% with scope_account_options = user_accounts if user_accounts else accounts %}
-    {% include "_account_scope_filters.html" %}
-    {% endwith %}
+<h3 class="ov-grp">Filters</h3>
+<div class="pos-panel pos-filters">
+<form method="get" class="filter-bar" id="posFilters">
+    {# Account scope lives in the hero. These hidden fields keep it when
+       Symbol / Strategy / dates submit this form. #}
+    {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
+    {% if tenants_query %}<input type="hidden" name="tenants" value="{{ tenants_query }}">{% endif %}
+    {% if selected_account %}<input type="hidden" name="account" value="{{ selected_account }}">{% endif %}
     <div>
         <label class="lblh">Symbol</label>
         <select name="symbol" class="form-select form-select-sm"
@@ -373,6 +393,7 @@
     <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
     {% endif %}
 </form>
+</div>
 
 {% if date_filtered %}
 <div class="alert alert-info py-2 px-3 mb-4 small">
@@ -389,73 +410,117 @@
 </div>
 {% endif %}
 
-{# ── Secondary stats (premium / positions count / trades) ────────── #}
+{% if (kpis and accounts and accounts|length > 0) or strategy_chart %}
+<h3 class="ov-grp">Summary</h3>
+{% endif %}
 {% if kpis and accounts and accounts|length > 0 %}
-<div class="ht-statbar mb-3">
-    <div class="ht-stat">
-        <span class="ht-stat-l">Premium Collected</span>
-        <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected, 0) }}</span>
+<div class="pos-panel">
+    <div class="pos-panel-head">
+        <h2>By the numbers</h2>
     </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">Positions</span>
-        <span class="ht-stat-v">{{ kpis.num_positions }}</span>
-    </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">Trades</span>
-        <span class="ht-stat-v">{{ "{:,}".format(kpis.total_trades) }}</span>
-    </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">Winners / Losers</span>
-        <span class="ht-stat-v"><span class="text-positive">{{ "{:,}".format(kpis.num_winners or 0) }}</span> / <span class="text-negative">{{ "{:,}".format(kpis.num_losers or 0) }}</span></span>
+    {% set _wins = kpis.num_winners or 0 %}
+    {% set _losses = kpis.num_losers or 0 %}
+    {% set _closed = _wins + _losses %}
+    <div class="ht-statbar pos-numbers">
+        <div class="ht-stat">
+            <span class="ht-stat-l">Premium collected</span>
+            <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected, 0) }}</span>
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Positions</span>
+            <span class="ht-stat-v">{{ kpis.num_positions }}</span>
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Trades</span>
+            <span class="ht-stat-v">{{ "{:,}".format(kpis.total_trades) }}</span>
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Winners / losers</span>
+            <span class="ht-stat-v pos-wl" title="Winning closed trade groups. Win rate above is winners ÷ closed groups.">
+                <span class="text-positive">{{ "{:,}".format(_wins) }}</span>
+                / <span class="text-negative">{{ "{:,}".format(_losses) }}</span>
+            </span>
+            {% if _closed %}
+            <div class="pos-wl-bar" aria-hidden="true">
+                <span style="width: {{ (_wins / _closed * 100)|round(1) }}%"></span>
+                <span style="width: {{ (_losses / _closed * 100)|round(1) }}%"></span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Strategies used</span>
+            <span class="ht-stat-v">{{ strategy_chart|length if strategy_chart else 0 }}</span>
+        </div>
     </div>
 </div>
 {% endif %}
 
-{# ── Strategy Chart ───────────────────────────────────────────────── #}
 {% if strategy_chart %}
-<div class="row mb-4">
-    <div class="col-lg-8">
-        <div class="chart-wrapper">
-            <h6 class="fw-bold mb-1">P&amp;L by Strategy</h6>
-            <p class="text-muted small mb-3">Realized vs unrealized (dividends count as realized).</p>
-            <div style="height: {{ [280, 36 * (strategy_chart | length) + 56] | max }}px;">
-                <canvas id="strategyChart"></canvas>
-            </div>
+{% set ns = namespace(lo=0.0, hi=0.0) %}
+{% for row in strategy_chart %}
+    {% set _neg = (row.realized if row.realized < 0 else 0) + (row.unrealized if row.unrealized < 0 else 0) %}
+    {% set _pos = (row.realized if row.realized > 0 else 0) + (row.unrealized if row.unrealized > 0 else 0) %}
+    {% if _neg < ns.lo %}{% set ns.lo = _neg %}{% endif %}
+    {% if _pos > ns.hi %}{% set ns.hi = _pos %}{% endif %}
+{% endfor %}
+{% set _span = (ns.hi - ns.lo) if (ns.hi - ns.lo) else 1 %}
+{% set _zero = ((0 - ns.lo) / _span * 100) %}
+<div class="pos-panel">
+    <div class="pos-panel-head">
+        <div>
+            <h2>P&amp;L by strategy</h2>
+            <p>Realized vs unrealized (dividends count as realized).</p>
+        </div>
+        <div class="pos-legend">
+            <span><i class="real"></i> Realized</span>
+            <span><i class="unreal"></i> Unrealized</span>
         </div>
     </div>
-    <div class="col-lg-4 d-flex align-items-center">
-        <div class="chart-wrapper w-100">
-            <h6 class="fw-bold mb-3">Quick Stats</h6>
-            <table class="table table-sm table-borderless mb-0">
-                <tr><td class="text-muted">Total Trades</td><td class="fw-bold text-end">{{ "{:,}".format(kpis.total_trades) }}</td></tr>
-                <tr title="Winning closed trade groups (one group per option contract or one per equity round-trip). Win Rate above is winners ÷ closed groups.">
-                    <td class="text-muted">Winners / Losers</td>
-                    <td class="fw-bold text-end">
-                        <span class="text-positive">{{ "{:,}".format(kpis.num_winners or 0) }}</span>
-                        /
-                        <span class="text-negative">{{ "{:,}".format(kpis.num_losers or 0) }}</span>
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-muted">Strategies Used</td>
-                    <td class="fw-bold text-end">{{ strategy_chart | length }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">Accounts in view</td>
-                    <td class="fw-bold text-end">{{ _view_acct_count }}</td>
-                </tr>
-            </table>
+    {% for row in strategy_chart %}
+    {% set _net = row.realized + row.unrealized %}
+    <div class="pos-strat-row">
+        <div class="pos-strat-name">{{ row.strategy }}</div>
+        <div class="pos-strat-track">
+            <div class="pos-strat-zero" style="left: {{ _zero }}%"></div>
+            {% if row.realized %}
+            {% set _w = (row.realized|abs / _span * 100) %}
+            <div class="pos-strat-seg real" style="left: {{ (_zero - _w) if row.realized < 0 else _zero }}%; width: {{ _w }}%"></div>
+            {% endif %}
+            {% if row.unrealized %}
+            {% set _w = (row.unrealized|abs / _span * 100) %}
+            {% if row.unrealized < 0 and row.realized < 0 %}
+            <div class="pos-strat-seg unreal" style="left: {{ _zero - ((row.realized|abs + row.unrealized|abs) / _span * 100) }}%; width: {{ _w }}%"></div>
+            {% elif row.unrealized < 0 %}
+            <div class="pos-strat-seg unreal" style="left: {{ _zero - _w }}%; width: {{ _w }}%"></div>
+            {% else %}
+            <div class="pos-strat-seg unreal" style="left: {{ _zero + ((row.realized if row.realized > 0 else 0) / _span * 100) }}%; width: {{ _w }}%"></div>
+            {% endif %}
+            {% endif %}
         </div>
+        <div class="pos-strat-total {% if _net > 0 %}text-positive{% elif _net < 0 %}text-negative{% endif %}">
+            {% if _net|abs >= 1000 %}{{ '+' if _net > 0 else '-' }}${{ '%.1f'|format(_net|abs / 1000) }}k
+            {% elif _net %}{{ '+' if _net > 0 else '-' }}${{ '{:,.0f}'.format(_net|abs) }}
+            {% else %}$0{% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    <div class="pos-axis">
+        <span style="left: 0%">{{ '-' if ns.lo < 0 else '' }}${{ '%.0f'|format(ns.lo|abs / 1000) }}k</span>
+        <span style="left: {{ _zero }}%">$0</span>
+        <span style="left: 100%">${{ '%.0f'|format(ns.hi / 1000) }}k</span>
     </div>
 </div>
 {% endif %}
 
 {# ── Symbol Summary Table ──────────────────────────────────────────── #}
 {% if symbol_rows %}
+<h3 class="ov-grp">Positions</h3>
 <div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
     <div class="card-body p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0">Performance by Symbol</h6>
+        <div class="ov-head">
+            <div>
+                <h2>Performance by symbol</h2>
+            </div>
             <input type="text" id="symbolSearch" class="form-control form-control-sm"
                    style="max-width:240px" placeholder="Search symbols..."
                    data-ht-search="#symbolTable" data-ht-empty="#symbolSearchEmpty"
@@ -581,8 +646,10 @@
 {# ── Strategy Detail Table ────────────────────────────────────────── #}
 <div class="card border-0 shadow-sm mb-5" style="border-radius:12px;">
     <div class="card-body p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0">Strategy Detail</h6>
+        <div class="ov-head">
+            <div>
+                <h2>Strategy detail</h2>
+            </div>
             <input type="text" id="tableSearch" class="form-control form-control-sm"
                    style="max-width:240px" placeholder="Search..."
                    data-ht-search="#positionsTable" data-ht-empty="#strategySearchEmpty"
@@ -740,85 +807,6 @@
 {% block scripts %}
 <script>
 (function () {
-    /* ── Strategy P&L Chart ────────────────────────────────────── */
-    {% if strategy_chart %}
-    var chartData = {{ strategy_chart | tojson }};
-    var labels = chartData.map(function(d){ return d.strategy; });
-    var realized = chartData.map(function(d){ return d.realized; });
-    var unrealized = chartData.map(function(d){ return d.unrealized; });
-    var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
-    var realizedColor = dark ? '#60a5fa' : '#1d4ed8';
-    var unrealizedColor = dark ? '#fbbf24' : '#d97706';
-
-    new Chart(document.getElementById('strategyChart'), {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Realized',
-                    data: realized,
-                    backgroundColor: realizedColor,
-                    borderRadius: 4,
-                    maxBarThickness: 22,
-                    stack: 'pnl'
-                },
-                {
-                    label: 'Unrealized',
-                    data: unrealized,
-                    backgroundColor: unrealizedColor,
-                    borderRadius: 4,
-                    maxBarThickness: 22,
-                    stack: 'pnl'
-                }
-            ]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                    align: 'end',
-                    labels: { boxWidth: 12, boxHeight: 12, padding: 12 }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(ctx) {
-                            var n = ctx.parsed.x;
-                            return ctx.dataset.label + '  $' + n.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
-                        },
-                        footer: function(items) {
-                            var t = items.reduce(function(s, i) { return s + i.parsed.x; }, 0);
-                            return 'Net  $' + t.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    stacked: true,
-                    ticks: {
-                        callback: function(v) {
-                            return '$' + (v >= 1000 || v <= -1000
-                                ? (v/1000).toFixed(0) + 'k'
-                                : v.toFixed(0));
-                        }
-                    },
-                    grid: {
-                        color: function(ctx) {
-                            return ctx.tick.value === 0 ? '#000' : '#e9ecef';
-                        }
-                    }
-                },
-                y: { stacked: true, grid: { display: false } }
-            }
-        }
-    });
-    {% endif %}
-
     /* Table search + sorting live in static/js/tables.js
        (input[data-ht-search], th.sortable + td[data-val]). */
 

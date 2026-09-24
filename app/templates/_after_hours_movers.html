@@ -1,22 +1,25 @@
 {# After-hours drift vs the official close. Lives on /today only. #}
 {% if after_hours_movers and (after_hours_movers.winners or after_hours_movers.losers) %}
 <div class="review-section">
-    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>After-Hours Movers (vs the official close)</span>
+    <div class="ov-head">
+        <div>
+            <h2>After hours</h2>
+            <p>Extended-hours movement since the official close{% if after_hours_movers.as_of %}, as of your last broker sync ({{ after_hours_movers.as_of }}){% endif %}. Not the close you traded against.</p>
+        </div>
         {% if after_hours_movers.total_impact %}
         {% set ahti = after_hours_movers.total_impact %}
-        <span style="font-size: .8rem; color: {% if ahti >= 0 %}#15803d{% else %}#b91c1c{% endif %}; text-transform:none; letter-spacing:0;">
-            Net after-hours drift: {{ "+" if ahti >= 0 else "-" }}${{ "{:,.0f}".format(ahti|abs) }}
-        </span>
+        <div class="ov-pills-lite">
+            <span class="ov-pl {{ 'gn' if ahti >= 0 else 'rd' }}">{% if ahti >= 0 %}+{% else %}−{% endif %}${{ "{:,.0f}".format(ahti|abs) }} drift</span>
+        </div>
         {% endif %}
     </div>
-    <p class="section-sub">
-        Extended-hours movement since the official close{% if after_hours_movers.as_of %}, as of your last broker sync ({{ after_hours_movers.as_of }}){% endif %}.
-        Can lag; not the close you traded against.
-    </p>
+    {% set _ah = namespace(m=1) %}
+    {% for m in (after_hours_movers.winners or []) + (after_hours_movers.losers or []) %}
+        {% if m.dollar_impact is not none and m.dollar_impact|abs > _ah.m %}{% set _ah.m = m.dollar_impact|abs %}{% endif %}
+    {% endfor %}
     <div class="movers-grid">
-        <div>
-            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Up after hours</div>
+        <div class="ov-mover-col up">
+            <div class="ov-mover-k">Up after hours</div>
             <div class="movers-list">
                 {% for m in after_hours_movers.winners %}
                 <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
@@ -29,14 +32,15 @@
                         <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
                     </div>
                     <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
+                    <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _ah.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
                 <div class="text-muted small">No green names after hours.</div>
                 {% endfor %}
             </div>
         </div>
-        <div>
-            <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">Down after hours</div>
+        <div class="ov-mover-col down">
+            <div class="ov-mover-k">Down after hours</div>
             <div class="movers-list">
                 {% for m in after_hours_movers.losers %}
                 <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
@@ -48,7 +52,8 @@
                         <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
                         <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
                     </div>
-                    <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                    <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                    <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _ah.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
                 <div class="text-muted small">No red names after hours.</div>
