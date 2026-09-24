@@ -1,8 +1,8 @@
 """Generate PWA / home-screen icons and favicon.ico from the favicon.svg design.
 
-Reproduces the mark (navy diagonal gradient, rounded corners, white
-chart-line zigzag) as PNGs at the sizes the web app manifest and iOS
-need. Pure PIL so it runs anywhere without an SVG rasterizer.
+Reproduces the mark (flat navy, rounded corners, white chart-line
+zigzag) as PNGs at the sizes the web app manifest and iOS need.
+Pure PIL so it runs anywhere without an SVG rasterizer.
 
 Usage: .venv/bin/python scripts/generate_pwa_icons.py
 """
@@ -18,20 +18,12 @@ OUT = pathlib.Path(__file__).resolve().parent.parent / "app" / "static" / "icons
 AXIS = [(6, 22), (6, 10)]
 ZIGZAG = [(6, 10), (10, 14), (14, 10), (18, 18), (22, 14), (26, 22)]
 
-NAVY_A = (26, 26, 46)    # #1a1a2e
-NAVY_B = (22, 33, 62)    # #16213e
+NAVY = (26, 26, 46)    # #1a1a2e
 
 
 def _gradient(size):
-    img = Image.new("RGB", (size, size))
-    px = img.load()
-    for y in range(size):
-        for x in range(size):
-            t = (x + y) / (2 * size - 2)
-            px[x, y] = tuple(
-                round(a + (b - a) * t) for a, b in zip(NAVY_A, NAVY_B)
-            )
-    return img
+    # Name kept so callers stay stable. The mark is a flat navy field.
+    return Image.new("RGB", (size, size), NAVY)
 
 
 def _rounded_mask(size, radius):

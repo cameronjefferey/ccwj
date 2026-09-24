@@ -6,6 +6,9 @@
     <title>Loading… - HappyTrader</title>
     <link rel="icon" href="{{ url_for('favicon') }}" sizes="32x32">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         (function () {
             try {
@@ -16,9 +19,9 @@
         })();
     </script>
     <style>
-        :root { --sk-bg: #eef1f6; --sk-card: #e9edf2; --sk-hint: #94a3b8; }
-        [data-bs-theme="dark"] { --sk-bg: #0f172a; --sk-card: #1e293b; --sk-hint: #64748b; }
-        html, body { margin: 0; background: var(--sk-bg); font-family: Inter, system-ui, sans-serif; }
+        :root { --sk-bg: #f7f5f2; --sk-card: #efeae3; --sk-hint: #78716c; }
+        [data-bs-theme="dark"] { --sk-bg: #12141a; --sk-card: #1c1e26; --sk-hint: #a8a29e; }
+        html, body { margin: 0; background: var(--sk-bg); font-family: "Public Sans", system-ui, sans-serif; }
         .sk-wrap { max-width: 1100px; margin: 1.25rem auto; padding: 0 1rem; }
         .sk-shimmer {
             position: relative; overflow: hidden;

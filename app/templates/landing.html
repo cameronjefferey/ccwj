@@ -8,7 +8,7 @@
 {% block head %}
 <style>
     .landing-hero {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        background: #1a1a2e;
         border-radius: 20px;
         padding: 5rem 3rem;
         color: #fff;
@@ -26,7 +26,7 @@
         background: radial-gradient(circle, rgba(25,135,84,.12) 0%, transparent 70%);
         border-radius: 50%;
     }
-    .landing-hero h1 { font-size: 3rem; font-weight: 800; margin-bottom: 1.25rem; letter-spacing: -0.02em; }
+    .landing-hero h1 { font-size: 3rem; font-weight: 700; margin-bottom: 1.25rem; letter-spacing: -0.01em; }
     .landing-hero .lead {
         font-size: 1.2rem;
         color: rgba(255,255,255,.9);
@@ -90,7 +90,7 @@
         width: 48px;
         height: 48px;
         border-radius: 50%;
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        background: #1a1a2e;
         color: #fff;
         font-weight: 700;
         font-size: 1.25rem;
@@ -103,7 +103,7 @@
     .how-step p { color: #6c757d; font-size: .9rem; margin-bottom: 0; }
 
     .cta-section {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        background: #1a1a2e;
         border-radius: 20px;
         padding: 3rem;
         color: #fff;
@@ -219,7 +219,7 @@
     {% if insights_enabled %}
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('feature_detail', slug='ai-trading-insights') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(111,66,193,.12); color:#6f42c1">
+            <div class="feature-icon" style="background:rgba(184,115,51,.14); color:var(--color-mirror)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
                     <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>

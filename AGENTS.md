@@ -1464,19 +1464,58 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   ternaries in page templates. New templates with hardcoded light
   styling need a token or a dark override.
 
-**Design refresh layer (Aug 2026).** base.html carries a global "Design
-refresh" style block that owns the app's look: slate page background
-(#eef1f6) so white cards read as bordered surfaces, Inter font, denser
-card padding (`body .card.p-4` beats the Bootstrap utility's !important
-via specificity — the same body-prefix trick lets the layer out-rank
-every page's own `<style>` block regardless of order), .95rem tables
-with uppercase column headers, darker section labels, and the
-`.ht-statbar` component (one bordered row of label-over-value stats —
-used on /positions and /position/<symbol>; prefer it over rows of
-single-number KPI cards). Two rules of the layer: (1) never set a
+**Design refresh layer (Sep 2026 de-AI pass).** base.html carries a
+global "Design refresh" style block that owns the app's look. Full
+token list: `docs/VISUAL_BRAND.md`. Short version agents must follow:
+
+- **UI face:** Public Sans (400–700) from Google Fonts. Body stack is
+  `"Public Sans", system-ui, sans-serif`. Do not load Inter, Geist,
+  Plus Jakarta Sans, Manrope, Space Grotesk, or Outfit.
+- **Numbers:** IBM Plex Mono (400–600) on KPI values, `.ht-statbar`
+  values, and the `.ht-num` / `.font-mono-nums` utilities. Plex is not
+  loaded at 700/800 — don't faux-bold it. Chart tick labels use the
+  same face via the Chart.js default in base.html.
+- **Accent:** copper `#b87333` (`--color-mirror`). Small text on light
+  surfaces uses `--color-mirror-ink` (`#7a4a1e`); dark mode lightens
+  both to `#e0b56a`. This is the only brand accent for CTAs, focus
+  rings, and primary chrome. Bootstrap purple `#6f42c1` is not the
+  AI/mirror color. P&L tape is `--color-positive: #3f7d5c` and
+  `--color-negative: #b55249`.
+- **Navy is flat.** Nav, landing heroes, and the other dark bands are
+  solid `#1a1a2e` (`--nav-bg`). No 3-stop night-sky gradient
+  (`#1a1a2e → #16213e → #0f3460`) and no blue→purple progress bar.
+  The progress bar is charcoal → copper.
+- **Warm canvas.** Light page background `#f7f5f2`. Cards and
+  `.ht-statbar` use `--ht-surface: #fffcf8` with a hairline
+  `--ht-line`, not a soft drop shadow. Dark canvas is `#12141a`;
+  dark cards are `--ht-surface: #1c1e26`. Marketing `.feature-card`
+  may keep a mild hover-lift.
+- **Strategy swatches are not the brand.** Covered Call / CSP / Wheel
+  color maps (including CSP and Poor Man's Covered Call at `#6f42c1`)
+  stay as data colors. Do not retint them to copper.
+
+The layer still uses body-prefixed selectors so it out-ranks each
+page's own `<style>` block (`body .card.p-4` beats the Bootstrap
+utility's `!important`). Tables stay .95rem with uppercase column
+headers. `.ht-statbar` is the KPI strip (one bordered row of
+label-over-value stats on /positions and /position/<symbol>) — reuse
+it instead of inventing another card grid. Two rules: (1) never set a
 heading `color` globally — headings must inherit so dark heroes and
-dark mode stay readable; (2) new-page KPI strips should reuse
-`.ht-statbar`, not invent another card grid.
+dark mode stay readable; hero H1s are font-weight 700 with little or
+no negative letter-spacing, not 800; (2) new-page KPI strips should
+reuse `.ht-statbar`.
+
+### Visual brand
+
+Agents restyling a page should match `docs/VISUAL_BRAND.md` and the
+tokens above. Do not drift back to an "AI SaaS" kit: no Inter, no
+Bootstrap purple or indigo (`#6f42c1`, `#7c3aed`, `#6366f1`, `#4338ca`)
+as a brand or AI accent, no night-sky gradients, no cool slate page
+fill (`#eef1f6`) or cool dark canvas (`#151e30` / `#0b1220`). Feature
+icon tints for AI / mirror use the copper wash
+`rgba(184,115,51,.14)`, not a purple blob. User-chosen profile accent
+presets (violet / teal / amber / rose / slate) are a settings control,
+not the product brand.
 
 Remaining debt:
 - Auth/account fetching is inconsistent: some modules use `app.auth`, others use `app.models`.

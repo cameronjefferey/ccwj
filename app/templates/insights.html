@@ -3,7 +3,7 @@
 {% block head %}
 <style>
     .insights-hero {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        background: #1a1a2e;
         border-radius: 16px;
         padding: 2.5rem;
         color: #fff;
@@ -29,8 +29,8 @@
 
     /* Discovery Lab */
     .discovery-lab {
-        border: 1px solid rgba(99,102,241,.25);
-        background: linear-gradient(145deg, #fafbff 0%, #eef2ff 55%, #f8fafc 100%);
+        border: 1px solid rgba(184,115,51,.28);
+        background: #f8f1e7;
     }
     .discovery-grid {
         display: grid;
@@ -54,8 +54,8 @@
         font-weight: 700;
         letter-spacing: .12em;
         text-transform: uppercase;
-        color: #6366f1;
-        background: rgba(99,102,241,.1);
+        color: var(--color-mirror-ink);
+        background: rgba(184,115,51,.12);
         border-radius: 6px;
         padding: .22rem .5rem;
     }
@@ -445,7 +445,7 @@
         {% endif %}
 
         {% if insight and not scope_narrowed %}
-        <div class="coaching-section" style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0;">
+        <div class="coaching-section" style="background: var(--ht-surface-2); border: 1px solid var(--ht-line);">
             <div class="section-label">AI Analysis</div>
             {% if insight_conflict %}
             <div class="insights-stale">
