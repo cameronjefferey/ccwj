@@ -4,6 +4,7 @@
    style scoreboard. See app/trader_story.py. #}
 
 {% block content %}
+{% include '_review_styles.html' %}
 <style>
     .ts-hero {
         background: #1a1a2e;
@@ -305,17 +306,18 @@
     }
 </style>
 
-{% if (accounts and accounts|length > 1) or account_groups %}
-<form method="get" class="filter-bar">
-    {% include "_account_scope_filters.html" %}
-    {% if scope_is_filtered %}
-    <a class="filter-reset" href="{{ url_for('trader_story') }}">Reset</a>
-    {% endif %}
-</form>
-{% endif %}
-
-<div class="ts-hero mb-4">
-    <div class="ts-kicker">Your trading mirror</div>
+<div class="review-hero ts-hero mb-4">
+    <div class="ov-bar" style="text-align:left;">
+        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% include "_account_scope_filters.html" %}
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('trader_story') }}">Reset</a>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
     {% if novel %}
     <h1>Trader Profile</h1>
     <div class="ts-sub">

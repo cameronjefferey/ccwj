@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     /* ── Hero ───────────────────────────────────────────────────── */
     .wealth-hero {
@@ -150,7 +151,20 @@
 {% endblock %}
 
 {% block content %}
-<div class="wealth-hero">
+<div class="review-hero wealth-hero">
+    <div class="ov-bar">
+        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+        {% if (wealth_account_choices and wealth_account_choices|length > 0) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            <input type="hidden" name="view" value="value">
+            <input type="hidden" name="range" value="{{ selected_range }}">
+            {% if exclude_transfers %}<input type="hidden" name="exclude_transfers" value="1">{% endif %}
+            {% with scope_account_options = wealth_account_choices, account_filter_always = true %}
+            {% include "_account_scope_filters.html" %}
+            {% endwith %}
+        </form>
+        {% endif %}
+    </div>
     <h1>Account value &amp; composition</h1>
     <p class="lede">
         Daily account value over time, broken into cash, equity, and option positions.
@@ -176,20 +190,10 @@
 <div class="alert alert-warning">
     <strong>Unknown account filter.</strong>
     <p class="mb-0 mt-2 small"><code>{{ selected_account }}</code> is not one of your linked account names.
-        Use the account dropdown below (or pick an account on your
+        Use the account menu in the header (or pick an account on your
         <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page) so the label matches exactly.</p>
 </div>
 <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
-    {% if wealth_account_choices and wealth_account_choices|length > 0 %}
-    <form method="get" class="filter-bar mb-0">
-        <input type="hidden" name="view" value="value">
-        <input type="hidden" name="range" value="{{ selected_range }}">
-        {% with scope_account_options = wealth_account_choices, account_filter_always = true %}
-        {% include "_account_scope_filters.html" %}
-        {% endwith %}
-    </form>
-    {% endif %}
-
     <div class="range-toggle ms-auto">
         {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('ytd', 'YTD'), ('all', 'All')] %}
         {% for value, label in ranges %}
@@ -219,17 +223,6 @@
 
 {# ── Filters ──────────────────────────────────────────────────────── #}
 <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
-    {% if wealth_account_choices and wealth_account_choices|length > 0 %}
-    <form method="get" class="filter-bar mb-0">
-        <input type="hidden" name="view" value="value">
-        <input type="hidden" name="range" value="{{ selected_range }}">
-        {% if exclude_transfers %}<input type="hidden" name="exclude_transfers" value="1">{% endif %}
-        {% with scope_account_options = wealth_account_choices, account_filter_always = true %}
-        {% include "_account_scope_filters.html" %}
-        {% endwith %}
-    </form>
-    {% endif %}
-
     {# Deposits/withdrawals toggle — strips the trader's own money in/out
        from the change numbers + headline line so the picture is trading +
        income only. Submits via a tiny GET form that preserves account and

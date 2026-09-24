@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .insights-hero {
         background: #1a1a2e;
@@ -199,7 +200,18 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-9">
-        <div class="insights-hero">
+        <div class="review-hero insights-hero">
+            <div class="ov-bar">
+                <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+                {% if (accounts and accounts|length > 1) or account_groups %}
+                <form method="get" class="filter-bar filter-bar-hero">
+                    {% include "_account_scope_filters.html" %}
+                    {% if scope_is_filtered %}
+                    <a class="filter-reset" href="{{ url_for('insights') }}">Reset</a>
+                    {% endif %}
+                </form>
+                {% endif %}
+            </div>
             <h1>AI Insights</h1>
             <p class="mb-0 opacity-90">
                 A mirror backed by curves other platforms never ingest — Discovery Lab contrasts your closes by calendar,
@@ -208,16 +220,6 @@
         </div>
 
         {% include "_history_window_note.html" %}
-
-        {% if (accounts and accounts|length > 1) or account_groups %}
-        <form method="get" class="filter-bar">
-            {% include "_account_scope_filters.html" %}
-            {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('insights') }}">Reset</a>
-            {% endif %}
-        </form>
-        {% endif %}
-
 
         {# ════════════════════════════════════
            DETERMINISTIC COACHING DATA
