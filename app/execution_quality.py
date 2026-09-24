@@ -223,8 +223,9 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
             "label": "Long exits",
             "value": _signed(net),
             "tone": "pos" if net >= 0 else "neg",
-            "detail": (f"{len(longs)} sales before expiry — the exit beat "
+            "detail": (f"{len(longs)} sales before expiry. The exit beat "
                        f"holding in {n_better} of them."),
+            "meter": n_better / len(longs),
         })
 
     # 2. Early buybacks on short options (rolls handled separately).
@@ -265,6 +266,8 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
             "value": f"{untested} of {len(rolls)}",
             "tone": "neutral",
             "detail": detail,
+            "dots": untested,
+            "dots_total": len(rolls),
         })
 
     # 4. Expiry discipline (no counterfactual needed — it happened).
@@ -325,24 +328,26 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         delta = float(row["early_close_vs_expiry_delta"])
         label = _contract_label(row)
         if row["was_rolled"]:
-            tail = ("the strike was never tested"
-                    if row["expired_worthless"]
-                    else f"the roll sidestepped {_money(delta)}")
-            desc = f"Rolled away from the {label} — {tail}."
+            title = f"Rolled away from the {label}"
+            caption = ("strike was never tested" if row["expired_worthless"]
+                       else "roll sidestepped a finish in the money")
         elif row["direction"] == "Sold":
-            desc = (f"Bought back the {label}; it expired worthless — "
-                    f"{_money(-delta)} given up vs holding."
-                    if delta < 0 else
-                    f"Bought back the {label} before it finished in the "
-                    f"money — {_money(delta)} avoided.")
+            title = f"Bought back the {label}"
+            caption = ("vs holding to expiry" if delta < 0
+                       else "better than expiry")
         else:
-            desc = (f"Sold the {label} early; by expiry it was worth "
-                    f"{_money(-delta)} more than the exit."
-                    if delta < 0 else
-                    f"Sold the {label} near the highs — {_money(delta)} "
-                    f"better than the expiry outcome.")
-        examples.append({"symbol": row["symbol"], "desc": desc,
-                         "delta": round(delta, 2)})
+            title = (f"Sold the {label} early" if delta < 0
+                     else f"Sold the {label} near the highs")
+            caption = ("vs holding to expiry" if delta < 0
+                       else "better than expiry")
+        examples.append({
+            "symbol": row["symbol"],
+            "desc": title,
+            "caption": caption,
+            "delta": round(delta, 2),
+            "delta_text": _signed(delta),
+            "tone": "pos" if delta >= 0 else "neg",
+        })
 
     return {
         "n_graded": int(len(graded)),

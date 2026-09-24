@@ -1109,9 +1109,9 @@ and dollars, never advice — every early close also removed risk, and the
 sentences must not pretend otherwise. READABILITY REGISTER (Aug 2026
 pass, user feedback "a lot of words, I don't know the takeaway"): these
 surfaces are TAKEAWAY-FIRST, not prose-first. The profile card is one
-headline number + scannable findings rows ({label, value, tone, detail} —
-one bold number per row, never a number repeated in both a sentence and
-a chip); Daily Review verdict rows show the signed delta in its own
+headline number, then long and short books (one bold number each, detail
+under it, never repeated in a chip). The largest early-exit swings sit
+in their own list with the dollar in its own column. Daily Review verdict rows show the signed delta in its own
 column with a SHORT action line (`action` field), while the full
 `sentence` form is reserved for the weekly EMAIL (no layout to lean on).
 New execution copy must follow this shape — no paragraph blocks on pages. All three models keep one row per
@@ -1424,13 +1424,14 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   (≥4) and headlines like/unlike (quiet when they usually trade, a
   roll burst, first expiries). Questions, not advice. Then a PROFILE
   SUMMARY
-  (takeaway-first, Aug 2026 readability pass: ONE identity headline —
-  income vs directional vs stock — plus scannable {label, value, tone,
-  detail} fact rows for the income/directional books, contract record,
-  kept-at-expiry, dividends, busiest day; the old six-sentence prose
-  block + stat-chip strip repeating the same numbers was removed, and
-  the card never repeats the hero's symbols/trade-days/since counts),
+  (takeaway-first: ONE identity headline — income vs directional vs
+  stock — then two tinted books, a contract-record bar, and a quiet
+  dividends / busiest-day line. Kept-at-expiry sits inside the income
+  book. The card never repeats the hero's symbols/trade-days/since
+  counts),
   NOTABLE POSITIONS cards
+  (same five claims, tinted by the sign of P&L, with one shared bar
+  scale so a small result stays small),
   (Top performer / Largest loss / Most active / Longest held / Most
   re-entered — each linking to the position page whose history proves
   the claim), a per-style scoreboard (income/directional/stock ×
