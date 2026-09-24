@@ -531,3 +531,222 @@ def test_roll_open_leg_counts_as_premium_collected():
     _, _, stats = build_position_story(df, None)
     assert stats["rolls"] == 1
     assert stats["premium_collected"] == 160.0  # 50 STO + 110 roll open
+
+
+def _day(items, iso):
+    return next(i for i in items if i["type"] == "day" and i["date_iso"] == iso)
+
+
+def test_review_cards_split_options_shares_and_cash():
+    """The column layout covers the maneuvers the review actually names."""
+    df = _trades([
+        (date(2024, 8, 21), "option_buy_to_open", "Call",
+         "LUNR 250117C00005000", 10, 2.14, -2136.61),
+        (date(2024, 9, 18), "option_sell_to_close", "Call",
+         "LUNR 250117C00005000", 10, 3.27, 3273.27),
+        (date(2024, 11, 22), "equity_buy", "Equity", "LUNR", 1500, 15.36, -23040.0),
+        (date(2024, 11, 22), "option_sell_to_open", "Call",
+         "LUNR 241129C00018000", 15, 0.28, 425.0),
+        (date(2024, 11, 29), "option_buy_to_close", "Call",
+         "LUNR 241129C00018000", 15, 0.10, -150.0),
+        (date(2024, 11, 29), "option_sell_to_open", "Call",
+         "LUNR 241206C00018000", 15, 0.59, 890.0),
+        (date(2024, 12, 16), "option_expired", "Call",
+         "LUNR 241206C00018000", 15, None, 0.0),
+        (date(2025, 1, 27), "option_exercised", "Call",
+         "LUNR 250117C00023000", 15, None, 0.0),
+        (date(2025, 1, 27), "equity_sell", "Equity", "LUNR", 1500, 23.0, 34500.0),
+    ])
+    items, _, stats = build_position_story(
+        df, None,
+        exit_notes={("Schwab", "LUNR 250117C00005000"):
+                    "After the fact: by expiry this contract was worth $10,237 more than the exit price."},
+    )
+    opened = _day(items, "2024-08-21")
+    assert opened["option_cards"][0]["title"].startswith("Bought 10 contracts")
+    assert opened["option_cards"][0]["metric"] == "$2,137 at risk"
+    assert opened["option_cards"][0]["pill"] == "Bullish"
+    assert opened["share_cards"] == []
+    assert opened["cash_mode"] == "fills"
+    assert opened["fill_count"] == 1
+    assert opened["label_day"] == "Aug 21"
+    assert opened["label_year"] == "2024"
+
+    closed = _day(items, "2024-09-18")
+    assert closed["option_cards"][0]["tone"] == "pos"
+    assert "on the contract" in closed["option_cards"][0]["metric"]
+    assert closed["option_cards"][0]["note"].startswith("In hindsight:")
+    assert "After the fact" not in closed["option_cards"][0]["note"]
+    # The headline the chart tooltip uses keeps the original wording.
+    assert any(h.startswith("After the fact:") for h in closed["headlines"])
+
+    paired = _day(items, "2024-11-22")
+    assert paired["option_cards"] and paired["share_cards"]
+    assert paired["share_cards"][0]["title"].startswith("Started the position:")
+    assert paired["share_cards"][0]["metric"] == "$23,040"
+    assert "collected" in paired["option_cards"][0]["metric"]
+    assert paired["fill_count"] == 2
+
+    rolled = _day(items, "2024-11-29")
+    roll = rolled["option_cards"][0]
+    assert roll["title"].startswith("Rolled the short")
+    assert "→" in roll["pill"]
+    assert roll["tone"] == "pos"
+    assert roll["metric"].endswith("net credit")
+
+    expired = _day(items, "2024-12-16")
+    assert "premium kept" in expired["option_cards"][0]["metric"]
+    assert expired["cash_mode"] == "none"
+    assert expired["share_cards"] == []
+
+    settled = _day(items, "2025-01-27")
+    assert settled["option_cards"][0]["title"].startswith("The short $23 call was exercised")
+    assert settled["share_cards"][0]["title"].startswith("Shares called away")
+    header = __import__("app.position_story", fromlist=["story_header"]).story_header(stats)
+    assert header["days"] == 6
+    assert header["span"]
+    assert header["accounts"] == ["Schwab"]
+
+
+def test_assignment_puts_shares_in_their_own_card():
+    df = _trades([
+        (date(2024, 6, 3), "option_sell_to_open", "Put", "F 240621P00012000", 1, 0.60, 60.0),
+        (date(2024, 6, 21), "option_assigned", "Put", "F 240621P00012000", 1, None, 0.0),
+        (date(2024, 6, 21), "equity_buy", "Equity", "F", 100, 12.0, -1200.0),
+    ])
+    items, _, _stats = build_position_story(df, None)
+    day = _day(items, "2024-06-21")
+    assert day["option_cards"][0]["title"] == "Assigned on the $12 put"
+    assert "wheel" in (day["option_cards"][0]["detail"] or "").lower()
+    assert day["share_cards"][0]["title"].startswith("Took delivery")
+    assert day["share_cards"][0]["metric"] == "$1,200"
+
+
+def test_legged_structure_day_stays_a_fill_not_a_wheel():
+    df = _trades([
+        (date(2026, 7, 8), "option_sell_to_open", "Put",
+         "DAL 260717P00086000", 10, 2.90, 2903.0),
+        (date(2026, 7, 10), "option_buy_to_open", "Call",
+         "DAL 260717C00095000", 10, 0.82, -817.0),
+        (date(2026, 7, 10), "option_buy_to_open", "Put",
+         "DAL 260717P00083000", 10, 1.75, -1747.0),
+        (date(2026, 7, 10), "option_sell_to_open", "Call",
+         "DAL 260717C00093000", 10, 1.14, 1143.0),
+    ])
+    items, _, _stats = build_position_story(df, None)
+    first = _day(items, "2026-07-08")
+    blob = " ".join(c["title"] + " " + (c["detail"] or "") for c in first["option_cards"])
+    assert "wheel" not in blob.lower()
+    assert first["option_cards"]
+    named = _day(items, "2026-07-10")
+    assert "iron condor" in named["option_cards"][0]["title"]
+    assert named["option_cards"][0]["metric"].endswith("net credit")
+
+
+def test_loss_buyback_dividend_and_multi_account_cards():
+    from app.position_story import _cards_for_sentence, attach_realized_pnl
+
+    loss = _cards_for_sentence(
+        "Sold the $5 calls (Jan 17 '25) for $800 — taking the $1,337 loss."
+    )
+    assert loss[0]["tone"] == "neg"
+    assert loss[0]["metric"].startswith("-$")
+
+    kept = _cards_for_sentence(
+        "Bought back the $11 call (Nov 15) for $10 — locking in $40 of the premium."
+    )
+    assert kept[0]["tone"] == "pos"
+
+    lost = _cards_for_sentence(
+        "The $5 call expired worthless — the $2,137 paid for it was lost."
+    )
+    assert lost[0]["lane"] == "options"
+    assert lost[0]["tone"] == "neg"
+
+    div = _cards_for_sentence("Collected $54.12 in dividends.")
+    assert div[0]["lane"] == "shares"
+    assert div[0]["metric"] == "+$54.12"
+
+    items, _, stats = build_position_story(_trades([
+        (date(2024, 1, 2), "equity_buy", "Equity", "X", 10, 10.0, -100.0, "Cameron 401k"),
+        (date(2024, 1, 3), "equity_sell", "Equity", "X", 10, 12.0, 120.0, "Cameron 401k"),
+        (date(2024, 1, 4), "equity_buy", "Equity", "X", 5, 11.0, -55.0, "Sara IRA"),
+    ]), None)
+    assert _day(items, "2024-01-02")["share_cards"][0]["account"] == "Cameron 401k"
+    assert _day(items, "2024-01-04")["share_cards"][0]["account"] == "Sara IRA"
+    assert _day(items, "2024-01-03")["share_cards"][0]["metric"] == "Position closed"
+    attach_realized_pnl(items, {}, {"2024-01-03": 20.0})
+    sold = _day(items, "2024-01-03")["share_cards"][0]
+    assert sold["metric"] == "+$20.00 realized"
+    assert sold["detail"] == "Position closed"
+    assert stats["accounts"] == ["Cameron 401k", "Sara IRA"]
+
+
+def test_same_day_structure_is_one_options_card():
+    df = _trades([
+        (date(2026, 7, 8), "option_buy_to_open", "Call",
+         "DAL 260717C00095000", 10, 0.82, -817.0),
+        (date(2026, 7, 8), "option_buy_to_open", "Put",
+         "DAL 260717P00083000", 10, 1.75, -1747.0),
+        (date(2026, 7, 8), "option_sell_to_open", "Call",
+         "DAL 260717C00093000", 10, 1.14, 1143.0),
+        (date(2026, 7, 8), "option_sell_to_open", "Put",
+         "DAL 260717P00086000", 10, 2.90, 2903.0),
+    ])
+    items, _, _stats = build_position_story(df, None)
+    day = _day(items, "2026-07-08")
+    assert len(day["option_cards"]) == 1
+    assert "iron condor" in day["option_cards"][0]["title"]
+    assert day["share_cards"] == []
+    assert day["fill_count"] == 4
+
+
+def test_exercise_realized_follows_a_later_broker_fill():
+    """Warehouse close_date is expiry Friday; the fill often posts Monday."""
+    from app.position_story import attach_realized_pnl
+
+    items = [{
+        "type": "day",
+        "date_iso": "2025-01-27",
+        "option_cards": [{
+            "title": "The short $23 call was exercised",
+            "metric": None, "tone": "", "detail": None,
+        }],
+        "share_cards": [{
+            "title": "Shares called away at $23",
+            "metric": None, "tone": "", "detail": None,
+        }],
+    }]
+    attach_realized_pnl(
+        items,
+        {"2025-01-24": 3034.97},
+        {"2025-01-27": 11459.75},
+    )
+    assert items[0]["option_cards"][0]["metric"] == "+$3,034.97 realized"
+    assert items[0]["share_cards"][0]["metric"] == "+$11,459.75 realized"
+
+
+def test_zero_close_does_not_stamp_a_realized_chip():
+    from app.position_story import attach_realized_pnl
+
+    items = [{
+        "type": "day",
+        "date_iso": "2024-10-18",
+        "option_cards": [{
+            "title": "The short $28 call was exercised",
+            "metric": None, "tone": "", "detail": None,
+        }],
+        "share_cards": [],
+    }]
+    attach_realized_pnl(items, {"2024-10-18": 0.0}, {})
+    assert items[0]["option_cards"][0]["metric"] is None
+
+
+def test_share_counts_in_cards_use_thousands_separators():
+    df = _trades([
+        (date(2024, 11, 22), "equity_buy", "Equity", "LUNR", 1500, 15.36, -23040.0),
+    ])
+    items, _, _stats = build_position_story(df, None)
+    assert _day(items, "2024-11-22")["share_cards"][0]["title"] == (
+        "Started the position: 1,500 shares at $15.36"
+    )

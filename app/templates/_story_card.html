@@ -1,0 +1,17 @@
+<div class="story-card story-card-{{ c.lane }}">
+    {% if c.account and story_header and story_header.accounts|length > 1 %}
+    <div class="story-card-acct">{{ c.account }}</div>
+    {% endif %}
+    {% if c.title %}<div class="story-card-title">{{ c.title }}</div>{% endif %}
+    {% if c.detail %}<div class="story-card-detail">{{ c.detail }}</div>{% endif %}
+    {% if c.pill and c.pill_style == 'move' %}
+    <div class="story-pill story-pill-move">{{ c.pill }}</div>
+    {% endif %}
+    {% if c.metric or (c.pill and c.pill_style == 'stance') %}
+    <div class="story-card-metricline">
+        {% if c.metric %}<span class="story-metric story-metric-{{ c.tone or 'neutral' }}">{{ c.metric }}</span>{% endif %}
+        {% if c.pill and c.pill_style == 'stance' %}<span class="story-pill story-pill-stance">{{ c.pill }}</span>{% endif %}
+    </div>
+    {% endif %}
+    {% if c.note %}<div class="story-note">{{ c.note }}</div>{% endif %}
+</div>
