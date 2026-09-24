@@ -191,8 +191,10 @@ What's working:
  bar (the pattern to roll out site-wide; the global nav stays until
  then). Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
- This week, and percent invested. A one-line takeaway only claims what
- those numbers and the snapshot benchmark rows support. Pills name the
+ This week, and percent invested. The one-line takeaway calls these
+ **account-value changes** and lists one-week benchmark figures without
+ saying ahead/behind: snapshot deltas include deposits and withdrawals,
+ so they are not investment returns. Pills name the
  session (pre-market / open / after hours), that session's fill count,
  the trailing-week SPY/QQQ line, and a link to the live page. Account
  table adds share-of-book and leads each move with the percent.
