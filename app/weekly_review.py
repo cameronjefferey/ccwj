@@ -8,8 +8,9 @@ the word "today". Those are now two routes:
     /overview  (endpoint weekly_review) — last completed session only.
     /today     (endpoint today_view)    — in-session last-trade, delay banner.
 
-/overview never uses the word "today". Live fills, in-session movers,
-after-hours drift, and open-contract marks live on /today.
+The Overview hero labels the last completed session's move "Today".
+Live fills, in-session movers, after-hours drift, and open-contract
+marks stay on /today.
 
 Tenancy: every BQ read passes through `_tenant_sql_and` (SQL-level) and
 every DataFrame is filtered via `_filter_df_by_tenant_ids` BEFORE any
@@ -2227,6 +2228,228 @@ def _market_line_source(market, benchmark_snapshot):
     return merged
 
 
+def _overview_takeaway(day_pct, week_pct, benchmarks):
+    """One sentence under the Overview hero. Only claims the numbers support.
+
+    ``benchmarks`` is the snapshot index rows (S&P 500, Nasdaq 100) with
+    ``day_pct`` and ``week_pct``. Missing pieces are left out rather than
+    filled in.
+    """
+    day_bits = []
+    for row in benchmarks or []:
+        pct = row.get("day_pct")
+        if pct is not None:
+            day_bits.append(pct)
+    week_bits = []
+    week_labels = []
+    for row in benchmarks or []:
+        pct = row.get("week_pct")
+        if pct is not None:
+            week_bits.append(pct)
+            week_labels.append(row.get("label") or row.get("symbol") or "the index")
+
+    clauses = []
+    if day_pct is not None:
+        verb = "Up" if day_pct > 0 else "Down" if day_pct < 0 else "Flat"
+        moved = f"{abs(day_pct):.2f}%" if day_pct != 0 else ""
+        if len(day_bits) >= 2 and all(p < 0 for p in day_bits):
+            backdrop = "on a day both indexes fell"
+        elif len(day_bits) >= 2 and all(p > 0 for p in day_bits):
+            backdrop = "on a day both indexes rose"
+        else:
+            backdrop = "on the day"
+        if day_pct == 0:
+            clauses.append(f"Flat {backdrop}")
+        else:
+            clauses.append(f"{verb} {moved} {backdrop}")
+
+    if week_pct is not None and len(week_bits) >= 2:
+        names = f"the {week_labels[0]} and {week_labels[1]}"
+        if week_pct > max(week_bits):
+            clauses.append(f"ahead of {names} for the week")
+        elif week_pct < min(week_bits):
+            clauses.append(f"behind {names} for the week")
+        else:
+            clauses.append(f"between {names} for the week")
+    elif week_pct is not None and len(week_bits) == 1:
+        name = week_labels[0]
+        if week_pct > week_bits[0]:
+            clauses.append(f"ahead of the {name} for the week")
+        elif week_pct < week_bits[0]:
+            clauses.append(f"behind the {name} for the week")
+        else:
+            clauses.append(f"in line with the {name} for the week")
+
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0] + "."
+    return clauses[0] + ", and " + clauses[1] + "."
+
+
+def _overview_radar(start, earnings, options, dividends, pending, n_days=15):
+    """15-day radar for Overview. Columns start on ``start`` (the close
+    on screen). Events outside the window are omitted. Chips span up to
+    three days so the label fits, and stop at the window edge.
+    """
+    start = _coerce_date(start)
+    if start is None:
+        return None
+    days = []
+    for i in range(n_days):
+        d = start + timedelta(days=i)
+        if d.day == 1:
+            num = d.strftime("%b %-d")
+        else:
+            num = d.strftime("%-d")
+        days.append({
+            "dow": d.strftime("%a")[:1],
+            "num": num,
+            "weekend": d.weekday() >= 5,
+            "iso": d.isoformat(),
+        })
+
+    def _place(iso, span=3):
+        d = _coerce_date(str(iso)[:10] if iso else None)
+        if d is None:
+            return None
+        i = (d - start).days
+        if i < 0 or i >= n_days:
+            return None
+        width = min(span, n_days - i)
+        return {"col": i + 1, "span": width}
+
+    def _pack(raw):
+        """Stack chips that share a day onto extra tracks in the lane."""
+        tracks = []
+        out = []
+        for ev in raw:
+            ev = dict(ev)
+            placed = False
+            for ti, used in enumerate(tracks):
+                cols = range(ev["col"], ev["col"] + ev["span"])
+                if any(c in used for c in cols):
+                    if ev["col"] in used:
+                        continue
+                    ev["span"] = 1
+                    cols = range(ev["col"], ev["col"] + 1)
+                used.update(cols)
+                ev["track"] = ti
+                out.append(ev)
+                placed = True
+                break
+            if placed:
+                continue
+            tracks.append(set(range(ev["col"], ev["col"] + ev["span"])))
+            ev["track"] = len(tracks) - 1
+            out.append(ev)
+        return out, max(len(tracks), 1)
+
+    earn_ev, opt_ev, div_ev = [], [], []
+    for e in earnings or []:
+        slot = _place(e.get("earnings_date"))
+        if not slot:
+            continue
+        company = (e.get("company") or "").split(",")[0]
+        sub = company
+        if e.get("earnings_date_display"):
+            sub = (company + ", " if company else "") + e["earnings_date_display"]
+        earn_ev.append({**slot, "cls": "er", "title": f"{e.get('symbol')} earnings",
+                         "sub": sub, "href_symbol": e.get("symbol")})
+    for opt in options or []:
+        slot = _place(opt.get("expiry"))
+        if not slot:
+            continue
+        side = "short" if (opt.get("quantity") or 0) < 0 else "long"
+        raw_kind = (opt.get("option_type") or "option").strip().lower()
+        kind = {"c": "call", "p": "put", "call": "call", "put": "put"}.get(raw_kind, raw_kind or "option")
+        bits = [f"{side} {abs(int(opt.get('quantity') or 0))} {kind}"]
+        if opt.get("itm") is False and opt.get("distance") is not None:
+            bits.append(f"OTM ${abs(float(opt['distance'])):.2f}")
+        elif opt.get("itm") and opt.get("distance") is not None:
+            bits.append(f"ITM ${abs(float(opt['distance'])):.2f}")
+        if opt.get("unrealized_pnl") is not None:
+            pnl = float(opt["unrealized_pnl"])
+            bits.append(("+" if pnl >= 0 else "−") + f"${abs(pnl):,.0f}")
+        strike_txt = ""
+        try:
+            strike_txt = f"${float(opt.get('strike')):g} "
+        except (TypeError, ValueError):
+            pass
+        opt_ev.append({
+            **slot, "cls": "ex",
+            "title": f"{opt.get('symbol')} {strike_txt}{kind} expires",
+            "sub": ", ".join(bits),
+            "href_symbol": opt.get("symbol"),
+        })
+    for item in (pending or {}).get("items") or []:
+        slot = _place(item.get("expiry"))
+        if not slot:
+            continue
+        opt_ev.append({
+            **slot, "cls": "vd",
+            "title": f"{item.get('symbol')} {item.get('short_label') or ''} verdict".strip(),
+            "sub": "closed early, graded at expiry",
+            "href_symbol": item.get("symbol"),
+        })
+    est_total = 0.0
+    for d in dividends or []:
+        if (d.get("days_until") or 0) > 14:
+            continue
+        slot = _place(d.get("projected_date") or d.get("date"))
+        if not slot:
+            continue
+        est = float(d.get("est_income") or 0)
+        est_total += est
+        shares = d.get("shares_held")
+        last = d.get("last_amount_per_share")
+        sub_bits = []
+        if shares:
+            sub_bits.append(f"{float(shares):,.0f} sh")
+        if last:
+            sub_bits.append(f"${float(last):.2f} last")
+        title = d.get("symbol") or ""
+        if est:
+            title += f" est. +${est:,.2f}"
+        div_ev.append({**slot, "cls": "dv", "title": title, "sub": ", ".join(sub_bits),
+                        "href_symbol": d.get("symbol")})
+
+    earn_ev, earn_tracks = _pack(earn_ev)
+    opt_ev, opt_tracks = _pack(opt_ev)
+    div_ev, div_tracks = _pack(div_ev)
+    n_earn = len(earn_ev)
+    n_exp = sum(1 for e in opt_ev if e["cls"] == "ex")
+    n_ver = sum(1 for e in opt_ev if e["cls"] == "vd")
+    n_div = len(div_ev)
+    parts = []
+    if n_earn:
+        parts.append(f"{n_earn} earning{'s' if n_earn != 1 else ''}")
+    if n_exp:
+        parts.append(f"{n_exp} expir{'ies' if n_exp != 1 else 'y'}")
+    if n_ver:
+        parts.append(f"{n_ver} verdict{'s' if n_ver != 1 else ''}")
+    if n_div:
+        parts.append(f"{n_div} ex-dividend{'s' if n_div != 1 else ''}")
+    summary = "Next 14 days"
+    if parts:
+        summary += ": " + ", ".join(parts)
+    if est_total:
+        summary += f". Estimated dividends +${est_total:,.2f}"
+    summary += "."
+    if not (earn_ev or opt_ev or div_ev):
+        return None
+    return {
+        "days": days,
+        "summary": summary,
+        "earnings": earn_ev,
+        "earnings_tracks": earn_tracks,
+        "options": opt_ev,
+        "options_tracks": opt_tracks,
+        "dividends": div_ev,
+        "dividends_tracks": div_tracks,
+    }
+
+
 def _neutral_market_line(market):
     """Neutral one-liner about market context. No 'beating'/'trailing' judgment.
 
@@ -4201,6 +4424,14 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
         app.logger.warning("Calendar grid failed: %s", e)
         context["daily_calendar_no_query_rows"] = True
         context["calendar_grid"] = _build_calendar_grid({}, today)
+    context["overview_radar"] = _overview_radar(
+        context.get("review_date") or today,
+        (context.get("upcoming_earnings_this_week") or [])
+        + (context.get("upcoming_earnings_next_week") or []),
+        context.get("expiring_options"),
+        context.get("upcoming_ex_dividends"),
+        context.get("exit_verdicts_pending"),
+    )
     return daily_changes_map
 
 
@@ -4733,6 +4964,14 @@ def weekly_review():
     if _hero_av is None:
         _hero_av = (context.get("equity_snapshot") or {}).get("account_value")
     context["hero_account_value"] = _hero_av
+    _book_row = _total_row or (_snaps[0] if len(_snaps) == 1 else None)
+    _day = ((_book_row or {}).get("comparisons") or {}).get("day") or {}
+    _week = ((_book_row or {}).get("comparisons") or {}).get("week") or {}
+    context["overview_takeaway"] = _overview_takeaway(
+        _day.get("delta_pct") if _day.get("has_data") else None,
+        _week.get("delta_pct") if _week.get("has_data") else None,
+        context.get("benchmark_snapshot"),
+    )
 
     context["today_headline"] = _today_headline(
         context.get("today_pulse"),
