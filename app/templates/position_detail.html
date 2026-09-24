@@ -639,8 +639,8 @@
         <div class="story-scroll mt-3">
             <div class="story-cols" aria-hidden="true">
                 <div></div>
-                <div class="story-col-h story-col-opt">Options</div>
                 <div class="story-col-h story-col-sh">{{ _share_label }}</div>
+                <div class="story-col-h story-col-opt">Options</div>
                 <div class="story-col-h story-col-cash">Cash</div>
             </div>
             {% for item in story_days %}
@@ -653,17 +653,17 @@
                     {% if item.label_year %}<div class="story-date-year">{{ item.label_year }}</div>{% endif %}
                 </div>
                 <div class="story-lane">
-                    {% if item.option_cards %}
-                    <div class="story-lane-label">Options</div>
-                    {% for c in item.option_cards %}
+                    {% if item.share_cards %}
+                    <div class="story-lane-label">{{ _share_label }}</div>
+                    {% for c in item.share_cards %}
                     {% include "_story_card.html" %}
                     {% endfor %}
                     {% endif %}
                 </div>
                 <div class="story-lane">
-                    {% if item.share_cards %}
-                    <div class="story-lane-label">{{ _share_label }}</div>
-                    {% for c in item.share_cards %}
+                    {% if item.option_cards %}
+                    <div class="story-lane-label">Options</div>
+                    {% for c in item.option_cards %}
                     {% include "_story_card.html" %}
                     {% endfor %}
                     {% endif %}
@@ -703,12 +703,6 @@
             <div class="story-realized">
                 <div class="story-realized-label">Realized</div>
                 <div>
-                    <div class="story-real-val {{ 'story-pos' if story_realized.options > 0 else 'story-neg' if story_realized.options < 0 else '' }}">
-                        {% if story_realized.options > 0 %}+{% endif %}{{ money(story_realized.options) }}
-                    </div>
-                    <div class="story-real-lbl">options</div>
-                </div>
-                <div>
                     <div class="story-real-val {{ 'story-pos' if story_realized.shares > 0 else 'story-neg' if story_realized.shares < 0 else '' }}">
                         {% if story_realized.shares > 0 %}+{% endif %}{{ money(story_realized.shares) }}
                     </div>
@@ -718,6 +712,12 @@
                         {% if story_realized.dividends > 0 %}+{% endif %}{{ money(story_realized.dividends) }} dividends
                     </div>
                     {% endif %}
+                </div>
+                <div>
+                    <div class="story-real-val {{ 'story-pos' if story_realized.options > 0 else 'story-neg' if story_realized.options < 0 else '' }}">
+                        {% if story_realized.options > 0 %}+{% endif %}{{ money(story_realized.options) }}
+                    </div>
+                    <div class="story-real-lbl">options</div>
                 </div>
                 <div>
                     <div class="story-real-val story-real-total {{ 'story-pos' if story_realized.combined > 0 else 'story-neg' if story_realized.combined < 0 else '' }}">
