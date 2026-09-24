@@ -702,7 +702,10 @@ Connected but still waiting on data: manage accounts, with Connect
 another account first. `/first-look` 301s here. New signups land here.
 Cancelling the SnapTrade portal returns to `/snaptrade/accounts` with
 an honest "nothing new was connected" message — not name-now claiming
-"Connected N accounts". The post-upload and post-sync processing pages
+"Connected N accounts". An unchanged account list is still treated as a
+successful recovery when a returned account is broken or has not completed
+its first sync; that path must clear health state and kick the catch-up pull,
+not be mistaken for cancel. The post-upload and post-sync processing pages
 land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the
