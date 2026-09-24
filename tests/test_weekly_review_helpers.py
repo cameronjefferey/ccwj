@@ -16,6 +16,8 @@ from app.weekly_review import (
     _classify_expiring_moneyness,
     _market_line_source,
     _neutral_market_line,
+    _overview_radar,
+    _overview_takeaway,
     _snapshot_placeholder_labels,
 )
 
@@ -229,6 +231,62 @@ class TestNeutralMarketLine:
         market = {"spy_week_pct": 0.6, "qqq_week_pct": None}
         src = _market_line_source(market, [{"symbol": "SPY", "week_pct": None}])
         assert _neutral_market_line(src) == _neutral_market_line(market)
+
+
+class TestOverviewTakeaway:
+    def test_up_while_both_indexes_fell_and_ahead_for_the_week(self):
+        benches = [
+            {"label": "S&P 500", "day_pct": -0.72, "week_pct": 2.08},
+            {"label": "Nasdaq 100", "day_pct": -0.84, "week_pct": 5.29},
+        ]
+        line = _overview_takeaway(0.13, 6.08, benches)
+        assert line == (
+            "Up 0.13% on a day both indexes fell, and ahead of "
+            "the S&P 500 and Nasdaq 100 for the week."
+        )
+
+    def test_down_and_behind_does_not_claim_a_win(self):
+        benches = [
+            {"label": "S&P 500", "day_pct": 0.4, "week_pct": 1.2},
+            {"label": "Nasdaq 100", "day_pct": 0.2, "week_pct": 0.8},
+        ]
+        line = _overview_takeaway(-0.5, 0.3, benches)
+        assert "Down 0.50% on a day both indexes rose" in line
+        assert "behind the S&P 500 and Nasdaq 100" in line
+
+    def test_missing_indexes_stays_quiet(self):
+        assert _overview_takeaway(None, None, []) is None
+        assert _overview_takeaway(1.0, None, []) == "Up 1.00% on the day."
+
+
+class TestOverviewRadar:
+    def test_places_earnings_and_ex_div_chips(self):
+        radar = _overview_radar(
+            date(2026, 9, 23),
+            [{"symbol": "MU", "earnings_date": "2026-09-24",
+              "company": "Micron Technology, Inc.",
+              "earnings_date_display": "Thu Sep 24"}],
+            [{"symbol": "SMTC", "expiry": "2026-10-02", "quantity": -1,
+              "option_type": "Call", "strike": 75, "itm": False,
+              "distance": 1.2, "unrealized_pnl": 40}],
+            [{"symbol": "JEPI", "projected_date": "2026-10-01",
+              "days_until": 8, "est_income": 180.32,
+              "shares_held": 92, "last_amount_per_share": 1.96}],
+            {"items": [{"symbol": "MU", "short_label": "$1040 call",
+                        "expiry": "2026-09-25"}]},
+        )
+        assert radar["earnings"][0]["title"] == "MU earnings"
+        assert "Micron Technology" in radar["earnings"][0]["sub"]
+        assert radar["options"][0]["cls"] == "ex"
+        assert "short 1 call" in radar["options"][0]["sub"]
+        verdict = [e for e in radar["options"] if e["cls"] == "vd"]
+        assert verdict and "MU" in verdict[0]["title"]
+        assert radar["dividends"][0]["sub"] == "92 sh, $1.96 last"
+        assert "est. +$180.32" in radar["dividends"][0]["title"]
+        assert "Estimated dividends" in radar["summary"]
+
+    def test_empty_window_is_none(self):
+        assert _overview_radar(date(2026, 9, 23), [], [], [], None) is None
 
 
 class TestSnapshotPlaceholderScope:

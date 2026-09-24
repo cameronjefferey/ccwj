@@ -167,7 +167,7 @@ It reflects behavior back to the trader.
 ## Page-by-Page Status
 
 ### Overview (`/overview` — endpoint still named `weekly_review` for url_for() compat) — PRIMARY EXPERIENCE
-**Status: Close-based recap. Nav dropdown with Today. Never uses the word "today".**
+**Status: Close-based recap. Nav dropdown with Today. The hero labels the last completed session's move "Today"; the number is still that close, not the live session.**
 
 Canonical URL is `/overview` (`/daily-review` and `/weekly-review` are aliases).
 This is the page a paying customer opens for the **last completed session**. It should answer:
@@ -187,12 +187,15 @@ The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', 
 callers don't break.
 
 What's working:
-- Session hero: date kicker (no page name), **Overview** headline, then a
- **Your book** strip (close value / vs prior close / vs 1w / % invested),
- plus market context (trailing 1-week SPY/QQQ, same window as the
- snapshot benchmark row — not the ISO-week minimum close, which reads
- +0.0% on Monday and on down weeks) and that session's fill count. Session P&amp;L is in
- the book row, not the headline.
+- Session hero: brand and the Group / Account filters sit in the dark
+ bar (the pattern to roll out site-wide; the global nav stays until
+ then). Date of the close, then total value, the last close's move
+ labeled Today (percent, then dollars, with the S&amp;P 500 under it),
+ This week, and percent invested. A one-line takeaway only claims what
+ those numbers and the snapshot benchmark rows support. Pills name the
+ session (pre-market / open / after hours), that session's fill count,
+ the trailing-week SPY/QQQ line, and a link to the live page. Account
+ table adds share-of-book and leads each move with the percent.
 - Session trades: every fill dated the **review session** from `stg_history`
  (`DAY_TRADES_QUERY`, shared with the time-machine day page), plus option
  expiry / assignment / exercise from `int_option_contracts` on
@@ -227,7 +230,7 @@ What's working:
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Clicking a mover opens the same right-side position drawer as Today.
-- Watch list: upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
+- Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the close date. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position / strategy / sector / subsector scorecards (performance by account). The account scorecard is **lifetime P&amp;L for currently-open positions plus anything closed since the Monday of the close on screen** (Friday's session → that Friday's Monday, not calendar-today's ISO Monday, which is still ahead of the close on Monday morning). Dividends on those rows are lifetime too — not a week-to-date clock. Copy names that Monday, not "this week's result". Ex-div share counts are every share held in the current scope; Today's "No short call open" list is uncovered covered-call lots only.

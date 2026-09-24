@@ -3,7 +3,61 @@
    WATCH LIST — earnings, expiring opts, projected ex-div
    ════════════════════════════════════ #}
 {% set _all_earnings = (upcoming_earnings_this_week or []) + (upcoming_earnings_next_week or []) %}
-{% if _all_earnings or expiring_options or upcoming_ex_dividends %}
+{% if overview_radar or _all_earnings or expiring_options or upcoming_ex_dividends %}
+<h3 class="ov-grp">Coming up</h3>
+{% endif %}
+{% if overview_radar %}
+<div class="review-section">
+    <div class="ov-head">
+        <div>
+            <h2>On your radar</h2>
+            <p>{{ overview_radar.summary }}</p>
+        </div>
+    </div>
+    <div class="ov-rad">
+        <div class="ov-tl">
+            <div class="ov-days">
+                {% for d in overview_radar.days %}
+                <div class="ov-dh {{ 'w' if d.weekend }}">{{ d.dow }}<b>{{ d.num }}</b></div>
+                {% endfor %}
+            </div>
+            {% if overview_radar.earnings %}
+            <div class="ov-lane">
+                <div class="ov-ln" style="color:#b06a00">Earnings</div>
+                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.earnings_tracks }}, 50px)">
+                    <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
+                    {% for ev in overview_radar.earnings %}
+                    <a class="ov-ev er" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small>{{ ev.sub }}</small></a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if overview_radar.options %}
+            <div class="ov-lane">
+                <div class="ov-ln" style="color:#4b3fd1">Options</div>
+                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.options_tracks }}, 50px)">
+                    <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
+                    {% for ev in overview_radar.options %}
+                    <a class="ov-ev {{ ev.cls }}" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small>{{ ev.sub }}</small></a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if overview_radar.dividends %}
+            <div class="ov-lane">
+                <div class="ov-ln" style="color:#17804d">Ex-dividends</div>
+                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.dividends_tracks }}, 50px)">
+                    <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
+                    {% for ev in overview_radar.dividends %}
+                    <a class="ov-ev dv" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small>{{ ev.sub }}</small></a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% elif _all_earnings or expiring_options or upcoming_ex_dividends %}
 <div class="review-section">
     <div class="section-label">On Your Radar (next ~14 days)</div>
     <div class="watch-grid">
@@ -136,52 +190,33 @@
    items are verdicts already in the mail. The open-contract record is
    strictly observational (premium captured / mark vs cost, days left).
    ════════════════════════════════════ #}
+{% if (exit_verdicts_landed or exit_verdicts_pending or (open_option_record and (open_option_record.shorts or open_option_record.longs))) or calendar_grid or (account_breakdown and account_breakdown.rows) or (trades_this_week and trades_this_week.has_any) %}
+<h3 class="ov-grp">Review</h3>
+{% endif %}
 {% if exit_verdicts_landed or exit_verdicts_pending or (open_option_record and (open_option_record.shorts or open_option_record.longs)) %}
 <div class="review-section">
-    <div class="section-label">Execution Review</div>
-    <p class="section-sub">
-        Your closes, graded against what happened at expiry. Spread legs are one verdict.
-    </p>
-    <div class="watch-grid">
-        {% if exit_verdicts_landed or exit_verdicts_pending %}
-        <div class="watch-block">
-            <div class="wb-title">
-                <span>Verdicts (last 7 days)</span>
-                <span class="text-muted small" style="text-transform:none; letter-spacing:0;">{{ exit_verdicts_landed|length }} landed</span>
-            </div>
-            {% if exit_verdicts_landed %}
-            <div class="watch-list">
-            {% for v in exit_verdicts_landed[:8] %}
-            <a href="{{ scoped_url('position_detail', symbol=v.symbol) }}" class="watch-item exec">
-                <div>
-                    <div class="watch-days {% if v.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if v.delta >= 0 else "-" }}${{ "{:,.0f}".format(v.delta|abs) }}</div>
-                    <div class="watch-days-label">vs expiry</div>
-                </div>
-                <div>
-                    <div class="watch-sym">{{ v.symbol }}{% if v.structure %}<span class="watch-badge">{{ v.structure }}</span>{% endif %}<span class="watch-badge">landed {{ v.landed_label }}</span></div>
-                    {# Short action line only — the signed delta already
-                       leads the row; don't repeat it in prose. #}
-                    <div class="watch-meta">{{ v.action }}</div>
-                </div>
-            </a>
-            {% endfor %}
-            </div>
-            {% else %}
-            <div class="wb-empty">No verdicts matured in the last 7 days.</div>
-            {% endif %}
-            {% if exit_verdicts_pending %}
-            <div class="text-muted small" style="margin-top:.6rem;">
-                {{ exit_verdicts_pending.n }} awaiting a verdict &mdash;
-                contract{{ 's' if exit_verdicts_pending.n != 1 }} you closed early,
-                graded once the expiry arrives and the outcome is knowable.
-                Next: {{ exit_verdicts_pending.next_symbol }}
-                {{ exit_verdicts_pending.next_short_label }},
-                {{ exit_verdicts_pending.next_date_label }}.
-            </div>
-            {% endif %}
+    <div class="ov-head">
+        <div>
+            <h2>Execution review</h2>
+            <p>Your closes, graded against what happened at expiry. Spread legs are one verdict.</p>
         </div>
-        {% endif %}
-
+        <div class="ov-pills-lite">
+            {% if exit_verdicts_landed %}<span class="ov-pl gn">{{ exit_verdicts_landed|length }} landed</span>{% endif %}
+            {% if exit_verdicts_pending %}<span class="ov-pl am">{{ exit_verdicts_pending.n }} waiting</span>
+            <span class="ov-pl in">Next: {{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_short_label }}, {{ exit_verdicts_pending.next_date_label }}</span>{% endif %}
+        </div>
+    </div>
+    {% if exit_verdicts_landed %}
+    {% set v = exit_verdicts_landed[0] %}
+    <a class="ov-verdict {{ 'up' if v.delta >= 0 else 'down' }}" href="{{ scoped_url('position_detail', symbol=v.symbol) }}">
+        <div><strong class="{{ 'pos' if v.delta >= 0 else 'neg' }}">{{ "+" if v.delta >= 0 else "−" }}${{ "{:,.0f}".format(v.delta|abs) }}</strong><small>vs expiry</small></div>
+        <div><p class="h">{{ v.symbol }} <small>landed {{ v.landed_label }}</small></p><p>{{ v.action }}</p></div>
+    </a>
+    {% endif %}
+    {% if exit_verdicts_pending %}
+    <p class="ov-wait">{{ exit_verdicts_pending.n }} awaiting a verdict: contracts you closed early, graded once the expiry arrives and the outcome is knowable.</p>
+    {% endif %}
+    <div class="watch-grid" style="margin-top:1rem;">
         {% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
         <div class="watch-block">
             <div class="wb-title">
@@ -238,7 +273,9 @@
 {% endfor %}{% endfor %}
 <div class="review-section">
     <div class="cal-section-head">
-        <div class="section-label" style="margin:0;">Daily Account &Delta;</div>
+        <div>
+            <h2 style="margin:0;font-size:1.15rem;font-weight:700;letter-spacing:-.01em;">Daily change</h2>
+        </div>
         {% if calendar_extra_weeks and calendar_extra_weeks > 0 %}
         <button type="button" id="cal-toggle-btn" class="cal-toggle-btn"
                 data-extra="{{ calendar_extra_weeks }}"
@@ -333,25 +370,24 @@
 {% endmacro %}
 {% if account_breakdown and account_breakdown.rows %}
 <div class="review-section">
-    <div class="section-label">Performance by Account</div>
-    <p class="section-sub">
-        Open positions plus anything closed since
-        {{ week_start.strftime('%a %-d') if week_start else 'this week' }}
-        &mdash; stock, options, and lifetime dividends for those rows.
-        Click an account for its full lifetime breakdown.
-    </p>
+    <div class="ov-head">
+        <div>
+            <h2>Performance by account</h2>
+            <p>Open positions plus anything closed since {{ week_start.strftime('%a %-d') if week_start else 'Monday' }} — stock, options, and lifetime dividends.</p>
+        </div>
+    </div>
     <div class="breakdown-wrap">
         <table class="breakdown-table">
             <thead>
                 <tr>
                     {# data-m="hide": collapsed on phones (tables.js). #}
-                    <th class="left sortable" data-sort="str">Account</th>
-                    <th class="sortable" data-sort="num">Stock</th>
-                    <th class="sortable" data-sort="num">Options</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Dividend</th>
-                    <th class="sortable" data-sort="num">Total</th>
-                    <th class="sortable" data-sort="num" data-m="hide">G/L %</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Annualized</th>
+                    <th class="left">Account</th>
+                    <th>Stock</th>
+                    <th>Options</th>
+                    <th data-m="hide">Dividend</th>
+                    <th>Total</th>
+                    <th data-m="hide">G/L %</th>
+                    <th data-m="hide">Annualized</th>
                 </tr>
             </thead>
             <tbody>
@@ -447,32 +483,25 @@
         </span>
     </div>
     <p class="section-sub">
-        Opened or closed since
+        Groups that opened or closed since
         {{ (trades_week_start or week_start).strftime('%a %b %-d') if (trades_week_start or week_start) else 'Monday' }}
         &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} still open.
-        One row per symbol. Fills on the session above (adds and trims on a position you already held) are listed under Trades — not only groups that opened or closed this week.
     </p>
     <details class="section-fine" style="margin:-.4rem 0 .8rem;">
         <summary>How this is computed</summary>
-        <p>
-            All of a symbol's contracts this week are netted into one row.
-            Closed rows show realized P&amp;L; open rows show unrealized G/L at
-            the latest snapshot. Add a tag (e.g. <code>earningsfollower</code>)
-            to any row to track a group of trades &mdash; tags roll up on the
-            Accounts and Positions pages.
-        </p>
+        <p>One row per symbol. Closed rows are realized P&amp;L; open rows are unrealized at the latest snapshot.</p>
     </details>
     <div class="breakdown-wrap ht-sticky">
         <table class="breakdown-table">
             <thead>
                 <tr>
                     {# data-m="hide": collapsed on phones (tables.js). #}
-                    <th class="left sortable" data-sort="str" data-m="hide">Account</th>
-                    <th class="left sortable" data-sort="str">Trade</th>
-                    <th class="left sortable" data-sort="str" data-m="hide">Strategy</th>
-                    <th class="sortable" data-sort="str" data-m="hide">Opened</th>
-                    <th class="left sortable" data-sort="str">Status</th>
-                    <th class="sortable" data-sort="num">Result</th>
+                    <th class="left" data-m="hide">Account</th>
+                    <th class="left">Trade</th>
+                    <th class="left" data-m="hide">Strategy</th>
+                    <th data-m="hide">Opened</th>
+                    <th class="left">Status</th>
+                    <th>Result</th>
                     <th class="left">Tags</th>
                 </tr>
             </thead>
