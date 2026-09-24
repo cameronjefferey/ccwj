@@ -1102,7 +1102,7 @@ working pipeline look like 3% coverage. `data_reliable` is density ≥40%
 with ≥2 snapshots (`greatest(days_in_trade,1)` so same-day 0DTE marks
 count). Surfaces: Trader Profile "Execution review" card (gated ≥5 graded
 contracts — the "after X days of data" promise), Position review mirror
-sentences (≥2 graded), and day-row verdicts ("After the fact: …")
+sentences (≥2 graded), and day-row verdicts (the review shows them as "In hindsight: …"; the stored sentence still starts "After the fact:")
 appended to the completing close's headline via the `exit_notes`
 param of `build_position_story`. Copy register: neutral evidence, counts
 and dollars, never advice — every early close also removed risk, and the

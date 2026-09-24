@@ -1085,6 +1085,594 @@ def _phrase_split(symbolless_ratio, before, after):
             f"(position value unchanged).")
 
 
+# ── Column layout for the day-by-day review ─────────────────────────────
+# Headlines stay the source of truth (chart tooltips, mirror, tests). The
+# review renders each one as a card in the Options or Shares column. Cash
+# is the day's fills, separate from the card. Parsing is presentation-only:
+# it must not invent a maneuver the sentence didn't already name.
+
+_MONEY_RE = r"\$[\d,]+(?:\.\d+)?"
+
+
+def _comma_counts(text):
+    """'1500 shares' → '1,500 shares'. Leaves prices ($15.36, $23,040) alone."""
+    if not text:
+        return text
+    return re.sub(
+        r"(?<![\d$,.\-])\d{4,}(?!\d)",
+        lambda m: f"{int(m.group(0)):,}",
+        text,
+    )
+
+
+def _card(lane, title, metric=None, tone=None, pill=None, pill_style=None,
+          detail=None, note=None, account=None):
+    title = _comma_counts(re.sub(r"\s+", " ", (title or "").strip()).rstrip("."))
+    detail = _comma_counts((detail or "").strip().rstrip(".")) or None
+    if metric and "$" not in metric and "+" not in metric:
+        metric = _comma_counts(metric)
+    return {
+        "lane": lane,
+        "title": title,
+        "metric": metric,
+        "tone": tone or "",
+        "pill": pill,
+        "pill_style": pill_style,
+        "detail": detail,
+        "note": note,
+        "account": account,
+    }
+
+
+def _plus(raw):
+    """'$1,137' → '+$1,137'. Already-signed values pass through."""
+    raw = (raw or "").strip()
+    if not raw:
+        return raw
+    if raw[0] in "+-−":
+        return raw
+    return f"+{raw}"
+
+
+def _minus(raw):
+    raw = (raw or "").strip().lstrip("+")
+    if raw.startswith("-") or raw.startswith("−"):
+        return "-$" + raw.lstrip("-−$")
+    if raw.startswith("$"):
+        return f"-{raw}"
+    return f"-${raw}"
+
+
+def _stance_pill(stance):
+    words = (stance or "").strip()
+    if not words:
+        return None
+    return " ".join(w[:1].upper() + w[1:] for w in words.split())
+
+
+def _strip_account(sentence, labels):
+    """Pull a multi-account suffix (' — Cameron Investment.') off a headline.
+
+    The suffix is only stripped when it matches a known display label, so a
+    sentence's own em dash ('— $2,137 at risk') stays part of the card.
+    """
+    for lab in sorted((labels or []), key=len, reverse=True):
+        suffix = f" — {lab}."
+        if sentence.endswith(suffix):
+            body = sentence[: -len(suffix)].rstrip()
+            if body and not body.endswith("."):
+                body += "."
+            return body, lab
+    return sentence, None
+
+
+def _split_extra(sentence):
+    """Separate a follow-on bookkeeping sentence ('Wheel complete: …')."""
+    parts = sentence.split(". ")
+    if len(parts) == 1:
+        return sentence, ""
+    head = parts[0]
+    if not head.endswith("."):
+        head += "."
+    return head, ". ".join(parts[1:])
+
+
+def _cash_clause(clause):
+    """Turn a maneuver's cash tail into (metric, tone)."""
+    clause = (clause or "").strip().rstrip(".")
+    m = re.search(rf"collecting a net ({_MONEY_RE}) credit", clause)
+    if m:
+        return f"{_plus(m.group(1))} net credit", "pos"
+    m = re.search(rf"paying ({_MONEY_RE}) to reposition", clause)
+    if m:
+        return f"{_minus(m.group(1))} to reposition", "neg"
+    m = re.search(rf"putting ({_MONEY_RE}) at risk", clause)
+    if m:
+        return f"{m.group(1)} at risk", ""
+    if "even" in clause:
+        return "Even money", ""
+    return None, ""
+
+
+def _cards_for_sentence(sentence):
+    """Return one or two cards for a single headline, or None to keep walking."""
+    head, extra = _split_extra(sentence)
+
+    m = re.match(
+        rf"^(Rolled the .+?):\s*(.+?)\s*→\s*(.+?),\s*(.+)\.?$",
+        head,
+    )
+    if m:
+        metric, tone = _cash_clause(m.group(4))
+        card = _card(
+            "options", m.group(1), metric=metric, tone=tone,
+            pill=f"{m.group(2).strip()} → {m.group(3).strip()}",
+            pill_style="move",
+        )
+        if extra:
+            card["detail"] = extra.rstrip(".")
+        return [card]
+
+    m = re.match(r"^(Opened .+?):\s*(.+)$", head)
+    if m:
+        body = m.group(2).rstrip(".")
+        detail = body
+        metric, tone = None, ""
+        tail = re.search(
+            rf",\s*(collecting a net {_MONEY_RE} credit|putting {_MONEY_RE} at risk|even on cash)\.?$",
+            body,
+        )
+        if tail:
+            detail = body[: tail.start()].rstrip(" ,")
+            metric, tone = _cash_clause(tail.group(1))
+        card = _card("options", m.group(1), metric=metric, tone=tone, detail=detail)
+        if extra:
+            card["detail"] = ((card["detail"] + ". ") if card["detail"] else "") + extra.rstrip(".")
+        return [card]
+
+    m = re.match(rf"^(Bought .+?) — ({_MONEY_RE}) at risk \(([^)]+)\)\.?$", head)
+    if m:
+        return [_card(
+            "options", m.group(1), metric=f"{m.group(2)} at risk",
+            pill=_stance_pill(m.group(3)), pill_style="stance",
+        )]
+
+    m = re.match(rf"^(.+?) — a ({_MONEY_RE}) win on the contract\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric=f"{_plus(m.group(2))} on the contract", tone="pos")]
+
+    m = re.match(rf"^(.+?) — taking the ({_MONEY_RE}) loss\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric=f"{_minus(m.group(2))} on the contract", tone="neg")]
+
+    m = re.match(rf"^(.+?) — locking in ({_MONEY_RE}) of the premium\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric=f"{_plus(m.group(2))} of the premium", tone="pos")]
+
+    m = re.match(rf"^(.+?) — a net ({_MONEY_RE}) loss on the contract\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric=f"{_minus(m.group(2))} on the contract", tone="neg")]
+
+    m = re.match(rf"^(Sold .+?),\s*collecting ({_MONEY_RE})\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric=f"{_plus(m.group(2))} collected", tone="pos")]
+
+    m = re.match(rf"^(The .+? expired worthless) — you kept the full ({_MONEY_RE}) premium\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric=f"{_plus(m.group(2))} premium kept", tone="pos")]
+
+    m = re.match(rf"^(The .+? expired worthless) — the ({_MONEY_RE}) paid for it was lost\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric=f"{_minus(m.group(2))} lost", tone="neg")]
+
+    m = re.match(r"^(The .+? expired worthless) — premium fully earned\.?$", head)
+    if m:
+        return [_card("options", m.group(1), metric="Premium kept", tone="pos")]
+
+    m = re.match(r"^(The .+?) expired\.?$", head)
+    if m and "expired" not in m.group(1):
+        return [_card("options", f"{m.group(1)} expired")]
+
+    m = re.match(r"^Assigned on the (.+?):\s*(.+)\.?$", head)
+    if m:
+        rest = m.group(2).rstrip(".")
+        opt = _card("options", f"Assigned on the {m.group(1)}")
+        if ", starting a wheel" in rest:
+            rest = rest.split(", starting a wheel")[0].rstrip(" ,")
+            opt["detail"] = "Starting a wheel"
+        if extra:
+            opt["detail"] = ((opt["detail"] + ". ") if opt["detail"] else "") + extra.rstrip(".")
+        share_title = rest[:1].upper() + rest[1:] if rest else "Took delivery of the shares"
+        return [opt, _card("shares", share_title)]
+
+    m = re.match(rf"^Shares called away at ({_MONEY_RE}) on the (\w+)\.?$", head)
+    if m:
+        share = _card("shares", f"Shares called away at {m.group(1)}")
+        if extra:
+            share["detail"] = extra.rstrip(".")
+        return [
+            _card("options", f"The short {m.group(1)} {m.group(2)} was assigned"),
+            share,
+        ]
+
+    m = re.match(
+        rf"^Your short ({_MONEY_RE}) (call|put) was exercised — (.+?)\.?$",
+        head,
+    )
+    if m:
+        rest = m.group(3).rstrip(".")
+        opt = _card("options", f"The short {m.group(1)} {m.group(2)} was exercised")
+        if ", starting a wheel" in rest:
+            rest = rest.split(", starting a wheel")[0].rstrip(" ,")
+            opt["detail"] = "Starting a wheel"
+        if extra:
+            # Wheel-complete bookkeeping belongs with the shares leaving.
+            pass
+        share_title = rest[:1].upper() + rest[1:] if rest else "Shares settled"
+        share = _card("shares", share_title)
+        if extra:
+            share["detail"] = extra.rstrip(".")
+        return [opt, share]
+
+    m = re.match(r"^(Exercised the .+?) — converted into stock\.?$", head)
+    if m:
+        return [
+            _card("options", m.group(1)),
+            _card("shares", "Converted into stock"),
+        ]
+
+    m = re.match(rf"^Started the stock position:\s*(.+?)\s+\(({_MONEY_RE})\)\.?$", head)
+    if m:
+        return [_card("shares", f"Started the position: {m.group(1)}", metric=m.group(2))]
+
+    m = re.match(r"^Added (.+?) — now holding (.+)\.?$", head)
+    if m:
+        return [_card("shares", f"Added {m.group(1)}", metric=f"Now holding {m.group(2).rstrip('.')}")]
+
+    m = re.match(r"^Trimmed (.+?) — (.+?) remaining\.?$", head)
+    if m:
+        return [_card("shares", f"Trimmed {m.group(1)}", metric=f"{m.group(2)} remaining")]
+
+    m = re.match(r"^Sold the last (.+?) — stock position closed\.?$", head)
+    if m:
+        return [_card("shares", f"Sold the last {m.group(1)}", metric="Position closed")]
+
+    m = re.match(r"^Sold (.+?) — more than you held; now short (.+)\.?$", head)
+    if m:
+        return [_card(
+            "shares", f"Sold {m.group(1)}",
+            metric=f"Now short {m.group(2).rstrip('.')}",
+            detail="More than you held",
+        )]
+
+    m = re.match(rf"^Collected ({_MONEY_RE}) in dividends\.?$", head)
+    if m:
+        return [_card("shares", "Dividend", metric=_plus(m.group(1)), tone="pos")]
+
+    if head.startswith("Dividend reinvested"):
+        return [_card("shares", head.rstrip("."))]
+
+    if re.match(r"^A .+split:", head):
+        return [_card("shares", head.rstrip("."))]
+
+    if re.match(r"^Sold short [\d,]+ shares?\b", head) or re.match(r"^Sold [\d,.]+ shares?\b", head):
+        return [_card("shares", head.rstrip("."))]
+
+    return None
+
+
+def _fallback_card(sentence, account):
+    low = sentence.lower()
+    shareish = any(tok in low for tok in (
+        " share", "stock position", "dividend", "split", "called away",
+        "took delivery", "converted into stock", "sold short",
+    ))
+    return _card("shares" if shareish else "options", sentence.rstrip("."), account=account)
+
+
+def _fill_fallback_cards(events):
+    """A day the engine kept silent (a structure wing, before it is named).
+
+    Show the fill itself. Do not invent a strategy name — the completing
+    day already does that.
+    """
+    cards = []
+    for e in events or []:
+        kind = e.get("kind")
+        detail = (e.get("detail") or "").strip()
+        verb = e.get("verb") or "Fill"
+        if kind == "income":
+            amt = e.get("amount") or 0
+            metric = _plus(f"${abs(amt):,.2f}") if abs(amt) >= 0.01 else None
+            cards.append(_card("shares", "Dividend", metric=metric, tone="pos" if metric else ""))
+            continue
+        lane = "shares" if " sh" in f" {detail}" else "options"
+        cards.append(_card(lane, verb, detail=detail or None))
+    return cards
+
+
+def _layout_cash(item):
+    events = item.get("events") or []
+    fills = [e for e in events if e.get("kind") in ("buy", "sell")]
+    income = [
+        e for e in events
+        if e.get("kind") == "income" and abs(e.get("amount") or 0) >= 0.01
+    ]
+    amount = item.get("amount") or 0
+    if fills:
+        return "fills", len(fills)
+    if income:
+        return "income", len(income)
+    if abs(amount) >= 0.01:
+        return "cash", 0
+    return "none", 0
+
+
+def _hindsight(sentence):
+    body = re.sub(r"^After the fact:\s*", "", sentence, flags=re.I).strip()
+    body = body.replace(
+        "expired worthless — the roll was never tested",
+        "expired worthless, so the roll was never tested",
+    )
+    if body and not body.endswith("."):
+        body += "."
+    return f"In hindsight: {body}" if body else None
+
+
+def _remember(cards, produced, account):
+    for c in produced:
+        if account and not c.get("account"):
+            c["account"] = account
+        cards.append(c)
+
+
+def layout_story_items(items, account_labels=None):
+    """Attach option_cards, share_cards, and cash_mode to each event day.
+
+    Mutates ``items`` in place. Headlines are unchanged.
+    """
+    labels = [a for a in (account_labels or []) if a]
+    for item in items or []:
+        if item.get("type") != "day":
+            continue
+        cards = []
+        for raw in item.get("headlines") or []:
+            sentence, account = _strip_account(raw, labels)
+            if sentence.startswith("After the fact:"):
+                note = _hindsight(sentence)
+                host = cards[-1] if cards else None
+                if host is None:
+                    host = _card("options", "", account=account)
+                    cards.append(host)
+                host["note"] = note
+                if account and not host.get("account"):
+                    host["account"] = account
+                continue
+            if (
+                sentence.startswith("Wheel complete")
+                or "premium already collected" in sentence
+            ) and cards:
+                prev = cards[-1]
+                extra = sentence.rstrip(".")
+                prev["detail"] = ((prev["detail"] + ". ") if prev["detail"] else "") + extra
+                continue
+            produced = _cards_for_sentence(sentence)
+            if produced:
+                _remember(cards, produced, account)
+                continue
+            cards.append(_fallback_card(sentence, account))
+        if not cards:
+            cards = _fill_fallback_cards(item.get("events"))
+            # A suppressed structure wing is one account; leave account blank
+            # unless every fill shared a label we were given. Single-account
+            # reviews show the name in the header, not on the card.
+        mode, count = _layout_cash(item)
+        item["option_cards"] = [c for c in cards if c["lane"] == "options" and (c["title"] or c["note"])]
+        item["share_cards"] = [c for c in cards if c["lane"] == "shares" and (c["title"] or c["note"])]
+        item["cash_mode"] = mode
+        item["fill_count"] = count
+        label = item.get("label") or ""
+        if "," in label:
+            day, year = label.rsplit(",", 1)
+            item["label_day"] = day.strip()
+            item["label_year"] = year.strip()
+        else:
+            item["label_day"] = label
+            item["label_year"] = ""
+        # Delivery of assigned shares has a real cost on the swallowed fill.
+        _stamp_delivery_cost(item)
+    return items
+
+
+def _stamp_delivery_cost(item):
+    cost = 0.0
+    found = False
+    for e in item.get("events") or []:
+        detail = e.get("detail") or ""
+        if e.get("kind") == "buy" and " sh" in f" {detail}":
+            amt = e.get("amount") or 0.0
+            if abs(amt) >= 0.01:
+                cost += amt
+                found = True
+    if not found:
+        return
+    shown = f"${abs(cost):,.2f}" if abs(cost - round(cost)) >= 0.001 else f"${abs(cost):,.0f}"
+    for card in item.get("share_cards") or []:
+        title = (card.get("title") or "").lower()
+        if title.startswith("took delivery") and not card.get("metric"):
+            card["metric"] = shown
+
+
+def story_header(stats):
+    """Symbol-card kicker: trade-day count, span, and the accounts involved."""
+    if not stats or not stats.get("chapters"):
+        return None
+    span = ""
+    if stats.get("span_days", 0) >= 14:
+        span = _span_text(stats["span_days"])
+    accounts = []
+    seen = set()
+    for lab in stats.get("accounts") or []:
+        lab = (lab or "").strip()
+        if lab and lab not in seen:
+            seen.add(lab)
+            accounts.append(lab)
+    return {
+        "days": int(stats["chapters"]),
+        "span": span,
+        "accounts": accounts,
+    }
+
+
+def _iso_day(value):
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, date):
+        return value.isoformat()
+    if hasattr(value, "date"):
+        try:
+            return value.date().isoformat()
+        except (TypeError, ValueError):
+            pass
+    try:
+        return pd.to_datetime(value).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def close_pnl_by_day(frame, date_col, pnl_col):
+    """Sum a closed-leg frame's P&L by close date (ISO). Empty when absent."""
+    out = {}
+    if frame is None or getattr(frame, "empty", True):
+        return out
+    if date_col not in frame.columns or pnl_col not in frame.columns:
+        return out
+    for _, row in frame.iterrows():
+        iso = _iso_day(row.get(date_col))
+        if not iso:
+            continue
+        try:
+            pnl = float(row.get(pnl_col) or 0)
+        except (TypeError, ValueError):
+            continue
+        if pnl != pnl:  # NaN
+            continue
+        out[iso] = out.get(iso, 0.0) + pnl
+    return {k: round(v, 2) for k, v in out.items()}
+
+
+def _fmt_realized(pnl):
+    tone = "pos" if pnl > 0.005 else "neg" if pnl < -0.005 else ""
+    sign = "+" if pnl > 0.005 else "-" if pnl < -0.005 else ""
+    return f"{sign}${abs(pnl):,.2f} realized", tone
+
+
+def _option_terminal(card):
+    title = (card.get("title") or "").lower()
+    return (
+        title.startswith("assigned on")
+        or title.startswith("the short")
+        or title.startswith("exercised")
+        or "expired" in title
+    )
+
+
+def _share_terminal(card):
+    title = (card.get("title") or "").lower()
+    metric = (card.get("metric") or "").lower()
+    return (
+        title.startswith("shares called away")
+        or title.startswith("sold the last")
+        or metric == "position closed"
+    )
+
+
+def _stamp_realized(card, pnl):
+    if abs(pnl) < 0.01:
+        return False
+    if card.get("metric") and card.get("tone") in ("pos", "neg"):
+        return False
+    text, tone = _fmt_realized(pnl)
+    if card.get("metric") and not card.get("detail"):
+        card["detail"] = card["metric"]
+    card["metric"] = text
+    card["tone"] = tone
+    return True
+
+
+def _pnl_for_story_day(by_day, iso, used, window_days=5):
+    """P&L whose close date is this story day, or the broker line a few days later.
+
+    Option expiry is dated the contract's Friday in the warehouse; Schwab
+    often posts the exercise/assignment fill the next session. A card on
+    that later day is the same close. Two unlabeled closes in the window
+    are left unmatched so a dollar is never pinned on the wrong contract.
+    """
+    if not iso:
+        return None, None
+    if iso in by_day and iso not in used:
+        return iso, by_day[iso]
+    try:
+        target = date.fromisoformat(iso)
+    except ValueError:
+        return None, None
+    near = []
+    for key, pnl in by_day.items():
+        if key in used:
+            continue
+        try:
+            delta = (target - date.fromisoformat(key)).days
+        except ValueError:
+            continue
+        if 0 < delta <= window_days:
+            near.append((delta, key, pnl))
+    if len(near) != 1:
+        return None, None
+    _delta, key, pnl = near[0]
+    return key, pnl
+
+
+def attach_realized_pnl(items, option_pnl_by_day=None, equity_pnl_by_day=None):
+    """Fill a terminal card's dollar from closed-leg P&L when the sentence has none.
+
+    Assignment and exercise sentences name the maneuver without the ledger
+    result. Rolls and outright closes already carry their own figure, and
+    those are left alone. A day with two unlabeled terminal cards is left
+    alone too — splitting one total across them would mis-attribute it.
+    """
+    option_pnl_by_day = option_pnl_by_day or {}
+    equity_pnl_by_day = equity_pnl_by_day or {}
+    used_opt, used_eq = set(), set()
+    for item in items or []:
+        if item.get("type") != "day":
+            continue
+        iso = item.get("date_iso")
+        opt_cards = [
+            c for c in (item.get("option_cards") or [])
+            if _option_terminal(c)
+            and not (c.get("metric") and c.get("tone") in ("pos", "neg"))
+        ]
+        if len(opt_cards) == 1:
+            key, pnl = _pnl_for_story_day(option_pnl_by_day, iso, used_opt)
+            if key is not None and _stamp_realized(opt_cards[0], pnl):
+                used_opt.add(key)
+        sh_cards = [
+            c for c in (item.get("share_cards") or [])
+            if _share_terminal(c)
+            and not (c.get("metric") and c.get("tone") in ("pos", "neg"))
+        ]
+        if len(sh_cards) == 1:
+            key, pnl = _pnl_for_story_day(equity_pnl_by_day, iso, used_eq)
+            if key is not None and _stamp_realized(sh_cards[0], pnl):
+                used_eq.add(key)
+    return items
+
+
 def build_position_story(
     trades_df,
     div_df,
@@ -1293,6 +1881,16 @@ def build_position_story(
             date.fromisoformat(day_items[-1]["date_iso"])
             - date.fromisoformat(day_items[0]["date_iso"])
         ).days
+
+    account_labels = []
+    seen_labels = set()
+    for f in fills:
+        lab = ((label_map or {}).get(f["state_key"]) or f.get("account") or "").strip()
+        if lab and lab not in seen_labels:
+            seen_labels.add(lab)
+            account_labels.append(lab)
+    stats["accounts"] = account_labels
+    layout_story_items(story_items, account_labels)
 
     return story_items, story_markers, stats
 

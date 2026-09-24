@@ -497,6 +497,41 @@ def _unique_open_strategy_labels(strategy_rows):
     return seen
 
 
+def _story_realized_footer(breakdown_rows):
+    """Closed P&L for the review footer, same figures as Breakdown by Type.
+
+    Returns None when nothing has been realized, so an open-only position
+    does not grow a row of zeros.
+    """
+    options = shares = dividends = 0.0
+    share_label = "shares"
+    seen = False
+    for row in breakdown_rows or []:
+        kind = row.get("type")
+        realized = float(row.get("realized") or 0)
+        if kind == "Options":
+            options = realized
+            seen = True
+        elif kind in ("Equity", "Crypto"):
+            shares = realized
+            seen = True
+            if kind == "Crypto":
+                share_label = "crypto"
+        elif kind == "Dividends":
+            dividends = realized
+    if not seen:
+        return None
+    if abs(options) < 0.005 and abs(shares) < 0.005 and abs(dividends) < 0.005:
+        return None
+    return {
+        "options": round(options, 2),
+        "shares": round(shares, 2),
+        "share_label": share_label,
+        "dividends": round(dividends, 2),
+        "combined": round(options + shares + dividends, 2),
+    }
+
+
 def _breakdown_footer(breakdown_rows):
     """Realized, unrealized, and count for the Breakdown-by-Type total."""
     realized = 0.0
@@ -1644,7 +1679,13 @@ POSITION_SPLITS_QUERY = """
 # covered calls, assignments, kept premium) + interludes narrated from the
 # daily-mark chart series. Built entirely from frames the page already
 # fetches — no extra queries.
-from app.position_story import build_position_story, compose_mirror  # noqa: E402
+from app.position_story import (  # noqa: E402
+    attach_realized_pnl,
+    build_position_story,
+    close_pnl_by_day,
+    compose_mirror,
+    story_header,
+)
 from app.execution_quality import (  # noqa: E402
     POSITION_EXECUTION_QUERY,
     exit_notes as _execution_exit_notes,
@@ -3230,6 +3271,12 @@ def position_detail(symbol):
                 exit_notes=_exit_notes,
                 label_map=_tenant_label_map,
             )
+            attach_realized_pnl(
+                story_days,
+                close_pnl_by_day(closed_legs_df, "close_date", "total_pnl"),
+                close_pnl_by_day(closed_equity_df, "close_date", "realized_pnl"),
+            )
+            story_head = story_header(story_stats)
         # The mirror prologue: how this position was traded + where it
         # sits in the trader's book. Rank comes from the tab-strip rollup
         # (already tenant-scoped) so the mirror needs no extra query.
@@ -3249,6 +3296,7 @@ def position_detail(symbol):
     except Exception as exc:
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
         story_days, story_markers, story_mirror = [], [], []
+        story_head = None
 
     # _stats set once near the top (right after the initial query batch);
     # reused here and after render_template below.
@@ -3283,6 +3331,9 @@ def position_detail(symbol):
         story_days=story_days,
         story_markers_json=json.dumps(story_markers),
         story_mirror=story_mirror,
+        story_header=story_head,
+        story_realized=_story_realized_footer(breakdown_rows),
+        story_share_label="Coins" if _is_crypto else "Shares",
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,
