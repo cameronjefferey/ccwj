@@ -252,7 +252,7 @@ def send_email(
 # HTML rendering
 # ---------------------------------------------------------------------------
 
-_ACCENT = "#6d5dfc"
+_ACCENT = "#b87333"
 
 
 def _wrap_html(*, title: str, inner_html: str, unsubscribe_url: Optional[str] = None) -> str:
@@ -275,7 +275,7 @@ def _wrap_html(*, title: str, inner_html: str, unsubscribe_url: Optional[str] = 
         'style="background:#f4f5f7;padding:24px 0;"><tr><td align="center">'
         '<table role="presentation" width="560" cellpadding="0" cellspacing="0" '
         'style="background:#ffffff;border-radius:12px;overflow:hidden;'
-        'box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
+        'border:1px solid #e5e7eb;">'
         f'<tr><td style="background:{_ACCENT};padding:18px 28px;">'
         '<span style="color:#fff;font-size:18px;font-weight:700;">HappyTrader</span></td></tr>'
         f'<tr><td style="padding:28px;">'

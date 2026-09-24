@@ -1,6 +1,6 @@
 <style>
     .review-hero {
-        background: #15182b;
+        background: #1a1a2e;
         border-radius: 20px;
         padding: 1.35rem 1.6rem 1.25rem;
         color: #fff;
@@ -264,7 +264,7 @@
         display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap;
     }
     .snapshot-table a.acct-link { display: inline; text-decoration: none; }
-    .snapshot-table a.acct-link:hover { color: #2563eb; }
+    .snapshot-table a.acct-link:hover { color: var(--color-mirror-ink); }
     .acct-rename {
         font-size: .68rem; font-weight: 500; color: var(--ht-muted);
         text-decoration: none; white-space: nowrap;
@@ -500,7 +500,7 @@
         .cal-day { padding: .28rem .04rem; min-height: 2.35rem; }
         .cal-day .cal-day-num { font-size: .6rem; }
     }
-    .cal-day.today { outline: 2px solid #2563eb; }
+    .cal-day.today { outline: 2px solid var(--color-mirror-ink); }
     /* Time-machine: past cells are links to the day-detail page. */
     a.cal-day-link { text-decoration: none; }
     a.cal-day-link:hover { outline: 2px solid #94a3b8; cursor: pointer; }
@@ -524,7 +524,7 @@
         background: transparent; border: 0; padding: .25rem 0;
         font-size: .68rem; font-weight: 600;
         text-transform: uppercase; letter-spacing: .4px;
-        color: #2563eb; cursor: pointer; white-space: nowrap;
+        color: var(--color-mirror-ink); cursor: pointer; white-space: nowrap;
     }
     .cal-toggle-btn:hover { color: #1d4ed8; text-decoration: underline; }
 
@@ -562,7 +562,7 @@
     .breakdown-table .row-symbol {
         font-weight: 700; color: var(--ht-ink); text-decoration: none;
     }
-    .breakdown-table .row-symbol:hover { color: #2563eb; }
+    .breakdown-table .row-symbol:hover { color: var(--color-mirror-ink); }
     .breakdown-table .row-company {
         font-size: .7rem; color: var(--ht-muted); font-weight: 400; margin-top: .1rem;
     }
@@ -606,7 +606,7 @@
     .tt-verb.sell { background: #fef2f2; color: #b91c1c; }
     .tt-verb.lifecycle { background: #f5f3ff; color: #6d28d9; }
     .tt-sym { font-weight: 700; color: var(--ht-ink); text-decoration: none; }
-    .tt-sym:hover { color: #2563eb; }
+    .tt-sym:hover { color: var(--color-mirror-ink); }
     .tt-empty { color: var(--ht-faint); font-size: .9rem; padding: .15rem 0; }
     .tt-cc { margin: .7rem 0 0; }
     .tt-cc-heading {
@@ -622,8 +622,8 @@
     .tw-tag-chips { display:flex; flex-wrap:wrap; gap:3px; }
     .tw-tag-chip { display:inline-flex; align-items:center; gap:3px; padding:1px 7px;
         font-size:.68rem; font-weight:600; border-radius:999px;
-        background:rgba(99,102,241,.12); color:#4f46e5; transition:opacity .15s ease; }
-    .tw-tag-x { border:none; background:none; color:#4f46e5; cursor:pointer;
+        background:rgba(184,115,51,.14); color:var(--color-mirror-ink); transition:opacity .15s ease; }
+    .tw-tag-x { border:none; background:none; color:var(--color-mirror-ink); cursor:pointer;
         font-size:.8rem; line-height:1; padding:0; }
     .tw-tag-x:hover { color:#dc2626; }
     .tw-tag-add { display:inline-flex; align-items:center; gap:4px; }
@@ -631,8 +631,8 @@
     .tw-tag-btn { height:26px; padding:0 8px; font-size:.72rem; line-height:1; }
     .tw-tag-cell.tw-tag-ok  { background:rgba(34,197,94,.14); }
     .tw-tag-cell.tw-tag-err { background:rgba(220,38,38,.14); }
-    [data-bs-theme="dark"] .tw-tag-chip { background:rgba(129,140,248,.18); color:#c7d2fe; }
-    [data-bs-theme="dark"] .tw-tag-x { color:#c7d2fe; }
+    [data-bs-theme="dark"] .tw-tag-chip { background:rgba(224,181,106,.16); color:var(--color-mirror-ink); }
+    [data-bs-theme="dark"] .tw-tag-x { color:var(--color-mirror-ink); }
     @media (max-width: 480px) {
         .tt-table { font-size: .84rem; table-layout: fixed; }
         .tt-table td { padding: .4rem .3rem; }
@@ -641,7 +641,7 @@
         .tt-muted { word-break: break-all; }
         .tt-verb { white-space: normal; }
     }
-    [data-bs-theme="dark"] .tt-table td { border-bottom-color: #1f2a3f; }
+    [data-bs-theme="dark"] .tt-table td { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }
     [data-bs-theme="dark"] .tt-verb.sell { background: #450a0a; color: #fca5a5; }
     [data-bs-theme="dark"] .tt-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
@@ -749,7 +749,7 @@
     [data-bs-theme="dark"] .ov-mover-col .mover-row { border-top-color: rgba(255,255,255,.08); }
 
     .ov-held { text-align: center; font-size: .95rem; }
-    .ov-held a { color: #4b3fd1; font-weight: 600; margin-left: .35rem; }
+    .ov-held a { color: var(--color-mirror-ink); font-weight: 600; margin-left: .35rem; }
 
     .ov-rad { overflow-x: auto; }
     .ov-tl { min-width: 900px; }

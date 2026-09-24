@@ -3,7 +3,7 @@
 {% block head %}
 <style>
     .pos-hero {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        background: #1a1a2e;
         border-radius: 16px;
         padding: 2.5rem;
         color: #fff;
@@ -30,7 +30,7 @@
         background: #fff; border-radius: 16px;
         box-shadow: 0 2px 16px rgba(0,0,0,.05);
     }
-    [data-bs-theme="dark"] .narrative-card { background: #151e30; }
+    [data-bs-theme="dark"] .narrative-card { background: #1c1e26; }
     .kpi-mini { text-align: center; }
     .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
     .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
@@ -509,8 +509,8 @@
 <style>
   .leg-tag-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px;
       font-size:.72rem; font-weight:600; border-radius:999px;
-      background:rgba(99,102,241,.12); color:#4f46e5; }
-  .leg-tag-x { border:none; background:none; color:#4f46e5; cursor:pointer;
+      background:rgba(184,115,51,.14); color:var(--color-mirror-ink); }
+  .leg-tag-x { border:none; background:none; color:var(--color-mirror-ink); cursor:pointer;
       font-size:.9rem; line-height:1; padding:0; }
   .leg-tag-x:hover { color:#dc2626; }
   .leg-tag-input { max-width:150px; height:30px; font-size:.78rem; }
@@ -1422,7 +1422,7 @@
                     {
                         label: 'Options',
                         data: chartData.options,
-                        borderColor: '#6f42c1',
+                        borderColor: '#b87333',
                         tension: 0,
                         pointRadius: 0,
                         pointHitRadius: 6,

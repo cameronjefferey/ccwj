@@ -281,8 +281,8 @@ def _base_url() -> str:
 # Products or Prices (that would touch what customers are charged).
 _CHECKOUT_BRANDING = {
     "display_name": "HappyTrader",
-    "background_color": "#0f172a",
-    "button_color": "#2563eb",
+    "background_color": "#1a1a2e",
+    "button_color": "#b87333",
     "border_style": "rounded",
 }
 

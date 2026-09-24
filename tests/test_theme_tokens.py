@@ -1,8 +1,8 @@
 """Daily Review contrast is a theme issue, not a single hex.
 
-Light-mode ink (#0f172a) on a dark card and dark-mode muted (#94a3b8)
-on a white card are the same bug: a color that is correct in only one
-theme. Tokens on <html data-bs-theme> flip both.
+Light-mode ink on a dark card and dark-mode muted on a white card are
+the same bug: a color that is correct in only one theme. Tokens on
+<html data-bs-theme> flip both.
 """
 from pathlib import Path
 
@@ -17,8 +17,8 @@ def test_base_defines_paired_theme_tokens():
     # Dark values live on the attribute selector so they inherit.
     dark_idx = src.index('[data-bs-theme="dark"]')
     dark_block = src[dark_idx:dark_idx + 800]
-    assert "--ht-ink: #e2e8f0" in dark_block
-    assert "--ht-surface: #151e30" in dark_block
+    assert "--ht-ink: #f4f0ea" in dark_block
+    assert "--ht-surface: #1c1e26" in dark_block
 
 
 def test_daily_review_identity_text_uses_tokens():
@@ -53,3 +53,39 @@ def test_snapshot_table_numeric_columns_line_up():
 def test_day_detail_muted_uses_token():
     src = (ROOT / "app/templates/day_detail.html").read_text()
     assert ".dd-muted { color: var(--ht-muted);" in src
+
+
+def test_brand_fonts_and_copper_accent_not_inter_or_bootstrap_purple():
+    """Sep 2026 de-AI pass: Public Sans + Plex, copper accent, flat navy."""
+    base = (ROOT / "app/templates/base.html").read_text()
+    skeleton = (ROOT / "app/templates/_skeleton.html").read_text()
+    landing = (ROOT / "app/templates/landing.html").read_text()
+
+    assert "family=Inter" not in base
+    assert "font-family: \"Inter\"" not in base
+    assert "font-family: Inter" not in skeleton
+    assert "family=Public+Sans" in base
+    assert "family=IBM+Plex+Mono" in base
+    assert "Public Sans" in base
+    assert "IBM Plex Mono" in base
+    assert "Public Sans" in skeleton
+
+    assert "--color-mirror: #6f42c1" not in base
+    assert "--color-mirror: #b87333" in base
+    assert "--color-mirror: #e0b56a" in base
+    assert "#7c3aed" not in base
+    assert "linear-gradient(135deg, #1a1a2e 0%, #16213e" not in base
+    assert "--nav-bg: #1a1a2e" in base
+    assert "background: #f4f5f7" in base
+    assert "background: #f7f5f2" not in base
+    assert "--ht-surface: #ffffff" in base
+    assert "--ht-surface: #fffcf8" not in base
+
+    assert "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" not in landing
+    assert "background: #1a1a2e" in landing
+    assert "font-weight: 800" not in landing.split(".landing-hero h1")[1].split("}")[0]
+
+    # Strategy swatches are data colors. CSP / PMCC still share #6f42c1;
+    # that is not the brand accent and must not be "fixed" to copper.
+    positions = (ROOT / "app/templates/positions.html").read_text()
+    assert "Cash-Secured Put" in positions and "#6f42c1" in positions
