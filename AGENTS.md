@@ -188,8 +188,9 @@ callers don't break.
 
 What's working:
 - Session hero: brand and the Group / Account filters sit in the dark
- bar (the pattern to roll out site-wide; the global nav stays until
- then). Date of the close, then total value, the last close's move
+ bar (same bar on Today, Positions, Accounts, Strategies, Sectors,
+ Trader Profile, Position Detail, Earnings, and Insights; the global
+ nav stays until that header replaces it). Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
  This week, and percent invested. A one-line takeaway only claims what
  those numbers and the snapshot benchmark rows support. Pills name the

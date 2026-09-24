@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .pos-hero {
         background: #1a1a2e;
@@ -184,7 +185,18 @@
 {% endif %}
 
 {# ── Hero ── #}
-<div class="pos-hero">
+<div class="review-hero pos-hero">
+    <div class="ov-bar">
+        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+        {% if (accounts|length > 1 and not (account_toggles and account_toggles|length > 1)) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% for _leg in request.args.getlist('leg') %}
+            <input type="hidden" name="leg" value="{{ _leg }}">
+            {% endfor %}
+            {% include "_account_scope_filters.html" %}
+        </form>
+        {% endif %}
+    </div>
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <h1>{{ symbol }}</h1>
@@ -251,23 +263,6 @@
         {% endif %}
     </div>
 
-    {# When a symbol is traded across multiple accounts the grouped
-       account-toggle bar below supersedes this single-select dropdown.
-       Keep the dropdown only for the single-account / no-toggle case
-       (e.g. picking an account that hasn't traded this symbol). #}
-    {% if accounts|length > 1 and not (account_toggles and account_toggles|length > 1) %}
-    <form method="get" class="filter-bar mt-3">
-        {% with account_select_extra_class='d-inline-block', account_select_extra_style='max-width:220px; background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2)' %}
-        {% include "_account_scope_filters.html" %}
-        {% endwith %}
-    </form>
-    {% elif account_groups %}
-    <form method="get" class="filter-bar mt-3">
-        {% with account_select_extra_class='d-inline-block', account_select_extra_style='max-width:220px; background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2)' %}
-        {% include "_account_scope_filters.html" %}
-        {% endwith %}
-    </form>
-    {% endif %}
 </div>
 
 {# ── Position Narrative (open = snapshot; history = all trades) ── #}

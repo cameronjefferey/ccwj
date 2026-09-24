@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     /* CSS class names are legacy internal selectors; page copy uses
        sector / subsector terminology. */
@@ -118,7 +119,18 @@
 
 {% block content %}
 
-<div class="ind-hero">
+<div class="review-hero ind-hero">
+    <div class="ov-bar">
+        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% include "_account_scope_filters.html" %}
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('sectors') }}">Reset</a>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
     <div>
         <h1>Sectors</h1>
         <p class="lede">How your trading breaks down by sector. Click a sector to see the specific subsectors you've traded inside it.</p>
@@ -169,15 +181,6 @@
     </div>
 </div>
 {% else %}
-
-{% if (accounts and accounts|length > 1) or account_groups %}
-<form method="get" class="filter-bar">
-    {% include "_account_scope_filters.html" %}
-    {% if scope_is_filtered %}
-    <a class="filter-reset" href="{{ url_for('sectors') }}">Reset</a>
-    {% endif %}
-</form>
-{% endif %}
 
 <div class="sec-grid">
     {% for s in sector_rows %}

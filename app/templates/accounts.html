@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .chart-wrapper {
         background: #fff;
@@ -35,7 +36,19 @@
 {% endblock %}
 
 {% block content %}
-<div class="acct-hero">
+<div class="review-hero acct-hero">
+    <div class="ov-bar">
+        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% include "_account_scope_filters.html" %}
+            <input type="hidden" name="range" value="{{ selected_range or 'ALL' }}">
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('accounts') }}">Reset</a>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
     <h1>Account performance</h1>
     <p class="lede">A side-by-side view of every account you've connected &mdash; current value, what's invested, and how realized vs unrealized P&amp;L is trending over time.</p>
 </div>
@@ -70,16 +83,6 @@
     <p class="mb-0 mt-2 small">Refresh in a minute, or try <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync">syncing your broker</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
 </div>
 {% else %}
-
-{# ── Filters ──────────────────────────────────────────────────────── #}
-{% if (accounts and accounts|length > 1) or account_groups %}
-<form method="get" class="filter-bar">
-    {% include "_account_scope_filters.html" %}
-    {% if scope_is_filtered %}
-    <a class="filter-reset" href="{{ url_for('accounts') }}">Reset</a>
-    {% endif %}
-</form>
-{% endif %}
 
 {# ── Time frame ────────────────────────────────────────────────────────
    Buttons are <a> links (bookmarkable + no-JS fallback) but JS intercepts the

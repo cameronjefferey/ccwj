@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .fit-hero {
         background: #1a1a2e;
@@ -472,7 +473,18 @@
 
 {% include "_history_window_note.html" %}
 
-<div class="fit-hero">
+<div class="review-hero fit-hero">
+    <div class="ov-bar">
+        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            <input type="hidden" name="view" value="fit">
+            {% if drill_sector %}<input type="hidden" name="sector" value="{{ drill_sector }}">{% endif %}
+            {% if dim %}<input type="hidden" name="dim" value="{{ dim }}">{% endif %}
+            {% include "_account_scope_filters.html" %}
+        </form>
+        {% endif %}
+    </div>
     <h1>Strategy fit</h1>
     <p class="lede">Which of your strategies actually have edge across {{ dim_label_plural or 'sectors' }}? Each cell shows how your real trades performed.</p>
     {% if grand_total and grand_total.num_trades %}
@@ -651,15 +663,6 @@
             </div>
         </div>
     </div>
-
-    {% if (accounts and accounts|length > 1) or account_groups %}
-    <form method="get" class="filter-bar" style="margin: 0;">
-        <input type="hidden" name="view" value="fit">
-        <input type="hidden" name="sector" value="{{ drill_sector }}">
-        <input type="hidden" name="dim" value="{{ dim }}">
-        {% include "_account_scope_filters.html" %}
-    </form>
-    {% endif %}
 
     {% if dim == 'subsector' %}
     <a class="btn btn-sm btn-outline-secondary"
