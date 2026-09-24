@@ -726,6 +726,49 @@ def test_exercise_realized_follows_a_later_broker_fill():
     assert items[0]["share_cards"][0]["metric"] == "+$11,459.75 realized"
 
 
+def test_realized_is_not_stamped_when_two_contracts_closed_on_expiry_day():
+    """A Monday assignment must not inherit Friday's multi-contract net."""
+    from app.position_story import attach_realized_pnl, close_pnl_by_day
+
+    closed = pd.DataFrame([
+        {
+            "tenant_id": "t-1",
+            "account": "IRA",
+            "trade_symbol": "XYZ 260918C00100000",
+            "close_date": date(2026, 9, 18),
+            "total_pnl": 12000.0,
+        },
+        {
+            "tenant_id": "t-1",
+            "account": "IRA",
+            "trade_symbol": "XYZ 260918P00090000",
+            "close_date": date(2026, 9, 18),
+            "total_pnl": -9500.0,
+        },
+    ])
+    by_day = close_pnl_by_day(
+        closed,
+        "close_date",
+        "total_pnl",
+        grain_cols=("tenant_id", "account", "trade_symbol"),
+    )
+    assert by_day == {"2026-09-18": None}
+
+    items = [{
+        "type": "day",
+        "date_iso": "2026-09-21",
+        "option_cards": [{
+            "title": "The short $100 call was exercised",
+            "metric": None,
+            "tone": "",
+            "detail": None,
+        }],
+        "share_cards": [],
+    }]
+    attach_realized_pnl(items, by_day, {})
+    assert items[0]["option_cards"][0]["metric"] is None
+
+
 def test_zero_close_does_not_stamp_a_realized_chip():
     from app.position_story import attach_realized_pnl
 

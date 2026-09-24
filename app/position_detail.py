@@ -3273,8 +3273,18 @@ def position_detail(symbol):
             )
             attach_realized_pnl(
                 story_days,
-                close_pnl_by_day(closed_legs_df, "close_date", "total_pnl"),
-                close_pnl_by_day(closed_equity_df, "close_date", "realized_pnl"),
+                close_pnl_by_day(
+                    closed_legs_df,
+                    "close_date",
+                    "total_pnl",
+                    grain_cols=("tenant_id", "account", "trade_symbol"),
+                ),
+                close_pnl_by_day(
+                    closed_equity_df,
+                    "close_date",
+                    "realized_pnl",
+                    grain_cols=("tenant_id", "account", "session_id"),
+                ),
             )
             story_head = story_header(story_stats)
         # The mirror prologue: how this position was traded + where it

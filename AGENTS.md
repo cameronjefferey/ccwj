@@ -1383,7 +1383,11 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   required to keep running-share state honest across pre/post-split
   fill units), assignment/exercise voice (short vs long inferred from
   tracked state or the same-day mechanical share fill at the strike,
-  which is swallowed rather than double-narrated). Between trade days
+  which is swallowed rather than double-narrated). Assignment/exercise
+  cards receive a realized-P&L chip only when exactly one closed
+  contract/session owns the matched warehouse close date; multi-close
+  dates stay blank rather than assigning the day's net to one event.
+  Between trade days
   it narrates INTERLUDES from the daily-mark chart series — "A quiet 13
   weeks: +$3,434 with no trades placed" — the data only HappyTrader has
   (per-day option marks), plus "no activity / fully out of the position"
