@@ -318,7 +318,7 @@
                    href="{{ scoped_url('day_detail', day_str=c.date.isoformat(),
                                     account=selected_account or None,
                                     tenant=selected_tenant,
-                                    tenants=selected_tenants) }}"
+                                    tenants=selected_tenants, _anchor='day-review') }}"
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}

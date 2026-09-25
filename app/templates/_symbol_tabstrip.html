@@ -267,7 +267,7 @@
             {% set _account = s.account or '' %}
             {% if _mode == 'navigate' %}
             <a class="sym-tab {{ 'active' if _is_active }}"
-               href="{{ _href_base }}{{ s.symbol|urlencode }}{{ _href_suffix }}"
+               href="{{ _href_base }}{{ s.symbol|urlencode }}{{ _href_suffix }}#{{ _strip_id }}"
                role="tab"
                aria-selected="{{ 'true' if _is_active else 'false' }}"
                data-symbol="{{ s.symbol }}"
@@ -347,6 +347,29 @@
     /* Wait one frame so layout has settled. */
     requestAnimationFrame(scrollActiveIntoView);
 
+    /* Keep the section already on screen (chart, legs, accounts).
+       A symbol change is a new URL; without a fragment the browser
+       opens it at the top. */
+    function sectionHash() {
+        var ids = ['position-chart', 'position-legs', 'position-accounts', strip.id];
+        var nav = 72;
+        var pick = strip.id;
+        var best = 1e9;
+        ids.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var top = el.getBoundingClientRect().top;
+            if (top > nav + 40) return;
+            if (top <= -el.offsetHeight) return;
+            var score = nav - top;
+            if (score < best) {
+                best = score;
+                pick = id;
+            }
+        });
+        return pick;
+    }
+
     /* ── Activate a tab (mode-dependent) ──────────────────────── */
     function activateBySymbol(symbol, opts) {
         opts = opts || {};
@@ -354,7 +377,7 @@
         const tab = tabs.find(t => t.dataset.symbol === symbol);
         if (!tab) return;
         if (mode === 'navigate') {
-            window.location.href = hrefBase + encodeURIComponent(symbol) + hrefSfx;
+            window.location.href = hrefBase + encodeURIComponent(symbol) + hrefSfx + '#' + sectionHash();
             return;
         }
         /* swap mode: parent page provides window.symbolTabSwap(symbol) */
@@ -411,7 +434,7 @@
         if (next) {
             const sym = next.dataset.symbol;
             if (mode === 'navigate') {
-                window.location.href = hrefBase + encodeURIComponent(sym) + hrefSfx;
+                window.location.href = hrefBase + encodeURIComponent(sym) + hrefSfx + '#' + sectionHash();
             } else {
                 activateBySymbol(sym);
             }

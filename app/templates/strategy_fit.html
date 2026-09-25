@@ -144,7 +144,7 @@
     .callouts-card .pair .pnl-big.pos { color: #28c08a; }
     .callouts-card .pair .pnl-big.neg { color: #f0556d; }
 
-    .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; }
+    .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; scroll-margin-top: 4.5rem; }
     .fit-controls label.lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: .25rem; display: block; }
 
     .metric-toggle {
@@ -623,21 +623,21 @@
 {% endif %}
 
 {# ── Controls: dimension switcher + metric toggle + visibility ── #}
-<div class="fit-controls">
+<div class="fit-controls" id="fit-controls">
     {# "Slice by" dimension switcher. Subsector isn't a top-level option —
        it's reached by drilling a Sector cell — so we surface it here only
        when the user is currently in subsector-drill mode. #}
     <div>
         <label class="lblh">Slice by</label>
         <div class="metric-toggle" id="dimSwitcher">
-            <a href="{{ scoped_url('strategies', view='fit', dim='sector') }}"
+            <a href="{{ scoped_url('strategies', view='fit', dim='sector', _anchor='fit-controls') }}"
                class="{% if dim == 'sector' %}active{% endif %}">Sector</a>
             {% if dim == 'subsector' %}
             <a href="#" class="active" aria-current="page">Subsector</a>
             {% endif %}
-            <a href="{{ scoped_url('strategies', view='fit', dim='dte') }}"
+            <a href="{{ scoped_url('strategies', view='fit', dim='dte', _anchor='fit-controls') }}"
                class="{% if dim == 'dte' %}active{% endif %}">DTE</a>
-            <a href="{{ scoped_url('strategies', view='fit', dim='moneyness') }}"
+            <a href="{{ scoped_url('strategies', view='fit', dim='moneyness', _anchor='fit-controls') }}"
                class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>
         </div>
     </div>
@@ -668,7 +668,7 @@
 
     {% if dim == 'subsector' %}
     <a class="btn btn-sm btn-outline-secondary"
-       href="{{ scoped_url('strategies', view='fit', dim='sector') }}">
+       href="{{ scoped_url('strategies', view='fit', dim='sector', _anchor='fit-controls') }}">
         ← Back to all sectors
     </a>
     <span class="text-muted small">Drilled into <strong>{{ drill_sector }}</strong>.</span>
@@ -710,7 +710,7 @@
                     data-num-closed="{{ (ct.num_winners + ct.num_losers) | int }}"
                     {% endif %}>
                     {% if dim == 'sector' %}
-                    <a href="{{ scoped_url('strategies', view='fit', sector=col) }}"
+                    <a href="{{ scoped_url('strategies', view='fit', sector=col, _anchor='fit-controls') }}"
                        title="Drill into {{ col }} subsectors">{{ col }}</a>
                     {% else %}
                     {{ col }}

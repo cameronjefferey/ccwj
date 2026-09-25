@@ -576,6 +576,18 @@
            scroll wrapper (needs a bounded height so the wrapper itself
            scrolls vertically — sticky is relative to the nearest scroll
            container). */
+        /* Same-page controls (table Next, filters, range) land on their
+           section instead of the top of the document. */
+        #pos-filters,
+        #strategy-detail,
+        #strategy-focus,
+        #value-controls,
+        #fit-controls,
+        #day-review,
+        #symbolTabStrip,
+        #position-chart,
+        #position-accounts,
+        #position-legs { scroll-margin-top: 4.5rem; }
         .ht-sticky { max-height: 75vh; overflow-y: auto; }
         .ht-sticky table thead th {
             position: sticky; top: 0; z-index: 5;
