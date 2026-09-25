@@ -573,6 +573,7 @@ def index():
 
 
 @app.route("/start")
+@limiter.limit("20 per minute; 200 per hour")
 def campaign_start():
     """Reddit (and any other) campaign landing page. Not the homepage.
 
@@ -596,6 +597,7 @@ def campaign_start():
 
 @app.route("/start/go/<dest>")
 @app.route("/start/go/<dest>/<place>")
+@limiter.limit("20 per minute; 200 per hour")
 def campaign_go(dest, place=None):
     """Count a Sign up or Demo click, then send them on.
 
