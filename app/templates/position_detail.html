@@ -1313,6 +1313,7 @@
                 borderWidth: 1.5,
                 pointRadius: 4.5,
                 pointHoverRadius: 7,
+                pointStyle: 'circle',
                 order: -1
             };
         }
@@ -1395,13 +1396,13 @@
                         // Near-black reads as invisible on the dark theme —
                         // flip to a light stroke there.
                         borderColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '#e2e8f0' : '#1a1a2e',
-                        backgroundColor: document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'rgba(226,232,240,.06)' : 'rgba(26,26,46,.08)',
-                        fill: true,
+                        fill: false,
                         tension: 0,
                         spanGaps: true,
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 2.5,
+                        pointStyle: 'line',
                         order: 0
                     },
                     {
@@ -1412,6 +1413,7 @@
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 1.5,
+                        pointStyle: 'line',
                         order: 1
                     },
                     {
@@ -1422,6 +1424,7 @@
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 1.5,
+                        pointStyle: 'line',
                         order: 2
                     },
                     {
@@ -1432,6 +1435,7 @@
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 1.5,
+                        pointStyle: 'line',
                         order: 3
                     }
                     {% if has_underlying_price %}
@@ -1444,6 +1448,7 @@
                         pointRadius: 0,
                         pointHitRadius: 6,
                         borderWidth: 1.5,
+                        pointStyle: 'line',
                         order: 4,
                         yAxisID: 'yPrice',
                         hidden: !showPriceLine
@@ -1474,6 +1479,59 @@
                     row.classList.add('story-flash');
                 },
                 plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            usePointStyle: true,
+                            pointStyle: 'line',
+                            boxWidth: 32,
+                            boxHeight: 8,
+                            padding: 14,
+                            // Trade days is a scatter of per-dot colors with a
+                            // white ring. Chart.js can't paint an array as a
+                            // legend fill, so that swatch vanished. Force a
+                            // solid dot there; every other series is a stroke.
+                            // A series that never leaves $0 (no dividends, no
+                            // equity, no options) is omitted. The price line
+                            // is omitted while its toggle is off — Chart.js
+                            // otherwise keeps it in the legend, struck through.
+                            generateLabels: function (chart) {
+                                function leavesZero(data) {
+                                    if (!data) return false;
+                                    for (var i = 0; i < data.length; i++) {
+                                        var v = data[i];
+                                        if (v && typeof v === 'object') v = v.y;
+                                        if (v == null || isNaN(v)) continue;
+                                        if (Math.abs(v) >= 0.01) return true;
+                                    }
+                                    return false;
+                                }
+                                var items = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                var kept = [];
+                                items.forEach(function (item) {
+                                    var ds = chart.data.datasets[item.datasetIndex];
+                                    if (!ds) return;
+                                    if (ds.yAxisID === 'yPrice') {
+                                        if (!chart.isDatasetVisible(item.datasetIndex)) return;
+                                    } else if (ds.label !== 'Total' && ds.label !== 'Trade days') {
+                                        if (!leavesZero(ds.data)) return;
+                                    }
+                                    if (ds.label === 'Trade days') {
+                                        item.pointStyle = 'circle';
+                                        item.fillStyle = '#1d4ed8';
+                                        item.strokeStyle = '#1d4ed8';
+                                        item.lineWidth = 0;
+                                    } else {
+                                        item.pointStyle = 'line';
+                                        item.strokeStyle = ds.borderColor;
+                                        item.lineWidth = Math.max(ds.borderWidth || 2, 2);
+                                    }
+                                    kept.push(item);
+                                });
+                                return kept;
+                            }
+                        }
+                    },
                     tooltip: {
                         callbacks: {
                             label: function(ctx) {
