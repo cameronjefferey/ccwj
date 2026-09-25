@@ -16,7 +16,6 @@
 {% set _ti = today_movers.combined_impact if today_movers and today_movers.combined_impact is not none else none %}
 <div class="review-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}

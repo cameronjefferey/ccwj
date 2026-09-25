@@ -4,7 +4,7 @@
 {% include '_review_styles.html' %}
 <style>
     .chart-wrapper {
-        background: #fff;
+        background: #121826;
         border-radius: 12px;
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
         padding: 1.25rem;
@@ -38,7 +38,6 @@
 {% block content %}
 <div class="review-hero acct-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
@@ -758,7 +757,7 @@
         if (hasData(summaryData.options)) {
             datasets.push({
                 label: 'Options', _key: 'options', data: summaryData.options.slice(),
-                borderColor: '#b87333', backgroundColor: 'rgba(184,115,51,.10)',
+                borderColor: '#5b8cff', backgroundColor: 'rgba(184,115,51,.10)',
                 fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
         }

@@ -1,19 +1,19 @@
 <style>
     .review-hero {
-        background: #1a1a2e;
+        background: #121826;
         border-radius: 20px;
         padding: 1.35rem 1.6rem 1.25rem;
         color: #fff;
         margin-bottom: 1.5rem;
     }
     .ov-bar {
-        display: flex; flex-wrap: wrap; justify-content: space-between;
+        display: flex; flex-wrap: wrap; justify-content: flex-end;
         align-items: center; gap: .75rem 1rem;
         padding-bottom: 1rem; margin-bottom: 1rem;
         border-bottom: 1px solid #2a2f48;
     }
-    .ov-brand b { display: block; font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; }
-    .ov-brand span { display: block; font-size: .78rem; color: #aeb8cc; margin-top: .1rem; }
+    .ov-bar:not(:has(form)) { display: none; }
+    .review-hero:not(:has(:not(.ov-bar))) { display: none; }
     .ov-date { margin: 0 0 .65rem; font-size: .82rem; font-weight: 600; color: #aeb8cc; }
     .filter-bar-hero { margin: 0; gap: .65rem; }
     .filter-bar-hero .lblh { color: #aeb8cc; }
@@ -162,16 +162,15 @@
 
     /* ── Since you last looked ── */
     .since-card {
-        background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
-        border: 1px solid #fde68a;
-        border-radius: 14px;
+        background: #121826;
+        border: 1px solid #243049;
+        border-radius: 0.75rem;
         padding: 1.1rem 1.4rem;
         margin-bottom: 1.25rem;
-        box-shadow: 0 1px 8px rgba(234, 179, 8, .08);
     }
     .since-kicker {
         font-size: .68rem; text-transform: uppercase; letter-spacing: 1.1px;
-        color: #b45309; font-weight: 700; margin-bottom: .2rem;
+        color: #ffb454; font-weight: 700; margin-bottom: .2rem;
         display: flex; align-items: center; gap: .4rem;
     }
     .since-kicker .since-dot {
@@ -191,7 +190,7 @@
     .since-chip {
         display: inline-flex; align-items: center; gap: .35rem;
         padding: .25rem .65rem; border-radius: 14px;
-        background: #fff; border: 1px solid #e5e7eb;
+        background: #121826; border: 1px solid #243049;
         font-size: .8rem; text-decoration: none; color: inherit;
         white-space: nowrap;
     }
@@ -595,7 +594,7 @@
 
     /* Trades today — fill-level rows (not weekly groups) */
     .tt-table { width: 100%; font-size: .9rem; border-collapse: collapse; }
-    .tt-table td { padding: .45rem .4rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .tt-table td { padding: .45rem .4rem; border-bottom: 1px solid #243049; vertical-align: middle; }
     .tt-table tr:last-child td { border-bottom: 0; }
     .tt-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
     .tt-muted { color: var(--ht-muted); font-size: .8rem; }
@@ -603,8 +602,8 @@
     .tt-roll-miss { color: #9a3412; font-size: .75rem; font-weight: 600; }
     .tt-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
     .tt-verb.buy { background: #eff6ff; color: #1d4ed8; }
-    .tt-verb.sell { background: #fef2f2; color: #b91c1c; }
-    .tt-verb.lifecycle { background: #f5f3ff; color: #6d28d9; }
+    .tt-verb.sell { background: rgba(240,85,109,.12); color: #e8edf7; }
+    .tt-verb.lifecycle { background: rgba(176,107,255,.14); color: #e8edf7; }
     .tt-sym { font-weight: 700; color: var(--ht-ink); text-decoration: none; }
     .tt-sym:hover { color: var(--color-mirror-ink); }
     .tt-empty { color: var(--ht-faint); font-size: .9rem; padding: .15rem 0; }
@@ -708,8 +707,8 @@
     }
     .ov-pl.gn { background: #e3f3ea; color: #17804d; }
     .ov-pl.rd { background: #fbebe9; color: #b83a2e; }
-    .ov-pl.am { background: #fdf1d8; color: #8a5200; }
-    .ov-pl.in { background: #f0eefc; color: #4b3fd1; }
+    .ov-pl.am { background: #2a2118; color: #e8edf7; }
+    .ov-pl.in { background: rgba(91,140,255,.14); color: #e8edf7; }
     [data-bs-theme="dark"] .ov-pl.gn { background: #052e16; color: #86efac; }
     [data-bs-theme="dark"] .ov-pl.rd { background: #450a0a; color: #fca5a5; }
     [data-bs-theme="dark"] .ov-pl.am { background: #422006; color: #fcd34d; }
@@ -727,8 +726,8 @@
     }
 
     .ov-mover-col { border-radius: 14px; padding: .35rem 1rem .7rem; }
-    .ov-mover-col.up { background: #eef7f2; }
-    .ov-mover-col.down { background: #fbeeec; }
+    .ov-mover-col.up { background: rgba(40,192,138,.14); }
+    .ov-mover-col.down { background: rgba(240,85,109,.12); }
     .ov-mover-k { font-size: .82rem; font-weight: 600; margin: .45rem 0 .15rem; }
     .ov-mover-col.up .ov-mover-k { color: #17804d; }
     .ov-mover-col.down .ov-mover-k { color: #b83a2e; }
@@ -758,7 +757,7 @@
     .ov-lane { display: grid; grid-template-columns: 96px 1fr; align-items: stretch; }
     .ov-bg { grid-column: 1 / -1; grid-row: 1 / -1; }
     .ov-bg i { border-left: 1px solid var(--ht-line); }
-    .ov-bg i.w, .ov-dh.w { background: #f5f6f8; }
+    .ov-bg i.w, .ov-dh.w { background: #1a2233; }
     [data-bs-theme="dark"] .ov-bg i.w, [data-bs-theme="dark"] .ov-dh.w { background: rgba(255,255,255,.04); }
     .ov-dh { text-align: center; font-size: .75rem; color: var(--ht-muted); line-height: 1.25; padding-top: 4px; }
     .ov-dh b { display: block; font-size: .85rem; color: var(--ht-ink); }
@@ -770,8 +769,8 @@
     }
     .ov-ev b { display: block; font-size: .84rem; }
     .ov-ev small { font-size: .75rem; opacity: .85; }
-    .ov-ev.er { background: #fdf1d8; border-color: #d98a00; color: #5b3b00; }
-    .ov-ev.ex { background: #f0eefc; border-color: #4b3fd1; color: #2c2470; }
+    .ov-ev.er { background: #2a2118; border-color: #243049; color: #e8edf7; }
+    .ov-ev.ex { background: rgba(91,140,255,.14); border-color: #243049; color: #e8edf7; }
     .ov-ev.vd { background: var(--ht-surface); border: 1px dashed #4b3fd1; border-left: 3px solid #4b3fd1; color: #2c2470; }
     .ov-ev.dv { background: #e6f4ec; border-color: #17804d; color: #0f4f30; }
 
@@ -779,8 +778,8 @@
         display: grid; grid-template-columns: 110px 1fr; gap: 4px 16px; align-items: center;
         padding: .85rem 1rem; border-radius: 14px; text-decoration: none; color: inherit;
     }
-    .ov-verdict.up { background: #eef7f2; }
-    .ov-verdict.down { background: #fbeeec; }
+    .ov-verdict.up { background: rgba(40,192,138,.14); }
+    .ov-verdict.down { background: rgba(240,85,109,.12); }
     .ov-verdict strong { font-size: 1.75rem; letter-spacing: -.02em; line-height: 1.1; }
     .ov-verdict.up strong { color: #17804d; }
     .ov-verdict.down strong { color: #b83a2e; }

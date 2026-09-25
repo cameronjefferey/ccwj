@@ -2,7 +2,7 @@
 
 {% block head %}
 <style>
-    .atlas { background: #f8fafc; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
+    .atlas { background: #1a2233; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
     .atlas-shell { max-width: 1160px; margin: 0 auto; }
     .atlas-hero {
         border-radius: 16px;
@@ -37,15 +37,15 @@
         border-radius: 8px; color: #475569; font-weight: 600; font-size: .88rem;
         padding: .55rem .95rem; border: 1px solid transparent;
     }
-    .atlas-nav .nav-link:hover { background: #fff; color: #1e3a8a; border-color: #e2e8f0; }
+    .atlas-nav .nav-link:hover { background: #121826; color: #1e3a8a; border-color: #243049; }
     .atlas-nav .nav-link.active {
-        background: #fff; color: #0f172a; border-color: #e2e8f0;
+        background: #121826; color: #e8edf7; border-color: #243049;
         box-shadow: 0 2px 8px rgba(15,23,42,.05);
     }
     .atlas-card {
-        background: #fff;
+        background: #121826;
         border-radius: 12px;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #243049;
         box-shadow: 0 1px 3px rgba(15,23,42,.04);
         margin-bottom: 1rem;
         overflow: hidden;
@@ -59,15 +59,15 @@
     .atlas-field { margin-bottom: 1.1rem; }
     .atlas-hint { font-size: .85rem; color: #64748b; line-height: 1.5; }
     .account-badge {
-        display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px;
+        display: inline-block; background: #1a2233; border: 1px solid #243049; border-radius: 8px;
         padding: .35rem .75rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
-        color: #0f172a;
+        color: #e8edf7;
     }
 
     /* Sync card — prominent on Overview */
     .sync-card {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 12px;
         padding: 1.5rem 1.75rem;
         margin-bottom: 1rem;
@@ -86,7 +86,7 @@
         padding: .3rem .7rem; border-radius: 999px;
     }
     .sync-status.connected { background: #dcfce7; color: #14532d; }
-    .sync-status.disconnected { background: #fef3c7; color: #78350f; }
+    .sync-status.disconnected { background: #2a2118; color: #e8edf7; }
     .sync-status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
     .sync-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
     .btn-sync-primary {
@@ -97,11 +97,11 @@
     }
     .btn-sync-primary:hover { background: #1e40af; color: #fff !important; }
     .btn-sync-ghost {
-        border: 1px solid #cbd5e1; color: #334155 !important;
+        border: 1px solid #cbd5e1; color: #e8edf7 !important;
         padding: .5rem 1.15rem; border-radius: 6px; font-weight: 500;
-        text-decoration: none !important; background: #fff;
+        text-decoration: none !important; background: #121826;
     }
-    .btn-sync-ghost:hover { background: #f1f5f9; color: #0f172a !important; }
+    .btn-sync-ghost:hover { background: #1a2233; color: #e8edf7 !important; }
 
     /* Identity card */
     .id-card { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
@@ -122,16 +122,16 @@
     }
     .pill .dot { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
     .pill-ok { background: #dcfce7; color: #14532d; }
-    .pill-warn { background: #fef3c7; color: #78350f; }
-    .pill-muted { background: #f1f5f9; color: #475569; }
-    .pill-danger { background: #fee2e2; color: #991b1b; }
+    .pill-warn { background: #2a2118; color: #e8edf7; }
+    .pill-muted { background: #1a2233; color: #8a97b1; }
+    .pill-danger { background: rgba(240,85,109,.14); color: #e8edf7; }
 
     .ht-pick { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 1rem; }
     .ht-pick-chip {
         display: inline-flex; align-items: center; margin: 0;
         padding: .4rem .85rem; border-radius: 8px; cursor: pointer;
-        background: #f1f5f9; border: 1px solid #e2e8f0;
-        font-size: .85rem; font-weight: 600; color: #0f172a; user-select: none;
+        background: #1a2233; border: 1px solid #243049;
+        font-size: .85rem; font-weight: 600; color: #e8edf7; user-select: none;
     }
     .ht-pick-chip input { position: absolute; opacity: 0; pointer-events: none; }
     .ht-pick-chip:hover { border-color: #94a3b8; }
@@ -147,7 +147,7 @@
     /* At-a-glance stat tiles */
     .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .75rem; }
     .stat-tile {
-        display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+        display: block; background: #121826; border: 1px solid #243049; border-radius: 10px;
         padding: .9rem 1rem; text-decoration: none; transition: border-color .12s, box-shadow .12s;
     }
     a.stat-tile:hover { border-color: var(--color-mirror-ink); box-shadow: 0 2px 8px rgba(15,23,42,.06); }
@@ -157,7 +157,7 @@
     /* Connection health rows */
     .conn-row {
         display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap;
-        padding: .7rem 0; border-top: 1px solid #f1f5f9;
+        padding: .7rem 0; border-top: 1px solid #243049;
     }
     .conn-row:first-child { border-top: none; }
     .conn-meta { font-size: .78rem; color: #94a3b8; }
@@ -345,7 +345,7 @@
                     {% endfor %}
                     {% if _ns_st_o.any_broken %}
                     <div class="alert small mb-3" role="alert"
-                         style="background:#fef2f2; border:1px solid #fecaca; color:#7f1d1d;">
+                         style="background: rgba(240,85,109,.12); border: 1px solid #f0556d; color: #e8edf7;">
                         <strong>A broker connection needs reconnecting.</strong>
                         Syncing won't help until it's fixed — reconnect the broker (one
                         click fixes every account on that connection).
@@ -657,7 +657,7 @@
                         through the SnapTrade Connection Portal. Connect once per broker; we refresh
                         from then on. This is not a lifetime archive of the account.
                     </p>
-                    <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
+                    <div class="alert alert-warning small mb-3" role="alert" style="background: #2a2118; border-color:#fed7aa; color:#7c2d12;">
                         <strong>What broker sync actually includes:</strong>
                         <ul class="mb-0 ps-3 mt-1">
                             <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>

@@ -795,6 +795,7 @@ def _migrate_campaign_attribution():
         # both names are added and the funnel reads whichever is filled.
         execute("ALTER TABLE campaign_events ADD COLUMN IF NOT EXISTS visit_id TEXT")
         execute("ALTER TABLE campaign_events ADD COLUMN IF NOT EXISTS session_id TEXT")
+        execute("ALTER TABLE campaign_events ADD COLUMN IF NOT EXISTS place TEXT")
     except Exception as exc:
         _log.warning("campaign attribution migration skipped: %s", exc)
 

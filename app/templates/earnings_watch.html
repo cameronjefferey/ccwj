@@ -28,7 +28,7 @@
     .ew-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }
 
     .ew-card {
-        background: #fff; border: 1px solid #e7e5e4; border-radius: 12px;
+        background: #121826; border: 1px solid #243049; border-radius: 12px;
         padding: .85rem 1rem; display: flex; flex-direction: column; gap: .5rem;
     }
     .ew-card .top { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
@@ -44,18 +44,18 @@
     .ew-card .move.pos { color: #059669; }
     .ew-card .move.neg { color: #b91c1c; }
     .ew-badge {
-        display: inline-block; font-size: .62rem; font-weight: 600; color: #475569;
-        background: #f1f5f9; border-radius: 999px; padding: .1rem .5rem; margin-left: .3rem;
+        display: inline-block; font-size: .62rem; font-weight: 600; color: #8a97b1;
+        background: #1a2233; border-radius: 999px; padding: .1rem .5rem; margin-left: .3rem;
     }
     .ew-card .ef-link {
         font-size: .72rem; font-weight: 600; color: #1e3a8a; text-decoration: none;
-        border-top: 1px solid #f1f5f9; padding-top: .5rem;
+        border-top: 1px solid #243049; padding-top: .5rem;
     }
     .ew-card .ef-link:hover { text-decoration: underline; }
 
     .ew-empty {
-        color: #78716c; font-size: .85rem; padding: 1.5rem; text-align: center;
-        background: #fff; border-radius: 12px; border: 1px dashed #e7e5e4;
+        color: #8a97b1; font-size: .85rem; padding: 1.5rem; text-align: center;
+        background: #121826; border-radius: 12px; border: 1px dashed #e7e5e4;
     }
     .ew-empty-slim { padding: .8rem 1rem; text-align: left; font-style: italic; }
 
@@ -64,7 +64,7 @@
     .ew-group-head {
         display: flex; align-items: center; justify-content: space-between;
         gap: .8rem; flex-wrap: wrap; margin-bottom: .6rem;
-        padding: .55rem .8rem; background: #f1f5f9; border-radius: 10px;
+        padding: .55rem .8rem; background: #1a2233; border-radius: 10px;
     }
     .ew-group-held { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
     .ew-group-held .lbl {
@@ -84,8 +84,8 @@
         color: #94a3b8; text-align: right; margin-top: .1rem;
     }
     .ew-note {
-        background: #fff; border-radius: 10px; padding: .75rem 1rem;
-        font-size: .78rem; color: #64748b; border: 1px dashed #e7e5e4; margin-top: 1rem;
+        background: #121826; border-radius: 10px; padding: .75rem 1rem;
+        font-size: .78rem; color: #8a97b1; border: 1px dashed #e7e5e4; margin-top: 1rem;
     }
 </style>
 {% endblock %}
@@ -94,7 +94,6 @@
 
 <div class="review-hero ew-hero">
     <div class="ov-bar" style="flex:1 0 100%;">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}

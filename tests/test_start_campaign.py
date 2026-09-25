@@ -13,6 +13,7 @@ from app.campaign import (
     reddit_pixel_context,
     stamp_signup,
     summarize_funnel,
+    summarize_places,
 )
 
 
@@ -35,7 +36,15 @@ def test_start_explains_the_mirror_and_the_honest_offer(monkeypatch):
     assert "Read-only" in body
     assert "5 years" not in body
     assert "five years" not in body.lower()
-    assert 'href="/start/go/signup?utm_source=reddit' in body
+    assert 'href="/start/go/signup/hero?utm_source=reddit' in body
+    assert 'href="/start/go/signup/chart?' in body
+    assert 'href="/start/go/demo/profile?' in body
+    assert "See the sequence" in body
+    assert "See your chart" in body
+    assert "Read the trades" in body
+    assert "See your profile" in body
+    assert "See your strategies" in body
+    assert "Start the 30 days" in body
     assert "utm_content=score" in body
     assert "ht_acq=" in (resp.headers.get("Set-Cookie") or "")
     assert 'name="robots" content="noindex"' in body
@@ -111,6 +120,20 @@ def test_demo_click_redirects_without_following(monkeypatch):
 
 def test_unknown_destination_is_404():
     assert _client().get("/start/go/pricing").status_code == 404
+    assert _client().get("/start/go/signup/nope").status_code == 404
+
+
+def test_card_click_records_which_button(monkeypatch):
+    events = []
+
+    def _record(event, attr, **kwargs):
+        events.append((event, kwargs.get("place")))
+
+    monkeypatch.setattr("app.campaign.record_event", _record)
+    resp = _client().get("/start/go/demo/chart?utm_source=reddit&utm_content=score")
+    assert resp.status_code == 302
+    assert "/demo/start" in (resp.headers.get("Location") or "")
+    assert events[-1] == ("demo_click", "chart")
 
 
 def test_record_event_writes_visit_id_into_session_id(monkeypatch):
@@ -207,6 +230,26 @@ def test_funnel_counts_connects_separately_from_signups():
 
     only_you = filter_funnel_events(events, creative="you")
     assert {ev["utm_content"] for ev in only_you} == {"you"}
+
+
+def test_place_counts_are_separate_from_the_creative_funnel():
+    events = [
+        {"event": "signup_click", "visit_id": "v1", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "score", "place": "chart"},
+        {"event": "signup_click", "visit_id": "v1", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "score", "place": "chart"},
+        {"event": "demo_click", "visit_id": "v2", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "score", "place": "profile"},
+        {"event": "signup_click", "visit_id": "v3", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "you", "place": None},
+    ]
+    rows = {row["place"]: row for row in summarize_places(events)}
+    assert rows["chart"]["signup_clicks"] == 1
+    assert rows["chart"]["primary"] == "See your chart"
+    assert rows["profile"]["demo_clicks"] == 1
+    assert rows["hero"]["signup_clicks"] == 0
+    assert rows[""]["where"] == "Earlier"
+    assert rows[""]["signup_clicks"] == 1
 
 
 def test_stamp_signup_writes_the_cookie_onto_the_user(monkeypatch):

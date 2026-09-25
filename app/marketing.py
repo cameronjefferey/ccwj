@@ -581,7 +581,7 @@ def campaign_start():
     """
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
-    from app.campaign import attach_cookie, begin_visit, utm_query
+    from app.campaign import CTA_PLACES, attach_cookie, begin_visit, utm_query
 
     g.campaign_pixel_event = "PageVisit"
     attr = begin_visit()
@@ -589,21 +589,26 @@ def campaign_start():
         "start.html",
         title="Your broker shows the number",
         utm_query=utm_query(request.args),
+        cta_places=CTA_PLACES,
     ))
     return attach_cookie(resp, attr)
 
 
 @app.route("/start/go/<dest>")
-def campaign_go(dest):
-    """Count a Sign up or Demo click, then send them on."""
-    from app.campaign import CLICK_EVENTS, attach_cookie, log_click
+@app.route("/start/go/<dest>/<place>")
+def campaign_go(dest, place=None):
+    """Count a Sign up or Demo click, then send them on.
+
+    ``place`` is which button on /start (hero, chart, profile, …).
+    """
+    from app.campaign import CLICK_EVENTS, CTA_PLACES, attach_cookie, log_click
 
     event = CLICK_EVENTS.get(dest)
-    if event is None:
+    if event is None or (place is not None and place not in CTA_PLACES):
         abort(404)
     if dest == "signup" and not app.config.get("SIGNUP_ENABLED", True):
         abort(404)
-    attr = log_click(event)
+    attr = log_click(event, place=place)
     target = url_for("signup") if dest == "signup" else url_for("demo_start")
     return attach_cookie(redirect(target), attr)
 

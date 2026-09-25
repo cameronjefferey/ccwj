@@ -8,44 +8,38 @@
 {% block head %}
 <style>
     .landing-hero {
-        background: #1a1a2e;
-        border-radius: 20px;
-        padding: 5rem 3rem;
-        color: #fff;
+        background: transparent;
+        border-radius: 0;
+        padding: 4.5rem 0 3.5rem;
+        color: #e8edf7;
         text-align: center;
         position: relative;
         overflow: hidden;
+        border-bottom: 1px solid #1c2538;
+        margin-bottom: 0 !important;
     }
-    .landing-hero::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        right: -15%;
-        width: 500px;
-        height: 500px;
-        background: radial-gradient(circle, rgba(25,135,84,.12) 0%, transparent 70%);
-        border-radius: 50%;
-    }
-    .landing-hero h1 { font-size: 3rem; font-weight: 700; margin-bottom: 1.25rem; letter-spacing: -0.01em; }
+    .landing-hero h1 { font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 650; margin-bottom: 1.25rem; letter-spacing: -0.03em; color: #fff; }
     .landing-hero .lead {
-        font-size: 1.2rem;
-        color: rgba(255,255,255,.9);
+        font-size: 1.05rem;
+        color: #7d8aa3;
         margin-bottom: 2rem;
-        max-width: 600px;
+        max-width: 36rem;
         margin-left: auto;
         margin-right: auto;
+        line-height: 1.6;
     }
-    .landing-hero .btn { padding: .85rem 2rem; font-weight: 600; border-radius: 10px; font-size: 1rem; }
-    .landing-hero .btn-light,
-    .landing-hero .btn-outline-light { transition: transform .2s ease, box-shadow .2s ease, opacity .15s; }
-    .landing-hero .btn-light:hover,
-    .landing-hero .btn-light:focus-visible,
-    .landing-hero .btn-outline-light:hover,
-    .landing-hero .btn-outline-light:focus-visible {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(0,0,0,.2);
+    .landing-hero .btn-light {
+        background: #5b8cff; color: #0a0e17; border: none; font-weight: 650;
+        border-radius: 0.45rem; padding: 0.75rem 1.15rem;
     }
-    .landing-hero .btn-outline-light:active { transform: translateY(0); }
+    .landing-hero .btn-light:hover { filter: brightness(1.08); color: #0a0e17; }
+    .landing-hero .btn-outline-light {
+        background: rgba(255,255,255,.03); color: #fff; border: 1px solid #1c2538;
+        border-radius: 0.45rem; font-weight: 550;
+    }
+    .landing-hero .btn-outline-light:hover {
+        border-color: rgba(91,140,255,.45); background: rgba(91,140,255,.14); color: #fff;
+    }
 
     .section-title {
         font-size: 1.5rem;
@@ -54,20 +48,26 @@
         text-align: center;
     }
     .feature-card {
-        border: none;
-        border-radius: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,.06);
-        padding: 2rem;
+        border: 1px solid #1c2538;
+        border-radius: 0.55rem;
+        box-shadow: none;
+        background: #0c111c;
+        padding: 1.25rem;
         height: 100%;
-        transition: transform .2s, box-shadow .2s;
+        transition: border-color .2s, filter .2s, transform .2s;
         text-decoration: none;
-        color: inherit;
+        color: #e8edf7;
         display: block;
     }
     .feature-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 30px rgba(0,0,0,.1);
-        color: inherit;
+        transform: translateY(-1px);
+        border-color: rgba(255,255,255,.22);
+        filter: brightness(1.08);
+        color: #e8edf7;
+    }
+    .feature-icon {
+        background: rgba(91,140,255,.14) !important;
+        color: #5b8cff !important;
     }
     .feature-icon {
         width: 56px;
@@ -80,33 +80,33 @@
         margin-bottom: 1rem;
     }
     .feature-card h6 { font-weight: 700; margin-bottom: .5rem; }
-    .feature-card p { color: #6c757d; font-size: .9rem; margin-bottom: 0; }
+    .feature-card h6 { color: #fff; }
+    .feature-card p { color: #7d8aa3; font-size: .9rem; margin-bottom: 0; }
 
     .how-step {
-        text-align: center;
-        padding: 1.5rem;
+        text-align: left;
+        padding: 1.25rem;
+        background: #0c111c;
+        border: 1px solid #1c2538;
+        border-radius: 0.55rem;
+        height: 100%;
     }
     .how-step-num {
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        background: #1a1a2e;
-        color: #fff;
-        font-weight: 700;
-        font-size: 1.25rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1rem;
+        color: #5b8cff;
+        font-weight: 650;
+        font-size: .7rem;
+        letter-spacing: .12em;
+        margin-bottom: .75rem;
     }
-    .how-step h6 { font-weight: 700; margin-bottom: .5rem; }
-    .how-step p { color: #6c757d; font-size: .9rem; margin-bottom: 0; }
+    .how-step h6 { font-weight: 650; margin-bottom: .5rem; color: #fff; }
+    .how-step p { color: #7d8aa3; font-size: .9rem; margin-bottom: 0; }
 
     .cta-section {
-        background: #1a1a2e;
-        border-radius: 20px;
-        padding: 3rem;
-        color: #fff;
+        background: #0c111c;
+        border: 1px solid #1c2538;
+        border-radius: 0.55rem;
+        padding: 3rem 1.5rem;
+        color: #e8edf7;
         text-align: center;
     }
     .cta-section h3 { font-weight: 700; margin-bottom: .75rem; }
@@ -121,13 +121,14 @@
     }
     .cta-section .btn-outline-light:active { transform: translateY(0); }
 
+    .section-title { color: #fff; }
     .landing-footer {
         padding: 2.5rem 0;
         margin-top: 4rem;
-        border-top: 1px solid #e9ecef;
+        border-top: 1px solid #1c2538;
     }
-    .landing-footer a { color: #6c757d; text-decoration: none; font-size: .9rem; }
-    .landing-footer a:hover { color: #1a1a2e; }
+    .landing-footer a { color: #7d8aa3; text-decoration: none; font-size: .9rem; }
+    .landing-footer a:hover { color: #5b8cff; text-decoration: underline; }
 
     @media (max-width: 640px) {
         .landing-hero { padding: 2.75rem 1.25rem; border-radius: 16px; }
@@ -173,21 +174,21 @@
 <div class="row g-4 mb-3">
     <div class="col-md-4">
         <div class="how-step">
-            <div class="how-step-num">1</div>
+            <div class="how-step-num">01</div>
             <h6>Connect your brokerage</h6>
             <p>Sign in through SnapTrade — Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only access. HappyTrader never stores your broker password.</p>
         </div>
     </div>
     <div class="col-md-4">
         <div class="how-step">
-            <div class="how-step-num">2</div>
+            <div class="how-step-num">02</div>
             <h6>Sync your accounts</h6>
             <p>{% include "_broker_sync_timing.html" %} We classify every position — Covered Calls, CSPs, Wheels, spreads — and link it to your account.</p>
         </div>
     </div>
     <div class="col-md-4">
         <div class="how-step">
-            <div class="how-step-num">3</div>
+            <div class="how-step-num">03</div>
             <h6>See your trading profile</h6>
             <p>See what's working, where you're losing, and get a mirror of your process — including AI-powered insights.</p>
         </div>
@@ -292,7 +293,7 @@
     <h3>Ready to see what's really working?</h3>
     <p class="mb-0">Try the demo — no signup. Or create a free account and connect a brokerage.</p>
     <div class="d-flex gap-3 justify-content-center flex-wrap">
-        <a href="{{ url_for('demo_start') }}" class="btn btn-light btn-lg px-4 fw-semibold">Try Demo</a>
+        <a href="{{ url_for('demo_start') }}" class="btn btn-light">Try Demo</a>
         {% if signup_enabled %}
         <a href="{{ url_for('signup') }}" class="btn btn-outline-light btn-lg px-4 fw-semibold">
             {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}

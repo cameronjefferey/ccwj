@@ -40,8 +40,8 @@
         border-radius: 14px; padding: 1rem 1.1rem 1.05rem; min-width: 0;
         border: 1px solid transparent;
     }
-    .ts-book.income { background: #f3faf8; border-color: #d5eee6; border-top: 3px solid #0f766e; }
-    .ts-book.directional { background: #f5f3fb; border-color: #e4dff3; border-top: 3px solid #6d5bd0; }
+    .ts-book.income { background: rgba(40,192,138,.12); border-color: #243049; border-top: 3px solid #0f766e; }
+    .ts-book.directional { background: rgba(176,107,255,.14); border-color: #243049; border-top: 3px solid #6d5bd0; }
     .ts-book-kicker { font-size: .78rem; font-weight: 700; margin-bottom: .35rem; }
     .ts-book.income .ts-book-kicker { color: #0f766e; }
     .ts-book.directional .ts-book-kicker { color: #6d5bd0; }
@@ -53,7 +53,7 @@
     .ts-book-lead { color: var(--ht-muted, #64748b); font-size: .88rem; margin-top: .2rem; }
     .ts-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem; }
     .ts-chip {
-        background: rgba(255,255,255,.78); border: 1px solid rgba(15,23,42,.06);
+        background: #1a2233; border: 1px solid rgba(15,23,42,.06);
         border-radius: 999px; padding: .18rem .65rem;
         font-size: .8rem; font-weight: 650; color: var(--ht-ink, #0f172a);
     }
@@ -61,14 +61,14 @@
     .ts-kept-value { font-weight: 800; color: var(--color-positive); font-variant-numeric: tabular-nums; }
     .ts-kept-detail { color: var(--ht-muted, #64748b); font-size: .84rem; line-height: 1.4; margin-top: .15rem; }
     .ts-record {
-        margin-top: .8rem; background: var(--ht-surface-2, #f8fafc);
-        border: 1px solid var(--ht-line, #e5e7eb); border-radius: 12px;
+        margin-top: .8rem; background: var(--ht-surface-2, #121826);
+        border: 1px solid var(--ht-line, #243049); border-radius: 12px;
         padding: .8rem 1rem .85rem;
     }
     .ts-record-top { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; }
     .ts-record-label { font-size: .84rem; color: var(--ht-muted, #64748b); font-weight: 600; }
     .ts-record-value { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ht-ink, #0f172a); }
-    .ts-meter { height: 8px; border-radius: 999px; background: #f0d2cd; margin-top: .55rem; overflow: hidden; }
+    .ts-meter { height: 8px; border-radius: 999px; background: #243049; margin-top: .55rem; overflow: hidden; }
     .ts-meter > span { display: block; height: 100%; border-radius: 999px; background: #2f8f62; }
     .ts-meter.long { background: #e4dff6; }
     .ts-meter.long > span { background: #6d5bd0; }
@@ -85,7 +85,7 @@
     [data-bs-theme="dark"] .ts-profile-foot strong { color: var(--ht-ink); }
     [data-bs-theme="dark"] .ts-chip { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.08); color: var(--ht-ink); }
 
-    .ts-era { display: grid; grid-template-columns: 84px 1fr; gap: 1rem; padding: .7rem 0; border-bottom: 1px solid #f1f5f9; }
+    .ts-era { display: grid; grid-template-columns: 84px 1fr; gap: 1rem; padding: .7rem 0; border-bottom: 1px solid #243049; }
     .ts-era:last-child { border-bottom: 0; }
     .ts-era-year { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
     .ts-era-title { font-weight: 700; }
@@ -103,8 +103,8 @@
         border-top-width: 3px; transition: transform .15s ease;
     }
     a.ts-standout:hover { transform: translateY(-2px); }
-    a.ts-standout.pos { background: #f3faf6; border-color: #d7efe3; border-top-color: #1f8a5b; }
-    a.ts-standout.neg { background: #fdf6f5; border-color: #f3ddd9; border-top-color: #c4513f; }
+    a.ts-standout.pos { background: rgba(40,192,138,.12); border-color: #243049; border-top-color: #1f8a5b; }
+    a.ts-standout.neg { background: rgba(240,85,109,.12); border-color: #243049; border-top-color: #c4513f; }
     .ts-standout-label { font-size: .78rem; font-weight: 700; }
     a.ts-standout.pos .ts-standout-label { color: #1f8a5b; }
     a.ts-standout.neg .ts-standout-label { color: #c4513f; }
@@ -115,7 +115,7 @@
     .ts-standout-hook { color: var(--ht-muted, #64748b); font-size: .82rem; margin-top: .4rem; line-height: 1.4; flex: 1; }
     .ts-standout-open {
         font-size: .68rem; font-weight: 700; padding: .1rem .45rem; border-radius: 999px;
-        background: #fff; color: #047857; border: 1px solid #bbf7d0; vertical-align: middle;
+        background: #121826; color: #047857; border: 1px solid #bbf7d0; vertical-align: middle;
         margin-left: .3rem;
     }
     .ts-standout-track { height: 6px; border-radius: 999px; background: rgba(15,23,42,.08); margin-top: .75rem; overflow: hidden; }
@@ -142,9 +142,9 @@
         margin-bottom: .55rem; border: 1px solid transparent; text-decoration: none; color: inherit;
     }
     .ts-style-row:last-child { margin-bottom: 0; }
-    .ts-style-row.income { background: #f3faf8; border-color: #d5eee6; border-left: 3px solid #0f766e; }
-    .ts-style-row.directional { background: #f5f3fb; border-color: #e4dff3; border-left: 3px solid #6d5bd0; }
-    .ts-style-row.stock { background: #f4f6f8; border-color: #e6eaef; border-left: 3px solid #64748b; }
+    .ts-style-row.income { background: rgba(40,192,138,.12); border-color: #243049; border-left: 3px solid #0f766e; }
+    .ts-style-row.directional { background: rgba(176,107,255,.14); border-color: #243049; border-left: 3px solid #6d5bd0; }
+    .ts-style-row.stock { background: #1a2233; border-color: #243049; border-left: 3px solid #64748b; }
     .ts-style-name { font-weight: 800; color: var(--ht-ink, #0f172a); }
     .ts-style-row.income .ts-style-name { color: #0f766e; }
     .ts-style-row.directional .ts-style-name { color: #6d5bd0; }
@@ -182,7 +182,7 @@
 
     .ts-exec-head {
         border-left: 3px solid #1f8a5b; border-radius: 12px;
-        background: #f3faf6; padding: 1rem 1.15rem; margin-bottom: .8rem;
+        background: rgba(40,192,138,.12); padding: 1rem 1.15rem; margin-bottom: .8rem;
     }
     [data-bs-theme="dark"] .ts-exec-head { background: #10241c; }
     .ts-exec-headline { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
@@ -193,8 +193,8 @@
     .ts-exec-headsub { color: var(--ht-muted, #64748b); font-size: .85rem; margin-top: .3rem; line-height: 1.4; }
     .ts-exec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; align-items: stretch; }
     .ts-exec-pane { border-radius: 14px; padding: 1rem 1.05rem 1.05rem; border: 1px solid transparent; min-width: 0; }
-    .ts-exec-pane.long { background: #f5f3fb; border-color: #e4dff3; border-top: 3px solid #6d5bd0; }
-    .ts-exec-pane.short { background: #f3faf8; border-color: #d5eee6; border-top: 3px solid #0f766e; }
+    .ts-exec-pane.long { background: rgba(176,107,255,.14); border-color: #243049; border-top: 3px solid #6d5bd0; }
+    .ts-exec-pane.short { background: rgba(40,192,138,.12); border-color: #243049; border-top: 3px solid #0f766e; }
     .ts-exec-pane-kicker { font-size: .8rem; font-weight: 700; margin-bottom: .65rem; }
     .ts-exec-pane.long .ts-exec-pane-kicker { color: #6d5bd0; }
     .ts-exec-pane.short .ts-exec-pane-kicker { color: #0f766e; }
@@ -210,7 +210,7 @@
     .ts-dot.on { background: #0f766e; border-color: #0f766e; }
     .ts-exec-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-top: .8rem; }
     .ts-exec-tile {
-        background: var(--ht-surface-2, #f8fafc); border: 1px solid var(--ht-line, #e5e7eb);
+        background: var(--ht-surface-2, #121826); border: 1px solid var(--ht-line, #243049);
         border-radius: 14px; padding: .9rem 1rem;
     }
     [data-bs-theme="dark"] .ts-exec-pane.long { background: #1c1830; border-color: #3a3260; }
@@ -221,7 +221,7 @@
     a.ts-swing {
         display: grid; grid-template-columns: 72px 1fr auto;
         gap: .75rem; align-items: center;
-        padding: .75rem .9rem; border: 1px solid var(--ht-line, #e5e7eb);
+        padding: .75rem .9rem; border: 1px solid var(--ht-line, #243049);
         border-radius: 12px; margin-bottom: .5rem; text-decoration: none; color: inherit;
     }
     a.ts-swing:last-child { margin-bottom: 0; }
@@ -239,7 +239,7 @@
     .ts-finding {
         display: grid; grid-template-columns: 150px 130px 1fr;
         gap: .35rem 1rem; align-items: baseline;
-        padding: .6rem 0; border-bottom: 1px solid #f1f5f9;
+        padding: .6rem 0; border-bottom: 1px solid #243049;
     }
     .ts-finding:last-child { border-bottom: 0; }
     .ts-finding-label { font-size: .74rem; text-transform: uppercase; letter-spacing: .6px; color: #6b7280; font-weight: 700; }
@@ -308,7 +308,6 @@
 
 <div class="review-hero ts-hero mb-4">
     <div class="ov-bar" style="text-align:left;">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}

@@ -26,24 +26,25 @@
 
     /* ── AI Insights card ─────────────────────────────────────────── */
     .ai-card {
-        background: #fff; border-radius: 14px; padding: 1.1rem 1.25rem;
-        border: 1px solid #e7e5e4;
-        box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        background: #121826; border-radius: 0.75rem; padding: 1.1rem 1.25rem;
+        border: 1px solid #243049;
+        box-shadow: none;
         margin-bottom: 1rem;
         position: relative;
         overflow: hidden;
+        color: #e8edf7;
     }
     .ai-card::before {
         content: ""; position: absolute; left: 0; top: 0; bottom: 0;
-        width: 4px;
-        background: var(--color-mirror);
+        width: 2px;
+        background: #5b8cff;
     }
     .ai-card .ai-head {
         display: flex; gap: .8rem; align-items: center; flex-wrap: wrap;
         margin-bottom: .55rem;
     }
     .ai-card .ai-head .badge-ai {
-        background: #b87333;
+        background: #5b8cff;
         color: #fff;
         font-size: .62rem; font-weight: 700; letter-spacing: .05em;
         text-transform: uppercase;
@@ -51,7 +52,7 @@
         border-radius: 999px;
     }
     .ai-card .ai-head h2 {
-        font-size: 1.05rem; font-weight: 700; margin: 0; color: #0f172a;
+        font-size: 1.05rem; font-weight: 650; margin: 0; color: #fff;
     }
     .ai-card .ai-head .when {
         font-size: .72rem; color: #64748b;
@@ -59,7 +60,7 @@
     }
     .ai-card .ai-summary {
         font-size: .95rem; line-height: 1.5;
-        color: #0f172a; font-weight: 500;
+        color: #8a97b1; font-weight: 500;
         padding: .55rem 0 .65rem;
     }
     .ai-card .ai-toggle {
@@ -92,12 +93,12 @@
         margin-top: .65rem;
     }
     .ai-card .ai-refresh {
-        background: #f1f5f9; border: 1px solid #e2e8f0;
-        color: #0f172a; font-size: .75rem; font-weight: 600;
+        background: #1a2233; border: 1px solid #243049;
+        color: #e8edf7; font-size: .75rem; font-weight: 600;
         padding: .35rem .8rem; border-radius: 999px;
         cursor: pointer;
     }
-    .ai-card .ai-refresh:hover { background: #f3e6d4; border-color: var(--color-mirror-ink); }
+    .ai-card .ai-refresh:hover { background: #1a2233; border-color: var(--color-mirror-ink); }
     .ai-card .ai-disclaimer {
         font-size: .68rem; color: #94a3b8; font-style: italic;
         margin-left: auto;
@@ -107,68 +108,69 @@
         color: #64748b; font-weight: 400;
     }
     .ai-generate-btn {
-        background: #b87333;
-        color: #fff; border: 0;
-        padding: .55rem 1.05rem; border-radius: 999px;
-        font-size: .82rem; font-weight: 600;
-        cursor: pointer; box-shadow: 0 2px 6px rgba(184,115,51,.28);
+        background: #5b8cff;
+        color: #0a0e17; border: 0;
+        padding: .55rem 1.05rem; border-radius: 0.45rem;
+        font-size: .82rem; font-weight: 650;
+        cursor: pointer; box-shadow: none;
     }
-    .ai-generate-btn:hover { box-shadow: 0 4px 12px rgba(184,115,51,.35); }
+    .ai-generate-btn:hover { filter: brightness(1.08); }
     .ai-generate-btn:disabled { opacity: .55; cursor: not-allowed; }
 
     .callouts-card {
-        background: #fff; border-radius: 12px; padding: .9rem 1rem;
-        border: 1px solid #e7e5e4; box-shadow: 0 2px 8px rgba(0,0,0,.04);
+        background: #121826; border-radius: 0.75rem; padding: .9rem 1rem;
+        border: 1px solid #243049; box-shadow: none; color: #e8edf7;
     }
-    .callouts-card.sweet { border-left: 3px solid #059669; }
-    .callouts-card.soft  { border-left: 3px solid #b91c1c; }
+    .callouts-card.sweet { border-left: 2px solid #28c08a; }
+    .callouts-card.soft  { border-left: 2px solid #f0556d; }
     .callouts-card h3 {
-        font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
-        color: #64748b; margin: 0 0 .55rem; font-weight: 700;
+        font-size: .65rem; text-transform: uppercase; letter-spacing: .1em;
+        color: #8a97b1; margin: 0 0 .55rem; font-weight: 650;
     }
     .callouts-card .pair {
         display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
         font-size: .85rem; padding: .35rem 0;
-        border-bottom: 1px dashed #f1f5f9;
+        border-bottom: 1px solid #243049;
     }
     .callouts-card .pair:last-child { border-bottom: 0; }
-    .strat-tag { background: #1e293b; color: #fafaf9; padding: .15rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 700; }
-    .ind-tag   { background: #f3e6d4; color: #1e3a8a; padding: .15rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 600; }
-    .callouts-card .pair .meta { color: #64748b; font-size: .72rem; }
+    .strat-tag { background: #1a2233; color: #fff; padding: .15rem .55rem; border-radius: 0.35rem; font-size: .68rem; font-weight: 650; border: 1px solid #243049; }
+    .ind-tag   { background: rgba(91,140,255,.15); color: #5b8cff; padding: .15rem .55rem; border-radius: 0.35rem; font-size: .68rem; font-weight: 650; }
+    .callouts-card .pair .meta { color: #8a97b1; font-size: .72rem; }
     .callouts-card .pair .pnl-big {
-        margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums;
+        margin-left: auto; font-weight: 650; font-variant-numeric: tabular-nums;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
         font-size: 1rem; white-space: nowrap;
     }
-    .callouts-card .pair .pnl-big.pos { color: #059669; }
-    .callouts-card .pair .pnl-big.neg { color: #b91c1c; }
+    .callouts-card .pair .pnl-big.pos { color: #28c08a; }
+    .callouts-card .pair .pnl-big.neg { color: #f0556d; }
 
     .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; }
     .fit-controls label.lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: .25rem; display: block; }
 
     .metric-toggle {
-        display: inline-flex; gap: 0; background: #f1f5f9; padding: 3px;
-        border-radius: 999px; border: 1px solid #e2e8f0;
+        display: inline-flex; gap: 0; background: #121826; padding: 3px;
+        border-radius: 0.45rem; border: 1px solid #243049;
     }
     .metric-toggle button,
     .metric-toggle a {
-        background: transparent; border: 0; color: #475569;
-        padding: .35rem .85rem; border-radius: 999px;
-        font-size: .75rem; font-weight: 600; cursor: pointer;
+        background: transparent; border: 0; color: #8a97b1;
+        padding: .35rem .85rem; border-radius: 0.35rem;
+        font-size: .75rem; font-weight: 650; cursor: pointer;
         transition: all .12s ease;
         white-space: nowrap;
         text-decoration: none;
         display: inline-flex; align-items: center;
     }
     .metric-toggle button.active,
-    .metric-toggle a.active { background: #0f172a; color: #fafaf9; }
+    .metric-toggle a.active { background: rgba(91,140,255,.15); color: #5b8cff; }
     .metric-toggle button:hover:not(.active),
-    .metric-toggle a:hover:not(.active) { color: #0f172a; background: #fff; }
+    .metric-toggle a:hover:not(.active) { color: #fff; background: rgba(255,255,255,.04); }
 
     .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
     .visibility-toggles .form-check { font-size: .78rem; color: #475569; }
 
     .fit-card {
-        background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05);
+        background: #121826; border: 1px solid #243049; border-radius: 0.75rem; box-shadow: none; color: #e8edf7;
         padding: 1rem; margin-bottom: 1rem;
         /* The card used to grow with the table (min-content width) and then
            overflow:hidden clipped Healthcare / the strategy total with no
@@ -215,7 +217,7 @@
     }
     table.fit th, table.fit td { padding: .5rem .55rem; vertical-align: top; }
     table.fit thead th {
-        background: #f1f5f9; color: #0f172a;
+        background: #1a2233; color: #8a97b1;
         font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
         font-weight: 700;
         border-radius: 6px;
@@ -224,7 +226,7 @@
         position: sticky; top: 0; z-index: 3;
     }
     table.fit thead th.row-head {
-        text-align: left; background: #fff;
+        text-align: left; background: #121826; color: #e8edf7;
         position: sticky; left: 0; z-index: 4;
         box-shadow: 2px 0 0 #e2e8f0;
     }
@@ -247,8 +249,8 @@
     table.fit thead th.totals { background: #1e293b; color: #fff; }
 
     table.fit tbody th.strategy {
-        text-align: left; background: #fafafa; border-radius: 6px;
-        white-space: nowrap; font-weight: 700; color: #0f172a; min-width: 140px;
+        text-align: left; background: #121826; border-radius: 6px;
+        white-space: nowrap; font-weight: 650; color: #fff; min-width: 140px;
         position: sticky; left: 0; z-index: 2;
         box-shadow: 2px 0 0 #e7e5e4;
     }
@@ -280,7 +282,8 @@
     table.fit td.cell.low-n:hover { opacity: 1; }
 
     table.fit td.cell.empty {
-        background: #fafafa; color: #cbd5e1; text-align: center;
+        background: #0a0e17; color: #8a97b1; text-align: center;
+        border: 1px solid #243049;
     }
 
     /* Equity-only strategies viewed under an options-only dimension
@@ -288,7 +291,7 @@
        "small sample") — this is "wrong dimension," not a sample issue.
        Diagonal hatch tells the user "this row doesn't apply here." */
     table.fit tr.equity-na th.strategy {
-        background: #f5f5f4; color: #57534e; font-weight: 600;
+        background: #121826; color: #8a97b1; font-weight: 600;
     }
     table.fit tr.equity-na th.strategy .row-meta {
         color: #78716c;
@@ -304,8 +307,8 @@
     table.fit tr.equity-na td.cell.na {
         background: repeating-linear-gradient(
             45deg,
-            #fafaf9, #fafaf9 6px,
-            #f5f5f4 6px, #f5f5f4 12px
+            #0a0e17, #0a0e17 6px,
+            #1a2233 6px, #1a2233 12px
         );
         color: #a8a29e; text-align: center;
         font-size: .7rem; font-style: italic;
@@ -321,7 +324,7 @@
     table.fit td.total-cell .cell-pnl.pos { color: #6ee7b7 !important; }
     table.fit td.total-cell .cell-pnl.neg { color: #fca5a5 !important; }
     table.fit tr.totals-row th.strategy { background: #1e293b; color: #fff; }
-    table.fit tr.totals-row td.total-cell.grand { background: #b87333 !important; }
+    table.fit tr.totals-row td.total-cell.grand { background: #5b8cff !important; }
 
     .pos { color: #059669; }
     .neg { color: #b91c1c; }
@@ -358,7 +361,7 @@
     .fit-panel {
         position: fixed; top: 0; right: 0; bottom: 0;
         width: min(440px, 92vw);
-        background: #fff;
+        background: #121826;
         box-shadow: -8px 0 24px rgba(15, 23, 42, .15);
         transform: translateX(100%);
         transition: transform .22s ease;
@@ -403,7 +406,7 @@
         margin-bottom: 1.1rem;
     }
     .panel-stats .stat {
-        background: #f8fafc; padding: .6rem .75rem; border-radius: 9px;
+        background: #1a2233; padding: .6rem .75rem; border-radius: 9px;
     }
     .panel-stats .stat .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
     .panel-stats .stat .val { font-size: .95rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
@@ -411,7 +414,7 @@
     .panel-stats .stat .val.neg { color: #b91c1c; }
 
     .panel-edge {
-        background: #f8f1e7; border-left: 3px solid var(--color-mirror);
+        background: #1a2233; border-left: 3px solid var(--color-mirror);
         padding: .65rem .8rem; border-radius: 0 9px 9px 0;
         font-size: .82rem; color: var(--ht-ink); margin-bottom: 1rem;
     }
@@ -428,11 +431,11 @@
         display: grid; grid-template-columns: auto 1fr auto; align-items: center;
         gap: .6rem; padding: .55rem .75rem;
         border-radius: 8px; margin-bottom: .35rem;
-        background: #fafafa;
+        background: #121826;
         text-decoration: none; color: inherit;
         transition: background .12s ease;
     }
-    .symbol-row:hover { background: #f8f1e7; color: inherit; }
+    .symbol-row:hover { background: #1a2233; color: inherit; }
     .symbol-row .sym { font-weight: 700; color: #0f172a; min-width: 60px; font-variant-numeric: tabular-nums; }
     .symbol-row .bar { height: 6px; border-radius: 3px; background: #e2e8f0; position: relative; }
     .symbol-row .bar > span {
@@ -456,8 +459,8 @@
     }
     .panel-actions a.primary { background: #0f172a; color: #fafaf9; }
     .panel-actions a.primary:hover { background: #1e293b; color: #fafaf9; }
-    .panel-actions a.secondary { background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; }
-    .panel-actions a.secondary:hover { background: #f3e6d4; }
+    .panel-actions a.secondary { background: #1a2233; color: #e8edf7; border: 1px solid #243049; }
+    .panel-actions a.secondary:hover { background: #1a2233; }
 </style>
 {% endblock %}
 
@@ -475,7 +478,6 @@
 
 <div class="review-hero fit-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             <input type="hidden" name="view" value="fit">
@@ -919,7 +921,7 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
     function fmtPct(n) { return Math.round(n * 100) + '%'; }
 
     function colorFor(value, maxAbs, mode) {
-        if (!value && value !== 0) return { bg: '#fafafa', txt: '#cbd5e1' };
+        if (!value && value !== 0) return { bg: '#0a0e17', txt: '#8a97b1' };
         var intensity = Math.min(Math.abs(value) / (maxAbs || 1), 1);
         var alpha = 0.12 + intensity * 0.55;
         if (mode === 'win_rate') {
@@ -928,14 +930,14 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
             var dist = Math.min(Math.abs(value - 0.5) / 0.5, 1);
             alpha = 0.12 + dist * 0.55;
             if (value >= 0.5) {
-                return { bg: 'rgba(16,185,129,' + alpha + ')', txt: '#065f46' };
+                return { bg: 'rgba(40,192,138,' + alpha + ')', txt: '#e8edf7' };
             }
-            return { bg: 'rgba(239,68,68,' + alpha + ')', txt: '#7f1d1d' };
+            return { bg: 'rgba(240,85,109,' + alpha + ')', txt: '#e8edf7' };
         }
         if (value >= 0) {
-            return { bg: 'rgba(16,185,129,' + alpha + ')', txt: '#065f46' };
+            return { bg: 'rgba(40,192,138,' + alpha + ')', txt: '#e8edf7' };
         }
-        return { bg: 'rgba(239,68,68,' + alpha + ')', txt: '#7f1d1d' };
+        return { bg: 'rgba(240,85,109,' + alpha + ')', txt: '#e8edf7' };
     }
 
     function renderCell(td, metric) {

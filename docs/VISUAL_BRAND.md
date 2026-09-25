@@ -8,8 +8,8 @@ variables instead of new hexes.
 
 | Role | Face | Weights | Stack |
 | --- | --- | --- | --- |
-| UI, body, headings | Public Sans | 400, 500, 600, 700 | `"Public Sans", system-ui, sans-serif` |
-| KPI values, stat bars, numeric utilities | IBM Plex Mono | 400, 500, 600 | `"IBM Plex Mono", ui-monospace, monospace` |
+| UI, body, headings | Instrument Sans | 400–700 | `"Instrument Sans", ui-sans-serif, system-ui, sans-serif` |
+| Tickers, prices, P&L, table dates | JetBrains Mono | 400, 500, 600, 700 | `"JetBrains Mono", ui-monospace, monospace` |
 
 Loaded from Google Fonts in `base.html`. The skeleton shell loads Public Sans only.
 
@@ -22,22 +22,23 @@ Do not introduce Inter, Geist, Plus Jakarta Sans, Manrope, Space Grotesk, or Out
 
 ## Color
 
-| Token | Light | Dark | Use |
-| --- | --- | --- | --- |
-| `--color-mirror` | `#b87333` | `#e0b56a` | Brand copper. Fills, icons, focus. |
-| `--color-mirror-ink` | `#7a4a1e` | `#e0b56a` | Accent text on a surface. The light fill fails AA as small text on white. |
-| `--nav-bg` / heroes | `#1a1a2e` | `#1a1a2e` | Flat charcoal navy. Not a gradient. |
-| Page background | `#f4f5f7` | `#12141a` | Neutral gray page. White cards sit on it. |
-| `--ht-surface` | `#ffffff` | `#1c1e26` | Cards, stat bars, tables. |
-| `--ht-surface-2` | `#f3f4f6` | `#16181f` | Inset strips. |
-| `--ht-ink` | `#1c1917` | `#f4f0ea` | Primary text. |
-| `--ht-label` | `#44403c` | `#d6d1c9` | Section labels. |
-| `--ht-muted` | `#57534e` | `#a8a29e` | Secondary text. |
-| `--ht-faint` | `#78716c` | `#78716c` | Tertiary text. |
-| `--ht-line` | `#e5e7eb` | `#2e313a` | Hairline borders. |
-| `--ht-hover` | `#f3f4f6` | `#262932` | Row hover. |
-| `--color-positive` | `#3f7d5c` | same | P&L green. Desaturated tape, still clearly green. |
-| `--color-negative` | `#b55249` | same | P&L red. Desaturated tape, still clearly red. |
+The product is a dark desk. There is no light theme.
+
+| Token | Hex | Use |
+| --- | --- | --- |
+| Page (public) | `#05070c` | Marketing field, with mint and blue glows |
+| `--ht-page` | `#0a0e17` | Logged-in background |
+| `--ht-surface` | `#121826` | Cards |
+| `--ht-surface-2` | `#1a2233` | Nested stats, hover |
+| `--ht-line` | `#243049` | Card borders |
+| `--ht-ink` | `#e8edf7` | Body |
+| `--ht-muted` | `#8a97b1` | Labels (public muted is `#7d8aa3`) |
+| `--ht-mint` | `#5b8cff` | Wordmark tail and primary button. Purply-blue, not the P&L green. Text on it is `#0a0e17` |
+| `--color-mirror` / `--ht-blue` | `#5b8cff` | Selected nav, links, focus |
+| `--color-positive` | `#28c08a` | Gains only |
+| `--color-negative` | `#f0556d` | Losses only |
+
+Wordmark is lowercase `happy` in `#ffffff` plus `trader` in mint, weight 650, tracking `-0.03em`.
 
 Buttons and other white-on-copper fills stay `#b87333` in both themes. White text on the dark-mode `#e0b56a` fails contrast, so do not bind a white label to `var(--color-mirror)`.
 
