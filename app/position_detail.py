@@ -3304,6 +3304,35 @@ def position_detail(symbol):
         _stats.add_step("compute", (time.perf_counter() - _compute_t0) * 1000.0)
     _render_t0 = time.perf_counter()
     open_strategy_names = unique_open_strategy_names(strategy_rows)
+    chart_read = None
+    try:
+        from app.llm_access import user_can_use_paid_llm
+        from app.position_chart_read import (
+            load_chart_read,
+            review_brief,
+            store_chart_brief,
+        )
+
+        _brief = review_brief(story_markers)
+        if _brief:
+            _scope_ids = ",".join(sorted(str(t) for t in (tenant_scope or [])))
+            _scope = f"{_scope_ids}|{leg_param or ''}"
+            _digest = store_chart_brief(
+                current_user.id, symbol, _scope, _brief, "",
+            )
+            _saved = load_chart_read(current_user.id, symbol, _scope, _digest) or {}
+            _body = (_saved.get("body") or "").strip()
+            chart_read = {
+                "lead": "" if _body else "Reading this chart…",
+                "rest": _body,
+                "digest": _digest,
+                "scope": _scope,
+                "pending": not _body,
+                "locked": not user_can_use_paid_llm(current_user.id),
+            }
+    except Exception as exc:
+        app.logger.warning("chart read prep failed for %s: %s", symbol, exc)
+        chart_read = None
     resp = make_response(render_template(
         "position_detail.html",
         title=symbol,
@@ -3351,6 +3380,7 @@ def position_detail(symbol):
         tab_href_suffix=tab_qs,
         mode="navigate",
         first_visit=first_visit,
+        chart_read=chart_read,
     ))
     if _stats is not None:
         _stats.add_step("render", (time.perf_counter() - _render_t0) * 1000.0)
@@ -3361,6 +3391,45 @@ def position_detail(symbol):
             httponly=True, samesite="Lax", secure=not app.debug,
         )
     return resp
+
+
+@app.route("/position/<symbol>/chart-read", methods=["POST"])
+@login_required
+def position_chart_read(symbol):
+    """Fill the blurred half of the chart read. The brief was stored when
+    the page rendered, from the chart already on screen."""
+    from app.db import execute
+    from app.llm_access import user_can_use_paid_llm
+    from app.position_chart_read import generate_chart_body, load_chart_read
+
+    digest = (request.form.get("digest") or "").strip()[:64]
+    scope = (request.form.get("scope") or "").strip()[:800]
+    if not digest:
+        return jsonify(ok=False), 400
+    row = load_chart_read(current_user.id, symbol, scope, digest)
+    if not row:
+        return jsonify(ok=False), 404
+    body = (row.get("body") or "").strip()
+    if not body:
+        try:
+            facts = json.loads(row.get("brief") or "{}")
+        except json.JSONDecodeError:
+            facts = {}
+        body = generate_chart_body(facts) or ""
+        if body:
+            execute(
+                """
+                UPDATE position_chart_reads
+                SET body = %s, generated_at = NOW()
+                WHERE user_id = %s AND symbol = %s AND scope = %s AND brief_hash = %s
+                """,
+                (body, current_user.id, symbol.upper(), scope, digest),
+            )
+    return jsonify(
+        ok=True,
+        body=body,
+        locked=not user_can_use_paid_llm(current_user.id),
+    )
 
 
 def _peek_num(val):

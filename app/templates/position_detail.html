@@ -45,7 +45,7 @@
     .leg-detail-table th { padding: .25rem .5rem; font-size: .65rem; text-transform: uppercase; letter-spacing: .3px; color: #6c757d; border: none; }
     .session-pills { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
     .session-pill {
-        display: inline-flex; align-items: center; gap: .4rem;
+        display: inline-flex; align-items: center; flex-wrap: wrap; gap: .4rem;
         padding: .4rem .85rem; border-radius: 20px; font-size: .78rem; font-weight: 600;
         cursor: pointer; user-select: none; transition: all .15s;
         border: 1px solid #243049; background: #121826; color: #e8edf7;
@@ -102,10 +102,64 @@
         .table-responsive { -webkit-overflow-scrolling: touch; }
         .leg-detail-table { font-size: .7rem; }
     }
+    .wl-matrix {
+        --bs-table-bg: #121826;
+        --bs-table-color: #e8edf7;
+        --bs-table-border-color: #243049;
+    }
+    .wl-matrix .wl-axis {
+        background: #1a2233;
+        color: #8a97b1;
+        border-color: #243049;
+    }
+    .chart-read-kicker {
+        font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+        color: #8a97b1; font-weight: 650; margin-bottom: .35rem;
+    }
+    .chart-read-lead, .chart-read-rest {
+        color: #e8edf7; font-size: .95rem; line-height: 1.55; margin: 0;
+    }
+    .chart-read-more { position: relative; margin-top: .65rem; }
+    .chart-read-more.is-locked .chart-read-rest {
+        filter: blur(5px);
+        user-select: none;
+        max-height: 4.6rem;
+        overflow: hidden;
+    }
+    .chart-read-upgrade {
+        position: absolute; left: 0; right: 0; bottom: .2rem;
+        display: flex; justify-content: center;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+{% macro trade_action(t) %}
+{% set action = (t.action or '')|string %}
+{% if t.is_dividend_reinvestment %}
+<span class="tt-verb buy" title="Dividend reinvestment — the broker took a cash dividend and bought fractional shares.">DRIP</span>
+{% else %}
+{% set labels = {
+    'equity_buy': 'Bought',
+    'equity_sell': 'Sold',
+    'equity_sell_short': 'Sold short',
+    'option_sell_to_open': 'Sold to open',
+    'option_buy_to_open': 'Bought to open',
+    'option_buy_to_close': 'Bought to close',
+    'option_sell_to_close': 'Sold to close',
+    'option_expired': 'Expired',
+    'option_assigned': 'Assigned',
+    'option_exercised': 'Exercised',
+    'dividend': 'Dividend',
+    'margin_interest': 'Margin interest',
+    'credit_interest': 'Interest',
+    'adr_fee': 'ADR fee',
+    'cash_transfer': 'Cash transfer',
+} %}
+{% set kind = 'lifecycle' if action in ('option_expired', 'option_assigned', 'option_exercised') else 'buy' if 'buy' in action else 'sell' if 'sell' in action else '' %}
+<span class="tt-verb {{ kind }}">{{ labels.get(action, action|replace('_', ' ')|title) }}</span>
+{% endif %}
+{% endmacro %}
 <div class="mb-2">
     <a href="/positions" class="text-muted small text-decoration-none">&larr; Back to Positions</a>
 </div>
@@ -374,7 +428,7 @@
 
 {# ── Account Toggle Bar (turn entire accounts on/off) ── #}
 {% if account_toggles and account_toggles|length > 1 %}
-<div class="card stat-card p-3 mb-4">
+<div class="card stat-card p-3 mb-4" id="position-accounts">
     <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="fw-bold mb-0">Accounts</h6>
         <span class="text-muted small">Traded {{ symbol }} in {{ account_toggles|length }} accounts</span>
@@ -409,6 +463,7 @@
             } else {
                 url.searchParams.set('tenants', checked.join(','));
             }
+            url.hash = 'position-accounts';
             window.location = url.toString();
         });
     });
@@ -416,22 +471,42 @@
 </script>
 {% endif %}
 
-{# ── Session / Leg Filter (grouped by account) ── #}
-{% if sessions and sessions|length > 1 %}
+{# ── Session / Leg Filter, with tags on each leg ── #}
+{% if sessions %}
 {% set multi_account = legs_by_account and legs_by_account|length > 1 %}
-<div class="card stat-card p-3 mb-4">
+{% set can_filter = sessions|length > 1 %}
+<style>
+  .leg-tag-ui { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
+  .leg-tag-chip { display:inline-flex; align-items:center; gap:4px; padding:1px 7px;
+      font-size:.68rem; font-weight:600; border-radius:999px;
+      background:rgba(184,115,51,.14); color:var(--color-mirror-ink); }
+  .leg-tag-x { border:none; background:none; color:inherit; cursor:pointer;
+      font-size:.85rem; line-height:1; padding:0; }
+  .leg-tag-x:hover { color:#f0556d; }
+  .leg-tag-open, .leg-tag-ui .btn { font-size:.68rem; font-weight:600; padding:0 .35rem;
+      border:none; background:none; color:#8a97b1; cursor:pointer; }
+  .leg-tag-open:hover { color:#e8edf7; }
+  .leg-tag-input { width:7rem; height:24px; font-size:.72rem; }
+  .leg-tag-form { display:inline-flex; align-items:center; gap:.25rem; margin:0; }
+  .leg-tag-form[hidden] { display:none !important; }
+</style>
+<datalist id="userTags">
+    {% for t in all_user_tags %}<option value="{{ t }}">{% endfor %}
+</datalist>
+<div class="card stat-card p-3 mb-4" id="position-legs">
     <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="fw-bold mb-0">Position Legs</h6>
         {% if leg_param %}
-        <a href="{{ scoped_url('position_detail', symbol=symbol) }}" class="btn btn-sm btn-outline-secondary">Show All</a>
+        <a href="{{ scoped_url('position_detail', symbol=symbol, _anchor='position-legs') }}" class="btn btn-sm btn-outline-secondary">Show All</a>
         {% endif %}
     </div>
     <p class="text-muted small mb-2">
-        {% if multi_account %}
+        {% if can_filter and multi_account %}
         Legs are grouped by account. Click a leg to focus that account and leg.
-        {% else %}
-        Filter the entire page by leg. Click to toggle.
+        {% elif can_filter %}
+        Click a leg to filter the page to it.
         {% endif %}
+        + tag labels a leg. Tags are private and roll up on Accounts and Positions.
     </p>
     <div id="sessionPills" data-multi-account="{{ '1' if multi_account else '0' }}">
         {% for grp in legs_by_account %}
@@ -456,6 +531,32 @@
                     {% elif s.options_count > 0 and s.equity_pnl != 0 %}
                     <span class="pill-pnl" style="opacity:.55; font-size:.65rem;">(eq {{ money(s.equity_pnl, 0) }} + {{ s.options_count }} opt)</span>
                     {% endif %}
+                    <span class="leg-tag-ui">
+                        {% for tg in s.tags %}
+                        <span class="leg-tag-chip">{{ tg }}
+                            <form method="POST" action="{{ url_for('remove_position_tag', symbol=symbol) }}" class="d-inline m-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
+                                <input type="hidden" name="tenant_id" value="{{ s.tenant_id }}">
+                                <input type="hidden" name="leg_open_date" value="{{ s.open_date[:10] }}">
+                                <input type="hidden" name="tag" value="{{ tg }}">
+                                <button type="submit" class="leg-tag-x" title="Remove tag" aria-label="Remove tag {{ tg }}">&times;</button>
+                            </form>
+                        </span>
+                        {% endfor %}
+                        {% if s.open_date %}
+                        <button type="button" class="leg-tag-open">+ tag</button>
+                        <form method="POST" action="{{ url_for('add_position_tag', symbol=symbol) }}" class="leg-tag-form" hidden>
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ request.full_path }}">
+                            <input type="hidden" name="tenant_id" value="{{ s.tenant_id }}">
+                            <input type="hidden" name="leg_open_date" value="{{ s.open_date[:10] }}">
+                            <input type="text" name="tag" list="userTags" maxlength="40" placeholder="tag"
+                                   class="form-control form-control-sm leg-tag-input" autocomplete="off">
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Add</button>
+                        </form>
+                        {% endif %}
+                    </span>
                 </div>
                 {% endfor %}
             </div>
@@ -467,7 +568,20 @@
 (function() {
     const container = document.getElementById('sessionPills');
     const multiAccount = container && container.dataset.multiAccount === '1';
+    document.querySelectorAll('.leg-tag-ui').forEach(ui => {
+        ui.addEventListener('click', (e) => e.stopPropagation());
+        const open = ui.querySelector('.leg-tag-open');
+        const form = ui.querySelector('.leg-tag-form');
+        if (!open || !form) return;
+        open.addEventListener('click', () => {
+            open.hidden = true;
+            form.hidden = false;
+            const input = form.querySelector('input[name="tag"]');
+            if (input) input.focus();
+        });
+    });
     const pills = document.querySelectorAll('.session-pill');
+    if (pills.length < 2) return;
     pills.forEach(pill => {
         pill.addEventListener('click', () => {
             const url = new URL(window.location);
@@ -479,6 +593,7 @@
                 url.searchParams.delete('account');
                 url.searchParams.delete('tenant');
                 url.searchParams.set('leg', pill.dataset.sessionId);
+                url.hash = 'position-legs';
                 window.location = url.toString();
                 return;
             }
@@ -491,6 +606,7 @@
             } else {
                 url.searchParams.set('leg', ids.join(','));
             }
+            url.hash = 'position-legs';
             window.location = url.toString();
         });
     });
@@ -498,70 +614,8 @@
 </script>
 {% endif %}
 
-{# ── Leg Tags (user-defined labels per leg, stored in Postgres) ── #}
-{% if sessions %}
-<style>
-  .leg-tag-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px;
-      font-size:.72rem; font-weight:600; border-radius:999px;
-      background:rgba(184,115,51,.14); color:var(--color-mirror-ink); }
-  .leg-tag-x { border:none; background:none; color:var(--color-mirror-ink); cursor:pointer;
-      font-size:.9rem; line-height:1; padding:0; }
-  .leg-tag-x:hover { color:#dc2626; }
-  .leg-tag-input { max-width:150px; height:30px; font-size:.78rem; }
-  .leg-tag-row:last-child { border-bottom:none !important; }
-</style>
-<datalist id="userTags">
-    {% for t in all_user_tags %}<option value="{{ t }}">{% endfor %}
-</datalist>
-<div class="card stat-card p-3 mb-4">
-    <h6 class="fw-bold mb-1">Leg Tags</h6>
-    <p class="text-muted small mb-3">
-        Tag a leg (e.g. <code>earningsfollower</code>) to track how a group of trades
-        performs. Tags are private to you and roll up on the Accounts and Positions pages.
-    </p>
-    {% for grp in legs_by_account %}
-    <div class="mb-2">
-        {% if legs_by_account|length > 1 %}
-        <div class="text-muted small fw-bold mb-1">{{ grp.label }}</div>
-        {% endif %}
-        {% for s in grp.sessions %}
-        <div class="leg-tag-row d-flex flex-wrap align-items-center gap-2 py-2 border-bottom">
-            <span class="small fw-bold" style="min-width:56px;">Leg {{ s.display_leg }}</span>
-            <span class="text-muted small">{{ s.open_date[:10] }} &rarr; {{ s.last_trade_date[:10] if s.status != 'Open' else 'now' }}</span>
-            <span class="d-flex flex-wrap gap-1 align-items-center">
-                {% for tg in s.tags %}
-                <span class="leg-tag-chip">{{ tg }}
-                    <form method="POST" action="{{ url_for('remove_position_tag', symbol=symbol) }}" class="d-inline m-0">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="next" value="{{ request.full_path }}">
-                        <input type="hidden" name="tenant_id" value="{{ s.tenant_id }}">
-                        <input type="hidden" name="leg_open_date" value="{{ s.open_date[:10] }}">
-                        <input type="hidden" name="tag" value="{{ tg }}">
-                        <button type="submit" class="leg-tag-x" title="Remove tag" aria-label="Remove tag {{ tg }}">&times;</button>
-                    </form>
-                </span>
-                {% endfor %}
-            </span>
-            {% if s.open_date %}
-            <form method="POST" action="{{ url_for('add_position_tag', symbol=symbol) }}" class="d-inline-flex align-items-center gap-1 m-0">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="next" value="{{ request.full_path }}">
-                <input type="hidden" name="tenant_id" value="{{ s.tenant_id }}">
-                <input type="hidden" name="leg_open_date" value="{{ s.open_date[:10] }}">
-                <input type="text" name="tag" list="userTags" maxlength="40" placeholder="+ tag"
-                       class="form-control form-control-sm leg-tag-input" autocomplete="off">
-                <button type="submit" class="btn btn-sm btn-outline-primary">Add</button>
-            </form>
-            {% endif %}
-        </div>
-        {% endfor %}
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
 {# ── Cumulative P&L Chart ── #}
-<div class="chart-wrapper mb-4">
+<div class="chart-wrapper mb-4" id="position-chart">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
         <div>
             <h6 class="fw-bold mb-1">Cumulative P&amp;L</h6>
@@ -583,6 +637,26 @@
     <p class="text-muted small mb-0 mt-2">
         Dots mark your trade days &mdash; click one to jump to that day in the review below. Click a day in the review to highlight its dot here.
     </p>
+    {% endif %}
+    {% if chart_read %}
+    <div class="chart-read mt-3" id="chartRead"
+         data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
+         data-digest="{{ chart_read.digest }}"
+         data-scope="{{ chart_read.scope }}"
+         data-locked="{{ '1' if chart_read.locked else '0' }}"
+         data-pending="{{ '1' if chart_read.pending else '0' }}">
+        <div class="chart-read-kicker">On this chart</div>
+        <p class="chart-read-lead">{{ chart_read.lead }}</p>
+        <div class="chart-read-more {% if chart_read.locked %}is-locked{% endif %}">
+            <p class="chart-read-rest" id="chartReadRest">{{ chart_read.rest }}</p>
+            {% if chart_read.locked %}
+            <form class="chart-read-upgrade" method="post" action="{{ url_for('billing_checkout_ai') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-primary">Upgrade to HappyTrader AI to read the rest</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
     {% endif %}
 </div>
 
@@ -936,19 +1010,19 @@
             <span class="text-muted fw-normal" style="font-size:.75rem;">({{ mat.trade_count }} trades)</span>
         </h6>
         <div class="table-responsive">
-            <table class="table table-sm table-bordered align-middle mb-0" style="font-size:.72rem;">
+            <table class="table table-sm table-bordered align-middle mb-0 wl-matrix" style="font-size:.72rem;">
                 <thead>
                     <tr>
-                        <th class="bg-light" style="min-width:60px;">DTE \ Strike Distance</th>
+                        <th class="wl-axis" style="min-width:60px;">DTE \ Strike Distance</th>
                         {% for col in mat.col_headers %}
-                        <th class="text-center bg-light" style="min-width:96px;">{{ col }}</th>
+                        <th class="text-center wl-axis" style="min-width:96px;">{{ col }}</th>
                         {% endfor %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in mat.rows %}
                     <tr>
-                        <td class="fw-semibold bg-light text-nowrap">{{ row.dte_label }}</td>
+                        <td class="fw-semibold wl-axis text-nowrap">{{ row.dte_label }}</td>
                         {% for cell in row.cells %}
                         {% if cell.count == 0 %}
                         <td class="text-center" style="background: #1a2233;color: #8a97b1;">&mdash;</td>
@@ -1135,13 +1209,7 @@
                                 {% for t in o.raw_trades %}
                                 <tr>
                                     <td class="text-nowrap">{{ t.trade_date }}</td>
-                                    <td>
-                                        {% if t.is_dividend_reinvestment %}
-                                        <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.6rem;" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares.">DRIP</span>
-                                        {% else %}
-                                        <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.6rem;">{{ t.action }}</span>
-                                        {% endif %}
-                                    </td>
+                                    <td>{{ trade_action(t) }}</td>
                                     <td>
                                         {% if t.quantity is number and (t.quantity % 1) != 0 %}
                                         {{ "{:,.4f}".format(t.quantity) }}
@@ -1230,13 +1298,7 @@
                         <tr>
                             <td class="text-nowrap" data-val="{{ t.trade_date }}">{{ t.trade_date }}</td>
                             <td>{{ t.account_display or (t.account | account_label(t.tenant_id)) }}</td>
-                            <td data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">
-                                {% if t.is_dividend_reinvestment %}
-                                <span class="badge bg-info bg-opacity-25 text-info-emphasis" style="font-size:.65rem" title="Dividend reinvestment — Schwab took a cash dividend and bought fractional shares of {{ t.symbol }} on the ex-div date.">DRIP</span>
-                                {% else %}
-                                <span class="badge bg-secondary bg-opacity-25 text-dark" style="font-size:.65rem">{{ t.action }}</span>
-                                {% endif %}
-                            </td>
+                            <td data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">{{ trade_action(t) }}</td>
                             <td>{{ t.instrument_type }}</td>
                             <td class="small">{{ t.description }}</td>
                             <td data-val="{{ t.quantity }}">
@@ -1269,6 +1331,30 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+(function () {
+    var box = document.getElementById('chartRead');
+    if (!box || box.dataset.pending !== '1') return;
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    var token = csrf ? csrf.getAttribute('content') : '';
+    var fd = new FormData();
+    fd.append('digest', box.dataset.digest || '');
+    fd.append('scope', box.dataset.scope || '');
+    if (token) fd.append('csrf_token', token);
+    fetch(box.dataset.url, {
+        method: 'POST',
+        body: fd,
+        headers: token ? { 'X-CSRFToken': token } : {},
+        credentials: 'same-origin'
+    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+        if (!data || !data.body) return;
+        var lead = box.querySelector('.chart-read-lead');
+        if (lead) lead.textContent = '';
+        var rest = document.getElementById('chartReadRest');
+        if (rest) rest.textContent = data.body;
+    }).catch(function () {});
+})();
+</script>
 <script>
 (function () {
     var chartData = {{ chart_data_json | safe }};

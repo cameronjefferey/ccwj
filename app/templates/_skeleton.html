@@ -85,6 +85,15 @@
         document.open();
         document.write(html);
         document.close();
+        /* The shell document had no matching id, so the browser's
+           first hash scroll was a no-op. Retry once the real page exists. */
+        var hash = window.location.hash;
+        if (hash.length > 1) {
+            window.setTimeout(function () {
+                var el = document.getElementById(decodeURIComponent(hash.slice(1)));
+                if (el && el.scrollIntoView) el.scrollIntoView();
+            }, 0);
+        }
     }).catch(function () {
         var u = new URL(window.location.href);
         u.searchParams.set("_full", "1");

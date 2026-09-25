@@ -254,7 +254,7 @@
 {% if selected_strategy and focus_strategy %}
 
 {# Key stats #}
-<div class="focus-header">
+<div class="focus-header" id="strategy-focus">
     <div class="row g-0 text-center">
         <div class="col focus-stat" style="border-right: 1px solid #243049">
             <div class="focus-stat-value {{ 'text-positive' if focus_strategy.total_return >= 0 else 'text-negative' }}">
@@ -467,7 +467,7 @@
         </thead>
         <tbody>
             {% for a in focus_accounts %}
-            <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none) }}">
+            <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none, _anchor='strategy-focus') }}">
                 {% set _acct = a.account | account_label(a.tenant_id) %}
                 <td class="fw-semibold" data-val="{{ _acct }}">{{ _acct }}</td>
                 <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
@@ -494,7 +494,7 @@
    ══════════════════════════════ #}
 <div class="strat-cards">
     {% for s in strategies %}
-    <a href="{{ scoped_url('strategies', strategy=s.strategy) }}"
+    <a href="{{ scoped_url('strategies', strategy=s.strategy, _anchor='strategy-focus') }}"
        class="strat-card {% if s.is_selected %}selected{% endif %}">
         <div class="strat-card-header">
             <div>

@@ -8,6 +8,7 @@
     .dd-hero {
         background: #1a1a2e;
         border-radius: 14px; color: #fff; padding: 1.5rem 1.75rem;
+        scroll-margin-top: 4.5rem;
     }
     .dd-hero .dd-date { font-size: .78rem; letter-spacing: 1px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
     .dd-hero .dd-delta { font-size: 2rem; font-weight: 600; }
@@ -56,7 +57,7 @@
     [data-bs-theme="dark"] .dd-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
 </style>
 
-<div class="dd-hero mb-4">
+<div class="dd-hero mb-4" id="day-review">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <div class="dd-date">Day review &middot; {{ day_label }}</div>
@@ -88,13 +89,13 @@
             <a href="{{ scoped_url('day_detail', day_str=prev_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
+                                tenants=selected_tenants, _anchor='day-review') }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
             {% if next_day %}
             <span class="mx-1" style="color:#475569;">|</span>
             <a href="{{ scoped_url('day_detail', day_str=next_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
+                                tenants=selected_tenants, _anchor='day-review') }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
             {% endif %}
             <div class="mt-2">
                 <a href="{{ scoped_url('weekly_review',

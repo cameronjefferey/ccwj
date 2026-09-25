@@ -98,7 +98,7 @@ def test_heatmap_day_link_preserves_tenant_scope():
     assert queries[0]["tenants"] == [TENANTS]
     assert "1 symbol is currently held." in rendered
     assert "of your stories" not in rendered
-    assert "Trades — Wed Jan 3" in rendered
+    assert "Trades, Wed Jan 3" in rendered
     assert "Bought" in rendered
     assert "1 fill Wed" in rendered
     assert "AAPL" in rendered

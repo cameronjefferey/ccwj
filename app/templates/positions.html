@@ -287,8 +287,8 @@
 {% endif %}
 
 <h3 class="ov-grp">Filters</h3>
-<div class="pos-panel pos-filters">
-<form method="get" class="filter-bar" id="posFilters">
+<div class="pos-panel pos-filters" id="pos-filters">
+<form method="get" class="filter-bar" id="posFilters" action="#pos-filters">
     {# Account scope lives in the hero. These hidden fields keep it when
        Symbol / Strategy / dates submit this form. #}
     {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
@@ -348,11 +348,11 @@
         <label class="lblh">Status</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _all_statuses }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='pos-filters') }}">All</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Open']) }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Open'], start_date=selected_start_date, end_date=selected_end_date, _anchor='pos-filters') }}">Open</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Closed']) }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date, _anchor='pos-filters') }}">Closed</a>
         </div>
         {# Mirror the chosen status into the form so a Symbol/Strategy
            change preserves it. Multi-status (rare path) still works
@@ -367,11 +367,11 @@
         <label class="lblh">Dates</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _is_alltime }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses) }}">All time</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, _anchor='pos-filters') }}">All time</a>
             <a class="{{ 'active' if _is_30d }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d'), _anchor='pos-filters') }}">Last 30d</a>
             <a class="{{ 'active' if _is_ytd }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d'), _anchor='pos-filters') }}">YTD</a>
         </div>
         {# No hidden date inputs needed — the visible date inputs below
            are part of this form and carry the current values, so when
@@ -584,7 +584,7 @@
                         <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
                             title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
                             {% if row.subsector and row.subsector != 'Unknown' %}
-                            <a href="{{ scoped_url('positions', subsector=row.subsector) }}"
+                            <a href="{{ scoped_url('positions', subsector=row.subsector, _anchor='pos-filters') }}"
                                class="text-decoration-none text-muted">{{ row.subsector }}</a>
                             {% else %}
                             <span class="text-muted">—</span>
@@ -643,7 +643,7 @@
 {% endif %}
 
 {# ── Strategy Detail Table ────────────────────────────────────────── #}
-<div class="card border-0 shadow-sm mb-5" style="border-radius:12px;">
+<div class="card border-0 shadow-sm mb-5" id="strategy-detail" style="border-radius:12px;">
     <div class="card-body p-3">
         <div class="ov-head">
             <div>
@@ -658,7 +658,7 @@
         {% if rows %}
         <div class="table-responsive">
             {% macro pos_sort(col) -%}
-            {{ scoped_url('positions', page=1, sort=col, dir=sort_next[col], strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}
+            {{ scoped_url('positions', page=1, sort=col, dir=sort_next[col], strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='strategy-detail') }}
             {%- endmacro %}
             <table class="table table-hover table-sm align-middle mb-0" id="positionsTable" data-server-sort="1">
                 <thead class="table-light">
@@ -785,11 +785,11 @@
             <span class="text-muted small" data-page-label data-unfiltered="Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {{ 'disabled' if page <= 1 }}">
-                    <a class="page-link" href="{{ scoped_url('positions', page=page-1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
+                    <a class="page-link" href="{{ scoped_url('positions', page=page-1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='strategy-detail') if page > 1 else '#' }}">&laquo; Prev</a>
                 </li>
                 <li class="page-item disabled"><span class="page-link">Page {{ page }} of {{ total_pages }}</span></li>
                 <li class="page-item {{ 'disabled' if page >= total_pages }}">
-                    <a class="page-link" href="{{ scoped_url('positions', page=page+1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
+                    <a class="page-link" href="{{ scoped_url('positions', page=page+1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='strategy-detail') if page < total_pages else '#' }}">Next &raquo;</a>
                 </li>
             </ul>
         </nav>
