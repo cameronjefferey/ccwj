@@ -542,6 +542,7 @@ def build_admin_overview():
         "signups": list(reversed(signups)),
         "recent": recent,
         "campaign_funnel": campaign["rows"],
+        "campaign_places": campaign["places"],
         "campaign_names": campaign["names"],
         "campaign_filter": campaign["campaign"],
         "creative_filter": campaign["creative"],
@@ -555,13 +556,13 @@ def _campaign_funnel():
     or a CSV upload. The table is the whole point of the ad: a signup that
     never links is not a win. ?campaign= and ?creative= narrow the rows.
     """
-    from app.campaign import filter_funnel_events, summarize_funnel
+    from app.campaign import filter_funnel_events, summarize_funnel, summarize_places
 
     events = _q(
         """
         SELECT event,
                COALESCE(visit_id, session_id) AS visit_id,
-               user_id, utm_campaign, utm_content
+               user_id, utm_campaign, utm_content, place
         FROM campaign_events
         WHERE created_at > NOW() - INTERVAL '30 days'
         """
@@ -591,6 +592,7 @@ def _campaign_funnel():
         connected = {row.get("user_id") for row in linked if row.get("user_id")}
     return {
         "rows": summarize_funnel(filtered, connected),
+        "places": summarize_places(filtered) if filtered else [],
         "names": names,
         "campaign": campaign,
         "creative": creative,

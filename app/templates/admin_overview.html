@@ -24,8 +24,8 @@
     .ov-card h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ht-label, #44403c); font-weight: 700; margin: 0 0 .75rem; }
     .ov-attn { display: flex; gap: .75rem; padding: .7rem .8rem; border-radius: 10px; margin-bottom: .5rem; align-items: flex-start; }
     .ov-attn.ok { background: #ecfdf5; }
-    .ov-attn.warn { background: #fff7ed; }
-    .ov-attn.bad { background: #fef2f2; }
+    .ov-attn.warn { background: #2a2118; }
+    .ov-attn.bad { background: rgba(240,85,109,.12); }
     .ov-attn.info { background: #eff6ff; }
     .ov-attn .t { font-weight: 700; font-size: .88rem; color: var(--ht-ink, #1c1917); }
     .ov-attn .d { font-size: .8rem; color: var(--ht-muted, #57534e); margin-top: .1rem; }
@@ -36,14 +36,14 @@
     .ov-pill { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
     .ov-pill.ok { background: #dcfce7; color: #166534; }
     .ov-pill.info { background: #dbeafe; color: #1e40af; }
-    .ov-pill.warn { background: #ffedd5; color: #9a3412; }
-    .ov-pill.bad { background: #fee2e2; color: #991b1b; }
-    .ov-pill.muted { background: #f5f5f4; color: #57534e; }
+    .ov-pill.warn { background: #2a2118; color: #e8edf7; }
+    .ov-pill.bad { background: rgba(240,85,109,.14); color: #e8edf7; }
+    .ov-pill.muted { background: #121826; color: #8a97b1; }
     .ov-muted { color: var(--ht-muted, #78716c); font-size: .82rem; }
     .ov-bar-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .4rem; font-size: .82rem; }
     .ov-bar-row .name { min-width: 10rem; color: var(--ht-ink, #1c1917); }
-    .ov-bar-track { flex: 1; height: .45rem; background: #f5f5f4; border-radius: 99px; overflow: hidden; }
-    .ov-bar-fill { height: 100%; background: #b87333; border-radius: 99px; }
+    .ov-bar-track { flex: 1; height: .45rem; background: #121826; border-radius: 99px; overflow: hidden; }
+    .ov-bar-fill { height: 100%; background: #5b8cff; border-radius: 99px; }
     .ov-bar-row .n { min-width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--ht-muted, #57534e); }
     .ov-note { font-size: .8rem; color: var(--ht-muted, #78716c); margin: 0 0 .75rem; }
     [data-bs-theme="dark"] .ov-stat,
@@ -130,6 +130,32 @@
         {% endfor %}
         </tbody>
     </table>
+    {% if campaign_places %}
+    <h3 class="mt-4 mb-2" style="font-size:1rem;">Which button</h3>
+    <p class="ov-note">A click is counted once per landing, on the button that was used.</p>
+    <table class="ov-table">
+        <thead>
+            <tr>
+                <th>Where</th>
+                <th>Signup button</th>
+                <th>Demo button</th>
+                <th class="text-end">Signup clicks</th>
+                <th class="text-end">Demo clicks</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in campaign_places %}
+        <tr>
+            <td>{{ row.where }}</td>
+            <td>{{ row.primary }}</td>
+            <td>{{ row.demo }}</td>
+            <td class="text-end">{{ row.signup_clicks }}</td>
+            <td class="text-end">{{ row.demo_clicks }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
     {% else %}
     <p class="ov-muted mb-0">No campaign visits yet. Ads should land on /start.</p>
     {% endif %}

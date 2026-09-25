@@ -13,8 +13,8 @@
     .broker-mgr-hero h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: .35rem; }
     .broker-mgr-hero p { margin: 0; opacity: .85; line-height: 1.55; max-width: 60ch; }
     .broker-card {
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 14px;
         padding: 1.4rem 1.5rem;
         margin-bottom: 1.25rem;
@@ -33,7 +33,7 @@
         align-items: center;
         gap: 1rem;
         padding: .9rem 0;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid #243049;
         scroll-margin-top: 5rem;
     }
     .broker-row:last-child { border-bottom: none; padding-bottom: 0; }
@@ -78,12 +78,12 @@
 
     /* Per-broker connection grouping */
     .broker-group {
-        border: 1px solid #e5e7eb;
+        border: 1px solid #243049;
         border-radius: 12px;
         padding: 1rem 1.1rem;
         margin-bottom: 1.1rem;
     }
-    .broker-group.is-broken { border-color: #fecaca; background: #fffbfa; }
+    .broker-group.is-broken { border-color: #fecaca; background: #2a1216; }
     .broker-group-head {
         display: flex;
         align-items: center;
@@ -100,8 +100,8 @@
         align-items: center;
         justify-content: space-between;
         gap: .9rem;
-        background: #fef2f2;
-        border: 1px solid #fecaca;
+        background: rgba(240,85,109,.12);
+        border: 1px solid #f0556d;
         border-radius: 10px;
         padding: .85rem 1rem;
         margin: .5rem 0 1rem;
@@ -148,8 +148,8 @@
     .complete-account-body {
         margin-top: .6rem;
         padding: .8rem .9rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
+        background: #1a2233;
+        border: 1px solid #243049;
         border-radius: 8px;
     }
     [data-bs-theme="dark"] .broker-card,
@@ -211,7 +211,7 @@
     <div class="broker-card">
         <h2>Connected accounts</h2>
 
-        <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
+        <div class="alert alert-warning small mb-3" role="alert" style="background: #2a2118; border-color:#fed7aa; color:#7c2d12;">
             <strong>Trades can lag.</strong>
             {% include "_broker_sync_timing.html" %}
             If a trade you just placed isn't here, check back later.
@@ -219,7 +219,7 @@
 
         {% if any_reconnect_needed %}
         <div class="alert small mb-3" role="alert"
-             style="background:#fef2f2; border:1px solid #fecaca; color:#7f1d1d;">
+             style="background: rgba(240,85,109,.12); border: 1px solid #f0556d; color: #e8edf7;">
             <strong>Action needed:</strong> one or more broker connections need to be
             reconnected before they can sync again. Use the
             <strong>Reconnect</strong> button on the affected broker below &mdash;
@@ -242,7 +242,7 @@
             {% if not c.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
         {% endfor %}
         {% set _any_first_pending = _ns.any_first_pending %}
-        <div class="mb-4 pb-3" style="border-bottom: 1px solid #e5e7eb;">
+        <div class="mb-4 pb-3" style="border-bottom: 1px solid #243049;">
             <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="sync_all" value="1">

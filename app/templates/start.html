@@ -9,14 +9,15 @@
 {% block head %}
 <style>
     body .start {
-        max-width: 42rem;
+        max-width: 58rem;
         margin: 0 auto 2rem;
     }
     body .start-hero {
-        background: #1a1a2e;
-        color: #fff;
-        border-radius: 18px;
-        padding: 2.25rem 1.35rem 1.75rem;
+        background: transparent;
+        color: #e8edf7;
+        border-radius: 0;
+        border-bottom: 1px solid #1c2538;
+        padding: 2.25rem 0 1.75rem;
         margin-bottom: 1.75rem;
     }
     body .start-kicker {
@@ -56,28 +57,127 @@
         font-size: 1rem;
     }
     body .start-btn-primary {
-        background: #fff;
-        color: #1a1a2e;
+        background: #5b8cff;
+        color: #0a0e17;
+        border-radius: 0.45rem;
+        font-weight: 650;
     }
-    body .start-btn-primary:hover { color: #1a1a2e; }
+    body .start-btn-primary:hover { color: #0a0e17; filter: brightness(1.08); }
     body .start-btn-ghost {
-        background: transparent;
+        background: rgba(255,255,255,.03);
         color: #fff;
-        border: 1px solid rgba(255,255,255,.45);
+        border: 1px solid #1c2538;
+        border-radius: 0.45rem;
     }
-    body .start-btn-ghost:hover { color: #fff; }
+    body .start-btn-ghost:hover {
+        color: #fff;
+        border-color: rgba(91,140,255,.45);
+        background: rgba(91,140,255,.14);
+    }
     body .start-fine {
         margin: .9rem 0 0;
         font-size: .82rem;
         color: rgba(255,255,255,.7);
     }
-    body .start h2 {
-        font-size: 1.35rem;
-        letter-spacing: -.01em;
-        margin: 0 0 .35rem;
+    body .start-cta { margin-top: 1.15rem; }
+    body .start-cta .start-btn-primary {
+        background: #5b8cff;
+        color: #0a0e17;
+    }
+    body .start-cta .start-btn-primary:hover { color: #0a0e17; }
+    body .start-cta .start-btn-ghost {
+        color: #fff;
+        border-color: #1c2538;
+    }
+    body .start-cta .start-btn-ghost:hover { color: #fff; }
+    body .start-cta-note {
+        margin: .55rem 0 0;
+        font-size: .82rem;
+        color: var(--ht-muted, #57534e);
+    }
+    [data-bs-theme="dark"] body .start-cta .start-btn-primary {
+        background: #5b8cff;
+        color: #0a0e17;
+    }
+    [data-bs-theme="dark"] body .start-cta .start-btn-primary:hover { color: #0a0e17; }
+    [data-bs-theme="dark"] body .start-cta .start-btn-ghost {
+        color: #fff;
+        border-color: #1c2538;
+    }
+    [data-bs-theme="dark"] body .start-cta .start-btn-ghost:hover { color: #fff; }
+    body .start h2,
+    body .start h3 {
+        letter-spacing: -.02em;
         color: var(--ht-ink, #1c1917);
     }
-    body .start-section { margin: 0 0 2.25rem; }
+    body .start h2 {
+        font-size: 1.35rem;
+        margin: 0 0 .35rem;
+    }
+    body .start h3 {
+        font-size: 1.12rem;
+        margin: 0;
+        line-height: 1.25;
+    }
+    body .start-flow {
+        display: grid;
+        grid-template-columns: 1.7rem 1fr;
+        column-gap: .85rem;
+        margin: 0 0 .8rem;
+        padding: 1.15rem 1rem 1.15rem;
+        border-radius: 16px;
+        position: relative;
+    }
+    body:has(.start) { background: var(--ht-surface, #fff); }
+    body .start-flow-1,
+    body .start-flow-3,
+    body .start-flow-5 { background: #0a0e17; }
+    body .start-flow-2,
+    body .start-flow-4 { background: transparent; }
+    body .start-rail { position: relative; z-index: 1; }
+    body .start-flow-head { margin: .12rem 0 .85rem; }
+    body .start-steps li { animation: start-step-in .55s ease both; }
+    body .start-steps li:nth-child(1) { animation-delay: .12s; }
+    body .start-steps li:nth-child(2) { animation-delay: .28s; }
+    body .start-steps li:nth-child(3) { animation-delay: .44s; }
+    body .start-steps li:nth-child(4) { animation-delay: .6s; }
+    body .start-steps li:nth-child(5) { animation-delay: .76s; }
+    @keyframes start-step-in {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        body .start-steps li { animation: none; }
+    }
+    body .start-flow-head p {
+        margin: .25rem 0 0;
+        color: var(--ht-muted, #57534e);
+        font-size: .95rem;
+    }
+    body .start-insight {
+        margin: 1rem 0 0;
+        padding: .75rem .85rem;
+        background: rgba(255,255,255,.72);
+        border-radius: 10px;
+        font-size: .95rem;
+        line-height: 1.45;
+        color: var(--ht-ink, #1c1917);
+    }
+    body .start-insight span {
+        display: block;
+        font-size: .68rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--ht-muted, #78716c);
+        margin-bottom: .2rem;
+    }
+    body .start-section { margin: 0 0 1.15rem; }
+    body .start-section-how {
+        background: transparent;
+        padding: 1.2rem 1rem 1.25rem;
+        margin-bottom: .8rem;
+    }
     body .start-dek {
         color: var(--ht-muted, #57534e);
         font-size: .95rem;
@@ -101,6 +201,49 @@
         color: var(--ht-muted, #78716c);
         margin: 0 0 .65rem;
     }
+    body .start-panel-broker {
+        background: #eceae6;
+        border-color: #d6d3d1;
+    }
+    body .start-panel-broker .who {
+        display: inline-block;
+        margin: 0 0 .8rem;
+        padding: .22rem .6rem;
+        border-radius: 999px;
+        background: #d6d3d1;
+        color: #44403c;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+    body .start-panel-broker .broker-line .amt {
+        color: #44403c;
+        font-size: 1.35rem;
+    }
+    body .start-panel-ht {
+        padding: 0;
+        overflow: hidden;
+        border-color: #1a1a2e;
+    }
+    body .start-panel-ht .who {
+        margin: 0;
+        padding: .75rem 1.05rem .7rem;
+        background: #1a1a2e;
+        color: #fff;
+        font-size: 1.02rem;
+        font-weight: 800;
+        letter-spacing: -.01em;
+    }
+    body .start-panel-ht .who span {
+        display: block;
+        margin-top: .15rem;
+        font-size: .82rem;
+        font-weight: 500;
+        letter-spacing: 0;
+        color: rgba(255,255,255,.72);
+    }
+    body .start-panel-ht .start-steps { padding: .35rem 1.05rem .95rem; }
     body .broker-line {
         display: flex;
         justify-content: space-between;
@@ -121,12 +264,31 @@
     body .start-steps { list-style: none; margin: 0; padding: 0; }
     body .start-steps li {
         display: grid;
-        grid-template-columns: 1.7rem 1fr;
+        grid-template-columns: 1.7rem 1fr auto;
         gap: .65rem;
-        align-items: start;
+        align-items: center;
         padding: .42rem 0;
         color: var(--ht-ink, #1c1917);
         font-size: .98rem;
+    }
+    body .step-amt {
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        font-size: .95rem;
+        white-space: nowrap;
+    }
+    body .step-amt.up { color: #15803d; }
+    body .step-amt.down { color: #b91c1c; }
+    body .step-amt.shares {
+        color: var(--ht-muted, #57534e);
+        font-weight: 600;
+    }
+    body .start-steps li.step-total {
+        grid-template-columns: 1fr auto;
+        margin-top: .2rem;
+        padding-top: .55rem;
+        border-top: 1px solid #e7e5e4;
+        font-weight: 600;
     }
     body .step-n {
         width: 1.7rem;
@@ -158,11 +320,102 @@
         width: 100%;
         height: auto;
     }
-    body .start-frame p {
-        margin: .55rem .15rem 0;
-        font-size: .92rem;
+    body .start-review {
+        background: var(--ht-surface, #fff);
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 1.05rem 1.05rem .85rem;
+    }
+    body .start-review .story-scroll { max-height: none; overflow: visible; padding-right: 0; }
+    body .start-review .story-symbol { font-size: 1.25rem; }
+    body .start-review .story-cols,
+    body .start-review .story-day,
+    body .start-review .story-realized {
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1.15fr) 108px;
+        gap: .6rem;
+    }
+    body .start-review .story-lane-label { display: none; }
+    body .start-review .story-cash,
+    body .start-review .story-realized > div:last-child { text-align: right; }
+    body .start-review .story-date { display: block; }
+    body .start-profile { padding: 1.05rem 1.1rem 1.1rem; }
+    body .start-profile .ts-section-title {
+        font-size: .95rem; font-weight: 650; letter-spacing: 0;
+        text-transform: none; color: var(--ht-label, #64748b); margin: 0 0 .7rem;
+    }
+    body .start-profile .ts-profile-headline {
+        font-size: 1.2rem; font-weight: 750; line-height: 1.3; letter-spacing: -.02em;
+        color: var(--ht-ink, #0f172a); margin: 0;
+    }
+    body .start-profile .ts-books {
+        display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin-top: .85rem;
+    }
+    body .start-profile .ts-book {
+        border-radius: 14px; padding: .85rem .95rem .9rem; min-width: 0; border: 1px solid transparent;
+    }
+    body .start-profile .ts-book.income { background: rgba(40,192,138,.12); border-color: #243049; border-top: 3px solid #0f766e; }
+    body .start-profile .ts-book.directional { background: rgba(176,107,255,.14); border-color: #243049; border-top: 3px solid #6d5bd0; }
+    body .start-profile .ts-book-kicker { font-size: .78rem; font-weight: 700; margin-bottom: .3rem; }
+    body .start-profile .ts-book.income .ts-book-kicker { color: #0f766e; }
+    body .start-profile .ts-book.directional .ts-book-kicker { color: #6d5bd0; }
+    body .start-profile .ts-book-value {
+        font-size: 1.55rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05;
+        color: var(--ht-ink, #0f172a); font-variant-numeric: tabular-nums;
+    }
+    body .start-profile .ts-book-lead { color: var(--ht-muted, #64748b); font-size: .84rem; margin-top: .15rem; }
+    body .start-profile .ts-chips { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .65rem; }
+    body .start-profile .ts-chip {
+        background: #1a2233; border: 1px solid rgba(15,23,42,.06);
+        border-radius: 999px; padding: .14rem .55rem; font-size: .78rem; font-weight: 650;
+        color: var(--ht-ink, #0f172a);
+    }
+    body .start-profile .ts-kept {
+        margin-top: .7rem; padding-top: .6rem; border-top: 1px dashed rgba(15,118,110,.28);
+        font-size: .88rem;
+    }
+    body .start-profile .ts-kept-value { font-weight: 800; color: #0d9f6e; font-variant-numeric: tabular-nums; }
+    [data-bs-theme="dark"] body .start-profile .ts-book.income { background: #102824; border-color: #1c4a42; }
+    [data-bs-theme="dark"] body .start-profile .ts-book.directional { background: #1c1830; border-color: #3a3260; }
+    [data-bs-theme="dark"] body .start-profile .ts-book-value { color: var(--ht-ink); }
+    [data-bs-theme="dark"] body .start-profile .ts-chip { background: rgba(255,255,255,.06); color: var(--ht-ink); }
+    body .start-review-kicker {
+        margin: 0 0 .35rem;
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
         color: var(--ht-muted, #57534e);
     }
+    body .start-review-day {
+        padding: .7rem 0 .75rem;
+        border-top: 1px solid #e7e5e4;
+    }
+    body .start-review-day .when {
+        margin: 0;
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: var(--ht-muted, #57534e);
+    }
+    body .start-review-day p { margin: .28rem 0 0; }
+    body .start-review-gap {
+        margin: .85rem 0 .15rem;
+        color: var(--ht-muted, #57534e);
+        font-size: .92rem;
+        line-height: 1.4;
+    }
+    body .start-review-nums {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem .9rem;
+        margin-top: .45rem;
+        font-variant-numeric: tabular-nums;
+    }
+    body .start-review-nums > span { font-weight: 600; color: var(--ht-ink, #1c1917); }
+    [data-bs-theme="dark"] body .start-review,
+    [data-bs-theme="dark"] body .start-review-day { border-color: #334155; }
     body .start-how {
         list-style: none;
         margin: 0;
@@ -192,26 +445,54 @@
         body .start-split { grid-template-columns: 1fr 1.15fr; align-items: stretch; }
     }
     [data-bs-theme="dark"] body .start-panel,
-    [data-bs-theme="dark"] body .start-shot {
-        border-color: #334155;
-    }
+    [data-bs-theme="dark"] body .start-shot { border-color: #334155; }
+    [data-bs-theme="dark"] body:has(.start) { background: #0b1220; }
     [data-bs-theme="dark"] body .broker-line { border-color: #334155; }
+    [data-bs-theme="dark"] body .start-panel-broker {
+        background: #292524;
+        border-color: #44403c;
+    }
+    [data-bs-theme="dark"] body .start-panel-broker .who {
+        background: #44403c;
+        color: #e7e5e4;
+    }
+    [data-bs-theme="dark"] body .start-panel-broker .broker-line .name,
+    [data-bs-theme="dark"] body .start-panel-broker .broker-line .amt { color: #e7e5e4; }
+    [data-bs-theme="dark"] body .start-panel-ht { border-color: #e2e8f0; }
     [data-bs-theme="dark"] body .step-n { background: #e2e8f0; color: #0f172a; }
+    [data-bs-theme="dark"] body .step-amt.up { color: #4ade80; }
+    [data-bs-theme="dark"] body .step-amt.down { color: #fca5a5; }
+    [data-bs-theme="dark"] body .start-steps li.step-total { border-color: #334155; }
+    [data-bs-theme="dark"] body .start-flow-1,
+    [data-bs-theme="dark"] body .start-flow-3,
+    [data-bs-theme="dark"] body .start-flow-5 { background: var(--ht-surface, #151e30); }
+    [data-bs-theme="dark"] body .start-flow-2,
+    [data-bs-theme="dark"] body .start-flow-4,
+    [data-bs-theme="dark"] body .start-section-how { background: transparent; }
+    [data-bs-theme="dark"] body .start-insight { background: rgba(15, 23, 42, .45); }
 </style>
+{% include "_story_review_css.html" %}
 {% endblock %}
 
 {% block content %}
+{% macro campaign_cta(place, tone='card', note=true) %}
+{% set spec = cta_places[place] %}
+<div class="{% if tone == 'card' %}start-cta{% endif %}">
+    <div class="start-actions">
+        {% if signup_enabled %}
+        <a class="start-btn start-btn-primary" href="{{ url_for('campaign_go', dest='signup', place=place, **utm_query) }}">{{ spec.primary }}</a>
+        {% endif %}
+        <a class="start-btn start-btn-ghost" href="{{ url_for('campaign_go', dest='demo', place=place, **utm_query) }}">{{ spec.demo }}</a>
+    </div>
+    {% if note %}<p class="start-cta-note">30 days. No card.</p>{% endif %}
+</div>
+{% endmacro %}
 <div class="start">
     <header class="start-hero">
         <p class="start-kicker">Trading mirror</p>
         <h1>Your broker shows the number. This shows the trades behind it.</h1>
-        <p class="start-lead">Wheels, rolls, covered calls, early closes — reconstructed from your own history. Compared with you. The market is context.</p>
-        <div class="start-actions">
-            {% if signup_enabled %}
-            <a class="start-btn start-btn-primary" href="{{ url_for('campaign_go', dest='signup', **utm_query) }}">See your trades</a>
-            {% endif %}
-            <a class="start-btn start-btn-ghost" href="{{ url_for('campaign_go', dest='demo', **utm_query) }}">Look at the demo</a>
-        </div>
+        <p class="start-lead">First the trades behind one number. Then one name, every day. Then those trades, written out. Then your profile across every symbol.</p>
+        {{ campaign_cta('hero', tone='inverse', note=false) }}
         <p class="start-fine">30 days of the full product. No credit card. The clock starts when the first sync or CSV lands.</p>
         {% if signup_invite_required %}
         <p class="start-fine">Signup is invite-only right now.</p>
@@ -219,54 +500,206 @@
     </header>
 
     <section class="start-section">
-        <h2>The number, then the sequence</h2>
-        <p class="start-dek">One position. The broker stops at the total.</p>
-        <div class="start-split">
-            <div class="start-panel">
-                <p class="label">What the broker shows</p>
-                <div class="broker-line">
-                    <span class="name">Realized P&amp;L</span>
-                    <span class="amt">+$1,240</span>
+        <h2>What you see</h2>
+        <p class="start-dek">Five pages, in this order. Each one answers a different question.</p>
+
+        <div class="start-flow start-flow-1">
+            <div class="start-rail"><span class="step-n">1</span></div>
+            <div class="start-flow-main">
+            <div class="start-flow-head">
+                <div>
+                    <h3>One number, then the trades</h3>
+                    <p>The broker stops at the total.</p>
                 </div>
-                <p class="start-example">Example. Not a result.</p>
             </div>
-            <div class="start-panel">
-                <p class="label">What HappyTrader shows</p>
-                <ol class="start-steps">
-                    <li><span class="step-n">1</span><span>Sold the cash-secured put</span></li>
-                    <li><span class="step-n">2</span><span>Got assigned</span></li>
-                    <li><span class="step-n">3</span><span>Wrote calls</span></li>
-                    <li><span class="step-n">4</span><span>Rolled one</span></li>
-                    <li><span class="step-n">5</span><span>Closed one early</span></li>
-                </ol>
+            <div class="start-split">
+                <div class="start-panel start-panel-broker">
+                    <p class="who">Your broker</p>
+                    <div class="broker-line">
+                        <span class="name">Realized P&amp;L</span>
+                        <span class="amt">+$1,240</span>
+                    </div>
+                    <p class="start-example">One number. Example, not a result.</p>
+                </div>
+                <div class="start-panel start-panel-ht">
+                    <p class="who">HappyTrader<span>The trades behind that number</span></p>
+                    <ol class="start-steps">
+                        <li><span class="step-n">1</span><span>Sold the cash-secured put</span><span class="step-amt up">+$465</span></li>
+                        <li><span class="step-n">2</span><span>Got assigned</span><span class="step-amt shares">100 shares</span></li>
+                        <li><span class="step-n">3</span><span>Wrote calls</span><span class="step-amt up">+$890</span></li>
+                        <li><span class="step-n">4</span><span>Rolled one</span><span class="step-amt down">−$70</span></li>
+                        <li><span class="step-n">5</span><span>Closed one early</span><span class="step-amt down">−$45</span></li>
+                        <li class="step-total"><span>Adds up to</span><span class="step-amt up">+$1,240</span></li>
+                    </ol>
+                </div>
+            </div>
+            <p class="start-insight"><span>What you learn</span>What each step was worth. The dollars add up to the broker’s +$1,240. Assignment is the shares, not a gain.</p>
+            {{ campaign_cta('trades') }}
             </div>
         </div>
-        <p class="start-caption">The broker line is the score. The sequence is whether that close matched how you usually trade.</p>
+
+        <div class="start-flow start-flow-2">
+            <div class="start-rail"><span class="step-n">2</span></div>
+            <div class="start-flow-main">
+            <div class="start-flow-head">
+                <div>
+                    <h3>One name, every day</h3>
+                    <p>LUNR, August through January. The shares and the calls, each on their own line.</p>
+                </div>
+            </div>
+            <div class="start-frame">
+                <div class="start-shot">
+                    <img src="{{ url_for('static', filename='campaign/frame-chart.png') }}?v=5" alt="LUNR cumulative P&amp;L from August 2024 through January 2025. Equity and the stock move day by day. Options step up as the calls close. The position finished up $16,246.29.">
+                </div>
+            </div>
+            <p class="start-insight"><span>What you learn</span>The shares are marked every day they were held. The calls show up when they close. This one finished +$16,246.29.</p>
+            {{ campaign_cta('chart') }}
+            </div>
+        </div>
+
+        <div class="start-flow start-flow-3">
+            <div class="start-rail"><span class="step-n">3</span></div>
+            <div class="start-flow-main">
+            <div class="start-flow-head">
+                <div>
+                    <h3>That same name, in words</h3>
+                    <p>The chart above, written out trade by trade.</p>
+                </div>
+            </div>
+            <div class="start-frame">
+                <div class="start-review">
+                    <div class="story-top">
+                        <div>
+                            <div class="story-symbol">LUNR</div>
+                            <div class="story-kicker">11 trade days over 5 months</div>
+                        </div>
+                    </div>
+                    <div class="story-scroll">
+                        <div class="story-cols" aria-hidden="true">
+                            <div></div>
+                            <div class="story-col-h story-col-sh">Shares</div>
+                            <div class="story-col-h story-col-opt">Options</div>
+                            <div class="story-col-h story-col-cash">Cash</div>
+                        </div>
+                        <div class="story-day">
+                            <div class="story-date"><div class="story-date-day">Nov 22</div><div class="story-date-year">2024</div></div>
+                            <div class="story-lane">
+                                <div class="story-lane-label">Shares</div>
+                                <div class="story-card story-card-shares">
+                                    <div class="story-card-title">Started the position: 1,500 shares at $15.36</div>
+                                    <div class="story-card-metricline"><span class="story-metric story-metric-neutral">$23,040</span></div>
+                                </div>
+                            </div>
+                            <div class="story-lane">
+                                <div class="story-lane-label">Options</div>
+                                <div class="story-card story-card-options">
+                                    <div class="story-card-title">Sold 15 contracts of the $18 covered call (Nov 29) against your shares</div>
+                                    <div class="story-card-metricline"><span class="story-metric story-metric-pos">+$425 collected</span></div>
+                                </div>
+                            </div>
+                            <div class="story-cash"><div class="story-lane-label">Cash</div><div class="story-cash-amt story-neg">−$22,614.96</div></div>
+                        </div>
+                        <div class="story-day">
+                            <div class="story-date"><div class="story-date-day">Jan 27</div><div class="story-date-year">2025</div></div>
+                            <div class="story-lane">
+                                <div class="story-lane-label">Shares</div>
+                                <div class="story-card story-card-shares">
+                                    <div class="story-card-title">Shares called away at $23</div>
+                                    <div class="story-card-metricline"><span class="story-metric story-metric-pos">+$11,459.75 realized</span></div>
+                                </div>
+                            </div>
+                            <div class="story-lane">
+                                <div class="story-lane-label">Options</div>
+                                <div class="story-card story-card-options">
+                                    <div class="story-card-title">The short $23 call was exercised</div>
+                                    <div class="story-card-metricline"><span class="story-metric story-metric-pos">+$3,034.97 realized</span></div>
+                                </div>
+                            </div>
+                            <div class="story-cash"><div class="story-lane-label">Cash</div><div class="story-cash-amt story-pos">+$34,499.75</div></div>
+                        </div>
+                        <div class="story-realized">
+                            <div class="story-realized-label">Realized</div>
+                            <div>
+                                <div class="story-real-val story-pos">+$11,459.75</div>
+                                <div class="story-real-lbl">shares</div>
+                            </div>
+                            <div>
+                                <div class="story-real-val story-pos">+$4,786.54</div>
+                                <div class="story-real-lbl">options</div>
+                            </div>
+                            <div>
+                                <div class="story-real-val story-real-total story-pos">+$16,246.29</div>
+                                <div class="story-real-lbl">combined</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p class="start-insight"><span>What you learn</span>What the shares made, and what the calls made. Together, +$16,246.29.</p>
+            {{ campaign_cta('story') }}
+            </div>
+        </div>
+
+        <div class="start-flow start-flow-4">
+            <div class="start-rail"><span class="step-n">4</span></div>
+            <div class="start-flow-main">
+            <div class="start-flow-head">
+                <div>
+                    <h3>Your trader profile</h3>
+                    <p>Premium you collected, apart from what you paid to be directional.</p>
+                </div>
+            </div>
+            <div class="start-frame">
+                <div class="start-review start-profile">
+                    <h2 class="ts-section-title">Profile summary</h2>
+                    <div class="ts-profile-headline">You’re a directional trader first — most of your options work buys options outright.</div>
+                    <div class="ts-books">
+                        <div class="ts-book income">
+                            <div class="ts-book-kicker">Income book</div>
+                            <div class="ts-book-value">$428,049</div>
+                            <div class="ts-book-lead">premium collected</div>
+                            <div class="ts-chips">
+                                <span class="ts-chip">192 covered calls</span>
+                                <span class="ts-chip">3 short puts</span>
+                                <span class="ts-chip">68 rolls</span>
+                            </div>
+                            <div class="ts-kept"><span class="ts-kept-value">$101,984</span> kept at expiry</div>
+                        </div>
+                        <div class="ts-book directional">
+                            <div class="ts-book-kicker">Directional book</div>
+                            <div class="ts-book-value">$942,367</div>
+                            <div class="ts-book-lead">placed at risk buying options</div>
+                            <div class="ts-chips"><span class="ts-chip">109 purchases</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p class="start-insight"><span>What you learn</span>How much of the book is income, and how much is directional.</p>
+            {{ campaign_cta('profile') }}
+            </div>
+        </div>
+
+        <div class="start-flow start-flow-5">
+            <div class="start-rail"><span class="step-n">5</span></div>
+            <div class="start-flow-main">
+            <div class="start-flow-head">
+                <div>
+                    <h3>Where each strategy fits</h3>
+                    <p>Where a strategy made money, and where it did not.</p>
+                </div>
+            </div>
+            <div class="start-frame">
+                <div class="start-shot">
+                    <img src="{{ url_for('static', filename='campaign/frame-fit.png') }}?v=5" alt="Where you have edge, and where you lose money, by strategy and sector.">
+                </div>
+            </div>
+            <p class="start-insight"><span>What you learn</span>Which of those strategies has worked for you, and where.</p>
+            {{ campaign_cta('fit') }}
+            </div>
+        </div>
     </section>
 
-    <section class="start-section">
-        <h2>What you actually open</h2>
-        <div class="start-frame">
-            <div class="start-shot">
-                <img src="{{ url_for('static', filename='campaign/frame-overview.png') }}" alt="Overview of the last completed session: account value, what traded, and the day's movers.">
-            </div>
-            <p>Last close, including what you traded that session.</p>
-        </div>
-        <div class="start-frame">
-            <div class="start-shot">
-                <img src="{{ url_for('static', filename='campaign/frame-position.png') }}" alt="Position review for one symbol, with the day-by-day of rolls and assignments.">
-            </div>
-            <p>The chapter of one symbol. Rolls, assignments, the quiet weeks.</p>
-        </div>
-        <div class="start-frame">
-            <div class="start-shot">
-                <img src="{{ url_for('static', filename='campaign/frame-fit.png') }}" alt="Strategy fit matrix of covered calls, wheels, and spreads against the sectors you trade.">
-            </div>
-            <p>Where a strategy actually fits — covered calls, wheels, spreads — for you.</p>
-        </div>
-    </section>
-
-    <section class="start-section">
+    <section class="start-section start-section-how">
         <h2>How it starts</h2>
         <ol class="start-how">
             <li>
@@ -286,8 +719,8 @@
             <li>
                 <span class="step-n">3</span>
                 <div>
-                    <strong>Read the mirror.</strong>
-                    <span>You, compared with you. SPY and QQQ sit next to the week as weather, not as a grade.</span>
+                    <strong>Then read it.</strong>
+                    <span>The chart, the written review, your profile, and the strategies are there once the first sync finishes.</span>
                 </div>
             </li>
         </ol>
@@ -296,12 +729,7 @@
     <section class="start-close">
         <h2>See the trades behind the number.</h2>
         <p class="start-dek">30 days. No card. Read-only. No trade ideas.</p>
-        <div class="start-actions">
-            {% if signup_enabled %}
-            <a class="start-btn start-btn-primary" href="{{ url_for('campaign_go', dest='signup', **utm_query) }}">See your trades</a>
-            {% endif %}
-            <a class="start-btn start-btn-ghost" href="{{ url_for('campaign_go', dest='demo', **utm_query) }}">Look at the demo</a>
-        </div>
+        {{ campaign_cta('close', tone='inverse', note=false) }}
     </section>
 </div>
 {% endblock %}

@@ -451,11 +451,17 @@ There is no separate dashboard page — Overview is the authenticated home.
 
 Separate from the homepage so a Reddit test can be measured on its own.
 Copy is the mirror (broker number vs the trade sequence), 30 days, no card.
+The page walks the product in order: the trades behind one number, one
+symbol marked every day (equity and options, both with realized gains),
+that position written out trade by trade, the trader profile, and the
+strategy-fit matrix.
 History is whatever the broker still has (often a year or two) plus an
 optional CSV — the page does not promise five years. Visits, signup clicks,
-demo clicks, and signups land in `campaign_events` (`app/campaign.py`); the
-cookie is stamped onto `users.acquisition_*` at signup. Admin overview shows
-the funnel, including who actually connected a broker or uploaded a CSV.
+demo clicks, and signups land in `campaign_events` (`app/campaign.py`); each
+click also stores which button (`place`: hero, trades, chart, story, profile,
+fit, close). The cookie is stamped onto `users.acquisition_*` at signup.
+Admin overview shows the funnel, including who actually connected a broker
+or uploaded a CSV, and which button was clicked.
 `REDDIT_PIXEL_ID` adds PageVisit on `/start` and SignUp after signup.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
@@ -1475,29 +1481,20 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
 global "Design refresh" style block that owns the app's look. Full
 token list: `docs/VISUAL_BRAND.md`. Short version agents must follow:
 
-- **UI face:** Public Sans (400–700) from Google Fonts. Body stack is
-  `"Public Sans", system-ui, sans-serif`. Do not load Inter, Geist,
-  Plus Jakarta Sans, Manrope, Space Grotesk, or Outfit.
-- **Numbers:** IBM Plex Mono (400–600) on KPI values, `.ht-statbar`
-  values, and the `.ht-num` / `.font-mono-nums` utilities. Plex is not
-  loaded at 700/800 — don't faux-bold it. Chart tick labels use the
-  same face via the Chart.js default in base.html.
-- **Accent:** copper `#b87333` (`--color-mirror`). Small text on light
-  surfaces uses `--color-mirror-ink` (`#7a4a1e`); dark mode lightens
-  both to `#e0b56a`. This is the only brand accent for CTAs, focus
-  rings, and primary chrome. Bootstrap purple `#6f42c1` is not the
-  AI/mirror color. P&L tape is `--color-positive: #3f7d5c` and
-  `--color-negative: #b55249`.
-- **Navy is flat.** Nav, landing heroes, and the other dark bands are
-  solid `#1a1a2e` (`--nav-bg`). No 3-stop night-sky gradient
-  (`#1a1a2e → #16213e → #0f3460`) and no blue→purple progress bar.
-  The progress bar is charcoal → copper.
-- **Neutral canvas.** Light page background `#f4f5f7`. Cards,
-  tables, and `.ht-statbar` use `--ht-surface: #ffffff` with a
-  hairline `--ht-line` (`#e5e7eb`), not a soft drop shadow and not a
-  cream fill. `#f7f5f2` / `#fffcf8` were tried and rejected. Dark
-  canvas is `#12141a`; dark cards are `--ht-surface: #1c1e26`.
-  Marketing `.feature-card` may keep a mild hover-lift.
+- **UI face:** Instrument Sans (400–700) from Google Fonts. Body stack is
+  `"Instrument Sans", ui-sans-serif, system-ui, sans-serif`. Do not load
+  Inter, Geist, Public Sans, Plus Jakarta Sans, Manrope, Space Grotesk, or Outfit.
+- **Numbers:** JetBrains Mono on tickers, prices, P&L, and table dates.
+  All figures use `font-variant-numeric: tabular-nums`.
+- **The field is dark.** Public pages are `#05070c`. The logged-in app is
+  `#0a0e17` with cards `#121826`. There is no light theme.
+- **Brand `#5b8cff`** (purply-blue) is the wordmark tail (`trader`) and the
+  primary button (text `#0a0e17`). Green is only for gains.
+- **Blue `#5b8cff`** is selected nav, links, and focus. Selected nav is
+  blue at 15% fill with blue text.
+- **Up `#28c08a` is only a gain. Down `#f0556d` is only a loss.**
+- **Wordmark:** lowercase `happy` in white plus `trader` in mint, weight
+  650, tracking `-0.03em`. No icon, no all-caps.
 - **Strategy swatches are not the brand.** Covered Call / CSP / Wheel
   color maps (including CSP and Poor Man's Covered Call at `#6f42c1`)
   stay as data colors. Do not retint them to copper.

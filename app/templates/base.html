@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-bs-theme="light">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -22,24 +22,19 @@
     {# PWA: installable from the phone browser (Add to Home Screen) —
        manifest + icons + service worker (registered at the bottom). #}
     <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
-    <meta name="theme-color" content="#1a1a2e">
+    <meta name="theme-color" content="#05070c">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="HappyTrader">
 
-    {# Dark mode: apply the stored theme BEFORE first paint (no flash).
-       Opt-in via the navbar toggle; default stays light. Bootstrap 5.3's
-       data-bs-theme=dark restyles cards/tables/forms natively; the style
-       block below overrides the app's hardcoded light surfaces. #}
+    {# Always the dark desk. A stored light preference is ignored so the
+       field cannot flip back to a light finance app. #}
     <script>
         (function () {
-            try {
-                if (localStorage.getItem("ht-theme") === "dark") {
-                    document.documentElement.setAttribute("data-bs-theme", "dark");
-                }
-            } catch (e) { /* localStorage unavailable */ }
+            document.documentElement.setAttribute("data-bs-theme", "dark");
+            document.documentElement.style.colorScheme = "dark";
         })();
     </script>
     {% if current_user.is_authenticated %}
@@ -66,7 +61,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Chart.js global theme defaults — must run after chart.js loads
@@ -74,83 +69,147 @@
         // numeric face; legends and titles stay in the UI face.
         (function () {
             if (!window.Chart) return;
-            var sans = '"Public Sans", system-ui, sans-serif';
-            var mono = '"IBM Plex Mono", ui-monospace, monospace';
-            Chart.defaults.font.family = sans;
+            var sans = '"Instrument Sans", ui-sans-serif, system-ui, sans-serif';
+            var mono = '"JetBrains Mono", ui-monospace, monospace';
+            Chart.defaults.font.family = mono;
+            Chart.defaults.color = "#8a97b1";
+            Chart.defaults.borderColor = "#243049";
             var scales = Chart.defaults.scales || {};
             ["linear", "category", "time", "logarithmic", "radialLinear"].forEach(function (type) {
                 if (scales[type] && scales[type].ticks) {
                     scales[type].ticks.font = Object.assign({}, scales[type].ticks.font || {}, { family: mono });
                 }
             });
-            if (document.documentElement.getAttribute("data-bs-theme") === "dark") {
-                Chart.defaults.color = "#a8a29e";
-                Chart.defaults.borderColor = "rgba(168,162,158,.22)";
-            }
         })();
     </script>
 
     <style>
         :root {
-            /* Tape greens/reds — desaturated so P&L reads as print, not
-               Bootstrap success/danger. Still unambiguously green/red. */
-            --color-positive: #3f7d5c;
-            --color-negative: #b55249;
-            /* Brand accent: copper. Fills and icons use --color-mirror;
-               small text on light surfaces uses --color-mirror-ink
-               (the fill fails AA as body text on white). Dark mode
-               lightens the same hue. */
-            --color-mirror: #b87333;
-            --color-mirror-ink: #7a4a1e;
-            --color-reflect: #1a1a2e;
-            --nav-bg: #1a1a2e;
-            /* Ink / surface tokens — page style blocks must use these
-               instead of hardcoded one-theme hexes. Inherit from <html
-               data-bs-theme>. Neutral gray page, white cards. A cream
-               page fill (#f7f5f2) was rejected — do not bring it back. */
-            --ht-ink: #1c1917;
-            --ht-label: #44403c;
-            --ht-muted: #57534e;
-            --ht-faint: #78716c;
-            --ht-surface: #ffffff;
-            --ht-surface-2: #f3f4f6;
-            --ht-line: #e5e7eb;
-            --ht-hover: #f3f4f6;
-            --bs-primary: #b87333;
-            --bs-primary-rgb: 184, 115, 51;
-            --bs-link-color: #7a4a1e;
-            --bs-link-hover-color: #5e3816;
-            --bs-focus-ring-color: rgba(184, 115, 51, .35);
+            color-scheme: dark;
+            --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+            --font-mono: "JetBrains Mono", ui-monospace, monospace;
+            /* Up is a gain. Down is a loss. Not success/danger chrome. */
+            --color-positive: #28c08a;
+            --color-negative: #f0556d;
+            /* App selection and links are blue. Mint is the wordmark
+               tail and the primary button only. */
+            --color-mirror: #5b8cff;
+            --color-mirror-ink: #5b8cff;
+            --ht-mint: #5b8cff;
+            --ht-mint-wash: rgba(91, 140, 255, 0.14);
+            --ht-on-mint: #0a0e17;
+            --ht-blue: #5b8cff;
+            --ht-hot: #ff5b7a;
+            --ht-warm: #ffb454;
+            --color-reflect: #05070c;
+            --nav-bg: rgba(5, 7, 12, 0.78);
+            --ht-ink: #e8edf7;
+            --ht-label: #8a97b1;
+            --ht-muted: #8a97b1;
+            --ht-faint: #7d8aa3;
+            --ht-surface: #121826;
+            --ht-surface-2: #1a2233;
+            --ht-line: #243049;
+            --ht-hover: #1a2233;
+            --ht-page: #0a0e17;
+            --bs-body-bg: #0a0e17;
+            --bs-body-color: #e8edf7;
+            --bs-secondary-color: #8a97b1;
+            --bs-tertiary-bg: #1a2233;
+            --bs-border-color: #243049;
+            --bs-primary: #5b8cff;
+            --bs-primary-rgb: 91, 140, 255;
+            --bs-link-color: #5b8cff;
+            --bs-link-hover-color: #ffffff;
+            --bs-focus-ring-color: rgba(91, 140, 255, .45);
         }
         [data-bs-theme="dark"] {
-            --color-mirror: #e0b56a;
-            --color-mirror-ink: #e0b56a;
-            --ht-ink: #f4f0ea;
-            --ht-label: #d6d1c9;
-            --ht-muted: #a8a29e;
-            --ht-faint: #78716c;
-            --ht-surface: #1c1e26;
-            --ht-surface-2: #16181f;
-            --ht-line: #2e313a;
-            --ht-hover: #262932;
-            --bs-link-color: #e0b56a;
-            --bs-link-hover-color: #f0d7b0;
+            --color-mirror: #5b8cff;
+            --color-mirror-ink: #5b8cff;
+            --ht-ink: #e8edf7;
+            --ht-label: #8a97b1;
+            --ht-muted: #8a97b1;
+            --ht-faint: #7d8aa3;
+            --ht-surface: #121826;
+            --ht-surface-2: #1a2233;
+            --ht-line: #243049;
+            --ht-hover: #1a2233;
+            --bs-link-color: #5b8cff;
+            --bs-link-hover-color: #ffffff;
         }
         body {
-            background: #f4f5f7;
-            font-family: "Public Sans", system-ui, sans-serif;
+            background: var(--ht-page);
+            font-family: var(--font-sans);
             color: var(--ht-ink);
+            -webkit-font-smoothing: antialiased;
+            font-variant-numeric: tabular-nums;
         }
-        .navbar { background: var(--nav-bg) !important; }
-        .navbar-brand { font-weight: 700; letter-spacing: .5px; }
-        .navbar-brand small {
-            font-size: .6rem;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            opacity: .6;
-            display: block;
-            line-height: 1;
-            margin-top: 1px;
+        body.ht-public {
+            --ht-page: #05070c;
+            --ht-muted: #7d8aa3;
+            --ht-faint: #7d8aa3;
+            --bs-link-color: #5b8cff;
+            --bs-link-hover-color: #ffffff;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -10%, rgba(91, 140, 255, 0.07), transparent 50%),
+                radial-gradient(ellipse 60% 40% at 100% 50%, rgba(91, 140, 255, 0.05), transparent 45%),
+                #05070c;
+        }
+        .navbar {
+            background: rgba(5, 7, 12, 0.78) !important;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid #1c2538;
+            position: sticky;
+            top: 0;
+            z-index: 1030;
+            margin-bottom: 0 !important;
+        }
+        .navbar .nav-link { color: #8a97b1; border-radius: 0.4rem; }
+        .navbar .nav-link:hover,
+        .navbar .nav-link:focus { color: #fff; background: rgba(255,255,255,.04); }
+        .navbar .nav-link.active {
+            color: #5b8cff;
+            background: rgba(91, 140, 255, 0.15);
+        }
+        .ht-wordmark {
+            font-weight: 650;
+            letter-spacing: -0.03em;
+            color: #ffffff;
+            text-transform: none;
+        }
+        .ht-wordmark span { color: #5b8cff; }
+        .navbar-brand { font-weight: 650; letter-spacing: -0.03em; color: #fff !important; }
+        .navbar-brand:hover { color: #fff !important; }
+        .btn-primary {
+            background: #5b8cff;
+            border-color: #5b8cff;
+            color: #0a0e17;
+            font-weight: 650;
+            border-radius: 0.45rem;
+            padding: 0.75rem 1.15rem;
+        }
+        .btn-primary:hover, .btn-primary:focus {
+            background: #5b8cff;
+            border-color: #5b8cff;
+            color: #0a0e17;
+            filter: brightness(1.08);
+        }
+        .btn-sm.btn-primary { padding: 0.35rem 0.75rem; }
+        .form-control, .form-select {
+            background: #0a0e17;
+            border: 1px solid #1c2538;
+            border-radius: 0.5rem;
+            color: #e8edf7;
+        }
+        .form-control:focus, .form-select:focus {
+            background: #0a0e17;
+            color: #e8edf7;
+            border-color: rgba(91, 140, 255, 0.55);
+            box-shadow: 0 0 0 0.2rem rgba(91, 140, 255, 0.14);
+        }
+        @media (max-width: 639px) {
+            input, select, textarea { font-size: 16px !important; }
         }
         .text-positive { color: var(--color-positive) !important; }
         .text-negative { color: var(--color-negative) !important; }
@@ -160,7 +219,7 @@
         .narrative strong { color: #2c3e50; }
 
         .prompt-card {
-            background: #f8f1e7;
+            background: #1a2233;
             border-left: 4px solid var(--color-mirror);
             border-radius: 0 12px 12px 0;
             padding: 1.25rem 1.5rem;
@@ -285,7 +344,7 @@
         }
         .data-freshness-strip .freshness-link:hover { color: #1a1a2e; }
         .data-freshness-strip.is-stale {
-            background: #fff4e0;
+            background: #2a2118;
             border-bottom-color: #ffe0a8;
             color: #8a5a00;
         }
@@ -427,7 +486,7 @@
         .seg-toggle button.active,
         .seg-toggle a.active { background: #0f172a; color: #fafaf9; }
         .seg-toggle button:hover:not(.active),
-        .seg-toggle a:hover:not(.active) { color: #0f172a; background: #fff; }
+        .seg-toggle a:hover:not(.active) { color: #e8edf7; background: #121826; }
 
         /* Inline boolean toggles (e.g. "Hide Unknown", "Open positions only"). */
         .vis-toggles {
@@ -447,7 +506,7 @@
         .metric-toggle button.active,
         .metric-toggle a.active { background: #0f172a; color: #fafaf9; }
         .metric-toggle button:hover:not(.active),
-        .metric-toggle a:hover:not(.active) { color: #0f172a; background: #fff; }
+        .metric-toggle a:hover:not(.active) { color: #e8edf7; background: #121826; }
         .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
         .visibility-toggles .form-check { font-size: .78rem; color: #475569; }
 
@@ -455,7 +514,7 @@
            + row-click navigation, used across accounts, positions, symbols,
            daily-review, insights, strategies, profile and admin tables. */
         th.sortable { cursor: pointer; user-select: none; }
-        th.sortable:hover { background: #e9ecef; }
+        th.sortable:hover { background: #1a2233; }
         th.sortable::after { content: ' \2195'; opacity: .3; font-size: .75em; }
         th.sortable.asc::after  { content: ' \25B2'; opacity: .7; }
         th.sortable.desc::after { content: ' \25BC'; opacity: .7; }
@@ -466,9 +525,9 @@
            and form submits, cleared on pageshow. */
         #ht-progress {
             position: fixed; top: 0; left: 0; height: 3px; width: 0;
-            background: linear-gradient(90deg, #1a1a2e, #b87333);
+            background: #5b8cff;
             z-index: 3000; opacity: 0; pointer-events: none;
-            box-shadow: 0 0 8px rgba(184, 115, 51, .45);
+            box-shadow: none;
         }
 
         /* Quick switcher (Cmd+K / "/") — static/js/nav.js */
@@ -479,13 +538,13 @@
         }
         #ht-palette.show { display: block; }
         .ht-palette-box {
-            max-width: 520px; margin: 0 auto; background: #fff;
+            max-width: 520px; margin: 0 auto; background: #121826;
             border-radius: 14px; box-shadow: 0 24px 70px rgba(0,0,0,.35);
             overflow: hidden;
         }
         .ht-palette-input {
             width: 100%; border: none; outline: none; font-size: 1.05rem;
-            padding: 1rem 1.15rem; border-bottom: 1px solid #e5e7eb;
+            padding: 1rem 1.15rem; border-bottom: 1px solid #243049;
         }
         .ht-palette-list { max-height: 46vh; overflow-y: auto; padding: .35rem; }
         .ht-palette-item {
@@ -493,7 +552,7 @@
             padding: .55rem .8rem; border-radius: 8px; cursor: pointer;
             font-size: .95rem;
         }
-        .ht-palette-item.active { background: #f8f1e7; }
+        .ht-palette-item.active { background: #1a2233; }
         .ht-palette-name { font-weight: 600; color: #0f172a; }
         .ht-palette-kind { font-size: .72rem; color: #78716c; text-transform: uppercase; letter-spacing: .4px; }
         .ht-palette-empty { padding: 1rem; color: #78716c; font-size: .9rem; text-align: center; }
@@ -520,7 +579,7 @@
         .ht-sticky { max-height: 75vh; overflow-y: auto; }
         .ht-sticky table thead th {
             position: sticky; top: 0; z-index: 5;
-            background: #fff; box-shadow: 0 1px 0 #e5e7eb;
+            background: #121826; box-shadow: 0 1px 0 #243049;
         }
 
         /* ── Design refresh (Sep 2026 de-AI pass) ──────────────────
@@ -536,15 +595,13 @@
            keeps its own mild hover-lift. Do not set the page fill back
            to cream (#f7f5f2). */
         body {
-            background: #f4f5f7;
-            font-family: "Public Sans", system-ui, sans-serif;
+            background: var(--ht-page);
+            font-family: var(--font-sans);
             color: var(--ht-ink);
             -webkit-font-smoothing: antialiased;
         }
-        /* No color here — headings must inherit (dark heroes, dark mode).
-           700 is the heaviest Public Sans weight we load. */
         body h1, body h2, body h3, body h4, body h5, body h6 {
-            font-weight: 700; letter-spacing: -.01em;
+            font-weight: 650; letter-spacing: -0.03em; color: #fff;
         }
         /* Cards are bordered surfaces. Hairline, no drop shadow. */
         body .card:not(.feature-card),
@@ -589,7 +646,7 @@
         body tr[data-href]:hover > * { background: var(--ht-hover); }
         /* Muted text one step darker everywhere — #6c757d on white at
            .8rem was below comfortable contrast. */
-        body .text-muted { color: #57534e !important; }
+        body .text-muted { color: var(--ht-muted) !important; }
         /* Numbers that matter. Plex only loads through 600, so values
            must not ask for 700/800 (the browser will faux-bold). */
         .ht-num,
@@ -602,7 +659,7 @@
         body .pricing-card .price,
         body .dd-money,
         body .dd-delta {
-            font-family: "IBM Plex Mono", ui-monospace, monospace;
+            font-family: var(--font-mono);
             font-variant-numeric: tabular-nums;
             font-weight: 600;
         }
@@ -634,44 +691,44 @@
            these rules cover the app's hardcoded light surfaces. The
            attribute+class selectors out-rank the page style blocks'
            bare class rules, so order of <style> blocks doesn't matter. */
-        [data-bs-theme="dark"] body { background: #12141a; color: #d6d1c9; }
+        [data-bs-theme="dark"] body { background: #0a0e17; color: #e8edf7; }
         [data-bs-theme="dark"] .card,
-        [data-bs-theme="dark"] .stat-card { background-color: #1c1e26; color: #d6d1c9; }
+        [data-bs-theme="dark"] .stat-card { background-color: #121826; color: #e8edf7; }
         [data-bs-theme="dark"] .card,
         [data-bs-theme="dark"] .review-section,
         [data-bs-theme="dark"] .chart-wrapper,
-        [data-bs-theme="dark"] .narrative-card { border-color: #2e313a; }
-        [data-bs-theme="dark"] .table { color: #d6d1c9; }
-        [data-bs-theme="dark"] .table thead th { color: #a8a29e; }
-        [data-bs-theme="dark"] .section-label { color: #a8a29e; }
-        [data-bs-theme="dark"] .section-sub { color: #a8a29e; }
+        [data-bs-theme="dark"] .narrative-card { border-color: #243049; }
+        [data-bs-theme="dark"] .table { color: #e8edf7; }
+        [data-bs-theme="dark"] .table thead th { color: #8a97b1; }
+        [data-bs-theme="dark"] .section-label { color: #8a97b1; }
+        [data-bs-theme="dark"] .section-sub { color: #8a97b1; }
         [data-bs-theme="dark"] .kpi-label,
         [data-bs-theme="dark"] .kpi-mini .label,
-        [data-bs-theme="dark"] .snap-label { color: #a8a29e; }
-        [data-bs-theme="dark"] tr[data-href]:hover > * { background: #262932; }
+        [data-bs-theme="dark"] .snap-label { color: #8a97b1; }
+        [data-bs-theme="dark"] tr[data-href]:hover > * { background: #1a2233; }
         /* Freshness strip + Position Detail leg pills stayed light-on-dark. */
-        [data-bs-theme="dark"] .data-freshness-strip { background: #24262e; border-bottom-color: #3a3e48; color: #f4f0ea; }
+        [data-bs-theme="dark"] .data-freshness-strip { background: #24262e; border-bottom-color: #3a3e48; color: #ffffff; }
         [data-bs-theme="dark"] .data-freshness-strip span,
-        [data-bs-theme="dark"] .data-freshness-strip .freshness-link { color: #f4f0ea; }
-        [data-bs-theme="dark"] .data-freshness-strip strong { color: #f4f0ea; }
+        [data-bs-theme="dark"] .data-freshness-strip .freshness-link { color: #ffffff; }
+        [data-bs-theme="dark"] .data-freshness-strip strong { color: #ffffff; }
         [data-bs-theme="dark"] .data-freshness-strip .freshness-link:hover { color: #fff; }
         [data-bs-theme="dark"] .data-freshness-strip.is-stale { background: #3a2e12; border-bottom-color: #4a3a10; color: #fde68a; }
         [data-bs-theme="dark"] .data-freshness-strip.is-stale span,
         [data-bs-theme="dark"] .data-freshness-strip.is-stale strong,
         [data-bs-theme="dark"] .data-freshness-strip.is-stale .freshness-link { color: #fde68a; }
-        [data-bs-theme="dark"] .session-pill { background: #1c1e26; border-color: #3a3e48; color: #d6d1c9; }
-        [data-bs-theme="dark"] .session-pill:hover { border-color: #a8a29e; }
-        [data-bs-theme="dark"] .session-pill.active { background: #2c2822; color: #f4f0ea; }
+        [data-bs-theme="dark"] .session-pill { background: #121826; border-color: #3a3e48; color: #e8edf7; }
+        [data-bs-theme="dark"] .session-pill:hover { border-color: #8a97b1; }
+        [data-bs-theme="dark"] .session-pill.active { background: #2c2822; color: #ffffff; }
         [data-bs-theme="dark"] .session-pill.active.session-open { background: rgba(25,135,84,.18); color: #6ee7b7; border-color: #198754; }
-        [data-bs-theme="dark"] .session-pill.active.session-closed { background: #262932; color: #d6d1c9; border-color: #3a3e48; }
-        [data-bs-theme="dark"] .text-muted { color: #a8a29e !important; }
-        [data-bs-theme="dark"] .ht-sticky table thead th { background: #1c1e26; box-shadow: 0 1px 0 #343842; }
-        [data-bs-theme="dark"] .ht-palette-box { background: #1c1e26; }
-        [data-bs-theme="dark"] .ht-palette-input { background: #1c1e26; color: #f4f0ea; border-bottom-color: #343842; }
+        [data-bs-theme="dark"] .session-pill.active.session-closed { background: #1a2233; color: #e8edf7; border-color: #3a3e48; }
+        [data-bs-theme="dark"] .text-muted { color: #8a97b1 !important; }
+        [data-bs-theme="dark"] .ht-sticky table thead th { background: #121826; box-shadow: 0 1px 0 #343842; }
+        [data-bs-theme="dark"] .ht-palette-box { background: #121826; }
+        [data-bs-theme="dark"] .ht-palette-input { background: #121826; color: #ffffff; border-bottom-color: #343842; }
         [data-bs-theme="dark"] .ht-palette-item.active { background: #2c2822; }
-        [data-bs-theme="dark"] .ht-palette-name { color: #f4f0ea; }
-        [data-bs-theme="dark"] .ht-palette-hint { background: #16181f; border-top-color: #2e313a; }
-        [data-bs-theme="dark"] .sk-shimmer { background: #262932; }
+        [data-bs-theme="dark"] .ht-palette-name { color: #ffffff; }
+        [data-bs-theme="dark"] .ht-palette-hint { background: #1a2233; border-top-color: #243049; }
+        [data-bs-theme="dark"] .sk-shimmer { background: #1a2233; }
         [data-bs-theme="dark"] .sk-shimmer::after {
             background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
         }
@@ -679,22 +736,22 @@
            blocks; attribute selector wins on specificity). */
         [data-bs-theme="dark"] .snapshot-section,
         [data-bs-theme="dark"] .review-section,
-        [data-bs-theme="dark"] .dd-card { background: #1c1e26 !important; color: #d6d1c9; }
+        [data-bs-theme="dark"] .dd-card { background: #121826 !important; color: #e8edf7; }
         [data-bs-theme="dark"] .watch-block,
-        [data-bs-theme="dark"] .strip-card { background: #16181f; border-color: #343842; }
+        [data-bs-theme="dark"] .strip-card { background: #1a2233; border-color: #343842; }
         [data-bs-theme="dark"] .watch-item:hover,
-        [data-bs-theme="dark"] .strip-card:hover { background: #262932; }
-        [data-bs-theme="dark"] .mover-row:hover { background: #262932; }
-        [data-bs-theme="dark"] .breakdown-table th { color: #a8a29e; }
+        [data-bs-theme="dark"] .strip-card:hover { background: #1a2233; }
+        [data-bs-theme="dark"] .mover-row:hover { background: #1a2233; }
+        [data-bs-theme="dark"] .breakdown-table th { color: #8a97b1; }
         [data-bs-theme="dark"] .breakdown-table td,
-        [data-bs-theme="dark"] .dd-table td { border-bottom-color: #2e313a; }
+        [data-bs-theme="dark"] .dd-table td { border-bottom-color: #243049; }
         /* Daily Review snapshot table (hardcoded light grays in its own
            style block; these attribute rules out-rank them). */
         [data-bs-theme="dark"] .snapshot-table .acct-name { color: var(--ht-ink); }
         [data-bs-theme="dark"] .snapshot-table-row > div { border-bottom-color: var(--ht-line); }
         [data-bs-theme="dark"] .snapshot-table-row.total > div { background: var(--ht-surface-2); border-top-color: #3a3e48; }
         [data-bs-theme="dark"] .snapshot-table-row.total .acct-name { color: var(--ht-ink); }
-        [data-bs-theme="dark"] .snapshot-table-row.benchmark > div { background: #12141a; }
+        [data-bs-theme="dark"] .snapshot-table-row.benchmark > div { background: #0a0e17; }
         [data-bs-theme="dark"] .snapshot-table .snap-cell-dash { color: var(--ht-faint); }
         /* Daily Review page-local ink was hardcoded for light cards.
            Dark mode flips .review-section to navy; these remap the
@@ -746,40 +803,40 @@
         [data-bs-theme="dark"] .breakdown-table tbody tr:hover,
         [data-bs-theme="dark"] .breakdown-table tr.totals-row td { background: var(--ht-surface-2); }
         [data-bs-theme="dark"] .since-card {
-            background: linear-gradient(135deg, #2a2109 0%, #1c1e26 100%);
+            background: linear-gradient(135deg, #2a2109 0%, #121826 100%);
             border-color: #4a3a10;
         }
-        [data-bs-theme="dark"] .since-chip { background: #1c1e26; border-color: #3a3e48; color: var(--ht-ink); }
+        [data-bs-theme="dark"] .since-chip { background: #121826; border-color: #3a3e48; color: var(--ht-ink); }
         /* Chart cards + Position Detail symbol tab strip. */
-        [data-bs-theme="dark"] .chart-wrapper { background: #1c1e26; }
-        [data-bs-theme="dark"] .sym-tabstrip { background: #12141a; border-bottom-color: #2e313a; }
-        [data-bs-theme="dark"] .sym-tabstrip__search input { background: #1c1e26; border-color: #3a3e48; color: #f4f0ea; }
-        [data-bs-theme="dark"] .sym-tabstrip__search input:focus { background: #1c1e26; }
-        [data-bs-theme="dark"] .sym-tabstrip__sort { background: #262932; }
-        [data-bs-theme="dark"] .sym-tabstrip__sort button { color: #a8a29e; }
-        [data-bs-theme="dark"] .sym-tabstrip__sort button.active { background: #3a3e48; color: #f4f0ea; }
-        [data-bs-theme="dark"] .sym-tab { background: #1c1e26; border-color: #2e313a; color: #d6d1c9; }
-        [data-bs-theme="dark"] .sym-tab:hover { background: #262932; color: #f4f0ea; }
-        [data-bs-theme="dark"] .sym-tab.active { background: #2c2822; color: #f4f0ea; border-color: #b87333; }
+        [data-bs-theme="dark"] .chart-wrapper { background: #121826; }
+        [data-bs-theme="dark"] .sym-tabstrip { background: #0a0e17; border-bottom-color: #243049; }
+        [data-bs-theme="dark"] .sym-tabstrip__search input { background: #121826; border-color: #3a3e48; color: #ffffff; }
+        [data-bs-theme="dark"] .sym-tabstrip__search input:focus { background: #121826; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort { background: #1a2233; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort button { color: #8a97b1; }
+        [data-bs-theme="dark"] .sym-tabstrip__sort button.active { background: #3a3e48; color: #ffffff; }
+        [data-bs-theme="dark"] .sym-tab { background: #121826; border-color: #243049; color: #e8edf7; }
+        [data-bs-theme="dark"] .sym-tab:hover { background: #1a2233; color: #ffffff; }
+        [data-bs-theme="dark"] .sym-tab.active { background: rgba(91,140,255,.15); color: #5b8cff; border-color: #5b8cff; }
         [data-bs-theme="dark"] .sym-tabstrip__nav button,
-        [data-bs-theme="dark"] .sym-tabstrip__mobile button { background: #262932; border-color: #3a3e48; color: #d6d1c9; }
-        [data-bs-theme="dark"] .sym-tabstrip__mobile select { background: #1c1e26; border-color: #3a3e48; color: #f4f0ea; }
+        [data-bs-theme="dark"] .sym-tabstrip__mobile button { background: #1a2233; border-color: #3a3e48; color: #e8edf7; }
+        [data-bs-theme="dark"] .sym-tabstrip__mobile select { background: #121826; border-color: #3a3e48; color: #ffffff; }
         /* Wealth page KPI / income cards + generic value text. */
         [data-bs-theme="dark"] .kpi-card,
-        [data-bs-theme="dark"] .income-card { background: #1c1e26; border-color: #2e313a; }
+        [data-bs-theme="dark"] .income-card { background: #121826; border-color: #243049; }
         [data-bs-theme="dark"] .kpi-value,
-        [data-bs-theme="dark"] .income-card .income-value { color: #f4f0ea; }
-        [data-bs-theme="dark"] .narrative { color: #d6d1c9; }
-        [data-bs-theme="dark"] .narrative strong { color: #f4f0ea; }
+        [data-bs-theme="dark"] .income-card .income-value { color: #ffffff; }
+        [data-bs-theme="dark"] .narrative { color: #e8edf7; }
+        [data-bs-theme="dark"] .narrative strong { color: #ffffff; }
         /* Bootstrap's .table-light thead stays literally light in dark mode
            (it's a hardcoded variant, not theme-aware) — restyle it. */
         [data-bs-theme="dark"] .table-light,
         [data-bs-theme="dark"] .table-light > th,
         [data-bs-theme="dark"] .table-light > tr > th {
             --bs-table-bg: #24262e;
-            --bs-table-color: #d6d1c9;
+            --bs-table-color: #e8edf7;
             background-color: #24262e;
-            color: #d6d1c9;
+            color: #e8edf7;
         }
         /* Story badges: pastel chips -> translucent on dark. */
         [data-bs-theme="dark"] .story-buy { background: rgba(37,99,235,.2); color: #93c5fd; }
@@ -787,7 +844,7 @@
         [data-bs-theme="dark"] .story-lifecycle { background: rgba(109,40,217,.22); color: #ddd6fe; }
         [data-bs-theme="dark"] .story-income { background: rgba(5,150,105,.2); color: #6ee7b7; }
         [data-bs-theme="dark"] .story-detail { color: #78716c; }
-        [data-bs-theme="dark"] .story-day { border-bottom-color: #2e313a; }
+        [data-bs-theme="dark"] .story-day { border-bottom-color: #243049; }
         .ht-theme-btn {
             background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
             color: rgba(255,255,255,.75); border-radius: 8px;
@@ -800,6 +857,16 @@
            390px viewport. Pairs with the mobile column-priority system
            in tables.js (<th data-m="hide">) that collapses low-priority
            columns so the identity + headline-P&L columns fit unclipped. */
+        .ht-page { max-width: 72rem; margin-inline: auto; }
+        body .review-hero {
+            background: #121826;
+            border: 1px solid #243049;
+            border-radius: 0.75rem;
+            box-shadow: 0 24px 50px -32px rgba(0,0,0,.85);
+        }
+        body .card:not(.feature-card) { border-radius: 0.75rem; }
+        body .text-success { color: #28c08a !important; }
+        body .text-danger { color: #f0556d !important; }
         @media (max-width: 767px) {
             .table-sm > :not(caption) > * > * { padding: .35rem .4rem; }
             .table { font-size: .85rem; }
@@ -809,6 +876,87 @@
         }
     </style>
     {% block head %}{% endblock %}
+    <style>
+        /* Page styles that hardcode white tiles load above. These beat them. */
+        body .sec-card,
+        body .ew-card,
+        body .ew-empty,
+        body .ew-note,
+        body .ind-empty,
+        body .ind-section-note,
+        body .ai-card,
+        body .callouts-card,
+        body .fit-card,
+        body .fit-panel,
+        body .ht-peek,
+        body .coaching-section,
+        body .gs-step,
+        body .gs-path,
+        body .fl-section,
+        body .static-card,
+        body .broker-card,
+        body .portal-card,
+        body .na-card,
+        body .efb-panel,
+        body .efb-door,
+        body .processing-card,
+        body .atlas-card,
+        body .sync-card,
+        body .stat-tile,
+        body .au-section,
+        body .aa-section,
+        body .af-card,
+        body .au-modal,
+        body .kpi-card,
+        body .income-card,
+        body .chart-wrapper,
+        body .narrative-card,
+        body .demo-section,
+        body .faq-item,
+        body .faq-item .accordion-button,
+        body .faq-item .faq-answer,
+        body .ht-palette-box {
+            background: #121826;
+            border-color: #243049;
+            color: #e8edf7;
+            box-shadow: none;
+        }
+        body .sec-card .stats,
+        body .sec-card .extremes .ex,
+        body .fit-panel .panel-edge {
+            background: #1a2233;
+            border-color: #243049;
+        }
+        body .sec-card .name,
+        body .sec-card .stat .val,
+        body .ew-card .sym a,
+        body .ew-card .when .big,
+        body .gs-step-body h6,
+        body .faq-item .accordion-button,
+        body .insights-content strong {
+            color: #fff;
+        }
+        body .sec-card .meta,
+        body .sec-card .stat .lbl,
+        body .sec-card .pnl-sub,
+        body .ew-card .company,
+        body .ew-card .when .lbl,
+        body .gs-step-body .lead-sub,
+        body .processing-sub {
+            color: #8a97b1;
+        }
+        body .sec-card .pnl.pos,
+        body .ew-card .move.pos { color: #28c08a; }
+        body .sec-card .pnl.neg,
+        body .ew-card .move.neg { color: #f0556d; }
+        body table.fit thead th,
+        body table.fit tbody th.strategy,
+        body .sym-tabstrip,
+        body .sym-tab,
+        body .sym-tabstrip__search input,
+        body .atlas { background: #0a0e17; color: #e8edf7; }
+        body .sym-tab.active { background: rgba(91,140,255,.15); color: #5b8cff; border-color: #5b8cff; }
+    </style>
     {% if reddit_pixel_id and reddit_pixel_event %}
     <script>
     !function(w,d){if(!w.rdt){var p=w.rdt=function(){p.sendEvent?p.sendEvent.apply(p,arguments):p.callQueue.push(arguments)};p.callQueue=[];var t=d.createElement("script");t.src="https://www.redditstatic.com/ads/pixel.js";t.async=!0;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(t,s)}}(window,document);
@@ -817,7 +965,7 @@
     </script>
     {% endif %}
 </head>
-<body{% if compact_tables %} class="ht-compact"{% endif %}>
+<body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}">
     {% if session.get('_impersonator_id') %}
     <div style="background: #fef08a; color: #713f12; padding: .55rem 1rem;
                 border-bottom: 2px solid #f59e0b; font-weight: 600; font-size: .9rem;
@@ -834,10 +982,7 @@
     {% endif %}
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ scoped_url('weekly_review') if current_user.is_authenticated else url_for('index') }}">
-                HappyTrader
-                <small>your trading mirror</small>
-            </a>
+            <a class="navbar-brand ht-wordmark" href="{{ scoped_url('weekly_review') if current_user.is_authenticated else url_for('index') }}">happy<span>trader</span></a>
             <div class="d-flex align-items-center gap-2">
                 {% if current_user.is_authenticated %}
                 {# Phone-only palette trigger OUTSIDE the collapse: on mobile
@@ -957,15 +1102,6 @@
                         <kbd class="d-none d-lg-inline">&#8984;K</kbd>
                     </button>
                 </li>
-                <li class="nav-item py-1 py-lg-0 me-lg-2">
-                    {# Dark mode toggle (nav.js). Moon shows in light mode,
-                       sun in dark. Charts recolor via a one-time reload. #}
-                    <button type="button" class="ht-theme-btn" id="ht-theme-toggle"
-                            aria-label="Toggle dark mode" title="Toggle dark mode">
-                        <svg class="ht-icon-moon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278"/></svg>
-                        <svg class="ht-icon-sun" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" style="display:none;"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6m0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/></svg>
-                    </button>
-                </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle text-white-50" href="#" id="userMenu"
                        data-bs-toggle="dropdown" aria-expanded="false">Account</a>
@@ -1008,7 +1144,7 @@
                     </li>
                     {% if signup_enabled %}
                     <li class="nav-item ps-lg-1 py-1 py-lg-0">
-                        <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('signup') }}">
+                        <a class="btn btn-sm btn-primary btn-auth-nav" href="{{ url_for('signup') }}">
                             {% if signup_invite_required %}Sign Up (invite){% else %}Sign Up{% endif %}
                         </a>
                     </li>

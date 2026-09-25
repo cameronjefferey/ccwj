@@ -4,7 +4,8 @@
 {% include '_review_styles.html' %}
 <style>
     .strat-hero {
-        background: #1a1a2e;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 16px;
         padding: 2.25rem 2rem;
         color: #fff;
@@ -17,35 +18,42 @@
     .hero-stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .4px; color: rgba(255,255,255,.45); margin-top: .2rem; }
 
     /* Strategy cards */
-    .strat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .strat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .85rem; margin-bottom: 1.5rem; }
     .strat-card {
-        background: #fff;
-        border-radius: 14px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.25rem 1.5rem;
+        background: #121826;
+        border: 1px solid #243049;
+        border-radius: 0.75rem;
+        box-shadow: none;
+        padding: 1rem 1.1rem;
         text-decoration: none;
-        color: inherit;
-        transition: box-shadow .15s, transform .1s;
+        color: #e8edf7;
+        transition: border-color .2s, filter .2s, transform .2s;
         display: flex;
         flex-direction: column;
-        gap: .75rem;
+        gap: .85rem;
     }
-    .strat-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); transform: translateY(-1px); }
-    .strat-card.selected { border: 2px solid #3b82f6; }
-    .strat-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
-    .strat-card-name { font-weight: 700; font-size: 1.05rem; }
-    .strat-card-meta { font-size: .78rem; color: #9ca3af; margin-top: .15rem; }
+    .strat-card:hover { border-color: rgba(255,255,255,.22); filter: brightness(1.08); transform: translateY(-1px); color: #e8edf7; }
+    .strat-card.selected { border-color: #5b8cff; }
+    .strat-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
+    .strat-card-name { font-weight: 650; font-size: 1.05rem; color: #fff; letter-spacing: -0.02em; }
+    .strat-card-meta { font-size: .78rem; color: #8a97b1; margin-top: .15rem; }
     .trend-badge {
-        font-size: .7rem; font-weight: 700; padding: .2rem .55rem; border-radius: 6px;
-        text-transform: uppercase; letter-spacing: .3px; white-space: nowrap;
+        font-size: .65rem; font-weight: 650; padding: .15rem .45rem; border-radius: 0.35rem;
+        text-transform: uppercase; letter-spacing: .08em; white-space: nowrap;
+        background: rgba(91,140,255,.15); color: #5b8cff;
     }
-    .trend-badge.improving { background: rgba(25,135,84,.1); color: #166534; }
-    .trend-badge.declining { background: rgba(220,53,69,.1); color: #7f1d1d; }
-    .trend-badge.stable { background: rgba(100,116,139,.1); color: #475569; }
-    .trend-badge.new { background: rgba(13,110,253,.08); color: #1e40af; }
+    .trend-badge.declining { background: rgba(240,85,109,.14); color: #f0556d; }
+    .trend-badge.stable { background: rgba(255,255,255,.06); color: #8a97b1; }
     .strat-card-stats { display: flex; gap: 1.25rem; }
-    .sc-stat-value { font-size: 1rem; font-weight: 700; line-height: 1.2; }
-    .sc-stat-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .3px; color: #9ca3af; margin-top: .1rem; }
+    .sc-stat-value {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 1.15rem; font-weight: 650; line-height: 1.2; color: #fff;
+    }
+    .sc-stat-label {
+        font-size: .65rem; text-transform: uppercase; letter-spacing: .1em;
+        color: #8a97b1; margin-bottom: .2rem;
+    }
 
     /* Sparkline */
     .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
@@ -56,27 +64,29 @@
         border-radius: 2px 2px 0 0;
         transition: height .2s;
     }
-    .spark-bar.positive { background: #198754; }
-    .spark-bar.negative { background: #dc3545; }
-    .spark-bar.zero { background: #e5e7eb; height: 2px !important; }
-    .spark-label { font-size: .62rem; color: #9ca3af; text-align: center; margin-top: .15rem; }
+    .spark-bar.positive { background: #28c08a; }
+    .spark-bar.negative { background: #f0556d; }
+    .spark-bar.zero { background: #243049; height: 2px !important; }
+    .spark-label { font-size: .62rem; color: #8a97b1; text-align: center; margin-top: .15rem; font-variant-numeric: tabular-nums; }
 
     /* Focus sections */
-    .data-section { background: #fff; border-radius: 16px; box-shadow: 0 1px 8px rgba(0,0,0,.05); padding: 1.5rem 1.75rem; margin-bottom: 1.25rem; }
+    .data-section { background: #121826; border: 1px solid #243049; border-radius: 0.75rem; box-shadow: none; padding: 1.15rem 1.25rem; margin-bottom: 1.25rem; color: #e8edf7; }
     .section-label { font-size: .72rem; text-transform: uppercase; letter-spacing: 1.1px; color: #9ca3af; font-weight: 600; margin-bottom: 1rem; }
     .trend-chart-wrap { position: relative; height: 140px; }
     @media (max-width: 720px) { .trend-chart-wrap { height: 120px; } }
 
     .focus-header {
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.5rem 1.75rem;
+        background: #121826;
+        border: 1px solid #243049;
+        border-radius: 0.75rem;
+        box-shadow: none;
+        padding: 1.15rem 1.25rem;
         margin-bottom: 1.25rem;
+        color: #e8edf7;
     }
     .focus-stat { text-align: center; }
-    .focus-stat-value { font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
-    .focus-stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-top: .2rem; }
+    .focus-stat-value { font-size: 1.25rem; font-weight: 650; line-height: 1.2; color: #fff; font-variant-numeric: tabular-nums; }
+    .focus-stat-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: #8a97b1; margin-bottom: .2rem; }
     .focus-stat-meta { font-size: .75rem; color: #6c757d; margin-top: .1rem; }
 
     .obs-card {
@@ -95,7 +105,7 @@
     .dte-bar-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #f3f4f6; }
     .dte-bar-row:last-child { border-bottom: none; }
     .dte-label { width: 90px; font-size: .82rem; font-weight: 600; flex-shrink: 0; }
-    .dte-bar-track { flex: 1; height: 22px; background: #f3f4f6; border-radius: 4px; overflow: hidden; position: relative; }
+    .dte-bar-track { flex: 1; height: 22px; background: #1a2233; border-radius: 4px; overflow: hidden; position: relative; }
     .dte-bar-fill { height: 100%; border-radius: 4px; }
     .dte-bar-fill.good { background: #198754; }
     .dte-bar-fill.bad { background: #dc3545; }
@@ -147,7 +157,6 @@
 {% if not strategies %}
 <div class="review-hero">
     <div class="ov-bar" style="border-bottom:0; margin-bottom:0; padding-bottom:0;">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
@@ -180,7 +189,6 @@
    ══════════════════════════════ #}
 <div class="review-hero strat-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
@@ -248,13 +256,13 @@
 {# Key stats #}
 <div class="focus-header">
     <div class="row g-0 text-center">
-        <div class="col focus-stat" style="border-right: 1px solid #f0f0f0">
+        <div class="col focus-stat" style="border-right: 1px solid #243049">
             <div class="focus-stat-value {{ 'text-positive' if focus_strategy.total_return >= 0 else 'text-negative' }}">
                 {{ "+" if focus_strategy.total_return >= 0 else "" }}${{ "{:,.0f}".format(focus_strategy.total_return) }}
             </div>
             <div class="focus-stat-label">Total Return</div>
         </div>
-        <div class="col focus-stat" style="border-right: 1px solid #f0f0f0">
+        <div class="col focus-stat" style="border-right: 1px solid #243049">
             {% if focus_strategy.win_rate is not none %}
             <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.win_rate) }}%</div>
             <div class="focus-stat-label">Win Rate</div>
@@ -264,7 +272,7 @@
             <div class="focus-stat-label">Win Rate</div>
             {% endif %}
         </div>
-        <div class="col focus-stat" style="border-right: 1px solid #f0f0f0">
+        <div class="col focus-stat" style="border-right: 1px solid #243049">
             <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.avg_days) }}d</div>
             <div class="focus-stat-label">Avg Hold</div>
         </div>
@@ -505,19 +513,19 @@
         </div>
         <div class="strat-card-stats">
             <div>
-                <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
                 <div class="sc-stat-label">Win Rate</div>
+                <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
             </div>
             <div>
+                <div class="sc-stat-label">Total Return</div>
                 <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
                     {{ "+" if s.total_return >= 0 else "" }}${{ "{:,.0f}".format(s.total_return) }}
                 </div>
-                <div class="sc-stat-label">Total Return</div>
             </div>
             {% if s.avg_days > 0 %}
             <div>
-                <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>
                 <div class="sc-stat-label">Avg Hold</div>
+                <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>
             </div>
             {% endif %}
         </div>

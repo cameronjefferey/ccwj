@@ -78,7 +78,7 @@
     .pos-numbers .ht-stat-v { font-size: 1.35rem; font-weight: 600; }
     .pos-wl-bar {
         display: flex; height: 4px; border-radius: 999px; overflow: hidden;
-        margin-top: .35rem; background: #f3d6d3; max-width: 9rem;
+        margin-top: .35rem; background: rgba(240,85,109,.2); max-width: 9rem;
     }
     .pos-wl-bar span:first-child { background: var(--color-positive); }
     .pos-wl-bar span:last-child { background: #e7b2ad; }
@@ -146,7 +146,6 @@
 {% set _mixed_ct   = status_counts.Mixed   if status_counts else 0 %}
 <div class="review-hero pos-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (_auth_acct_count > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% with scope_account_options = user_accounts if user_accounts else accounts %}

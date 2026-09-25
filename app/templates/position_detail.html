@@ -23,12 +23,12 @@
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
     }
     .chart-wrapper {
-        background: #fff; border-radius: 12px;
+        background: #121826; border-radius: 12px;
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
         padding: 1.25rem;
     }
     .narrative-card {
-        background: #fff; border-radius: 16px;
+        background: #121826; border-radius: 16px;
         box-shadow: 0 2px 16px rgba(0,0,0,.05);
     }
     [data-bs-theme="dark"] .narrative-card { background: #1c1e26; }
@@ -40,7 +40,7 @@
     .leg-detail-row { display: none; }
     .leg-detail-row.open { display: table-row; }
     .leg-detail-cell { padding: 0 !important; }
-    .leg-detail-table { margin: 0; font-size: .72rem; background: #fafbfc; }
+    .leg-detail-table { margin: 0; font-size: .72rem; background: #121826; }
     .leg-detail-table td { padding: .25rem .5rem; border: none; }
     .leg-detail-table th { padding: .25rem .5rem; font-size: .65rem; text-transform: uppercase; letter-spacing: .3px; color: #6c757d; border: none; }
     .session-pills { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
@@ -48,12 +48,12 @@
         display: inline-flex; align-items: center; gap: .4rem;
         padding: .4rem .85rem; border-radius: 20px; font-size: .78rem; font-weight: 600;
         cursor: pointer; user-select: none; transition: all .15s;
-        border: 2px solid #dee2e6; background: #fff; color: #495057;
+        border: 1px solid #243049; background: #121826; color: #e8edf7;
     }
     .session-pill:hover { border-color: #6c757d; }
     .session-pill.active { border-color: #0d6efd; background: #e7f1ff; color: #0a58ca; }
     .session-pill.active.session-open { border-color: #198754; background: #d1e7dd; color: #0f5132; }
-    .session-pill.active.session-closed { border-color: #6c757d; background: #e9ecef; color: #495057; }
+    .session-pill.active.session-closed { border-color: #8a97b1; background: #1a2233; color: #e8edf7; }
     .session-pill .pill-dot {
         width: 8px; height: 8px; border-radius: 50%; display: inline-block;
     }
@@ -71,7 +71,7 @@
         display: inline-flex; align-items: center; gap: .45rem; margin: 0;
         padding: .4rem .9rem; border-radius: 20px; font-size: .8rem; font-weight: 600;
         cursor: pointer; user-select: none; transition: all .15s;
-        border: 2px solid #dee2e6; background: #f8f9fa; color: #adb5bd;
+        border: 1px solid #243049; background: #1a2233; color: #8a97b1;
     }
     .account-toggle:hover { border-color: #6c757d; }
     .account-toggle.active { border-color: #0d6efd; background: #e7f1ff; color: #0a58ca; }
@@ -187,7 +187,6 @@
 {# ── Hero ── #}
 <div class="review-hero pos-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts|length > 1 and not (account_toggles and account_toggles|length > 1)) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% for _leg in request.args.getlist('leg') %}
@@ -736,7 +735,7 @@
    as before. #}
 {% set _has_pd_advanced = breakdown_rows or strategy_rows or option_matrices or current_positions or trade_outcomes %}
 {% if first_visit and _has_pd_advanced %}
-<div class="card stat-card p-3 mb-3" style="background:#f8fafc; border:1px solid #e2e8f0;">
+<div class="card stat-card p-3 mb-3" style="background:#121826; border:1px solid #243049; color:#e8edf7;">
     <p class="text-muted small mb-2">
         Quick terms, since strategy labels show up below: a <strong>leg</strong> is one
         open&rarr;close stretch of this position. <strong>Covered Call</strong> = a short call
@@ -952,7 +951,7 @@
                         <td class="fw-semibold bg-light text-nowrap">{{ row.dte_label }}</td>
                         {% for cell in row.cells %}
                         {% if cell.count == 0 %}
-                        <td class="text-center" style="background:#f8f9fa;color:#ccc;">&mdash;</td>
+                        <td class="text-center" style="background: #1a2233;color: #8a97b1;">&mdash;</td>
                         {% else %}
                         {% set wr = cell.win_rate %}
                         {% if wr >= 75 %}
@@ -1074,7 +1073,7 @@
                 {# ── Separator ── #}
                 {% if current_positions and trade_outcomes %}
                 <tr>
-                    <td colspan="13" class="text-center text-muted py-1" style="font-size:.65rem; background:#f0f0f0; letter-spacing:.5px;">
+                    <td colspan="13" class="text-center text-muted py-1" style="font-size:.65rem; background: #1a2233; letter-spacing:.5px;">
                         CLOSED TRADES
                     </td>
                 </tr>
@@ -1419,7 +1418,7 @@
                     {
                         label: 'Options',
                         data: chartData.options,
-                        borderColor: '#b87333',
+                        borderColor: '#5b8cff',
                         tension: 0,
                         pointRadius: 0,
                         pointHitRadius: 6,

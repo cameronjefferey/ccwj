@@ -23,7 +23,7 @@
     .range-toggle {
         display: inline-flex;
         gap: .25rem;
-        background: #f1f5f9;
+        background: #1a2233;
         padding: .25rem;
         border-radius: 8px;
     }
@@ -37,12 +37,12 @@
         transition: background-color .15s;
     }
     .range-toggle a:hover { background: rgba(184,115,51,.12); color: var(--color-mirror-ink); }
-    .range-toggle a.active { background: #b87333; color: #fff; }
+    .range-toggle a.active { background: #5b8cff; color: #fff; }
 
     /* ── KPI cards ─────────────────────────────────────────────── */
     .kpi-card {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 10px;
         padding: 1rem 1.1rem;
     }
@@ -105,8 +105,8 @@
 
     /* ── Chart wrapper ─────────────────────────────────────────── */
     .chart-wrapper {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 12px;
         padding: 1.25rem;
         margin-bottom: 1.5rem;
@@ -125,8 +125,8 @@
 
     /* ── Income panel ─────────────────────────────────────────── */
     .income-card {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 10px;
         padding: 1rem 1.1rem;
     }
@@ -153,7 +153,6 @@
 {% block content %}
 <div class="review-hero wealth-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (wealth_account_choices and wealth_account_choices|length > 0) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             <input type="hidden" name="view" value="value">

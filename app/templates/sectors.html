@@ -24,8 +24,8 @@
     .sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
 
     .sec-card {
-        background: #fff;
-        border: 1px solid #e7e5e4;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 14px;
         padding: 1.1rem 1.2rem;
         display: flex; flex-direction: column; gap: .75rem;
@@ -42,7 +42,7 @@
 
     .sec-card .stats {
         display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem;
-        background: #f8fafc; border-radius: 10px; padding: .55rem .65rem;
+        background: #1a2233; border-radius: 10px; padding: .55rem .65rem;
     }
     .sec-card .stat .lbl { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
     .sec-card .stat .val { font-size: .9rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
@@ -56,7 +56,7 @@
     .sec-card .splits .v.neg { color: #b91c1c; }
 
     .sec-card .extremes { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; font-size: .76rem; }
-    .sec-card .extremes .ex { background: #f8fafc; border-radius: 8px; padding: .45rem .6rem; }
+    .sec-card .extremes .ex { background: #1a2233; border-radius: 8px; padding: .45rem .6rem; }
     .sec-card .extremes .ex .lbl { font-size: .62rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
     .sec-card .extremes .ex .sym { font-weight: 700; color: #0f172a; }
     .sec-card .extremes .ex .ret { font-variant-numeric: tabular-nums; }
@@ -74,12 +74,12 @@
     .sec-card .btn-toggle .chev { transition: transform .15s ease; display: inline-block; margin-left: .3rem; }
     .sec-card.expanded .btn-toggle .chev { transform: rotate(180deg); }
     .sec-card .btn-positions {
-        background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0;
+        background: #1a2233; color: #e8edf7; border: 1px solid #243049;
         padding: .5rem .85rem; border-radius: 999px;
         font-size: .78rem; font-weight: 600; text-decoration: none;
         white-space: nowrap;
     }
-    .sec-card .btn-positions:hover { background: #f3e6d4; }
+    .sec-card .btn-positions:hover { background: #1a2233; }
 
     /* Subsector breakdown — only visible when sector is expanded */
     .sec-card .ind-list { display: none; flex-direction: column; gap: .4rem; padding-top: .25rem; }
@@ -88,8 +88,8 @@
         display: grid; grid-template-columns: 1fr auto auto; align-items: center;
         gap: .55rem;
         padding: .5rem .65rem;
-        background: #fafafa;
-        border: 1px solid #f1f5f9;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 8px;
         font-size: .82rem;
     }
@@ -101,17 +101,17 @@
     .ind-row .ind-pnl.pos { color: #059669; }
     .ind-row .ind-pnl.neg { color: #b91c1c; }
     .ind-row .ind-link {
-        background: #fff; border: 1px solid #e2e8f0; border-radius: 999px;
+        background: #121826; border: 1px solid #243049; border-radius: 999px;
         padding: .15rem .55rem; font-size: .68rem; font-weight: 600;
-        color: #0f172a; text-decoration: none; white-space: nowrap;
+        color: #e8edf7; text-decoration: none; white-space: nowrap;
     }
-    .ind-row .ind-link:hover { background: #f3e6d4; }
+    .ind-row .ind-link:hover { background: #1a2233; }
 
-    .ind-empty { color: #78716c; font-size: .85rem; padding: 2rem; text-align: center; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+    .ind-empty { color: #8a97b1; font-size: .85rem; padding: 2rem; text-align: center; background: #121826; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
 
     .ind-section-note {
-        background: #fff; border-radius: 10px; padding: .75rem 1rem;
-        font-size: .8rem; color: #64748b;
+        background: #121826; border-radius: 10px; padding: .75rem 1rem;
+        font-size: .8rem; color: #8a97b1;
         border: 1px dashed #e7e5e4; margin-top: 1rem;
     }
 </style>
@@ -121,7 +121,6 @@
 
 <div class="review-hero ind-hero">
     <div class="ov-bar">
-        <div class="ov-brand"><b>HappyTrader</b><span>Your trading mirror</span></div>
         {% if (accounts and accounts|length > 1) or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
