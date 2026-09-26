@@ -234,29 +234,36 @@ class TestNeutralMarketLine:
 
 
 class TestOverviewTakeaway:
-    def test_up_while_both_indexes_fell_and_ahead_for_the_week(self):
+    def test_labels_balance_delta_and_lists_benchmarks_without_comparing(self):
         benches = [
             {"label": "S&P 500", "day_pct": -0.72, "week_pct": 2.08},
             {"label": "Nasdaq 100", "day_pct": -0.84, "week_pct": 5.29},
         ]
         line = _overview_takeaway(0.13, 6.08, benches)
         assert line == (
-            "Up 0.13% on a day both indexes fell, and ahead of "
-            "the S&P 500 and Nasdaq 100 for the week."
+            "Account value rose 0.13% since the prior close; "
+            "one-week change: account +6.08%, S&P 500 +2.08%, "
+            "Nasdaq 100 +5.29%."
         )
 
-    def test_down_and_behind_does_not_claim_a_win(self):
+    def test_deposit_sized_move_never_claims_market_outperformance(self):
         benches = [
             {"label": "S&P 500", "day_pct": 0.4, "week_pct": 1.2},
             {"label": "Nasdaq 100", "day_pct": 0.2, "week_pct": 0.8},
         ]
-        line = _overview_takeaway(-0.5, 0.3, benches)
-        assert "Down 0.50% on a day both indexes rose" in line
-        assert "behind the S&P 500 and Nasdaq 100" in line
+        # Snapshot deltas include transfers: a $50k deposit into a $100k
+        # account is a +50% balance move, not a +50% investment return.
+        line = _overview_takeaway(50.0, 50.0, benches)
+        assert line.startswith("Account value rose 50.00%")
+        assert "ahead" not in line
+        assert "behind" not in line
+        assert "outperform" not in line
 
     def test_missing_indexes_stays_quiet(self):
         assert _overview_takeaway(None, None, []) is None
-        assert _overview_takeaway(1.0, None, []) == "Up 1.00% on the day."
+        assert _overview_takeaway(1.0, None, []) == (
+            "Account value rose 1.00% since the prior close."
+        )
 
 
 class TestOverviewRadar:
@@ -287,6 +294,23 @@ class TestOverviewRadar:
 
     def test_empty_window_is_none(self):
         assert _overview_radar(date(2026, 9, 23), [], [], [], None) is None
+
+    def test_market_today_anchor_keeps_day_14_event_after_weekend(self):
+        review_close = date(2026, 9, 18)
+        market_today = date(2026, 9, 21)
+        option = {
+            "symbol": "XYZ",
+            "expiry": "2026-10-05",
+            "quantity": -1,
+            "option_type": "Call",
+            "strike": 100,
+            "unrealized_pnl": 25,
+        }
+        # The old settled-close anchor silently dropped this valid day-14
+        # event because it sat 17 days after Friday.
+        assert _overview_radar(review_close, [], [option], [], None) is None
+        radar = _overview_radar(market_today, [], [option], [], None)
+        assert radar["options"][0]["title"] == "XYZ $100 call expires"
 
 
 class TestSnapshotPlaceholderScope:

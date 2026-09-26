@@ -646,6 +646,17 @@ def snaptrade_callback():
         if isinstance(acc, dict) and str(acc.get("id") or "").strip()
     }
     new_ids = remote_ids - prior_ids
+    recovery_existing = any(
+        str(row.get("snaptrade_account_id") or "") in remote_ids
+        and (
+            bool(row.get("connection_broken_at"))
+            or (
+                row.get("first_sync_completed") is not None
+                and not bool(row.get("first_sync_completed"))
+            )
+        )
+        for row in existing_accounts
+    )
 
     if not accounts:
         # Empty list: the portal was closed, or a brand-new connection has
@@ -653,7 +664,7 @@ def snaptrade_callback():
         _portal_cancel_flash(had_existing=bool(prior_ids))
         return redirect(url_for("snaptrade_accounts_page"))
 
-    if not reconnect_label and not new_ids:
+    if not reconnect_label and not new_ids and not recovery_existing:
         # Only accounts we already had. A cancel (or a no-op re-auth)
         # must not flash "Connected N" or open the name-now step.
         _portal_cancel_flash(had_existing=True)
@@ -800,7 +811,7 @@ def snaptrade_callback():
             "before syncing that account.",
             "warning",
         )
-    if saved and (reconnect_label or newly_saved):
+    if saved and (reconnect_label or newly_saved or recovery_existing):
         _kick_post_connect_sync(user_id)
         all_accounts = get_snaptrade_accounts(user_id) or []
         pending_first = any(
@@ -812,6 +823,12 @@ def snaptrade_callback():
         if reconnect_label:
             flash(
                 f"{reconnect_label} reconnected. We're pulling the latest "
+                "data now.",
+                "success",
+            )
+        elif recovery_existing:
+            flash(
+                "Broker connection refreshed. We're pulling the latest "
                 "data now.",
                 "success",
             )

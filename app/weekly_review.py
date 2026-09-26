@@ -2229,68 +2229,48 @@ def _market_line_source(market, benchmark_snapshot):
 
 
 def _overview_takeaway(day_pct, week_pct, benchmarks):
-    """One sentence under the Overview hero. Only claims the numbers support.
+    """One factual line under the Overview hero.
 
-    ``benchmarks`` is the snapshot index rows (S&P 500, Nasdaq 100) with
-    ``day_pct`` and ``week_pct``. Missing pieces are left out rather than
-    filled in.
+    Account snapshot deltas are balance changes, not transfer-adjusted
+    investment returns. A deposit can move them sharply, so never describe
+    them as ahead of / behind market-return benchmarks.
     """
-    day_bits = []
-    for row in benchmarks or []:
-        pct = row.get("day_pct")
-        if pct is not None:
-            day_bits.append(pct)
-    week_bits = []
-    week_labels = []
-    for row in benchmarks or []:
-        pct = row.get("week_pct")
-        if pct is not None:
-            week_bits.append(pct)
-            week_labels.append(row.get("label") or row.get("symbol") or "the index")
-
     clauses = []
     if day_pct is not None:
-        verb = "Up" if day_pct > 0 else "Down" if day_pct < 0 else "Flat"
-        moved = f"{abs(day_pct):.2f}%" if day_pct != 0 else ""
-        if len(day_bits) >= 2 and all(p < 0 for p in day_bits):
-            backdrop = "on a day both indexes fell"
-        elif len(day_bits) >= 2 and all(p > 0 for p in day_bits):
-            backdrop = "on a day both indexes rose"
+        if day_pct > 0:
+            clauses.append(
+                f"Account value rose {abs(day_pct):.2f}% since the prior close"
+            )
+        elif day_pct < 0:
+            clauses.append(
+                f"Account value fell {abs(day_pct):.2f}% since the prior close"
+            )
         else:
-            backdrop = "on the day"
-        if day_pct == 0:
-            clauses.append(f"Flat {backdrop}")
-        else:
-            clauses.append(f"{verb} {moved} {backdrop}")
+            clauses.append("Account value was flat since the prior close")
 
-    if week_pct is not None and len(week_bits) >= 2:
-        names = f"the {week_labels[0]} and {week_labels[1]}"
-        if week_pct > max(week_bits):
-            clauses.append(f"ahead of {names} for the week")
-        elif week_pct < min(week_bits):
-            clauses.append(f"behind {names} for the week")
-        else:
-            clauses.append(f"between {names} for the week")
-    elif week_pct is not None and len(week_bits) == 1:
-        name = week_labels[0]
-        if week_pct > week_bits[0]:
-            clauses.append(f"ahead of the {name} for the week")
-        elif week_pct < week_bits[0]:
-            clauses.append(f"behind the {name} for the week")
-        else:
-            clauses.append(f"in line with the {name} for the week")
+    week_parts = []
+    if week_pct is not None:
+        week_parts.append(f"account {week_pct:+.2f}%")
+    for row in benchmarks or []:
+        pct = row.get("week_pct")
+        if pct is None:
+            continue
+        label = row.get("label") or row.get("symbol") or "index"
+        week_parts.append(f"{label} {pct:+.2f}%")
+    if week_parts:
+        clauses.append("one-week change: " + ", ".join(week_parts))
 
     if not clauses:
         return None
-    if len(clauses) == 1:
-        return clauses[0] + "."
-    return clauses[0] + ", and " + clauses[1] + "."
+    return "; ".join(clauses) + "."
 
 
 def _overview_radar(start, earnings, options, dividends, pending, n_days=15):
-    """15-day radar for Overview. Columns start on ``start`` (the close
-    on screen). Events outside the window are omitted. Chips span up to
-    three days so the label fits, and stop at the window edge.
+    """15-day radar for Overview, anchored on the current ET market date.
+
+    The source lists are also forward-looking from today. Anchoring on the
+    older settled close would shorten their visible horizon every weekend or
+    pre-market and silently omit otherwise valid events near day 14.
     """
     start = _coerce_date(start)
     if start is None:
@@ -4425,7 +4405,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
         context["daily_calendar_no_query_rows"] = True
         context["calendar_grid"] = _build_calendar_grid({}, today)
     context["overview_radar"] = _overview_radar(
-        context.get("review_date") or today,
+        market_today,
         (context.get("upcoming_earnings_this_week") or [])
         + (context.get("upcoming_earnings_next_week") or []),
         context.get("expiring_options"),
