@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pandas as pd
+from flask import render_template
 
 from app.linked_accounts import (
     distinct_broker_names,
@@ -78,6 +79,66 @@ def test_linked_inventory_is_one_row_per_live_account():
     )
     assert "Keeley" in [r["label"] for r in masked]
     assert "Schwab ••••5989" not in [r["label"] for r in masked]
+
+
+def test_linked_inventory_keeps_canonical_tenant_after_reconnect():
+    rows = profile_account_rows(
+        [{
+            "snaptrade_account_id": "new-transport-uuid",
+            "tenant_id": "snaptrade:retained-tenant",
+            "broker_slug": "Schwab",
+            "account_name": "Schwab ••••9437",
+            "display_nickname": "Cameron 401k",
+        }],
+        [{
+            "tenant_id": "snaptrade:retained-tenant",
+            "broker_slug": "snaptrade",
+            "account_name": "Schwab ••••9437",
+            "display_nickname": "Cameron 401k",
+        }],
+    )
+
+    assert rows == [{
+        "tenant_id": "snaptrade:retained-tenant",
+        "label": "Cameron 401k",
+        "broker_slug": "schwab",
+        "institution": "Schwab",
+        "removable": False,
+    }]
+
+
+def test_complete_account_link_keeps_canonical_tenant_after_reconnect():
+    from app import app
+
+    account = {
+        "snaptrade_account_id": "new-transport-uuid",
+        "tenant_id": "snaptrade:retained-tenant",
+        "broker_slug": "Schwab",
+        "account_name": "Schwab Account",
+        "display_nickname": "Cameron 401k",
+        "account_number_masked": "9437",
+        "first_sync_completed": True,
+        "holdings_last_successful_sync": None,
+        "connection_broken_at": None,
+    }
+    group = {
+        "broker_label": "Schwab",
+        "authorization_id": None,
+        "needs_reconnect": False,
+        "accounts": [account],
+    }
+
+    with app.test_request_context("/snaptrade/accounts"):
+        html = render_template(
+            "snaptrade_accounts.html",
+            accounts=[account],
+            connection_groups=[group],
+            any_reconnect_needed=False,
+            snaptrade_enabled=True,
+        )
+
+    assert "/upload?tenant=snaptrade:retained-tenant" in html
+    assert "/upload?tenant=snaptrade:new-transport-uuid" not in html
 
 
 def test_account_mask_normalizes_punctuation():
