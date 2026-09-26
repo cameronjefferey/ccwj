@@ -920,6 +920,25 @@ def test_orders_df_real_alpaca_payload_buy_yields_negative_amount():
     assert abs(float(row["Quantity"]) * float(row["Price"]) + float(row["Amount"])) <= 0.01
 
 
+def test_orders_df_crypto_pair_uses_same_base_symbol_as_activities():
+    """Coinbase order/activity symbol drift must not duplicate one fill."""
+    order = {
+        **_ALPACA_ORDER_NVDA_BUY,
+        "universal_symbol": {
+            "raw_symbol": "BTC-USD",
+            "description": "Bitcoin / U.S. Dollar",
+        },
+        "filled_quantity": "0.01",
+        "total_quantity": "0.01",
+        "execution_price": "60000",
+    }
+    df = orders_to_history_df(
+        [order], account_name="Coinbase Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert df.iloc[0]["Symbol"] == "BTC"
+
+
 def test_orders_df_sell_yields_positive_amount():
     """A SELL is cash IN; sign convention matches activities so the
     cross-source dedup keys agree."""

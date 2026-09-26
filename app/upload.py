@@ -232,6 +232,33 @@ def is_crypto_symbol(symbol: str) -> bool:
     return str(symbol).strip().upper() in CRYPTO_SYMBOLS
 
 
+def canonicalize_crypto_pair_symbol(symbol: str) -> str:
+    """Collapse a known crypto/USD pair ticker to its base symbol.
+
+    SnapTrade's activities and recent-orders feeds may describe the same
+    Coinbase fill as ``BTC`` and ``BTC-USD`` respectively.  The history
+    merge runs before dbt's crypto normalization, so leaving those spellings
+    different defeats cross-source dedup and doubles the economic fill.
+    """
+    raw = str(symbol or "").strip().upper()
+    if not raw or raw in CRYPTO_SYMBOLS:
+        return raw
+    if " " in raw or len(raw) > 12:
+        return raw
+    for sep in ("-", "/"):
+        if sep in raw:
+            base, _, quote = raw.partition(sep)
+            if quote in ("USD", "USDT", "USDC") and base in CRYPTO_SYMBOLS:
+                return base
+            return raw
+    for quote in ("USDT", "USDC", "USD"):
+        if raw.endswith(quote) and len(raw) > len(quote):
+            base = raw[: -len(quote)]
+            if base in CRYPTO_SYMBOLS:
+                return base
+    return raw
+
+
 def _github_repo() -> str:
     """owner/repo for the GitHub API (override with GITHUB_REPO)."""
     return os.environ.get("GITHUB_REPO", "cameronjefferey/ccwj").strip()
@@ -558,8 +585,11 @@ def _canonicalize_date_mdy(value):
 
 def _canonicalize_key_cell(col, value):
     """Dedup-key canonicalizer: Date → MM/DD/YYYY, everything else as usual."""
-    if str(col).lower() == "date":
+    col_lower = str(col).lower()
+    if col_lower == "date":
         return _canonicalize_date_mdy(value)
+    if col_lower == "symbol":
+        return canonicalize_crypto_pair_symbol(_canonicalize_seed_cell(value))
     return _canonicalize_seed_cell(value)
 
 
@@ -874,7 +904,7 @@ def _dedup_history_rows(df, seed_columns):
         key3 = (
             _canonicalize_date_mdy(df.iloc[pos][date_col]),
             _normalize_history_action(df.iloc[pos][action_col]),
-            _canonicalize_seed_cell(df.iloc[pos][sym_col]),
+            _canonicalize_key_cell(sym_col, df.iloc[pos][sym_col]),
             _canonicalize_seed_cell(df.iloc[pos][qty_col]),
             _canonicalize_seed_cell(df.iloc[pos][price_col]),
             _canonicalize_stg_amount(
@@ -912,7 +942,7 @@ def _dedup_history_rows(df, seed_columns):
         key4 = (
             _canonicalize_date_mdy(df.iloc[pos][date_col]),
             _normalize_history_action(df.iloc[pos][action_col]),
-            _canonicalize_seed_cell(df.iloc[pos][sym_col]),
+            _canonicalize_key_cell(sym_col, df.iloc[pos][sym_col]),
             _canonicalize_seed_cell(df.iloc[pos][qty_col]),
             _canonicalize_cross_source_amount(
                 df.iloc[pos][action_col], df.iloc[pos][amount_col],
