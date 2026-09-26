@@ -1951,7 +1951,12 @@ class TestReviewSessionDates:
         tenant_filter = "AND tenant_id IN ('snaptrade:abc')"
         batch = {"today_moves": pd.DataFrame({"today_date": [friday]})}
 
-        cutoff, trade_query = _review_session_cutoff_and_trade_query(
+        (
+            cutoff,
+            trade_query,
+            scorecard_week,
+            attribution_query,
+        ) = _review_session_cutoff_and_trade_query(
             tenant_filter,
             tuesday,
             {"state": "after_hours"},
@@ -1966,12 +1971,20 @@ class TestReviewSessionDates:
         assert tenant_filter in sql
         params = {p.name: p.value for p in cfg.query_parameters}
         assert params["day"] == cutoff
+        assert scorecard_week == date(2026, 8, 24)
+        assert attribution_query is not None
+        assert "close_date >= DATE '2026-08-24'" in attribution_query
 
     def test_unchanged_cutoff_does_not_repeat_session_trade_query(self):
         batch = {
             "today_moves": pd.DataFrame({"today_date": [self.thursday]}),
         }
-        cutoff, trade_query = _review_session_cutoff_and_trade_query(
+        (
+            cutoff,
+            trade_query,
+            scorecard_week,
+            attribution_query,
+        ) = _review_session_cutoff_and_trade_query(
             "AND 1=0",
             self.friday,
             {"state": "after_hours"},
@@ -1981,6 +1994,8 @@ class TestReviewSessionDates:
         )
         assert cutoff == self.thursday
         assert trade_query is None
+        assert scorecard_week == date(2026, 8, 10)
+        assert attribution_query is None
 
     def test_deferred_overview_rewinds_heatmap_and_trade_highlights(self, monkeypatch):
         """The skeleton's /overview/below fragment must use the hero's close.
@@ -2032,6 +2047,10 @@ class TestReviewSessionDates:
                 params = {p.name: p.value for p in cfg.query_parameters}
                 assert params["day"] == friday
                 return {"today_trades": friday_fills.copy()}
+            if set(queries) == {"attribution"}:
+                sql = queries["attribution"]
+                assert "close_date >= DATE '2026-08-24'" in sql
+                return {"attribution": pd.DataFrame()}
 
             assert "today_moves" in queries
             assert "today_options_moves" in queries
@@ -2090,6 +2109,7 @@ class TestReviewSessionDates:
 
         def fake_apply(_context, _batch, **kwargs):
             observed["snap_cutoff"] = kwargs["snap_cutoff"]
+            observed["scorecard_week"] = kwargs["scorecard_week"]
 
         def fake_split(frame, **_kwargs):
             observed["highlight_symbols"] = frame["underlying_symbol"].tolist()
@@ -2109,8 +2129,9 @@ class TestReviewSessionDates:
 
         assert context["review_date"] == friday
         assert observed["snap_cutoff"] == friday
+        assert observed["scorecard_week"] == date(2026, 8, 24)
         assert observed["highlight_symbols"] == ["FRIDAY_FILL"]
-        assert len(observed["parallel_calls"]) == 2
+        assert len(observed["parallel_calls"]) == 3
 
     def test_snapshot_cutoff_never_after_user_today(self):
         assert _snapshot_as_of_date(

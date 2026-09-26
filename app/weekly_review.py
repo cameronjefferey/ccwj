@@ -4119,11 +4119,13 @@ def _day_trades_spec(tenant_filter, day):
 def _review_session_cutoff_and_trade_query(
         tenant_filter, user_today, market_session, initial_session_date,
         batch, *, et_today=None):
-    """Final Overview session date and any required trade-query rebind.
+    """Final Overview session date and queries that must follow a rewind.
 
     Movers are the first batch result that proves which official close is
     actually available. If that date rewinds the recap, the fill query from
-    the initial batch is now for the wrong session and must be replaced.
+    the initial batch is now for the wrong session and must be replaced. A
+    cross-week rewind also changes the scorecard's "closed since Monday"
+    window, so attribution must be rebound to the displayed session's week.
     """
     close_as_of = (
         _frame_as_of_date((batch or {}).get("today_moves"))
@@ -4138,7 +4140,16 @@ def _review_session_cutoff_and_trade_query(
         if cutoff != initial_session_date
         else None
     )
-    return cutoff, trade_query
+    scorecard_week = _iso_week_start(cutoff)
+    attribution_query = (
+        POSITION_ATTRIBUTION_QUERY.format(
+            tenant_filter=tenant_filter,
+            week_start=scorecard_week.isoformat(),
+        )
+        if scorecard_week != _iso_week_start(initial_session_date)
+        else None
+    )
+    return cutoff, trade_query, scorecard_week, attribution_query
 
 
 def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
@@ -4614,7 +4625,12 @@ def weekly_review():
         # Official-close as-of (movers) + session heuristic: the latest
         # date whose snapshot/calendar cell is a real session, not a UTC
         # spine forward-fill with a $0 delta.
-        snap_cutoff, rewound_trade_query = (
+        (
+            snap_cutoff,
+            rewound_trade_query,
+            rewound_scorecard_week,
+            rewound_attribution_query,
+        ) = (
             _review_session_cutoff_and_trade_query(
                 tenant_filter,
                 today,
@@ -4634,15 +4650,24 @@ def weekly_review():
                 client, {"today_trades": rewound_trade_query})
             batch["today_trades"] = _filter_df_by_tenant_ids(
                 rewound.get("today_trades", pd.DataFrame()), tenant_ids)
+        if (
+            rewound_attribution_query is not None
+            and "attribution" in batch_queries
+        ):
+            # The displayed close crossed into the prior ISO week. The first
+            # batch's "closed since Monday" attribution belongs to the nominal
+            # session and would omit positions closed during the week now on
+            # screen.
+            rewound = _bq_parallel(
+                client, {"attribution": rewound_attribution_query})
+            batch["attribution"] = _filter_df_by_tenant_ids(
+                rewound.get("attribution", pd.DataFrame()), tenant_ids)
         session_date = snap_cutoff
         context["review_date"] = snap_cutoff
         if snap_cutoff:
-            # Keep the scorecard Monday on the date the hero actually
-            # names. A same-week rewind does not change the Monday, so
-            # the attribution SQL (built from the nominal session) still
-            # matches. A cross-week rewind is rare; the copy follows the
-            # date on screen.
-            scorecard_week = _iso_week_start(snap_cutoff)
+            # Keep both copy and attribution on the Monday of the close the
+            # hero actually names.
+            scorecard_week = rewound_scorecard_week
             context["week_start"] = scorecard_week
         context["overview_pending_date"] = _overview_pending_session(
             today, market_session, snap_cutoff, et_today=market_today)
@@ -5084,7 +5109,12 @@ def overview_below():
         except Exception as e:
             app.logger.warning("Overview below positions failed: %s", e)
 
-        snap_cutoff, rewound_trade_query = (
+        (
+            snap_cutoff,
+            rewound_trade_query,
+            rewound_scorecard_week,
+            rewound_attribution_query,
+        ) = (
             _review_session_cutoff_and_trade_query(
                 tenant_filter,
                 today,
@@ -5099,7 +5129,14 @@ def overview_below():
                 client, {"today_trades": rewound_trade_query})
             batch["today_trades"] = _filter_df_by_tenant_ids(
                 rewound.get("today_trades", pd.DataFrame()), tenant_ids)
+        if rewound_attribution_query is not None:
+            rewound = _bq_parallel(
+                client, {"attribution": rewound_attribution_query})
+            batch["attribution"] = _filter_df_by_tenant_ids(
+                rewound.get("attribution", pd.DataFrame()), tenant_ids)
+        scorecard_week = rewound_scorecard_week
         context["review_date"] = snap_cutoff
+        context["week_start"] = scorecard_week
         _apply_overview_below(
             context, batch,
             today=today, this_week=this_week,
