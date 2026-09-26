@@ -1028,17 +1028,16 @@ def _merge_position_strategy_breakdown(
             # strategy row. positions_summary's Covered Call total is
             # stock plus the call, so a second Buy and Hold row repeats
             # the stock (SMTC: $3,240.50 beside the $1,824.16 covered
-            # call). Skip when those stock dollars are already explained
-            # by the mart total, minus the option legs and any dividends
-            # attributed to the strategy.
+            # call). Compare realized with realized: closed_equity_df only
+            # contains realized stock sales, while total_pnl also contains
+            # remaining stock and option marks on an open position.
             equity_pnl = (
                 float(pd.to_numeric(sub["realized_pnl"], errors="coerce").fillna(0).sum())
                 if "realized_pnl" in sub.columns else 0.0
             )
             explained = (
-                _acct_sum(summary_df, acct, "total_pnl")
+                _acct_sum(summary_df, acct, "realized_pnl")
                 - _acct_sum(closed_legs_df, acct, "total_pnl")
-                - _acct_sum(summary_df, acct, "total_dividend_income")
             )
             if abs(explained - equity_pnl) <= 1.0:
                 continue
