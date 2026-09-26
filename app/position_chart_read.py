@@ -2,8 +2,8 @@
 
 Compares the equity line and the options line already drawn on the
 cumulative P&L chart, plus where trade-day dots sit. The page shows the
-opening sentence to everyone. The rest is blurred until HappyTrader AI
-is unlocked. The model may only restate these figures. It does not get
+opening sentence to everyone. The rest stays server-side until HappyTrader
+AI is unlocked. The model may only restate these figures. It does not get
 a new warehouse query, and it does not get to recommend a trade.
 """
 from __future__ import annotations
@@ -297,6 +297,23 @@ def review_brief(markers) -> dict | None:
     return {"review_lines": lines[:80], "read": 7}
 
 
+def visible_chart_read(body: str | None, *, unlocked: bool) -> tuple[str, str]:
+    """Split generated prose into the public lead and protected remainder.
+
+    CSS blur is presentation, not access control. Locked callers must never
+    receive the remainder in either rendered HTML or the JSON response.
+    """
+    cleaned = (body or "").strip()
+    if not cleaned:
+        return "", ""
+    parts = re.split(r"(?<=[.!?])\s+", cleaned, maxsplit=1)
+    if len(parts) == 1:
+        return (cleaned, "") if unlocked else ("A chart read is ready.", "")
+    lead = parts[0]
+    rest = parts[1] if len(parts) > 1 and unlocked else ""
+    return lead, rest
+
+
 _PROSE_DATE_RE = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December)"
     r"\s+(\d{1,2})\b"
@@ -372,6 +389,8 @@ def _waiting_cost(lines: list[dict]) -> float:
 
 def _too_long(cleaned: str) -> str | None:
     sentences = [s for s in re.split(r"(?<=[.!?])\s+", cleaned.strip()) if s.strip()]
+    if len(sentences) < 2:
+        return "too short; use a story sentence and a separate lesson sentence"
     if len(sentences) > 3:
         return "too long; use at most 3 sentences"
     if not cleaned.rstrip().endswith((".", "!", "?")):

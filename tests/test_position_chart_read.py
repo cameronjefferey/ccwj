@@ -1,9 +1,14 @@
 """Equity line vs options line on the position chart."""
+import inspect
+from types import SimpleNamespace
+
 from app.position_chart_read import (
     _SYSTEM,
+    _too_long,
     chart_path_facts,
     chart_read_sentences,
     review_brief,
+    visible_chart_read,
 )
 
 
@@ -68,3 +73,67 @@ def test_short_or_flat_chart_stays_quiet():
     flat_eq = [100] * 20
     moving_opt = [i * 40 for i in range(20)]
     assert chart_path_facts(_series(flat_eq, moving_opt), []) is None
+
+
+def test_locked_chart_read_never_exposes_paid_remainder():
+    text = (
+        "You opened the position in April. "
+        "The option exits cost $430 compared with expiry. "
+        "The lesson from this chart is that those exits cost $430."
+    )
+
+    lead, locked_rest = visible_chart_read(text, unlocked=False)
+    assert lead == "You opened the position in April."
+    assert locked_rest == ""
+
+    paid_lead, paid_rest = visible_chart_read(text, unlocked=True)
+    assert paid_lead == lead
+    assert "option exits" in paid_rest
+    assert paid_rest.endswith("$430.")
+
+
+def test_locked_one_sentence_chart_read_fails_closed():
+    text = "The lesson from this chart is that the exits cost $430."
+
+    lead, rest = visible_chart_read(text, unlocked=False)
+
+    assert lead == "A chart read is ready."
+    assert rest == ""
+    assert "$430" not in lead
+    assert _too_long(text) is not None
+
+
+def test_locked_chart_read_endpoint_redacts_cached_body(monkeypatch):
+    from app import app
+    import app.llm_access as llm_access
+    import app.position_chart_read as chart_read_module
+    import app.position_detail as position_detail_module
+
+    full = (
+        "You opened the position in April. "
+        "The protected comparison is $430. "
+        "The lesson from this chart is that the exits cost $430."
+    )
+    monkeypatch.setattr(
+        chart_read_module,
+        "load_chart_read",
+        lambda *_args: {"body": full, "brief": "{}"},
+    )
+    monkeypatch.setattr(llm_access, "user_can_use_paid_llm", lambda _user_id: False)
+    monkeypatch.setattr(
+        position_detail_module, "current_user", SimpleNamespace(id=17)
+    )
+
+    view = inspect.unwrap(app.view_functions["position_chart_read"])
+    with app.test_request_context(
+        "/position/TEST/chart-read",
+        method="POST",
+        data={"digest": "abc123", "scope": "tenant|1"},
+    ):
+        response = view("TEST")
+
+    payload = response.get_json()
+    assert payload["lead"] == "You opened the position in April."
+    assert payload["body"] == ""
+    assert payload["locked"] is True
+    assert "protected comparison" not in response.get_data(as_text=True)

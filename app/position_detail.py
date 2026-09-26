@@ -3311,6 +3311,7 @@ def position_detail(symbol):
             load_chart_read,
             review_brief,
             store_chart_brief,
+            visible_chart_read,
         )
 
         _brief = review_brief(story_markers)
@@ -3322,13 +3323,15 @@ def position_detail(symbol):
             )
             _saved = load_chart_read(current_user.id, symbol, _scope, _digest) or {}
             _body = (_saved.get("body") or "").strip()
+            _unlocked = user_can_use_paid_llm(current_user.id)
+            _lead, _rest = visible_chart_read(_body, unlocked=_unlocked)
             chart_read = {
-                "lead": "" if _body else "Reading this chart…",
-                "rest": _body,
+                "lead": _lead or "Reading this chart…",
+                "rest": _rest,
                 "digest": _digest,
                 "scope": _scope,
                 "pending": not _body,
-                "locked": not user_can_use_paid_llm(current_user.id),
+                "locked": not _unlocked,
             }
     except Exception as exc:
         app.logger.warning("chart read prep failed for %s: %s", symbol, exc)
@@ -3395,12 +3398,21 @@ def position_detail(symbol):
 
 @app.route("/position/<symbol>/chart-read", methods=["POST"])
 @login_required
+@limiter.limit("3 per minute; 10 per hour; 30 per day")
 def position_chart_read(symbol):
-    """Fill the blurred half of the chart read. The brief was stored when
-    the page rendered, from the chart already on screen."""
+    """Generate the chart read and return only the caller-visible portion.
+
+    The brief was stored when the page rendered, from the chart already on
+    screen. The paid remainder never crosses the response boundary for a
+    locked user.
+    """
     from app.db import execute
     from app.llm_access import user_can_use_paid_llm
-    from app.position_chart_read import generate_chart_body, load_chart_read
+    from app.position_chart_read import (
+        generate_chart_body,
+        load_chart_read,
+        visible_chart_read,
+    )
 
     digest = (request.form.get("digest") or "").strip()[:64]
     scope = (request.form.get("scope") or "").strip()[:800]
@@ -3425,10 +3437,13 @@ def position_chart_read(symbol):
                 """,
                 (body, current_user.id, symbol.upper(), scope, digest),
             )
+    unlocked = user_can_use_paid_llm(current_user.id)
+    lead, visible_body = visible_chart_read(body, unlocked=unlocked)
     return jsonify(
         ok=True,
-        body=body,
-        locked=not user_can_use_paid_llm(current_user.id),
+        lead=lead,
+        body=visible_body,
+        locked=not unlocked,
     )
 
 
