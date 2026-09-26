@@ -64,6 +64,54 @@ def test_start_refresh_does_not_log_a_second_visit(monkeypatch):
     assert events == ["visit"]
 
 
+def test_campaign_write_routes_are_rate_limited(monkeypatch):
+    """Anonymous traffic cannot turn campaign logging into unbounded DB writes."""
+    from app.extensions import limiter
+
+    monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", True)
+    remote = {"REMOTE_ADDR": "203.0.113.42"}
+    attr = {
+        "visit_id": "a" * 32,
+        "utm_source": "",
+        "utm_campaign": "",
+        "utm_content": "",
+        "visit_logged": True,
+    }
+
+    limiter.reset()
+    try:
+        start_calls = []
+        monkeypatch.setattr(
+            "app.campaign.begin_visit",
+            lambda: start_calls.append(True) or dict(attr),
+        )
+        client = _client()
+        statuses = [
+            client.get("/start", environ_base=remote).status_code
+            for _ in range(21)
+        ]
+        assert statuses[:20] == [200] * 20
+        assert statuses[20] == 302  # HTML 429 handler redirects home.
+        assert len(start_calls) == 20
+
+        limiter.reset()
+        click_calls = []
+        monkeypatch.setattr(
+            "app.campaign.log_click",
+            lambda *a, **k: click_calls.append(True) or dict(attr),
+        )
+        responses = [
+            client.get("/start/go/demo/hero", environ_base=remote)
+            for _ in range(21)
+        ]
+        assert all(r.status_code == 302 for r in responses)
+        assert all("/demo/start" in r.location for r in responses[:20])
+        assert responses[20].location.endswith("/index")
+        assert len(click_calls) == 20
+    finally:
+        limiter.reset()
+
+
 def test_new_creative_starts_a_new_visit(monkeypatch):
     events = []
     monkeypatch.setattr(

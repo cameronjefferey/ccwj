@@ -2,6 +2,31 @@
 import pandas as pd
 
 import app.insights as insights
+import app.models as models
+
+
+def test_saved_thread_query_keeps_id_available_for_stable_outer_order(monkeypatch):
+    """The outer chronological sort needs ``id`` from the inner query.
+
+    Without projecting it, Postgres rejects every thread read and the
+    fail-closed helper makes saved Ask AI turns appear to vanish.
+    """
+    seen = {}
+
+    def fake_fetch_all(sql, params):
+        seen["sql"] = sql
+        seen["params"] = params
+        return [{"role": "user", "content": "Earlier turn"}]
+
+    monkeypatch.setattr(models, "fetch_all", fake_fetch_all)
+
+    rows = models.get_insight_messages(7, limit=12)
+
+    inner = seen["sql"].split("FROM insight_messages", 1)[0]
+    assert "SELECT id, role, content, model_key, created_at" in inner
+    assert ") recent ORDER BY created_at ASC, id ASC" in seen["sql"]
+    assert seen["params"] == (7, 12)
+    assert rows[0]["content"] == "Earlier turn"
 
 
 def test_ask_brief_includes_execution_and_prior_analysis():

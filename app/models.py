@@ -2191,14 +2191,15 @@ def get_insight_messages(user_id, limit=12):
     try:
         rows = fetch_all(
             "SELECT role, content, model_key, created_at FROM ("
-            "  SELECT role, content, model_key, created_at "
+            "  SELECT id, role, content, model_key, created_at "
             "  FROM insight_messages WHERE user_id = %s "
             "  ORDER BY created_at DESC, id DESC LIMIT %s"
             ") recent ORDER BY created_at ASC, id ASC",
             (user_id, int(limit)),
         )
         return rows or []
-    except Exception:
+    except Exception as exc:
+        _log.warning("get_insight_messages(%s) failed: %s", user_id, exc)
         return []
 
 
