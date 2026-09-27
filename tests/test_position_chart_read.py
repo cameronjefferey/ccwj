@@ -1,9 +1,11 @@
 """Equity line vs options line on the position chart."""
 import inspect
+import time
 from types import SimpleNamespace
 
 from app.position_chart_read import (
     _SYSTEM,
+    _is_small_sum,
     _too_long,
     chart_path_facts,
     chart_read_sentences,
@@ -73,6 +75,24 @@ def test_short_or_flat_chart_stays_quiet():
     flat_eq = [100] * 20
     moving_opt = [i * 40 for i in range(20)]
     assert chart_path_facts(_series(flat_eq, moving_opt), []) is None
+
+
+def test_small_sum_accepts_two_to_four_distinct_source_amounts():
+    assert _is_small_sum(10, {1, 9})
+    assert _is_small_sum(6, {1, 2, 3})
+    assert _is_small_sum(10, {1, 2, 3, 4})
+    assert not _is_small_sum(10, {10})
+
+
+def test_small_sum_validation_is_bounded_for_long_reviews():
+    amounts = {float(value) for value in range(1, 241)}
+
+    started = time.perf_counter()
+    matched = _is_small_sum(10_000, amounts)
+    elapsed = time.perf_counter() - started
+
+    assert matched is False
+    assert elapsed < 1.0
 
 
 def test_locked_chart_read_never_exposes_paid_remainder():

@@ -416,12 +416,33 @@ def _plain_language(cleaned: str) -> str | None:
 
 
 def _is_small_sum(target: float, amounts: set[float]) -> bool:
-    from itertools import combinations
-    cents = [round(n * 100) for n in amounts if 0 < n <= target]
+    cents = sorted(round(n * 100) for n in amounts if 0 < n <= target)
     target_cents = round(target * 100)
-    for size in (2, 3, 4):
-        for combo in combinations(cents, size):
-            if sum(combo) == target_cents:
+
+    # Generated prose may add up a few source figures. Keep that allowance
+    # without enumerating every 4-item combination: a long position review
+    # can contain hundreds of amounts, making combinations(..., 4) consume
+    # seconds of a web worker for one validation.
+    seen = set()
+    for value in cents:
+        if target_cents - value in seen:
+            return True
+        seen.add(value)
+
+    earlier = set()
+    for middle in range(1, len(cents) - 1):
+        earlier.add(cents[middle - 1])
+        for last in range(middle + 1, len(cents)):
+            if target_cents - cents[middle] - cents[last] in earlier:
+                return True
+
+    earlier_pair_sums = set()
+    for third in range(2, len(cents) - 1):
+        second = third - 1
+        for first in range(second):
+            earlier_pair_sums.add(cents[first] + cents[second])
+        for fourth in range(third + 1, len(cents)):
+            if target_cents - cents[third] - cents[fourth] in earlier_pair_sums:
                 return True
     return False
 
