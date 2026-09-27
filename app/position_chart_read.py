@@ -292,9 +292,12 @@ def review_brief(markers) -> dict | None:
         if not text:
             continue
         lines.append({"date": str(m.get("d") or "")[:10], "line": text})
-    if len(lines) < 4:
+    # A partial history must not be presented as the story of the whole
+    # position. Disable the read when the bounded prompt cannot carry every
+    # trade day; taking lines[:80] also froze the hash after day 80.
+    if len(lines) < 4 or len(lines) > 80:
         return None
-    return {"review_lines": lines[:80], "read": 7}
+    return {"review_lines": lines, "read": 7}
 
 
 def visible_chart_read(body: str | None, *, unlocked: bool) -> tuple[str, str]:
@@ -353,37 +356,55 @@ def _ungrounded(cleaned: str, lines: list[dict]) -> str | None:
             line = by_md.get(key, "")
             if not _line_supports_holding(line):
                 return f"{match.group(0)} has no holding result in the review"
+    waiting_total = _waiting_cost(lines)
     for amount in re.findall(r"\$([0-9,]+(?:\.\d+)?)", cleaned):
         value = round(float(amount.replace(",", "")), 2)
-        if value not in source_amounts and not _is_small_sum(value, source_amounts):
+        if (
+            value not in source_amounts
+            and value != waiting_total
+            and not _is_small_sum(value, source_amounts)
+        ):
             return f"${amount} is not in the review"
-    for row in lines:
-        net = re.search(r"net \$([0-9,]+(?:\.\d+)?) loss", row["line"], re.I)
-        gave = re.search(r"gave up \$([0-9,]+(?:\.\d+)?)", row["line"], re.I)
+    for sentence in _review_sentences(lines):
+        net = re.search(r"net \$([0-9,]+(?:\.\d+)?) loss", sentence, re.I)
+        gave = re.search(r"gave up \$([0-9,]+(?:\.\d+)?)", sentence, re.I)
         if not net or not gave:
             continue
         net_amt = "$" + net.group(1)
         paid_amt = "$" + gave.group(1)
         if net_amt in cleaned:
             return f"quote {paid_amt}, the amount paid to buy it back, not the {net_amt} net loss"
-    total = _waiting_cost(lines)
-    if total and _money(total) not in cleaned.split("The lesson from this chart")[-1] and _money(total) not in cleaned.split("the lesson from this chart")[-1]:
-        return f"the lesson must include the total {_money(total)}, the cost of closing instead of waiting"
+    lesson = cleaned.split("The lesson from this chart")[-1]
+    lesson = lesson.split("the lesson from this chart")[-1]
+    if waiting_total and _money(waiting_total) not in lesson:
+        return (
+            f"the lesson must include the total {_money(waiting_total)}, "
+            "the cost of closing instead of waiting"
+        )
     return None
+
+
+def _review_sentences(lines: list[dict]):
+    for row in lines:
+        yield from (
+            sentence
+            for sentence in re.split(r"(?<=[.!?])\s+", row["line"])
+            if sentence
+        )
 
 
 def _waiting_cost(lines: list[dict]) -> float:
     """Sum of give-up amounts on lines that say the contract expired worthless."""
     total = 0.0
     found = False
-    for row in lines:
-        if "expired worthless" not in row["line"]:
+    for sentence in _review_sentences(lines):
+        if "expired worthless" not in sentence:
             continue
-        gave = re.search(r"gave up \$([0-9,]+(?:\.\d+)?)", row["line"], re.I)
-        if not gave:
-            continue
-        total += float(gave.group(1).replace(",", ""))
-        found = True
+        for gave in re.finditer(
+            r"gave up \$([0-9,]+(?:\.\d+)?)", sentence, re.I
+        ):
+            total += float(gave.group(1).replace(",", ""))
+            found = True
     return round(total, 2) if found else 0.0
 
 
