@@ -859,6 +859,7 @@ def _merge_position_strategy_breakdown(
     summary_df: pd.DataFrame,
     closed_legs_df: pd.DataFrame,
     closed_equity_df: pd.DataFrame,
+    strategy_components_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return a strategy table that includes any (account, strategy) in closed legs/equity
     missing from positions_summary, so the breakdown matches the Position Legs / history.
@@ -1035,9 +1036,33 @@ def _merge_position_strategy_breakdown(
                 float(pd.to_numeric(sub["realized_pnl"], errors="coerce").fillna(0).sum())
                 if "realized_pnl" in sub.columns else 0.0
             )
+            # positions_summary.realized_pnl also includes the realized
+            # wedge of a partially-closed option contract whose status is
+            # still Open. closed_legs_df cannot see that row, so subtract
+            # option realized P&L from the canonical classification stream
+            # rather than only subtracting fully-closed option totals.
+            option_realized = 0.0
+            if (
+                strategy_components_df is not None
+                and not strategy_components_df.empty
+                and "trade_group_type" in strategy_components_df.columns
+            ):
+                option_components = strategy_components_df[
+                    strategy_components_df["trade_group_type"].astype(str)
+                    == "option_contract"
+                ]
+                option_realized = _acct_sum(
+                    option_components, acct, "realized_pnl"
+                )
+            else:
+                # Deploy-gap fallback for frames built before the component
+                # query projected the realized split.
+                option_realized = _acct_sum(
+                    closed_legs_df, acct, "total_pnl"
+                )
             explained = (
                 _acct_sum(summary_df, acct, "realized_pnl")
-                - _acct_sum(closed_legs_df, acct, "total_pnl")
+                - option_realized
             )
             if abs(explained - equity_pnl) <= 1.0:
                 continue
@@ -1081,8 +1106,8 @@ def _fetch_int_strategy_classification_by_symbol(
     sql = f"""
     SELECT
         account, tenant_id, symbol, strategy, status, total_pnl, num_trades,
-        is_winner, premium_received, premium_paid, days_in_trade,
-        open_date, close_date
+        realized_pnl, unrealized_pnl, trade_group_type, is_winner,
+        premium_received, premium_paid, days_in_trade, open_date, close_date
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM('{safe_symbol}'))
     {acct}
@@ -1155,7 +1180,8 @@ def _rollup_int_strategy_to_summary_shape(cdf: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     cdf = cdf.copy()
     for c in (
-        "total_pnl", "num_trades", "premium_received", "premium_paid", "days_in_trade",
+        "total_pnl", "realized_pnl", "unrealized_pnl", "num_trades",
+        "premium_received", "premium_paid", "days_in_trade",
     ):
         if c in cdf.columns:
             cdf[c] = pd.to_numeric(cdf[c], errors="coerce").fillna(0.0)
@@ -1176,8 +1202,20 @@ def _rollup_int_strategy_to_summary_shape(cdf: pd.DataFrame) -> pd.DataFrame:
         ssub = sub.copy()
         is_open = ssub["_st"].eq("open")
         n_closed = int((~is_open).sum())
-        c_real = float(ssub.loc[~is_open, "total_pnl"].sum()) if n_closed else 0.0
-        c_unrl = float(ssub.loc[is_open, "total_pnl"].sum()) if is_open.any() else 0.0
+        if {"realized_pnl", "unrealized_pnl"}.issubset(ssub.columns):
+            # Classification already owns this split, including realized P&L
+            # from a partial close whose contract remains Open.
+            c_real = float(ssub["realized_pnl"].sum())
+            c_unrl = float(ssub["unrealized_pnl"].sum())
+        else:
+            c_real = (
+                float(ssub.loc[~is_open, "total_pnl"].sum())
+                if n_closed else 0.0
+            )
+            c_unrl = (
+                float(ssub.loc[is_open, "total_pnl"].sum())
+                if is_open.any() else 0.0
+            )
         tot = float(ssub["total_pnl"].sum())
         pcr = float(ssub["premium_received"].sum()) if "premium_received" in ssub else 0.0
         ppd = float(ssub["premium_paid"].sum()) if "premium_paid" in ssub else 0.0
@@ -1597,9 +1635,11 @@ def _compute_breakdown_by_type(
 
 
 def _realized_pnl_from_closed_frames(
-    closed_legs_df: pd.DataFrame, closed_equity_df: pd.DataFrame
+    closed_legs_df: pd.DataFrame,
+    closed_equity_df: pd.DataFrame,
+    current_df: pd.DataFrame | None = None,
 ) -> float:
-    """Sum realized P&L from closed option contract legs and closed equity lots."""
+    """Sum realized P&L, including closed portions of still-open options."""
     r = 0.0
     if (
         closed_legs_df is not None
@@ -1613,6 +1653,21 @@ def _realized_pnl_from_closed_frames(
         and "realized_pnl" in closed_equity_df.columns
     ):
         r += float(closed_equity_df["realized_pnl"].sum())
+    if (
+        current_df is not None
+        and not current_df.empty
+        and "option_realized_pnl" in current_df.columns
+    ):
+        option_rows = current_df
+        if "instrument_type" in option_rows.columns:
+            option_rows = option_rows[
+                option_rows["instrument_type"].isin(["Call", "Put"])
+            ]
+        r += float(
+            pd.to_numeric(
+                option_rows["option_realized_pnl"], errors="coerce"
+            ).fillna(0).sum()
+        )
     return r
 
 
@@ -2378,7 +2433,7 @@ def position_detail(symbol):
 
     if leg_param and _leg_ranges:
         realized_for_display = _realized_pnl_from_closed_frames(
-            closed_legs_df, closed_equity_df
+            closed_legs_df, closed_equity_df, current_df
         )
     else:
         has_closed_frame = (not closed_legs_pre_leg.empty) or (
@@ -2386,7 +2441,7 @@ def position_detail(symbol):
         )
         if has_closed_frame:
             realized_for_display = _realized_pnl_from_closed_frames(
-                closed_legs_pre_leg, closed_equity_pre_leg
+                closed_legs_pre_leg, closed_equity_pre_leg, current_df
             )
         else:
             realized_for_display = (
@@ -2572,6 +2627,7 @@ def position_detail(symbol):
     # See `_compute_breakdown_by_type`'s gate comment — `is None` means
     # admin and must NOT short-circuit.
     # Empty list still short-circuits (genuine "no tenants" state).
+    int_raw = pd.DataFrame()
     if leg_param and _leg_ranges:
         summary_for_strat = pd.DataFrame()
         if tenant_scope is None or len(tenant_scope) > 0:
@@ -2601,7 +2657,11 @@ def position_detail(symbol):
     _cl_for_strat = closed_legs_pre_leg if not leg_param else closed_legs_df
     _eq_for_strat = closed_equity_pre_leg if not leg_param else closed_equity_df
     merged_strategy_df = _merge_position_strategy_breakdown(
-        safe_symbol, summary_for_strat, _cl_for_strat, _eq_for_strat
+        safe_symbol,
+        summary_for_strat,
+        _cl_for_strat,
+        _eq_for_strat,
+        strategy_components_df=int_raw,
     )
     if merged_strategy_df.empty and not current_df.empty:
         syn = _synthetic_open_strategy_from_current(current_df)
