@@ -103,6 +103,22 @@ def test_locked_one_sentence_chart_read_fails_closed():
     assert _too_long(text) is not None
 
 
+def test_locked_chart_read_hides_lesson_that_model_puts_first():
+    text = (
+        "The lesson from this chart is that you paid $430 to exit. "
+        "You opened the position in April."
+    )
+
+    lead, rest = visible_chart_read(text, unlocked=False)
+
+    assert lead == "A chart read is ready."
+    assert rest == ""
+    assert "$430" not in lead
+    assert _too_long(text) == (
+        'the last sentence must start with "The lesson from this chart"'
+    )
+
+
 def test_locked_chart_read_endpoint_redacts_cached_body(monkeypatch):
     from app import app
     import app.llm_access as llm_access
