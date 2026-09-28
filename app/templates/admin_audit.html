@@ -11,13 +11,13 @@
     .aa-hero p { margin: .35rem 0 0; color: rgba(255,255,255,.75); font-size: .88rem; }
 
     .aa-section { background: #121826; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
-    .aa-section h2 { font-size: 1rem; font-weight: 700; margin: 0 0 .15rem; color: #1c1917; }
-    .aa-section .aa-sub { color: #78716c; font-size: .8rem; margin-bottom: .9rem; }
+    .aa-section h2 { font-size: 1rem; font-weight: 700; margin: 0 0 .15rem; color: var(--ht-ink); }
+    .aa-section .aa-sub { color: var(--ht-muted); font-size: .8rem; margin-bottom: .9rem; }
     .aa-empty { color: #a8a29e; font-size: .85rem; padding: .5rem 0; }
     .aa-error { background: rgba(240,85,109,.12); color: #e8edf7; border: 1px solid #f0556d; padding: .6rem .8rem; border-radius: 8px; font-family: monospace; font-size: .8rem; }
 
     .aa-form { display: flex; gap: .6rem; flex-wrap: wrap; align-items: end; }
-    .aa-form label { font-size: .72rem; font-weight: 600; color: #57534e; text-transform: uppercase; letter-spacing: .04em; display: block; margin-bottom: .2rem; }
+    .aa-form label { font-size: .72rem; font-weight: 600; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; display: block; margin-bottom: .2rem; }
     .aa-form input { border: 1px solid #d6d3d1; border-radius: 8px; padding: .5rem .75rem; font-size: .9rem; min-width: 180px; }
     .aa-form button { background: #1c1917; color: #fff; border: none; padding: .55rem 1.2rem; border-radius: 8px; font-weight: 700; font-size: .88rem; cursor: pointer; }
     .aa-form button.alt { background: #0369a1; }
@@ -26,14 +26,14 @@
     .aa-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: .9rem; }
     .aa-card { border: 1px solid #243049; border-radius: 10px; padding: .85rem 1rem; background: #121826; }
     .aa-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
-    .aa-card-strategy { font-weight: 700; font-size: .95rem; color: #1c1917; }
+    .aa-card-strategy { font-weight: 700; font-size: .95rem; color: var(--ht-ink); }
     .aa-card-status { font-size: .68rem; font-weight: 700; text-transform: uppercase; padding: .15rem .55rem; border-radius: 999px; letter-spacing: .04em; }
     .aa-card-status.open { background: #dbeafe; color: #1e40af; }
     .aa-card-status.closed { background: #e7e5e4; color: #44403c; }
     .aa-stat-row { display: flex; justify-content: space-between; padding: .25rem 0; font-size: .85rem; border-top: 1px dashed #e7e5e4; }
     .aa-stat-row:first-of-type { border-top: none; }
-    .aa-stat-row .lbl { color: #78716c; }
-    .aa-stat-row .val { font-variant-numeric: tabular-nums; font-weight: 600; color: #1c1917; }
+    .aa-stat-row .lbl { color: var(--ht-muted); }
+    .aa-stat-row .val { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ht-ink); }
 
     /* Tables */
     .aa-table { width: 100%; font-size: .82rem; border-collapse: collapse; }
@@ -43,8 +43,8 @@
     .aa-table .num { text-align: right; }
     .aa-table .muted { color: #a8a29e; }
 
-    .aa-pos { color: #15803d; font-weight: 600; }
-    .aa-neg { color: #b91c1c; font-weight: 600; }
+    .aa-pos { color: #28c08a; font-weight: 600; }
+    .aa-neg { color: #f0556d; font-weight: 600; }
 
     .aa-impersonate-card {
         background: rgba(91,140,255,.12); border: 1px solid #243049;
@@ -130,7 +130,7 @@
 {% set total_realized = by_kind_rows | sum(attribute='realized_pnl') %}
 {% set total_unrealized = by_kind_rows | sum(attribute='unrealized_pnl') %}
 <div class="aa-section">
-    <h2>P&amp;L by security type <span style="color:#78716c;font-weight:500;">— {{ account }} / {{ symbol }}</span></h2>
+    <h2>P&amp;L by security type <span style="color:#8a97b1;font-weight:500;">— {{ account }} / {{ symbol }}</span></h2>
     <div class="aa-sub">Equity vs Options P&amp;L, plus the combined position-level total.</div>
 
     <div class="aa-cards">
@@ -183,7 +183,7 @@
 {# positions_summary — rendered as readable cards, one per row          #}
 {# ──────────────────────────────────────────────────────────────────── #}
 <div class="aa-section">
-    <h2>positions_summary <span style="color:#78716c;font-weight:500;">— breakdown by strategy</span></h2>
+    <h2>positions_summary <span style="color:#8a97b1;font-weight:500;">— breakdown by strategy</span></h2>
     <div class="aa-sub">Source of the row shown on /positions and the hero on /position/{{ symbol }}.</div>
     {% if summary_rows and summary_rows[0].get("_error") %}
         <div class="aa-error">BigQuery error: {{ summary_rows[0]._error }}</div>
@@ -239,7 +239,7 @@
 {# int_strategy_classification — one row per leg                        #}
 {# ──────────────────────────────────────────────────────────────────── #}
 <div class="aa-section">
-    <h2>int_strategy_classification <span style="color:#78716c;font-weight:500;">— {{ legs|length }} legs</span></h2>
+    <h2>int_strategy_classification <span style="color:#8a97b1;font-weight:500;">— {{ legs|length }} legs</span></h2>
     <div class="aa-sub">One row per identified strategy leg. The "Strategy breakdown" card and closed-position rows on /positions are built from this table.</div>
     {% if legs and legs[0].get("_error") %}
         <div class="aa-error">BigQuery error: {{ legs[0]._error }}</div>
@@ -282,7 +282,7 @@
 {# stg_history — every transaction                                      #}
 {# ──────────────────────────────────────────────────────────────────── #}
 <div class="aa-section">
-    <h2>stg_history <span style="color:#78716c;font-weight:500;">— {{ transactions|length }} transactions</span></h2>
+    <h2>stg_history <span style="color:#8a97b1;font-weight:500;">— {{ transactions|length }} transactions</span></h2>
     <div class="aa-sub">Every trade-history row that hit BigQuery for this account &amp; underlying. If a transaction the user expects is missing here, the bug is in the seed/sync layer; if it's here but the legs/summary disagree, the bug is in classification.</div>
     {% if transactions and transactions[0].get("_error") %}
         <div class="aa-error">BigQuery error: {{ transactions[0]._error }}</div>

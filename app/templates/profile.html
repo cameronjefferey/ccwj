@@ -34,10 +34,10 @@
         .atlas-nav { display: flex; flex-wrap: wrap; gap: .35rem; }
     }
     .atlas-nav .nav-link {
-        border-radius: 8px; color: #475569; font-weight: 600; font-size: .88rem;
+        border-radius: 8px; color: var(--ht-muted); font-weight: 600; font-size: .88rem;
         padding: .55rem .95rem; border: 1px solid transparent;
     }
-    .atlas-nav .nav-link:hover { background: #121826; color: #1e3a8a; border-color: #243049; }
+    .atlas-nav .nav-link:hover { background: #121826; color: #5b8cff; border-color: #243049; }
     .atlas-nav .nav-link.active {
         background: #121826; color: #e8edf7; border-color: #243049;
         box-shadow: 0 2px 8px rgba(15,23,42,.05);
@@ -52,12 +52,12 @@
     }
     .atlas-card-h {
         font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-        color: #64748b; padding: 1rem 1.5rem .4rem;
+        color: var(--ht-muted); padding: 1rem 1.5rem .4rem;
     }
     .atlas-card-b { padding: 0 1.5rem 1.3rem; }
-    .atlas-label { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-bottom: .35rem; }
+    .atlas-label { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ht-muted); margin-bottom: .35rem; }
     .atlas-field { margin-bottom: 1.1rem; }
-    .atlas-hint { font-size: .85rem; color: #64748b; line-height: 1.5; }
+    .atlas-hint { font-size: .85rem; color: var(--ht-muted); line-height: 1.5; }
     .account-badge {
         display: inline-block; background: #1a2233; border: 1px solid #243049; border-radius: 8px;
         padding: .35rem .75rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
@@ -76,10 +76,10 @@
     .sync-card .sync-title {
         font-size: 1.15rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
         margin: 0 0 .25rem;
     }
-    .sync-card .sync-sub { font-size: .88rem; color: #64748b; margin: 0 0 1rem; }
+    .sync-card .sync-sub { font-size: .88rem; color: var(--ht-muted); margin: 0 0 1rem; }
     .sync-status {
         display: inline-flex; align-items: center; gap: .5rem;
         font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
@@ -111,10 +111,10 @@
         color: #fff; font-weight: 700; font-size: 1.5rem;
         display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
     }
-    .id-name { font-size: 1.25rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
-    .id-handle { font-size: .85rem; color: #64748b; }
+    .id-name { font-size: 1.25rem; font-weight: 700; color: var(--ht-ink); line-height: 1.2; }
+    .id-handle { font-size: .85rem; color: var(--ht-muted); }
     .id-email-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .15rem; }
-    .id-email { font-size: .9rem; color: #334155; }
+    .id-email { font-size: .9rem; color: var(--ht-ink); }
     .pill {
         display: inline-flex; align-items: center; gap: .35rem;
         font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
@@ -140,8 +140,8 @@
         border: 1px solid #e2e8f0; border-radius: 10px; padding: .85rem 1rem;
         margin-bottom: .65rem;
     }
-    .ht-group-card h3 { font-size: .95rem; font-weight: 700; margin: 0 0 .35rem; color: #0f172a; }
-    .ht-group-card .members { font-size: .82rem; color: #475569; }
+    .ht-group-card h3 { font-size: .95rem; font-weight: 700; margin: 0 0 .35rem; color: var(--ht-ink); }
+    .ht-group-card .members { font-size: .82rem; color: var(--ht-muted); }
     .ht-group-card .actions { margin-top: .55rem; display: flex; gap: .75rem; align-items: center; }
 
     /* At-a-glance stat tiles */
@@ -151,8 +151,8 @@
         padding: .9rem 1rem; text-decoration: none; transition: border-color .12s, box-shadow .12s;
     }
     a.stat-tile:hover { border-color: var(--color-mirror-ink); box-shadow: 0 2px 8px rgba(15,23,42,.06); }
-    .stat-tile .n { font-size: 1.5rem; font-weight: 700; color: #0f172a; line-height: 1; }
-    .stat-tile .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; margin-top: .35rem; }
+    .stat-tile .n { font-size: 1.5rem; font-weight: 700; color: var(--ht-ink); line-height: 1; }
+    .stat-tile .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ht-muted); margin-top: .35rem; }
 
     /* Connection health rows */
     .conn-row {
@@ -657,7 +657,7 @@
                         through the SnapTrade Connection Portal. Connect once per broker; we refresh
                         from then on. This is not a lifetime archive of the account.
                     </p>
-                    <div class="alert alert-warning small mb-3" role="alert" style="background: #2a2118; border-color:#fed7aa; color:#7c2d12;">
+                    <div class="alert alert-warning small mb-3" role="alert" style="background: #2a2118; border-color:#e8c07a; color:#e8c07a;">
                         <strong>What broker sync actually includes:</strong>
                         <ul class="mb-0 ps-3 mt-1">
                             <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>
@@ -980,7 +980,7 @@
             </div>
 
             <div class="atlas-card" style="border-color:#fecaca;">
-                <div class="atlas-card-h" style="color:#b91c1c;">Danger zone</div>
+                <div class="atlas-card-h" style="color:#f0556d;">Danger zone</div>
                 <div class="atlas-card-b">
                     <p class="atlas-hint mb-3">
                         Deleting your account is permanent. It removes your login, disconnects

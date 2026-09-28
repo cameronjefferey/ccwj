@@ -20,7 +20,7 @@
         font-size: .85rem;
         text-transform: uppercase;
         letter-spacing: 1.2px;
-        color: #6c757d;
+        color: var(--ht-muted);
         margin-bottom: 1.25rem;
     }
     .fl-stat {
@@ -28,7 +28,7 @@
         padding: 1rem .5rem;
     }
     .fl-stat .val { font-size: 1.6rem; font-weight: 700; }
-    .fl-stat .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; color: #6c757d; }
+    .fl-stat .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; color: var(--ht-muted); }
     .strat-card {
         background: #1a2233;
         border-radius: 12px;
@@ -234,7 +234,7 @@
 {# ── THE KEY INSIGHT — the one thing that makes this page worth visiting ── #}
 {% if profile.key_insight %}
 <div class="insight-box mb-4">
-    <div class="small text-uppercase fw-bold mb-2" style="letter-spacing:1.5px; color:#6c757d;">One thing to think about</div>
+    <div class="small text-uppercase fw-bold mb-2" style="letter-spacing:1.5px; color:#8a97b1;">One thing to think about</div>
     <h2>{{ profile.key_insight.title }}</h2>
     <p class="narrative mb-3">{{ profile.key_insight.body }}</p>
     <div class="prompt-card" style="background:rgba(255,255,255,.6);">

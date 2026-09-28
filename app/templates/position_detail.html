@@ -33,7 +33,7 @@
     }
     [data-bs-theme="dark"] .narrative-card { background: #1c1e26; }
     .kpi-mini { text-align: center; }
-    .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: #6c757d; }
+    .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: var(--ht-muted); }
     .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
     .leg-toggle { cursor: pointer; user-select: none; }
     .leg-toggle:hover { opacity: .7; }
@@ -42,7 +42,7 @@
     .leg-detail-cell { padding: 0 !important; }
     .leg-detail-table { margin: 0; font-size: .72rem; background: #121826; }
     .leg-detail-table td { padding: .25rem .5rem; border: none; }
-    .leg-detail-table th { padding: .25rem .5rem; font-size: .65rem; text-transform: uppercase; letter-spacing: .3px; color: #6c757d; border: none; }
+    .leg-detail-table th { padding: .25rem .5rem; font-size: .65rem; text-transform: uppercase; letter-spacing: .3px; color: var(--ht-muted); border: none; }
     .session-pills { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
     .session-pill {
         display: inline-flex; align-items: center; flex-wrap: wrap; gap: .4rem;
@@ -64,7 +64,7 @@
     .leg-account-group:first-of-type { margin-top: 0; }
     .leg-account-label {
         font-size: .72rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .04em; color: #6c757d; margin-bottom: .35rem;
+        letter-spacing: .04em; color: var(--ht-muted); margin-bottom: .35rem;
     }
     .account-toggles { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
     .account-toggle {
@@ -1163,9 +1163,9 @@
                 <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
                     <td>
                         {% if o.is_winner %}
-                        <span class="leg-arrow" style="color:#1b7a3d;font-size:.7rem;">&#9654;</span>
+                        <span class="leg-arrow" style="color:#28c08a;font-size:.7rem;">&#9654;</span>
                         {% else %}
-                        <span class="leg-arrow" style="color:#c9302c;font-size:.7rem;">&#9654;</span>
+                        <span class="leg-arrow" style="color:#f0556d;font-size:.7rem;">&#9654;</span>
                         {% endif %}
                     </td>
                     <td class="text-center text-muted small">

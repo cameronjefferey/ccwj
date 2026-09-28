@@ -142,8 +142,8 @@
         max-width: 56rem;
     }
 
-    .text-positive { color: #15803d; }
-    .text-negative { color: #b91c1c; }
+    .text-positive { color: #28c08a; }
+    .text-negative { color: #f0556d; }
 
     /* ── Filter bar ── */
     .filter-bar {
@@ -287,7 +287,7 @@
         overflow: hidden; flex: 0 0 72px;
     }
     .share-track > span {
-        display: block; height: 100%; border-radius: 999px; background: #4b3fd1;
+        display: block; height: 100%; border-radius: 999px; background: #a8b8ff;
         min-width: 3px;
     }
     .share-pct { font-size: .82rem; color: var(--ht-muted); font-variant-numeric: tabular-nums; min-width: 3.2rem; text-align: right; }
@@ -396,9 +396,9 @@
         font-size: .7rem; font-weight: 700; margin-left: .3rem;
         background: var(--ht-line); color: var(--ht-label);
     }
-    .watch-badge.itm { background: rgba(220,53,69,.1); color: #b91c1c; }
-    .watch-badge.atm { background: rgba(234,179,8,.12); color: #854d0e; }
-    .watch-badge.otm { background: rgba(25,135,84,.08); color: #15803d; }
+    .watch-badge.itm { background: rgba(220,53,69,.1); color: #f0556d; }
+    .watch-badge.atm { background: rgba(234,179,8,.12); color: #e8c07a; }
+    .watch-badge.otm { background: rgba(25,135,84,.08); color: #28c08a; }
     /* EarningsFollower deep-link pill (earnings rows). Sits in the aux cell
        under the report date; a real, visible affordance — not fine print. */
     .watch-ef {
@@ -525,7 +525,7 @@
         text-transform: uppercase; letter-spacing: .4px;
         color: var(--color-mirror-ink); cursor: pointer; white-space: nowrap;
     }
-    .cal-toggle-btn:hover { color: #1d4ed8; text-decoration: underline; }
+    .cal-toggle-btn:hover { color: #5b8cff; text-decoration: underline; }
 
     /* ── Breakdown table (positions / strategies / sectors) ── */
     .breakdown-wrap { overflow-x: auto; }
@@ -588,9 +588,9 @@
         border-radius: 10px; text-transform: uppercase; letter-spacing: .4px;
         font-weight: 700;
     }
-    .pill-status.open { background: rgba(25,135,84,.08); color: #15803d; }
+    .pill-status.open { background: rgba(25,135,84,.08); color: #28c08a; }
     .pill-status.closed { background: rgba(100,116,139,.12); color: var(--ht-label); }
-    .pill-status.today { background: rgba(37,99,235,.12); color: #1d4ed8; margin-left: .35rem; }
+    .pill-status.today { background: rgba(37,99,235,.12); color: #5b8cff; margin-left: .35rem; }
 
     /* Trades today — fill-level rows (not weekly groups) */
     .tt-table { width: 100%; font-size: .9rem; border-collapse: collapse; }
@@ -598,8 +598,8 @@
     .tt-table tr:last-child td { border-bottom: 0; }
     .tt-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
     .tt-muted { color: var(--ht-muted); font-size: .8rem; }
-    .tt-roll-ok { color: #166534; font-size: .75rem; font-weight: 600; }
-    .tt-roll-miss { color: #9a3412; font-size: .75rem; font-weight: 600; }
+    .tt-roll-ok { color: #28c08a; font-size: .75rem; font-weight: 600; }
+    .tt-roll-miss { color: #e8c07a; font-size: .75rem; font-weight: 600; }
     .tt-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
     .tt-verb.buy { background: #eff6ff; color: #1d4ed8; }
     .tt-verb.sell { background: rgba(240,85,109,.12); color: #e8edf7; }
@@ -624,7 +624,7 @@
         background:rgba(184,115,51,.14); color:var(--color-mirror-ink); transition:opacity .15s ease; }
     .tw-tag-x { border:none; background:none; color:var(--color-mirror-ink); cursor:pointer;
         font-size:.8rem; line-height:1; padding:0; }
-    .tw-tag-x:hover { color:#dc2626; }
+    .tw-tag-x:hover { color:#f0556d; }
     .tw-tag-add { display:inline-flex; align-items:center; gap:4px; }
     .tw-tag-input { width:112px; height:26px; font-size:.72rem; padding:2px 6px; }
     .tw-tag-btn { height:26px; padding:0 8px; font-size:.72rem; line-height:1; }
@@ -729,8 +729,8 @@
     .ov-mover-col.up { background: rgba(40,192,138,.14); }
     .ov-mover-col.down { background: rgba(240,85,109,.12); }
     .ov-mover-k { font-size: .82rem; font-weight: 600; margin: .45rem 0 .15rem; }
-    .ov-mover-col.up .ov-mover-k { color: #17804d; }
-    .ov-mover-col.down .ov-mover-k { color: #b83a2e; }
+    .ov-mover-col.up .ov-mover-k { color: #28c08a; }
+    .ov-mover-col.down .ov-mover-k { color: #f0556d; }
     .ov-mover-col .mover-row {
         background: transparent; border: 0; border-radius: 0;
         border-top: 1px solid rgba(28,35,48,.08);
@@ -769,10 +769,10 @@
     }
     .ov-ev b { display: block; font-size: .84rem; }
     .ov-ev small { font-size: .75rem; opacity: .85; }
-    .ov-ev.er { background: #2a2118; border-color: #243049; color: #e8edf7; }
-    .ov-ev.ex { background: rgba(91,140,255,.14); border-color: #243049; color: #e8edf7; }
-    .ov-ev.vd { background: var(--ht-surface); border: 1px dashed #4b3fd1; border-left: 3px solid #4b3fd1; color: #2c2470; }
-    .ov-ev.dv { background: #e6f4ec; border-color: #17804d; color: #0f4f30; }
+    .ov-ev.er { background: #2a2118; border-color: #e8c07a; color: #e8edf7; }
+    .ov-ev.ex { background: rgba(91,140,255,.18); border-color: #a8b8ff; color: #e8edf7; }
+    .ov-ev.vd { background: rgba(91,140,255,.14); border: 1px dashed #a8b8ff; border-left: 3px solid #a8b8ff; color: #e8edf7; }
+    .ov-ev.dv { background: rgba(40,192,138,.16); border-color: #5eead4; color: #e8edf7; }
 
     .ov-verdict {
         display: grid; grid-template-columns: 110px 1fr; gap: 4px 16px; align-items: center;
@@ -781,8 +781,8 @@
     .ov-verdict.up { background: rgba(40,192,138,.14); }
     .ov-verdict.down { background: rgba(240,85,109,.12); }
     .ov-verdict strong { font-size: 1.75rem; letter-spacing: -.02em; line-height: 1.1; }
-    .ov-verdict.up strong { color: #17804d; }
-    .ov-verdict.down strong { color: #b83a2e; }
+    .ov-verdict.up strong { color: #28c08a; }
+    .ov-verdict.down strong { color: #f0556d; }
     .ov-verdict small { display: block; font-size: .78rem; color: var(--ht-muted); }
     .ov-verdict p { margin: 0; }
     .ov-verdict .h { font-size: 1.02rem; font-weight: 700; }
