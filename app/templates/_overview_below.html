@@ -23,7 +23,7 @@
             </div>
             {% if overview_radar.earnings %}
             <div class="ov-lane">
-                <div class="ov-ln" style="color:#b06a00">Earnings</div>
+                <div class="ov-ln" style="color:#e8c07a">Earnings</div>
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.earnings_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.earnings %}
@@ -34,7 +34,7 @@
             {% endif %}
             {% if overview_radar.options %}
             <div class="ov-lane">
-                <div class="ov-ln" style="color:#4b3fd1">Options</div>
+                <div class="ov-ln" style="color:#a8b8ff">Options</div>
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.options_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.options %}
@@ -45,7 +45,7 @@
             {% endif %}
             {% if overview_radar.dividends %}
             <div class="ov-lane">
-                <div class="ov-ln" style="color:#17804d">Ex-dividends</div>
+                <div class="ov-ln" style="color:#5eead4">Ex-dividends</div>
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.dividends_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.dividends %}

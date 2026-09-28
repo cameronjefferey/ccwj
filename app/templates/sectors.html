@@ -33,35 +33,35 @@
     }
     .sec-card:hover { box-shadow: 0 10px 24px rgba(0,0,0,.06); }
     .sec-card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; }
-    .sec-card .name { font-size: 1.1rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
-    .sec-card .meta { font-size: .72rem; color: #64748b; margin-top: .15rem; text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .name { font-size: 1.1rem; font-weight: 700; color: var(--ht-ink); line-height: 1.2; }
+    .sec-card .meta { font-size: .72rem; color: var(--ht-muted); margin-top: .15rem; text-transform: uppercase; letter-spacing: .04em; }
     .sec-card .pnl { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
     .sec-card .pnl.pos { color: #059669; }
-    .sec-card .pnl.neg { color: #b91c1c; }
-    .sec-card .pnl-sub { font-size: .7rem; color: #64748b; text-align: right; margin-top: .15rem; }
+    .sec-card .pnl.neg { color: #f0556d; }
+    .sec-card .pnl-sub { font-size: .7rem; color: var(--ht-muted); text-align: right; margin-top: .15rem; }
 
     .sec-card .stats {
         display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem;
         background: #1a2233; border-radius: 10px; padding: .55rem .65rem;
     }
-    .sec-card .stat .lbl { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
-    .sec-card .stat .val { font-size: .9rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .sec-card .stat .lbl { font-size: .65rem; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .stat .val { font-size: .9rem; font-weight: 700; color: var(--ht-ink); font-variant-numeric: tabular-nums; }
 
     .sec-card .splits {
         display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .9rem;
         font-size: .78rem;
     }
-    .sec-card .splits .k { color: #64748b; }
-    .sec-card .splits .v { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; text-align: right; }
-    .sec-card .splits .v.neg { color: #b91c1c; }
+    .sec-card .splits .k { color: var(--ht-muted); }
+    .sec-card .splits .v { font-weight: 600; color: var(--ht-ink); font-variant-numeric: tabular-nums; text-align: right; }
+    .sec-card .splits .v.neg { color: #f0556d; }
 
     .sec-card .extremes { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; font-size: .76rem; }
     .sec-card .extremes .ex { background: #1a2233; border-radius: 8px; padding: .45rem .6rem; }
-    .sec-card .extremes .ex .lbl { font-size: .62rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
-    .sec-card .extremes .ex .sym { font-weight: 700; color: #0f172a; }
+    .sec-card .extremes .ex .lbl { font-size: .62rem; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .extremes .ex .sym { font-weight: 700; color: var(--ht-ink); }
     .sec-card .extremes .ex .ret { font-variant-numeric: tabular-nums; }
     .sec-card .extremes .ex .ret.pos { color: #059669; }
-    .sec-card .extremes .ex .ret.neg { color: #b91c1c; }
+    .sec-card .extremes .ex .ret.neg { color: #f0556d; }
 
     .sec-card .actions { display: flex; gap: .5rem; }
     .sec-card .btn-toggle {
@@ -93,13 +93,13 @@
         border-radius: 8px;
         font-size: .82rem;
     }
-    .ind-row .ind-name { font-weight: 600; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ind-row .ind-name { font-weight: 600; color: var(--ht-ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ind-row .ind-name a { color: inherit; text-decoration: none; }
     .ind-row .ind-name a:hover { text-decoration: underline; }
-    .ind-row .ind-meta { font-size: .68rem; color: #64748b; font-weight: 500; margin-top: .1rem; }
+    .ind-row .ind-meta { font-size: .68rem; color: var(--ht-muted); font-weight: 500; margin-top: .1rem; }
     .ind-row .ind-pnl { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .ind-row .ind-pnl.pos { color: #059669; }
-    .ind-row .ind-pnl.neg { color: #b91c1c; }
+    .ind-row .ind-pnl.neg { color: #f0556d; }
     .ind-row .ind-link {
         background: #121826; border: 1px solid #243049; border-radius: 999px;
         padding: .15rem .55rem; font-size: .68rem; font-weight: 600;

@@ -63,18 +63,18 @@
     .discovery-stat {
         font-size: .85rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
     }
     .discovery-title {
         font-size: 1.02rem;
         font-weight: 700;
         line-height: 1.35;
-        color: #111827;
+        color: var(--ht-ink);
         margin-bottom: .5rem;
     }
     .discovery-body {
         font-size: .86rem;
-        color: #374151;
+        color: var(--ht-ink);
         line-height: 1.55;
         white-space: normal;
     }
@@ -97,7 +97,7 @@
     }
     .signal-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-bottom: .3rem; }
     .signal-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
-    .signal-meta { font-size: .75rem; color: #6c757d; margin-top: .2rem; }
+    .signal-meta { font-size: .75rem; color: var(--ht-muted); margin-top: .2rem; }
 
     /* Strategy rows */
     .strat-row {
@@ -110,7 +110,7 @@
         margin-bottom: .5rem;
     }
     .strat-row .strat-name { font-weight: 600; font-size: .9rem; }
-    .strat-row .strat-stats { font-size: .82rem; color: #6c757d; }
+    .strat-row .strat-stats { font-size: .82rem; color: var(--ht-muted); }
     .strat-giveback { font-weight: 700; font-size: .9rem; }
 
     /* Exit table */
@@ -155,8 +155,8 @@
     #coachThread ul { margin-bottom: .45rem; padding-left: 1.15rem; }
     .insights-content ul { padding-left: 1.25rem; }
     .insights-content li { margin-bottom: .4rem; line-height: 1.6; }
-    .insights-content strong { color: #1a1a2e; }
-    .insights-meta { font-size: .78rem; color: #6c757d; }
+    .insights-content strong { color: var(--ht-ink); }
+    .insights-meta { font-size: .78rem; color: var(--ht-muted); }
     .insights-stale {
         background: #2a2118;
         border: 1px solid #fdba74;
@@ -164,7 +164,7 @@
         padding: .75rem .9rem;
         font-size: .85rem;
         line-height: 1.45;
-        color: #9a3412;
+        color: #e8c07a;
         margin-bottom: .9rem;
     }
     #coachThread .ask-md-heading {
@@ -193,7 +193,7 @@
         text-align: center;
     }
     .generate-card h5 { font-weight: 700; margin-bottom: .5rem; }
-    .generate-card p { color: #6c757d; margin-bottom: 1.5rem; }
+    .generate-card p { color: var(--ht-muted); margin-bottom: 1.5rem; }
 </style>
 {% endblock %}
 
@@ -259,7 +259,7 @@
         {% if coaching.signals %}
         <div class="coaching-section">
             <div class="section-label">Exit Timing Profile</div>
-            <p class="mb-3" style="font-size:.9rem; color:#475569; line-height:1.5">
+            <p class="mb-3" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
                 How much profit you leave on the table by holding past the optimal exit point.
                 Computed from daily option mark-to-market snapshots, captured since August 2026.
                 Contracts closed before that cannot be scored.
@@ -288,7 +288,7 @@
                 </div>
                 <div class="signal-card">
                     <div class="signal-label">Data Coverage</div>
-                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#6c757d"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
+                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#8a97b1"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
                     <div class="signal-meta">{{ coaching.pct_reliable }}% of contracts since daily marks began</div>
                 </div>
             </div>
@@ -318,7 +318,7 @@
         {% if coaching.recent_exits %}
         <div class="coaching-section">
             <div class="section-label">Recent Exit Examples (Last 90 Days)</div>
-            <p class="mb-3" style="font-size:.9rem; color:#475569">
+            <p class="mb-3" style="font-size:.9rem; color:#8a97b1">
                 Specific trades where you held past the peak — the gap between what you made and what you could have made.
             </p>
             <div class="table-responsive">
@@ -361,7 +361,7 @@
         {% elif scope_narrowed %}
         <div class="coaching-section">
             <div class="section-label">Nothing in this filter</div>
-            <p class="mb-0" style="font-size:.9rem; color:#475569; line-height:1.5">
+            <p class="mb-0" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
                 Discovery Lab and Exit Timing need closed option contracts with daily marks.
                 This group or account doesn't have any, so those cards are empty here.
             </p>
@@ -434,7 +434,7 @@
         {% if scope_narrowed %}
         <div class="coaching-section">
             <div class="section-label">AI Analysis</div>
-            <p class="mb-0" style="font-size:.9rem; color:#475569; line-height:1.5">
+            <p class="mb-0" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
                 The saved analysis covers your whole book, so it isn't shown under this filter.
                 {% if coaching and coaching.has_data %}
                 The cards above are this filter's record.

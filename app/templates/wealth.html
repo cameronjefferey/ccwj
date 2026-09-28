@@ -32,7 +32,7 @@
         border-radius: 6px;
         font-size: .82rem;
         font-weight: 500;
-        color: #475569;
+        color: var(--ht-muted);
         text-decoration: none;
         transition: background-color .15s;
     }
@@ -49,7 +49,7 @@
     .kpi-label {
         font-size: .72rem;
         font-weight: 600;
-        color: #64748b;
+        color: var(--ht-muted);
         text-transform: uppercase;
         letter-spacing: .05em;
         margin-bottom: .35rem;
@@ -57,18 +57,18 @@
     .kpi-value {
         font-size: 1.5rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
         font-variant-numeric: tabular-nums;
         line-height: 1.1;
     }
     .kpi-meta {
         font-size: .78rem;
-        color: #64748b;
+        color: var(--ht-muted);
         margin-top: .35rem;
     }
     .kpi-delta-pos { color: #16a34a; font-weight: 600; }
-    .kpi-delta-neg { color: #dc2626; font-weight: 600; }
-    .kpi-delta-flat { color: #64748b; }
+    .kpi-delta-neg { color: #f0556d; font-weight: 600; }
+    .kpi-delta-flat { color: var(--ht-muted); }
 
     /* ── Allocation breakdown sub-bar ───────────────────────── */
     .alloc-bar {
@@ -89,7 +89,7 @@
         gap: 1rem;
         margin-top: .55rem;
         font-size: .78rem;
-        color: #475569;
+        color: var(--ht-muted);
         flex-wrap: wrap;
     }
     .alloc-dot {
@@ -114,12 +114,12 @@
     .chart-wrapper h2 {
         font-size: .95rem;
         font-weight: 600;
-        color: #0f172a;
+        color: var(--ht-ink);
         margin: 0 0 .25rem;
     }
     .chart-wrapper .chart-sub {
         font-size: .8rem;
-        color: #64748b;
+        color: var(--ht-muted);
         margin: 0 0 .9rem;
     }
 
@@ -133,12 +133,12 @@
     .income-card .income-label {
         font-size: .8rem;
         font-weight: 500;
-        color: #475569;
+        color: var(--ht-muted);
     }
     .income-card .income-value {
         font-size: 1.2rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
         font-variant-numeric: tabular-nums;
         margin-top: .3rem;
     }

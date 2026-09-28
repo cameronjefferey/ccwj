@@ -26,8 +26,8 @@
     .dd-money.pos { color: var(--color-positive); }
     .dd-money.neg { color: var(--color-negative); }
     .dd-muted { color: var(--ht-muted); font-size: .8rem; }
-    .dd-roll-ok { color: #166534; font-size: .75rem; font-weight: 600; }
-    .dd-roll-miss { color: #9a3412; font-size: .75rem; font-weight: 600; }
+    .dd-roll-ok { color: #28c08a; font-size: .75rem; font-weight: 600; }
+    .dd-roll-miss { color: #e8c07a; font-size: .75rem; font-weight: 600; }
     .dd-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
     .dd-verb.buy { background: #eff6ff; color: #1d4ed8; }
     .dd-verb.sell { background: rgba(240,85,109,.12); color: #e8edf7; }
@@ -91,7 +91,7 @@
                                 tenant=selected_tenant,
                                 tenants=selected_tenants, _anchor='day-review') }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
             {% if next_day %}
-            <span class="mx-1" style="color:#475569;">|</span>
+            <span class="mx-1" style="color:#8a97b1;">|</span>
             <a href="{{ scoped_url('day_detail', day_str=next_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
