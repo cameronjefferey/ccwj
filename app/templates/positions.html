@@ -26,10 +26,27 @@
     .badge-closed { background: #6c757d; }
     .badge-mixed  { background: #ffc107; color: #000; }
 
-    /* Table */
-    #positionsTable th { white-space: nowrap; }
+    /* Table. The page shell caps at 72rem (~1152px), which squeezes
+       12–13 columns at 1280–1600px until "W/L" wraps one token per
+       line and the last columns clip. Widen this page at laptop widths
+       and keep headers on one line. */
+    @media (min-width: 1200px) {
+        body:has(#positionsTable) .ht-page { max-width: none; }
+    }
+    #positionsTable,
+    #symbolTable { font-size: .84rem; }
+    #positionsTable th,
+    #positionsTable th a,
+    #symbolTable th,
+    #symbolTable th a {
+        white-space: nowrap;
+        letter-spacing: 0;
+    }
+    #positionsTable thead th,
+    #symbolTable thead th { font-size: .68rem; letter-spacing: 0; }
     #positionsTable th.sortable a { color: inherit; text-decoration: none; }
-    #positionsTable td { white-space: nowrap; }
+    #positionsTable td,
+    #symbolTable td { white-space: nowrap; }
     /* Sortable-header + row-click styles are global (see static/js/tables.js). */
 
     /* Mobile horizontal-scroll affordance */
@@ -568,7 +585,7 @@
                         <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
                         <th class="sortable" data-sort="num">Win Rate</th>
                         <th class="sortable" data-sort="num" data-m="hide">Trades</th>
-                        <th class="sortable" data-sort="num" data-m="hide">W / L</th>
+                        <th class="sortable" data-sort="num" data-m="hide">W/L</th>
                         <th class="sortable" data-sort="num" data-m="hide">Premium</th>
                     </tr>
                 </thead>
@@ -678,7 +695,7 @@
                         </th>
                         <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('win_rate') }}">Win Rate</a></th>
                         <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('trades') }}">Trades</a></th>
-                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W / L</a></th>
+                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W/L</a></th>
                         <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
                         <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_days') }}">Avg Days</a></th>
                         <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('premium') }}">Premium</a></th>

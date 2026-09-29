@@ -978,6 +978,16 @@
     {% endif %}
 </head>
 <body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}">
+    <script>
+    window.htMoney = function(n, digits, signed) {
+        var v = Number(n);
+        if (!isFinite(v)) return '\u2014';
+        var d = digits == null ? 2 : digits;
+        var abs = Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
+        var sign = v < 0 ? '-' : (signed && v > 0 ? '+' : '');
+        return sign + '$' + abs;
+    };
+    </script>
     {% if session.get('_impersonator_id') %}
     <div style="background: #fef08a; color: #713f12; padding: .55rem 1rem;
                 border-bottom: 2px solid #f59e0b; font-weight: 600; font-size: .9rem;

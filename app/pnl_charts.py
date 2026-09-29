@@ -687,12 +687,28 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     # already trims these for closed positions, this covers OPEN ones.
     position_started = False
 
+    # Options-only books sometimes carry their P&L in cumulative_other_pnl
+    # (option cash that never landed in Call/Put, or fees on a book with
+    # no shares). That column is added to Total and not drawn as its own
+    # series, so the Options line sits at $0 while Total moves. When the
+    # symbol has no equity fills, fold other into the Options series.
+    # A book that also trades the shares keeps other out of Options so
+    # interest and fees are not painted as option P&L.
+    _eq_activity = 0.0
+    for _qty_col in ("equity_buy_qty", "equity_sell_qty"):
+        if _qty_col in daily_df.columns:
+            _eq_activity += float(
+                pd.to_numeric(daily_df[_qty_col], errors="coerce").fillna(0).abs().sum()
+            )
+    fold_other_into_options = _eq_activity <= 1e-6
+
     dates, equity_s, options_s, dividends_s, total_s, price_s = (
         [], [], [], [], [], [],
     )
     last_cumulative_options_realized = 0.0
     last_open_options_unrealized = 0.0
     last_cumulative_other_pnl = 0.0
+    last_good_close = 0.0
     # Track when option series steps (realization or MTM change) so the
     # "skip quiet days for closed positions" branch doesn't drop a real
     # event day. Without this an OTM-expiry crystallization (no fill in
@@ -791,6 +807,14 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
         # If no close price on a buy day, use avg cost so open position doesn't show full cost as "loss"
         if close <= 0 and buy_qty > 0 and buy_cost > 0 and shares_held > 0:
             close = buy_cost / buy_qty
+        # A missing or zero close while shares are still held used to zero
+        # unrealized for that day (the line dropped to realized, often $0,
+        # then jumped back when the next close arrived). Carry the last
+        # positive close, the same way the account chart does.
+        if close > 0:
+            last_good_close = close
+        elif last_good_close > 0 and (shares_held > 0 or short_shares > 0):
+            close = last_good_close
         unrealized = 0
         if close > 0:
             if shares_held > 0:
@@ -814,6 +838,9 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
         last_cumulative_other_pnl = oth_pnl
         last_cumulative_options_realized = cum_realized_opt
         last_open_options_unrealized = open_unreal_opt
+        if fold_other_into_options:
+            opt_pnl += oth_pnl
+            oth_pnl = 0.0
 
         dates.append(str(row["date"])[:10])
         equity_s.append(round(eq_pnl, 2))
@@ -913,6 +940,10 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
         else:
             opt_unreal_today = last_open_options_unrealized
         today_option_pnl = last_cumulative_options_realized + opt_unreal_today
+        other_for_total = last_cumulative_other_pnl
+        if fold_other_into_options:
+            today_option_pnl += last_cumulative_other_pnl
+            other_for_total = 0.0
         eq_row = _equity_slice_for_live_chart(current_df)
         today_eq = equity_s[-1]
         # When the broker's live snapshot has equity AND a current
@@ -970,7 +1001,7 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
             options_s[-1] = round(today_option_pnl, 2)
             total_s[-1] = round(
                 today_eq + today_option_pnl + dividends_s[-1]
-                + last_cumulative_other_pnl,
+                + other_for_total,
                 2,
             )
             if today_price is not None:
@@ -984,7 +1015,7 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
             total_s.append(
                 round(
                     today_eq + today_option_pnl + dividends_s[-1]
-                    + last_cumulative_other_pnl,
+                    + other_for_total,
                     2,
                 )
             )
@@ -1580,8 +1611,29 @@ def _synthetic_cumulative_pnl_for_position(kpis, sessions_list, leg_param, selec
     if abs(eq_unreal + opt_unreal - unreal) > 0.02:
         eq_unreal, opt_unreal = unreal, 0.0
 
-    eq_end = round(realized + eq_unreal, 2)
-    opt_end = round(opt_unreal, 2)
+    # Options-only: realized P&L belongs on the Options line. Putting all
+    # realized on Equity left Options at $0 (or at open unrealized only)
+    # while Total followed the option result. Only when the snapshot
+    # shows option contracts and no shares — a closed stock with an empty
+    # snapshot keeps realized on Equity.
+    equity_shares = False
+    has_options = False
+    if not current_df.empty and "instrument_type" in current_df.columns:
+        has_options = bool(
+            current_df["instrument_type"].isin(["Call", "Put"]).any()
+        )
+        if "quantity" in current_df.columns:
+            eq_qty = current_df[current_df["instrument_type"] == "Equity"]
+            if not eq_qty.empty:
+                equity_shares = float(
+                    pd.to_numeric(eq_qty["quantity"], errors="coerce").fillna(0).abs().sum()
+                ) > 1e-6
+    if has_options and not equity_shares:
+        eq_end = 0.0
+        opt_end = round(realized + opt_unreal, 2)
+    else:
+        eq_end = round(realized + eq_unreal, 2)
+        opt_end = round(opt_unreal, 2)
 
     start_d = None
     if leg_param and sessions_list and selected_legs:

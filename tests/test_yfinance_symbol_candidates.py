@@ -109,6 +109,12 @@ class TestCryptoMapping:
         seed = _load_crypto_symbols()
         assert {"LINK", "BTC", "ETH"}.issubset(seed)
         assert _yahoo_symbol_candidates("LINK") == ["LINK-USD"]
+        # SNX / SEI / COMP are listed stocks on the bare ticker. Mapping
+        # them to SYM-USD marks TD SYNNEX with the Synthetix token.
+        assert "SNX" in seed
+        assert _yahoo_symbol_candidates("SNX") == ["SNX"]
+        assert _yahoo_symbol_candidates("SEI") == ["SEI"]
+        assert _yahoo_symbol_candidates("COMP") == ["COMP"]
 
     def test_load_crypto_symbols_missing_file_returns_empty(self, tmp_path):
         missing = tmp_path / "does_not_exist.csv"

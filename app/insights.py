@@ -27,7 +27,8 @@ from app.routes import (
     _user_account_list,
     _scope_keep_kwargs,
 )
-from app.utils import demo_block_writes
+from app.utils import demo_block_writes, is_demo_user
+from app.demo_analysis import compose_demo_analysis
 from app.llm import (
     call_llm, llm_available, selectable_models,
     selectable_model_keys,
@@ -94,7 +95,7 @@ LIMIT 20
 
 INSIGHTS_DATA_QUERY = """
 SELECT
-    account, symbol, strategy, status,
+    account, tenant_id, symbol, strategy, status,
     total_pnl, realized_pnl, unrealized_pnl,
     total_premium_received, total_premium_paid,
     num_trade_groups, num_individual_trades,
@@ -1421,6 +1422,36 @@ def _require_insights_feature():
     return None
 
 
+def _live_demo_insight(client, tenant_ids, coaching_data):
+    """Analysis for the public demo, rebuilt from the current book.
+
+    The stored ``insights`` row is ignored. Demo writes are blocked, so a
+    cached generation can never stay current, and the old seed described
+    a different account.
+    """
+    portfolio = pd.DataFrame()
+    if client is not None:
+        try:
+            where = _tenant_sql_filter(tenant_ids)
+            portfolio = cached_query_df(
+                client,
+                INSIGHTS_DATA_QUERY.format(where=where),
+                label="insights_demo_book",
+            )
+            portfolio = _filter_df_by_tenant_ids(portfolio, tenant_ids)
+        except Exception as exc:
+            app.logger.warning("demo insights: portfolio read failed: %s", exc)
+            portfolio = pd.DataFrame()
+    summary, full_analysis, generated_at = compose_demo_analysis(
+        portfolio, coaching_data,
+    )
+    return {
+        "summary": summary,
+        "full_analysis": full_analysis,
+        "generated_at": generated_at,
+    }
+
+
 @app.route("/insights")
 @login_required
 def insights():
@@ -1473,11 +1504,17 @@ def insights():
         "pct_reliable": 0,
         "exit_timing": None,
     }
+    client = None
     try:
         client = get_bigquery_client()
         _, coaching_data = _build_coaching_brief(client, tenant_ids)
     except Exception as exc:
         app.logger.warning("insights: coaching brief failed (page renders without coach data): %s", exc)
+
+    # The demo's stored insight is a one-shot seed. Compose from the
+    # warehouse book instead of rendering that row.
+    if is_demo_user():
+        cached = _live_demo_insight(client, tenant_ids, coaching_data)
 
     insight_conflict = None
     if cached and not scope_narrowed:
