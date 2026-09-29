@@ -310,16 +310,19 @@ def _matching_open_session(position, sessions_list):
 
 def _annotate_open_legs(current_positions, sessions_list, symbol, today=None):
     """Opened / days / fractional qty / Crypto label for live holdings."""
-    from app.upload import is_crypto_symbol
+    from app.upload import holding_is_crypto
 
     today = today or date.today()
-    symbol_is_crypto = is_crypto_symbol(symbol)
     for position in current_positions or []:
         inst = str(position.get("instrument_type") or "")
         trade_sym = str(position.get("trade_symbol") or "")
         row_sym = str(position.get("symbol") or symbol or "")
+        sec_type = str(position.get("security_type") or position.get("security_type_raw") or "")
+        desc = str(position.get("description") or "")
         if inst not in ("Call", "Put") and (
-            symbol_is_crypto or is_crypto_symbol(row_sym) or is_crypto_symbol(trade_sym)
+            holding_is_crypto(symbol, sec_type, desc)
+            or holding_is_crypto(row_sym, sec_type, desc)
+            or holding_is_crypto(trade_sym, sec_type, desc)
         ):
             position["leg_kind"] = "Crypto"
         else:
@@ -1317,7 +1320,7 @@ def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFr
     """
     if current_df is None or current_df.empty:
         return pd.DataFrame()
-    from app.upload import is_crypto_symbol
+    from app.upload import holding_is_crypto
     rows = []
     for _, r in current_df.iterrows():
         acct = str(r.get("account", "") or "").strip()
@@ -1328,11 +1331,14 @@ def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFr
         elif it == "Put":
             lab = "Long Put"
         elif it == "Equity":
-            # Equity rows for crypto symbols (Coinbase via SnapTrade
-            # currently ship as security_type='Equity') get the Crypto
-            # label so the strategy breakdown matches what the warehouse
-            # would have surfaced via int_strategy_classification.
-            lab = "Crypto" if is_crypto_symbol(sym) else "Buy and Hold"
+            # Equity rows for real crypto (Coinbase BTC) get the Crypto
+            # label. Colliding tickers (SNX, SEI) stay Buy and Hold unless
+            # the broker type and description name the token.
+            lab = "Crypto" if holding_is_crypto(
+                sym,
+                str(r.get("security_type") or r.get("security_type_raw") or ""),
+                str(r.get("description") or ""),
+            ) else "Buy and Hold"
         else:
             lab = "Open"
         u = float(r.get("unrealized_pnl") or 0)
@@ -1407,8 +1413,8 @@ def _compute_breakdown_by_type(
     rounding (positions_summary uses rounded P&L per strategy; the mart's
     open_options unrealized has full precision).
     """
-    from app.upload import is_crypto_symbol
-    is_crypto = is_crypto_symbol(safe_symbol)
+    from app.upload import symbol_defaults_to_crypto
+    is_crypto = symbol_defaults_to_crypto(safe_symbol)
     eq_realized = 0.0
     eq_unrealized = 0.0
     eq_session_count = 0
@@ -1698,7 +1704,7 @@ def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
     Shared by the view and the cache warmer so warmed keys match a request.
     ``safe_symbol`` is already SQL-escaped (``'`` → ``''``).
     """
-    from app.upload import is_crypto_symbol
+    from app.upload import symbol_defaults_to_crypto
 
     _pos_acct = _tenant_sql_and(tenant_scope)
     _pos_all_acct = _tenant_sql_and(all_owned_scope)
@@ -1742,7 +1748,7 @@ def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
             symbol=safe_symbol, tenant_filter=_pos_acct
         ),
     }
-    if not is_crypto_symbol(safe_symbol):
+    if not symbol_defaults_to_crypto(safe_symbol):
         queries["dividends"] = POSITION_DIVIDENDS_QUERY.format(
             symbol=safe_symbol, tenant_filter=_pos_acct
         )
@@ -1921,8 +1927,8 @@ def position_detail(symbol):
 
     _fetch_t0 = time.perf_counter()
     try:
-        from app.upload import is_crypto_symbol
-        _is_crypto = is_crypto_symbol(safe_symbol)
+        from app.upload import symbol_defaults_to_crypto
+        _is_crypto = symbol_defaults_to_crypto(safe_symbol)
         _pos_queries = position_detail_query_batch(
             safe_symbol, tenant_scope, all_owned_scope)
         dfs = _bq_parallel(client, _pos_queries)

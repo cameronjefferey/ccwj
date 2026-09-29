@@ -1221,8 +1221,8 @@
                                         {{ "{:,.0f}".format(t.quantity) }}
                                         {% endif %}
                                     </td>
-                                    <td class="text-end">{{ "${:,.2f}".format(t.price) if t.price else '' }}</td>
-                                    <td class="text-end text-muted">{{ "${:,.2f}".format(t.fees) if t.fees else '' }}</td>
+                                    <td class="text-end">{{ money(t.price) if t.price else '' }}</td>
+                                    <td class="text-end text-muted">{{ money(t.fees) if t.fees else '' }}</td>
                                     <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
                                         {{ money(t.amount) }}
                                     </td>
@@ -1630,8 +1630,7 @@
                                 }
                                 var y = ctx.parsed.y;
                                 if (y == null) return null;
-                                return ctx.dataset.label + ': $' +
-                                    y.toLocaleString(undefined, {minimumFractionDigits: 2});
+                                return ctx.dataset.label + ': ' + window.htMoney(y, 2);
                             }
                         }
                     }
@@ -1647,9 +1646,10 @@
                         position: 'left',
                         ticks: {
                             callback: function(v) {
-                                return '$' + (Math.abs(v) >= 1000
-                                    ? (v / 1000).toFixed(1) + 'k'
-                                    : v.toFixed(0));
+                                var n = Number(v) || 0;
+                                var sign = n < 0 ? '-' : '';
+                                var a = Math.abs(n);
+                                return sign + '$' + (a >= 1000 ? (a / 1000).toFixed(1) + 'k' : a.toFixed(0));
                             }
                         },
                         grid: { display: false }

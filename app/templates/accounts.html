@@ -142,7 +142,7 @@
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Unrealized P&amp;L</div>
             <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
+                {{ money(kpis.unrealized_pnl, 0) }}
             </div>
         </div>
     </div>
@@ -162,7 +162,7 @@
         <div class="card kpi-card p-3 text-center" id="kpiNetDeposits">
             <div class="kpi-label">Net deposits</div>
             <div class="kpi-value {{ 'text-positive' if (kpis.net_deposits or 0) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.net_deposits or 0) }}
+                {{ money(kpis.net_deposits or 0, 0) }}
             </div>
         </div>
     </div>
@@ -172,7 +172,7 @@
         <div class="card kpi-card p-3 text-center" id="kpiRealized">
             <div class="kpi-label">{{ 'Realized (period)' if period_kpis else 'Realized P&L' }}</div>
             <div class="kpi-value {{ 'text-positive' if (period_kpis.realized if period_kpis else kpis.realized_pnl) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(period_kpis.realized if period_kpis else kpis.realized_pnl) }}
+                {{ money(period_kpis.realized if period_kpis else kpis.realized_pnl, 0) }}
             </div>
         </div>
     </div>
@@ -193,7 +193,7 @@
         <div class="card kpi-card p-3 text-center" id="kpiNet">
             <div class="kpi-label">{{ 'Net P&L this period' if period_kpis else 'Total Return' }}</div>
             <div class="kpi-value {{ 'text-positive' if (period_kpis.net if period_kpis else kpis.total_return) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(period_kpis.net if period_kpis else kpis.total_return) }}
+                {{ money(period_kpis.net if period_kpis else kpis.total_return, 0) }}
             </div>
         </div>
     </div>
@@ -304,15 +304,15 @@
                         </td>
                         <td data-val="{{ row.total_return }}"
                             class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-semibold">
-                            ${{ "{:,.2f}".format(row.total_return) }}
+                            {{ money(row.total_return, 2) }}
                         </td>
                         <td data-val="{{ row.realized_pnl }}"
                             class="{{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.realized_pnl) }}
+                            {{ money(row.realized_pnl, 2) }}
                         </td>
                         <td data-val="{{ row.unrealized_pnl }}"
                             class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                            {{ money(row.unrealized_pnl, 2) }}
                         </td>
                         <td data-val="{{ row.win_rate }}">
                             {{ "{:.0%}".format(row.win_rate) }}
@@ -616,7 +616,7 @@
         var val = card.querySelector('.kpi-value');
         if (lab) lab.textContent = label;
         if (val) {
-            val.textContent = '$' + Math.round(value).toLocaleString();
+            val.textContent = window.htMoney(Math.round(value), 0);
             val.classList.toggle('text-positive', value >= 0);
             val.classList.toggle('text-negative', value < 0);
         }
@@ -782,12 +782,17 @@
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 15 } },
-                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
+                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': ' + window.htMoney(ctx.parsed.y, 2); } } }
                 },
                 scales: {
                     x: { ticks: { maxTicksLimit: 14, maxRotation: 45, callback: function (v) { return shortAxisDate(this.getLabelForValue(v)); } }, grid: { display: false } },
                     y: {
-                        ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
+                        ticks: { callback: function (v) {
+                            var n = Number(v) || 0;
+                            var sign = n < 0 ? '-' : '';
+                            var a = Math.abs(n);
+                            return sign + '$' + (a >= 1000 ? (a / 1000).toFixed(1) + 'k' : a.toFixed(0));
+                        } },
                         grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }
                     }
                 }
@@ -816,12 +821,17 @@
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 12, font: { size: 11 } } },
-                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
+                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': ' + window.htMoney(ctx.parsed.y, 2); } } }
                 },
                 scales: {
                     x: { ticks: { maxTicksLimit: 14, maxRotation: 45, callback: function (v) { return shortAxisDate(this.getLabelForValue(v)); } }, grid: { display: false } },
                     y: {
-                        ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
+                        ticks: { callback: function (v) {
+                            var n = Number(v) || 0;
+                            var sign = n < 0 ? '-' : '';
+                            var a = Math.abs(n);
+                            return sign + '$' + (a >= 1000 ? (a / 1000).toFixed(1) + 'k' : a.toFixed(0));
+                        } },
                         grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }
                     }
                 }

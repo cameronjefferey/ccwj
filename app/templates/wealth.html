@@ -551,7 +551,7 @@
                     callbacks: {
                         label: function (ctx) {
                             const v = ctx.parsed.y;
-                            return ctx.dataset.label + ': $' + (v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
+                            return ctx.dataset.label + ': ' + (v == null ? '—' : window.htMoney(v, 0));
                         }
                     }
                 }
@@ -579,9 +579,11 @@
                     stacked: false,
                     ticks: {
                         callback: function (v) {
-                            if (Math.abs(v) >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M';
-                            if (Math.abs(v) >= 1_000) return '$' + (v / 1_000).toFixed(0) + 'k';
-                            return '$' + v.toFixed(0);
+                            var sign = v < 0 ? '-' : '';
+                            var a = Math.abs(v);
+                            if (a >= 1_000_000) return sign + '$' + (a / 1_000_000).toFixed(1) + 'M';
+                            if (a >= 1_000) return sign + '$' + (a / 1_000).toFixed(0) + 'k';
+                            return window.htMoney(v, 0);
                         }
                     },
                     grid: { color: '#e9ecef' }

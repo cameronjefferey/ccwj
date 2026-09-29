@@ -272,6 +272,31 @@
         table.fit td.cell { min-width: 72px; }
         table.fit tbody th.strategy { min-width: 108px; }
     }
+    .fit-col-short, .fit-corner-short { display: none; }
+    @media (max-width: 480px) {
+        /* At ~400px a 108px strategy pin plus a sticky total left room
+           for one sector. Narrow the cells, abbreviate headers, and let
+           the total scroll so several sectors fit. */
+        .fit-col-full, .fit-corner-full { display: none; }
+        .fit-col-short, .fit-corner-short { display: inline; }
+        table.fit { border-spacing: 2px; font-size: .72rem; }
+        table.fit th, table.fit td { padding: .28rem .22rem; }
+        table.fit td.cell { min-width: 52px; }
+        table.fit thead th.row-head,
+        table.fit tbody th.strategy {
+            min-width: 68px;
+            max-width: 84px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        table.fit thead th .col-meta { display: none; }
+        table.fit thead th.totals,
+        table.fit tbody tr:not(.totals-row) > td.total-cell,
+        table.fit tr.totals-row > td.total-cell.grand {
+            position: static;
+            box-shadow: none;
+        }
+    }
     table.fit td.cell.has-data { cursor: pointer; }
     table.fit td.cell.has-data:hover { transform: scale(1.03); box-shadow: 0 3px 8px rgba(0,0,0,.1); z-index: 1; position: relative; }
     table.fit td.cell .cell-pnl { font-weight: 700; display: block; line-height: 1.1; }
@@ -493,7 +518,7 @@
     <div class="fit-baselines">
         <div class="fit-baseline">
             <div class="lbl">Your baseline expectancy</div>
-            <div class="val">${{ "{:,.2f}".format(baseline_expectancy) }}/trade</div>
+            <div class="val">{{ money(baseline_expectancy, 2) }}/trade</div>
         </div>
         <div class="fit-baseline">
             <div class="lbl">Your baseline win rate</div>
@@ -505,7 +530,7 @@
         </div>
         <div class="fit-baseline">
             <div class="lbl">Total Return</div>
-            <div class="val">${{ "{:,.0f}".format(grand_total.total_pnl) }}</div>
+            <div class="val">{{ money(grand_total.total_pnl, 0) }}</div>
         </div>
     </div>
     {% endif %}
@@ -599,8 +624,8 @@
             <span class="strat-tag">{{ c.strategy }}</span>
             <span class="text-muted small">in</span>
             <span class="ind-tag">{{ c[col_field] }}</span>
-            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · ${{ "{:,.0f}".format(c.expectancy) }}/trade</span>
-            <span class="pnl-big pos">+${{ "{:,.0f}".format(c.total_pnl) }}</span>
+            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
+            <span class="pnl-big pos">{{ money(c.total_pnl, 0, true) }}</span>
         </div>
         {% endfor %}
     </div>
@@ -613,8 +638,8 @@
             <span class="strat-tag">{{ c.strategy }}</span>
             <span class="text-muted small">in</span>
             <span class="ind-tag">{{ c[col_field] }}</span>
-            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · ${{ "{:,.0f}".format(c.expectancy) }}/trade</span>
-            <span class="pnl-big neg">${{ "{:,.0f}".format(c.total_pnl) }}</span>
+            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
+            <span class="pnl-big neg">{{ money(c.total_pnl, 0) }}</span>
         </div>
         {% endfor %}
     </div>
@@ -699,8 +724,25 @@
         data-max-edge="{{ max_abs_edge }}">
         <thead>
             <tr>
-                <th class="row-head">Strategy ↓ &nbsp;/ &nbsp;{{ dim_label }} →</th>
+                <th class="row-head">
+                    <span class="fit-corner-full">Strategy ↓ &nbsp;/ &nbsp;{{ dim_label }} →</span>
+                    <span class="fit-corner-short">Strat</span>
+                </th>
                 {% for col in col_labels %}
+                {% set _short = {
+                    'Technology': 'Tech',
+                    'Healthcare': 'Health',
+                    'Financial Services': 'Fin',
+                    'Consumer Cyclical': 'Cycl',
+                    'Communication Services': 'Comm',
+                    'Industrials': 'Ind',
+                    'Consumer Defensive': 'Def',
+                    'Basic Materials': 'Matl',
+                    'Real Estate': 'RE',
+                    'Energy': 'Enrgy',
+                    'Utilities': 'Util',
+                    'Unknown': 'Unk'
+                }.get(col, col[:4]) %}
                 {% set ct = col_totals.get(col) %}
                 <th class="{% if col == 'Unknown' %}col-unknown{% endif %}"
                     {% if ct %}
@@ -711,12 +753,12 @@
                     {% endif %}>
                     {% if dim == 'sector' %}
                     <a href="{{ scoped_url('strategies', view='fit', sector=col, _anchor='fit-controls') }}"
-                       title="Drill into {{ col }} subsectors">{{ col }}</a>
+                       title="Drill into {{ col }} subsectors"><span class="fit-col-full">{{ col }}</span><span class="fit-col-short">{{ _short }}</span></a>
                     {% else %}
-                    {{ col }}
+                    <span class="fit-col-full">{{ col }}</span><span class="fit-col-short">{{ _short }}</span>
                     {% endif %}
                     {% if ct %}
-                    <span class="col-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">${{ "{:,.0f}".format(ct.total_pnl) }}</span>
+                    <span class="col-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">{{ money(ct.total_pnl, 0) }}</span>
                     <span class="col-meta" title="Unique symbols in this {{ dim_label|lower }}">
                         {{ ct.num_symbols }} sym ·
                         {% if (ct.num_winners + ct.num_losers) > 0 %}{{ "{:.0%}".format(ct.win_rate) }} win{% else %}—{% endif %}
@@ -734,7 +776,7 @@
             {% set rt = row_totals.get(strat) %}
             {% set is_equity_na = strat in equity_set %}
             <tr {% if is_equity_na %}class="equity-na"{% endif %}>
-                <th class="strategy">
+                <th class="strategy" title="{{ strat }}">
                     {{ strat }}
                     {% if is_equity_na %}
                     <span class="equity-badge" title="This strategy has no option contracts, so {{ dim_label }} doesn't apply.">N/A · equity</span>
@@ -771,7 +813,7 @@
                             data-num-losers="{{ c.num_losers | int }}"
                             data-num-symbols="{{ c.num_symbols | int }}"
                             data-positions-url="{{ drill_url }}"
-                            title="{{ strat }} in {{ col }} · {{ c.num_trades | int }} trades · {{ '{:.0%}'.format(c.win_rate) }} win · ${{ '{:,.2f}'.format(c.expectancy) }}/trade · ${{ '{:,.0f}'.format(c.total_pnl) }} total · click for details">
+                            title="{{ strat }} in {{ col }} · {{ c.num_trades | int }} trades · {{ '{:.0%}'.format(c.win_rate) }} win · {{ money(c.expectancy, 2) }}/trade · {{ money(c.total_pnl, 0) }} total · click for details">
                             <span class="cell-pnl"></span>
                             <span class="cell-meta">{{ c.num_trades | int }}t{% if (c.num_winners + c.num_losers) > 0 %} · {{ "{:.0%}".format(c.win_rate) }}{% endif %}</span>
                         </td>
@@ -790,7 +832,7 @@
                     data-win-rate="{{ rt.win_rate }}"
                     data-num-closed="{{ (rt.num_winners + rt.num_losers) | int }}">
                     <span class="cell-pnl {% if rt.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                        {% if rt.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(rt.total_pnl) }}
+                        {{ money(rt.total_pnl, 0, true) }}
                     </span>
                     <span class="cell-meta">
                         {{ rt.num_trades | int }}t
@@ -814,7 +856,7 @@
                         data-win-rate="{{ ct.win_rate }}"
                         data-num-closed="{{ (ct.num_winners + ct.num_losers) | int }}">
                         <span class="cell-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                            {% if ct.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(ct.total_pnl) }}
+                            {{ money(ct.total_pnl, 0, true) }}
                         </span>
                         <span class="cell-meta">
                             {{ ct.num_trades | int }}t
@@ -832,7 +874,7 @@
                     data-win-rate="{{ grand_total.win_rate }}"
                     data-num-closed="{{ (grand_total.num_winners + grand_total.num_losers) | int }}">
                     <span class="cell-pnl {% if grand_total.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                        {% if grand_total.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(grand_total.total_pnl) }}
+                        {{ money(grand_total.total_pnl, 0, true) }}
                     </span>
                     <span class="cell-meta">
                         {{ grand_total.num_trades | int }}t · {{ "{:.0%}".format(grand_total.win_rate) }}

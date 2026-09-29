@@ -256,7 +256,7 @@
     <div class="row g-0 text-center">
         <div class="col focus-stat" style="border-right: 1px solid #243049">
             <div class="focus-stat-value {{ 'text-positive' if focus_strategy.total_return >= 0 else 'text-negative' }}">
-                {{ "+" if focus_strategy.total_return >= 0 else "" }}${{ "{:,.0f}".format(focus_strategy.total_return) }}
+                {{ money(focus_strategy.total_return, 0, true) }}
             </div>
             <div class="focus-stat-label">Total Return</div>
         </div>
@@ -277,7 +277,7 @@
         {% if focus_strategy.premium_received %}
         <div class="col focus-stat">
             <div class="focus-stat-value {{ 'text-positive' if (focus_strategy.premium_received - focus_strategy.premium_paid) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(focus_strategy.premium_received - focus_strategy.premium_paid) }}
+                {{ money(focus_strategy.premium_received - focus_strategy.premium_paid, 0) }}
             </div>
             <div class="focus-stat-label">Net Premium</div>
         </div>
@@ -308,17 +308,17 @@
                 <tr>
                     <td><strong>{{ r.type }}</strong></td>
                     <td class="text-end {{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-semibold">
-                        {{ "+" if r.total >= 0 else "" }}${{ "{:,.2f}".format(r.total) }}
+                        {{ money(r.total, 2, true) }}
                         {% if r.suffix %}<span class="text-muted fw-normal ms-1 small">{{ r.suffix }}</span>{% endif %}
                     </td>
                     <td class="text-end {{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
-                        {{ "+" if r.realized >= 0 else "" }}${{ "{:,.2f}".format(r.realized) }}
+                        {{ money(r.realized, 2, true) }}
                     </td>
                     <td class="text-end {% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
                         {% if r.unrealized is none %}
                         &mdash;
                         {% else %}
-                        {{ "+" if r.unrealized >= 0 else "" }}${{ "{:,.2f}".format(r.unrealized) }}
+                        {{ money(r.unrealized, 2, true) }}
                         {% endif %}
                     </td>
                     <td class="small text-muted">
@@ -337,7 +337,7 @@
             <tfoot>
                 <tr class="border-top">
                     <th>Total</th>
-                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ "+" if _bd_tot >= 0 else "" }}${{ "{:,.2f}".format(_bd_tot) }}</th>
+                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ money(_bd_tot, 2, true) }}</th>
                     <th colspan="3"></th>
                 </tr>
             </tfoot>
@@ -391,7 +391,7 @@
         <div class="dte-stats">
             {% if d.win_rate_pct is not none %}{{ "%.0f"|format(d.win_rate_pct) }}% WR{% endif %}
             &middot; {{ d.num_trades }} trades
-            &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ "+" if d.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(d.total_pnl) }}</span>
+            &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ money(d.total_pnl, 0, true) }}</span>
         </div>
     </div>
     {% endfor %}
@@ -471,7 +471,7 @@
                 <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
                 <td class="text-end" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
                 <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}" data-val="{{ a.total_return }}">
-                    {{ "+" if a.total_return >= 0 else "" }}${{ "{:,.2f}".format(a.total_return) }}
+                    {{ money(a.total_return, 2, true) }}
                 </td>
             </tr>
             {% endfor %}
@@ -517,7 +517,7 @@
             <div>
                 <div class="sc-stat-label">Total Return</div>
                 <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
-                    {{ "+" if s.total_return >= 0 else "" }}${{ "{:,.0f}".format(s.total_return) }}
+                    {{ money(s.total_return, 0, true) }}
                 </div>
             </div>
             {% if s.avg_days > 0 %}
@@ -534,12 +534,12 @@
             <div class="month-marks">
                 {% for m in s.sparkline %}
                 <span class="month-mark {% if m.pnl > 0 %}up{% elif m.pnl < 0 %}down{% endif %}"
-                      title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {% if m.pnl > 0 %}+${{ '{:,.0f}'.format(m.pnl) }}{% elif m.pnl < 0 %}−${{ '{:,.0f}'.format(m.pnl|abs) }}{% else %}$0{% endif %} ({{ m.trades }} trades{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
+                      title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {{ money(m.pnl, 0, true) }} ({{ m.trades }} trades{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
                 {% endfor %}
             </div>
             <div class="month-latest">
                 <span class="month-latest-name">{{ _mo[last.month[-2:]|int] }}</span>
-                <span class="month-latest-amt {% if last.pnl > 0 %}up{% elif last.pnl < 0 %}down{% endif %}">{% if last.pnl > 0 %}+${{ '{:,.0f}'.format(last.pnl) }}{% elif last.pnl < 0 %}−${{ '{:,.0f}'.format(last.pnl|abs) }}{% else %}$0{% endif %}</span>
+                <span class="month-latest-amt {% if last.pnl > 0 %}up{% elif last.pnl < 0 %}down{% endif %}">{{ money(last.pnl, 0, true) }}</span>
             </div>
         </div>
         {% endif %}
@@ -591,8 +591,7 @@
                         label: function(ctx) {
                             const row = data[ctx.dataIndex] || {};
                             const v = ctx.parsed.y;
-                            const pnl = (v >= 0 ? '+' : '') + '$' +
-                                Math.round(v).toLocaleString();
+                            const pnl = window.htMoney(v, 0, true);
                             const bits = ['P&L ' + pnl];
                             if (row.win_rate != null) bits.push(row.win_rate + '% win');
                             if (row.trades != null) bits.push(row.trades + ' trade' + (row.trades === 1 ? '' : 's'));
@@ -607,9 +606,9 @@
                     ticks: {
                         maxTicksLimit: 4,
                         callback: function(v) {
-                            const sign = v >= 0 ? '+' : '';
-                            if (Math.abs(v) >= 1000) return sign + '$' + (v / 1000).toFixed(0) + 'k';
-                            return sign + '$' + Math.round(v);
+                            const sign = v < 0 ? '-' : (v > 0 ? '+' : '');
+                            if (Math.abs(v) >= 1000) return sign + '$' + Math.abs(v / 1000).toFixed(0) + 'k';
+                            return window.htMoney(v, 0, true);
                         },
                         font: { size: 11 }
                     },

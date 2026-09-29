@@ -41,14 +41,15 @@
     .discovery-card {
         border-radius: 14px;
         padding: 1.15rem 1.2rem;
-        background: rgba(255,255,255,.92);
-        border: 1px solid #243049;
-        box-shadow: 0 4px 18px rgba(15,23,42,.06);
+        background: var(--ht-surface, #121826);
+        color: var(--ht-ink, #e8edf7);
+        border: 1px solid var(--ht-line, #243049);
+        box-shadow: none;
         transition: transform .12s ease, box-shadow .12s ease;
     }
     .discovery-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(15,23,42,.09);
+        box-shadow: 0 8px 24px rgba(0,0,0,.28);
     }
     .discovery-tag {
         font-size: .62rem;
@@ -344,7 +345,7 @@
                             <td class="text-muted" data-val="{{ e.strategy }}">{{ e.strategy }}</td>
                             <td class="small" data-val="{{ e.close_date }}">{{ e.close_date }}</td>
                             <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.actual_pnl }}">
-                                {{ "+" if e.actual_pnl >= 0 else "" }}${{ "{:,.0f}".format(e.actual_pnl) }}
+                                {{ money(e.actual_pnl, 0, true) }}
                             </td>
                             <td class="text-end text-positive" data-val="{{ e.peak_pnl }}">${{ "{:,.0f}".format(e.peak_pnl) }}</td>
                             <td class="text-end text-warning fw-semibold" data-val="{{ e.given_back }}">${{ "{:,.0f}".format(e.given_back) }}</td>

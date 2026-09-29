@@ -140,7 +140,7 @@
         <div class="ind-kpi">
             <div class="lbl">Total Return</div>
             <div class="val {% if kpis.total_pnl < 0 %}ind-neg{% elif kpis.total_pnl > 0 %}ind-pos{% endif %}">
-                ${{ "{:,.2f}".format(kpis.total_pnl) }}
+                {{ money(kpis.total_pnl, 2) }}
             </div>
         </div>
         <div class="ind-kpi">
@@ -197,7 +197,7 @@
             </div>
             <div>
                 <div class="pnl {% if s.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                    ${{ "{:,.0f}".format(s.total_pnl) }}
+                    {{ money(s.total_pnl, 0) }}
                 </div>
                 <div class="pnl-sub">total P&amp;L</div>
             </div>
@@ -218,18 +218,18 @@
             </div>
             <div class="stat">
                 <div class="lbl">Premium</div>
-                <div class="val">${{ "{:,.0f}".format(s.premium_received or 0) }}</div>
+                <div class="val">{{ money(s.premium_received or 0, 0) }}</div>
             </div>
         </div>
 
         <div class="splits">
             <span class="k">Realized</span>
-            <span class="v {% if s.realized_pnl < 0 %}neg{% endif %}">${{ "{:,.0f}".format(s.realized_pnl) }}</span>
+            <span class="v {% if s.realized_pnl < 0 %}neg{% endif %}">{{ money(s.realized_pnl, 0) }}</span>
             <span class="k">Unrealized</span>
-            <span class="v {% if s.unrealized_pnl < 0 %}neg{% endif %}">${{ "{:,.0f}".format(s.unrealized_pnl) }}</span>
+            <span class="v {% if s.unrealized_pnl < 0 %}neg{% endif %}">{{ money(s.unrealized_pnl, 0) }}</span>
             {% if s.dividend_income and s.dividend_income > 0 %}
             <span class="k">Dividends</span>
-            <span class="v">${{ "{:,.0f}".format(s.dividend_income) }}</span>
+            <span class="v">{{ money(s.dividend_income, 0) }}</span>
             {% endif %}
         </div>
 
@@ -241,7 +241,7 @@
                 <a href="{{ scoped_url('position_detail', symbol=s.top_symbol) }}"
                    class="text-decoration-none d-block">
                     <span class="sym">{{ s.top_symbol }}</span>
-                    <span class="ret pos">${{ "{:,.0f}".format(s.top_symbol_return or 0) }}</span>
+                    <span class="ret pos">{{ money(s.top_symbol_return or 0, 0) }}</span>
                 </a>
             </div>
             {% endif %}
@@ -252,7 +252,7 @@
                 <a href="{{ scoped_url('position_detail', symbol=s.worst_symbol) }}"
                    class="text-decoration-none d-block">
                     <span class="sym">{{ s.worst_symbol }}</span>
-                    <span class="ret neg">${{ "{:,.0f}".format(s.worst_symbol_return or 0) }}</span>
+                    <span class="ret neg">{{ money(s.worst_symbol_return or 0, 0) }}</span>
                 </a>
             </div>
             {% endif %}
@@ -286,7 +286,7 @@
                     </div>
                 </div>
                 <div class="ind-pnl {% if r.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                    ${{ "{:,.0f}".format(r.total_pnl) }}
+                    {{ money(r.total_pnl, 0) }}
                 </div>
                 <a class="ind-link" href="{{ scoped_url('positions', subsector=r.subsector) }}">View</a>
             </div>

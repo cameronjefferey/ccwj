@@ -700,3 +700,79 @@ def test_clean_reconciling_history_untouched_by_snapshot_mode():
     )
     # Terminal equity == broker unrealized either way.
     assert out["equity"][-1] == pytest.approx(1000.0, abs=1.0)
+
+
+def test_options_only_other_pnl_is_drawn_on_the_options_series():
+    """An options book whose dollars sit in cumulative_other_pnl used to
+    move Total while the Options line stayed at $0. With no equity fills,
+    that column is the options result and must not be added twice."""
+    df = pd.DataFrame([
+        dict(_daily_row("2026-08-11"), cumulative_other_pnl=3100.0),
+        dict(_daily_row("2026-08-12"), cumulative_other_pnl=0.0),
+        dict(_daily_row("2026-08-13"), cumulative_other_pnl=3100.0),
+    ])
+    out = _build_chart_from_daily_pnl_partition(df, pd.DataFrame())
+    assert out["options"] == pytest.approx([3100.0, 0.0, 3100.0])
+    assert out["total"] == pytest.approx(out["options"])
+    assert out["equity"] == pytest.approx([0.0, 0.0, 0.0])
+
+
+def test_equity_book_does_not_fold_other_into_options():
+    df = pd.DataFrame([
+        _daily_row(
+            "2026-08-08",
+            equity_buy_qty=10,
+            equity_buy_cost=500.0,
+            close_price=50.0,
+            has_trade=True,
+        ),
+        dict(_daily_row("2026-08-11", close_price=50.0), cumulative_other_pnl=50.0),
+    ])
+    out = _build_chart_from_daily_pnl_partition(df, pd.DataFrame())
+    assert out["options"][-1] == pytest.approx(0.0)
+    assert out["total"][-1] == pytest.approx(out["equity"][-1] + 50.0)
+
+
+def test_missing_close_while_shares_held_does_not_zero_equity():
+    """A 0/missing close used to drop unrealized to $0 for that day, then
+    jump back when the next close arrived (the SNX chart spike)."""
+    df = pd.DataFrame([
+        _daily_row(
+            "2026-08-08",
+            equity_buy_qty=10,
+            equity_buy_cost=500.0,
+            close_price=100.0,
+            has_trade=True,
+        ),
+        _daily_row("2026-08-11", close_price=0),
+        _daily_row("2026-08-12", close_price=80.0),
+    ])
+    out = _build_chart_from_daily_pnl_partition(df, pd.DataFrame())
+    assert out["equity"][0] == pytest.approx(500.0)
+    assert out["equity"][1] == pytest.approx(500.0)
+    assert out["equity"][2] == pytest.approx(300.0)
+
+
+def test_synthetic_options_only_puts_realized_on_the_options_line():
+    from app.pnl_charts import _synthetic_cumulative_pnl_for_position
+
+    current = pd.DataFrame([{
+        "instrument_type": "Call",
+        "unrealized_pnl": 50.0,
+        "quantity": -1,
+    }])
+    out = _synthetic_cumulative_pnl_for_position(
+        {
+            "realized_pnl": 400.0,
+            "unrealized_pnl": 50.0,
+            "dividend_income": 0.0,
+            "total_return": 450.0,
+        },
+        [],
+        None,
+        None,
+        current,
+    )
+    assert out["options"][-1] == pytest.approx(450.0)
+    assert out["equity"][-1] == pytest.approx(0.0)
+    assert out["total"][-1] == pytest.approx(450.0)

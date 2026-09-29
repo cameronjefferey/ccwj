@@ -222,14 +222,111 @@ CRYPTO_SYMBOLS: frozenset[str] = frozenset({
     "AURORA", "BOBA", "EOS", "MORPHO", "OMG",
 })
 
+# Tickers that are also listed equities. A whitelist hit is not evidence
+# the holding is the token: SNX is TD SYNNEX, SEI is Solaris Energy,
+# COMP is Compass, LINK is Interlink Electronics, UNI / EOS collide too.
+# These are Crypto only with an explicit crypto type AND a token-like
+# description (see ``holding_is_crypto``). Yahoo's bare symbol for SNX,
+# SEI, and COMP is the stock — the price loader must not fetch SYM-USD
+# for those (LINK stays SYM-USD; Yahoo's bare LINK is the wrong company).
+CRYPTO_AMBIGUOUS_SYMBOLS: frozenset[str] = frozenset({
+    "SNX", "SEI", "LINK", "COMP", "UNI", "EOS",
+})
+
+# Subset whose Yahoo bare ticker is the stock, not a tiny unrelated name.
+# LINK is excluded on purpose: ``yf.Ticker("LINK")`` is Interlink.
+YAHOO_BARE_IS_THE_STOCK: frozenset[str] = frozenset({
+    "SNX", "SEI", "COMP",
+})
 
 def is_crypto_symbol(symbol: str) -> bool:
     """Whether ``symbol`` (case-insensitive) is on the curated crypto
     whitelist. See ``CRYPTO_SYMBOLS`` for the full set and the dbt
-    seed for the source of truth."""
+    seed for the source of truth.
+
+    Membership is not "this holding is crypto." Colliding tickers use
+    ``holding_is_crypto``.
+    """
     if not symbol:
         return False
     return str(symbol).strip().upper() in CRYPTO_SYMBOLS
+
+
+def symbol_defaults_to_crypto(symbol: str) -> bool:
+    """True when the ticker is crypto without any broker evidence.
+
+    Ambiguous tickers (SNX, SEI, …) default to the stock. Unambiguous
+    bases (BTC, ETH) default to crypto so a missing type code still
+    tags Coinbase.
+    """
+    sym = str(symbol or "").strip().upper()
+    if sym not in CRYPTO_SYMBOLS:
+        return False
+    return sym not in CRYPTO_AMBIGUOUS_SYMBOLS
+
+
+def _looks_like_issuer(desc: str) -> bool:
+    import re
+    text = desc or ""
+    if re.search(
+        r"\b(inc|incorporated|corp|corporation|ltd|limited|plc|company)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
+    # "TD SYNNEX" / "Solaris Energy Infrastructure" — a multi-word name
+    # that does not mention the token.
+    return False
+
+
+def _names_the_token(desc: str) -> bool:
+    import re
+    return re.search(
+        r"\b(synthetix|chainlink|compound|uniswap|wormhole|eos)\b",
+        desc or "",
+        re.IGNORECASE,
+    ) is not None or re.search(r"\bsei\b", desc or "", re.IGNORECASE) is not None
+
+
+def holding_is_crypto(symbol: str, security_type: str = "", description: str = "") -> bool:
+    """Whether this holding should be labeled Crypto.
+
+    Explicit equity/ETF types are never crypto. Unambiguous whitelist
+    tickers are crypto when the broker did not say otherwise. Ambiguous
+    tickers are crypto only when the broker said cryptocurrency AND the
+    description names the token rather than an issuer (``TD SYNNEX
+    Corporation`` is the stock even if an older sync stamped
+    ``security_type='Cryptocurrency'`` from the whitelist alone).
+    """
+    sym = str(symbol or "").strip().upper()
+    if not sym or sym not in CRYPTO_SYMBOLS:
+        return False
+    st = str(security_type or "").strip().lower()
+    equity_types = {
+        "equity", "etf", "etfs & closed end funds", "cs", "stock",
+        "common stock", "preferred stock", "adr",
+    }
+    if st in equity_types:
+        return False
+    crypto_types = {"cryptocurrency", "crypto", "digital_asset", "digital asset"}
+    if sym not in CRYPTO_AMBIGUOUS_SYMBOLS:
+        if st in crypto_types:
+            return True
+        # No type at all: unambiguous bases (BTC) stay crypto.
+        return st == ""
+    if st not in crypto_types:
+        return False
+    desc = str(description or "").strip()
+    if not desc or desc.upper() == sym:
+        return False
+    if _looks_like_issuer(desc):
+        return False
+    if _names_the_token(desc):
+        return True
+    # Multi-word and not the token name: an issuer ("TD SYNNEX").
+    if " " in desc:
+        return False
+    return False
 
 
 def canonicalize_crypto_pair_symbol(symbol: str) -> str:
