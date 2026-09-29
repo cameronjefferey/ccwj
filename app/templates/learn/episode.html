@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block meta_tags %}
+<meta name="description" content="{{ meta_description }}">
+<meta property="og:description" content="{{ meta_description }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ og_image }}">
+<meta property="og:image:alt" content="{{ og_alt }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ title }} - HappyTrader">
+<meta name="twitter:description" content="{{ meta_description }}">
+<meta name="twitter:image" content="{{ og_image }}">
+<link rel="canonical" href="{{ canonical }}">
+{% if robots %}
+<meta name="robots" content="{{ robots }}">
+{% endif %}
+{% if video_ld %}
+<script type="application/ld+json">{{ video_ld|tojson }}</script>
+{% endif %}
+{% endblock %}
+
+{% block head %}
+{% include "learn/_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<article class="learn-page learn-episode">
+    <p class="learn-back"><a href="{{ url_for('learn_index') }}">All episodes</a></p>
+    <p class="learn-kicker">
+        Episode {{ episode.number }}
+        {% if episode.duration %}<span class="ht-num"> · {{ episode.duration }}</span>{% endif %}
+    </p>
+    <h1>{{ episode.title }}</h1>
+    <p class="learn-summary">{{ episode.summary }}</p>
+
+    {% if episode.watchable %}
+    <div class="learn-player">
+        <div class="yt-lite"
+             id="episode-player"
+             role="button"
+             tabindex="0"
+             aria-label="Play {{ episode.title }}"
+             data-title="{{ episode.title }}"
+             data-src="{{ episode.embed_src }}">
+            {% if episode.thumb %}
+            <img src="{{ episode.thumb }}" alt="" width="480" height="270" loading="lazy">
+            {% endif %}
+            <span class="yt-play" aria-hidden="true"></span>
+        </div>
+    </div>
+    {% else %}
+    <div class="learn-stage" role="img" aria-label="Coming soon">
+        <p class="learn-soon">Coming soon</p>
+        <p>This episode’s video isn’t up yet.</p>
+    </div>
+    {% endif %}
+
+    {% if episode.vocab %}
+    <h2 class="learn-label">Words you'll learn</h2>
+    <ul class="learn-vocab">
+        {% for word in episode.vocab %}
+        <li>{{ word }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if episode.chapters %}
+    <h2 class="learn-label">Chapters</h2>
+    <ol class="learn-chapters">
+        {% for chapter in episode.chapters %}
+        <li>
+            {% if episode.watchable %}
+            <button type="button" data-seek="{{ chapter.t }}">
+                <span class="ht-num">{{ chapter.clock }}</span>
+                <span>{{ chapter.label }}</span>
+            </button>
+            {% else %}
+            <div class="learn-chapter">
+                <span class="ht-num">{{ chapter.clock }}</span>
+                <span>{{ chapter.label }}</span>
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+    {% endif %}
+
+    {% if episode.recap_paragraphs %}
+    <h2 class="learn-label">Recap</h2>
+    <div class="learn-recap">
+        {% for paragraph in episode.recap_paragraphs %}
+        <p>{{ paragraph }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if episode.published and (previous or next_episode) %}
+    <nav class="learn-pager" aria-label="Episodes">
+        {% if previous %}
+        <a href="{{ url_for('learn_episode', slug=previous.slug) }}">
+            <span>Previous</span>
+            {{ previous.title }}
+        </a>
+        {% else %}
+        <span class="learn-pager-gap" hidden></span>
+        {% endif %}
+        {% if next_episode %}
+        <a class="is-next" href="{{ url_for('learn_episode', slug=next_episode.slug) }}">
+            <span>Next</span>
+            {{ next_episode.title }}
+        </a>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    {% if episode.shorts %}
+    <section class="learn-section" aria-labelledby="episode-shorts-heading">
+        <h2 id="episode-shorts-heading">Shorts</h2>
+        <div class="learn-shorts-stack">
+            {% for short in episode.shorts %}
+            {% include "learn/_short.html" %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% include "learn/_cta.html" %}
+</article>
+{% if episode.watchable or episode.shorts|selectattr('watchable')|list %}
+{% include "learn/_player.html" %}
+{% endif %}
+{% endblock %}

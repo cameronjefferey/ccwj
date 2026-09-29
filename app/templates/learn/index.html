@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block meta_tags %}
+<meta name="description" content="{{ meta_description }}">
+<meta property="og:description" content="{{ meta_description }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ og_image }}">
+<meta property="og:image:alt" content="{{ og_alt }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ title }} - HappyTrader">
+<meta name="twitter:description" content="{{ meta_description }}">
+<meta name="twitter:image" content="{{ og_image }}">
+<link rel="canonical" href="{{ canonical }}">
+{% endblock %}
+
+{% block head %}
+{% include "learn/_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="learn-page learn-index">
+    <header class="learn-hero">
+        <h1>{{ series.title }}</h1>
+        <p class="learn-lead">{{ series.subhead }}</p>
+        {% if first_episode %}
+        <a class="btn btn-primary" href="{{ url_for('learn_episode', slug=first_episode.slug) }}">Start with Episode 1</a>
+        {% endif %}
+    </header>
+
+    <section class="learn-section" aria-labelledby="learn-episodes-heading">
+        <h2 id="learn-episodes-heading">Episodes</h2>
+        <div class="learn-grid">
+            {% for episode in episodes %}
+            {% if episode.watchable %}
+            <a class="learn-card" href="{{ url_for('learn_episode', slug=episode.slug) }}">
+            {% else %}
+            <article class="learn-card">
+            {% endif %}
+                <div class="learn-thumb">
+                    {% if episode.thumb %}
+                    <img src="{{ episode.thumb }}" alt="" width="480" height="270" loading="lazy">
+                    {% endif %}
+                    <span class="learn-thumb-num ht-num">{{ episode.number_label }}</span>
+                </div>
+                <div class="learn-card-body">
+                    <p class="learn-kicker">
+                        Episode {{ episode.number }}
+                        {% if episode.duration %}<span class="ht-num"> · {{ episode.duration }}</span>{% endif %}
+                    </p>
+                    <h2 class="learn-card-title">{{ episode.title }}</h2>
+                    <p class="learn-summary">{{ episode.summary }}</p>
+                    {% if episode.watchable %}
+                    <span class="learn-watch">Watch</span>
+                    {% else %}
+                    <p class="learn-soon">Coming soon</p>
+                    {% endif %}
+                </div>
+            {% if episode.watchable %}
+            </a>
+            {% else %}
+            </article>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </section>
+
+    {% if shorts %}
+    <section class="learn-section" aria-labelledby="learn-shorts-heading">
+        <h2 id="learn-shorts-heading">Shorts</h2>
+        <div class="learn-shorts-row">
+            {% for short in shorts %}
+            {% include "learn/_short.html" %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% include "learn/_cta.html" %}
+</div>
+{% if episodes|selectattr('watchable')|list or shorts|selectattr('watchable')|list %}
+{% include "learn/_player.html" %}
+{% endif %}
+{% endblock %}

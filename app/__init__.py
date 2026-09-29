@@ -727,6 +727,7 @@ if os.environ.get("HAPPYTRADER_SKIP_DB_INIT") != "1":
 
 from app import routes
 from app import marketing  # noqa: F401  registers marketing/static/health routes
+from app import learn  # noqa: F401  registers /learn
 from app import position_detail  # noqa: F401  registers /position/<symbol> + tag routes
 from app import positions_page  # noqa: F401  registers /positions (also imported by routes facade)
 from app import symbols_page  # noqa: F401  registers /symbols (also imported by routes facade)
