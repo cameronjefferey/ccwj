@@ -716,6 +716,7 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
     # skipped from the rendered series.
     prev_options_realized_for_skip = 0.0
     prev_options_open_mtm_for_skip = 0.0
+    prev_other_for_skip = 0.0
 
     for _, row in daily_df.iterrows():
         buy_qty = float(row.get("equity_buy_qty") or 0)
@@ -735,9 +736,14 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
         # values: any change is a real event the user should see.
         cur_realized_for_skip = float(row.get("cumulative_options_pnl") or 0)
         cur_open_mtm_for_skip = float(row.get("open_options_unrealized_pnl") or 0)
+        cur_other_for_skip = float(row.get("cumulative_other_pnl") or 0)
+        # Other is part of Total and, on an options-only book, of the
+        # Options line. Skipping a day that only moves it drops that
+        # step (the line stays $0, or the day vanishes).
         options_step_today = (
             cur_realized_for_skip != prev_options_realized_for_skip
             or cur_open_mtm_for_skip != prev_options_open_mtm_for_skip
+            or cur_other_for_skip != prev_other_for_skip
         )
         if (position_is_closed
                 and shares_held == 0
@@ -747,6 +753,7 @@ def _build_chart_from_daily_pnl_partition(daily_df, current_df):
             continue
         prev_options_realized_for_skip = cur_realized_for_skip
         prev_options_open_mtm_for_skip = cur_open_mtm_for_skip
+        prev_other_for_skip = cur_other_for_skip
 
         # Trim the leading pre-open prefix. Until the position's first
         # activity, every series value is 0 and there are no holdings —
