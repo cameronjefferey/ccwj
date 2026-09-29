@@ -5,6 +5,7 @@ import re
 
 from app import app
 from app import learn_catalog as catalog
+from app import learn_progress
 from app.models import User
 
 
@@ -214,6 +215,146 @@ def test_embed_url_rejects_anything_that_is_not_an_id():
     assert catalog.is_watchable({"published": True, "youtube_id": None}) is False
     assert catalog.is_watchable({"published": False, "youtube_id": "aaaaaaaaaaa"}) is False
     assert catalog.is_watchable({"published": True, "youtube_id": "aaaaaaaaaaa"}) is True
+
+
+def _csrf(client):
+    html = client.get("/learn").get_data(as_text=True)
+    match = re.search(r'name="csrf-token" content="([^"]+)"', html)
+    assert match, html[:400]
+    return match.group(1)
+
+
+def _login(monkeypatch, client, username):
+    user = _SessionUser(username)
+
+    def get_by_id(user_id):
+        return user if str(user_id) == "1" else None
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(get_by_id))
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "1"
+        sess["_fresh"] = True
+    return user
+
+
+def test_resume_is_local_until_a_signed_in_account_saves_it():
+    html = _html("/learn")
+    assert 'id="learn-start"' in html
+    assert "Start with Episode 1" in html
+    assert 'id="learn-progress"' in html
+    assert 'data-learn-sync="0"' in html
+    assert 'src="/static/js/learn-progress.js"' in html
+    assert 'data-slug="what-is-an-option"' in html
+    assert 'data-published="1"' in html
+    assert 'data-published="0"' in html
+    episode = _html("/learn/what-is-an-option")
+    assert 'data-slug="what-is-an-option"' in episode
+    assert 'id="learn-resume"' in episode
+
+    client = _client()
+    assert client.get("/learn/progress").get_json() == {
+        "updated": 0,
+        "last": None,
+        "done": [],
+    }
+    posted = client.post(
+        "/learn/progress",
+        json={"done": ["what-is-an-option"], "last": {"slug": "calls-and-puts", "t": 12}},
+        headers={"X-CSRFToken": _csrf(client)},
+    )
+    assert posted.status_code == 204
+
+
+def test_progress_keeps_catalog_titles_and_merges_finished_episodes():
+    clean = learn_progress.sanitize({
+        "updated": 5,
+        "last": {
+            "slug": "what-is-an-option",
+            "t": 999999,
+            "title": "<script>",
+            "number": 99,
+        },
+        "done": ["what-is-an-option", "nope", "what-is-an-option"],
+    })
+    assert clean["last"]["title"] == "What is an option?"
+    assert clean["last"]["number"] == 1
+    assert clean["last"]["t"] == 8 * 60 * 60
+    assert clean["done"] == ["what-is-an-option"]
+    assert learn_progress.sanitize({"last": {"slug": "not-real", "t": 4}})["last"] is None
+
+    merged = learn_progress.merge(
+        {"updated": 10, "last": {"slug": "what-is-an-option"}, "done": ["what-is-an-option"]},
+        {"updated": 20, "last": {"slug": "calls-and-puts"}, "done": ["calls-and-puts"]},
+    )
+    assert merged["last"]["slug"] == "calls-and-puts"
+    assert merged["done"] == ["what-is-an-option", "calls-and-puts"]
+    assert merged["updated"] == 20
+
+
+def test_signed_in_progress_fails_open_and_skips_the_demo(monkeypatch):
+    saved = {}
+
+    def remember(user_id, payload):
+        saved["user_id"] = user_id
+        saved["payload"] = payload
+        return learn_progress.sanitize(payload)
+
+    def unavailable(_user_id):
+        raise RuntimeError("no database")
+
+    monkeypatch.setattr(learn_progress, "save_for_user", remember)
+    monkeypatch.setattr(learn_progress, "load_for_user", unavailable)
+
+    client = _client()
+    _login(monkeypatch, client, "alice")
+    page = client.get("/learn").get_data(as_text=True)
+    assert 'data-learn-sync="1"' in page
+    loaded = client.get("/learn/progress")
+    assert loaded.status_code == 200
+    assert loaded.get_json()["done"] == []
+    body = {
+        "updated": 30,
+        "done": ["calls-and-puts"],
+        "last": {"slug": "calls-and-puts", "t": 40, "title": "ignored"},
+    }
+    stored = client.post(
+        "/learn/progress",
+        json=body,
+        headers={"X-CSRFToken": _csrf(client)},
+    )
+    assert stored.status_code == 200
+    assert stored.get_json()["last"]["title"] == "Calls and puts"
+    assert saved["user_id"] == 1
+
+    demo = _client()
+    _login(monkeypatch, demo, "demo")
+    demo_page = demo.get("/learn/what-is-an-option").get_data(as_text=True)
+    assert 'data-learn-sync="0"' in demo_page
+    skipped = demo.post(
+        "/learn/progress",
+        json=body,
+        headers={"X-CSRFToken": _csrf(demo)},
+    )
+    assert skipped.status_code == 204
+    assert saved["user_id"] == 1
+
+
+def test_empty_progress_does_not_wipe_a_saved_resume(monkeypatch):
+    monkeypatch.setattr(
+        learn_progress,
+        "load_for_user",
+        lambda user_id: {
+            "updated": 4,
+            "last": {"slug": "what-is-an-option", "t": 8, "title": "What is an option?", "number": 1},
+            "done": [],
+        },
+    )
+
+    def fail_write(*_args, **_kwargs):
+        raise AssertionError("empty progress should not write")
+
+    monkeypatch.setattr(learn_progress, "execute", fail_write)
+    assert learn_progress.save_for_user(7, {})["last"]["slug"] == "what-is-an-option"
 
 
 def _assert_public_copy(html):

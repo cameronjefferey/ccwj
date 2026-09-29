@@ -23,7 +23,8 @@
         <h1>{{ series.title }}</h1>
         <p class="learn-lead">{{ series.subhead }}</p>
         {% if first_episode %}
-        <a class="btn btn-primary" href="{{ url_for('learn_episode', slug=first_episode.slug) }}">Start with Episode 1</a>
+        <a class="btn btn-primary" id="learn-start" href="{{ url_for('learn_episode', slug=first_episode.slug) }}" data-start-href="{{ url_for('learn_episode', slug=first_episode.slug) }}" data-start-label="Start with Episode 1">Start with Episode 1</a>
+        <p class="learn-progress-line ht-num" id="learn-progress" hidden></p>
         {% endif %}
     </header>
 
@@ -32,9 +33,9 @@
         <div class="learn-grid">
             {% for episode in episodes %}
             {% if episode.watchable %}
-            <a class="learn-card" href="{{ url_for('learn_episode', slug=episode.slug) }}">
+            <a class="learn-card" href="{{ url_for('learn_episode', slug=episode.slug) }}" data-slug="{{ episode.slug }}" data-number="{{ episode.number }}" data-title="{{ episode.title }}" data-published="{{ '1' if episode.published else '0' }}">
             {% else %}
-            <article class="learn-card">
+            <article class="learn-card" data-slug="{{ episode.slug }}" data-number="{{ episode.number }}" data-title="{{ episode.title }}" data-published="{{ '1' if episode.published else '0' }}">
             {% endif %}
                 <div class="learn-thumb">
                     {% if episode.thumb %}
@@ -54,6 +55,7 @@
                     {% else %}
                     <p class="learn-soon">Coming soon</p>
                     {% endif %}
+                    <p class="learn-watched">Watched</p>
                 </div>
             {% if episode.watchable %}
             </a>
@@ -80,4 +82,5 @@
 {% if episodes|selectattr('watchable')|list or shorts|selectattr('watchable')|list %}
 {% include "learn/_player.html" %}
 {% endif %}
+{% include "learn/_progress.html" %}
 {% endblock %}

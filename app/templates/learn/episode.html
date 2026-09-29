@@ -24,7 +24,7 @@
 {% endblock %}
 
 {% block content %}
-<article class="learn-page learn-episode">
+<article class="learn-page learn-episode" data-slug="{{ episode.slug }}" data-number="{{ episode.number }}" data-title="{{ episode.title }}" data-published="{{ '1' if episode.published else '0' }}">
     <p class="learn-back"><a href="{{ url_for('learn_index') }}">All episodes</a></p>
     <p class="learn-kicker">
         Episode {{ episode.number }}
@@ -54,6 +54,7 @@
         <p>This episode’s video isn’t up yet.</p>
     </div>
     {% endif %}
+    <p class="learn-resume" id="learn-resume" hidden></p>
 
     {% if episode.vocab %}
     <h2 class="learn-label">Words you'll learn</h2>
@@ -129,4 +130,5 @@
 {% if episode.watchable or episode.shorts|selectattr('watchable')|list %}
 {% include "learn/_player.html" %}
 {% endif %}
+{% include "learn/_progress.html" %}
 {% endblock %}

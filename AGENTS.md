@@ -457,7 +457,11 @@ are already `published`, so adding the 11-character YouTube id is enough to
 turn on the Watch link, the nocookie lite embed, chapter seek, and
 VideoObject JSON-LD. `published: false` (episodes 4–10) stays out of the
 sitemap and is `noindex`. Shorts use the same id field and render as 9:16
-cards.
+cards. The series page remembers the last episode in this browser
+(`ht-learn-progress` in localStorage) and says Continue plus “N of M
+watched” once a video actually finishes. Signed-in accounts other than
+the shared demo user also keep that blob in `learn_progress` so it follows
+them after signup (`/learn/progress`, merged on the next signed-in page).
 
 ### Campaign landing (`/start`, endpoint `campaign_start`)
 **Status: Working. Ad destination. Logged-in visitors redirect to Overview.**

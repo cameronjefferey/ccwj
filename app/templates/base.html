@@ -1575,6 +1575,9 @@
             });
         }
     </script>
+    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode') %}
+    {% include "learn/_progress.html" %}
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

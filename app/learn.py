@@ -1,9 +1,16 @@
 """Public Options 101 pages (/learn). No login and no warehouse reads."""
 
-from flask import abort, render_template, request, url_for
+import logging
+
+from flask import abort, jsonify, render_template, request, url_for
+from flask_login import current_user
 
 from app import app
 from app import learn_catalog as catalog
+from app import learn_progress
+from app.extensions import limiter
+
+logger = logging.getLogger(__name__)
 
 _FALLBACK_THUMB = "learn/options-101.png"
 
@@ -108,6 +115,36 @@ def learn_index():
         shorts=[_view_short(short) for short in catalog.series_shorts()],
         first_episode=first,
     )
+
+
+def _can_sync_progress():
+    if not current_user.is_authenticated:
+        return False
+    return getattr(current_user, "username", None) != "demo"
+
+
+@app.route("/learn/progress", methods=["GET", "POST"])
+@limiter.limit("60 per minute")
+def learn_progress_api():
+    """Resume point for the signed-in account. Logged-out and demo stay local."""
+    if not _can_sync_progress():
+        if request.method == "POST":
+            return ("", 204)
+        return jsonify(learn_progress.empty())
+    if request.content_length and request.content_length > 8000:
+        return ("", 204)
+    try:
+        if request.method == "GET":
+            return jsonify(learn_progress.load_for_user(current_user.id))
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            body = {}
+        return jsonify(learn_progress.save_for_user(current_user.id, body))
+    except Exception:
+        logger.warning("learn progress unavailable", exc_info=True)
+        if request.method == "POST":
+            return ("", 204)
+        return jsonify(learn_progress.empty())
 
 
 @app.route("/learn/<slug>")
