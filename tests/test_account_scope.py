@@ -1,4 +1,4 @@
-"""Header account picker: nicknames, cookie restore, shareable URLs."""
+"""Page-header account picker: nicknames, cookie restore, shareable URLs."""
 
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -177,40 +177,45 @@ def test_persist_hook_redirects_and_clear_deletes_cookie():
     assert "ht_tenants=" in resp.headers.get("Set-Cookie", "")
 
 
+def _render_picker(**kwargs):
+    defaults = dict(
+        scope_account_choices=[],
+        visible_account_choices=None,
+        selected_tenant_ids=[],
+        account_groups=[],
+        selected_group_ids=[],
+        tenants_query=None,
+        account_rename_urls={},
+    )
+    defaults.update(kwargs)
+    if defaults["visible_account_choices"] is None:
+        defaults["visible_account_choices"] = defaults["scope_account_choices"]
+    with app.test_request_context("/overview"):
+        return app.jinja_env.get_template("_account_scope_filters.html").render(**defaults)
+
+
 def test_header_picker_template_uses_nicknames():
     choices = [
         {"tenant_id": "snaptrade:aaa", "label": "IRA"},
         {"tenant_id": "snaptrade:bbb", "label": "Unnamed account"},
     ]
-    with app.test_request_context("/overview"):
-        html = app.jinja_env.get_template("_account_scope_filters.html").render(
-            header_account_only=True,
-            scope_account_choices=choices,
-            selected_tenant_ids=[],
-            account_groups=[],
-            selected_group_ids=[],
-            tenants_query=None,
-            account_rename_urls={},
-        )
+    html = _render_picker(scope_account_choices=choices)
     assert "IRA" in html
     assert "Unnamed account" in html
     assert "All accounts" in html
+    assert "ht-page-acct" in html
     assert "Schwab Account" not in html
     assert "••••" not in html
+    assert "Group accounts" in html
 
-    with app.test_request_context("/positions"):
-        page = app.jinja_env.get_template("_account_scope_filters.html").render(
-            header_account_only=False,
-            scope_account_choices=choices,
-            visible_account_choices=choices,
-            selected_tenant_ids=[],
-            account_groups=[],
-            selected_group_ids=[],
-            tenants_query=None,
-            account_rename_urls={},
-        )
-    assert "All accounts" not in page
-    assert "Group accounts" in page
+
+def test_single_account_hides_the_picker():
+    html = _render_picker(
+        scope_account_choices=[{"tenant_id": "snaptrade:aaa", "label": "IRA"}],
+    )
+    assert "All accounts" not in html
+    assert "ht-page-acct" not in html
+    assert "IRA" not in html
 
 
 def test_header_picker_limits_accounts_to_selected_group_members():
@@ -218,18 +223,14 @@ def test_header_picker_limits_accounts_to_selected_group_members():
         {"tenant_id": "snaptrade:aaa", "label": "IRA"},
         {"tenant_id": "snaptrade:bbb", "label": "Taxable"},
     ]
-    with app.test_request_context("/overview?groups=7"):
-        html = app.jinja_env.get_template("_account_scope_filters.html").render(
-            header_account_only=True,
-            scope_account_choices=choices,
-            visible_account_choices=choices[:1],
-            selected_tenant_ids=["snaptrade:aaa"],
-            account_groups=[{"id": 7, "name": "Retirement"}],
-            selected_group_ids=[7],
-            tenants_query=None,
-            groups_query="7",
-            account_rename_urls={},
-        )
+    html = _render_picker(
+        scope_account_choices=choices,
+        visible_account_choices=choices[:1],
+        selected_tenant_ids=["snaptrade:aaa"],
+        account_groups=[{"id": 7, "name": "Retirement", "tenant_ids": ["snaptrade:aaa"]}],
+        selected_group_ids=[7],
+        groups_query="7",
+    )
     assert "IRA" in html
     assert "Taxable" not in html
     assert "snaptrade:bbb" not in html
@@ -249,16 +250,11 @@ def test_header_picker_masks_labels_in_privacy_mode(monkeypatch):
             {"IRA": "Account 1", "Unnamed account": "Account 2"},
         ),
     )
-    with app.test_request_context("/overview?tenants=snaptrade:aaa"):
-        html = app.jinja_env.get_template("_account_scope_filters.html").render(
-            header_account_only=True,
-            scope_account_choices=choices,
-            selected_tenant_ids=["snaptrade:aaa"],
-            account_groups=[],
-            selected_group_ids=[],
-            tenants_query="snaptrade:aaa",
-            account_rename_urls={},
-        )
+    html = _render_picker(
+        scope_account_choices=choices,
+        selected_tenant_ids=["snaptrade:aaa"],
+        tenants_query="snaptrade:aaa",
+    )
     assert "Account 1" in html
     assert "Account 2" in html
     assert "IRA" not in html
@@ -284,16 +280,11 @@ def test_header_picker_orders_masked_labels_numerically(monkeypatch):
     monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
     monkeypatch.setattr("app.privacy.viewer_slots", lambda: (by_tid, {}))
     ordered = sort_masked_account_choices(choices)
-    with app.test_request_context("/overview"):
-        html = app.jinja_env.get_template("_account_scope_filters.html").render(
-            header_account_only=True,
-            scope_account_choices=ordered,
-            selected_tenant_ids=["snaptrade:zzz", "snaptrade:mmm", "snaptrade:ten"],
-            account_groups=[],
-            selected_group_ids=[],
-            tenants_query="snaptrade:zzz,snaptrade:mmm,snaptrade:ten",
-            account_rename_urls={},
-        )
+    html = _render_picker(
+        scope_account_choices=ordered,
+        selected_tenant_ids=["snaptrade:zzz", "snaptrade:mmm", "snaptrade:ten"],
+        tenants_query="snaptrade:zzz,snaptrade:mmm,snaptrade:ten",
+    )
     spans = re.findall(r"<span>(Account \d+)</span>", html)
     assert spans == ["Account 1", "Account 2", "Account 10"]
     assert "Alpha" not in html and "Zulu" not in html
@@ -345,9 +336,56 @@ def test_context_processor_sorts_the_header_picker(monkeypatch):
     ]
 
 
-def test_base_hides_picker_until_two_accounts():
+def test_nav_does_not_host_the_account_picker():
+    """The picker is a page-header filter, and only when there are 2+ accounts."""
     from pathlib import Path
-    base = (Path(app.root_path) / "templates" / "base.html").read_text()
-    assert "ht-header-scope" in base
-    assert "scope_account_choices|length > 1" in base
-    assert "data-ht-persist-tenants" in base
+
+    templates = Path(app.root_path) / "templates"
+    base = (templates / "base.html").read_text()
+    nav = base.split("<nav", 1)[1].split("</nav>", 1)[0]
+    assert "ht-header-scope" not in base
+    assert "header_account_only" not in base
+    assert "ht-page-acct" not in nav
+    assert "_account_scope_filters.html" not in nav
+    assert "--ht-nav-h" in base
+
+    partial = (templates / "_account_scope_filters.html").read_text()
+    assert "scope_account_choices|length > 1" in partial
+    assert "ht-page-acct" in partial
+
+    # Every surface that filters by account keeps Apply persistence.
+    for name in (
+        "weekly_review.html",
+        "today.html",
+        "positions.html",
+        "position_detail.html",
+        "accounts.html",
+        "wealth.html",
+        "strategies.html",
+        "strategy_fit.html",
+        "sectors.html",
+        "trader_story.html",
+        "earnings_watch.html",
+        "insights.html",
+        "day_detail.html",
+    ):
+        text = (templates / name).read_text()
+        assert "_account_scope_filters.html" in text, name
+        assert "data-ht-persist-tenants" in text, name
+        assert "data-ht-preserve-query" in text, name
+        assert "scope_account_choices|length > 1" in text, name
+
+
+def test_symbol_tabstrip_sticks_below_the_nav():
+    from pathlib import Path
+
+    templates = Path(app.root_path) / "templates"
+    strip = (templates / "_symbol_tabstrip.html").read_text()
+    base = (templates / "base.html").read_text()
+    assert "top: var(--ht-nav-h, 3.5rem)" in strip
+    assert "z-index: 1020" in strip
+    assert "background: #0a0e17" in strip
+    # The late base rule outranks the strip's own <style> if both set top.
+    assert "body .sym-tabstrip" in base
+    assert "top: var(--ht-nav-h, 3.5rem)" in base
+    assert 'setProperty("--ht-nav-h"' in base

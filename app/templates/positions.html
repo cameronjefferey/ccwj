@@ -260,8 +260,8 @@
 {% set _mixed_ct   = status_counts.Mixed   if status_counts else 0 %}
 <div class="review-hero pos-hero">
     <div class="ov-bar">
-        {% if (_auth_acct_count > 1) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero">
+        {% if scope_account_choices|length > 1 or (_auth_acct_count > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% with scope_account_options = user_accounts if user_accounts else accounts %}
             {% include "_account_scope_filters.html" %}
             {% endwith %}

@@ -94,8 +94,8 @@
 
 <div class="review-hero ew-hero">
     <div class="ov-bar" style="flex:1 0 100%;">
-        {% if (accounts and accounts|length > 1) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero">
+        {% if scope_account_choices|length > 1 or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% include "_account_scope_filters.html" %}
         </form>
         {% endif %}
