@@ -224,6 +224,103 @@ def build_held_charts(execution_df, prices_df, marks_df=None, *,
     return charts
 
 
+def held_page_summary(charts):
+    """Headline above the trades table, or None when nothing closed early.
+
+    The warehouse ``difference`` is realized minus the expiry outcome, so
+    a negative sum means holding finished higher: closing early cost that
+    amount. A positive sum means the early exits came out ahead.
+    """
+    if not charts:
+        return None
+    net_cost = -sum(float(c.get("difference") or 0) for c in charts)
+    count = len(charts)
+    across = f" across {count} trades" if count > 1 else ""
+    if abs(net_cost) < 0.5:
+        headline = f"Closing early matched holding to expiration{across}"
+    elif net_cost > 0:
+        headline = (
+            f"Closing early cost you {_abs_money(net_cost)}{across}"
+            " vs holding to expiration"
+        )
+    else:
+        headline = (
+            f"Closing early saved you {_abs_money(net_cost)}{across}"
+            " vs holding"
+        )
+    meta = None
+    if count == 1:
+        chart = charts[0]
+        contracts = int(chart.get("contracts") or 0)
+        word = "contract" if contracts == 1 else "contracts"
+        expired = _fmt_day(_as_date(chart.get("expiry_date"))) if chart.get("expiry_date") else ""
+        meta = (
+            f"{chart.get('label') or 'Option'}"
+            f" · {contracts} {word}"
+            f" · closed {chart.get('close_date_label') or ''}"
+            f" · expired {expired}"
+        ).strip()
+    return {
+        "headline": headline,
+        "meta": meta,
+        "count": count,
+        "open_id": charts[0].get("dom_id") or "held-0",
+        "net_cost": round(net_cost, 2),
+    }
+
+
+def outcome_pill(difference):
+    """Short trades-table label. The column already says If held."""
+    if difference is None:
+        return None
+    try:
+        delta = float(difference)
+    except (TypeError, ValueError):
+        return None
+    if abs(delta) < 0.5:
+        return "Same"
+    amount = _abs_money(delta)
+    if delta < 0:
+        return f"+{amount} more"
+    return f"{amount} less"
+
+
+def stamp_held_column(charts, outcomes):
+    """Mark early-closed option rows that have a chart. Equity rows stay blank.
+
+    Match ``(tenant_id, trade_symbol, open_date)`` first. A symbol with
+    exactly one chart still matches when the outcome date is missing.
+    """
+    if not outcomes:
+        return outcomes
+    by_exact = {}
+    by_symbol = {}
+    for chart in charts or []:
+        tenant = str(chart.get("tenant_id") or "")
+        symbol = str(chart.get("trade_symbol") or "")
+        opened = str(chart.get("open_date") or "")[:10]
+        by_exact[(tenant, symbol, opened)] = chart
+        by_symbol.setdefault((tenant, symbol), []).append(chart)
+    for outcome in outcomes:
+        if str(outcome.get("type") or "") != "option":
+            continue
+        tenant = str(outcome.get("tenant_id") or "")
+        symbol = str(outcome.get("trade_symbol") or "")
+        opened = str(outcome.get("open_date") or "")[:10]
+        chart = by_exact.get((tenant, symbol, opened))
+        if chart is None:
+            matches = by_symbol.get((tenant, symbol), [])
+            if len(matches) == 1:
+                chart = matches[0]
+        if chart is None:
+            continue
+        delta = chart.get("difference")
+        outcome["held_id"] = chart.get("dom_id")
+        outcome["held_pill"] = outcome_pill(delta)
+        outcome["held_better"] = delta is not None and float(delta) < 0
+    return outcomes
+
+
 def peek_held_summary(charts, limit=48):
     """Compact drawer payload for the largest early-close chart, or None."""
     if not charts:
@@ -572,6 +669,11 @@ def _signed_money(v):
         return "—"
     dec = 0 if abs(v) >= 100 else 2
     return fmt_money(v, decimals=dec, signed=True)
+
+
+def _abs_money(v):
+    dec = 0 if abs(float(v)) >= 100 else 2
+    return fmt_money(abs(float(v)), decimals=dec, signed=False)
 
 
 def _price_display(v):
