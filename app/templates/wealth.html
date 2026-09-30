@@ -153,12 +153,12 @@
 {% block content %}
 <div class="review-hero wealth-hero">
     <div class="ov-bar">
-        {% if (wealth_account_choices and wealth_account_choices|length > 0) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero">
+        {% if (scope_account_choices|length > 1) or (wealth_account_choices and wealth_account_choices|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             <input type="hidden" name="view" value="value">
             <input type="hidden" name="range" value="{{ selected_range }}">
             {% if exclude_transfers %}<input type="hidden" name="exclude_transfers" value="1">{% endif %}
-            {% with scope_account_options = wealth_account_choices, account_filter_always = true %}
+            {% with scope_account_options = wealth_account_choices %}
             {% include "_account_scope_filters.html" %}
             {% endwith %}
         </form>

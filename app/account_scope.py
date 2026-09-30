@@ -1,4 +1,4 @@
-"""Header account picker: nicknames, ``?tenants=``, and a saved choice.
+"""Page-header account picker: nicknames, ``?tenants=``, and a saved choice.
 
 The warehouse filter is still ``?tenants=`` (see ``_tenants_for_scope``).
 The header control writes that query so a link stays shareable. A cookie

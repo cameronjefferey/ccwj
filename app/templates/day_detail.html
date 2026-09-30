@@ -58,6 +58,14 @@
 </style>
 
 <div class="dd-hero mb-4" id="day-review">
+    {% if scope_account_choices|length > 1 or account_groups %}
+    <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1" style="justify-content: flex-end; margin: 0 0 .85rem;">
+        {% include "_account_scope_filters.html" %}
+        {% if scope_is_filtered %}
+        <a class="filter-reset" href="{{ url_for('day_detail', day_str=request.view_args.get('day_str'), scope='all') }}">Reset</a>
+        {% endif %}
+    </form>
+    {% endif %}
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <div class="dd-date">Day review &middot; {{ day_label }}</div>

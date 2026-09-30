@@ -190,11 +190,14 @@ What's working:
 - Session hero: brand and the Group filter sit in the dark
  bar (same bar on Today, Positions, Accounts, Strategies, Sectors,
  Trader Profile, Position Detail, Earnings, and Insights; the global
- nav stays until that header replaces it). The Account control is in
- the app header when the user has two or more accounts. It shows
- nicknames only, stays hidden for a single account, writes `?tenants=`,
- and a cookie restores that shareable URL on the next visit. Groups
- stay on the page toolbar. Date of the close, then total value, the last close's move
+ nav stays until that header replaces it). The Account control is a
+ compact filter in that page header (Overview, Today, Positions,
+ Accounts, Strategies, Sectors, Trader Profile, Position Detail,
+ Earnings, Insights, and the day review) when the user has two or more
+ accounts. It is not in the top nav. It shows nicknames only, stays
+ hidden for a single account, writes `?tenants=`, and a cookie restores
+ that shareable URL on the next visit. Groups stay beside it on the
+ same toolbar. Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
  This week, and percent invested. The one-line takeaway calls these
  **account-value changes** and lists one-week benchmark figures without
@@ -383,8 +386,9 @@ What's working:
   it cannot widen the page. Each row opens that contract's chart. On a
   phone the chart is a full-viewport bottom sheet. The difference uses
   the same words on the card and in the panel ("$X more if held" /
-  "$X less if held"). The same pill
-  stays on the Position Legs row. The panel steps between charts,
+  "$X less if held"). The Position Legs cell shows that if-held P&L
+  in dollars, or an em dash when the expiry counterfactual does not
+  apply; the same sentence is the cell's tooltip. The panel steps between charts,
   largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
   name when privacy mode is on. Math lives in `app/held_chart.py`; no
@@ -395,11 +399,13 @@ What's working:
 - **Covered call runs (Sep 2026).** A share lot and the calls written
   against it are one run, from the buy (or a put assignment, for a
   wheel) through the sale or assignment, or through today if the shares
-  are still held. The card under the position review lists each call
-  (strike, expiry, premium, outcome: expired / closed / assigned /
-  rolled / open), a running premium total, the share result, and one
-  net for the whole run. Broker fees are left out of that math and the
-  card says so. Multiple runs, partial sales, and partial coverage stay
+  are still held. The card under the position review keeps the run
+  header, then a collapsed calls-net row (outcome groups inside it,
+  each group collapsed to its badge, count, and net, sorted by that
+  net). Opening a group lists that outcome's calls (strike, expiry,
+  net — expired / closed / assigned / rolled / open) in date order.
+  The share result and one whole-run net stay on the card. Broker
+  fees are left out of that math and the card says so. Multiple runs, partial sales, and partial coverage stay
   on the same lot until the shares are flat. Built in
   `app/covered_call_runs.py` from the fills and inferred opening balances
   the page already loaded (tenant-scoped, before the leg filter so one leg
@@ -932,7 +938,8 @@ Users trade multiple accounts. All logic must:
 Users can **group** accounts (kids / sara / 401ks) on Settings → Accounts & data.
 Membership is many-to-many on `tenant_id`; `?groups=` is the union of selected
 groups' members, then intersected with `?account=` / `?tenant=` / `?tenants=`.
-The Account control lives in the app header. It lists nicknames only
+The Account control lives in the page header of surfaces whose data
+follows the account scope (not the top nav). It lists nicknames only
 (no broker masks or account numbers) and is hidden when the user has
 one account. It writes `?tenants=` so a filtered view stays shareable.
 A cookie (`ht_tenants`) restores that URL on a later visit that has no

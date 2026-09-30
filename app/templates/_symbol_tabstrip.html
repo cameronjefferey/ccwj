@@ -25,12 +25,27 @@
 <style>
     .sym-tabstrip {
         position: sticky;
-        top: 0;
-        z-index: 30;
-        background: #121826;
+        /* Sit fully under the sticky nav. --ht-nav-h is the measured
+           navbar height (base.html); 3.5rem covers the bar before that
+           script runs. z-index stays under the nav (1030) and over page
+           cards so the row is not clipped and content cannot paint
+           through it. Bottom spacing is padding, not margin, so the
+           opaque plate includes the gap under the chips. */
+        top: var(--ht-nav-h, 3.5rem);
+        z-index: 1020;
+        background: #0a0e17;
         border-bottom: 1px solid #243049;
-        padding: .5rem .25rem .35rem;
-        margin: 0 -.25rem 1rem;
+        box-shadow: 0 -8px 0 0 #0a0e17;
+        padding: .5rem .75rem 1rem;
+        margin: 0 -.5rem 0;
+    }
+    @media (min-width: 768px) {
+        .sym-tabstrip {
+            margin-left: -1.5rem;
+            margin-right: -1.5rem;
+            padding-left: 1.75rem;
+            padding-right: 1.75rem;
+        }
     }
     .sym-tabstrip__controls {
         display: flex;
@@ -202,7 +217,11 @@
     /* Mobile: collapse the strip into a dropdown + prev/next chevrons */
     .sym-tabstrip__mobile { display: none; }
     @media (max-width: 640px) {
-        .sym-tabstrip { padding: .4rem .15rem .25rem; }
+        .sym-tabstrip {
+            padding: .45rem .65rem .85rem;
+            margin-left: -.5rem;
+            margin-right: -.5rem;
+        }
         .sym-tabstrip__rail { display: none; }
         .sym-tabstrip__sort { display: none; }
         .sym-tabstrip__count { display: none; }

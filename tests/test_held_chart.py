@@ -615,9 +615,11 @@ def test_stamp_marks_only_the_matching_option_row():
     ]
     stamp_held_column(charts, outcomes)
     assert outcomes[0]["held_pill"] == "$15,266 more if held"
+    assert outcomes[0]["pnl_if_held"] == 11933.0
     assert outcomes[0]["held_better"] is True
     assert outcomes[0]["held_id"] == "held-0"
     assert "held_pill" not in outcomes[1]
+    assert "pnl_if_held" not in outcomes[1]
     assert "held_pill" not in outcomes[2]
 
 

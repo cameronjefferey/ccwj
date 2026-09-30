@@ -463,47 +463,49 @@
         }
         .ht-ms-apply-row .btn { flex: 1; }
 
-        /* Header account picker — same multi-select as the page toolbar,
-           sitting in the nav so every page can filter. */
-        .ht-header-scope {
-            display: flex;
+        /* Page-header account filter. Compact row in the dark hero,
+           not the nav. Only rendered when the user has 2+ accounts. */
+        .filter-bar > .ht-page-acct {
+            flex-direction: row;
             align-items: center;
-            margin: 0 .35rem 0 .15rem;
+            gap: .4rem;
         }
-        .ht-header-scope .ht-ms-dd { flex-direction: row; align-items: center; gap: .35rem; }
-        .ht-header-scope .lblh {
+        .filter-bar > .ht-page-acct .lblh {
             margin: 0;
             color: #8a97b1;
             font-size: .62rem;
         }
-        .ht-header-scope .ht-ms-btn {
+        .ht-page-acct .ht-ms-btn {
             min-width: 0;
-            max-width: 11rem;
-            background: #121826;
+            max-width: 12rem;
+            background: #0a0e17;
             color: #e8edf7;
             border-color: #243049;
             font-size: .8rem;
+            border-radius: 999px;
+            padding-top: .15rem;
+            padding-bottom: .15rem;
         }
-        .ht-header-scope .ht-ms-btn:hover,
-        .ht-header-scope .ht-ms-btn:focus {
+        .ht-page-acct .ht-ms-btn:hover,
+        .ht-page-acct .ht-ms-btn:focus {
             background: #1a2233;
             color: #fff;
             border-color: #5b8cff;
         }
-        .ht-header-scope .dropdown-menu {
+        .ht-page-acct .dropdown-menu {
             background: #121826;
             border: 1px solid #243049;
             z-index: 1050;
         }
-        .ht-header-scope .ht-ms-item { color: #e8edf7; }
-        .ht-header-scope .ht-ms-item:hover { background: #1a2233; color: #fff; }
-        .ht-header-scope .ht-ms-apply-row {
+        .ht-page-acct .ht-ms-item { color: #e8edf7; }
+        .ht-page-acct .ht-ms-item:hover,
+        .ht-page-acct .ht-ms-item:focus { background: #1a2233; color: #fff; }
+        .ht-page-acct .ht-ms-apply-row {
             background: #121826;
             border-top-color: #243049;
         }
-        @media (max-width: 991.98px) {
-            .ht-header-scope .lblh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-            .ht-header-scope .ht-ms-btn { max-width: 7.25rem; }
+        @media (max-width: 640px) {
+            .ht-page-acct .ht-ms-btn { max-width: 8.5rem; }
         }
 
         /* Glossary tooltip. The header word is the control (dotted
@@ -733,7 +735,7 @@
         #symbolTabStrip,
         #position-chart,
         #position-accounts,
-        #position-legs { scroll-margin-top: 4.5rem; }
+        #position-legs { scroll-margin-top: calc(var(--ht-nav-h, 3.5rem) + .75rem); }
         .ht-sticky { max-height: 75vh; overflow-y: auto; }
         .ht-sticky table thead th {
             position: sticky; top: 0; z-index: 5;
@@ -1109,10 +1111,18 @@
         body .ew-card .move.neg { color: #f0556d; }
         body table.fit thead th,
         body table.fit tbody th.strategy,
-        body .sym-tabstrip,
         body .sym-tab,
         body .sym-tabstrip__search input,
         body .atlas { background: #0a0e17; color: #e8edf7; }
+        /* Higher specificity than the strip's own rule so a later
+           top: 0 cannot tuck the chips under the nav again. */
+        body .sym-tabstrip {
+            position: sticky;
+            top: var(--ht-nav-h, 3.5rem);
+            z-index: 1020;
+            background: #0a0e17;
+            color: #e8edf7;
+        }
         body .sym-tab.active { background: rgba(91,140,255,.15); color: #5b8cff; border-color: #5b8cff; }
     </style>
     {% if reddit_pixel_id and reddit_pixel_event %}
@@ -1172,18 +1182,6 @@
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
             <a class="navbar-brand ht-wordmark" href="{{ scoped_url('weekly_review') if current_user.is_authenticated else url_for('index') }}">happy<span>trader</span></a>
-            {% if current_user.is_authenticated and scope_account_choices|length > 1 %}
-            {# One account control for every page. Writes ?tenants= so the
-               link stays shareable, and scope-filters.js stores the choice.
-               Hidden when the user has a single account. Nicknames only. #}
-            <form method="get" class="ht-header-scope" action="{{ request.path }}"
-                  data-ht-preserve-query="1" data-ht-persist-tenants="1"
-                  aria-label="Account filter">
-                {% with header_account_only=true %}
-                {% include "_account_scope_filters.html" %}
-                {% endwith %}
-            </form>
-            {% endif %}
             <div class="d-flex align-items-center gap-2">
                 {% if current_user.is_authenticated %}
                 {# Phone-only palette trigger OUTSIDE the collapse: on mobile
@@ -1368,6 +1366,26 @@
             </div>
         </div>
     </nav>
+    <script>
+    /* Measured navbar height so sticky page chrome (symbol chips) clears
+       the bar on desktop and on a phone, including when the bar wraps. */
+    (function () {
+        function syncNavH() {
+            var nav = document.querySelector("nav.navbar");
+            if (!nav) return;
+            var h = nav.getBoundingClientRect().height;
+            if (h > 0) {
+                document.documentElement.style.setProperty("--ht-nav-h", h + "px");
+            }
+        }
+        syncNavH();
+        window.addEventListener("resize", syncNavH);
+        if (window.ResizeObserver) {
+            var nav = document.querySelector("nav.navbar");
+            if (nav) new ResizeObserver(syncNavH).observe(nav);
+        }
+    })();
+    </script>
 
     {# Top strip under the nav. Overview pending-close is first — that
        sentence used to live in the hero and was easy to miss. Broker

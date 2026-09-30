@@ -307,10 +307,17 @@ def outcome_pill(difference):
 
 
 def stamp_held_column(charts, outcomes):
-    """Mark early-closed option rows that have a chart. Equity rows stay blank.
+    """Mark early-closed option rows that have an expiry counterfactual.
+
+    Equity, opens, expirations, and closes whose expiry price is not
+    knowable yet are left unset. Position Legs renders an em dash for
+    those and keeps the column only as wide as that dash (or the
+    counterfactual dollars, when a chart exists).
 
     Match ``(tenant_id, trade_symbol, open_date)`` first. A symbol with
     exactly one chart still matches when the outcome date is missing.
+    ``pnl_if_held`` is the counterfactual P&L. ``held_pill`` is the
+    long sentence (``$X more if held``) for the tooltip.
     """
     if not outcomes:
         return outcomes
@@ -338,6 +345,7 @@ def stamp_held_column(charts, outcomes):
         delta = chart.get("difference")
         outcome["held_id"] = chart.get("dom_id")
         outcome["held_pill"] = outcome_pill(delta)
+        outcome["pnl_if_held"] = chart.get("pnl_if_held")
         outcome["held_better"] = delta is not None and float(delta) < 0
     return outcomes
 

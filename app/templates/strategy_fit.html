@@ -499,8 +499,8 @@
 
 <div class="review-hero fit-hero">
     <div class="ov-bar">
-        {% if (accounts and accounts|length > 1) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero">
+        {% if scope_account_choices|length > 1 or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             <input type="hidden" name="view" value="fit">
             {% if drill_sector %}<input type="hidden" name="sector" value="{{ drill_sector }}">{% endif %}
             {% if dim %}<input type="hidden" name="dim" value="{{ dim }}">{% endif %}
