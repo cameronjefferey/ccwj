@@ -519,6 +519,169 @@ def test_compose_mirror_empty_for_empty_story():
     assert compose_mirror(None, "X") == []
 
 
+def test_story_summary_income_kept_and_rank():
+    """The card's two tiles are the same dollars the prose mirror names."""
+    from app.position_story import compose_story_summary
+
+    df = _trades([
+        (date(2024, 1, 2), "equity_buy", "Equity", "RKLB", 1000, 19.71, -19710.0),
+        (date(2024, 1, 3), "option_sell_to_open", "Call", "RKLB 240216C00022000", 10, 0.47, 473.0),
+        (date(2024, 2, 16), "option_expired", "Call", "RKLB 240216C00022000", 10, None, 0.0),
+        (date(2024, 3, 1), "option_sell_to_open", "Call", "RKLB 240419C00025000", 10, 0.60, 600.0),
+        (date(2024, 4, 19), "option_expired", "Call", "RKLB 240419C00025000", 10, None, 0.0),
+    ])
+    _, _, stats = build_position_story(df, None)
+    summary = compose_story_summary(stats, book_rank=14, book_size=141)
+    labels = [t["label"] for t in summary["tiles"]]
+    assert labels == ["Income strategy", "Kept at expiry"]
+    income, kept = summary["tiles"]
+    assert income["value"] == "$1,073"
+    assert income["tone"] == "pos"
+    assert income["sub"] == "collected across 2 covered calls"
+    assert "premium" not in income["sub"]
+    assert "net" not in income["sub"]
+    assert kept["value"] == "$1,073"
+    assert kept["sub"] == "2 short contracts expired worthless"
+    assert summary["rank"]["rank"] == 14
+    assert summary["rank"]["label"] == "of 141 symbols by total P&L"
+    # #14 of 141 sits near the top, so the bar is mostly full.
+    assert summary["rank"]["fill"] == 90.8
+
+
+def test_story_summary_directional_net_is_not_called_premium():
+    from app.position_story import compose_story_summary
+
+    df = _trades([
+        (date(2024, 1, 2), "option_buy_to_open", "Call",
+         "AMD 240216C00100000", 2, 5.0, -1000.0),
+        (date(2024, 2, 1), "option_sell_to_close", "Call",
+         "AMD 240216C00100000", 2, 2.0, 400.0),
+    ])
+    _, _, stats = build_position_story(df, None)
+    summary = compose_story_summary(stats, book_rank=2, book_size=3)
+    assert summary["rank"] is None  # book of 3 is below the rank gate
+    assert len(summary["tiles"]) == 1
+    tile = summary["tiles"][0]
+    assert tile["label"] == "Directional"
+    assert tile["tone"] == "neg"
+    assert tile["value"] == "-$600"
+    assert tile["sub"] == "net across 1 long-option purchase"
+    assert "premium" not in tile["sub"]
+    assert "premium" not in tile["label"]
+
+
+def test_story_summary_directional_gain_and_open_risk():
+    from app.position_story import compose_story_summary
+
+    closed = _trades([
+        (date(2024, 1, 2), "option_buy_to_open", "Call",
+         "AMD 240216C00100000", 1, 5.0, -500.0),
+        (date(2024, 2, 1), "option_sell_to_close", "Call",
+         "AMD 240216C00100000", 1, 8.0, 800.0),
+    ])
+    _, _, stats = build_position_story(closed, None)
+    tile = compose_story_summary(stats)["tiles"][0]
+    assert tile["tone"] == "pos"
+    assert tile["value"] == "$300"
+    assert tile["value"].startswith("$")
+
+    still_open = _trades([
+        (date(2024, 1, 2), "option_buy_to_open", "Call",
+         "AMD 240216C00100000", 1, 5.0, -500.0),
+    ])
+    _, _, stats = build_position_story(still_open, None)
+    tile = compose_story_summary(stats)["tiles"][0]
+    assert tile["label"] == "Directional"
+    assert tile["tone"] == "neutral"
+    assert tile["sub"].startswith("at risk across")
+    assert "premium" not in tile["sub"]
+
+
+def test_story_summary_omits_absent_tiles_and_caps_at_two():
+    from app.position_story import compose_story_summary
+
+    _, _, empty = build_position_story(pd.DataFrame(), None)
+    assert compose_story_summary(empty, book_rank=1, book_size=10) is None
+    assert compose_story_summary(None) is None
+
+    # Dividends outrank the smaller kept-at-expiry fact, same as the
+    # prose mirror's top-two cap. Kept is omitted; income stays.
+    df = _trades([
+        (date(2024, 1, 2), "equity_buy", "Equity", "JEPI", 100, 50.0, -5000.0),
+        (date(2024, 1, 3), "option_sell_to_open", "Call",
+         "JEPI 240216C00055000", 1, 1.0, 100.0),
+        (date(2024, 2, 16), "option_expired", "Call",
+         "JEPI 240216C00055000", 1, None, 0.0),
+    ])
+    _, _, stats = build_position_story(df, None)
+    # Dividend dollars outrank kept-at-expiry. The cap is what we test,
+    # so the fingerprint is stamped directly.
+    stats = dict(stats)
+    stats["dividend_total"] = 5000.0
+    summary = compose_story_summary(stats)
+    labels = [t["label"] for t in summary["tiles"]]
+    assert labels == ["Dividends", "Income strategy"]
+    assert "Kept at expiry" not in labels
+    assert len(summary["tiles"]) == 2
+
+
+def test_story_summary_template_with_and_without_early_exits():
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    env = Environment(
+        loader=FileSystemLoader("app/templates"),
+        autoescape=select_autoescape(["html"]),
+    )
+    env.globals["scoped_url"] = lambda *args, **kwargs: "/story"
+    summary = {
+        "tiles": [
+            {"label": "Income strategy", "value": "$19,888", "tone": "pos",
+             "sub": "collected across 18 covered calls"},
+            {"label": "Kept at expiry", "value": "$9,744", "tone": "pos",
+             "sub": "12 short contracts expired worthless"},
+        ],
+        "rank": {"rank": 14, "size": 141, "fill": 90.8,
+                 "label": "of 141 symbols by total P&L"},
+    }
+    header = {"days": 35, "span": "5 months", "accounts": ["Sara Investment"]}
+    callout = {
+        "tone": "cost",
+        "title": "Early exits cost you",
+        "lead": ("Both contracts you closed early here would have "
+                 "expired worthless anyway."),
+        "tail_before": "Closing early gave up ",
+        "amount_label": "$9,387",
+        "tail_after": " versus holding.",
+        "roll_line": "",
+    }
+    html = env.get_template("_story_summary.html").render(
+        symbol="BE", story_header=header, story_summary=summary,
+        story_callout=callout,
+    )
+    quiet = env.get_template("_story_summary.html").render(
+        symbol="BE", story_header=header, story_summary=summary,
+        story_callout=None,
+    )
+    assert "BE" in html
+    assert "Sara Investment" in html
+    assert "35 trade days over 5 months" in html
+    assert "Income strategy" in html
+    assert "$19,888" in html
+    assert "collected across 18 covered calls" in html
+    assert "Kept at expiry" in html
+    assert "$9,744" in html
+    assert '>#14<' in html or ">#14<" in html
+    assert "of 141 symbols by total P&amp;L" in html
+    assert "width: 90.8%" in html
+    assert "Early exits cost you" in html
+    assert "story-callout-amt" in html and "$9,387" in html
+    assert "See your full trader profile" in html
+    assert "story-mirror" not in html
+    assert "Early exits" not in quiet
+    assert "story-callout" not in quiet
+    assert "Income strategy" in quiet
+
+
 def test_roll_open_leg_counts_as_premium_collected():
     # Identity/eras consistency: the /story eras sum STO credits straight
     # from fills, so the fingerprint must count a roll's open leg too.

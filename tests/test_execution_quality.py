@@ -18,6 +18,7 @@ from app.execution_quality import (
     exit_notes,
     open_option_record,
     summarize_execution,
+    symbol_execution_callout,
     symbol_execution_sentences,
     verdicts_landed,
     verdicts_pending,
@@ -197,6 +198,44 @@ def test_symbol_sentences_roll_line():
     ])
     out = symbol_execution_sentences(df)
     assert any("2 of 2 rolls were never tested" in s for s in out)
+
+
+def test_symbol_callout_cost_when_both_expired_worthless():
+    df = pd.DataFrame([
+        _row(early_close_vs_expiry_delta=-45.0),
+        _row(trade_symbol="SOFI 250620C00007500",
+             early_close_vs_expiry_delta=-30.0),
+    ])
+    out = symbol_execution_callout(df)
+    assert out["tone"] == "cost"
+    assert out["title"] == "Early exits cost you"
+    assert out["lead"].startswith("Both contracts you closed early")
+    assert "expired worthless anyway" in out["lead"]
+    assert out["amount_label"] == "$75"
+    assert out["tail_before"] == "Closing early gave up "
+    assert out["tail_after"] == " versus holding."
+    assert out["roll_line"] == ""
+
+
+def test_symbol_callout_saved_and_partial_worthless():
+    df = pd.DataFrame([
+        _row(early_close_vs_expiry_delta=-40.0),
+        _row(trade_symbol="SOFI 250620C00008000", expired_worthless=False,
+             early_close_vs_expiry_delta=820.0),
+    ])
+    out = symbol_execution_callout(df)
+    assert out["tone"] == "saved"
+    assert out["title"] == "Early exits saved you"
+    assert out["lead"] == ("1 of 2 contracts you closed early here "
+                            "expired worthless anyway.")
+    assert out["amount_label"] == "$780"
+    assert "ahead versus holding" in out["tail_after"]
+
+
+def test_symbol_callout_absent_without_early_exits():
+    assert symbol_execution_callout(pd.DataFrame()) is None
+    assert symbol_execution_callout(None) is None
+    assert symbol_execution_callout(pd.DataFrame([_row()])) is None
 
 
 # ── Day-row verdict notes ────────────────────────────────────────────────

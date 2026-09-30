@@ -689,43 +689,10 @@
 {# ── Position story: day-by-day review in Options / Shares / Cash ── #}
 {% if story_days %}
 {% set _day_count = story_days | selectattr('type', 'equalto', 'day') | list | length %}
-{% set _mirror = (story_mirror[1:] if story_header and story_mirror else story_mirror) %}
 {% set _share_label = story_share_label|default('Shares') %}
-<div class="card stat-card p-4 mb-4" id="storyCard">
-    {% if story_header %}
-    <div class="story-top">
-        <div>
-            <div class="story-symbol">{{ symbol }}</div>
-            <div class="story-kicker">
-                {{ story_header.days }} trade day{{ 's' if story_header.days != 1 }}{% if story_header.span %} over {{ story_header.span }}{% endif %}
-            </div>
-        </div>
-        {% if story_header.accounts|length == 1 %}
-        <span class="story-acct">{{ story_header.accounts[0] }}</span>
-        {% elif story_header.accounts|length > 1 %}
-        <span class="story-acct">{{ story_header.accounts|length }} accounts</span>
-        {% endif %}
-    </div>
-    {% else %}
-    <h6 class="fw-bold mb-1">Position review</h6>
-    {% endif %}
-    {% if _mirror %}
-    <div class="story-mirror">
-        {% for s in _mirror %}
-        <p class="mb-1">{{ s }}</p>
-        {% endfor %}
-        <p class="mb-0 mt-2 small">
-            <a href="{{ scoped_url('trader_story') }}" class="story-profile-link">
-                See your full trader profile &rarr;
-            </a>
-        </p>
-    </div>
-    {% elif story_header %}
-    <p class="mb-2 mt-2 small">
-        <a href="{{ scoped_url('trader_story') }}" class="story-profile-link">See your full trader profile &rarr;</a>
-    </p>
-    {% endif %}
-    <details id="storyDetails" class="pd-toggle">
+<div class="story-wrap">
+    {% include "_story_summary.html" %}
+    <details id="storyDetails" class="pd-toggle story-fold">
         <summary>
             <span class="story-open-cta story-cta-closed">Show the day-by-day review ({{ _day_count }} trade day{{ 's' if _day_count != 1 }}) &#9662;</span>
             <span class="story-open-cta story-cta-open">Hide the day-by-day review &#9652;</span>

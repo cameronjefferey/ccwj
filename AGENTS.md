@@ -1221,8 +1221,8 @@ Insights **Data Coverage** is reliable / contracts held since marks began
 working pipeline look like 3% coverage. `data_reliable` is density ≥40%
 with ≥2 snapshots (`greatest(days_in_trade,1)` so same-day 0DTE marks
 count). Surfaces: Trader Profile "Execution review" card (gated ≥5 graded
-contracts — the "after X days of data" promise), Position review mirror
-sentences (≥2 graded), and day-row verdicts (the review shows them as "In hindsight: …"; the stored sentence still starts "After the fact:")
+contracts — the "after X days of data" promise), Position review early-exit
+callout (≥2 graded), and day-row verdicts (the review shows them as "In hindsight: …"; the stored sentence still starts "After the fact:")
 appended to the completing close's headline via the `exit_notes`
 param of `build_position_story`. Copy register: neutral evidence, counts
 and dollars, never advice — every early close also removed risk, and the
@@ -1511,11 +1511,15 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   premium collected, covered calls, kept-at-expiry, wheels completed,
   contract W/L, quiet-stretch P&L, adds/trims…) recorded by the same
   branches that write the sentences, so the mirror can never disagree
-  with the review rows. `compose_mirror()` turns that + the tab-strip
-  book rank into a 2-4 sentence MIRROR SUMMARY ("RKLB: 22 trade days
-  across 20 months… you traded RKLB primarily for income… ranks #4 of
-  94 symbols") rendered always-visible above the day-by-day review,
-  which is COLLAPSED by default behind "Show the day-by-day review".
+  with the review rows. `compose_story_summary()` turns that fingerprint
+  plus the tab-strip book rank into the position summary card above the
+  day-by-day review: symbol, account, and trade-day span; up to two
+  stat tiles (income premium collected, kept-at-expiry, directional
+  net, and the other fingerprint facts — a tile is omitted when its
+  count is zero, and a net is never labeled premium); a P&L rank
+  bar; and, when at least two early exits were graded, an early-exit
+  callout (`symbol_execution_callout`). The day-by-day review stays
+  collapsed behind "Show the day-by-day review".
   Chart↔review choreography is CLICK-driven (deliberate act, not hover
   strobe): clicking a chart dot opens the review and scrolls/flashes its
   day; clicking a review day pops the dot's tooltip on the chart (click

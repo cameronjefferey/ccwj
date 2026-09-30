@@ -185,5 +185,123 @@
         }
         .story-cash, .story-realized > div:last-child { text-align: left; }
         .story-date { display: flex; gap: .4rem; align-items: baseline; }
+        #storyCard .story-top { flex-direction: row; align-items: center; }
+    }
+    /* Position summary card — marketing layout. Scoped to #storyCard so
+       the campaign page's story mock keeps the shared review styles. */
+    .story-wrap { margin-bottom: 1rem; }
+    body #storyCard.card {
+        border-radius: 16px;
+        background: #121826;
+        border: 1px solid #243049;
+        box-shadow: none;
+        padding: 1.05rem 1.15rem .9rem !important;
+        margin-bottom: 0;
+    }
+    #storyCard .story-top { align-items: center; margin-bottom: 0; }
+    #storyCard .story-symbol {
+        font-size: 1.85rem; font-weight: 700; letter-spacing: -0.01em;
+        color: #fff; line-height: 1.05;
+    }
+    #storyCard .story-kicker { font-size: .9rem; color: #8a97b1; margin-top: .28rem; }
+    #storyCard .story-acct { margin-top: .15rem; }
+    #storyCard .story-tiles {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: .7rem;
+        margin-top: .85rem;
+    }
+    #storyCard .story-tile {
+        background: #1a2233;
+        border: 1px solid #243049;
+        border-top: 2px solid var(--color-positive, #28c08a);
+        border-radius: 12px;
+        padding: .65rem .8rem .6rem;
+        min-width: 0;
+    }
+    #storyCard .story-tile.is-neg { border-top-color: var(--color-negative, #f0556d); }
+    #storyCard .story-tile.is-neutral { border-top-color: #5b8cff; }
+    #storyCard .story-tile-label {
+        font-size: .8rem; color: #8a97b1; line-height: 1.2;
+    }
+    #storyCard .story-tile-value {
+        font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+        font-weight: 600; font-size: 1.45rem; line-height: 1.15;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+        color: var(--color-positive, #28c08a);
+        margin-top: .18rem;
+    }
+    #storyCard .story-tile.is-neg .story-tile-value { color: var(--color-negative, #f0556d); }
+    #storyCard .story-tile.is-neutral .story-tile-value { color: #e8edf7; }
+    #storyCard .story-tile-sub {
+        margin-top: .28rem; font-size: .78rem; line-height: 1.35; color: #8a97b1;
+    }
+    #storyCard .story-rank {
+        display: flex; align-items: center; gap: .7rem;
+        margin-top: .7rem;
+        background: #1a2233;
+        border: 1px solid #243049;
+        border-radius: 12px;
+        padding: .5rem .8rem;
+    }
+    #storyCard .story-rank-n {
+        font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+        font-weight: 600; font-size: 1.15rem; color: #fff;
+        font-variant-numeric: tabular-nums; flex: none;
+    }
+    #storyCard .story-rank-track {
+        flex: 1 1 auto; min-width: 2.5rem; height: 7px;
+        background: #2c3548; border-radius: 999px; overflow: hidden;
+    }
+    #storyCard .story-rank-fill {
+        height: 100%; border-radius: 999px;
+        background: #e8b15a;
+    }
+    #storyCard .story-rank-label {
+        flex: none; font-size: .8rem; color: #8a97b1; white-space: nowrap;
+    }
+    #storyCard .story-callout {
+        margin-top: .7rem;
+        background: #2a2218;
+        border: 1px solid rgba(232, 177, 90, .28);
+        border-radius: 12px;
+        padding: .7rem .85rem .65rem;
+    }
+    #storyCard .story-callout-title {
+        color: #e8b15a; font-weight: 650; font-size: .92rem; line-height: 1.3;
+    }
+    #storyCard .story-callout-body {
+        margin: .22rem 0 0; color: #f0e2c6;
+        font-size: .9rem; line-height: 1.4;
+    }
+    #storyCard .story-callout-amt {
+        color: #e8b15a; font-weight: 650;
+        font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+        font-variant-numeric: tabular-nums;
+    }
+    #storyCard .story-callout.is-saved {
+        background: rgba(40, 192, 138, .10);
+        border-color: rgba(40, 192, 138, .28);
+    }
+    #storyCard .story-callout.is-saved .story-callout-title,
+    #storyCard .story-callout.is-saved .story-callout-amt { color: #28c08a; }
+    #storyCard .story-callout.is-saved .story-callout-body { color: #e8edf7; }
+    #storyCard .story-callout.is-even {
+        background: #1a2233;
+        border-color: #243049;
+    }
+    #storyCard .story-callout.is-even .story-callout-title { color: #8a97b1; }
+    #storyCard .story-callout.is-even .story-callout-body { color: #e8edf7; }
+    #storyCard .story-profile { margin: .8rem 0 0; font-size: .92rem; }
+    #storyCard .story-profile-link { color: #5b8cff; font-weight: 600; }
+    .story-fold { margin-top: .65rem; }
+    details.story-fold.pd-toggle > summary { margin-bottom: 0; }
+    @media (max-width: 640px) {
+        #storyCard .story-tiles { grid-template-columns: 1fr; }
+        #storyCard .story-rank-label { font-size: .75rem; white-space: normal; }
+        body #storyCard.card { padding: .9rem .85rem .8rem !important; }
+        #storyCard .story-symbol { font-size: 1.6rem; }
+        #storyCard .story-tile-value { font-size: 1.3rem; }
     }
 </style>

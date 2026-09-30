@@ -40,6 +40,7 @@ import pandas as pd
 __all__ = [
     "build_position_story",
     "compose_mirror",
+    "compose_story_summary",
     "parse_occ",
     "_behavior_candidates",
     "_new_stats",
@@ -1992,6 +1993,32 @@ def _span_text(days):
     return f"{days / 365:.1f} years"
 
 
+def _income_across(stats):
+    """' across 18 covered calls and 2 short puts', or '' when uncounted.
+
+    The dollars are premium received. Callers add the verb ('collected')
+    themselves so a net P&L is never described with this phrase.
+    """
+    bits = []
+    if stats["covered_calls"]:
+        bits.append(_plural(stats["covered_calls"], "covered call"))
+    if stats["puts_sold"]:
+        bits.append(_plural(stats["puts_sold"], "short put"))
+    if not bits:
+        return ""
+    return " across " + " and ".join(bits)
+
+
+def _dollars(v, decimals=None):
+    """Tile figure. Losses keep the minus in front of ``$``."""
+    if decimals is None:
+        decimals = 2 if abs(v) < 100 else 0
+    text = _money(v, decimals)
+    if v < -0.5:
+        return f"-{text}"
+    return text
+
+
 def _behavior_candidates(stats, symbol):
     """(score, sentence) pairs for the behaviors this position's chapters
     can prove, scored by the dollars (or repetition) behind them. Shared
@@ -1999,16 +2026,8 @@ def _behavior_candidates(stats, symbol):
     candidates = []
     if stats["premium_collected"] > 1:
         clause = (f"You traded {symbol} primarily for income: "
-                  f"{_money(stats['premium_collected'])} of option premium collected")
-        bits = []
-        if stats["covered_calls"]:
-            bits.append(f"{stats['covered_calls']} covered call"
-                        f"{'s' if stats['covered_calls'] != 1 else ''}")
-        if stats["puts_sold"]:
-            bits.append(f"{stats['puts_sold']} short put"
-                        f"{'s' if stats['puts_sold'] != 1 else ''}")
-        if bits:
-            clause += f" across {' and '.join(bits)}"
+                  f"{_money(stats['premium_collected'])} of option premium collected"
+                  f"{_income_across(stats)}")
         candidates.append((stats["premium_collected"], clause + "."))
     if stats["long_opens"] and stats["long_risk"] > 1:
         w, l = stats["contract_wins"], stats["contract_losses"]
@@ -2120,3 +2139,150 @@ def compose_mirror(stats, symbol, book_rank=None, book_size=None):
             )
 
     return sentences
+
+
+def _story_tiles(stats):
+    """Up to two stat tiles, same facts and ranking as the mirror sentences.
+
+    A tile is omitted when its count is zero. Income shows premium
+    received ('collected across …'). A net result is labeled 'net' and
+    is never called premium. 'Kept at expiry' is premium kept on short
+    contracts that expired worthless.
+    """
+    tiles = []
+    if stats["premium_collected"] > 1:
+        across = _income_across(stats)
+        tiles.append({
+            "score": stats["premium_collected"],
+            "label": "Income strategy",
+            "value": _dollars(stats["premium_collected"], 0),
+            "tone": "pos",
+            "sub": f"collected{across}" if across else "collected on short options",
+        })
+    if stats["long_opens"] and stats["long_risk"] > 1:
+        closed = stats["contract_wins"] + stats["contract_losses"]
+        net = stats["contract_win_total"] - stats["contract_loss_total"]
+        if closed:
+            if net > 1:
+                tone = "pos"
+            elif net < -1:
+                tone = "neg"
+            else:
+                tone = "neutral"
+            if closed == stats["long_opens"]:
+                sub = (f"net across "
+                       f"{_plural(stats['long_opens'], 'long-option purchase')}")
+            else:
+                sub = f"net on {_plural(closed, 'closed contract')}"
+            value = _dollars(net, 0)
+        else:
+            tone = "neutral"
+            value = _dollars(stats["long_risk"], 0)
+            sub = (f"at risk across "
+                   f"{_plural(stats['long_opens'], 'long-option purchase')}")
+        tiles.append({
+            "score": stats["long_risk"],
+            "label": "Directional",
+            "value": value,
+            "tone": tone,
+            "sub": sub,
+        })
+    if stats["expired_kept"]:
+        tiles.append({
+            "score": stats["expired_premium"],
+            "label": "Kept at expiry",
+            "value": _dollars(stats["expired_premium"], 0),
+            "tone": "pos",
+            "sub": (f"{_plural(stats['expired_kept'], 'short contract')} "
+                    f"expired worthless"),
+        })
+    if stats["wheels_completed"]:
+        n = stats["wheels_completed"]
+        tiles.append({
+            "score": 2000.0 * n,
+            "label": "Wheels",
+            "value": str(n),
+            "tone": "neutral",
+            "sub": ("full cycle completed" if n == 1
+                    else "full cycles completed"),
+        })
+    if stats["rolls"]:
+        credit = stats["roll_credit"]
+        n = _plural(stats["rolls"], "roll")
+        if credit > 1:
+            tone, value = "pos", _dollars(credit, 0)
+            sub = f"net credit across {n}"
+        elif credit < -1:
+            tone, value = "neg", _dollars(credit, 0)
+            sub = f"paid to reposition across {n}"
+        else:
+            tone, value = "neutral", str(stats["rolls"])
+            sub = n
+        tiles.append({
+            "score": max(abs(credit), 500 * stats["rolls"]),
+            "label": "Rolls",
+            "value": value,
+            "tone": tone,
+            "sub": sub,
+        })
+    quiet_net = stats["quiet_gain"] - stats["quiet_loss"]
+    if stats["quiet_gain"] > 1 and quiet_net > 0:
+        tiles.append({
+            "score": stats["quiet_gain"],
+            "label": "Quiet stretches",
+            "value": _dollars(stats["quiet_gain"], 0),
+            "tone": "pos",
+            "sub": "accrued with no trades placed",
+        })
+    if stats["dividend_total"] > 1:
+        tiles.append({
+            "score": stats["dividend_total"],
+            "label": "Dividends",
+            "value": _dollars(stats["dividend_total"]),
+            "tone": "pos",
+            "sub": "paid over the holding period",
+        })
+    if stats["adds"] >= 3 and stats["adds"] > 2 * max(stats["trims"], 1):
+        tiles.append({
+            "score": 300.0 * stats["adds"],
+            "label": "Built in pieces",
+            "value": str(stats["adds"]),
+            "tone": "neutral",
+            "sub": "separate buys",
+        })
+    tiles.sort(key=lambda t: t["score"], reverse=True)
+    return [{k: v for k, v in tile.items() if k != "score"} for tile in tiles[:2]]
+
+
+def _story_rank(book_rank, book_size):
+    """P&L rank bar. ``#1`` fills the bar; last place leaves a sliver.
+
+    Same gate as ``compose_mirror``: rank is omitted when the book is
+    too small for a place to mean anything.
+    """
+    if not book_rank or not book_size or book_size < 5:
+        return None
+    fill = (book_size - book_rank + 1) / float(book_size)
+    fill = max(0.0, min(1.0, fill))
+    return {
+        "rank": int(book_rank),
+        "size": int(book_size),
+        "fill": round(fill * 100, 1),
+        "label": f"of {book_size} symbols by total P&L",
+    }
+
+
+def compose_story_summary(stats, book_rank=None, book_size=None):
+    """Structured facts for the position summary card.
+
+    Same evidence as ``compose_mirror`` (fingerprint + book rank), laid
+    out as tiles and a rank row instead of sentences. Returns None when
+    there is no story to summarize. Tiles and rank are each omitted
+    inside the dict when their data is absent.
+    """
+    if not stats or not stats.get("chapters"):
+        return None
+    return {
+        "tiles": _story_tiles(stats),
+        "rank": _story_rank(book_rank, book_size),
+    }
