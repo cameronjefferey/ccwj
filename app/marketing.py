@@ -571,7 +571,15 @@ def index():
     """Public landing page, or redirect to weekly review (home) if logged in."""
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
-    return render_template("landing.html", title="Home")
+    from app.marketing_videos import hero_video, resolve_learn_url, story_steps
+
+    return render_template(
+        "landing.html",
+        title="Home",
+        hero_video=hero_video(),
+        story_steps=story_steps(),
+        learn_url=resolve_learn_url(),
+    )
 
 
 @app.route("/start")

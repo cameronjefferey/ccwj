@@ -493,6 +493,23 @@ Known issues:
 ### Home (`/`, `/index`)
 **Status: Working. Public landing page; logged-in users redirect to Overview.**
 
+Logged-out `/` is a banded marketing page (`app/templates/landing.html`,
+catalog in `app/marketing_videos.py`). Order: a click-to-play walkthrough
+of about 2:30 (poster frame; the youtube-nocookie iframe is created only
+on click; nothing autoplays on load), a qualitative proof strip, How it
+works (connect read-only, strategies detected, see what's working), then
+the live demo as its own band — a mirror of a trading bot's paper
+account. Shorts are themed bands with one or two phones beside the copy
+(every position's story, covered-call income, privacy and share cards),
+not one sideways row. Still frames from the demo account sit in their
+own bands: a position P&amp;L chart, the if-held summary, strategy cards,
+and the fit matrix (`app/static/marketing/`). Those crops do not show
+ORCL, CFLT, or the Earnings or Admin tabs. Options 101 and the
+full-width trial close stay. The Options 101 step links to `/learn` only
+when that exact route exists. YouTube ids and mp4 URLs are empty
+placeholders until the videos are public. Primary CTA: "Start your
+30-day free trial, no credit card".
+
 There is no separate dashboard page — Overview is the authenticated home.
 
 ### Learn (`/learn`, `/learn/<slug>`)
