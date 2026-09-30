@@ -19,6 +19,7 @@ from app import app
 from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
 from app.models import get_tenant_ids_for_user
+from app.learn_catalog import sitemap_paths as _learn_sitemap_paths
 from app.tenant_scope import tenant_sql_filter as _tenant_sql_filter
 
 
@@ -493,6 +494,7 @@ def sitemap():
         if slug == "ai-trading-insights" and not app.config.get("INSIGHTS_ENABLED", True):
             continue
         pages.append((f"/features/{slug}", "monthly", "0.7"))
+    pages.extend(_learn_sitemap_paths())
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     for path, freq, prio in pages:
         xml += f"  <url><loc>{base}{path}</loc><changefreq>{freq}</changefreq><priority>{prio}</priority></url>\n"

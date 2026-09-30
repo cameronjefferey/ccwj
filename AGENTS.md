@@ -196,8 +196,10 @@ What's working:
  and a cookie restores that shareable URL on the next visit. Groups
  stay on the page toolbar. Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
- This week, and percent invested. A one-line takeaway only claims what
- those numbers and the snapshot benchmark rows support. Pills name the
+ This week, and percent invested. The one-line takeaway calls these
+ **account-value changes** and lists one-week benchmark figures without
+ saying ahead/behind: snapshot deltas include deposits and withdrawals,
+ so they are not investment returns. Pills name the
  session (pre-market / open / after hours), that session's fill count,
  the trailing-week SPY/QQQ line, and a link to the live page. Account
  table adds share-of-book and leads each move with the percent.
@@ -235,7 +237,7 @@ What's working:
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Clicking a mover opens the same right-side position drawer as Today.
-- Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the close date. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
+- Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the current New York market date. It must not start on the older settled close: doing so shortens the forward window every weekend / pre-market and hides day-14 events whenever any earlier chip makes the radar replace the legacy list. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position / strategy / sector / subsector scorecards (performance by account). The account scorecard is **lifetime P&amp;L for currently-open positions plus anything closed since the Monday of the close on screen** (Friday's session → that Friday's Monday, not calendar-today's ISO Monday, which is still ahead of the close on Monday morning). Dividends on those rows are lifetime too — not a week-to-date clock. Copy names that Monday, not "this week's result". Ex-div share counts are every share held in the current scope; Today's "No short call open" list is uncovered covered-call lots only.
@@ -374,9 +376,14 @@ What's working:
   Just above the Position Legs table, a collapsed "If held to expiration"
   block is the headline: the total and a count ("Closing early cost you
   $X across N trades vs holding to expiration", or "saved you" when the
-  early exits came out ahead). Expanding it lists each early close
+  early exits came out ahead).   Expanding it lists each early close
   (contract, contracts, closed date, actual P&L, if-held P&L, difference
-  pill). Each of those rows opens that contract's chart. The same pill
+  pill). Below 576px each exit is a stacked card instead of that table,
+  so the difference stays on screen. The fold clips overflow so opening
+  it cannot widen the page. Each row opens that contract's chart. On a
+  phone the chart is a full-viewport bottom sheet. The difference uses
+  the same words on the card and in the panel ("$X more if held" /
+  "$X less if held"). The same pill
   stays on the Position Legs row. The panel steps between charts,
   largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
@@ -394,9 +401,12 @@ What's working:
   net for the whole run. Broker fees are left out of that math and the
   card says so. Multiple runs, partial sales, and partial coverage stay
   on the same lot until the shares are flat. Built in
-  `app/covered_call_runs.py` from the fills the page already loaded
-  (tenant-scoped, before the leg filter so one leg click does not split
-  the cycle). Pinned by `tests/test_covered_call_runs.py`.
+  `app/covered_call_runs.py` from the fills and inferred opening balances
+  the page already loaded (tenant-scoped, before the leg filter so one leg
+  click does not split the cycle). Opening quantities are converted from
+  today's units back to their opening-date units before split events are
+  replayed, so pre-history holdings do not disappear or double-split.
+  Pinned by `tests/test_covered_call_runs.py`.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
@@ -501,6 +511,23 @@ placeholders until the videos are public. Primary CTA: "Start your
 30-day free trial, no credit card".
 
 There is no separate dashboard page — Overview is the authenticated home.
+
+### Learn (`/learn`, `/learn/<slug>`)
+**Status: Working. Public Options 101 series. No login.**
+
+Logged-out nav and footer link here. Logged-in users can open the same pages.
+Copy and video ids live in `app/learn_episodes.json` (loaded by
+`app/learn_catalog.py`). An episode with no `youtube_id` renders as Coming
+soon: no embed, and the series grid does not link that card. Episodes 1–3
+are already `published`, so adding the 11-character YouTube id is enough to
+turn on the Watch link, the nocookie lite embed, chapter seek, and
+VideoObject JSON-LD. `published: false` (episodes 4–10) stays out of the
+sitemap and is `noindex`. Shorts use the same id field and render as 9:16
+cards. The series page remembers the last episode in this browser
+(`ht-learn-progress` in localStorage) and says Continue plus “N of M
+watched” once a video actually finishes. Signed-in accounts other than
+the shared demo user also keep that blob in `learn_progress` so it follows
+them after signup (`/learn/progress`, merged on the next signed-in page).
 
 ### Campaign landing (`/start`, endpoint `campaign_start`)
 **Status: Working. Ad destination. Logged-in visitors redirect to Overview.**
@@ -766,7 +793,10 @@ Connected but still waiting on data: manage accounts, with Connect
 another account first. `/first-look` 301s here. New signups land here.
 Cancelling the SnapTrade portal returns to `/snaptrade/accounts` with
 an honest "nothing new was connected" message — not name-now claiming
-"Connected N accounts". The post-upload and post-sync processing pages
+"Connected N accounts". An unchanged account list is still treated as a
+successful recovery when a returned account is broken or has not completed
+its first sync; that path must clear health state and kick the catch-up pull,
+not be mistaken for cancel. The post-upload and post-sync processing pages
 land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the
@@ -1454,7 +1484,11 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   required to keep running-share state honest across pre/post-split
   fill units), assignment/exercise voice (short vs long inferred from
   tracked state or the same-day mechanical share fill at the strike,
-  which is swallowed rather than double-narrated). Between trade days
+  which is swallowed rather than double-narrated). Assignment/exercise
+  cards receive a realized-P&L chip only when exactly one closed
+  contract/session owns the matched warehouse close date; multi-close
+  dates stay blank rather than assigning the day's net to one event.
+  Between trade days
   it narrates INTERLUDES from the daily-mark chart series — "A quiet 13
   weeks: +$3,434 with no trades placed" — the data only HappyTrader has
   (per-day option marks), plus "no activity / fully out of the position"

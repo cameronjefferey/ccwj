@@ -1545,14 +1545,21 @@ def _iso_day(value):
         return None
 
 
-def close_pnl_by_day(frame, date_col, pnl_col):
-    """Sum a closed-leg frame's P&L by close date (ISO). Empty when absent."""
-    out = {}
+def close_pnl_by_day(frame, date_col, pnl_col, grain_cols=()):
+    """Return date-level P&L only when one closed group owns that date.
+
+    Story cards do not carry contract/session ids. If two distinct groups
+    close on the same date, their combined P&L cannot safely be stamped onto
+    one assignment/expiry card, so retain the date as ambiguous (``None``).
+    Duplicate rows at the same supplied grain still collapse normally.
+    """
+    by_group = {}
     if frame is None or getattr(frame, "empty", True):
-        return out
+        return {}
     if date_col not in frame.columns or pnl_col not in frame.columns:
-        return out
-    for _, row in frame.iterrows():
+        return {}
+    available_grain = [col for col in grain_cols if col in frame.columns]
+    for idx, row in frame.iterrows():
         iso = _iso_day(row.get(date_col))
         if not iso:
             continue
@@ -1562,8 +1569,29 @@ def close_pnl_by_day(frame, date_col, pnl_col):
             continue
         if pnl != pnl:  # NaN
             continue
-        out[iso] = out.get(iso, 0.0) + pnl
-    return {k: round(v, 2) for k, v in out.items()}
+        grain_parts = []
+        for col in available_grain:
+            value = row.get(col)
+            try:
+                missing = value is None or bool(pd.isna(value))
+            except (TypeError, ValueError):
+                missing = value is None
+            grain_parts.append("" if missing else str(value))
+        grain = tuple(grain_parts)
+        # The final supplied column is the contract/session identity. Owner
+        # columns alone are not enough to prove two rows belong together.
+        if not grain or not grain[-1]:
+            grain = ("row", str(idx))
+        key = (iso, grain)
+        by_group[key] = by_group.get(key, 0.0) + pnl
+
+    grouped = {}
+    for (iso, grain), pnl in by_group.items():
+        grouped.setdefault(iso, {})[grain] = pnl
+    return {
+        iso: round(next(iter(groups.values())), 2) if len(groups) == 1 else None
+        for iso, groups in grouped.items()
+    }
 
 
 def _fmt_realized(pnl):
@@ -1616,7 +1644,8 @@ def _pnl_for_story_day(by_day, iso, used, window_days=5):
     if not iso:
         return None, None
     if iso in by_day and iso not in used:
-        return iso, by_day[iso]
+        pnl = by_day[iso]
+        return (iso, pnl) if pnl is not None else (None, None)
     try:
         target = date.fromisoformat(iso)
     except ValueError:
@@ -1634,7 +1663,7 @@ def _pnl_for_story_day(by_day, iso, used, window_days=5):
     if len(near) != 1:
         return None, None
     _delta, key, pnl = near[0]
-    return key, pnl
+    return (key, pnl) if pnl is not None else (None, None)
 
 
 def attach_realized_pnl(items, option_pnl_by_day=None, equity_pnl_by_day=None):

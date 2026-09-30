@@ -15,7 +15,7 @@
  * Bump VERSION to invalidate everything after a static-asset change.
  */
 
-const VERSION = "ht-v3";
+const VERSION = "ht-v4";
 const OFFLINE_URL = "/offline";
 
 const STATIC_HOSTS = ["cdn.jsdelivr.net"];

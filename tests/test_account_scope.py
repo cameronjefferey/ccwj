@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 from app import app
 from app.account_scope import (
+    account_scope_cache_key,
     decide_persisted_scope,
     nickname_map,
     persist_account_scope_response,
@@ -66,6 +67,33 @@ def test_cookie_subset_redirects_and_keeps_other_query():
     q = parse_qs(urlparse(target).query)
     assert q["tenants"] == ["snaptrade:aaa"]
     assert q["range"] == ["1m"]
+
+
+def test_browser_encoded_cookie_restores_subset():
+    """document.cookie keeps encodeURIComponent output percent-encoded."""
+    decision = decide_persisted_scope(
+        "weekly_review", "GET", {},
+        "snaptrade%3Aaaa%2Csnaptrade%3Abbb",
+        ["snaptrade:aaa", "snaptrade:bbb", "snaptrade:ccc"],
+    )
+    assert decision == {
+        "action": "redirect",
+        "tenants": ["snaptrade:aaa", "snaptrade:bbb"],
+    }
+
+
+def test_scope_cache_key_separates_tenant_subset_from_all_accounts():
+    owned = ["snaptrade:aaa", "snaptrade:bbb"]
+    assert account_scope_cache_key({}, "", owned) == ""
+    assert account_scope_cache_key(
+        {"tenants": ["snaptrade:aaa"]}, "", ["snaptrade:aaa"],
+    ) == "tenants:snaptrade:aaa"
+    assert account_scope_cache_key(
+        {"groups": ["7"]}, "", ["snaptrade:bbb", "snaptrade:aaa"],
+    ) == "tenants:snaptrade:aaa,snaptrade:bbb"
+    assert account_scope_cache_key(
+        {"account": ["IRA"]}, "IRA", ["snaptrade:aaa"],
+    ) == "IRA"
 
 
 def test_explicit_url_wins_and_all_accounts_cookie_is_a_noop():
@@ -183,6 +211,28 @@ def test_header_picker_template_uses_nicknames():
         )
     assert "All accounts" not in page
     assert "Group accounts" in page
+
+
+def test_header_picker_limits_accounts_to_selected_group_members():
+    choices = [
+        {"tenant_id": "snaptrade:aaa", "label": "IRA"},
+        {"tenant_id": "snaptrade:bbb", "label": "Taxable"},
+    ]
+    with app.test_request_context("/overview?groups=7"):
+        html = app.jinja_env.get_template("_account_scope_filters.html").render(
+            header_account_only=True,
+            scope_account_choices=choices,
+            visible_account_choices=choices[:1],
+            selected_tenant_ids=["snaptrade:aaa"],
+            account_groups=[{"id": 7, "name": "Retirement"}],
+            selected_group_ids=[7],
+            tenants_query=None,
+            groups_query="7",
+            account_rename_urls={},
+        )
+    assert "IRA" in html
+    assert "Taxable" not in html
+    assert "snaptrade:bbb" not in html
 
 
 def test_header_picker_masks_labels_in_privacy_mode(monkeypatch):

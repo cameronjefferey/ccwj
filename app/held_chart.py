@@ -286,7 +286,12 @@ def _held_table_row(chart):
 
 
 def outcome_pill(difference):
-    """Short trades-table label. The column already says If held."""
+    """If-held result in the trader's words, on the table and the panel.
+
+    The warehouse delta is realized minus the expiry outcome. Negative
+    means holding finished higher, so the label is "$X more if held".
+    Positive means the early close came out ahead: "$X less if held".
+    """
     if difference is None:
         return None
     try:
@@ -297,8 +302,8 @@ def outcome_pill(difference):
         return "Same"
     amount = _abs_money(delta)
     if delta < 0:
-        return f"+{amount} more"
-    return f"{amount} less"
+        return f"{amount} more if held"
+    return f"{amount} less if held"
 
 
 def stamp_held_column(charts, outcomes):
@@ -470,7 +475,9 @@ def _chart_for_row(row, prices, marks, *, keep, label_for):
         "difference": delta_r,
         "realized_display": _signed_money(realized_r),
         "if_held_display": _signed_money(if_held),
-        "difference_display": _signed_money(delta_r),
+        # Same words as the table pill. A negative warehouse delta means
+        # holding finished higher: "$X more if held", not a minus sign.
+        "difference_display": outcome_pill(delta_r),
         "held_from_marks": held_from_marks,
         "held_estimated": held_estimated,
         "if_held_estimated": True,

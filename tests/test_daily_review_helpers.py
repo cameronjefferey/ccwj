@@ -1787,6 +1787,32 @@ class TestDailyReviewBatchIncludesTodayTrades:
         assert "date <= @as_of" in opt_sql
         assert {p.name: p.value for p in opt_cfg.query_parameters}["as_of"] == thursday
 
+    def test_market_context_is_capped_to_the_displayed_close(self):
+        friday = date(2026, 8, 28)
+        thursday = date(2026, 8, 27)
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            friday, date(2026, 8, 24),
+            trades_as_of=thursday, moves_as_of=thursday)
+
+        benchmark_sql, benchmark_cfg = batch["benchmark_snapshot"]
+        assert (
+            "BETWEEN DATE_SUB(@as_of, INTERVAL 70 DAY) AND @as_of"
+            in benchmark_sql
+        )
+        benchmark_params = {
+            p.name: p.value for p in benchmark_cfg.query_parameters
+        }
+        assert benchmark_params["as_of"] == thursday
+
+        market_sql, market_cfg = batch["market_perf"]
+        assert "date <= @as_of" in market_sql
+        market_params = {
+            p.name: p.value for p in market_cfg.query_parameters
+        }
+        assert market_params["as_of"] == thursday
+        assert market_params["week_start"] == date(2026, 8, 24)
+
     def test_batch_defaults_as_of_to_today_for_existing_callers(self):
         today = date(2026, 8, 13)
         batch = build_daily_review_batch(

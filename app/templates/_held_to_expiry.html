@@ -39,6 +39,29 @@
                 {% endfor %}
             </tbody>
         </table>
+        <div class="held-fold-cards">
+            {% for row in held_summary.rows %}
+            <div class="held-fold-card held-fold-row" data-held-open="{{ row.dom_id }}" tabindex="0">
+                <div class="held-fold-contract">{{ row.contract }}</div>
+                <div class="held-fold-card-metrics">
+                    <div>
+                        <span class="k">Actual</span>
+                        <span class="v {{ 'pos' if row.realized_pnl > 0 else 'neg' if row.realized_pnl < 0 else '' }}">{{ row.realized_display }}</span>
+                    </div>
+                    <div>
+                        <span class="k">If held</span>
+                        <span class="v {{ 'pos' if row.pnl_if_held > 0 else 'neg' if row.pnl_if_held < 0 else '' }}">{{ row.if_held_display }}</span>
+                    </div>
+                    <div class="held-fold-card-pill">
+                        {% if row.pill %}
+                        <button type="button" class="held-pill {{ 'held-more' if row.held_better else 'held-less' if row.pill != 'Same' else 'held-same' }}"
+                                data-held-open="{{ row.dom_id }}">{{ row.pill }}</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
 </details>
 {% endif %}
@@ -76,6 +99,9 @@
         color: #e8edf7;
         border-radius: 12px;
         margin-bottom: 1rem;
+        max-width: 100%;
+        min-width: 0;
+        overflow: clip;
         font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
     }
     .held-fold-sum {
@@ -118,7 +144,12 @@
         border-radius: 999px;
         padding: .05rem .5rem;
     }
-    .held-fold-body { padding: 0 .85rem .85rem 2rem; }
+    .held-fold-body {
+        padding: 0 .85rem .85rem 2rem;
+        max-width: 100%;
+        min-width: 0;
+        overflow: clip;
+    }
     .held-fold-table {
         width: 100%;
         border-collapse: collapse;
@@ -150,6 +181,39 @@
     .held-fold-row { cursor: pointer; }
     .held-fold-row:hover, .held-fold-row:focus-visible { background: rgba(91, 140, 255, .08); }
     .held-fold-row:focus-visible { outline: 2px solid #5b8cff; outline-offset: -2px; }
+    .held-fold-cards { display: none; }
+    .held-fold-card {
+        border: 1px solid #243049;
+        border-radius: 10px;
+        padding: .7rem .75rem;
+        margin-bottom: .5rem;
+        background: #0a0e17;
+    }
+    .held-fold-card:last-child { margin-bottom: 0; }
+    .held-fold-card-metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: .35rem .6rem;
+        align-items: end;
+        margin-top: .45rem;
+    }
+    .held-fold-card-metrics .k {
+        display: block;
+        font-size: .62rem;
+        font-weight: 650;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: #8a97b1;
+    }
+    .held-fold-card-metrics .v {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .85rem;
+        color: #e8edf7;
+    }
+    .held-fold-card-metrics .v.pos { color: #28c08a; }
+    .held-fold-card-metrics .v.neg { color: #f0556d; }
+    .held-fold-card-pill { text-align: right; }
     .sr {
         position: absolute;
         width: 1px; height: 1px;
@@ -159,9 +223,13 @@
     }
     @media (max-width: 720px) {
         .held-fold-sum { flex-wrap: wrap; }
-        .held-fold-line { flex: 1 1 100%; order: 3; }
-        .held-fold-body { padding-left: .5rem; overflow-x: auto; }
-        .held-fold-table { min-width: 34rem; }
+        .held-fold-line { flex: 1 1 100%; order: 3; min-width: 0; }
+        .held-fold-body { padding-left: .75rem; }
+    }
+    @media (max-width: 576px) {
+        .held-fold-table { display: none; }
+        .held-fold-cards { display: block; }
+        .held-fold-body { padding-left: .75rem; padding-right: .75rem; }
     }
     .held-pill {
         appearance: none;
@@ -350,6 +418,10 @@
     }
     .held-stat .val.pos { color: #28c08a; }
     .held-stat .val.neg { color: #f0556d; }
+    .held-stat .val.held-diff {
+        font-size: 1rem;
+        line-height: 1.3;
+    }
     .held-stat .hint {
         color: #8a97b1;
         font-size: .72rem;
@@ -381,6 +453,8 @@
         position: relative;
         height: 240px;
         width: 100%;
+        max-width: 100%;
+        overflow: hidden;
     }
     .held-note {
         color: #8a97b1;
@@ -390,16 +464,34 @@
         font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
     }
     @media (max-width: 720px) {
+        .held-drawer {
+            position: fixed;
+            inset: 0;
+            width: 100dvw;
+            max-width: 100dvw;
+            height: 100dvh;
+            max-height: 100dvh;
+        }
         .held-drawer-panel {
-            top: 0; left: 0; right: 0; bottom: 0;
-            width: 100%;
-            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: auto;
+            bottom: 0;
+            width: 100dvw;
+            max-width: 100dvw;
+            height: 100dvh;
+            max-height: 100dvh;
             border-left: 0;
             border-radius: 0;
+            box-sizing: border-box;
+            overflow-x: hidden;
+            overflow-y: auto;
             transform: translateY(105%);
         }
         .held-drawer.is-open .held-drawer-panel { transform: none; }
         .held-stat .val { font-size: 1.15rem; }
+        .held-stat .val.held-diff { font-size: .95rem; }
         .held-canvas-wrap { height: 220px; }
     }
     @media (min-width: 641px) {
@@ -457,6 +549,17 @@
                 return a.left < b.right && a.right > b.left &&
                     a.top < b.bottom && a.bottom > b.top;
             }
+            function seriesCrosses(left, top, width, height) {
+                var meta = chart.getDatasetMeta(1);
+                if (!meta || !meta.data) return false;
+                for (var n = 0; n < meta.data.length; n++) {
+                    var pt = meta.data[n];
+                    if (!pt || pt.skip) continue;
+                    if (pt.x < left - 2 || pt.x > left + width + 2) continue;
+                    if (pt.y > top - 8 && pt.y < top + height + 8) return true;
+                }
+                return false;
+            }
             function boxFor(x, top, w) {
                 return {left: x, right: x + w, top: top, bottom: top + lineH * 2};
             }
@@ -476,16 +579,32 @@
                 // Open sits above the fill (the line leaves downward).
                 // Close sits below it. A one-day hold otherwise stacks
                 // the two captions on the same pixels.
-                var above = (p.kind === 'open' || p.kind === 'expiry');
+                var above = (p.kind === 'open');
+                // The dashed line arrives from the left and ends on the
+                // expiration point. A caption on the line's side of that
+                // point sits on the stroke (RKLB "$17.00" on the tail).
+                // Put the caption on the clear side of the point instead.
+                if (p.kind === 'expiry') {
+                    var prev = pts[i - 1];
+                    var prevEl = prev ? anchorElement(chart, i - 1, prev.kind) : null;
+                    var incomingFromAbove = !!(prevEl && prevEl.y < el.y - 2);
+                    above = !incomingFromAbove;
+                }
                 if (p.kind === 'close' && el.y + 8 + lineH * 2 > area.bottom) above = true;
-                if (above && el.y - 8 - lineH * 2 < area.top) above = false;
+                if (p.kind !== 'expiry' && above && el.y - 8 - lineH * 2 < area.top) above = false;
                 var align = 'left';
                 var x = el.x + 8;
+                var gap = p.kind === 'expiry' ? (narrow ? 28 : 18) : 8;
                 if (p.kind === 'expiry') {
                     align = 'right';
                     x = el.x - 8;
                 }
-                var top = above ? el.y - 8 - lineH * 2 : el.y + 8;
+                var top = above ? el.y - gap - lineH * 2 : el.y + gap;
+                if (p.kind === 'expiry' && above && top < 2) top = 2;
+                if (p.kind === 'expiry' && !above && top + lineH * 2 > chart.height - 2) {
+                    above = true;
+                    top = Math.max(2, el.y - gap - lineH * 2);
+                }
                 if (align === 'right') x = x - w;
                 if (align === 'center') x = x - w / 2;
                 var guard = 0;
@@ -501,6 +620,15 @@
                 }
                 if (box.left < 4) {
                     x += 4 - box.left;
+                    box = boxFor(x, top, w);
+                }
+                if (p.kind === 'expiry') {
+                    var lift = 0;
+                    while (lift < 10 && seriesCrosses(x, top, w, lineH * 2)) {
+                        top -= 14;
+                        lift++;
+                    }
+                    if (top < 2) top = 2;
                     box = boxFor(x, top, w);
                 }
                 placed.push({
@@ -595,7 +723,7 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
-                layout: { padding: { top: 36, right: 8, left: 0, bottom: 0 } },
+                layout: { padding: { top: 44, right: 12, left: 0, bottom: 8 } },
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { display: false },
@@ -681,6 +809,12 @@
 
     var drawer = document.getElementById('if-held');
     if (!drawer) return;
+    // A transformed ancestor makes position:fixed stick to that box.
+    // On a phone that box is the widened page, so the sheet opens
+    // off-screen. Hang the drawer on the body so it tracks the viewport.
+    if (drawer.parentNode !== document.body) {
+        document.body.appendChild(drawer);
+    }
     var lastFocus = null;
 
     function focusables() {

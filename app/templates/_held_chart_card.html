@@ -27,12 +27,12 @@
         <div class="held-stat">
             <div class="lbl">If held to expiration</div>
             <div class="val {{ 'pos' if c.pnl_if_held > 0 else 'neg' if c.pnl_if_held < 0 else '' }}">{{ c.if_held_display }}</div>
-            <div class="hint">Opening cash plus intrinsic value</div>
+            <div class="hint">What you paid or received to open it, plus its value at expiration</div>
         </div>
         <div class="held-stat">
             <div class="lbl">Difference</div>
-            <div class="val {{ 'pos' if c.difference > 0 else 'neg' if c.difference < 0 else '' }}">{{ c.difference_display }}</div>
-            <div class="hint">Realized minus the expiry outcome</div>
+            <div class="val held-diff {{ 'pos' if c.difference < 0 else 'neg' if c.difference > 0 else '' }}">{{ c.difference_display }}</div>
+            <div class="hint">Compared with what the close booked</div>
         </div>
     </div>
     <div class="held-legend" aria-hidden="true">

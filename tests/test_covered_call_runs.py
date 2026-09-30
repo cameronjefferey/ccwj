@@ -11,6 +11,7 @@ from datetime import date
 
 import pandas as pd
 
+from app import app
 from app.covered_call_runs import build_covered_call_runs
 
 
@@ -406,6 +407,85 @@ def test_split_adjusts_the_share_lot_before_the_later_sell():
     assert runs[0]["net"] == 450.0
 
 
+def test_synthetic_opening_balance_restores_pre_history_covered_call():
+    call = _occ("RKLB", date(2026, 1, 17), "C", 15)
+    rows = [
+        _row(
+            date(2026, 1, 2), "option_sell_to_open", "Call",
+            call, 1, 1.0, 100.0,
+        ),
+        _row(
+            date(2026, 1, 17), "option_expired", "Call",
+            call, 1, 0.0, 0.0,
+        ),
+    ]
+    opening = pd.DataFrame([{
+        "tenant_id": "snaptrade:acct",
+        "account": "Schwab",
+        "symbol": "RKLB",
+        "opening_date": date(2025, 12, 31),
+        "opening_qty": 100.0,
+        "est_amount": -1000.0,
+        "price_source": "broker_cost_basis",
+    }])
+    current = pd.DataFrame([{
+        "instrument_type": "Equity",
+        "quantity": 100.0,
+        "current_price": 12.0,
+        "tenant_id": "snaptrade:acct",
+        "account": "Schwab",
+    }])
+    runs = build_covered_call_runs(
+        _frame(rows), current_df=current, opening_df=opening,
+        as_of=date(2026, 1, 20),
+    )
+    assert len(runs) == 1
+    assert runs[0]["status"] == "open"
+    assert runs[0]["calls"][0]["outcome"] == "expired"
+    assert runs[0]["share_pnl"] == 200.0
+    assert runs[0]["premium_total"] == 100.0
+    assert runs[0]["net"] == 300.0
+
+
+def test_synthetic_opening_quantity_is_not_double_adjusted_for_splits():
+    call = _occ("XLU", date(2026, 1, 17), "C", 12)
+    rows = [
+        _row(
+            date(2026, 1, 12), "option_sell_to_open", "Call",
+            call, 1, 0.50, 50.0,
+        ),
+        _row(
+            date(2026, 1, 17), "option_expired", "Call",
+            call, 1, 0.0, 0.0,
+        ),
+        _row(date(2026, 2, 2), "equity_sell", "Equity", "XLU", 200, 12.0, 2400.0),
+    ]
+    opening = pd.DataFrame([{
+        "tenant_id": "snaptrade:acct",
+        "account": "Schwab",
+        "symbol": "XLU",
+        "opening_date": date(2026, 1, 2),
+        # Warehouse opening quantities are already in today's units.
+        "opening_qty": 200.0,
+        "est_amount": -2000.0,
+        "price_source": "market_close",
+    }])
+    splits = pd.DataFrame([{
+        "symbol": "XLU",
+        "split_date": date(2026, 1, 10),
+        "split_ratio": 2.0,
+    }])
+    runs = build_covered_call_runs(
+        _frame(rows), opening_df=opening, splits_df=splits,
+        as_of=date(2026, 2, 3),
+    )
+    assert len(runs) == 1
+    assert runs[0]["status"] == "closed"
+    assert runs[0]["share_pnl"] == 400.0
+    assert runs[0]["premium_total"] == 50.0
+    assert runs[0]["net"] == 450.0
+
+
 def test_long_put_exercise_does_not_invent_a_wheel():
     rows = [
         _row(
@@ -422,8 +502,6 @@ def test_long_put_exercise_does_not_invent_a_wheel():
 
 
 def test_template_renders_the_run_numbers():
-    from app import app
-
     runs = build_covered_call_runs(_rklb_cycle(), as_of=date(2026, 4, 3))
     with app.app_context():
         html = app.jinja_env.get_template("_covered_call_runs.html").render(
@@ -442,3 +520,27 @@ def test_template_renders_the_run_numbers():
     assert "Broker fees are not included" in html
     assert "Whole run" in html
     assert 'class="ht-run"' in html
+
+
+def test_template_masks_multi_account_run_label_in_privacy_mode(monkeypatch):
+    runs = build_covered_call_runs(
+        _rklb_cycle(), as_of=date(2026, 4, 3),
+        label_map={"snaptrade:acct": "Family IRA"},
+    )
+    # Account labels only render when the position spans multiple tenants.
+    runs[0]["show_account"] = True
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr(
+        "app.privacy.viewer_slots",
+        lambda: (
+            {"snaptrade:acct": "Account 2"},
+            {"Family IRA": "Account 2"},
+        ),
+    )
+    with app.test_request_context("/position/RKLB"):
+        html = app.jinja_env.get_template("_covered_call_runs.html").render(
+            covered_call_runs=runs,
+            symbol="RKLB",
+        )
+    assert "Account 2" in html
+    assert "Family IRA" not in html

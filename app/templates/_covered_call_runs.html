@@ -15,7 +15,7 @@
             <div>
                 <div class="ht-run-kicker">{{ run.label }}{% if run.when %} · {{ run.when }}{% endif %}</div>
                 {% if run.show_account and run.account_label %}
-                <div class="ht-run-acct">{{ run.account_label }}</div>
+                <div class="ht-run-acct">{{ run.account_label | account_label(run.tenant_id) }}</div>
                 {% endif %}
                 <p class="ht-run-share">{{ run.share_sentence }}</p>
             </div>

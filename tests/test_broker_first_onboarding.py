@@ -63,7 +63,7 @@ def test_landing_how_it_works_is_broker_first():
     assert "few hours" in html
 
 
-def test_signup_explains_snaptrade_next_and_keeps_fields_on_mismatch(monkeypatch):
+def test_signup_explains_snaptrade_next_without_reflecting_passwords(monkeypatch):
     monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
     monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
     monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
@@ -90,8 +90,8 @@ def test_signup_explains_snaptrade_next_and_keeps_fields_on_mismatch(monkeypatch
     assert "Passwords do not match." in html
     assert 'value="ada_trader"' in html
     assert 'value="ada@example.com"' in html
-    assert 'value="Secret1pass"' in html
-    assert 'value="Secret2pass"' in html
+    assert "Secret1pass" not in html
+    assert "Secret2pass" not in html
 
 
 def test_get_started_without_broker_is_connect_first(monkeypatch):
@@ -267,6 +267,80 @@ def test_callback_cancel_does_not_claim_connected_or_open_name_now(monkeypatch):
     assert "Connected" not in messages
     assert "without adding a brokerage" in messages
     assert kicked == []
+
+
+@pytest.mark.parametrize("needs_recovery", ["broken", "first_sync"])
+def test_callback_existing_account_recovery_still_starts_sync(
+    monkeypatch, needs_recovery
+):
+    import types
+    from app import snaptrade as snap
+
+    existing = {
+        "snaptrade_account_id": "existing-acc",
+        "tenant_id": "snaptrade:existing-acc",
+        "account_name": "Schwab Account",
+        "first_sync_completed": needs_recovery != "first_sync",
+        "connection_broken_at": (
+            "2026-09-24T10:00:00Z" if needs_recovery == "broken" else None
+        ),
+    }
+    remote = {
+        "id": "existing-acc",
+        "institution_name": "Schwab",
+        "number": "9988",
+        "brokerage_authorization": "auth-9",
+    }
+    monkeypatch.setattr(snap, "current_user", types.SimpleNamespace(id=7))
+    monkeypatch.setattr(
+        snap, "get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(
+        snap, "_list_snaptrade_accounts", lambda client, creds: ([remote], True),
+    )
+    monkeypatch.setattr(snap, "get_snaptrade_accounts", lambda uid: [existing])
+    monkeypatch.setattr(
+        snap,
+        "_ensure_snaptrade_tenant_id",
+        lambda **kwargs: "snaptrade:existing-acc",
+    )
+    monkeypatch.setattr(
+        snap,
+        "get_broker_tenant",
+        lambda tid: {"account_name": "Schwab Account", "display_nickname": None},
+    )
+    monkeypatch.setattr(snap, "upsert_snaptrade_account", lambda *a, **k: None)
+    cleared = []
+    monkeypatch.setattr(
+        snap,
+        "clear_snaptrade_connection_broken",
+        lambda *args: cleared.append(args),
+    )
+    monkeypatch.setattr(snap, "add_account_for_user", lambda *a, **k: None)
+    monkeypatch.setattr(
+        snap, "set_snaptrade_brokerage_authorization_id", lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "app.routes._snaptrade_accounts_needing_nickname", lambda rows: [],
+    )
+    kicked = []
+    monkeypatch.setattr(snap, "_kick_post_connect_sync", lambda uid: kicked.append(uid))
+
+    with app.test_request_context("/snaptrade/callback"):
+        from flask import session
+        session["snaptrade_callback_user_id"] = 7
+        resp = snap.snaptrade_callback.__wrapped__()
+        flashes = session.get("_flashes") or []
+
+    assert resp.status_code == 302
+    assert "sync/processing" in (resp.location or "")
+    assert kicked == [7]
+    assert cleared == [(7, "existing-acc")]
+    messages = " ".join(str(item) for item in flashes)
+    assert "Broker connection refreshed" in messages
+    assert "without adding a brokerage" not in messages
 
 
 def test_callback_with_a_new_account_still_starts_sync(monkeypatch):
