@@ -189,7 +189,7 @@ def test_partial_sale_stays_one_open_run():
     assert run["premium_total"] == 100.0
     assert run["net"] == 1900.0
     assert run["share_sentence"] == (
-        "200 shares bought at $50. Sold 100 at $60. 100 shares still held."
+        "200 shares bought at $50. Sold 100 shares at $60. 100 shares still held."
     )
     assert run["calls"][0]["partial"] is False
 
