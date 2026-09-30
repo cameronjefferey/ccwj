@@ -3,30 +3,44 @@
 {% block head %}
 {% include '_review_styles.html' %}
 <style>
+    /* One card, one gain, one loss. Numbers use the gain/loss tokens.
+       Open/Closed and strategy names share one badge, not a second green. */
+    .pd-page {
+        --pd-gain: var(--color-positive, #28c08a);
+        --pd-loss: var(--color-negative, #f0556d);
+        --pd-ink: var(--ht-ink, #e8edf7);
+        --pd-muted: var(--ht-muted, #8a97b1);
+        --pd-surface: var(--ht-surface, #121826);
+        --pd-surface-2: var(--ht-surface-2, #1a2233);
+        --pd-line: var(--ht-line, #243049);
+        --pd-accent: var(--ht-blue, #5b8cff);
+        --pd-radius: 12px;
+        --pd-gap: 1rem;
+        color: var(--pd-ink);
+    }
     .pos-hero {
-        background: #1a1a2e;
-        border-radius: 16px;
-        padding: 2.5rem;
-        color: #fff;
-        margin-bottom: 2rem;
+        background: var(--pd-surface, #121826);
+        border: 1px solid var(--pd-line, #243049);
+        border-radius: var(--pd-radius, 12px);
+        padding: 1.35rem 1.5rem 1.2rem;
+        color: var(--pd-ink, #e8edf7);
+        margin-bottom: var(--pd-gap, 1rem);
+        box-shadow: none;
     }
-    .pos-hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: .25rem; }
-    .badge-open   { background: #198754; }
-    .badge-closed { background: #6c757d; }
-    .badge-mixed  { background: #ffc107; color: #000; }
-    .badge-strategy {
-        font-size: .75rem; font-weight: 600;
-        padding: .35em .65em; border-radius: 6px; color: #fff;
+    .pos-hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .25rem; }
+    .badge-open, .badge-closed, .badge-mixed, .badge-strategy {
+        font-size: .68rem; font-weight: 650;
+        padding: .2em .6em; border-radius: 999px;
+        background: transparent; color: var(--pd-muted, #8a97b1);
+        border: 1px solid var(--pd-line, #243049);
     }
-    .stat-card {
-        border: none; border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    .stat-card, .chart-wrapper, .narrative-card {
+        background: var(--pd-surface, #121826);
+        border: 1px solid var(--pd-line, #243049);
+        border-radius: var(--pd-radius, 12px);
+        box-shadow: none;
     }
-    .chart-wrapper {
-        background: #121826; border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
-        padding: 1.25rem;
-    }
+    .chart-wrapper { padding: 1.15rem 1.25rem 1.2rem; }
     .pnl-chart-box { position: relative; height: 520px; }
     .ht-pnl-tip {
         position: absolute;
@@ -84,8 +98,8 @@
         font-weight: 500;
         font-size: 13px;
     }
-    .ht-pnl-tip-amt.pos { color: #28c08a; }
-    .ht-pnl-tip-amt.neg { color: #f0556d; }
+    .ht-pnl-tip-amt.pos { color: var(--pd-gain, #28c08a); }
+    .ht-pnl-tip-amt.neg { color: var(--pd-loss, #f0556d); }
     .ht-pnl-tip-more {
         margin: 4px 0 0 13px;
         color: #8a97b1;
@@ -97,11 +111,13 @@
         font-size: 11px;
     }
     .ht-pnl-tip-total .ht-pnl-tip-num { color: #c5cedd; }
-    .narrative-card {
-        background: #121826; border-radius: 16px;
-        box-shadow: 0 2px 16px rgba(0,0,0,.05);
+    .pd-lede {
+        margin: 0 0 var(--pd-gap, 1rem);
+        color: var(--pd-muted, #8a97b1);
+        font-size: .95rem;
+        line-height: 1.55;
     }
-    [data-bs-theme="dark"] .narrative-card { background: #1c1e26; }
+    .pd-lede strong { color: var(--pd-ink, #e8edf7); font-weight: 650; }
     .kpi-mini { text-align: center; }
     .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: var(--ht-muted); }
     .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
@@ -176,14 +192,18 @@
         border: 1px solid #243049; background: #121826; color: #e8edf7;
     }
     .session-pill:hover { border-color: #6c757d; }
-    .session-pill.active { border-color: #0d6efd; background: #e7f1ff; color: #0a58ca; }
-    .session-pill.active.session-open { border-color: #198754; background: #d1e7dd; color: #0f5132; }
-    .session-pill.active.session-closed { border-color: #8a97b1; background: #1a2233; color: #e8edf7; }
+    .session-pill.active,
+    .session-pill.active.session-open,
+    .session-pill.active.session-closed {
+        border-color: var(--pd-accent, #5b8cff);
+        background: color-mix(in srgb, var(--pd-accent, #5b8cff) 16%, transparent);
+        color: var(--pd-ink, #e8edf7);
+    }
     .session-pill .pill-dot {
         width: 8px; height: 8px; border-radius: 50%; display: inline-block;
     }
-    .session-pill .pill-dot.open  { background: #198754; }
-    .session-pill .pill-dot.closed { background: #6c757d; }
+    .session-pill .pill-dot.open  { background: var(--pd-accent, #5b8cff); }
+    .session-pill .pill-dot.closed { background: var(--pd-muted, #8a97b1); }
     .session-pill .pill-pnl { font-size: .7rem; opacity: .8; }
     .leg-account-group { margin-top: .5rem; }
     .leg-account-group:first-of-type { margin-top: 0; }
@@ -199,12 +219,16 @@
         border: 1px solid #243049; background: #1a2233; color: #8a97b1;
     }
     .account-toggle:hover { border-color: #6c757d; }
-    .account-toggle.active { border-color: #0d6efd; background: #e7f1ff; color: #0a58ca; }
+    .account-toggle.active {
+        border-color: var(--pd-accent, #5b8cff);
+        background: color-mix(in srgb, var(--pd-accent, #5b8cff) 16%, transparent);
+        color: var(--pd-ink, #e8edf7);
+    }
     .account-toggle .pill-dot {
         width: 8px; height: 8px; border-radius: 50%; display: inline-block;
     }
-    .account-toggle .pill-dot.open { background: #198754; }
-    .account-toggle .pill-dot.closed { background: #ced4da; }
+    .account-toggle .pill-dot.open { background: var(--pd-accent, #5b8cff); }
+    .account-toggle .pill-dot.closed { background: var(--pd-muted, #8a97b1); }
 
     @media (max-width: 640px) {
         .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; margin-bottom: 1rem; }
@@ -259,6 +283,337 @@
         position: absolute; left: 0; right: 0; bottom: .2rem;
         display: flex; justify-content: center;
     }
+
+    /* ── Cohesive position page ── */
+    body .pd-page .review-hero {
+        box-shadow: none;
+        border-radius: var(--pd-radius);
+        margin-bottom: var(--pd-gap);
+    }
+    body .pd-page .review-hero .text-positive,
+    body .pd-page .text-positive,
+    body .pd-page .text-success,
+    body .pd-page .story-pos,
+    body .pd-page .story-metric-pos,
+    body .pd-page .pos {
+        color: var(--pd-gain) !important;
+    }
+    body .pd-page .review-hero .text-negative,
+    body .pd-page .text-negative,
+    body .pd-page .text-danger,
+    body .pd-page .story-neg,
+    body .pd-page .story-metric-neg,
+    body .pd-page .neg {
+        color: var(--pd-loss) !important;
+    }
+    body .pd-page .stat-card,
+    body .pd-page .chart-wrapper,
+    body .pd-page .narrative-card,
+    body .pd-page .ht-statbar,
+    body .pd-page #storyCard.card,
+    body .pd-page .held-fold,
+    body .pd-page .ht-runs,
+    body .pd-page .pd-fold {
+        background: var(--pd-surface);
+        border: 1px solid var(--pd-line);
+        border-radius: var(--pd-radius);
+        box-shadow: none;
+        margin-bottom: var(--pd-gap);
+    }
+    body .pd-page .pd-h,
+    body .pd-page .chart-wrapper h6,
+    body .pd-page .stat-card > h6,
+    body .pd-page .ht-runs > h6,
+    body .pd-page .held-fold-kicker {
+        font-size: .95rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        line-height: 1.3;
+        color: var(--pd-ink);
+        margin: 0;
+    }
+    body .pd-page .pd-sub,
+    body .pd-page .pd-fold-note {
+        color: var(--pd-muted);
+        font-size: .82rem;
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.4;
+        margin: .2rem 0 0;
+    }
+    body .pd-page .pd-kicker {
+        font-size: .68rem;
+        font-weight: 650;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--pd-muted);
+        margin: 1.35rem 0 .55rem;
+    }
+    body .pd-page .badge,
+    body .pd-page .badge-open,
+    body .pd-page .badge-closed,
+    body .pd-page .badge-strategy,
+    body .pd-page .badge.bg-success,
+    body .pd-page .badge.bg-warning {
+        background: transparent !important;
+        color: var(--pd-muted) !important;
+        border: 1px solid var(--pd-line);
+        border-radius: 999px;
+        font-weight: 650;
+        box-shadow: none;
+    }
+    body .pd-page .badge-open,
+    body .pd-page .badge.bg-success {
+        background: color-mix(in srgb, var(--pd-accent) 14%, transparent) !important;
+        color: var(--pd-accent) !important;
+        border-color: color-mix(in srgb, var(--pd-accent) 45%, var(--pd-line));
+    }
+    body .pd-page .session-pill.active,
+    body .pd-page .session-pill.active.session-open,
+    body[data-bs-theme="dark"] .pd-page .session-pill.active.session-open {
+        border-color: var(--pd-accent);
+        background: color-mix(in srgb, var(--pd-accent) 16%, transparent);
+        color: var(--pd-ink);
+    }
+    body .pd-page .session-pill .pill-dot.open,
+    body .pd-page .account-toggle .pill-dot.open { background: var(--pd-accent); }
+    body .pd-page .story-income {
+        background: color-mix(in srgb, var(--pd-gain) 16%, transparent);
+        color: var(--pd-gain);
+    }
+    body .pd-page .story-sell { color: var(--pd-loss); }
+    body .pd-page .story-col-sh { color: var(--pd-gain); border-bottom-color: var(--pd-gain); }
+    body .pd-page .pd-story-lead #storyCard .story-symbol { display: none; }
+    body .pd-page .pd-story-lead #storyCard { margin-bottom: var(--pd-gap); }
+    .pd-num, .pd-page .pd-row-val, .pd-page .pd-dl dd {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+    }
+    .pd-fold { padding: 0; }
+    .pd-fold-head { padding: .9rem 1.1rem .35rem; }
+    .pd-fold-sum {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: .35rem .75rem;
+        padding: .9rem 1.1rem;
+        cursor: pointer;
+        list-style: none;
+    }
+    .pd-fold-sum::-webkit-details-marker { display: none; }
+    .pd-fold-sum::after {
+        content: "▸";
+        color: var(--pd-muted);
+        flex: none;
+        margin-left: auto;
+        font-size: .8rem;
+    }
+    .pd-fold[open] > .pd-fold-sum::after { content: "▾"; }
+    .pd-fold-meta { color: var(--pd-muted); font-size: .78rem; font-weight: 500; }
+    .pd-fold-body { padding: 0 1.1rem 1rem; }
+    .pd-row {
+        border-top: 1px solid var(--pd-line);
+    }
+    .pd-row > summary {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        padding: .7rem .15rem;
+        cursor: pointer;
+        list-style: none;
+        min-width: 0;
+    }
+    .pd-row > summary::-webkit-details-marker { display: none; }
+    .pd-row-name { font-weight: 650; min-width: 0; }
+    .pd-row-val { margin-left: auto; white-space: nowrap; }
+    .pd-row-total {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        padding: .75rem .15rem .15rem;
+        border-top: 1px solid var(--pd-line);
+        font-weight: 650;
+    }
+    .pd-dl {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+        gap: .55rem .9rem;
+        margin: 0 0 .75rem;
+        padding: .15rem .15rem .35rem 1.4rem;
+    }
+    .pd-dl div { min-width: 0; }
+    .pd-dl dt {
+        font-size: .66rem;
+        font-weight: 650;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: var(--pd-muted);
+        margin: 0 0 .1rem;
+    }
+    .pd-dl dd { margin: 0; font-size: .88rem; }
+    .pd-strategy-link {
+        display: inline-block;
+        margin: .15rem 0 .65rem 1.4rem;
+        font-size: .8rem;
+        font-weight: 600;
+    }
+    .wl-win { background: var(--pd-gain); color: #0a0e17; }
+    .wl-win-soft { background: color-mix(in srgb, var(--pd-gain) 42%, var(--pd-surface-2)); color: var(--pd-ink); }
+    .wl-loss-soft { background: color-mix(in srgb, var(--pd-loss) 42%, var(--pd-surface-2)); color: var(--pd-ink); }
+    .wl-loss { background: var(--pd-loss); color: #fff; }
+    .wl-empty { background: var(--pd-surface-2); color: var(--pd-muted); }
+    .wl-scroll { overflow-x: auto; max-width: 100%; }
+    .wl-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
+    .wl-matrix { font-size: .72rem; width: max-content; min-width: 100%; }
+    .wl-matrix .wl-pnl {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-weight: 700;
+        font-size: .8rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .wl-matrix .wl-meta { font-size: .6rem; opacity: .75; }
+    .wl-axis { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; }
+    .pd-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .55rem 1rem;
+        margin-top: .75rem;
+        font-size: .68rem;
+        color: var(--pd-muted);
+    }
+    @media (max-width: 640px) {
+        .pd-page { overflow-x: clip; }
+        .pd-page .pd-legs-scroll {
+            overflow: visible !important;
+            max-height: none !important;
+        }
+        .pd-page table.pd-legs,
+        .pd-page table.pd-stack {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+        }
+        .pd-page table.pd-legs > thead,
+        .pd-page table.pd-stack > thead { display: none !important; }
+        .pd-page table.pd-legs > tbody,
+        .pd-page table.pd-legs > tfoot,
+        .pd-page table.pd-stack > tbody,
+        .pd-page table.pd-stack > tfoot { display: block; }
+        .pd-page table.pd-legs > tbody > tr,
+        .pd-page table.pd-legs > tfoot > tr,
+        .pd-page table.pd-stack > tbody > tr {
+            display: block;
+            border: 1px solid var(--pd-line);
+            border-radius: 10px;
+            margin: 0 0 .6rem;
+            padding: .5rem .7rem .55rem;
+            background: var(--pd-surface-2);
+        }
+        .pd-page table.pd-legs > tbody > tr.leg-detail-row { display: none !important; background: transparent; border: 0; padding: 0; margin: 0; }
+        .pd-page table.pd-legs > tbody > tr.leg-detail-row.open { display: block !important; overflow-x: auto; }
+        .pd-page table.pd-legs > tbody > tr > td,
+        .pd-page table.pd-legs > tfoot > tr > td,
+        .pd-page table.pd-stack > tbody > tr > td {
+            display: flex !important;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: .75rem;
+            width: auto !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            white-space: normal !important;
+            text-align: right;
+            border: 0;
+            padding: .16rem 0;
+            background: transparent !important;
+        }
+        .pd-page table.pd-legs > tbody > tr.leg-detail-row.open > td {
+            display: block !important;
+            text-align: left;
+            overflow-x: auto;
+        }
+        .pd-page table.pd-legs tr.leg-detail-row table td,
+        .pd-page table.pd-legs tr.leg-detail-row table th {
+            display: table-cell !important;
+            width: auto !important;
+            text-align: inherit;
+            white-space: nowrap !important;
+        }
+        .pd-page table.pd-legs > tbody > tr > td::before,
+        .pd-page table.pd-legs > tfoot > tr > td::before,
+        .pd-page table.pd-stack > tbody > tr > td::before {
+            color: var(--pd-muted);
+            font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+            font-size: .66rem;
+            font-weight: 650;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            text-align: left;
+            flex: none;
+        }
+        .pd-page table.pd-stack > tbody > tr > td::before { content: attr(data-label); }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(2)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(2)::before { content: "Leg"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(3)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(3)::before { content: "Contract"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(4)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(4)::before { content: "Strategy"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(5)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(5)::before { content: "Account"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(6)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(6)::before { content: "Qty"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(7)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(7)::before { content: "Opened"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(8)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(8)::before { content: "Closed"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(9)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(9)::before { content: "Days"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(10)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(10)::before { content: "Cost"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(11)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(11)::before { content: "Value"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(12)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(12)::before { content: "P&L"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(13)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(13)::before { content: "If held"; }
+        .pd-page table.pd-legs > tbody > tr > td:nth-child(14)::before,
+        .pd-page table.pd-legs > tfoot > tr > td:nth-child(14)::before { content: "Return"; }
+        .pd-page table.pd-stack > tbody > tr > td:not([data-label])::before,
+        .pd-page table.pd-stack > tbody > tr > td[data-label=""]::before { content: none; }
+        /* Key numbers stay on the card. The rest opens with the row. */
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(2),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(4),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(5),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(6),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(7),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(8),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(9),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(10),
+        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(11),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(2),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(4),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(5),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(6),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(7),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(8),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(9),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(10),
+        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(11) {
+            display: none !important;
+        }
+        .pd-page table.pd-legs .pd-num,
+        .pd-page table.pd-legs .pd-date,
+        .pd-page table.pd-legs .pd-tight,
+        .pd-page table.pd-legs .pd-clip,
+        .pd-page table.pd-legs .pd-flex {
+            min-width: 0;
+            width: auto;
+            max-width: none;
+        }
+        .pd-page table.pd-stack tr:not(.pd-open) td.pd-extra { display: none !important; }
+        .pd-dl { grid-template-columns: 1fr 1fr; padding-left: .15rem; }
+    }
 </style>
 {% endblock %}
 
@@ -289,6 +644,7 @@
 <span class="tt-verb {{ kind }}">{{ labels.get(action, action|replace('_', ' ')|title) }}</span>
 {% endif %}
 {% endmacro %}
+<div class="pd-page">
 <div class="mb-2">
     <a href="/positions" class="text-muted small text-decoration-none">&larr; Back to Positions</a>
 </div>
@@ -453,12 +809,20 @@
 
 </div>
 
+{# Review card from the position summary — the "what happened" headline.
+   The hero already names the symbol and the total, so this card does not
+   repeat that dollar. #}
+{% if story_days %}
+<div class="pd-story-lead">
+    {% include "_story_summary.html" %}
+</div>
+{% endif %}
+
 {# ── Position Narrative (open = snapshot; history = all trades) ── #}
 {% if kpis %}
-<div class="mb-4 p-4 narrative-card">
+<div class="pd-lede">
     {% if overall_status == 'Open' %}
-    <p class="narrative mb-2" style="font-size:1.05rem; line-height:1.7;">
-        <span class="text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">Open</span><br>
+    <p class="narrative mb-2">
         Your current <strong>{{ symbol }}</strong> book
         {% if open_strategy_names|length == 1 %}
         is <strong>{{ open_strategy_names[0] }}</strong>.
@@ -467,15 +831,8 @@
         {% else %}
         is open.
         {% endif %}
-        {% if kpis.unrealized_pnl >= 0 %}
-        You’re <strong class="text-positive">up {{ money(kpis.unrealized_pnl) }}</strong> unrealized
-        {% else %}
-        You’re <strong class="text-negative">down {{ money(-kpis.unrealized_pnl) }}</strong> unrealized
-        {% endif %}
-        (mark-to-market on what’s still open).
     </p>
-    <p class="narrative mb-0 text-muted" style="font-size:1.02rem; line-height:1.65;">
-        <span class="text-uppercase text-muted" style="font-size:.7rem; letter-spacing:.08em;">History</span><br>
+    <p class="narrative mb-0">
         Across everything you’ve done in <strong>{{ symbol }}</strong>
         {%- if kpis.first_trade and kpis.last_trade -%}
         {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
@@ -491,13 +848,9 @@
         {% endif %}.
         {%- else -%}.
         {%- endif %}
-        {% if kpis.avg_days > 0 %}Average time in trade (where we have it): {{ kpis.avg_days|int }} days.{% endif %}
-        {% if kpis.premium_collected > 0 %}
-        Premium collected over time: <strong class="text-positive">{{ money(kpis.premium_collected) }}</strong>.
-        {% endif %}
     </p>
     {% else %}
-    <p class="narrative mb-0" style="font-size:1.05rem; line-height:1.7;">
+    <p class="narrative mb-0">
         Your work in <strong>{{ symbol }}</strong> is fully closed
         {% if kpis.first_trade and kpis.last_trade -%}
         {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
@@ -510,14 +863,6 @@
         with <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}{% if kpis.num_winners + kpis.num_losers > 0 %} and <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed legs{% endif %}.
         {%- else -%}.
         {%- endif %}
-        {% if kpis.total_return >= 0 %}
-        Net result: <strong class="text-positive">{{ money(kpis.total_return) }}</strong> total return.
-        {% else %}
-        Net result: <strong class="text-negative">{{ money(-kpis.total_return) }}</strong> loss.
-        {% endif %}
-        {% if kpis.premium_collected > 0 %}
-        Premium collected: <strong class="text-positive">{{ money(kpis.premium_collected) }}</strong>.
-        {% endif %}
     </p>
     {% endif %}
 </div>
@@ -533,7 +878,10 @@
 
 {% include "_history_window_note.html" %}
 
-{# ── KPI Row ── #}
+{# ── KPI Row ──
+   Realized / unrealized decompose the hero total. Premium and dividends
+   stay here only when the review card above did not already state them. #}
+{% set _tile_labels = story_summary.tiles | map(attribute='label') | list if story_summary and story_summary.tiles else [] %}
 <div class="ht-statbar mb-3">
     <div class="ht-stat">
         <span class="ht-stat-l">{{ term('Realized P&L') }}</span>
@@ -543,10 +891,12 @@
         <span class="ht-stat-l">{{ term('Unrealized P&L') }}</span>
         <span class="ht-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.unrealized_pnl) }}</span>
     </div>
+    {% if 'Income strategy' not in _tile_labels %}
     <div class="ht-stat">
         <span class="ht-stat-l">{{ term('Premium Collected') }}</span>
         <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected) }}</span>
     </div>
+    {% endif %}
     <div class="ht-stat">
         <span class="ht-stat-l">{{ term('Win Rate') }}</span>
         <span class="ht-stat-v">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</span>
@@ -555,10 +905,12 @@
         <span class="ht-stat-l">Avg Days</span>
         <span class="ht-stat-v">{{ "{:.0f}".format(kpis.avg_days) }}</span>
     </div>
+    {% if 'Dividends' not in _tile_labels %}
     <div class="ht-stat">
         <span class="ht-stat-l">Dividends</span>
         <span class="ht-stat-v text-positive">{{ money(kpis.dividend_income) }}</span>
     </div>
+    {% endif %}
 </div>
 
 {# ── Account Toggle Bar (turn entire accounts on/off) ── #}
@@ -636,7 +988,7 @@
 </datalist>
 <div class="card stat-card p-3 mb-4" id="position-legs">
     <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold mb-0">Position Legs</h6>
+        <h6 class="pd-h mb-0">Focus a leg</h6>
         {% if leg_param %}
         <a href="{{ scoped_url('position_detail', symbol=symbol, _anchor='position-legs') }}" class="btn btn-sm btn-outline-secondary">Show All</a>
         {% endif %}
@@ -759,7 +1111,7 @@
 <div class="chart-wrapper mb-4" id="position-chart">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
         <div>
-            <h6 class="fw-bold mb-1">Cumulative P&amp;L</h6>
+            <h6 class="pd-h mb-1">Cumulative P&amp;L</h6>
             {% if prices_through_date and has_underlying_price %}
             <p class="text-muted small mb-0" id="pnlChartPriceCaption" style="display:none;">Stock prices through {{ prices_through_date }}.</p>
             {% endif %}
@@ -806,7 +1158,6 @@
 {% set _day_count = story_days | selectattr('type', 'equalto', 'day') | list | length %}
 {% set _share_label = story_share_label|default('Shares') %}
 <div class="story-wrap">
-    {% include "_story_summary.html" %}
     <details id="storyDetails" class="pd-toggle story-fold">
         <summary>
             <span class="story-open-cta story-cta-closed">Show the day-by-day review ({{ _day_count }} trade day{{ 's' if _day_count != 1 }}) &#9662;</span>
@@ -909,287 +1260,110 @@
 {% include "_story_review_css.html" %}
 {% endif %}
 
+{# First visit keeps a one-time glossary. The detail sections below
+   start collapsed for everyone, so the page reads as one story. #}
+{% if first_visit %}
+<p class="pd-lede">
+    A <strong>leg</strong> is one open&rarr;close stretch of this position.
+    {{ term('Covered Call') }} = a short call backed by 100+ shares you own;
+    <strong>Naked Call</strong> = a short call with no shares backing it;
+    {{ term('Cash-Secured Put') }} = a short put backed by cash to buy the shares if assigned.
+    A {{ term('roll') }} is closing one contract and opening another the same day.
+</p>
+{% endif %}
+
+{# ── What worked: strategy rows. The headline number is total return.
+   Realized, unrealized, dividends, and premium received open on the row.
+   Collected is premium received — not a net result. #}
+<p class="pd-kicker">What worked</p>
+{% if strategy_rows %}
+<div class="pd-fold" id="strategy-breakdown">
+    <div class="pd-fold-head">
+        <h2 class="pd-h">Strategy breakdown</h2>
+        <p class="pd-sub">Open is what’s live now. Closed is historical only.</p>
+    </div>
+    {% for r in strategy_rows %}
+    <details class="pd-row">
+        <summary>
+            <span class="badge badge-strategy">{{ r.strategy }}</span>
+            {% if r.status == 'Open' %}<span class="badge badge-open">Open</span>
+            {% else %}<span class="badge badge-closed">Closed</span>{% endif %}
+            <span class="pd-row-val {{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }}">{{ money(r.total_pnl) }}</span>
+        </summary>
+        <dl class="pd-dl">
+            <div>
+                <dt>Account</dt>
+                <dd>{{ (r.account_display or r.account) | account_label(r.tenant_id) }}</dd>
+            </div>
+            <div>
+                <dt>{{ term('Realized') }}</dt>
+                <dd class="{{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">{{ money(r.realized_pnl) }}</dd>
+            </div>
+            <div>
+                <dt>{{ term('Unrealized') }}</dt>
+                <dd class="{{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">{{ money(r.unrealized_pnl) }}</dd>
+            </div>
+            <div>
+                <dt>Dividends</dt>
+                <dd class="{% if (r.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                    {% if (r.total_dividend_income or 0) != 0 %}{{ money(r.total_dividend_income) }}{% else %}&mdash;{% endif %}
+                </dd>
+            </div>
+            <div>
+                <dt>{{ term('Win Rate') }}</dt>
+                <dd>{{ win_rate_label(r.win_rate, r.num_winners, r.num_losers) }}</dd>
+            </div>
+            <div>
+                <dt>Trades</dt>
+                <dd>
+                    {% if r.status == 'Open' and (r.num_individual_trades or 0) == 0 %}
+                    <span class="text-muted" title="Per-strategy fill count not in summary; see History and trade tables">—</span>
+                    {% else %}
+                    {{ r.num_individual_trades | int }}
+                    {% endif %}
+                </dd>
+            </div>
+            <div>
+                <dt>Avg P&amp;L</dt>
+                <dd class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">{{ money(r.avg_pnl_per_trade) }}</dd>
+            </div>
+            <div>
+                <dt>Avg days</dt>
+                <dd>{{ "{:,.0f}".format(r.avg_days_in_trade) if r.avg_days_in_trade is not none else '—' }}</dd>
+            </div>
+            <div>
+                <dt title="Premium received on this strategy.">Collected</dt>
+                <dd class="{% if (r.total_premium_received or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                    {% if (r.total_premium_received or 0) != 0 %}{{ money(r.total_premium_received) }}{% else %}&mdash;{% endif %}
+                </dd>
+            </div>
+        </dl>
+        <a class="pd-strategy-link" href="{{ scoped_url('strategies', tenant=r.tenant_id, tenants=none, strategy=r.strategy) }}">Open this strategy</a>
+    </details>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% include "_covered_call_runs.html" %}
 
-{# ── First-visit calm: collapse the analytical breakdown behind one
-   toggle so a brand-new user's first Position Detail load is hero + one
-   review sentence + chart, not five tables at once. ``first_visit`` is
-   server-set from a cookie (app/position_detail.py) so there's no
-   flash-of-content; returning visitors get everything expanded exactly
-   as before. #}
-{% set _has_pd_advanced = breakdown_rows or strategy_rows or option_matrices or current_positions or trade_outcomes %}
-{% if first_visit and _has_pd_advanced %}
-<div class="card stat-card p-3 mb-3" style="background:#121826; border:1px solid #243049; color:#e8edf7;">
-    <p class="text-muted small mb-2">
-        Quick terms, since strategy labels show up below: a <strong>leg</strong> is one
-        open&rarr;close stretch of this position. {{ term('Covered Call') }} = a short call
-        backed by 100+ shares you own; <strong>Naked Call</strong> = a short call with no
-        shares backing it; {{ term('Cash-Secured Put') }} = a short put backed by cash to
-        buy the shares if assigned. A {{ term('roll') }} is closing one contract and
-        opening another the same day.
-    </p>
-    <details class="pd-toggle" id="pdAdvanced">
-        <summary>
-            <span class="story-open-cta story-cta-closed">Show the full breakdown &mdash; strategy, legs, win/loss matrix &#9662;</span>
-            <span class="story-open-cta story-cta-open">Hide the full breakdown &#9652;</span>
-        </summary>
-        <div class="mt-3">
-{% endif %}
-
-{# ── Breakdown by Type (equity / options / dividends) ── #}
-{% if breakdown_rows %}
-<div class="card stat-card p-4 mb-4">
-    <h6 class="fw-bold mb-1">Breakdown by Type</h6>
-    <p class="text-muted small mb-3">
-        How {{ symbol }}'s P&amp;L splits across what you actually owned —
-        equity, options and dividends — for {% if leg_param %}the selected leg{% else %}the whole position{% endif %}.
-    </p>
-    <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Type</th>
-                    <th title="This type's contribution to Total Return (realized + unrealized; dividends are their own row).">Total Return</th>
-                    <th>{{ term('Realized') }}</th>
-                    <th>{{ term('Unrealized') }}</th>
-                    <th data-m="hide">Count</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in breakdown_rows %}
-                <tr>
-                    <td><strong>{{ r.type }}</strong></td>
-                    <td class="{{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-bold">
-                        {{ money(r.total) }}
-                    </td>
-                    <td class="{{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
-                        {{ money(r.realized) }}
-                    </td>
-                    <td class="{% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        {% if r.unrealized is none %}
-                        &mdash;
-                        {% else %}
-                        {{ money(r.unrealized) }}
-                        {% endif %}
-                    </td>
-                    <td class="text-muted small">
-                        {% if r.count == 0 %}
-                        &mdash;
-                        {% else %}
-                        {{ r.count }} {{ r.count_label }}{% if r.count_open %} ({{ r.count_open }} open){% endif %}
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            {% set bd_total = breakdown_rows | sum(attribute='total') %}
-            <tfoot>
-                <tr class="border-top">
-                    <th>Total</th>
-                    <th class="{{ 'text-positive' if bd_total >= 0 else 'text-negative' }}">
-                        {{ money(bd_total) }}
-                    </th>
-                    <th class="{{ 'text-positive' if breakdown_totals.realized >= 0 else 'text-negative' }}">
-                        {{ money(breakdown_totals.realized) }}
-                    </th>
-                    <th class="{% if breakdown_totals.unrealized is none %}text-muted{% elif breakdown_totals.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        {% if breakdown_totals.unrealized is none %}
-                        &mdash;
-                        {% else %}
-                        {{ money(breakdown_totals.unrealized) }}
-                        {% endif %}
-                    </th>
-                    <th class="text-muted small">
-                        {% if breakdown_totals.count %}{{ breakdown_totals.count }}{% else %}&mdash;{% endif %}
-                    </th>
-                </tr>
-            </tfoot>
-        </table>
-    </div>
-    {# Fee drag — informational only, deliberately NOT a row in the table
-       above (it would double-subtract; broker fees are already netted
-       into each fill's cash flow, so Realized already reflects them).
-       Hidden when there's nothing to show. #}
-    {% if breakdown_fees_total | default(0) %}
-    <p class="text-muted small mt-3 mb-0">
-        This included <strong>{{ money(breakdown_fees_total) }}</strong>
-        in broker-reported fees (commissions, contract &amp; regulatory fees) —
-        already reflected in Realized above, not an additional cost.
-    </p>
-    {% endif %}
-</div>
-{% endif %}
-
-{# ── Strategy Breakdown ── #}
-{% if strategy_rows %}
-<div class="card stat-card p-4 mb-4">
-    <h6 class="fw-bold mb-1">Strategy Breakdown</h6>
-    <p class="text-muted small mb-3">Every strategy label you’ve used for this symbol—<strong>Open</strong> is what’s live now; <strong>Closed</strong> is historical only.</p>
-    {% set colors = {
-        'Covered Call': '#0d6efd', 'Cash-Secured Put': '#6f42c1',
-        'Wheel': '#fd7e14', 'Buy and Hold': '#198754',
-        'Dividend': '#0c8b6e',
-        'Long Call': '#20c997', 'Long Put': '#0dcaf0',
-        'Call Spread': '#6610f2', 'Put Spread': '#d63384', 'Iron Condor': '#e8590c',
-        'Naked Call': '#dc3545', 'Poor Man Covered Call': '#6f42c1', 'Protective Put': '#ffc107',
-        'Partially Covered Call': '#4d94ff', 'Diagonal Call Spread': '#7950f2',
-        'Diagonal Put Spread': '#c2255c', 'Straddle': '#0ca678', 'Strangle': '#f08c00',
-        'Other Option': '#6c757d'
-    } %}
-    <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    {# data-m="hide": collapsed on phones (tables.js). #}
-                    <th class="sortable" data-sort="str" data-m="hide">Account</th>
-                    <th class="sortable" data-sort="str">Strategy</th>
-                    <th class="sortable" data-sort="str">Status</th>
-                    <th class="sortable" data-sort="num" title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total Return</th>
-                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
-                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
-                    <th class="sortable" data-sort="num" data-m="hide" title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
-                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Win Rate') }}</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Trades</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Avg P&amp;L</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Avg Days</th>
-                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Premium') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in strategy_rows %}
-                <tr data-href="{{ scoped_url('strategies', tenant=r.tenant_id, tenants=none, strategy=r.strategy) }}">
-                    <td data-val="{{ (r.account_display or r.account) | account_label(r.tenant_id) }}">{{ (r.account_display or r.account) | account_label(r.tenant_id) }}</td>
-                    <td data-val="{{ r.strategy }}">
-                        <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">
-                            {{ r.strategy }}
-                        </span>
-                    </td>
-                    <td data-val="{{ r.status }}">
-                        {% if r.status == 'Open' %}<span class="badge badge-open">Open</span>
-                        {% else %}<span class="badge badge-closed">Closed</span>{% endif %}
-                    </td>
-                    <td data-val="{{ r.total_pnl }}" class="{{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }} fw-bold">
-                        {{ money(r.total_pnl) }}
-                    </td>
-                    <td data-val="{{ r.realized_pnl }}" class="{{ 'text-positive' if r.realized_pnl >= 0 else 'text-negative' }}">
-                        {{ money(r.realized_pnl) }}
-                    </td>
-                    <td data-val="{{ r.unrealized_pnl }}" class="{{ 'text-positive' if r.unrealized_pnl >= 0 else 'text-negative' }}">
-                        {{ money(r.unrealized_pnl) }}
-                    </td>
-                    <td data-val="{{ r.total_dividend_income or 0 }}" class="{% if (r.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
-                        {% if (r.total_dividend_income or 0) != 0 %}
-                        {{ money(r.total_dividend_income) }}
-                        {% else %}
-                        &mdash;
-                        {% endif %}
-                    </td>
-                    <td data-val="{{ r.win_rate if (r.num_winners or 0) + (r.num_losers or 0) else '' }}">{{ win_rate_label(r.win_rate, r.num_winners, r.num_losers) }}</td>
-                    <td data-val="{{ r.num_individual_trades or 0 }}">
-                        {% if r.status == 'Open' and (r.num_individual_trades or 0) == 0 %}
-                        <span class="text-muted" title="Per-strategy fill count not in summary; see History and trade tables">—</span>
-                        {% else %}
-                        {{ r.num_individual_trades | int }}
-                        {% endif %}
-                    </td>
-                    <td data-val="{{ r.avg_pnl_per_trade }}" class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">
-                        {{ money(r.avg_pnl_per_trade) }}
-                    </td>
-                    <td data-val="{{ r.avg_days_in_trade }}">{{ "{:,.0f}".format(r.avg_days_in_trade) if r.avg_days_in_trade is not none else '—' }}</td>
-                    <td data-val="{{ r.total_premium_received }}" class="text-positive">{{ money(r.total_premium_received) }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-{# ── Strategy Heatmap Matrix ── #}
-{% if option_matrices %}
-<div class="card stat-card p-4 mb-4">
-    <h6 class="fw-bold mb-3">Win/Loss Matrix — DTE vs Strike Distance</h6>
-    <p class="text-muted small mb-3" style="font-size:.75rem;">
-        Each cell shows <strong>avg P&amp;L</strong>, trade count, and win rate.
-        Color = win rate (red = mostly losers, green = mostly winners).
-    </p>
-    {% for mat in option_matrices %}
-    <div class="{% if not loop.first %}mt-4{% endif %}">
-        <h6 class="fw-semibold mb-1" style="font-size:.85rem;">
-            {{ mat.strategy }}
-            <span class="text-muted fw-normal" style="font-size:.75rem;">({{ mat.trade_count }} trades)</span>
-        </h6>
-        <div class="table-responsive">
-            <table class="table table-sm table-bordered align-middle mb-0 wl-matrix" style="font-size:.72rem;">
-                <thead>
-                    <tr>
-                        <th class="wl-axis" style="min-width:60px;">{{ term('DTE') }} \ {{ term('Strike Distance', 'strike-price') }}</th>
-                        {% for col in mat.col_headers %}
-                        <th class="text-center wl-axis" style="min-width:96px;">{{ col }}</th>
-                        {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in mat.rows %}
-                    <tr>
-                        <td class="fw-semibold wl-axis text-nowrap">{{ row.dte_label }}</td>
-                        {% for cell in row.cells %}
-                        {% if cell.count == 0 %}
-                        <td class="text-center" style="background: #1a2233;color: #8a97b1;">&mdash;</td>
-                        {% else %}
-                        {% set wr = cell.win_rate %}
-                        {% if wr >= 75 %}
-                            {% set bg = "#1b7a3d" %}{% set fg = "#fff" %}{% set fg2 = "rgba(255,255,255,.7)" %}
-                        {% elif wr >= 50 %}
-                            {% set bg = "#5cb85c" %}{% set fg = "#fff" %}{% set fg2 = "rgba(255,255,255,.7)" %}
-                        {% elif wr >= 25 %}
-                            {% set bg = "#e8a838" %}{% set fg = "#333" %}{% set fg2 = "rgba(0,0,0,.5)" %}
-                        {% else %}
-                            {% set bg = "#c9302c" %}{% set fg = "#fff" %}{% set fg2 = "rgba(255,255,255,.7)" %}
-                        {% endif %}
-                        <td class="text-center" style="background:{{ bg }};color:{{ fg }};padding:.4rem .3rem;line-height:1.3;">
-                            <div style="font-weight:700;font-size:.8rem;">
-                                {% if cell.avg_pnl is not none %}{{ money(cell.avg_pnl, 0) }}{% else %}&mdash;{% endif %}
-                            </div>
-                            <div style="font-size:.6rem;color:{{ fg2 }};">
-                                {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
-                            </div>
-                        </td>
-                        {% endif %}
-                        {% endfor %}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endfor %}
-    <div class="d-flex gap-3 mt-2" style="font-size:.65rem;">
-        <span><span style="display:inline-block;width:12px;height:12px;background:#c9302c;border-radius:2px;vertical-align:middle;"></span> 0–24% wins</span>
-        <span><span style="display:inline-block;width:12px;height:12px;background:#e8a838;border-radius:2px;vertical-align:middle;"></span> 25–49%</span>
-        <span><span style="display:inline-block;width:12px;height:12px;background:#5cb85c;border-radius:2px;vertical-align:middle;"></span> 50–74%</span>
-        <span><span style="display:inline-block;width:12px;height:12px;background:#1b7a3d;border-radius:2px;vertical-align:middle;"></span> 75–100%</span>
-    </div>
-</div>
-{% endif %}
-
-{# ── All Legs (Open + Closed) ── #}
+{# ── All Legs (Open + Closed). The summary is the only "Position Legs"
+   heading, and it stays next to If held. #}
 {% include "_held_to_expiry.html" %}
+<p class="pd-kicker">Details</p>
 {% if current_positions or trade_outcomes %}
-<div class="card stat-card p-4 mb-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="fw-bold mb-0">
-            Position Legs
-            <span class="text-muted fw-normal" style="font-size:.75rem;">
-                {% if current_positions %}{{ current_positions|length }} open{% endif %}{% if current_positions and trade_outcomes %}, {% endif %}{% if trade_outcomes %}{{ trade_outcomes|length }} closed{% endif %}
-                {% if trade_outcomes %}
-                {% set winners = trade_outcomes | selectattr('is_winner') | list | length %}
-                &middot; {{ winners }}/{{ trade_outcomes|length }} winners ({{ (winners / trade_outcomes|length * 100) | round(0) | int }}%)
-                {% endif %}
-            </span>
-        </h6>
-    </div>
-    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+<details class="pd-fold" id="pd-legs">
+    <summary class="pd-fold-sum">
+        <span class="pd-h">Position Legs</span>
+        <span class="pd-fold-note">
+            {% if current_positions %}{{ current_positions|length }} open{% endif %}{% if current_positions and trade_outcomes %}, {% endif %}{% if trade_outcomes %}{{ trade_outcomes|length }} closed{% endif %}
+            {% if trade_outcomes %}
+            {% set winners = trade_outcomes | selectattr('is_winner') | list | length %}
+            &middot; {{ winners }}/{{ trade_outcomes|length }} winners ({{ (winners / trade_outcomes|length * 100) | round(0) | int }}%)
+            {% endif %}
+        </span>
+    </summary>
+    <div class="pd-fold-body">
+    <div class="table-responsive pd-legs-scroll" style="max-height: 600px; overflow-y: auto;">
         <table class="table table-sm table-hover align-middle mb-0 pd-legs">
             <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
                 <tr>
@@ -1227,11 +1401,11 @@
                 {# ── Open legs ── #}
                 {% if current_positions %}
                 {% for p in current_positions %}
-                <tr style="background:rgba(25,135,84,.04);">
+                <tr class="pd-openable">
                     {% set contract = (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else (p.description or '') %}
                     {% set strat = p.leg_kind or p.instrument_type or '' %}
                     {% set acct = (p.account_display or p.account) | account_label(p.tenant_id) %}
-                    <td class="pd-tight"><span class="badge bg-success bg-opacity-25 text-success" style="font-size:.6rem;">Open</span></td>
+                    <td class="pd-tight"><span class="badge badge-open">Open</span></td>
                     <td class="pd-tight text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
                     <td class="fw-semibold small pd-flex">
                         <div class="pd-contract-line"><span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span></div>
@@ -1254,7 +1428,7 @@
                 </tr>
                 {% endfor %}
                 {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
-                <tr class="fw-semibold table-light" style="font-size:.8rem;">
+                <tr class="fw-semibold table-light pd-open" style="font-size:.8rem;">
                     <td class="pd-tight"></td>
                     <td></td>
                     <td class="text-nowrap">Open Total</td>
@@ -1390,7 +1564,7 @@
             </tbody>
             {% if trade_outcomes %}
             <tfoot class="table-light">
-                <tr class="fw-semibold" style="font-size:.8rem;">
+                <tr class="fw-semibold pd-open" style="font-size:.8rem;">
                     <td class="pd-tight"></td>
                     <td></td>
                     <td class="text-nowrap">Closed Total</td>
@@ -1409,7 +1583,7 @@
                     <td class="pd-num text-muted">—</td>
                 </tr>
                 {% if current_positions %}
-                <tr class="fw-semibold border-top border-secondary" style="font-size:.8rem;">
+                <tr class="fw-semibold border-top border-secondary pd-open" style="font-size:.8rem;">
                     <td class="pd-tight"></td>
                     <td></td>
                     <td class="text-nowrap">Total</td>
@@ -1432,70 +1606,189 @@
             {% endif %}
         </table>
     </div>
-</div>
+    </div>
+</details>
 {% endif %}
 
-{% if first_visit and _has_pd_advanced %}
+{# ── Breakdown by Type (equity / options / dividends) ── #}
+{% if breakdown_rows %}
+<details class="pd-fold" id="pd-by-type">
+    <summary class="pd-fold-sum">
+        <span class="pd-h">Breakdown by Type</span>
+        <span class="pd-fold-note">Equity, options, and dividends{% if leg_param %} for the selected leg{% endif %}</span>
+    </summary>
+    <div class="pd-fold-body">
+        {% for r in breakdown_rows %}
+        <details class="pd-row">
+            <summary>
+                <span class="pd-row-name">{{ r.type }}</span>
+                <span class="pd-row-val {{ 'text-positive' if r.total >= 0 else 'text-negative' }}">{{ money(r.total) }}</span>
+            </summary>
+            <dl class="pd-dl">
+                <div>
+                    <dt>{{ term('Realized') }}</dt>
+                    <dd class="{{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">{{ money(r.realized) }}</dd>
+                </div>
+                <div>
+                    <dt>{{ term('Unrealized') }}</dt>
+                    <dd class="{% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                        {% if r.unrealized is none %}&mdash;{% else %}{{ money(r.unrealized) }}{% endif %}
+                    </dd>
+                </div>
+                <div>
+                    <dt>Count</dt>
+                    <dd class="text-muted">
+                        {% if r.count == 0 %}&mdash;{% else %}{{ r.count }} {{ r.count_label }}{% if r.count_open %} ({{ r.count_open }} open){% endif %}{% endif %}
+                    </dd>
+                </div>
+            </dl>
+        </details>
+        {% endfor %}
+        {% set bd_total = breakdown_rows | sum(attribute='total') %}
+        <div class="pd-row-total">
+            <span>Total</span>
+            <span class="pd-row-val {{ 'text-positive' if bd_total >= 0 else 'text-negative' }}">{{ money(bd_total) }}</span>
         </div>
-    </details>
-</div>
+        {# Fee drag — informational only, deliberately NOT a row above
+           (it would double-subtract; broker fees are already netted
+           into each fill's cash flow, so Realized already reflects them).
+           Hidden when there's nothing to show. #}
+        {% if breakdown_fees_total | default(0) %}
+        <p class="text-muted small mt-3 mb-0">
+            This included <strong>{{ money(breakdown_fees_total) }}</strong>
+            in broker-reported fees (commissions, contract &amp; regulatory fees) —
+            already reflected in Realized above, not an additional cost.
+        </p>
+        {% endif %}
+    </div>
+</details>
 {% endif %}
 
-{# ── Raw Trade History (collapsed) ── #}
+{# ── Raw Trade History (collapsed). Phone rows keep date, action, qty,
+   and amount; the rest opens with the row. #}
 {% if trades %}
-<div class="card stat-card p-4 mb-4">
-    <details>
-        <summary class="fw-bold" style="cursor:pointer; font-size:.9rem;">
-            Raw Transaction Log ({{ trades|length }} entries)
-        </summary>
-        <div class="mt-2">
-            <input type="text" id="tradeSearch" class="form-control form-control-sm mb-2"
-                   style="max-width:240px" placeholder="Search trades...">
-            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                <table class="table table-sm table-hover align-middle mb-0" style="font-size:.75rem;" id="tradeTable">
-                    <thead class="table-light" style="position: sticky; top: 0;">
+<details class="pd-fold" id="pd-raw">
+    <summary class="pd-fold-sum">
+        <span class="pd-h">Raw Transaction Log</span>
+        <span class="pd-fold-note">{{ trades|length }} entries</span>
+    </summary>
+    <div class="pd-fold-body">
+        <input type="text" id="tradeSearch" class="form-control form-control-sm mb-2"
+               style="max-width:240px" placeholder="Search trades...">
+        <div class="table-responsive pd-legs-scroll" style="max-height: 400px; overflow-y: auto;">
+            <table class="table table-sm table-hover align-middle mb-0 pd-stack" style="font-size:.75rem;" id="tradeTable">
+                <thead class="table-light" style="position: sticky; top: 0;">
+                    <tr>
+                        <th class="sortable" data-sort="str">Date</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Account</th>
+                        <th class="sortable" data-sort="str">Action</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Instrument</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Description</th>
+                        <th class="sortable" data-sort="num">Qty</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Price</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Fees</th>
+                        <th class="sortable" data-sort="num">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in trades %}
+                    <tr class="pd-openable">
+                        <td class="text-nowrap" data-label="Date" data-val="{{ t.trade_date }}">{{ t.trade_date }}</td>
+                        <td class="pd-extra" data-label="Account" data-val="{{ (t.account_display or t.account) | account_label(t.tenant_id) }}">{{ (t.account_display or t.account) | account_label(t.tenant_id) }}</td>
+                        <td data-label="Action" data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">{{ trade_action(t) }}</td>
+                        <td class="pd-extra" data-label="Instrument">{{ t.instrument_type }}</td>
+                        <td class="pd-extra small" data-label="Description">{{ t.description }}</td>
+                        <td data-label="Qty" data-val="{{ t.quantity }}">
+                            {% if t.quantity is number and (t.quantity % 1) != 0 %}
+                            {{ "{:,.4f}".format(t.quantity) }}
+                            {% else %}
+                            {{ "{:,.0f}".format(t.quantity) }}
+                            {% endif %}
+                        </td>
+                        <td class="pd-extra" data-label="Price" data-val="{{ t.price }}">{{ money(t.price) }}</td>
+                        <td class="pd-extra" data-label="Fees" data-val="{{ t.fees }}">{{ money(t.fees) }}</td>
+                        <td data-label="Amount" data-val="{{ t.amount }}" class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
+                            {{ money(t.amount) }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</details>
+{% endif %}
+
+{# ── Win/Loss matrix. Secondary, so it stays behind this disclosure.
+   Cell color is the page gain/loss pair, not a second palette. #}
+{% if option_matrices %}
+<details class="pd-fold" id="pd-matrix">
+    <summary class="pd-fold-sum">
+        <span class="pd-h">Win/Loss matrix</span>
+        <span class="pd-fold-note">DTE versus strike distance. Avg P&amp;L, trades, and win rate.</span>
+    </summary>
+    <div class="pd-fold-body">
+        {% for mat in option_matrices %}
+        <div class="{% if not loop.first %}mt-3{% endif %}">
+            <h3 class="pd-h mb-1">
+                {{ mat.strategy }}
+                <span class="pd-fold-note">({{ mat.trade_count }} trades)</span>
+            </h3>
+            <div class="wl-scroll">
+                <table class="table table-sm table-bordered align-middle mb-0 wl-matrix">
+                    <thead>
                         <tr>
-                            {# data-m="hide": collapsed on phones (tables.js). #}
-                            <th class="sortable" data-sort="str">Date</th>
-                            <th class="sortable" data-sort="str" data-m="hide">Account</th>
-                            <th class="sortable" data-sort="str">Action</th>
-                            <th class="sortable" data-sort="str" data-m="hide">Instrument</th>
-                            <th class="sortable" data-sort="str" data-m="hide">Description</th>
-                            <th class="sortable" data-sort="num">Qty</th>
-                            <th class="sortable" data-sort="num" data-m="hide">Price</th>
-                            <th class="sortable" data-sort="num" data-m="hide">Fees</th>
-                            <th class="sortable" data-sort="num">Amount</th>
+                            <th class="wl-axis">{{ term('DTE') }} \ {{ term('Strike Distance', 'strike-price') }}</th>
+                            {% for col in mat.col_headers %}
+                            <th class="text-center wl-axis">{{ col }}</th>
+                            {% endfor %}
                         </tr>
                     </thead>
                     <tbody>
-                        {% for t in trades %}
+                        {% for row in mat.rows %}
                         <tr>
-                            <td class="text-nowrap" data-val="{{ t.trade_date }}">{{ t.trade_date }}</td>
-                            <td data-val="{{ (t.account_display or t.account) | account_label(t.tenant_id) }}">{{ (t.account_display or t.account) | account_label(t.tenant_id) }}</td>
-                            <td data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">{{ trade_action(t) }}</td>
-                            <td>{{ t.instrument_type }}</td>
-                            <td class="small">{{ t.description }}</td>
-                            <td data-val="{{ t.quantity }}">
-                                {% if t.quantity is number and (t.quantity % 1) != 0 %}
-                                {{ "{:,.4f}".format(t.quantity) }}
-                                {% else %}
-                                {{ "{:,.0f}".format(t.quantity) }}
-                                {% endif %}
+                            <td class="fw-semibold wl-axis text-nowrap">{{ row.dte_label }}</td>
+                            {% for cell in row.cells %}
+                            {% if cell.count == 0 %}
+                            <td class="text-center wl-empty">&mdash;</td>
+                            {% else %}
+                            {% set wr = cell.win_rate %}
+                            {% if wr >= 75 %}
+                                {% set tone = "wl-win" %}
+                            {% elif wr >= 50 %}
+                                {% set tone = "wl-win-soft" %}
+                            {% elif wr >= 25 %}
+                                {% set tone = "wl-loss-soft" %}
+                            {% else %}
+                                {% set tone = "wl-loss" %}
+                            {% endif %}
+                            <td class="text-center {{ tone }}">
+                                <div class="wl-pnl">
+                                    {% if cell.avg_pnl is not none %}{{ money(cell.avg_pnl, 0) }}{% else %}&mdash;{% endif %}
+                                </div>
+                                <div class="wl-meta">
+                                    {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
+                                </div>
                             </td>
-                            <td data-val="{{ t.price }}">{{ money(t.price) }}</td>
-                            <td data-val="{{ t.fees }}">{{ money(t.fees) }}</td>
-                            <td data-val="{{ t.amount }}" class="{{ 'text-positive' if t.amount >= 0 else 'text-negative' }} fw-semibold">
-                                {{ money(t.amount) }}
-                            </td>
+                            {% endif %}
+                            {% endfor %}
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
-    </details>
-</div>
+        {% endfor %}
+        <div class="pd-legend">
+            <span><span class="wl-swatch wl-loss"></span> 0–24% wins</span>
+            <span><span class="wl-swatch wl-loss-soft"></span> 25–49%</span>
+            <span><span class="wl-swatch wl-win-soft"></span> 50–74%</span>
+            <span><span class="wl-swatch wl-win"></span> 75–100%</span>
+        </div>
+    </div>
+</details>
 {% endif %}
+
 
 <div class="ht-share-modal" id="htShareModal" hidden>
     <div class="ht-share-panel" role="dialog" aria-labelledby="htShareTitle">
@@ -1544,6 +1837,7 @@
     No data found for <strong>{{ symbol }}</strong> in your linked accounts. If you just synced, give it a couple of minutes for the dashboard to refresh; otherwise double-check the symbol and that the account label matches what you see on your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
 </div>
 {% endif %}
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -1587,7 +1881,7 @@
     // Index chart dates once, then place each marker at its date's Total
     // value (walking back to the last non-null Total for sparse spines).
     var MARKER_COLORS = (window.htPnlTooltip && window.htPnlTooltip.colors) || {
-        buy: '#1d4ed8', sell: '#b91c1c', lifecycle: '#6d28d9', income: '#047857'
+        buy: '#1d4ed8', sell: '#f0556d', lifecycle: '#6d28d9', income: '#28c08a'
     };
     var markerDataset = null;
     var markerIndexByDate = {};   // story date iso -> point index in the marker dataset
@@ -1748,7 +2042,7 @@
                     {
                         label: 'Dividends',
                         data: chartData.dividends,
-                        borderColor: '#198754',
+                        borderColor: '#28c08a',
                         tension: 0,
                         pointRadius: 0,
                         pointHitRadius: 6,
@@ -2009,19 +2303,22 @@
         });
     }
 
-    // Leg drill-down toggle
-    document.querySelectorAll('.leg-toggle').forEach(function (row) {
+    // Leg drill-down, and the phone row that hides the extra columns
+    // until the row is open. A row with no fill list still toggles.
+    document.querySelectorAll('.leg-toggle, tr.pd-openable').forEach(function (row) {
         row.addEventListener('click', function (e) {
-            if (e.target.closest('.ht-share-btn') || e.target.closest('.held-pill')) return;
+            if (e.target.closest('.ht-share-btn, .held-pill, a, button, input')) return;
             var targetId = this.getAttribute('data-target');
-            var detail = document.getElementById(targetId);
-            if (!detail) return;
+            var detail = targetId ? document.getElementById(targetId) : null;
             var arrow = this.querySelector('.leg-arrow');
-            if (detail.classList.contains('open')) {
-                detail.classList.remove('open');
+            var open = this.classList.contains('pd-open');
+            if (open) {
+                this.classList.remove('pd-open');
+                if (detail) detail.classList.remove('open');
                 if (arrow) arrow.innerHTML = '&#9654;';
             } else {
-                detail.classList.add('open');
+                this.classList.add('pd-open');
+                if (detail) detail.classList.add('open');
                 if (arrow) arrow.innerHTML = '&#9660;';
             }
         });
