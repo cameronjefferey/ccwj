@@ -253,7 +253,7 @@
         <div class="atlas-hero-in row g-3 align-items-center">
             <div class="col-lg-8">
                 <div class="atlas-kicker">Settings</div>
-                <h1>{{ profile_row.display_name or current_user.username }}</h1>
+                <h1>{{ profile_row.display_name or (current_user.username | privacy_hide) }}</h1>
                 <p class="lead">Manage how your data syncs, how the app opens, and your login.</p>
             </div>
             <div class="col-lg-4 d-flex justify-content-lg-end">
@@ -284,13 +284,13 @@
             <div class="atlas-card">
                 <div class="atlas-card-b pt-4">
                     <div class="id-card">
-                        <div class="id-avatar">{{ (profile_row.display_name or current_user.username)[:1]|upper }}</div>
+                        <div class="id-avatar">{% if privacy_mode and not profile_row.display_name %}•{% else %}{{ (profile_row.display_name or current_user.username)[:1]|upper }}{% endif %}</div>
                         <div class="flex-grow-1">
-                            <div class="id-name">{{ profile_row.display_name or current_user.username }}</div>
-                            <div class="id-handle">@{{ current_user.username }}</div>
+                            <div class="id-name">{{ profile_row.display_name or (current_user.username | privacy_hide) }}</div>
+                            <div class="id-handle">@{{ current_user.username | privacy_hide }}</div>
                             <div class="id-email-row">
                                 {% if current_user.email %}
-                                <span class="id-email">{{ current_user.email }}</span>
+                                <span class="id-email">{{ current_user.email | privacy_hide }}</span>
                                 {% if email_unverified %}
                                 <span class="pill pill-warn"><span class="dot"></span> Unverified</span>
                                 <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0 d-inline">
@@ -355,8 +355,8 @@
                     {% for a in _snaptrade_accounts %}
                     <div class="conn-row">
                         <div>
-                            <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
-                            <span class="small text-body-secondary ms-1">{{ a.broker_slug | title }}</span>
+                            <span class="account-badge mb-0">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
+                            <span class="small text-body-secondary ms-1">{{ a.broker_slug | title | privacy_hide }}</span>
                             {% if a.holdings_last_successful_sync %}
                             <div class="conn-meta">Broker data as of {{ a.holdings_last_successful_sync.strftime('%b %-d, %Y') }}</div>
                             {% elif a.last_sync_at %}
@@ -430,6 +430,20 @@
             {% endif %}
 
             {% if tab == 'preferences' %}
+            <form method="POST" action="{{ url_for('set_privacy_mode_route') }}" class="mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
+                <input type="hidden" name="next" value="{{ url_for('profile', tab='preferences') }}">
+                <div class="atlas-card">
+                    <div class="atlas-card-h">Privacy mode</div>
+                    <div class="atlas-card-b d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <p class="atlas-hint mb-0">Hide account names, broker names, balances, your username, and your email. Trade P&amp;L and prices stay visible.</p>
+                        <button type="submit" class="btn {% if privacy_mode %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                            {% if privacy_mode %}Turn off{% else %}Turn on{% endif %}
+                        </button>
+                    </div>
+                </div>
+            </form>
             <form method="POST" action="{{ url_for('profile', tab='preferences') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="save_profile">
@@ -442,7 +456,7 @@
                             <label class="atlas-label" for="display_name">Display name</label>
                             <input type="text" class="form-control form-control-lg" id="display_name" name="display_name" maxlength="80"
                                    value="{{ profile_row.display_name or '' }}" placeholder="How should we address you?" autocomplete="nickname">
-                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code>.</p>
+                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username | privacy_hide }}</code>.</p>
                         </div>
                     </div>
                 </div>
@@ -724,8 +738,8 @@
                     <ul class="list-unstyled mb-3">
                         {% for a in _snaptrade_accounts %}
                         <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                            <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
-                            <span class="small text-body-secondary">{{ a.broker_slug }}</span>
+                            <span class="account-badge mb-0">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
+                            <span class="small text-body-secondary">{{ a.broker_slug | privacy_hide }}</span>
                             {% if not a.first_sync_completed %}
                             <span class="badge text-bg-warning">First sync pending</span>
                             {% endif %}
@@ -776,7 +790,7 @@
                                 <input type="checkbox" name="tenant_id" value="{{ acct.tenant_id }}"
                                        {% if acct.tenant_id in _picked %}checked{% endif %}
                                        {% if is_demo_user %}disabled{% endif %}>
-                                {{ acct.label }}
+                                {{ acct.label | account_label(acct.tenant_id) }}
                             </label>
                             {% endfor %}
                         </div>
@@ -833,7 +847,7 @@
                     {% for g in account_groups %}
                     <div class="ht-group-card">
                         <h3>{{ g.name }}</h3>
-                        <div class="members">{% for acct in group_tenant_choices if acct.tenant_id in g.tenant_ids %}{{ acct.label }}{% if not loop.last %} · {% endif %}{% else %}No accounts yet{% endfor %}</div>
+                        <div class="members">{% for acct in group_tenant_choices if acct.tenant_id in g.tenant_ids %}{{ acct.label | account_label(acct.tenant_id) }}{% if not loop.last %} · {% endif %}{% else %}No accounts yet{% endfor %}</div>
                         <div class="actions">
                             <a href="{{ url_for('profile', tab='account', edit=g.id) }}#group-composer">Edit</a>
                             <form method="POST" action="{{ url_for('profile', tab='account') }}" class="m-0"
@@ -910,13 +924,16 @@
                     </p>
                     {% elif email_unverified %}
                     <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
-                        <span class="atlas-hint mb-0">We sent a confirmation link to <strong>{{ current_user.email }}</strong> — check your inbox (and spam).</span>
+                        <span class="atlas-hint mb-0">We sent a confirmation link to <strong>{{ current_user.email | privacy_hide }}</strong> — check your inbox (and spam).</span>
                         <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-outline-primary btn-sm">Resend verification email</button>
                         </form>
                     </div>
                     {% endif %}
+                    {% if privacy_mode %}
+                    <p class="atlas-hint mb-0">Turn off privacy mode to view or change your email.</p>
+                    {% else %}
                     <form method="POST" action="{{ url_for('profile', tab='security') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="action" value="set_email">
@@ -931,6 +948,7 @@
                             Save email
                         </button>
                     </form>
+                    {% endif %}
                 </div>
             </div>
 
@@ -944,7 +962,7 @@
                         <div class="mb-3">
                             <label class="form-label" for="pw_username">Username</label>
                             <input type="text" class="form-control" id="pw_username" name="username"
-                                   value="{{ current_user.username }}" autocomplete="username" readonly>
+                                   value="{{ current_user.username | privacy_hide }}" autocomplete="username" readonly>
                         </div>
                         <div class="mb-3"><label class="form-label" for="pw_current">Current</label>
                             <div class="input-group">

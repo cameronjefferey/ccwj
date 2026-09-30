@@ -185,6 +185,36 @@ def test_header_picker_template_uses_nicknames():
     assert "Group accounts" in page
 
 
+def test_header_picker_masks_labels_in_privacy_mode(monkeypatch):
+    """Dropdown rows and the selected-account button use Account N."""
+    choices = [
+        {"tenant_id": "snaptrade:aaa", "label": "IRA"},
+        {"tenant_id": "snaptrade:bbb", "label": "Unnamed account"},
+    ]
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr(
+        "app.privacy.viewer_slots",
+        lambda: (
+            {"snaptrade:aaa": "Account 1", "snaptrade:bbb": "Account 2"},
+            {"IRA": "Account 1", "Unnamed account": "Account 2"},
+        ),
+    )
+    with app.test_request_context("/overview?tenants=snaptrade:aaa"):
+        html = app.jinja_env.get_template("_account_scope_filters.html").render(
+            header_account_only=True,
+            scope_account_choices=choices,
+            selected_tenant_ids=["snaptrade:aaa"],
+            account_groups=[],
+            selected_group_ids=[],
+            tenants_query="snaptrade:aaa",
+            account_rename_urls={},
+        )
+    assert "Account 1" in html
+    assert "Account 2" in html
+    assert "IRA" not in html
+    assert "Unnamed account" not in html
+
+
 def test_base_hides_picker_until_two_accounts():
     from pathlib import Path
     base = (Path(app.root_path) / "templates" / "base.html").read_text()

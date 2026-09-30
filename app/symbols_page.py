@@ -136,8 +136,9 @@ def _nav_account_entries():
         label = str(entry.get("label") or "").strip()
         tid = str(entry.get("tenant_id") or "").strip()
         if label and tid:
+            from app.privacy import shown_account
             out.append({
-                "s": label,
+                "s": shown_account(label, tid),
                 "href": "/accounts?tenant=" + quote(tid, safe=":"),
             })
     return out
