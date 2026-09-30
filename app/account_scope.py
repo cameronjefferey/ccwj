@@ -14,7 +14,7 @@ and generic "{Broker} Account" labels are not shown.
 
 import re
 from collections import Counter
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from flask import request
 from flask_login import current_user
@@ -133,7 +133,11 @@ def _cookie_ids(cookie_value, owned):
     allowed = set(owned or [])
     out = []
     seen = set()
-    for part in str(cookie_value or "").split(","):
+    # scope-filters.js uses encodeURIComponent when writing document.cookie.
+    # Cookie parsing does not percent-decode values, so decode before matching
+    # broker tenant ids such as ``snaptrade:<uuid>``.
+    decoded = unquote(str(cookie_value or ""))
+    for part in decoded.split(","):
         tid = part.strip()
         if not tid or tid not in allowed or tid in seen:
             continue
@@ -157,6 +161,28 @@ def _args_multi(args):
         else:
             out[key] = [str(value)]
     return out
+
+
+def account_scope_cache_key(args, selected_account, tenant_ids):
+    """Stable cache key for data derived from the effective account scope.
+
+    Legacy ``?account=`` views keep their existing label key. Broker-stable
+    tenant and group URLs key on the resolved tenant set, so a subset cannot
+    overwrite or read the all-accounts cached result.
+    """
+    values = _args_multi(args)
+    explicit = any(
+        _first(values, key)
+        for key in ("tenant", "tenants", "groups")
+    )
+    if not explicit:
+        return str(selected_account or "").strip()
+    ids = sorted({
+        str(tid or "").strip()
+        for tid in (tenant_ids or [])
+        if str(tid or "").strip()
+    })
+    return "tenants:" + ",".join(ids)
 
 
 def _first(args, key):
