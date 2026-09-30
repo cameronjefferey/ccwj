@@ -1697,6 +1697,11 @@ from app.execution_quality import (  # noqa: E402
     exit_notes as _execution_exit_notes,
     symbol_execution_sentences as _symbol_execution_sentences,
 )
+from app.held_chart import (  # noqa: E402
+    build_held_charts,
+    fetch_held_series,
+    peek_held_summary,
+)
 
 
 def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
@@ -1748,6 +1753,9 @@ def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
         "opening": POSITION_OPENING_BALANCES_QUERY.format(
             symbol=safe_symbol, tenant_filter=_pos_acct
         ),
+        # Underlying closes and option marks are NOT in this batch.
+        # fetch_held_series loads them on their own and swallows errors
+        # so a bad marks/price query cannot blank this page.
     }
     if not symbol_defaults_to_crypto(safe_symbol):
         queries["dividends"] = POSITION_DIVIDENDS_QUERY.format(
@@ -1986,6 +1994,7 @@ def position_detail(symbol):
             story_markers_json="[]",
             story_mirror=[],
             covered_call_runs=[],
+            held_charts=[],
             has_underlying_price=False,
             symbol_sector="",
             symbol_subsector="",
@@ -1997,6 +2006,20 @@ def position_detail(symbol):
             tab_href_base="/position/",
             tab_href_suffix="",
             mode="navigate",
+        )
+
+    # If-held series, outside the batch that blanks the page on failure.
+    # Public closes have no tenant column — do not tenant-filter them.
+    # Option marks are tenant data and are filtered below with the rest.
+    underlying_closes_df = pd.DataFrame()
+    option_marks_df = pd.DataFrame()
+    try:
+        underlying_closes_df, option_marks_df = fetch_held_series(
+            client, safe_symbol, _tenant_sql_and(tenant_scope)
+        )
+    except Exception as exc:
+        app.logger.warning(
+            "if-held series fetch failed for %s: %s", symbol, exc
         )
 
     # Diagnostic timers (Sep 2026): "story"/"chart"/"matrix" already report
@@ -2057,6 +2080,7 @@ def position_detail(symbol):
     # Tab strip data has the same tenancy boundary as everything else above.
     tabs_df = _filter_df_by_tenant_ids(tabs_df, tenant_scope)
     opening_df = _filter_df_by_tenant_ids(opening_df, tenant_scope)
+    option_marks_df = _filter_df_by_tenant_ids(option_marks_df, tenant_scope)
     # earnings_df is symbol-grain PUBLIC market data (stg_earnings_calendar
     # has no tenant/account/user column at all — it cannot leak tenant rows).
     # It must NOT go through _filter_df_by_tenant_ids: the filter fails
@@ -3269,6 +3293,37 @@ def position_detail(symbol):
         app.logger.warning("opening-balance banner build failed for %s: %s", symbol, exc)
         opening_balances = []
 
+    # ── If held to expiration: one price path per closed option ──────
+    # Reuses int_option_exit_quality (the hindsight dollar) plus the
+    # underlying's daily closes and, when the snapshot history has them,
+    # daily option marks. Open contracts are not in that grain.
+    held_charts = []
+    try:
+        _held_exec = _filter_df_by_tenant_ids(execution_df, tenant_scope)
+        if (
+            leg_param and _leg_ranges
+            and _held_exec is not None and not _held_exec.empty
+            and "open_date" in _held_exec.columns
+        ):
+            _held_exec = _held_exec.copy()
+            _held_exec["_od"] = pd.to_datetime(
+                _held_exec["open_date"], errors="coerce"
+            ).dt.date
+            _held_exec = _held_exec[
+                _held_exec["_od"].apply(
+                    lambda d: pd.notna(d) and _in_leg_range(d)
+                )
+            ]
+        held_charts = build_held_charts(
+            _held_exec,
+            underlying_closes_df,
+            option_marks_df,
+            label_for=_account_display_for,
+        )
+    except Exception as exc:
+        app.logger.warning("held-to-expiry chart build failed for %s: %s", symbol, exc)
+        held_charts = []
+
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
     # get the same tenant + leg treatment here (the raw batch frame is
@@ -3410,6 +3465,7 @@ def position_detail(symbol):
         story_realized=_story_realized_footer(breakdown_rows),
         story_share_label="Coins" if _is_crypto else "Shares",
         covered_call_runs=covered_call_runs,
+        held_charts=held_charts,
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,
@@ -3722,6 +3778,8 @@ def position_peek(symbol):
                 symbol=safe_symbol, tenant_filter=tenant_filter),
             "current": POSITION_CURRENT_QUERY.format(
                 symbol=safe_symbol, tenant_filter=tenant_filter),
+            "execution": POSITION_EXECUTION_QUERY.format(
+                symbol=safe_symbol, tenant_filter=tenant_filter),
         })
     except Exception as exc:
         _log.warning("position peek query failed for %s: %s", symbol, exc)
@@ -3736,6 +3794,31 @@ def position_peek(symbol):
     label_map = _tenant_label_map_for_user(current_user.id)
     payload = compose_position_peek(
         symbol, summary_df, current_df, label_map=label_map)
+    # Closed-option if-held sparkline. Open contracts aren't in the
+    # exit-quality grain, so a still-open position leaves this empty.
+    # Underlying closes are public market data — not tenant-filtered.
+    try:
+        # Separate from the peek batch: a marks or price failure must
+        # not 503 the drawer. fetch_held_series already returns empty
+        # frames instead of raising; the except is the second guard.
+        closes_df, marks_df = fetch_held_series(
+            client, safe_symbol, tenant_filter)
+        exec_df = _filter_df_by_tenant_ids(batch.get("execution"), tenant_ids)
+        marks_df = _filter_df_by_tenant_ids(marks_df, tenant_ids)
+
+        def _peek_label(tid, acct):
+            return label_map.get(str(tid or "").strip(), acct or "")
+
+        held_charts = build_held_charts(
+            exec_df,
+            closes_df,
+            marks_df,
+            label_for=_peek_label,
+        )
+        payload["held"] = peek_held_summary(held_charts)
+    except Exception as exc:
+        _log.warning("position peek held chart failed for %s: %s", symbol, exc)
+        payload["held"] = None
     qs = []
     for key in ("account", "tenant", "tenants", "groups"):
         val = request.args.get(key)
@@ -3743,6 +3826,8 @@ def position_peek(symbol):
             qs.append(f"{key}={quote_plus(val)}")
     if qs:
         payload["position_url"] = payload["position_url"] + "?" + "&".join(qs)
+    if payload.get("held"):
+        payload["held"]["chart_url"] = payload["position_url"] + "#if-held"
     return jsonify(payload)
 
 
