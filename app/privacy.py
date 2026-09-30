@@ -16,6 +16,8 @@ per-account balances go through ``privacy_balance`` / ``privacy_signed``.
 
 from __future__ import annotations
 
+import re
+
 PRIVACY_MASK = "••••"
 PRIVACY_STORAGE_KEY = "ht-privacy"
 _SESSION_KEY = "ht_privacy_mode"
@@ -111,6 +113,65 @@ def format_privacy_signed(value, digits=0, *, enabled=None):
             return "—"
         return PRIVACY_MASK
     return _format_dollars(value, digits, signed=True)
+
+
+_ACCOUNT_NUM = re.compile(r"^Account\s+(\d+)$")
+
+
+def masked_label_sort_key(label):
+    """``Account 2`` before ``Account 10``. Unnumbered labels follow."""
+    text = " ".join(str(label or "").split())
+    match = _ACCOUNT_NUM.match(text)
+    if match:
+        return (0, int(match.group(1)), "")
+    return (1, 0, text.lower())
+
+
+def sort_masked_account_choices(choices, *, enabled=None, by_tid=None, by_name=None):
+    """Privacy mode: order a ``{tenant_id, label}`` list by ``Account N``.
+
+    Privacy off keeps the caller's order (nickname sort on the pickers).
+    """
+    items = [c for c in (choices or [])]
+    if enabled is None:
+        enabled = privacy_mode_on()
+    if not enabled:
+        return items
+    if by_tid is None or by_name is None:
+        by_tid, by_name = viewer_slots()
+
+    def key(choice):
+        label = (choice or {}).get("label")
+        tid = (choice or {}).get("tenant_id")
+        masked = mask_account_label(
+            label, tid, enabled=True, by_tid=by_tid, by_name=by_name,
+        )
+        return masked_label_sort_key(masked if masked is not None else label)
+
+    return sorted(items, key=key)
+
+
+def sort_rows_by_masked_label(rows, label_of, *, enabled=None, by_tid=None, by_name=None):
+    """Same order as ``sort_masked_account_choices`` for rows that aren't picker dicts.
+
+    ``label_of(row)`` returns ``(display_label, tenant_id)``.
+    """
+    items = list(rows or [])
+    if enabled is None:
+        enabled = privacy_mode_on()
+    if not enabled:
+        return items
+    if by_tid is None or by_name is None:
+        by_tid, by_name = viewer_slots()
+
+    def key(row):
+        raw, tid = label_of(row)
+        masked = mask_account_label(
+            raw, tid, enabled=True, by_tid=by_tid, by_name=by_name,
+        )
+        return masked_label_sort_key(masked if masked is not None else raw)
+
+    return sorted(items, key=key)
 
 
 def _format_dollars(value, digits, *, signed):

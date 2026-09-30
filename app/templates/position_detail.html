@@ -311,22 +311,11 @@
         </div>
         {% if kpis %}
         <div class="text-end">
-            {% if overall_status != 'Open' %}
-            {% set _share = namespace(strategy='Closed position', trade_symbol='') %}
-            {% set _share_strats = (strategy_rows|default([]))|map(attribute='strategy')|unique|list %}
-            {% if _share_strats|length == 1 %}
-            {% set _share.strategy = _share_strats[0] %}
-            {% endif %}
-            {% if (trade_outcomes|default([]))|length == 1 %}
-            {% set _share.trade_symbol = trade_outcomes[0].trade_symbol or '' %}
-            {% endif %}
+            {% if overall_status == 'Closed' %}
             <button type="button" class="ht-share-btn ht-share-btn-hero mb-2"
+                    data-ref="position"
                     data-symbol="{{ symbol }}"
-                    data-strategy="{{ _share.strategy }}"
-                    data-open="{{ (kpis.first_trade|string)[:10] if kpis.first_trade else '' }}"
-                    data-close="{{ (kpis.last_trade|string)[:10] if kpis.last_trade else '' }}"
-                    data-realized="{{ kpis.realized_pnl if kpis.realized_pnl is not none else '' }}"
-                    data-trade-symbol="{{ _share.trade_symbol }}">Share</button>
+                    {% if share_tenants %}data-tenants="{{ share_tenants }}"{% endif %}>Share</button>
             {% endif %}
             <div class="small text-white-50">Total return</div>
             <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized{% if kpis.dividend_income and kpis.dividend_income != 0 %} + dividends{% endif %}</div>
@@ -1217,12 +1206,18 @@
                     <td class="text-end fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
                         <div>{{ money(o.pnl) }}</div>
                         <button type="button" class="ht-share-btn"
+                                {% if o.type == 'equity' %}
+                                data-ref="equity"
                                 data-symbol="{{ symbol }}"
-                                data-strategy="{{ o.strategy or '' }}"
-                                data-open="{{ (o.open_date|string)[:10] if o.open_date else '' }}"
+                                data-tenant="{{ o.tenant_id or '' }}"
+                                data-session="{{ o.session_id if o.session_id is not none else '' }}"
                                 data-close="{{ (o.close_date|string)[:10] if o.close_date else '' }}"
-                                data-realized="{{ o.pnl if o.pnl is not none else '' }}"
-                                data-trade-symbol="{{ o.trade_symbol or '' }}">Share</button>
+                                {% else %}
+                                data-ref="option"
+                                data-symbol="{{ symbol }}"
+                                data-tenant="{{ o.tenant_id or '' }}"
+                                data-trade-symbol="{{ o.trade_symbol or '' }}"
+                                {% endif %}>Share</button>
                     </td>
                     <td class="text-end {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else '' }}">
                         {% if o.return_pct is not none %}{{ o.return_pct }}%{% else %}—{% endif %}
