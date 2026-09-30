@@ -1743,14 +1743,14 @@ from app.position_story import (  # noqa: E402
     attach_realized_pnl,
     build_position_story,
     close_pnl_by_day,
-    compose_mirror,
+    compose_story_summary,
     story_header,
 )
 from app.covered_call_runs import build_covered_call_runs  # noqa: E402
 from app.execution_quality import (  # noqa: E402
     POSITION_EXECUTION_QUERY,
     exit_notes as _execution_exit_notes,
-    symbol_execution_sentences as _symbol_execution_sentences,
+    symbol_execution_callout as _symbol_execution_callout,
 )
 from app.held_chart import (  # noqa: E402
     build_held_charts,
@@ -2049,7 +2049,8 @@ def position_detail(symbol):
             chart_data_json="{}",
             story_days=[],
             story_markers_json="[]",
-            story_mirror=[],
+            story_summary=None,
+            story_callout=None,
             covered_call_runs=[],
             held_charts=[],
             held_summary=None,
@@ -3449,14 +3450,17 @@ def position_detail(symbol):
             if str(t.get("symbol") or "").upper() == symbol.upper():
                 book_rank, book_size = i + 1, len(ranked)
                 break
-        story_mirror = compose_mirror(story_stats, symbol, book_rank, book_size)
-        # Execution sentences extend the mirror: same evidence-only voice,
-        # but graded against the market's record instead of the fills.
-        story_mirror = story_mirror + _symbol_execution_sentences(_exec_df)
+        # Same facts as the old prose mirror: fingerprint tiles, book
+        # rank, and the graded early-exit callout. Each piece is omitted
+        # when its data is absent.
+        story_summary = compose_story_summary(story_stats, book_rank, book_size)
+        story_callout = _symbol_execution_callout(_exec_df)
     except Exception as exc:
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
-        story_days, story_markers, story_mirror = [], [], []
+        story_days, story_markers = [], []
         story_head = None
+        story_summary = None
+        story_callout = None
 
     # Covered-call / wheel runs use the tenant-scoped fill stream from
     # before the leg filter, so clicking one leg does not split a cycle
@@ -3541,7 +3545,8 @@ def position_detail(symbol):
         chart_data_json=json.dumps(_chart_data_for_json(chart_data)),
         story_days=story_days,
         story_markers_json=json.dumps(story_markers),
-        story_mirror=story_mirror,
+        story_summary=story_summary,
+        story_callout=story_callout,
         story_header=story_head,
         story_realized=_story_realized_footer(breakdown_rows),
         story_share_label="Coins" if _is_crypto else "Shares",

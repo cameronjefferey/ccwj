@@ -771,14 +771,90 @@ def open_option_record(df, today):
 
 # ── Position review integration ──────────────────────────────────────────
 
-def symbol_execution_sentences(df, min_graded=MIN_GRADED_SYMBOL):
-    """0-2 mirror sentences for one symbol's Position review card."""
+def _graded_early_closes(df, min_graded):
+    """Graded early closes, or None when the symbol gate is not met."""
     df = _prep(df)
     if df.empty or "gradeable_early_close" not in df.columns:
-        return []
+        return None
     graded = df[df["gradeable_early_close"]
                 & df["early_close_vs_expiry_delta"].notna()]
     if len(graded) < min_graded:
+        return None
+    return graded
+
+
+def _worthless_lead(worthless, n):
+    """Counterfactual lead. Only claims 'worthless' for contracts that were."""
+    if worthless <= 0:
+        return ""
+    if worthless == n:
+        if n == 1:
+            return ("The contract you closed early here would have "
+                    "expired worthless anyway.")
+        if n == 2:
+            return ("Both contracts you closed early here would have "
+                    "expired worthless anyway.")
+        return (f"All {n} contracts you closed early here would have "
+                f"expired worthless anyway.")
+    return (f"{worthless} of {n} contracts you closed early here "
+            f"expired worthless anyway.")
+
+
+def symbol_execution_callout(df, min_graded=MIN_GRADED_SYMBOL):
+    """Early-exit callout for the position summary card.
+
+    Same gate and same dollars as ``symbol_execution_sentences``.
+    Returns None when there were no graded early exits (or fewer than
+    the gate). ``tone`` is ``cost`` / ``saved`` / ``even`` so the card
+    can color a loss and a gain differently. The highlighted amount is
+    the absolute dollar; the words around it carry the sign.
+    """
+    graded = _graded_early_closes(df, min_graded)
+    if graded is None:
+        return None
+    net = float(graded["early_close_vs_expiry_delta"].sum())
+    worthless = int(graded["expired_worthless"].sum())
+    n = len(graded)
+    if net < -1:
+        tone = "cost"
+        title = "Early exits cost you"
+        tail_before = "Closing early gave up "
+        amount_label = _money(net)
+        tail_after = " versus holding."
+    elif net > 1:
+        tone = "saved"
+        title = "Early exits saved you"
+        tail_before = "Closing early came out "
+        amount_label = _money(net)
+        tail_after = " ahead versus holding."
+    else:
+        tone = "even"
+        title = "Early exits came out even"
+        tail_before = "Closing early came out about even."
+        amount_label = ""
+        tail_after = ""
+    roll_line = ""
+    if "was_rolled" in graded.columns:
+        rolls = graded[graded["was_rolled"]]
+        if len(rolls) >= 2:
+            untested = int(rolls["expired_worthless"].sum())
+            roll_line = (f"{untested} of {len(rolls)} rolls were never "
+                         f"tested — the original strike expired worthless.")
+    return {
+        "tone": tone,
+        "title": title,
+        "lead": _worthless_lead(worthless, n),
+        "tail_before": tail_before,
+        "amount_label": amount_label,
+        "tail_after": tail_after,
+        "roll_line": roll_line,
+    }
+
+
+def symbol_execution_sentences(df, min_graded=MIN_GRADED_SYMBOL):
+    """0-2 mirror sentences for one symbol's Position review card."""
+    graded = _graded_early_closes(df, min_graded)
+    if graded is None:
         return []
     out = []
     net = float(graded["early_close_vs_expiry_delta"].sum())
@@ -791,11 +867,12 @@ def symbol_execution_sentences(df, min_graded=MIN_GRADED_SYMBOL):
         verdict = "closing early came out about even"
     out.append(f"Early exits here: {worthless} of {len(graded)} expired "
                f"worthless anyway — {verdict}.")
-    rolls = graded[graded["was_rolled"]]
-    if len(rolls) >= 2:
-        untested = int(rolls["expired_worthless"].sum())
-        out.append(f"{untested} of {len(rolls)} rolls were never tested — "
-                   f"the original strike expired worthless.")
+    if "was_rolled" in graded.columns:
+        rolls = graded[graded["was_rolled"]]
+        if len(rolls) >= 2:
+            untested = int(rolls["expired_worthless"].sum())
+            out.append(f"{untested} of {len(rolls)} rolls were never tested — "
+                       f"the original strike expired worthless.")
     return out
 
 

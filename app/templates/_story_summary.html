@@ -1,0 +1,62 @@
+{# Position summary card. Facts come from compose_story_summary and
+   symbol_execution_callout — the same fingerprint, rank, and early-exit
+   dollars the prose mirror used. Tiles, the rank row, and the callout
+   are each omitted when their data is absent. #}
+<div class="card stat-card p-4 story-summary" id="storyCard">
+    {% if story_header %}
+    <div class="story-top">
+        <div>
+            <div class="story-symbol">{{ symbol }}</div>
+            <div class="story-kicker">
+                {{ story_header.days }} trade day{{ 's' if story_header.days != 1 }}{% if story_header.span %} over {{ story_header.span }}{% endif %}
+            </div>
+        </div>
+        {% if story_header.accounts|length == 1 %}
+        <span class="story-acct">{{ story_header.accounts[0] }}</span>
+        {% elif story_header.accounts|length > 1 %}
+        <span class="story-acct">{{ story_header.accounts|length }} accounts</span>
+        {% endif %}
+    </div>
+    {% else %}
+    <h6 class="fw-bold mb-1">Position review</h6>
+    {% endif %}
+
+    {% if story_summary and story_summary.tiles %}
+    <div class="story-tiles">
+        {% for tile in story_summary.tiles %}
+        <div class="story-tile is-{{ tile.tone }}">
+            <div class="story-tile-label">{{ tile.label }}</div>
+            <div class="story-tile-value">{{ tile.value }}</div>
+            {% if tile.sub %}<div class="story-tile-sub">{{ tile.sub }}</div>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if story_summary and story_summary.rank %}
+    <div class="story-rank">
+        <div class="story-rank-n">#{{ story_summary.rank.rank }}</div>
+        <div class="story-rank-track" aria-hidden="true">
+            <div class="story-rank-fill" style="width: {{ story_summary.rank.fill }}%"></div>
+        </div>
+        <div class="story-rank-label">{{ story_summary.rank.label }}</div>
+    </div>
+    {% endif %}
+
+    {% if story_callout %}
+    <div class="story-callout is-{{ story_callout.tone }}">
+        <div class="story-callout-title">{{ story_callout.title }}</div>
+        <p class="story-callout-body">
+            {%- if story_callout.lead %}{{ story_callout.lead }} {% endif -%}
+            {{- story_callout.tail_before -}}
+            {%- if story_callout.amount_label %}<span class="story-callout-amt">{{ story_callout.amount_label }}</span>{% endif -%}
+            {{- story_callout.tail_after -}}
+            {%- if story_callout.roll_line %} {{ story_callout.roll_line }}{% endif -%}
+        </p>
+    </div>
+    {% endif %}
+
+    <p class="story-profile">
+        <a href="{{ scoped_url('trader_story') }}" class="story-profile-link">See your full trader profile &rarr;</a>
+    </p>
+</div>
