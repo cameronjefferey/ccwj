@@ -497,19 +497,26 @@ Logged-out `/` is a banded marketing page (`app/templates/landing.html`,
 catalog in `app/marketing_videos.py`). Order: a click-to-play walkthrough
 of about 2:30 (`NpU79Lwkdn4`; poster is the YouTube `maxresdefault` still;
 the youtube-nocookie iframe is created only on click; nothing autoplays
-on load), a qualitative proof strip, How it works (connect read-only,
-strategies detected, see what's working), then the live demo as its own
-band — a mirror of a trading bot's paper account. Shorts are themed bands
+on load), then a hero CTA block (solid `#5b8cff` button "Start your
+30-day free trial", subline "No credit card", outline button "Try the
+live demo", and a small Sign in link), a tight qualitative proof strip,
+How it works (connect read-only, strategies detected, see what's working),
+then the live demo as its own band — a mirror of a trading bot's paper
+account. Shorts are themed bands
 with one or two phones beside the copy (which strategies work, every
 position's story, if held, covered-call income, the fit matrix), not one
 sideways row. A Real trades band plays the ONON and RKLB stories wide.
 Privacy mode and share cards stay a sentence on the proof strip (there is
 no matching upload). Still frames from the demo account sit in their own
-bands: a position P&amp;L chart, the if-held summary, strategy cards, and
-the fit matrix (`app/static/marketing/`). Those crops do not show ORCL,
-CFLT, or the Earnings or Admin tabs. Options 101 and the full-width trial
-close stay. The Options 101 step links to `/learn` only when that exact
-route exists. Primary CTA: "Start your 30-day free trial, no credit card".
+bands: the BE cumulative P&amp;L chart (`app/static/marketing/pnl_real.webp`,
+caption "Real account · BE"), the if-held summary, strategy cards, and
+the fit matrix (`app/static/marketing/`). The day-by-day chart is that
+real-account still, not the demo AMD crop. Those crops do not show
+ORCL, CFLT, or the Earnings or Admin tabs. Options 101 and the full-width
+trial close stay. The Options 101 step links to `/learn` only when that
+exact route exists. Hero primary CTA: "Start your 30-day free trial"
+with the subline "No credit card". The closing band still uses the
+combined line "Start your 30-day free trial, no credit card".
 
 There is no separate dashboard page — Overview is the authenticated home.
 

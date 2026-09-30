@@ -66,7 +66,20 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     html = resp.get_data(as_text=True)
 
     assert "Watch the trading mirror" in html
+    assert 'class="ht-hero-primary"' in html
+    assert ">Start your 30-day free trial</a>" in html
+    assert 'class="ht-hero-sub">No credit card</p>' in html
+    assert 'class="ht-hero-secondary"' in html
+    assert ">Try the live demo</a>" in html
+    assert 'class="ht-hero-signin"' in html
+    assert "ht-text-cta" not in html
+    # Closing band keeps the combined line. The hero splits it across button + subline.
     assert "Start your 30-day free trial, no credit card" in html
+    stage = html.find('class="ht-stage"')
+    cta = html.find('class="ht-hero-cta"')
+    proof = html.find('class="ht-band ht-band-proof"')
+    how = html.find('class="ht-band ht-band-how')
+    assert 0 <= stage < cta < proof < how
     assert html.count('class="ht-facade"') == 9
     assert 'data-youtube-id=""' not in html
     assert "https://i.ytimg.com/vi/NpU79Lwkdn4/maxresdefault.jpg" in html
@@ -94,13 +107,19 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "CFLT" not in html
     root = Path(__file__).resolve().parents[1]
     for name in (
-        "marketing/amd-pnl.png",
+        "marketing/pnl_real.webp",
         "marketing/msft-if-held.png",
         "marketing/strategies.png",
         "marketing/fit-matrix.png",
     ):
         assert name in html
         assert (root / "app" / "static" / name).is_file()
+    assert "marketing/amd-pnl.png" not in html
+    assert "Real account · BE" in html
+    assert (
+        "Every trade day on one line. The run-up, the drawdown and the recovery, "
+        "with options and shares split out."
+    ) in html
     assert 'href="/signup"' in html or "signup" in html
     assert 'href="/login"' in html
     assert "Sign in" in html
