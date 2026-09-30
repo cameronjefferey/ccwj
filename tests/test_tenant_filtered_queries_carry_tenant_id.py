@@ -78,6 +78,7 @@ FILTERED_QUERIES = [
     ("app.execution_quality", "EXECUTION_REVIEW_QUERY"),
     ("app.execution_quality", "POSITION_EXECUTION_QUERY"),
     ("app.execution_quality", "OPEN_OPTION_RECORD_QUERY"),
+    ("app.held_chart", "OPTION_MARKS_QUERY"),
 ]
 
 

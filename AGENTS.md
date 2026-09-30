@@ -358,6 +358,16 @@ What's working:
   .total_fees` — sourced from `int_option_contracts.total_fees` for
   options and the new `int_equity_sessions.total_fees` for equity, both
   informational-only for the same double-subtract reason).
+- **If held to expiration (Sep 2026).** On each gradeable early close
+  (the same `int_option_exit_quality` rows as the hindsight notes), a
+  chart from open to expiration. Open and close are fill prices. The
+  dashed segment after the close is intrinsic value from
+  `stg_daily_prices` (an estimate). Daily option marks
+  (`int_option_marks_daily`) fill the held segment when they exist.
+  P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
+  same dollar as the hindsight note. Open contracts are omitted. The
+  peek drawer shows the largest one as a sparkline. Math lives in
+  `app/held_chart.py`; no new market-data vendor.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
