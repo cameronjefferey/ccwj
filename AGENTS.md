@@ -370,12 +370,15 @@ What's working:
   (`int_option_marks_daily`) fill the held segment when they exist.
   P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
   same dollar as the hindsight note. Open contracts are omitted. The
-  charts stay in a right-side panel (a full-screen sheet on phones),
-  opened from a headline just above the Position Legs table
-  ("Closing early cost you $X vs holding to expiration", or "saved you"
-  when the early exits came out ahead) and from an If held pill on
-  each early-closed option row. Several exits sum into one headline
-  with a count; the panel steps between them, largest first. The peek
+  charts stay in a right-side panel (a full-screen sheet on phones).
+  Just above the Position Legs table, a collapsed "If held to expiration"
+  block is the headline: the total and a count ("Closing early cost you
+  $X across N trades vs holding to expiration", or "saved you" when the
+  early exits came out ahead). Expanding it lists each early close
+  (contract, contracts, closed date, actual P&L, if-held P&L, difference
+  pill). Each of those rows opens that contract's chart. The same pill
+  stays on the Position Legs row. The panel steps between charts,
+  largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
   name when privacy mode is on. Math lives in `app/held_chart.py`; no
   new market-data vendor. The two price queries (`stg_daily_prices`,

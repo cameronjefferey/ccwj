@@ -3,15 +3,44 @@
    Charts are built on open, not on load. #}
 {% if held_charts %}
 {% if held_summary %}
-<div class="held-band">
-    <div class="held-band-row">
-        <div>
-            <h6>{{ held_summary.headline }}</h6>
-            {% if held_summary.meta %}<p class="held-band-meta">{{ held_summary.meta }}</p>{% endif %}
-        </div>
-        <a class="held-see" href="#{{ held_summary.open_id }}" data-held-open="{{ held_summary.open_id }}">See chart →</a>
+<details class="held-fold" id="if-held-summary">
+    <summary class="held-fold-sum">
+        <span class="held-fold-kicker">If held to expiration</span>
+        <span class="held-fold-line">{{ held_summary.headline }}</span>
+        <span class="held-fold-count">{{ held_summary.count }}</span>
+    </summary>
+    <div class="held-fold-body">
+        <table class="held-fold-table">
+            <thead>
+                <tr>
+                    <th>Contract</th>
+                    <th class="num">Contracts</th>
+                    <th>Closed</th>
+                    <th class="num">Actual</th>
+                    <th class="num">If held</th>
+                    <th class="num"><span class="sr">Difference</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in held_summary.rows %}
+                <tr class="held-fold-row" data-held-open="{{ row.dom_id }}" tabindex="0">
+                    <td class="held-fold-contract">{{ row.contract }}</td>
+                    <td class="num">{{ row.contracts }}</td>
+                    <td>{{ row.closed }}</td>
+                    <td class="num {{ 'pos' if row.realized_pnl > 0 else 'neg' if row.realized_pnl < 0 else '' }}">{{ row.realized_display }}</td>
+                    <td class="num {{ 'pos' if row.pnl_if_held > 0 else 'neg' if row.pnl_if_held < 0 else '' }}">{{ row.if_held_display }}</td>
+                    <td class="num">
+                        {% if row.pill %}
+                        <button type="button" class="held-pill {{ 'held-more' if row.held_better else 'held-less' if row.pill != 'Same' else 'held-same' }}"
+                                data-held-open="{{ row.dom_id }}">{{ row.pill }}</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-</div>
+</details>
 {% endif %}
 <div class="held-drawer" id="if-held" role="dialog" aria-modal="true"
      aria-labelledby="heldDrawerTitle" aria-hidden="true">
@@ -41,44 +70,99 @@
 </div>
 <style>
 
-    .held-band {
+    .held-fold {
         background: #121826;
         border: 1px solid #243049;
         color: #e8edf7;
         border-radius: 12px;
-        padding: .95rem 1.1rem;
         margin-bottom: 1rem;
         font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
     }
-    .held-band-row {
+    .held-fold-sum {
         display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: .85rem;
+        align-items: center;
+        gap: .75rem;
+        padding: .85rem 1rem;
+        cursor: pointer;
+        list-style: none;
     }
-    .held-band h6 {
-        margin: 0;
+    .held-fold-sum::-webkit-details-marker { display: none; }
+    .held-fold-sum::before {
+        content: "▸";
+        color: #8a97b1;
+        font-size: .8rem;
+        flex: none;
+    }
+    .held-fold[open] > .held-fold-sum::before { content: "▾"; }
+    .held-fold-kicker {
+        flex: none;
         font-weight: 650;
-        font-size: 1.05rem;
+        font-size: .95rem;
         letter-spacing: 0;
+    }
+    .held-fold-line {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: #e8edf7;
+        font-size: .9rem;
         line-height: 1.35;
     }
-    .held-band-meta {
-        color: #8a97b1;
-        font-size: .82rem;
-        margin: .35rem 0 0;
+    .held-fold-count {
+        flex: none;
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
+        font-size: .75rem;
+        font-weight: 500;
+        color: #8a97b1;
+        border: 1px solid #243049;
+        border-radius: 999px;
+        padding: .05rem .5rem;
     }
-    .held-see {
-        color: #5b8cff;
+    .held-fold-body { padding: 0 .85rem .85rem 2rem; }
+    .held-fold-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .8rem;
+    }
+    .held-fold-table th {
+        text-align: left;
+        font-size: .66rem;
         font-weight: 650;
-        font-size: .9rem;
-        white-space: nowrap;
-        text-decoration: none;
-        padding-top: .15rem;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: #8a97b1;
+        padding: .35rem .4rem;
+        border-bottom: 1px solid #243049;
     }
-    .held-see:hover, .held-see:focus-visible { text-decoration: underline; }
+    .held-fold-table td {
+        padding: .45rem .4rem;
+        border-bottom: 1px solid #243049;
+        vertical-align: middle;
+    }
+    .held-fold-table tr:last-child td { border-bottom: 0; }
+    .held-fold-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .held-fold-table .num, .held-fold-contract {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+    }
+    .held-fold-contract { color: #e8edf7; }
+    .held-fold-table .pos { color: #28c08a; }
+    .held-fold-table .neg { color: #f0556d; }
+    .held-fold-row { cursor: pointer; }
+    .held-fold-row:hover, .held-fold-row:focus-visible { background: rgba(91, 140, 255, .08); }
+    .held-fold-row:focus-visible { outline: 2px solid #5b8cff; outline-offset: -2px; }
+    .sr {
+        position: absolute;
+        width: 1px; height: 1px;
+        padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0, 0, 0, 0);
+        border: 0;
+    }
+    @media (max-width: 720px) {
+        .held-fold-sum { flex-wrap: wrap; }
+        .held-fold-line { flex: 1 1 100%; order: 3; }
+        .held-fold-body { padding-left: .5rem; overflow-x: auto; }
+        .held-fold-table { min-width: 34rem; }
+    }
     .held-pill {
         appearance: none;
         border: 1px solid #243049;
@@ -708,6 +792,16 @@
         if (e.target.closest && e.target.closest('[data-held-close]')) {
             e.preventDefault();
             closeHeld();
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var row = e.target.closest && e.target.closest('.held-fold-row');
+        if (!row || (e.target.closest && e.target.closest('.held-pill'))) return;
+        if (!drawer.classList.contains('is-open')) {
+            e.preventDefault();
+            openHeld(row.getAttribute('data-held-open'), row);
         }
     });
 

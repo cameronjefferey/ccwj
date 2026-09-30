@@ -235,7 +235,8 @@ def held_page_summary(charts):
         return None
     net_cost = -sum(float(c.get("difference") or 0) for c in charts)
     count = len(charts)
-    across = f" across {count} trades" if count > 1 else ""
+    trade_word = "trade" if count == 1 else "trades"
+    across = f" across {count} {trade_word}"
     if abs(net_cost) < 0.5:
         headline = f"Closing early matched holding to expiration{across}"
     elif net_cost > 0:
@@ -248,24 +249,39 @@ def held_page_summary(charts):
             f"Closing early saved you {_abs_money(net_cost)}{across}"
             " vs holding"
         )
-    meta = None
-    if count == 1:
-        chart = charts[0]
-        contracts = int(chart.get("contracts") or 0)
-        word = "contract" if contracts == 1 else "contracts"
-        expired = _fmt_day(_as_date(chart.get("expiry_date"))) if chart.get("expiry_date") else ""
-        meta = (
-            f"{chart.get('label') or 'Option'}"
-            f" · {contracts} {word}"
-            f" · closed {chart.get('close_date_label') or ''}"
-            f" · expired {expired}"
-        ).strip()
     return {
         "headline": headline,
-        "meta": meta,
         "count": count,
         "open_id": charts[0].get("dom_id") or "held-0",
         "net_cost": round(net_cost, 2),
+        "rows": [_held_table_row(c) for c in charts],
+    }
+
+
+def _held_table_row(chart):
+    """One expanded-table line. Contract reads like ``$41 call Sep 12``."""
+    expired = ""
+    if chart.get("expiry_date"):
+        exp = _as_date(chart.get("expiry_date"))
+        expired = _fmt_day(exp) if exp else ""
+    label = chart.get("label") or "Option"
+    contract = f"{label} {expired}".strip()
+    delta = chart.get("difference")
+    try:
+        better = float(delta) < 0
+    except (TypeError, ValueError):
+        better = False
+    return {
+        "contract": contract,
+        "contracts": chart.get("contracts"),
+        "closed": chart.get("close_date_label") or "",
+        "realized_display": chart.get("realized_display") or "",
+        "if_held_display": chart.get("if_held_display") or "",
+        "realized_pnl": chart.get("realized_pnl"),
+        "pnl_if_held": chart.get("pnl_if_held"),
+        "pill": outcome_pill(delta),
+        "held_better": better,
+        "dom_id": chart.get("dom_id") or "",
     }
 
 

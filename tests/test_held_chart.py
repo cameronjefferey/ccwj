@@ -489,13 +489,14 @@ def test_headline_for_one_early_close_names_the_cost():
     charts = build_held_charts(pd.DataFrame([_row()]), _onon_prices())
     summary = held_page_summary(charts)
     assert summary["headline"] == (
-        "Closing early cost you $15,266 vs holding to expiration"
+        "Closing early cost you $15,266 across 1 trade vs holding to expiration"
     )
-    assert summary["meta"] == (
-        "$41 call · 25 contracts · closed Aug 13 · expired Sep 12"
-    )
-    assert summary["open_id"] == "held-0"
     assert summary["count"] == 1
+    assert summary["rows"][0]["contract"] == "$41 call Sep 12"
+    assert summary["rows"][0]["contracts"] == 25
+    assert summary["rows"][0]["closed"] == "Aug 13"
+    assert summary["rows"][0]["pill"] == "+$15,266 more"
+    assert summary["rows"][0]["dom_id"] == "held-0"
     assert outcome_pill(charts[0]["difference"]) == "+$15,266 more"
 
 
@@ -530,7 +531,8 @@ def test_headline_sums_several_exits_and_opens_the_largest():
     assert summary["headline"] == (
         "Closing early cost you $16,434 across 2 trades vs holding to expiration"
     )
-    assert summary["meta"] is None
+    assert summary["count"] == 2
+    assert len(summary["rows"]) == 2
     assert summary["open_id"] == charts[0]["dom_id"]
 
 
@@ -540,7 +542,7 @@ def test_headline_says_saved_when_early_exits_came_out_ahead():
              proceeds_from_close=500.0),
     ]), _onon_prices())
     summary = held_page_summary(charts)
-    assert summary["headline"] == "Closing early saved you $400 vs holding"
+    assert summary["headline"] == "Closing early saved you $400 across 1 trade vs holding"
     assert outcome_pill(400) == "$400 less"
     assert outcome_pill(0) == "Same"
 
@@ -581,10 +583,12 @@ def test_template_renders_the_headline_and_keeps_the_chart_card():
             held_summary=summary,
         )
     assert summary["headline"] in html
-    assert summary["meta"] in html
-    assert "See chart" in html
+    assert "$41 call Sep 12" in html
+    assert "See chart" not in html
     assert 'data-held-open="held-0"' in html
     assert "If held to expiration" in html
+    assert 'class="held-fold"' in html
+    assert "held-fold-row" in html
     assert "+$11,933" in html
     assert "-$3,333" in html
     assert "-$15,266" in html
@@ -640,6 +644,7 @@ def test_several_charts_render_a_stepper():
         html = app.jinja_env.get_template("_held_to_expiry.html").render(
             held_charts=charts, held_summary=summary)
     assert "across 2 trades" in html
+    assert html.count("held-fold-row") == 2
     assert "data-held-prev" in html
     assert "data-held-next" in html
     assert 'data-held-pane="held-0"' in html
