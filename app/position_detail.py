@@ -2177,7 +2177,9 @@ def position_detail(symbol):
             "label": _sess[0].get("account_display") or "Account",
             "sessions": _sess,
         })
-    legs_by_account.sort(key=lambda g: g["label"])
+    legs_by_account.sort(key=lambda g: (g.get("label") or "").lower())
+    from app.privacy import sort_masked_account_choices
+    legs_by_account = sort_masked_account_choices(legs_by_account)
 
     # ── Account toggle bar (turn entire accounts on/off) ──
     # Built from the FULL owned-tenant set (accounts_all_df), so an account
@@ -2204,9 +2206,14 @@ def position_detail(symbol):
                 "label": _picker_labels.get(_tid) or "Unnamed account",
                 "selected": True if selected_tenant_set is None else (_tid in selected_tenant_set),
             })
-        account_toggles.sort(key=lambda a: a["label"])
+        account_toggles.sort(key=lambda a: (a.get("label") or "").lower())
+        account_toggles = sort_masked_account_choices(account_toggles)
     # Preserve the current account subset on leg "Show All" / navigation.
     tenants_param = request.args.get("tenants", "").strip()
+    if isinstance(tenant_scope, list):
+        share_tenants = ",".join(str(t) for t in tenant_scope if t)
+    else:
+        share_tenants = ""
 
     leg_param, selected_legs = _resolve_position_leg_filter(
         sessions_list, request.args.get("leg", "")
@@ -3392,6 +3399,7 @@ def position_detail(symbol):
         all_user_tags=all_user_tags,
         account_toggles=account_toggles,
         tenants_param=tenants_param,
+        share_tenants=share_tenants,
         selected_legs=selected_legs,
         leg_param=leg_param,
         chart_data_json=json.dumps(_chart_data_for_json(chart_data)),
