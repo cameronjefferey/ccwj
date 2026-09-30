@@ -16,6 +16,7 @@ from app.held_chart import (
     OPTION_MARKS_QUERY,
     UNDERLYING_CLOSES_QUERY,
     build_held_charts,
+    fetch_held_series,
     intrinsic_per_share,
     option_mark_per_share,
     peek_held_summary,
@@ -407,14 +408,70 @@ def test_underlying_query_is_public_and_marks_query_is_scoped():
     assert "{tenant_filter}" in OPTION_MARKS_QUERY
 
 
-def test_position_batch_requests_both_series():
+def test_held_series_are_outside_the_shared_position_batch():
+    """A marks or price failure must not be a key in the batch that
+    blanks Position Detail when the runner raises."""
     from app.position_detail import position_detail_query_batch
     batch = position_detail_query_batch(
         "ONON", ["snaptrade:abc"], ["snaptrade:abc"])
-    assert "ANY_VALUE" in batch["underlying_closes"]
-    assert "tenant_id" not in batch["underlying_closes"]
-    assert "tenant_id" in batch["option_marks"]
-    assert "snaptrade:abc" in batch["option_marks"]
+    assert "underlying_closes" not in batch
+    assert "option_marks" not in batch
+
+
+def test_marks_model_and_daily_prices_project_the_chart_columns():
+    """int_option_marks_daily is a real dbt model (not a name we invented).
+    The chart selects these columns; stg_daily_prices supplies the rest."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    marks = (root / "dbt/models/intermediate/int_option_marks_daily.sql").read_text()
+    prices = (root / "dbt/models/staging/stg_daily_prices.sql").read_text()
+    for col in (
+        "tenant_id", "trade_symbol", "underlying_symbol", "date",
+        "current_price", "market_value", "quantity",
+    ):
+        assert col in marks
+    assert "int_option_marks_daily" in OPTION_MARKS_QUERY
+    for col in ("tenant_id", "trade_symbol", "date", "current_price",
+                "market_value", "quantity", "underlying_symbol"):
+        assert col in OPTION_MARKS_QUERY
+    assert "cast(date as date)" in prices
+    assert "as close_price" in prices
+    assert "as symbol" in prices
+    assert "stg_daily_prices" in UNDERLYING_CLOSES_QUERY
+    for col in ("date", "close_price", "symbol"):
+        assert col in UNDERLYING_CLOSES_QUERY
+
+
+def test_fetch_held_series_returns_empty_frames_when_queries_raise():
+    def boom(*_a, **_k):
+        raise RuntimeError("unrecognized name: int_option_marks_daily")
+
+    import app.query_cache as query_cache
+    original = query_cache.cached_query_df
+    query_cache.cached_query_df = boom
+    try:
+        closes, marks = fetch_held_series(object(), "ONON", "AND tenant_id IN ('snaptrade:abc')")
+    finally:
+        query_cache.cached_query_df = original
+    assert closes.empty
+    assert marks.empty
+
+
+def test_fetch_held_series_keeps_closes_when_only_marks_raise():
+    def query(_client, sql, label=None):
+        if label == "option_marks":
+            raise RuntimeError("marks table missing")
+        return pd.DataFrame([{"date": date(2025, 8, 12), "close_price": 40.0}])
+
+    import app.query_cache as query_cache
+    original = query_cache.cached_query_df
+    query_cache.cached_query_df = query
+    try:
+        closes, marks = fetch_held_series(object(), "ONON", "")
+    finally:
+        query_cache.cached_query_df = original
+    assert list(closes["close_price"]) == [40.0]
+    assert marks.empty
 
 
 def test_template_renders_the_summary_and_the_fees_note():
@@ -443,3 +500,124 @@ def test_template_renders_the_summary_and_the_fees_note():
         empty = app.jinja_env.get_template("_held_to_expiry.html").render(
             held_charts=[], story_days=[])
     assert empty.strip() == ""
+
+
+def _logged_in_user():
+    from unittest.mock import MagicMock
+    user = MagicMock()
+    user.is_authenticated = True
+    user.is_active = True
+    user.is_anonymous = False
+    user.id = 42
+    user.username = "acme"
+    user.get_id = lambda: "42"
+    return user
+
+
+def _summary_frame():
+    return pd.DataFrame([{
+        "tenant_id": "snaptrade:abc",
+        "account": "Schwab Account",
+        "symbol": "ONON",
+        "strategy": "Long Call",
+        "status": "Closed",
+        "total_pnl": -3333.0,
+        "realized_pnl": -3333.0,
+        "unrealized_pnl": 0.0,
+        "total_premium_received": 0.0,
+        "total_premium_paid": 7158.0,
+        "num_trade_groups": 1,
+        "num_individual_trades": 2,
+        "num_winners": 0,
+        "num_losers": 1,
+        "win_rate": 0.0,
+        "avg_pnl_per_trade": -3333.0,
+        "avg_days_in_trade": 1.0,
+        "total_dividend_income": 0.0,
+        "dividend_count": 0,
+        "total_return": -3333.0,
+        "first_trade_date": date(2025, 8, 12),
+        "last_trade_date": date(2025, 8, 13),
+        "company_name": "On Holding AG",
+    }])
+
+
+def test_position_page_and_peek_render_when_held_queries_raise():
+    """The marks and underlying-close queries raising must not blank
+    Position Detail or 503 the peek drawer."""
+    from unittest.mock import patch
+    import app.position_detail as detail
+    import app.query_cache as query_cache
+
+    def boom(*_a, **_k):
+        raise RuntimeError("int_option_marks_daily is not a real table")
+
+    def page_batch(_client, queries):
+        assert "underlying_closes" not in queries
+        assert "option_marks" not in queries
+        return {
+            name: (_summary_frame() if name == "summary" else pd.DataFrame())
+            for name in queries
+        }
+
+    def peek_batch(_client, queries):
+        assert "underlying_closes" not in queries
+        assert "option_marks" not in queries
+        return {
+            "summary": _summary_frame(),
+            "current": pd.DataFrame([{
+                "tenant_id": "snaptrade:abc",
+                "account": "Schwab Account",
+                "symbol": "ONON",
+                "instrument_type": "Equity",
+                "trade_symbol": "ONON",
+                "quantity": 0.0,
+                "current_price": 48.0,
+                "market_value": 0.0,
+                "cost_basis": 0.0,
+                "unrealized_pnl": 0.0,
+                "option_expiry": None,
+            }]),
+            "execution": pd.DataFrame(),
+        }
+
+    user = _logged_in_user()
+    original = query_cache.cached_query_df
+    query_cache.cached_query_df = boom
+    try:
+        with patch.object(detail, "current_user", user), \
+             patch("flask_login.utils._get_user", lambda: user), \
+             patch.object(detail, "_redirect_if_no_accounts", lambda: None), \
+             patch.object(detail, "_user_account_list", lambda: ["Schwab Account"]), \
+             patch.object(detail, "_user_tenant_list", lambda: ["snaptrade:abc"]), \
+             patch.object(detail, "_tenants_for_scope", lambda *_a, **_k: ["snaptrade:abc"]), \
+             patch.object(detail, "_tenant_label_map_for_user", lambda *_a, **_k: {}), \
+             patch.object(detail, "_account_label_map", lambda *_a, **_k: {}), \
+             patch.object(detail, "get_bigquery_client", lambda: object()), \
+             patch.object(detail, "cached_query_df", boom), \
+             patch.object(detail, "_bq_parallel", page_batch):
+            page = detail.app.test_client().get("/position/ONON")
+        with patch.object(detail, "current_user", user), \
+             patch("flask_login.utils._get_user", lambda: user), \
+             patch.object(detail, "_redirect_if_no_accounts", lambda: None), \
+             patch.object(detail, "_tenants_for_scope", lambda *_a, **_k: ["snaptrade:abc"]), \
+             patch.object(detail, "_tenant_label_map_for_user", lambda *_a, **_k: {}), \
+             patch.object(detail, "get_bigquery_client", lambda: object()), \
+             patch.object(detail, "cached_query_df", boom), \
+             patch.object(detail, "_bq_parallel", peek_batch):
+            peek = detail.app.test_client().get("/api/position/ONON/peek")
+    finally:
+        query_cache.cached_query_df = original
+
+    assert page.status_code == 200, page.data[:800]
+    html = page.data.decode()
+    assert "We're having trouble loading this position" not in html
+    assert "ONON" in html
+    assert "Realized" in html
+
+    assert peek.status_code == 200, peek.data[:800]
+    body = peek.get_json()
+    assert body["symbol"] == "ONON"
+    assert body["total_pnl"] == -3333.0
+    assert body.get("error") is None
+    assert body.get("held") is None

@@ -1697,9 +1697,8 @@ from app.execution_quality import (  # noqa: E402
     symbol_execution_sentences as _symbol_execution_sentences,
 )
 from app.held_chart import (  # noqa: E402
-    OPTION_MARKS_QUERY,
-    UNDERLYING_CLOSES_QUERY,
     build_held_charts,
+    fetch_held_series,
     peek_held_summary,
 )
 
@@ -1753,12 +1752,9 @@ def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
         "opening": POSITION_OPENING_BALANCES_QUERY.format(
             symbol=safe_symbol, tenant_filter=_pos_acct
         ),
-        # Public closes, one row per date (ANY_VALUE inside the query).
-        # No tenant column — the caller must not tenant-filter this frame.
-        "underlying_closes": UNDERLYING_CLOSES_QUERY.format(symbol=safe_symbol),
-        "option_marks": OPTION_MARKS_QUERY.format(
-            symbol=safe_symbol, tenant_filter=_pos_acct
-        ),
+        # Underlying closes and option marks are NOT in this batch.
+        # fetch_held_series loads them on their own and swallows errors
+        # so a bad marks/price query cannot blank this page.
     }
     if not symbol_defaults_to_crypto(safe_symbol):
         queries["dividends"] = POSITION_DIVIDENDS_QUERY.format(
@@ -1963,12 +1959,6 @@ def position_detail(symbol):
         splits_df = dfs.get("splits", pd.DataFrame())
         execution_df = dfs.get("execution", pd.DataFrame())
         opening_df = dfs.get("opening", pd.DataFrame())
-        # Symbol-grain public closes. The query already collapsed the
-        # per-account stamp to one price per date. Do NOT tenant-filter:
-        # there is no tenant_id column, and fail-closed would blank the
-        # if-held chart for every non-admin.
-        underlying_closes_df = dfs.get("underlying_closes", pd.DataFrame())
-        option_marks_df = dfs.get("option_marks", pd.DataFrame())
         summary_df = _df_normalize_account_column(summary_df)
         trades_df = _df_normalize_account_column(trades_df)
         current_df = _df_normalize_account_column(current_df)
@@ -2013,6 +2003,20 @@ def position_detail(symbol):
             tab_href_base="/position/",
             tab_href_suffix="",
             mode="navigate",
+        )
+
+    # If-held series, outside the batch that blanks the page on failure.
+    # Public closes have no tenant column — do not tenant-filter them.
+    # Option marks are tenant data and are filtered below with the rest.
+    underlying_closes_df = pd.DataFrame()
+    option_marks_df = pd.DataFrame()
+    try:
+        underlying_closes_df, option_marks_df = fetch_held_series(
+            client, safe_symbol, _tenant_sql_and(tenant_scope)
+        )
+    except Exception as exc:
+        app.logger.warning(
+            "if-held series fetch failed for %s: %s", symbol, exc
         )
 
     # Diagnostic timers (Sep 2026): "story"/"chart"/"matrix" already report
@@ -3727,10 +3731,6 @@ def position_peek(symbol):
                 symbol=safe_symbol, tenant_filter=tenant_filter),
             "execution": POSITION_EXECUTION_QUERY.format(
                 symbol=safe_symbol, tenant_filter=tenant_filter),
-            # Public closes — no tenant column. See position_detail.
-            "underlying_closes": UNDERLYING_CLOSES_QUERY.format(symbol=safe_symbol),
-            "option_marks": OPTION_MARKS_QUERY.format(
-                symbol=safe_symbol, tenant_filter=tenant_filter),
         })
     except Exception as exc:
         _log.warning("position peek query failed for %s: %s", symbol, exc)
@@ -3749,15 +3749,20 @@ def position_peek(symbol):
     # exit-quality grain, so a still-open position leaves this empty.
     # Underlying closes are public market data — not tenant-filtered.
     try:
+        # Separate from the peek batch: a marks or price failure must
+        # not 503 the drawer. fetch_held_series already returns empty
+        # frames instead of raising; the except is the second guard.
+        closes_df, marks_df = fetch_held_series(
+            client, safe_symbol, tenant_filter)
         exec_df = _filter_df_by_tenant_ids(batch.get("execution"), tenant_ids)
-        marks_df = _filter_df_by_tenant_ids(batch.get("option_marks"), tenant_ids)
+        marks_df = _filter_df_by_tenant_ids(marks_df, tenant_ids)
 
         def _peek_label(tid, acct):
             return label_map.get(str(tid or "").strip(), acct or "")
 
         held_charts = build_held_charts(
             exec_df,
-            batch.get("underlying_closes"),
+            closes_df,
             marks_df,
             label_for=_peek_label,
         )

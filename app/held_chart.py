@@ -23,12 +23,15 @@ or missing an expiry price) produce no chart.
 
 from __future__ import annotations
 
+import logging
 import math
 from datetime import date, datetime
 
 import pandas as pd
 
 from app.money import fmt_money
+
+_log = logging.getLogger(__name__)
 
 # Public market data. stg_daily_prices is stamped per account, so a raw
 # join fans out; ANY_VALUE collapses to one close per symbol-date.
@@ -59,6 +62,50 @@ OPTION_MARKS_QUERY = """
     WHERE UPPER(TRIM(underlying_symbol)) = UPPER(TRIM('{symbol}'))
     {tenant_filter}
 """
+
+def fetch_held_series(client, safe_symbol, tenant_filter):
+    """Underlying closes and option marks for the if-held chart.
+
+    These two reads sit outside the shared position-detail batch on
+    purpose. ``_bq_parallel`` already turns one failed query into an
+    empty frame, but a failure here must not be able to take the
+    position page or the peek drawer down with it — a missing marks
+    table, a renamed column, or a price-query error returns empty
+    frames and the chart falls back to fill prices plus intrinsic
+    value (or disappears). Never raises.
+    """
+    from app.query_cache import cached_query_df
+
+    closes = pd.DataFrame()
+    marks = pd.DataFrame()
+    try:
+        frame = cached_query_df(
+            client,
+            UNDERLYING_CLOSES_QUERY.format(symbol=safe_symbol),
+            label="underlying_closes",
+        )
+        if frame is not None:
+            closes = frame
+    except Exception as exc:
+        _log.warning(
+            "if-held underlying closes failed for %s: %s", safe_symbol, exc
+        )
+    try:
+        frame = cached_query_df(
+            client,
+            OPTION_MARKS_QUERY.format(
+                symbol=safe_symbol, tenant_filter=tenant_filter or ""
+            ),
+            label="option_marks",
+        )
+        if frame is not None:
+            marks = frame
+    except Exception as exc:
+        _log.warning(
+            "if-held option marks failed for %s: %s", safe_symbol, exc
+        )
+    return closes, marks
+
 
 CONTRACT_MULTIPLIER = 100
 # How many charts sit open before the rest collapse. Every closed

@@ -367,7 +367,10 @@ What's working:
   P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
   same dollar as the hindsight note. Open contracts are omitted. The
   peek drawer shows the largest one as a sparkline. Math lives in
-  `app/held_chart.py`; no new market-data vendor.
+  `app/held_chart.py`; no new market-data vendor. The two price queries
+  (`stg_daily_prices`, `int_option_marks_daily`) are fetched outside the
+  shared position batch (`fetch_held_series`) and fail to empty frames,
+  so a marks-table miss cannot blank the page or the peek drawer.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
