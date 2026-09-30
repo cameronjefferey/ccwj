@@ -5,12 +5,13 @@ shares are bought (or a short put is assigned into shares) and ends when
 those shares are sold or called away. If the shares are still held, the
 run stays open through today.
 
-Each short call written while the shares were held is one timeline row:
-strike, expiry, premium, and an outcome (expired, closed, assigned,
-rolled, or still open). Premium on the row is the option result with
-broker fees left out. A running total adds those premiums in order. The
-share result is separate. The whole-run number is premium plus the share
-result.
+Each short call written while the shares were held is one row inside
+an outcome group (expired, closed, assigned, rolled, or still open).
+The row's net is the option result with broker fees left out — a roll
+or a buy-to-close is a net, not the opening credit. Groups sum those
+nets and sort largest first. The run's calls net is the sum of every
+group. The share result is separate. The whole-run number is the calls
+net plus the share result.
 
 Puts are included only when they are assigned and the shares actually
 show up — that is the wheel entry, not every put on the symbol. Naked
@@ -46,6 +47,40 @@ _OUTCOME_LABEL = {
     "rolled": "Rolled",
     "open": "Open",
 }
+
+
+def _count_label(n):
+    return "1 call" if n == 1 else f"{n} calls"
+
+
+def _outcome_groups(rows):
+    """Bundle call rows that share an outcome.
+
+    Rows arrive in date order. Each group's calls stay in that order.
+    Groups themselves sort by net, largest first, so the outcome that
+    made the most money is the first row. Equal nets break ties by the
+    outcome label.
+    """
+    buckets = []
+    index = {}
+    for row in rows:
+        key = row["outcome"]
+        if key not in index:
+            index[key] = len(buckets)
+            buckets.append({
+                "outcome": key,
+                "outcome_label": row["outcome_label"],
+                "calls": [],
+                "net": 0.0,
+            })
+        group = buckets[index[key]]
+        group["calls"].append(row)
+        group["net"] = round(group["net"] + row["premium"], 2)
+    for group in buckets:
+        group["count"] = len(group["calls"])
+        group["count_label"] = _count_label(group["count"])
+    buckets.sort(key=lambda g: (-g["net"], g["outcome_label"]))
+    return buckets
 
 
 def build_covered_call_runs(
@@ -743,6 +778,7 @@ def _present(run, mark, as_of):
 
     share_pnl, share_note = _share_pnl(run, mark)
     premium_total = rows[-1]["running_premium"] if rows else 0.0
+    groups = _outcome_groups(rows)
     status = run.status
     return {
         "tenant_id": run.tenant_id,
@@ -757,7 +793,10 @@ def _present(run, mark, as_of):
         "share_note": share_note,
         "share_pnl": share_pnl,
         "premium_total": premium_total,
-        "premium_label": "Premium so far" if has_open_call else "Premium kept",
+        "premium_label": "Calls net",
+        "call_count": len(rows),
+        "call_count_label": _count_label(len(rows)),
+        "outcome_groups": groups,
         "net": round(premium_total + share_pnl, 2),
         "net_label": "Whole run so far" if status == "open" else "Whole run",
         "has_open_call": has_open_call,
