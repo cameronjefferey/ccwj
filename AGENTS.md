@@ -358,6 +358,18 @@ What's working:
   .total_fees` — sourced from `int_option_contracts.total_fees` for
   options and the new `int_equity_sessions.total_fees` for equity, both
   informational-only for the same double-subtract reason).
+- **Covered call runs (Sep 2026).** A share lot and the calls written
+  against it are one run, from the buy (or a put assignment, for a
+  wheel) through the sale or assignment, or through today if the shares
+  are still held. The card under the position review lists each call
+  (strike, expiry, premium, outcome: expired / closed / assigned /
+  rolled / open), a running premium total, the share result, and one
+  net for the whole run. Broker fees are left out of that math and the
+  card says so. Multiple runs, partial sales, and partial coverage stay
+  on the same lot until the shares are flat. Built in
+  `app/covered_call_runs.py` from the fills the page already loaded
+  (tenant-scoped, before the leg filter so one leg click does not split
+  the cycle). Pinned by `tests/test_covered_call_runs.py`.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
