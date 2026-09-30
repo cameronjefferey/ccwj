@@ -85,8 +85,9 @@ def test_rklb_analog_one_run_nets_406():
     assert run["premium_total"] == 1006.0
     assert run["share_pnl"] == -600.0
     assert run["net"] == 406.0
-    assert run["premium_label"] == "Premium kept"
-    assert run["net_label"] == "Whole run"
+    assert run["premium_label"] == "Calls"
+    assert run["net_label"] == "Together"
+    assert run["summary"] == "Sold 6 calls, Feb 20 – Apr 2"
 
     outcomes = [c["outcome"] for c in run["calls"]]
     assert outcomes == ["expired", "expired", "expired", "expired", "expired", "assigned"]
@@ -114,7 +115,8 @@ def test_explicit_expiry_matches_inferred_expiry():
     assert runs[0]["calls"][0]["outcome"] == "expired"
     assert runs[0]["calls"][0]["premium"] == 200.0
     assert runs[0]["status"] == "open"
-    assert runs[0]["net_label"] == "Whole run so far"
+    assert runs[0]["net_label"] == "Together"
+    assert runs[0]["premium_label"] == "Calls"
 
 
 def test_two_runs_when_shares_go_flat_and_are_bought_again():
@@ -422,6 +424,7 @@ def test_long_put_exercise_does_not_invent_a_wheel():
 
 
 def test_template_renders_the_run_numbers():
+    from pathlib import Path
     from app import app
 
     runs = build_covered_call_runs(_rklb_cycle(), as_of=date(2026, 4, 3))
@@ -433,12 +436,20 @@ def test_template_renders_the_run_numbers():
     assert "Covered call runs" in html
     assert "100 shares bought at $69" in html
     assert "Called away at $63" in html
-    assert "+$931.00" in html
+    assert "+$200.00" in html
     assert "+$75.00" in html
     assert "-$600.00" in html
     assert "+$406.00" in html
     assert "Expired" in html
     assert "Assigned" in html
     assert "Broker fees are not included" in html
-    assert "Whole run" in html
+    assert "Together" in html
+    assert "+$1,006.00" in html
+    assert "Calls" in html
+    assert "Shares" in html
+    assert "Whole run" not in html
+    assert "Premium kept" not in html
+    assert "Running premium" not in html
+    assert "ht-together-tip" in html
     assert 'class="ht-run"' in html
+    assert "account_label(run.tenant_id)" in Path("app/templates/_covered_call_runs.html").read_text()

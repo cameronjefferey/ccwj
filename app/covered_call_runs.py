@@ -6,11 +6,10 @@ those shares are sold or called away. If the shares are still held, the
 run stays open through today.
 
 Each short call written while the shares were held is one timeline row:
-strike, expiry, premium, and an outcome (expired, closed, assigned,
-rolled, or still open). Premium on the row is the option result with
-broker fees left out. A running total adds those premiums in order. The
-share result is separate. The whole-run number is premium plus the share
-result.
+strike, expiry, the call's own result (sold minus bought back), and an
+outcome (expired, closed, assigned, rolled, or still open). Broker fees
+stay out. The headline number is Together: that call net plus the share
+gain or loss versus cost. It is not premium collected.
 
 Puts are included only when they are assigned and the shares actually
 show up — that is the wheel entry, not every put on the symbol. Naked
@@ -695,9 +694,10 @@ def _present(run, mark, as_of):
         "share_note": share_note,
         "share_pnl": share_pnl,
         "premium_total": premium_total,
-        "premium_label": "Premium so far" if has_open_call else "Premium kept",
+        "summary": _summary_line(run, rows),
+        "premium_label": "Calls",
         "net": round(premium_total + share_pnl, 2),
-        "net_label": "Whole run so far" if status == "open" else "Whole run",
+        "net_label": "Together",
         "has_open_call": has_open_call,
         "calls": rows,
     }
@@ -778,6 +778,36 @@ def _when(run):
     if start:
         return f"Since {start}"
     return ""
+
+
+def _summary_line(run, rows):
+    """One plain line: how many calls, and the stretch they covered."""
+    n = 0.0
+    for row in rows:
+        if row.get("side") != "call":
+            continue
+        qty = row.get("contracts") or 0
+        n += qty if qty else 1
+    if abs(n - round(n)) < 0.001:
+        n_txt = str(int(round(n)))
+    else:
+        n_txt = f"{n:g}"
+    word = "call" if abs(n - 1) < 0.001 else "calls"
+    head = f"Sold {n_txt} {word}" if n > 0.001 else "No calls sold yet"
+    start = _fmt_short(run.start)
+    if run.status == "closed" and run.end and start:
+        return f"{head}, {start} – {_fmt_short(run.end)}"
+    if start:
+        return f"{head} since {start}"
+    return head
+
+
+def _fmt_short(value):
+    if isinstance(value, datetime):
+        value = value.date()
+    if not isinstance(value, date):
+        return ""
+    return f"{_MONTHS[value.month - 1]} {value.day}"
 
 
 def _contract_title(contract, qty):
