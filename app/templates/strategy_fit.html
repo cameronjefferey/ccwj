@@ -397,19 +397,22 @@
     .fit-panel.open { transform: translateX(0); }
 
     .fit-panel header {
-        padding: 1.1rem 1.2rem .9rem;
+        padding: 1.1rem 5.5rem .9rem 1.2rem;
         border-bottom: 1px solid #e7e5e4;
         background: #1a1a2e;
         color: #fff;
     }
-    .fit-panel header .close {
-        position: absolute; top: .8rem; right: .9rem;
-        background: rgba(255,255,255,.15); border: 0; color: #fff;
-        width: 30px; height: 30px; border-radius: 999px;
-        cursor: pointer; font-size: 1.05rem;
-        display: flex; align-items: center; justify-content: center;
+    .fit-panel header .ht-fit-close {
+        position: absolute; top: .7rem; right: .85rem;
+        color: #e8edf7;
+        border-color: #243049;
+        background: transparent;
     }
-    .fit-panel header .close:hover { background: rgba(255,255,255,.25); }
+    .fit-panel header .ht-fit-close:hover {
+        color: #0a0e17;
+        background: #5b8cff;
+        border-color: #5b8cff;
+    }
     .fit-panel header .tags {
         display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .3rem;
     }
@@ -475,18 +478,10 @@
     .symbol-row .meta { font-size: .65rem; color: var(--ht-muted); margin-top: .15rem; }
 
     .panel-actions {
-        display: flex; gap: .5rem; margin-top: 1.1rem;
-        padding-top: .9rem; border-top: 1px solid #e7e5e4;
+        display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1.1rem;
+        padding-top: .9rem; border-top: 1px solid #243049;
     }
-    .panel-actions a {
-        flex: 1; text-align: center; padding: .55rem .85rem;
-        border-radius: 999px; font-size: .8rem; font-weight: 600;
-        text-decoration: none;
-    }
-    .panel-actions a.primary { background: #0f172a; color: #fafaf9; }
-    .panel-actions a.primary:hover { background: #1e293b; color: #fafaf9; }
-    .panel-actions a.secondary { background: #1a2233; color: #e8edf7; border: 1px solid #243049; }
-    .panel-actions a.secondary:hover { background: #1a2233; }
+    .panel-actions .btn { flex: 1; }
 </style>
 {% endblock %}
 
@@ -572,7 +567,7 @@
         <span class="badge-ai">AI Insight</span>
         <h2>What we noticed</h2>
         {% if ai_generated_at %}
-        <span class="when">Updated {{ ai_generated_at.strftime('%b %d, %I:%M %p') }}</span>
+        <span class="when">Updated <time class="ht-local-time" datetime="{{ ai_generated_at.isoformat() }}{% if ai_generated_at.tzinfo is none %}Z{% endif %}">{{ ai_generated_at.strftime('%b %d, %I:%M %p') }} UTC</time></span>
         {% endif %}
     </div>
     <div class="ai-summary">{{ ai_summary }}</div>
@@ -683,7 +678,7 @@
         <div class="visibility-toggles">
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="hideUnknown" checked>
-                <label class="form-check-label" for="hideUnknown">Hide Unknown</label>
+                <label class="form-check-label" for="hideUnknown">Hide unclassified</label>
             </div>
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="dimLowN" checked>
@@ -742,10 +737,12 @@
                     'Real Estate': 'RE',
                     'Energy': 'Enrgy',
                     'Utilities': 'Util',
-                    'Unknown': 'Unk'
+                    'Unknown': 'Unc.',
+                    'Unclassified': 'Unc.',
+                    'Other': 'Unc.'
                 }.get(col, col[:4]) %}
                 {% set ct = col_totals.get(col) %}
-                <th class="{% if col == 'Unknown' %}col-unknown{% endif %}"
+                <th class="{% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}"
                     {% if ct %}
                     data-total-pnl="{{ ct.total_pnl }}"
                     data-num-trades="{{ ct.num_trades | int }}"
@@ -798,7 +795,7 @@
                         {% else %}
                             {% set drill_url = '' %}
                         {% endif %}
-                        <td class="cell has-data {% if col == 'Unknown' %}col-unknown{% endif %} {% if c.num_trades < 3 %}low-n{% endif %}"
+                        <td class="cell has-data {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %} {% if c.num_trades < 3 %}low-n{% endif %}"
                             data-strategy="{{ strat }}"
                             data-col="{{ col }}"
                             data-col-label="{{ dim_label }}"
@@ -819,9 +816,9 @@
                             <span class="cell-meta">{{ c.num_trades | int }}t{% if (c.num_winners + c.num_losers) > 0 %} · {{ "{:.0%}".format(c.win_rate) }}{% endif %}</span>
                         </td>
                     {% elif is_equity_na %}
-                        <td class="cell na {% if col == 'Unknown' %}col-unknown{% endif %}">N/A</td>
+                        <td class="cell na {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}">N/A</td>
                     {% else %}
-                        <td class="cell empty {% if col == 'Unknown' %}col-unknown{% endif %}">—</td>
+                        <td class="cell empty {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}">—</td>
                     {% endif %}
                 {% endfor %}
                 {% if is_equity_na %}
@@ -851,7 +848,7 @@
                 {% for col in col_labels %}
                     {% set ct = col_totals.get(col) %}
                     {% if ct %}
-                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}"
+                    <td class="total-cell {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}"
                         data-total-pnl="{{ ct.total_pnl }}"
                         data-num-trades="{{ ct.num_trades | int }}"
                         data-win-rate="{{ ct.win_rate }}"
@@ -865,7 +862,7 @@
                         </span>
                     </td>
                     {% else %}
-                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}">—</td>
+                    <td class="total-cell {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}">—</td>
                     {% endif %}
                 {% endfor %}
                 {% if grand_total %}
@@ -902,7 +899,7 @@
 <div class="fit-panel-backdrop" id="fitPanelBackdrop"></div>
 <aside class="fit-panel" id="fitPanel" aria-hidden="true">
     <header style="position: relative;">
-        <button type="button" class="close" id="fitPanelClose" aria-label="Close">×</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary ht-fit-close" id="fitPanelClose" aria-label="Close">Close</button>
         <div class="tags">
             <span class="strat-tag" id="panelStrategy">—</span>
             <span class="text-white-50 small" style="align-self: center;">in</span>
@@ -933,8 +930,8 @@
         </div>
 
         <div class="panel-actions">
-            <a href="#" id="panelOpenPositions" class="primary">Open in Positions →</a>
-            <button type="button" class="secondary" id="panelCloseBottom">Close</button>
+            <a href="#" id="panelOpenPositions" class="btn btn-sm btn-primary">Open in Positions</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="panelCloseBottom">Close</button>
         </div>
     </div>
 </aside>

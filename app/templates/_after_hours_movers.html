@@ -29,7 +29,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
-                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _ah.m * 100)|round(0) }}%"></i></div>
@@ -50,7 +50,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
-                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _ah.m * 100)|round(0) }}%"></i></div>

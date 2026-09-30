@@ -27,14 +27,106 @@
     .badge-mixed  { background: #ffc107; color: #000; }
 
     /* Table. The page shell caps at 72rem (~1152px), which squeezes
-       12–13 columns at 1280–1600px until "W/L" wraps one token per
-       line and the last columns clip. Widen this page at laptop widths
-       and keep headers on one line. */
+       12–13 columns at 1280–1600px until the last columns clip. Widen
+       this page at laptop widths and keep headers on one line. */
     @media (min-width: 1200px) {
         body:has(#positionsTable) .ht-page { max-width: none; }
     }
     #positionsTable,
-    #symbolTable { font-size: .84rem; }
+    #symbolTable { font-size: .84rem; width: max-content; min-width: 100%; }
+    /* The symbol table's strategy badges used to push Premium / W/L
+       past the card. The wrapper could scroll, but its scrollbar sits
+       at the bottom of the 75vh sticky box — below an 800px window
+       when the header is on screen — so the right columns looked cut
+       off. At laptop widths, fit the table to the card instead. */
+    body:has(#positionsTable) .table-responsive,
+    body:has(#symbolTable) .table-responsive {
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: auto;
+        scrollbar-color: #8a97b1 #1a2233;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar {
+        height: 12px;
+        width: 12px;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar-thumb,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar-thumb {
+        background: #8a97b1;
+        border-radius: 8px;
+        border: 2px solid #1a2233;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar-track,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar-track {
+        background: #1a2233;
+    }
+    body:has(#positionsTable) .card,
+    body:has(#symbolTable) .card { max-width: 100%; min-width: 0; }
+    /* 768–1366: share the card width so no column runs past the edge.
+       Phones keep tables.js data-m="hide" (max-width 767) instead. */
+    @media (min-width: 768px) and (max-width: 1366px) {
+        #symbolTable {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 0;
+        }
+        #symbolTable th,
+        #symbolTable td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #symbolTable td:nth-child(4) {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+        }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 10%; }
+        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 11%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 14%; }
+        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 9.2%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 8%; }
+        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 8.2%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 7.4%; }
+        #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 6.6%; }
+        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 6%; }
+        #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 5%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 8.6%; }
+        /* Strategy detail is 13 columns. Same idea: stay inside the card.
+           Money columns keep enough width for "-$00,000.00". */
+        #positionsTable {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 0;
+        }
+        #positionsTable th,
+        #positionsTable td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #positionsTable td:nth-child(2) {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+        }
+        #positionsTable th:nth-child(1), #positionsTable td:nth-child(1) { width: 9%; }
+        #positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 13%; }
+        #positionsTable th:nth-child(3), #positionsTable td:nth-child(3) { width: 5.5%; }
+        #positionsTable th:nth-child(4), #positionsTable td:nth-child(4) { width: 9%; }
+        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 8%; }
+        #positionsTable th:nth-child(6), #positionsTable td:nth-child(6) { width: 8%; }
+        #positionsTable th:nth-child(7), #positionsTable td:nth-child(7) { width: 7.5%; }
+        #positionsTable th:nth-child(8), #positionsTable td:nth-child(8) { width: 6.5%; }
+        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9) { width: 5.5%; }
+        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 6.5%; }
+        #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 7.5%; }
+        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 6.5%; }
+        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 7.5%; }
+    }
     #positionsTable th,
     #positionsTable th a,
     #symbolTable th,
@@ -523,7 +615,7 @@
     <div class="pos-axis">
         <span style="left: 0%">{{ '-' if ns.lo < 0 else '' }}${{ '%.0f'|format(ns.lo|abs / 1000) }}k</span>
         <span style="left: {{ _zero }}%">$0</span>
-        <span style="left: 100%">${{ '%.0f'|format(ns.hi / 1000) }}k</span>
+        <span style="left: 100%">{{ money(ns.hi / 1000, 0) }}k</span>
     </div>
 </div>
 {% endif %}
@@ -594,13 +686,13 @@
                     <tr data-href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">
                         <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
                         <td class="fw-semibold">
-                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
+                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none" data-symbol="{{ row.symbol }}">
                                 {{ row.symbol }}
                             </a>
                         </td>
                         <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
                             title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
-                            {% if row.subsector and row.subsector != 'Unknown' %}
+                            {% if row.subsector and row.subsector not in ('Unknown', 'Unclassified', 'Other') %}
                             <a href="{{ scoped_url('positions', subsector=row.subsector, _anchor='pos-filters') }}"
                                class="text-decoration-none text-muted">{{ row.subsector }}</a>
                             {% else %}

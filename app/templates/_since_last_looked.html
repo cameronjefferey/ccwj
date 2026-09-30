@@ -63,7 +63,7 @@
            href="{{ scoped_url('position_detail', symbol=t.symbol) }}">
             <span class="sym">{{ t.symbol }}</span>
             {% if t.total_pnl is not none %}
-            <span>{{ '+' if t.positive else '' }}${{ '{:,.0f}'.format(t.total_pnl) }}</span>
+            <span>{{ money(t.total_pnl, 0, true) }}</span>
             {% endif %}
             <span class="text-muted">{{ t.close_date }}</span>
         </a>

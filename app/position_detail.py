@@ -1691,6 +1691,7 @@ from app.position_story import (  # noqa: E402
     compose_mirror,
     story_header,
 )
+from app.covered_call_runs import build_covered_call_runs  # noqa: E402
 from app.execution_quality import (  # noqa: E402
     POSITION_EXECUTION_QUERY,
     exit_notes as _execution_exit_notes,
@@ -1984,6 +1985,7 @@ def position_detail(symbol):
             story_days=[],
             story_markers_json="[]",
             story_mirror=[],
+            covered_call_runs=[],
             has_underlying_price=False,
             symbol_sector="",
             symbol_subsector="",
@@ -2234,6 +2236,10 @@ def position_detail(symbol):
     # Snapshot before leg filter so hero + chart can use full symbol history
     # when the selected leg has no trade rows in-range (common for new option legs).
     trades_pre_leg = trades_df.copy()
+    # Live marks for an open covered-call run. Captured before a closed-leg
+    # filter empties current_df — the run is the whole share cycle, and the
+    # open lot still needs today's price.
+    covered_call_current = current_df.copy() if current_df is not None else pd.DataFrame()
 
     # Apply leg filter to trades
     if leg_param and "trade_date" in trades_df.columns and _leg_ranges:
@@ -3080,6 +3086,8 @@ def position_detail(symbol):
 
     symbol_sector = _first_nonempty(summary_df, "sector") or _first_nonempty(current_df, "sector")
     symbol_subsector = _first_nonempty(summary_df, "subsector") or _first_nonempty(current_df, "subsector")
+    from app.sector_labels import classify_symbol
+    symbol_sector, symbol_subsector = classify_symbol(symbol, symbol_sector, symbol_subsector)
     symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
 
     # Next-earnings pill for the hero. dict form: {"date": "YYYY-MM-DD",
@@ -3306,6 +3314,22 @@ def position_detail(symbol):
         story_days, story_markers, story_mirror = [], [], []
         story_head = None
 
+    # Covered-call / wheel runs use the tenant-scoped fill stream from
+    # before the leg filter, so clicking one leg does not split a cycle
+    # into a share piece and a call piece. Fees stay out of the math.
+    covered_call_runs = []
+    try:
+        covered_call_runs = build_covered_call_runs(
+            trades_pre_leg,
+            current_df=covered_call_current,
+            splits_df=splits_df,
+            as_of=user_local_today(),
+            label_map=_tenant_label_map,
+        )
+    except Exception as exc:
+        app.logger.warning("covered call runs failed for %s: %s", symbol, exc)
+        covered_call_runs = []
+
     # _stats set once near the top (right after the initial query batch);
     # reused here and after render_template below.
     if _stats is not None:
@@ -3374,6 +3398,7 @@ def position_detail(symbol):
         story_header=story_head,
         story_realized=_story_realized_footer(breakdown_rows),
         story_share_label="Coins" if _is_crypto else "Shares",
+        covered_call_runs=covered_call_runs,
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,
@@ -3608,7 +3633,11 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
                 if abs(qty - round(qty)) < 1e-6:
                     qty_label = f"{abs(round(qty)):,.0f} sh"
                 else:
-                    qty_label = f"{abs(qty):,.4f} sh".rstrip("0").rstrip(".") + " sh"
+                    # rstrip runs on the number only. Appending " sh" first
+                    # left the unit in the string, so a fractional lot
+                    # rendered as "10.5000 sh sh".
+                    qty_text = f"{abs(qty):,.4f}".rstrip("0").rstrip(".")
+                    qty_label = qty_text + " sh"
             holdings.append({
                 "kind": "option" if is_opt else "equity",
                 "label": label,
