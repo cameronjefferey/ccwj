@@ -12,7 +12,7 @@
 {% set _a_names = namespace(names=[]) %}
 {% for c in scope_account_choices %}
     {% if c.tenant_id in selected_tenant_ids %}
-        {% set _a_names.names = _a_names.names + [c.label] %}
+        {% set _a_names.names = _a_names.names + [c.label | account_label(c.tenant_id)] %}
     {% endif %}
 {% endfor %}
 

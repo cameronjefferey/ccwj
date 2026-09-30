@@ -222,7 +222,7 @@
         <div class="small mb-1">
             {% for ob in opening_balances %}
             <div>
-                {% if opening_balances|length > 1 and ob.account %}<strong>{{ ob.account }}:</strong> {% endif %}
+                {% if opening_balances|length > 1 and ob.account %}<strong>{{ ob.account | account_label(ob.tenant_id) }}:</strong> {% endif %}
                 {{ '{:,.2f}'.format(ob.qty).rstrip('0').rstrip('.') }} shares were already held when your
                 history begins{% if ob.first_trade_date %} ({{ ob.first_trade_date }}){% endif %}.
                 Opening value {% if ob.price_source == 'broker_cost_basis' %}{{ money(ob.est_cost, 0) }},
@@ -311,6 +311,23 @@
         </div>
         {% if kpis %}
         <div class="text-end">
+            {% if overall_status != 'Open' %}
+            {% set _share = namespace(strategy='Closed position', trade_symbol='') %}
+            {% set _share_strats = (strategy_rows|default([]))|map(attribute='strategy')|unique|list %}
+            {% if _share_strats|length == 1 %}
+            {% set _share.strategy = _share_strats[0] %}
+            {% endif %}
+            {% if (trade_outcomes|default([]))|length == 1 %}
+            {% set _share.trade_symbol = trade_outcomes[0].trade_symbol or '' %}
+            {% endif %}
+            <button type="button" class="ht-share-btn ht-share-btn-hero mb-2"
+                    data-symbol="{{ symbol }}"
+                    data-strategy="{{ _share.strategy }}"
+                    data-open="{{ (kpis.first_trade|string)[:10] if kpis.first_trade else '' }}"
+                    data-close="{{ (kpis.last_trade|string)[:10] if kpis.last_trade else '' }}"
+                    data-realized="{{ kpis.realized_pnl if kpis.realized_pnl is not none else '' }}"
+                    data-trade-symbol="{{ _share.trade_symbol }}">Share</button>
+            {% endif %}
             <div class="small text-white-50">Total return</div>
             <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized{% if kpis.dividend_income and kpis.dividend_income != 0 %} + dividends{% endif %}</div>
             <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
@@ -443,7 +460,7 @@
         <label class="account-toggle {{ 'active' if a.selected }}">
             <input type="checkbox" class="account-toggle-input" data-tenant-id="{{ a.tenant_id }}" {{ 'checked' if a.selected }} hidden>
             <span class="pill-dot {{ 'open' if a.selected else 'closed' }}"></span>
-            <span>{{ a.label }}</span>
+            <span>{{ a.label | account_label(a.tenant_id) }}</span>
         </label>
         {% endfor %}
     </div>
@@ -516,7 +533,7 @@
         {% for grp in legs_by_account %}
         <div class="leg-account-group">
             {% if multi_account %}
-            <div class="leg-account-label">{{ grp.label }}</div>
+            <div class="leg-account-label">{{ grp.label | account_label(grp.tenant_id) }}</div>
             {% endif %}
             <div class="session-pills">
                 {% for s in grp.sessions %}
@@ -952,7 +969,7 @@
             <tbody>
                 {% for r in strategy_rows %}
                 <tr data-href="{{ scoped_url('strategies', tenant=r.tenant_id, tenants=none, strategy=r.strategy) }}">
-                    <td data-val="{{ r.account_display or r.account }}">{{ r.account_display or (r.account | account_label(r.tenant_id)) }}</td>
+                    <td data-val="{{ (r.account_display or r.account) | account_label(r.tenant_id) }}">{{ (r.account_display or r.account) | account_label(r.tenant_id) }}</td>
                     <td data-val="{{ r.strategy }}">
                         <span class="badge badge-strategy" style="background:{{ colors.get(r.strategy, '#6c757d') }}">
                             {{ r.strategy }}
@@ -1121,7 +1138,7 @@
                     <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
                     <td class="fw-semibold small" {% if p.trade_symbol %}title="{{ p.trade_symbol }}"{% endif %}>{{ (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
                     <td class="text-muted small">{{ p.leg_kind or p.instrument_type }}</td>
-                    <td class="text-muted small">{{ p.account_display or (p.account | account_label(p.tenant_id)) }}</td>
+                    <td class="text-muted small" data-val="{{ (p.account_display or p.account) | account_label(p.tenant_id) }}">{{ (p.account_display or p.account) | account_label(p.tenant_id) }}</td>
                     <td class="text-end">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
                     <td class="text-nowrap">{{ p.open_date|human_date if p.open_date else '—' }}</td>
                     <td class="text-nowrap">—</td>
@@ -1181,7 +1198,7 @@
                         {% endif %}
                     </td>
                     <td class="text-muted small">{{ o.strategy }}</td>
-                    <td class="text-muted small">{{ o.account_display or (o.account | account_label(o.tenant_id)) }}</td>
+                    <td class="text-muted small" data-val="{{ (o.account_display or o.account) | account_label(o.tenant_id) }}">{{ (o.account_display or o.account) | account_label(o.tenant_id) }}</td>
                     <td class="text-end">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
                     <td class="text-nowrap">{{ o.open_date|human_date }}</td>
                     <td class="text-nowrap">{{ o.close_date|human_date }}</td>
@@ -1189,7 +1206,14 @@
                     <td class="text-end">{{ money(o.cost) }}</td>
                     <td class="text-end">{{ money(o.proceeds) }}</td>
                     <td class="text-end fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
-                        {{ money(o.pnl) }}
+                        <div>{{ money(o.pnl) }}</div>
+                        <button type="button" class="ht-share-btn"
+                                data-symbol="{{ symbol }}"
+                                data-strategy="{{ o.strategy or '' }}"
+                                data-open="{{ (o.open_date|string)[:10] if o.open_date else '' }}"
+                                data-close="{{ (o.close_date|string)[:10] if o.close_date else '' }}"
+                                data-realized="{{ o.pnl if o.pnl is not none else '' }}"
+                                data-trade-symbol="{{ o.trade_symbol or '' }}">Share</button>
                     </td>
                     <td class="text-end {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else '' }}">
                         {% if o.return_pct is not none %}{{ o.return_pct }}%{% else %}—{% endif %}
@@ -1301,7 +1325,7 @@
                         {% for t in trades %}
                         <tr>
                             <td class="text-nowrap" data-val="{{ t.trade_date }}">{{ t.trade_date }}</td>
-                            <td>{{ t.account_display or (t.account | account_label(t.tenant_id)) }}</td>
+                            <td data-val="{{ (t.account_display or t.account) | account_label(t.tenant_id) }}">{{ (t.account_display or t.account) | account_label(t.tenant_id) }}</td>
                             <td data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">{{ trade_action(t) }}</td>
                             <td>{{ t.instrument_type }}</td>
                             <td class="small">{{ t.description }}</td>
@@ -1326,6 +1350,48 @@
     </details>
 </div>
 {% endif %}
+
+<div class="ht-share-modal" id="htShareModal" hidden>
+    <div class="ht-share-panel" role="dialog" aria-labelledby="htShareTitle">
+        <div class="ht-share-head">
+            <h2 id="htShareTitle">Share this trade</h2>
+            <button type="button" class="ht-share-close" id="htShareClose" aria-label="Close">×</button>
+        </div>
+        <p class="ht-share-note">The card shows the symbol, strategy, dates, and realized P&amp;L. No account or broker.</p>
+        <div class="ht-share-previews">
+            <figure>
+                <img id="htShareSquare" alt="Square share card" width="270" height="270">
+                <figcaption>1080 × 1080</figcaption>
+            </figure>
+            <figure>
+                <img id="htShareStory" alt="Story share card" width="152" height="270">
+                <figcaption>1080 × 1920</figcaption>
+            </figure>
+        </div>
+        <div class="ht-share-actions">
+            <a class="btn btn-primary" id="htShareDownloadSquare" download>Download square</a>
+            <a class="btn btn-outline-light" id="htShareDownloadStory" download>Download story</a>
+            <button type="button" class="btn btn-outline-light" id="htShareNative">Share</button>
+        </div>
+    </div>
+</div>
+<style>
+    .ht-share-btn { display: inline-block; margin-top: .2rem; border: 1px solid #5b8cff; background: transparent; color: #5b8cff; border-radius: 999px; font-size: .68rem; font-weight: 650; padding: .1rem .55rem; cursor: pointer; }
+    .ht-share-btn:hover { background: rgba(91,140,255,.15); }
+    .ht-share-btn-hero { margin-top: 0; }
+    .ht-share-modal { position: fixed; inset: 0; z-index: 1080; background: rgba(5,7,12,.72); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .ht-share-modal[hidden] { display: none !important; }
+    .ht-share-panel { width: min(640px, 100%); background: #121826; color: #e8edf7; border: 1px solid #243049; border-radius: 16px; padding: 1.1rem 1.2rem 1.25rem; }
+    .ht-share-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+    .ht-share-head h2 { font-size: 1.05rem; font-weight: 700; margin: 0; }
+    .ht-share-close { border: 0; background: transparent; color: #8a97b1; font-size: 1.4rem; line-height: 1; cursor: pointer; }
+    .ht-share-note { color: #8a97b1; font-size: .82rem; margin: .4rem 0 .8rem; }
+    .ht-share-previews { display: flex; gap: 1rem; align-items: flex-end; justify-content: center; flex-wrap: wrap; }
+    .ht-share-previews figure { margin: 0; text-align: center; }
+    .ht-share-previews img { display: block; background: #0a0e17; border-radius: 8px; max-width: 100%; height: auto; }
+    .ht-share-previews figcaption { color: #8a97b1; font-size: .72rem; margin-top: .35rem; font-variant-numeric: tabular-nums; }
+    .ht-share-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+</style>
 
 {% else %}
 <div class="alert alert-warning">
@@ -1763,7 +1829,8 @@
 
     // Leg drill-down toggle
     document.querySelectorAll('.leg-toggle').forEach(function (row) {
-        row.addEventListener('click', function () {
+        row.addEventListener('click', function (e) {
+            if (e.target.closest('.ht-share-btn')) return;
             var targetId = this.getAttribute('data-target');
             var detail = document.getElementById(targetId);
             if (!detail) return;
@@ -1779,4 +1846,5 @@
     });
 })();
 </script>
+<script src="{{ url_for('static', filename='js/share-card.js') }}"></script>
 {% endblock %}

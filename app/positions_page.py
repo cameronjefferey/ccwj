@@ -996,10 +996,12 @@ def positions():
     def _label_rows(_rows):
         for _r in _rows:
             _tid = _r.get("tenant_id")
-            _r["account_display"] = (
+            _raw_label = (
                 (_tenant_labels.get(_tid) if _tid else None)
                 or _norm_account_label(_r.get("account"))
             )
+            from app.privacy import shown_account
+            _r["account_display"] = shown_account(_raw_label, _tid)
         return _rows
 
     _label_rows(all_rows)

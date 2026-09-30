@@ -2156,7 +2156,9 @@ def position_detail(symbol):
         if not label:
             raw = account_raw or ""
             label = _acct_nick_map.get(raw, raw)
-        return label or "Account"
+        label = label or "Account"
+        from app.privacy import shown_account
+        return shown_account(label, tenant_id)
 
     for s in sessions_list:
         s["account_display"] = _account_display_for(
@@ -3235,6 +3237,7 @@ def position_detail(symbol):
                 if qty <= 0:
                     continue
                 opening_balances.append({
+                    "tenant_id": str(ob.get("tenant_id") or "").strip() or None,
                     "account": _account_display_for(
                         str(ob.get("tenant_id") or "").strip() or None,
                         ob.get("account"),
@@ -3495,6 +3498,7 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
     tenant_id → display nickname.
     """
     from app.option_formatting import format_option_symbol
+    from app.privacy import shown_account
 
     symbol = str(symbol or "").strip().upper()
     label_map = label_map or {}
@@ -3561,7 +3565,9 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
             tid = str(r.get("tenant_id") or "").strip()
             bucket = per_account.setdefault(tid, {
                 "tenant_id": tid,
-                "account": label_map.get(tid, str(r.get("account") or "")),
+                "account": shown_account(
+                    label_map.get(tid, str(r.get("account") or "")), tid,
+                ),
                 "total_pnl": 0.0,
                 "status": st,
             })
@@ -3615,7 +3621,9 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
                 "market_value": _peek_num(r.get("market_value")),
                 "cost_basis": _peek_num(r.get("cost_basis")),
                 "unrealized_pnl": _peek_num(r.get("unrealized_pnl")),
-                "account": label_map.get(tid, str(r.get("account") or "")),
+                "account": shown_account(
+                    label_map.get(tid, str(r.get("account") or "")), tid,
+                ),
                 "tenant_id": tid,
             })
         holdings.sort(key=lambda h: (0 if h["kind"] == "equity" else 1, h["label"]))

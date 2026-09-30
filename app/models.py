@@ -160,6 +160,7 @@ def init_db():
             product_update_email            BOOLEAN NOT NULL DEFAULT TRUE,
             email_unsubscribe_token         TEXT,
             compact_tables                  BOOLEAN NOT NULL DEFAULT FALSE,
+            privacy_mode                    BOOLEAN NOT NULL DEFAULT FALSE,
             show_account_names_on_published BOOLEAN NOT NULL DEFAULT FALSE,
             profile_visibility              TEXT NOT NULL DEFAULT 'private',
             created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -569,6 +570,7 @@ def init_db():
     _migrate_broker_account_id_columns()
     _migrate_onboarding_responses_v2()
     _migrate_user_profiles_email_prefs()
+    _migrate_user_profiles_privacy_mode()
     _migrate_users_email_verified_column()
     _migrate_users_preferred_llm_model_column()
     _migrate_users_plan_columns()
@@ -889,6 +891,18 @@ def _migrate_user_profiles_email_prefs():
             execute(ddl)
         except Exception as exc:
             _log.warning("user_profiles email-prefs migration skipped: %s", exc)
+
+
+def _migrate_user_profiles_privacy_mode():
+    """Idempotent: privacy mode is a per-user flag. CREATE TABLE does not
+    add the column on databases that already have user_profiles."""
+    try:
+        execute(
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+            "privacy_mode BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+    except Exception as exc:
+        _log.warning("user_profiles privacy_mode migration skipped: %s", exc)
 
 
 def _migrate_schwab_first_sync_column():
@@ -2979,7 +2993,7 @@ def get_snaptrade_account_nicknames(user_id):
 _PROFILE_COLUMNS = (
     "user_id, display_name, headline, bio, accent, timezone, week_starts_monday, "
     "default_route, digest_email, weekly_preview_email, product_update_email, "
-    "email_unsubscribe_token, compact_tables, show_account_names_on_published, "
+    "email_unsubscribe_token, compact_tables, privacy_mode, show_account_names_on_published, "
     "profile_visibility, created_at, updated_at"
 )
 
@@ -3000,6 +3014,7 @@ def _default_profile_row(user_id):
         "product_update_email": True,
         "email_unsubscribe_token": None,
         "compact_tables": False,
+        "privacy_mode": False,
         "show_account_names_on_published": False,
         "profile_visibility": "private",
         "created_at": None,
@@ -3058,6 +3073,7 @@ def update_user_profile(user_id, **fields):
         "weekly_preview_email",
         "product_update_email",
         "compact_tables",
+        "privacy_mode",
         "show_account_names_on_published",
         "profile_visibility",
     }

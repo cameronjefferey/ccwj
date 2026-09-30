@@ -92,7 +92,8 @@
 
   var trigger = document.getElementById("ht-palette-trigger");
   var cacheScope = trigger && trigger.getAttribute("data-cache-scope");
-  var SYMBOL_CACHE_KEY = cacheScope ? "ht-nav-symbols:" + cacheScope : null;
+  var privacyFlag = trigger && trigger.getAttribute("data-privacy") === "1" ? "1" : "0";
+  var SYMBOL_CACHE_KEY = cacheScope ? "ht-nav-symbols:" + cacheScope + ":p" + privacyFlag : null;
 
   function scopeQs() {
     var el = trigger || document.querySelector(".ht-palette-open");
