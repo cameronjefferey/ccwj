@@ -107,17 +107,19 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "CFLT" not in html
     root = Path(__file__).resolve().parents[1]
     for name in (
-        "marketing/amd-pnl.png",
+        "marketing/pnl_real.webp",
         "marketing/msft-if-held.png",
         "marketing/strategies.png",
         "marketing/fit-matrix.png",
     ):
         assert name in html
         assert (root / "app" / "static" / name).is_file()
-    from app.marketing import pnl_day_chart
-    chart = pnl_day_chart()
-    assert chart["filename"] in html
-    assert chart["caption"] in html
+    assert "marketing/amd-pnl.png" not in html
+    assert "Real account · BE" in html
+    assert (
+        "Every trade day on one line. The run-up, the drawdown and the recovery, "
+        "with options and shares split out."
+    ) in html
     assert 'href="/signup"' in html or "signup" in html
     assert 'href="/login"' in html
     assert "Sign in" in html
@@ -152,23 +154,6 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     else:
         assert 'href="/learn"' not in html
         assert "Options 101" in html
-
-
-def test_pnl_chart_uses_real_file_when_present(monkeypatch, tmp_path):
-    from app import marketing
-
-    missing = tmp_path / "absent.png"
-    monkeypatch.setattr(marketing, "_PNL_REAL", missing)
-    demo = marketing.pnl_day_chart()
-    assert demo["filename"] == "marketing/amd-pnl.png"
-    assert demo["caption"] == "Demo account"
-
-    real = tmp_path / "pnl_real.png"
-    real.write_bytes(b"png")
-    monkeypatch.setattr(marketing, "_PNL_REAL", real)
-    swapped = marketing.pnl_day_chart()
-    assert swapped["filename"] == "marketing/pnl_real.png"
-    assert swapped["caption"] == "Real account"
 
 
 def test_homepage_redirects_authenticated_visitors(monkeypatch):

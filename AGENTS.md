@@ -508,10 +508,10 @@ position's story, if held, covered-call income, the fit matrix), not one
 sideways row. A Real trades band plays the ONON and RKLB stories wide.
 Privacy mode and share cards stay a sentence on the proof strip (there is
 no matching upload). Still frames from the demo account sit in their own
-bands: a position P&amp;L chart, the if-held summary, strategy cards, and
-the fit matrix (`app/static/marketing/`). The day-by-day chart reads
-`pnl_real.png` when that file is present (caption "Real account") and
-otherwise `amd-pnl.png` (caption "Demo account"). Those crops do not show
+bands: the BE cumulative P&amp;L chart (`app/static/marketing/pnl_real.webp`,
+caption "Real account · BE"), the if-held summary, strategy cards, and
+the fit matrix (`app/static/marketing/`). The day-by-day chart is that
+real-account still, not the demo AMD crop. Those crops do not show
 ORCL, CFLT, or the Earnings or Admin tabs. Options 101 and the full-width
 trial close stay. The Options 101 step links to `/learn` only when that
 exact route exists. Hero primary CTA: "Start your 30-day free trial"

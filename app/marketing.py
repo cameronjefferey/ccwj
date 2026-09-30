@@ -10,8 +10,6 @@ Extracted verbatim from app/routes.py (routes.py refactor, Aug 2026).
 Routes register on import via @app.route — endpoint names unchanged.
 """
 
-from pathlib import Path
-
 from flask import (
     abort, flash, g, make_response, redirect, render_template, request, Response, url_for,
 )
@@ -567,36 +565,6 @@ def robots():
     )
 
 
-# Drop this file in to replace the demo P&L crop on the homepage.
-# The caption stays "Demo account" until the file is present.
-_PNL_REAL = Path(__file__).resolve().parent / "static" / "marketing" / "pnl_real.png"
-
-
-def pnl_day_chart():
-    """Still for the homepage "result, day by day" band.
-
-    ``app/static/marketing/pnl_real.png`` wins when it exists. Until then
-    the band keeps the demo AMD crop and the Demo account caption.
-    """
-    if _PNL_REAL.is_file():
-        return {
-            "filename": "marketing/pnl_real.png",
-            "caption": "Real account",
-            "alt": (
-                "Cumulative P&L chart from a real account, "
-                "with equity, options, and dividends."
-            ),
-        }
-    return {
-        "filename": "marketing/amd-pnl.png",
-        "caption": "Demo account",
-        "alt": (
-            "Cumulative P&L chart for AMD in the demo account, "
-            "with equity, options, and dividends."
-        ),
-    }
-
-
 @app.route("/")
 @app.route("/index")
 def index():
@@ -612,7 +580,6 @@ def index():
         story_steps=story_steps(),
         trade_stories=trade_stories(),
         learn_url=resolve_learn_url(),
-        pnl_chart=pnl_day_chart(),
     )
 
 
