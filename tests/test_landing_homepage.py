@@ -66,7 +66,20 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     html = resp.get_data(as_text=True)
 
     assert "Watch the trading mirror" in html
+    assert 'class="ht-hero-primary"' in html
+    assert ">Start your 30-day free trial</a>" in html
+    assert 'class="ht-hero-sub">No credit card</p>' in html
+    assert 'class="ht-hero-secondary"' in html
+    assert ">Try the live demo</a>" in html
+    assert 'class="ht-hero-signin"' in html
+    assert "ht-text-cta" not in html
+    # Closing band keeps the combined line. The hero splits it across button + subline.
     assert "Start your 30-day free trial, no credit card" in html
+    stage = html.find('class="ht-stage"')
+    cta = html.find('class="ht-hero-cta"')
+    proof = html.find('class="ht-band ht-band-proof"')
+    how = html.find('class="ht-band ht-band-how')
+    assert 0 <= stage < cta < proof < how
     assert html.count('class="ht-facade"') == 9
     assert 'data-youtube-id=""' not in html
     assert "https://i.ytimg.com/vi/NpU79Lwkdn4/maxresdefault.jpg" in html
@@ -101,6 +114,10 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     ):
         assert name in html
         assert (root / "app" / "static" / name).is_file()
+    from app.marketing import pnl_day_chart
+    chart = pnl_day_chart()
+    assert chart["filename"] in html
+    assert chart["caption"] in html
     assert 'href="/signup"' in html or "signup" in html
     assert 'href="/login"' in html
     assert "Sign in" in html
@@ -135,6 +152,23 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     else:
         assert 'href="/learn"' not in html
         assert "Options 101" in html
+
+
+def test_pnl_chart_uses_real_file_when_present(monkeypatch, tmp_path):
+    from app import marketing
+
+    missing = tmp_path / "absent.png"
+    monkeypatch.setattr(marketing, "_PNL_REAL", missing)
+    demo = marketing.pnl_day_chart()
+    assert demo["filename"] == "marketing/amd-pnl.png"
+    assert demo["caption"] == "Demo account"
+
+    real = tmp_path / "pnl_real.png"
+    real.write_bytes(b"png")
+    monkeypatch.setattr(marketing, "_PNL_REAL", real)
+    swapped = marketing.pnl_day_chart()
+    assert swapped["filename"] == "marketing/pnl_real.png"
+    assert swapped["caption"] == "Real account"
 
 
 def test_homepage_redirects_authenticated_visitors(monkeypatch):
