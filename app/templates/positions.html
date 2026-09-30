@@ -269,7 +269,7 @@
             {% if selected_start_date %}<input type="hidden" name="start_date" value="{{ selected_start_date }}">{% endif %}
             {% if selected_end_date %}<input type="hidden" name="end_date" value="{{ selected_end_date }}">{% endif %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('positions', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -288,15 +288,15 @@
             <div class="ov-big {% if kpis.total_return > 0 %}pos{% elif kpis.total_return < 0 %}neg{% endif %}">{% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k">Realized</div>
+            <div class="ov-k">{{ term('Realized') }}</div>
             <div class="ov-pct {% if kpis.realized_pnl > 0 %}pos{% elif kpis.realized_pnl < 0 %}neg{% endif %}">{% if kpis.realized_pnl > 0 %}+{% endif %}{{ money(kpis.realized_pnl, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k">Unrealized</div>
+            <div class="ov-k">{{ term('Unrealized') }}</div>
             <div class="ov-pct {% if kpis.unrealized_pnl > 0 %}pos{% elif kpis.unrealized_pnl < 0 %}neg{% endif %}">{% if kpis.unrealized_pnl > 0 %}+{% endif %}{{ money(kpis.unrealized_pnl, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k">Win rate</div>
+            <div class="ov-k">{{ term('Win rate') }}</div>
             <div class="ov-big ov-invest">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</div>
         </div>
     </div>
@@ -498,7 +498,7 @@
         </div>
     </div>
     {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_tag or selected_statuses or selected_start_date or selected_end_date or selected_group_ids or selected_tenant_ids %}
-    <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
+    <a class="filter-reset" href="{{ url_for('positions', scope='all') }}">Reset</a>
     {% endif %}
 </form>
 </div>
@@ -672,13 +672,13 @@
                             title="Realized + unrealized + dividends — the headline P&amp;L for this symbol.">
                             Total Return
                         </th>
-                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
-                        <th class="sortable" data-sort="num">Win Rate</th>
+                        <th class="sortable" data-sort="num">{{ term('Win Rate') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Trades</th>
                         <th class="sortable" data-sort="num" data-m="hide">W/L</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Premium') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -779,18 +779,18 @@
                             title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">
                             <a href="{{ pos_sort('total_return') }}">Total Return</a>
                         </th>
-                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('realized') }}">Realized</a></th>
-                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('unrealized') }}">Unrealized</a></th>
+                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('realized') }}">Realized</a>{{ term_mark('Realized') }}</th>
+                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('unrealized') }}">Unrealized</a>{{ term_mark('Unrealized') }}</th>
                         <th class="sortable {% if sort_key == 'dividends' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"
                             title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">
                             <a href="{{ pos_sort('dividends') }}">Dividends</a>
                         </th>
-                        <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('win_rate') }}">Win Rate</a></th>
+                        <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('win_rate') }}">Win Rate</a>{{ term_mark('Win Rate') }}</th>
                         <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('trades') }}">Trades</a></th>
                         <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W/L</a></th>
                         <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
                         <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_days') }}">Avg Days</a></th>
-                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('premium') }}">Premium</a></th>
+                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('premium') }}">Premium</a>{{ term_mark('Premium') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -904,7 +904,7 @@
         </nav>
         {% endif %}
         {% else %}
-        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-decoration-underline">connecting your broker</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
+        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions', scope='all') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-decoration-underline">connecting your broker</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
         {% endif %}
     </div>
 </div>
