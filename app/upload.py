@@ -2281,6 +2281,9 @@ def upload():
         account_choices = schwab_picker_choices(linked_accounts)
         if not account_choices and snap_rows is None:
             account_choices = _csv_upload_account_choices(tenant_rows)
+        from app.privacy import sort_masked_account_choices
+        account_choices = sort_masked_account_choices(account_choices)
+        linked_accounts = sort_masked_account_choices(linked_accounts)
         accounts = sorted(set(user_accounts))
         recent_uploads = get_uploads_for_user(current_user.id)
         try:

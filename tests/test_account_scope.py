@@ -215,6 +215,86 @@ def test_header_picker_masks_labels_in_privacy_mode(monkeypatch):
     assert "Unnamed account" not in html
 
 
+def test_header_picker_orders_masked_labels_numerically(monkeypatch):
+    """Nickname order would read Account 2 then Account 1. Privacy sorts 1, 2, 10."""
+    import re
+
+    from app.privacy import sort_masked_account_choices
+
+    choices = [
+        {"tenant_id": "snaptrade:zzz", "label": "Alpha"},
+        {"tenant_id": "snaptrade:mmm", "label": "Zulu"},
+        {"tenant_id": "snaptrade:ten", "label": "Middle"},
+    ]
+    by_tid = {
+        "snaptrade:mmm": "Account 1",
+        "snaptrade:zzz": "Account 2",
+        "snaptrade:ten": "Account 10",
+    }
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr("app.privacy.viewer_slots", lambda: (by_tid, {}))
+    ordered = sort_masked_account_choices(choices)
+    with app.test_request_context("/overview"):
+        html = app.jinja_env.get_template("_account_scope_filters.html").render(
+            header_account_only=True,
+            scope_account_choices=ordered,
+            selected_tenant_ids=["snaptrade:zzz", "snaptrade:mmm", "snaptrade:ten"],
+            account_groups=[],
+            selected_group_ids=[],
+            tenants_query="snaptrade:zzz,snaptrade:mmm,snaptrade:ten",
+            account_rename_urls={},
+        )
+    spans = re.findall(r"<span>(Account \d+)</span>", html)
+    assert spans == ["Account 1", "Account 2", "Account 10"]
+    assert "Alpha" not in html and "Zulu" not in html
+
+
+def test_context_processor_sorts_the_header_picker(monkeypatch):
+    """The live header list is Account N order, not nickname order."""
+    from flask_login import login_user
+
+    from app import _inject_feature_flags
+
+    class _Viewer:
+        is_authenticated = True
+        is_active = True
+        is_anonymous = False
+        id = 42
+
+        def get_id(self):
+            return "42"
+
+    rows = [
+        {
+            "tenant_id": "snaptrade:zzz",
+            "display_nickname": "Alpha",
+            "account_name": "Schwab Account",
+        },
+        {
+            "tenant_id": "snaptrade:mmm",
+            "display_nickname": "Zulu",
+            "account_name": "Schwab Account",
+        },
+    ]
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr("app.models.get_broker_tenants_for_user", lambda user_id: rows)
+    monkeypatch.setattr("app.models.list_account_groups", lambda user_id: [])
+    monkeypatch.setattr(
+        "app.routes._account_rename_urls_for_rows", lambda rows: {},
+    )
+    with app.test_request_context("/overview"):
+        login_user(_Viewer())
+        ctx = _inject_feature_flags()
+    assert [c["tenant_id"] for c in ctx["scope_account_choices"]] == [
+        "snaptrade:mmm",
+        "snaptrade:zzz",
+    ]
+    assert [c["tenant_id"] for c in ctx["visible_account_choices"]] == [
+        "snaptrade:mmm",
+        "snaptrade:zzz",
+    ]
+
+
 def test_base_hides_picker_until_two_accounts():
     from pathlib import Path
     base = (Path(app.root_path) / "templates" / "base.html").read_text()

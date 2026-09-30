@@ -12,6 +12,7 @@ from app.privacy import (
     mask_secret,
     shown_account,
     slots_from_rows,
+    sort_masked_account_choices,
 )
 
 
@@ -52,6 +53,37 @@ def test_account_numbers_and_balances_mask_when_on():
     assert format_privacy_balance(482331, enabled=True) == PRIVACY_MASK
     assert format_privacy_balance(None, enabled=True) == "—"
     assert format_privacy_signed(1200, enabled=True) == PRIVACY_MASK
+
+
+def test_masked_lists_sort_by_account_number_not_nickname():
+    choices = [
+        {"tenant_id": "snaptrade:m", "label": "Zulu"},
+        {"tenant_id": "snaptrade:z", "label": "Alpha"},
+        {"tenant_id": "snaptrade:a", "label": "Mid"},
+    ]
+    by_tid, by_name = slots_from_rows([
+        {"tenant_id": "snaptrade:z", "display_nickname": "Alpha"},
+        {"tenant_id": "snaptrade:a", "display_nickname": "Mid"},
+        {"tenant_id": "snaptrade:m", "display_nickname": "Zulu"},
+        {"tenant_id": "snaptrade:ten", "display_nickname": "Ten"},
+    ])
+    # tenant_id order: a, m, ten, z → Account 1, 2, 3, 4
+    assert by_tid["snaptrade:a"] == "Account 1"
+    assert by_tid["snaptrade:ten"] == "Account 3"
+    ordered = sort_masked_account_choices(
+        choices + [{"tenant_id": "snaptrade:ten", "label": "Ten"}],
+        enabled=True,
+        by_tid=by_tid,
+        by_name=by_name,
+    )
+    assert [c["tenant_id"] for c in ordered] == [
+        "snaptrade:a",
+        "snaptrade:m",
+        "snaptrade:ten",
+        "snaptrade:z",
+    ]
+    # Privacy off keeps the nickname order the picker already built.
+    assert sort_masked_account_choices(choices, enabled=False) == choices
 
 
 def test_trade_money_formatter_is_not_masked():

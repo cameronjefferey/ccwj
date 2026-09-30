@@ -4,6 +4,11 @@ The card is a download the browser generates on click. Nothing is stored
 and nothing is public. The picture never includes an account name, broker,
 balance, username, or email — privacy mode does not have to be on.
 
+Every figure on the card (symbol, strategy, dates, realized P&L, hindsight)
+is read from the viewer's own warehouse rows. The URL only carries an
+identifier (which closed position or leg). Strategy, dates-as-display, and
+dollars in the query string are ignored. A miss is a 404, not a card.
+
 Hindsight, when the warehouse has an early-close counterfactual, reads:
 
     Sold for -$3,333 · Holding would have made +$11,933
@@ -16,7 +21,8 @@ from __future__ import annotations
 
 import io
 import os
-from datetime import datetime
+import re
+from datetime import datetime, date
 
 from flask import abort, request, send_file
 from flask_login import current_user, login_required
@@ -38,25 +44,76 @@ LAYOUTS = {
     "story": (1080, 1920),
 }
 
-# Tenant-scoped. The frame is also passed through filter_df_by_tenant_ids,
+# Tenant-scoped. Each frame is also passed through filter_df_by_tenant_ids,
 # so the outer select must project tenant_id (see
 # tests/test_tenant_filtered_queries_carry_tenant_id.py).
-SHARE_EXIT_QUERY = """
+# Empty @trade_symbol / @session_id / @close_date means "every closed row
+# for this symbol" (the position card). A specific leg sets them.
+SHARE_POSITION_QUERY = """
 SELECT
+    symbol,
+    strategy,
+    status,
     realized_pnl,
-    early_close_vs_expiry_delta,
-    direction,
+    first_trade_date,
+    last_trade_date,
+    tenant_id
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM(@symbol))
+  {tenant_filter}
+"""
+
+SHARE_OPTION_QUERY = """
+SELECT
+    sc.symbol AS symbol,
+    sc.strategy AS strategy,
+    sc.trade_symbol AS trade_symbol,
+    sc.tenant_id AS tenant_id,
+    sc.open_date AS open_date,
+    sc.close_date AS close_date,
+    sc.total_pnl AS realized_pnl,
+    oc.direction AS direction,
+    eq.early_close_vs_expiry_delta AS early_close_vs_expiry_delta
+FROM `ccwj-dbt.analytics.int_strategy_classification` sc
+JOIN `ccwj-dbt.analytics.int_option_contracts` oc
+  ON (sc.tenant_id IS NOT DISTINCT FROM oc.tenant_id)
+ AND sc.account = oc.account
+ AND sc.trade_symbol = oc.trade_symbol
+ AND sc.user_id IS NOT DISTINCT FROM oc.user_id
+LEFT JOIN `ccwj-dbt.analytics.int_option_exit_quality` eq
+  ON (eq.tenant_id IS NOT DISTINCT FROM sc.tenant_id)
+ AND eq.trade_symbol = sc.trade_symbol
+ AND eq.user_id IS NOT DISTINCT FROM sc.user_id
+WHERE sc.status = 'Closed'
+  AND sc.trade_group_type = 'option_contract'
+  AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM(@symbol))
+  AND (@trade_symbol = '' OR sc.trade_symbol = @trade_symbol)
+  {tenant_filter}
+"""
+
+SHARE_EQUITY_QUERY = """
+SELECT
+    symbol,
+    tenant_id,
+    trade_symbol,
+    session_id,
     open_date,
     close_date,
-    symbol,
-    trade_symbol,
-    tenant_id
-FROM `ccwj-dbt.analytics.int_option_exit_quality`
-WHERE UPPER(symbol) = UPPER(@symbol)
-  AND trade_symbol = @trade_symbol
+    realized_pnl,
+    description
+FROM `ccwj-dbt.analytics.int_closed_equity_legs`
+WHERE UPPER(TRIM(COALESCE(symbol, ''))) = UPPER(TRIM(@symbol))
+  AND (@session_id = '' OR CAST(session_id AS STRING) = @session_id)
+  AND (
+        @close_date = ''
+        OR STARTS_WITH(CAST(close_date AS STRING), @close_date)
+      )
   {tenant_filter}
-LIMIT 8
 """
+
+_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,15}$")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SESSION_RE = re.compile(r"^\d+$")
 
 
 def signed_dollars(value) -> str:
@@ -138,7 +195,8 @@ def build_share_card(
     open_label = _date_label(open_date)
     close_label = _date_label(close_date)
     if open_label and close_label and open_label != close_label:
-        dates = f"{open_label}  →  {close_label}"
+        # "to", not an arrow: Instrument Sans has no U+2192, so → draws as a box.
+        dates = f"{open_label} to {close_label}"
     else:
         dates = close_label or open_label
     return {
@@ -266,96 +324,323 @@ def _owned_tenant_ids(user_id):
     return [str(r.get("tenant_id")) for r in rows if r.get("tenant_id")]
 
 
-def lookup_exit_quality(symbol, trade_symbol, tenant_ids):
-    """Warehouse hindsight for this viewer's contract, or ``None``.
+def _query_df(sql, params):
+    client = get_bigquery_client()
+    job = client.query(
+        sql,
+        job_config=bigquery.QueryJobConfig(query_parameters=params),
+    )
+    return job.to_dataframe()
 
-    Fail closed: an empty tenant list does not run an unscoped query.
-    """
-    symbol = _clean(symbol, 16)
-    trade_symbol = _clean(trade_symbol, 64)
-    if not symbol or not trade_symbol:
-        return None
+
+def _fetch(sql_template, tenant_ids, params, col="tenant_id"):
+    """Run one share lookup. Empty tenants do not become an unscoped read."""
     if not tenant_ids:
         return None
-    sql = SHARE_EXIT_QUERY.format(tenant_filter=tenant_sql_and(tenant_ids))
+    sql = sql_template.format(tenant_filter=tenant_sql_and(tenant_ids, col=col))
     try:
-        client = get_bigquery_client()
-        job = client.query(
-            sql,
-            job_config=bigquery.QueryJobConfig(query_parameters=[
-                bigquery.ScalarQueryParameter("symbol", "STRING", symbol),
-                bigquery.ScalarQueryParameter("trade_symbol", "STRING", trade_symbol),
-            ]),
-        )
-        frame = job.to_dataframe()
+        frame = _query_df(sql, params)
     except Exception as exc:
-        app.logger.warning("share-card exit lookup failed: %s", exc)
+        app.logger.warning("share-card lookup failed: %s", exc)
         return None
-    frame = filter_df_by_tenant_ids(frame, tenant_ids)
-    if frame is None or frame.empty:
+    return filter_df_by_tenant_ids(frame, tenant_ids)
+
+
+def _param(name, value):
+    return bigquery.ScalarQueryParameter(name, "STRING", value if value is not None else "")
+
+
+def _is_missing(value):
+    if value is None:
+        return True
+    try:
+        import pandas as pd
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
+def _cell(row, key):
+    try:
+        value = row.get(key)
+    except Exception:
+        value = row[key] if key in getattr(row, "index", ()) else None
+    if _is_missing(value):
         return None
-    row = frame.iloc[0]
+    return value
+
+
+def _as_float(value):
+    if _is_missing(value) or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_date(value):
+    if _is_missing(value) or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value)[:10]
+    return text if _DATE_RE.match(text) else str(value)[:40]
+
+
+def _sum_realized(frame):
+    if frame is None or getattr(frame, "empty", True):
+        return None
+    if "realized_pnl" not in frame.columns:
+        return None
+    total = 0.0
+    seen = False
+    for value in frame["realized_pnl"]:
+        number = _as_float(value)
+        if number is None:
+            continue
+        total += number
+        seen = True
+    return total if seen else None
+
+
+def _date_bounds(frame, column):
+    if frame is None or getattr(frame, "empty", True) or column not in frame.columns:
+        return []
+    out = []
+    for value in frame[column]:
+        text = _as_date(value)
+        if text:
+            out.append(text[:10])
+    return out
+
+
+def scope_tenant_ids(owned, requested):
+    """Intersection of the viewer's tenants and an optional identifier list.
+
+    ``requested is None`` means every owned tenant. A requested id the
+    viewer does not own is dropped. Nothing owned → empty (fail closed).
+    """
+    owned_ids = []
+    seen = set()
+    for raw in owned or []:
+        tid = str(raw or "").strip()
+        if tid and tid not in seen:
+            seen.add(tid)
+            owned_ids.append(tid)
+    if requested is None:
+        return owned_ids
+    picked = []
+    for raw in requested:
+        tid = str(raw or "").strip()
+        if tid and tid in seen and tid not in picked:
+            picked.append(tid)
+    return picked
+
+
+def _session_key(value):
+    text = str(value or "").strip()
+    if _SESSION_RE.match(text):
+        return text
+    if re.fullmatch(r"\d+\.0+", text):
+        return text.split(".", 1)[0]
+    return ""
+
+
+def parse_share_ref(args):
+    """Identifier only. Dollars, strategy, and display dates are not read."""
+    kind = str(args.get("ref") or "").strip().lower()
+    if kind not in ("position", "option", "equity"):
+        return None
+    symbol = str(args.get("symbol") or "").strip().upper()
+    if not _SYMBOL_RE.match(symbol):
+        return None
+    spec = {"kind": kind, "symbol": symbol}
+    if kind == "option":
+        # OCC roots are space-padded to 6 characters ("ONON  250613C00058000").
+        # Collapsing inner whitespace makes the warehouse lookup miss.
+        trade_symbol = str(args.get("trade_symbol") or "").strip()
+        if not trade_symbol or len(trade_symbol) > 64:
+            return None
+        spec["trade_symbol"] = trade_symbol
+        tenant = str(args.get("tenant") or "").strip()
+        spec["tenants"] = [tenant] if tenant else None
+        return spec
+    if kind == "equity":
+        tenant = str(args.get("tenant") or "").strip()
+        session = _session_key(args.get("session"))
+        close = str(args.get("close") or "").strip()[:10]
+        if not tenant or not session or not _DATE_RE.match(close):
+            return None
+        spec["tenants"] = [tenant]
+        spec["session_id"] = session
+        spec["close_date"] = close
+        return spec
+    raw_tenants = str(args.get("tenants") or "").strip()
+    if raw_tenants:
+        spec["tenants"] = [part.strip() for part in raw_tenants.split(",") if part.strip()]
+    else:
+        spec["tenants"] = None
+    return spec
+
+
+def _fields_from_option_row(row):
     return {
-        "realized_pnl": row.get("realized_pnl"),
-        "early_close_delta": row.get("early_close_vs_expiry_delta"),
-        "direction": row.get("direction"),
-        "open_date": row.get("open_date"),
-        "close_date": row.get("close_date"),
+        "symbol": _cell(row, "symbol"),
+        "strategy": str(_cell(row, "strategy") or "").strip(),
+        "open_date": _as_date(_cell(row, "open_date")),
+        "close_date": _as_date(_cell(row, "close_date")),
+        "realized_pnl": _as_float(_cell(row, "realized_pnl")),
+        "early_close_delta": _as_float(_cell(row, "early_close_vs_expiry_delta")),
+        "direction": _cell(row, "direction"),
     }
 
 
-def _float_arg(name):
-    raw = request.args.get(name, "")
-    if raw == "":
+def lookup_share_subject(spec, owned_tenant_ids):
+    """Warehouse fields for one closed position or leg, or ``None``."""
+    if not spec:
         return None
-    try:
-        return float(raw)
-    except ValueError:
+    tenant_ids = scope_tenant_ids(owned_tenant_ids, spec.get("tenants"))
+    if not tenant_ids:
         return None
+    kind = spec["kind"]
+    symbol = spec["symbol"]
+    if kind == "option":
+        frame = _fetch(
+            SHARE_OPTION_QUERY,
+            tenant_ids,
+            [
+                _param("symbol", symbol),
+                _param("trade_symbol", spec.get("trade_symbol") or ""),
+            ],
+            col="sc.tenant_id",
+        )
+        if frame is None or len(frame) != 1:
+            return None
+        return _fields_from_option_row(frame.iloc[0])
+    if kind == "equity":
+        frame = _fetch(
+            SHARE_EQUITY_QUERY,
+            tenant_ids,
+            [
+                _param("symbol", symbol),
+                _param("session_id", spec.get("session_id") or ""),
+                _param("close_date", spec.get("close_date") or ""),
+            ],
+        )
+        if frame is None or len(frame) != 1:
+            return None
+        row = frame.iloc[0]
+        strategy = str(_cell(row, "description") or "").strip() or "Equity Sold"
+        return {
+            "symbol": _cell(row, "symbol") or symbol,
+            "strategy": strategy,
+            "open_date": _as_date(_cell(row, "open_date")),
+            "close_date": _as_date(_cell(row, "close_date")),
+            "realized_pnl": _as_float(_cell(row, "realized_pnl")),
+            "early_close_delta": None,
+            "direction": "Sold",
+        }
+    return _lookup_closed_position(symbol, tenant_ids)
+
+
+def _lookup_closed_position(symbol, tenant_ids):
+    summary = _fetch(
+        SHARE_POSITION_QUERY,
+        tenant_ids,
+        [_param("symbol", symbol)],
+    )
+    if summary is None or summary.empty:
+        return None
+    statuses = []
+    strategies = []
+    for _, row in summary.iterrows():
+        status = str(_cell(row, "status") or "").strip().lower()
+        statuses.append(status)
+        name = str(_cell(row, "strategy") or "").strip()
+        if name and name not in strategies:
+            strategies.append(name)
+    if not statuses or any(status != "closed" for status in statuses):
+        return None
+    options = _fetch(
+        SHARE_OPTION_QUERY,
+        tenant_ids,
+        [_param("symbol", symbol), _param("trade_symbol", "")],
+        col="sc.tenant_id",
+    )
+    equity = _fetch(
+        SHARE_EQUITY_QUERY,
+        tenant_ids,
+        [
+            _param("symbol", symbol),
+            _param("session_id", ""),
+            _param("close_date", ""),
+        ],
+    )
+    leg_realized = None
+    opens = []
+    closes = []
+    if options is not None and not options.empty:
+        leg_realized = _sum_realized(options)
+        opens.extend(_date_bounds(options, "open_date"))
+        closes.extend(_date_bounds(options, "close_date"))
+    if equity is not None and not equity.empty:
+        eq_realized = _sum_realized(equity)
+        if eq_realized is not None:
+            leg_realized = (leg_realized or 0.0) + eq_realized
+        opens.extend(_date_bounds(equity, "open_date"))
+        closes.extend(_date_bounds(equity, "close_date"))
+    if leg_realized is None:
+        leg_realized = _sum_realized(summary)
+    if not opens:
+        opens = _date_bounds(summary, "first_trade_date")
+    if not closes:
+        closes = _date_bounds(summary, "last_trade_date")
+    delta = None
+    direction = None
+    n_opt = 0 if options is None else len(options)
+    n_eq = 0 if equity is None else len(equity)
+    if n_opt == 1 and n_eq == 0:
+        only = options.iloc[0]
+        delta = _as_float(_cell(only, "early_close_vs_expiry_delta"))
+        direction = _cell(only, "direction")
+    strategy = strategies[0] if len(strategies) == 1 else "Closed position"
+    return {
+        "symbol": _cell(summary.iloc[0], "symbol") or symbol,
+        "strategy": strategy,
+        "open_date": min(opens) if opens else None,
+        "close_date": max(closes) if closes else None,
+        "realized_pnl": leg_realized,
+        "early_close_delta": delta,
+        "direction": direction,
+    }
+
+
+def card_for_viewer(args, owned_tenant_ids):
+    """Card dict from warehouse data, or ``None`` when the leg isn't theirs."""
+    spec = parse_share_ref(args)
+    if spec is None:
+        return None
+    fields = lookup_share_subject(spec, owned_tenant_ids)
+    if not fields:
+        return None
+    return build_share_card(**fields)
 
 
 @app.route("/share/card.png")
 @login_required
 def share_card_png():
-    """Authenticated, unstored PNG. Query string is the trade the page already showed."""
+    """Authenticated, unstored PNG. Numbers come from the viewer's warehouse."""
     layout = (request.args.get("layout") or "square").strip().lower()
     if layout not in LAYOUTS:
         abort(400)
-    symbol = _clean(request.args.get("symbol"), 16)
-    if not symbol:
-        abort(400)
-    strategy = _clean(request.args.get("strategy"), 48)
-    open_date = _clean(request.args.get("open"), 32)
-    close_date = _clean(request.args.get("close"), 32)
-    realized = _float_arg("realized")
-    direction = _clean(request.args.get("direction"), 24)
-    delta = None
-    trade_symbol = _clean(request.args.get("trade_symbol"), 64)
-    if trade_symbol and getattr(current_user, "is_authenticated", False):
-        found = lookup_exit_quality(
-            symbol, trade_symbol, _owned_tenant_ids(current_user.id),
-        )
-        if found:
-            if found.get("realized_pnl") is not None:
-                try:
-                    realized = float(found["realized_pnl"])
-                except (TypeError, ValueError):
-                    pass
-            delta = found.get("early_close_delta")
-            direction = found.get("direction") or direction
-            if found.get("open_date"):
-                open_date = str(found["open_date"])[:10]
-            if found.get("close_date"):
-                close_date = str(found["close_date"])[:10]
-    card = build_share_card(
-        symbol=symbol,
-        strategy=strategy,
-        open_date=open_date,
-        close_date=close_date,
-        realized_pnl=realized,
-        early_close_delta=delta,
-        direction=direction,
-    )
+    card = card_for_viewer(request.args, _owned_tenant_ids(current_user.id))
+    if card is None:
+        abort(404)
     png = render_share_png(card, layout)
     filename = f"{card['symbol'] or 'trade'}-{layout}.png"
     return send_file(

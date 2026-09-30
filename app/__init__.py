@@ -401,6 +401,7 @@ def _inject_feature_flags():
                 list_account_groups as _list_account_groups,
             )
             from app.account_scope import picker_nickname_choices
+            from app.privacy import sort_masked_account_choices
             from app.routes import (
                 _account_rename_urls_for_rows,
                 _blank_query_text,
@@ -421,7 +422,9 @@ def _inject_feature_flags():
             account_rename_urls = _account_rename_urls_for_rows(_owned_rows)
             # Header picker: nicknames only. Masks and "Schwab Account"
             # stay out of this menu. Table cells still use account_label.
-            scope_account_choices = picker_nickname_choices(_owned_rows)
+            scope_account_choices = sort_masked_account_choices(
+                picker_nickname_choices(_owned_rows)
+            )
             try:
                 _args = _req.args
             except Exception:
@@ -432,6 +435,9 @@ def _inject_feature_flags():
             visible_account_groups, visible_account_choices = _scope_filter_options(
                 account_groups, selected_group_ids, selected_tenant_ids,
                 scope_account_choices,
+            )
+            visible_account_choices = sort_masked_account_choices(
+                visible_account_choices
             )
             scope_is_filtered = bool(
                 selected_group_ids or selected_tenant_ids

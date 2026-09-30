@@ -1,6 +1,7 @@
-/* Share-card modal. The PNG is built on the server from the trade the
-   page already showed. Nothing is uploaded. Web Share hands the file
-   to the phone; otherwise the links download it. */
+/* Share-card modal. The PNG is built on the server from the viewer's
+   warehouse row for this identifier. The URL does not carry P&L.
+   Nothing is uploaded. Web Share hands the file to the phone;
+   otherwise the links download it. */
 (function () {
   var modal = document.getElementById("htShareModal");
   if (!modal) return;
@@ -15,14 +16,18 @@
   function cardUrl(btn, layout) {
     var params = new URLSearchParams();
     params.set("layout", layout);
+    params.set("ref", btn.getAttribute("data-ref") || "");
     params.set("symbol", btn.getAttribute("data-symbol") || "");
-    params.set("strategy", btn.getAttribute("data-strategy") || "");
-    params.set("open", btn.getAttribute("data-open") || "");
-    params.set("close", btn.getAttribute("data-close") || "");
-    var realized = btn.getAttribute("data-realized");
-    if (realized) params.set("realized", realized);
+    var tenants = btn.getAttribute("data-tenants");
+    if (tenants) params.set("tenants", tenants);
+    var tenant = btn.getAttribute("data-tenant");
+    if (tenant) params.set("tenant", tenant);
     var tradeSymbol = btn.getAttribute("data-trade-symbol");
     if (tradeSymbol) params.set("trade_symbol", tradeSymbol);
+    var session = btn.getAttribute("data-session");
+    if (session) params.set("session", session);
+    var closeDate = btn.getAttribute("data-close");
+    if (closeDate) params.set("close", closeDate);
     return "/share/card.png?" + params.toString();
   }
 
