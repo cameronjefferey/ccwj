@@ -43,7 +43,7 @@ def _view_short(short):
         "watchable": watchable,
         "embed_src": catalog.embed_url(youtube_id) if watchable else None,
         "thumb": (
-            f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg" if watchable else None
+            f"https://i.ytimg.com/vi/{youtube_id}/maxresdefault.jpg" if watchable else None
         ),
     }
 

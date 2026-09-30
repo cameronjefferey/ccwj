@@ -44,7 +44,8 @@
             #0a0e17;
     }
     .ht-band-covered { background: #10182a; }
-    .ht-band-privacy { background: #17243a; }
+    .ht-band-fit { background: #17243a; }
+    .ht-band-trades { background: #0c111c; }
     .ht-band-learn {
         background: #1a2744;
         border-top: 1px solid rgba(91,140,255,.35);
@@ -318,6 +319,24 @@
         align-items: start;
     }
     .ht-phone-single { max-width: 16.5rem; }
+    .ht-trade-grid {
+        display: grid;
+        gap: 1.75rem;
+        margin-top: 1.5rem;
+    }
+    .ht-trade-grid h3 {
+        color: #fff;
+        font-size: 1.05rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        margin: 0.85rem 0 0.35rem;
+    }
+    .ht-trade-grid p {
+        margin: 0;
+        color: #c5d0e4;
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
 
     .ht-band-demo { text-align: center; padding: 4.25rem 0; }
     .ht-band-demo .ht-section-title { font-size: clamp(1.7rem, 4vw, 2.45rem); }
@@ -454,6 +473,7 @@
         .ht-split.media-end { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
         .ht-split.media-end .ht-copy { order: -1; }
         .ht-phone-single { justify-self: center; }
+        .ht-trade-grid { grid-template-columns: 1fr 1fr; align-items: start; }
     }
 </style>
 {% endblock %}
@@ -553,6 +573,10 @@
                 {% else %}
                 You can upload a CSV after you connect.
                 {% endif %}
+                Privacy mode masks account names and balances on your screen.
+                A share card is a picture of one closed trade — symbol, strategy,
+                dates, and realized P&amp;L — and it leaves out the account, the broker,
+                and the balance.
             </p>
         </div>
     </section>
@@ -643,6 +667,23 @@
         </div>
     </section>
 
+    <section class="ht-band ht-band-trades ht-section" aria-label="Real trades">
+        <div class="ht-wrap">
+            <div class="ht-kicker">Real trades</div>
+            <h2 class="ht-section-title">Two closed trades, written out</h2>
+            <p class="ht-section-lead">The same pages, on two positions. One early close, and one covered-call run that ended when the shares were called away.</p>
+            <div class="ht-trade-grid">
+                {% for story in trade_stories %}
+                <div>
+                    {{ video_frame(story, wide=true) }}
+                    <h3>{{ story.title }}</h3>
+                    <p>{{ story.caption }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
     <section class="ht-band ht-band-covered ht-section" aria-label="Covered-call income tracked">
         <div class="ht-wrap ht-split">
             {% for step in story_steps if step.step == 4 %}
@@ -673,7 +714,7 @@
         </div>
     </section>
 
-    <section class="ht-band ht-band-privacy ht-section" aria-label="Privacy mode and share cards">
+    <section class="ht-band ht-band-fit ht-section" aria-label="The fit matrix">
         <div class="ht-wrap ht-split">
             {% for step in story_steps if step.step == 5 %}
             <div class="ht-media ht-phone-single">
