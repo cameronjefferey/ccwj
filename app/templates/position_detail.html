@@ -105,16 +105,61 @@
     .kpi-mini { text-align: center; }
     .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: var(--ht-muted); }
     .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
-    .pd-legs { width: 100%; max-width: 100%; table-layout: fixed; font-size: .72rem; }
-    .pd-legs th, .pd-legs td {
-        padding: .28rem .22rem;
+    /* Auto layout + nowrap numbers: money and % size to their text.
+       Text columns (contract, strategy, account) take the leftover
+       and ellipsis. A fixed percentage colgroup was clipping Return
+       ("RETU…", "-14…") and Cost ("$47,639…") to feed an empty If held. */
+    .pd-legs { width: 100%; max-width: 100%; table-layout: auto; font-size: .72rem; }
+    .pd-legs > thead > tr > th,
+    .pd-legs > tbody > tr > td,
+    .pd-legs > tfoot > tr > td {
+        padding: .28rem .32rem;
+    }
+    .pd-legs thead th { white-space: nowrap; }
+    .pd-legs .pd-num,
+    .pd-legs .pd-date,
+    .pd-legs .pd-tight {
+        white-space: nowrap;
+        width: 1%;
+        /* Never shrink below the full number, date, or header. */
+        min-width: max-content;
+    }
+    .pd-legs td.pd-num,
+    .pd-legs td.pd-date {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+    }
+    .pd-legs .pd-num { text-align: right; }
+    .pd-legs .pd-clip,
+    .pd-legs .pd-flex {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        max-width: 9rem;
     }
-    .pd-legs .pd-pnl { white-space: normal; }
-    .pd-legs .pd-ifheld { text-align: right; white-space: normal; }
-    .pd-legs .held-pill { max-width: 100%; white-space: normal; }
+    .pd-legs .pd-flex { max-width: 16rem; }
+    .pd-legs .pd-contract-line {
+        display: flex;
+        align-items: center;
+        gap: .3rem;
+        min-width: 0;
+    }
+    .pd-legs .pd-contract-line .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+    .pd-legs .pd-contract-line .badge { flex: none; }
+    .pd-legs .pd-pnl .ht-share-btn { display: table; margin-left: auto; }
+    .pd-legs .pd-ifheld { text-align: right; }
+    .pd-legs .held-pill { max-width: none; white-space: nowrap; }
+    @media (max-width: 1100px) {
+        /* Account and days are the first columns to give back once the
+           money columns have claimed their width. Phones drop more via
+           data-m="hide" in tables.js. */
+        .pd-legs .pd-opt { display: none; }
+    }
     .leg-toggle { cursor: pointer; user-select: none; }
     .leg-toggle:hover { opacity: .7; }
     .leg-detail-row { display: none; }
@@ -1179,32 +1224,27 @@
     </div>
     <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
         <table class="table table-sm table-hover align-middle mb-0 pd-legs">
-            <colgroup>
-                <col style="width:3%"><col style="width:4%"><col style="width:13%">
-                <col style="width:7%"><col style="width:7%"><col style="width:4%">
-                <col style="width:8%"><col style="width:8%"><col style="width:4%">
-                <col style="width:7%"><col style="width:8%"><col style="width:9%">
-                <col style="width:13%"><col style="width:5%">
-            </colgroup>
             <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
                 <tr>
                     {# data-m="hide": collapsed on phones (tables.js) — the
-                       expander + Contract + P&L + If held + Return stay tappable.
-                       If held has no data-m so the pill is not dropped on a phone. #}
-                    <th></th>
-                    <th class="text-center" data-m="hide">Leg</th>
-                    <th>Contract / Leg</th>
-                    <th data-m="hide">Strategy</th>
-                    <th data-m="hide">Account</th>
-                    <th class="text-end" data-m="hide">Qty</th>
-                    <th data-m="hide">Opened</th>
-                    <th data-m="hide">Closed</th>
-                    <th class="text-end" data-m="hide">Days</th>
-                    <th class="text-end" data-m="hide">Cost</th>
-                    <th class="text-end" data-m="hide">Value / Proceeds</th>
-                    <th class="text-end">P&amp;L</th>
-                    <th class="text-end pd-ifheld">If held</th>
-                    <th class="text-end">Return</th>
+                       expander + Contract + P&L + If held + Return stay.
+                       pd-opt drops Account and Days a step earlier, once
+                       the money columns need the width. If held has no
+                       data-m so a dash or counterfactual is not dropped. #}
+                    <th class="pd-tight"></th>
+                    <th class="pd-tight text-center" data-m="hide">Leg</th>
+                    <th class="pd-flex" title="Contract or leg">Contract</th>
+                    <th class="pd-clip" data-m="hide">Strategy</th>
+                    <th class="pd-clip pd-opt" data-m="hide">Account</th>
+                    <th class="pd-num" data-m="hide">Qty</th>
+                    <th class="pd-date" data-m="hide">Opened</th>
+                    <th class="pd-date" data-m="hide">Closed</th>
+                    <th class="pd-num pd-opt" data-m="hide">Days</th>
+                    <th class="pd-num" data-m="hide">Cost</th>
+                    <th class="pd-num" data-m="hide" title="Market value, or proceeds if closed">Value</th>
+                    <th class="pd-num">P&amp;L</th>
+                    <th class="pd-num pd-ifheld" title="P&amp;L if held to expiration. A dash means that does not apply.">If held</th>
+                    <th class="pd-num">Return</th>
                 </tr>
             </thead>
             <tbody>
@@ -1221,36 +1261,49 @@
                 {% if current_positions %}
                 {% for p in current_positions %}
                 <tr style="background:rgba(25,135,84,.04);">
-                    <td><span class="badge bg-success bg-opacity-25 text-success" style="font-size:.6rem;">Open</span></td>
-                    <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
-                    <td class="fw-semibold small" {% if p.trade_symbol %}title="{{ p.trade_symbol }}"{% endif %}>{{ (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
-                    <td class="text-muted small clip">{{ p.leg_kind or p.instrument_type }}</td>
-                    <td class="text-muted small clip" data-val="{{ (p.account_display or p.account) | account_label(p.tenant_id) }}">{{ (p.account_display or p.account) | account_label(p.tenant_id) }}</td>
-                    <td class="text-end">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
-                    <td class="text-nowrap">{{ p.open_date|human_date if p.open_date else '—' }}</td>
-                    <td class="text-nowrap">—</td>
-                    <td class="text-end text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
-                    <td class="text-end">{{ money(p.cost_basis) }}</td>
-                    <td class="text-end">{{ money(p.market_value) }}</td>
-                    <td class="text-end pd-pnl fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
+                    {% set contract = (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else (p.description or '') %}
+                    {% set strat = p.leg_kind or p.instrument_type or '' %}
+                    {% set acct = (p.account_display or p.account) | account_label(p.tenant_id) %}
+                    <td class="pd-tight"><span class="badge bg-success bg-opacity-25 text-success" style="font-size:.6rem;">Open</span></td>
+                    <td class="pd-tight text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
+                    <td class="fw-semibold small pd-flex">
+                        <div class="pd-contract-line"><span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span></div>
+                    </td>
+                    <td class="text-muted small pd-clip" {% if strat %}title="{{ strat }}"{% endif %}>{{ strat }}</td>
+                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
+                    <td class="pd-num">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
+                    <td class="pd-date" {% if p.open_date %}title="{{ p.open_date|human_date }}"{% endif %}>{{ p.open_date|compact_date if p.open_date else '—' }}</td>
+                    <td class="pd-date text-muted">—</td>
+                    <td class="pd-num pd-opt text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
+                    <td class="pd-num">{{ money(p.cost_basis) }}</td>
+                    <td class="pd-num">{{ money(p.market_value) }}</td>
+                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
                         {{ money(p.unrealized_pnl) }}
                     </td>
-                    <td class="pd-ifheld"></td>
-                    <td class="text-end {{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
+                    <td class="pd-num pd-ifheld text-muted" title="Not applicable">—</td>
+                    <td class="pd-num {{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
                         {{ "{:.1f}%".format(p.unrealized_pnl_pct) }}
                     </td>
                 </tr>
                 {% endfor %}
                 {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
                 <tr class="fw-semibold table-light" style="font-size:.8rem;">
-                    <td colspan="9">Open Total</td>
-                    <td class="text-end">{{ money(ocost) }}</td>
-                    <td class="text-end">{{ money(omv) }}</td>
-                    <td class="text-end {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
+                    <td class="pd-tight"></td>
+                    <td></td>
+                    <td class="text-nowrap">Open Total</td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td class="pd-num">{{ money(ocost) }}</td>
+                    <td class="pd-num">{{ money(omv) }}</td>
+                    <td class="pd-num {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
                         {{ money(opnl) }}
                     </td>
-                    <td></td>
-                    <td></td>
+                    <td class="pd-num text-muted">—</td>
+                    <td class="pd-num text-muted">—</td>
                 </tr>
                 {% endif %}
 
@@ -1267,34 +1320,38 @@
                 {% if trade_outcomes %}
                 {% for o in trade_outcomes %}
                 <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
-                    <td>
+                    {% set contract = o.trade_symbol|option_symbol %}
+                    {% set acct = (o.account_display or o.account) | account_label(o.tenant_id) %}
+                    <td class="pd-tight">
                         {% if o.is_winner %}
                         <span class="leg-arrow" style="color:#28c08a;font-size:.7rem;">&#9654;</span>
                         {% else %}
                         <span class="leg-arrow" style="color:#f0556d;font-size:.7rem;">&#9654;</span>
                         {% endif %}
                     </td>
-                    <td class="text-center text-muted small">
+                    <td class="pd-tight text-center text-muted small">
                         {{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}
                         {% if o.equity_partial_n is defined and o.equity_partial_n > 1 %}
                         <span class="d-block lh-sm" style="font-size:.6rem;">partial {{ o.equity_partial_ix }}/{{ o.equity_partial_n }}</span>
                         {% endif %}
                     </td>
-                    <td class="fw-semibold small" {% if o.trade_symbol %}title="{{ o.trade_symbol }}"{% endif %}>
-                        {{ o.trade_symbol|option_symbol }}
-                        {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
-                        <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ o.close_type }}</span>
-                        {% endif %}
+                    <td class="fw-semibold small pd-flex">
+                        <div class="pd-contract-line">
+                            <span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span>
+                            {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
+                            <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ o.close_type }}</span>
+                            {% endif %}
+                        </div>
                     </td>
-                    <td class="text-muted small clip">{{ o.strategy }}</td>
-                    <td class="text-muted small clip" data-val="{{ (o.account_display or o.account) | account_label(o.tenant_id) }}">{{ (o.account_display or o.account) | account_label(o.tenant_id) }}</td>
-                    <td class="text-end">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
-                    <td class="text-nowrap">{{ o.open_date|human_date }}</td>
-                    <td class="text-nowrap">{{ o.close_date|human_date }}</td>
-                    <td class="text-end text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
-                    <td class="text-end">{{ money(o.cost) }}</td>
-                    <td class="text-end">{{ money(o.proceeds) }}</td>
-                    <td class="text-end pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
+                    <td class="text-muted small pd-clip" {% if o.strategy %}title="{{ o.strategy }}"{% endif %}>{{ o.strategy }}</td>
+                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
+                    <td class="pd-num">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
+                    <td class="pd-date" {% if o.open_date %}title="{{ o.open_date|human_date }}"{% endif %}>{{ o.open_date|compact_date }}</td>
+                    <td class="pd-date" {% if o.close_date %}title="{{ o.close_date|human_date }}"{% endif %}>{{ o.close_date|compact_date }}</td>
+                    <td class="pd-num pd-opt text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
+                    <td class="pd-num">{{ money(o.cost) }}</td>
+                    <td class="pd-num">{{ money(o.proceeds) }}</td>
+                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
                         <div>{{ money(o.pnl) }}</div>
                         <button type="button" class="ht-share-btn"
                                 {% if o.type == 'equity' %}
@@ -1310,14 +1367,17 @@
                                 data-trade-symbol="{{ o.trade_symbol or '' }}"
                                 {% endif %}>Share</button>
                     </td>
-                    <td class="pd-ifheld">
-                        {% if o.held_pill %}
-                        <button type="button" class="held-pill {{ 'held-more' if o.held_better else 'held-less' if o.held_pill != 'Same' else 'held-same' }}"
-                                data-held-open="{{ o.held_id }}">{{ o.held_pill }}</button>
+                    <td class="pd-num pd-ifheld">
+                        {% if o.held_id %}
+                        <button type="button" class="held-pill {{ 'text-positive' if o.pnl_if_held > 0 else 'text-negative' if o.pnl_if_held < 0 else '' }}"
+                                data-held-open="{{ o.held_id }}"
+                                {% if o.held_pill %}title="{{ o.held_pill }}"{% endif %}>{{ money(o.pnl_if_held) }}</button>
+                        {% else %}
+                        <span class="text-muted" title="Not applicable">—</span>
                         {% endif %}
                     </td>
-                    <td class="text-end {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else '' }}">
-                        {% if o.return_pct is not none %}{{ o.return_pct }}%{% else %}—{% endif %}
+                    <td class="pd-num {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else 'text-muted' }}">
+                        {% if o.return_pct is not none %}{{ "{:.1f}%".format(o.return_pct) }}{% else %}—{% endif %}
                     </td>
                 </tr>
                 {% if o.raw_trades %}
@@ -1364,25 +1424,41 @@
             {% if trade_outcomes %}
             <tfoot class="table-light">
                 <tr class="fw-semibold" style="font-size:.8rem;">
-                    <td colspan="9">Closed Total</td>
-                    <td class="text-end">{{ money(ccost) }}</td>
-                    <td class="text-end">{{ money(cproc) }}</td>
-                    <td class="text-end {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
+                    <td class="pd-tight"></td>
+                    <td></td>
+                    <td class="text-nowrap">Closed Total</td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td class="pd-num">{{ money(ccost) }}</td>
+                    <td class="pd-num">{{ money(cproc) }}</td>
+                    <td class="pd-num {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
                         {{ money(cpnl) }}
                     </td>
-                    <td></td>
-                    <td></td>
+                    <td class="pd-num text-muted">—</td>
+                    <td class="pd-num text-muted">—</td>
                 </tr>
                 {% if current_positions %}
                 <tr class="fw-semibold border-top border-secondary" style="font-size:.8rem;">
-                    <td colspan="9">Total Total</td>
-                    <td class="text-end">{{ money(gcost) }}</td>
-                    <td class="text-end">{{ money(gval) }}</td>
-                    <td class="text-end {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
+                    <td class="pd-tight"></td>
+                    <td></td>
+                    <td class="text-nowrap">Total</td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td class="pd-num">{{ money(gcost) }}</td>
+                    <td class="pd-num">{{ money(gval) }}</td>
+                    <td class="pd-num {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
                         {{ money(gpnl) }}
                     </td>
-                    <td></td>
-                    <td></td>
+                    <td class="pd-num text-muted">—</td>
+                    <td class="pd-num text-muted">—</td>
                 </tr>
                 {% endif %}
             </tfoot>
