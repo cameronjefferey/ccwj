@@ -104,6 +104,8 @@ def _build_strategy_fit_brief(client, tenant_ids):
     for c in ("sector", "subsector", "symbol", "strategy"):
         if c in df.columns:
             df[c] = df[c].fillna("Unknown").astype(str)
+    from app.sector_labels import apply_sector_labels, is_unclassified
+    df = apply_sector_labels(df)
 
     # Baselines — these are the user's overall numbers. Every claim in
     # the brief should reference these so "edge" is meaningful.
@@ -147,7 +149,7 @@ def _build_strategy_fit_brief(client, tenant_ids):
     # that yfinance can't classify rather than a coherent group.
     qualified = cell_agg[
         (cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
-        & (cell_agg["sector"].astype(str) != "Unknown")
+        & ~cell_agg["sector"].astype(str).map(is_unclassified)
     ].copy()
 
     sweet_df = qualified[
@@ -244,7 +246,7 @@ def _build_strategy_fit_brief(client, tenant_ids):
     # so a strategy with trades in 2 real sectors + 1 Unknown bucket
     # doesn't get falsely promoted to "works across 3 sectors" in the
     # narrative.
-    cell_agg_named = cell_agg[cell_agg["sector"].astype(str) != "Unknown"].copy()
+    cell_agg_named = cell_agg[~cell_agg["sector"].astype(str).map(is_unclassified)].copy()
     strat_agg = (
         cell_agg_named.groupby("strategy")
         .agg(
@@ -302,13 +304,13 @@ def _build_strategy_fit_brief(client, tenant_ids):
 
     # Surface sectors that are both *positive* AND punching above weight.
     overweight = sec_agg[
-        (sec_agg["total_pnl"] > 0) & (sec_agg["sector"] != "Unknown") & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
+        (sec_agg["total_pnl"] > 0) & ~sec_agg["sector"].map(is_unclassified) & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
     ].sort_values("punch_ratio", ascending=False).head(2).to_dict(orient="records")
     for r in overweight:
         r["top_symbols"] = _top_symbols_for_sector(r["sector"], n=3, sort="pos")
 
     underweight = sec_agg[
-        (sec_agg["total_pnl"] < 0) & (sec_agg["sector"] != "Unknown") & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
+        (sec_agg["total_pnl"] < 0) & ~sec_agg["sector"].map(is_unclassified) & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
     ].sort_values("total_pnl", ascending=True).head(2).to_dict(orient="records")
     for r in underweight:
         r["top_symbols"] = _top_symbols_for_sector(r["sector"], n=3, sort="neg")
@@ -329,9 +331,9 @@ def _build_strategy_fit_brief(client, tenant_ids):
         "overweight_sectors": overweight,
         "underweight_sectors": underweight,
         "num_strategies": int(strat_agg.shape[0]),
-        "num_sectors": int(sec_agg[sec_agg["sector"] != "Unknown"].shape[0]),
+        "num_sectors": int(sec_agg[~sec_agg["sector"].map(is_unclassified)].shape[0]),
         "unknown_share": float(
-            (sec_agg.loc[sec_agg["sector"] == "Unknown", "num_trades"].sum() / total_trades)
+            (sec_agg.loc[sec_agg["sector"].map(is_unclassified), "num_trades"].sum() / total_trades)
             if total_trades else 0
         ),
     }

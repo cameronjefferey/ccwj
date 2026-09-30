@@ -159,6 +159,10 @@ def _build_strategy_fit_matrix(
             empty["row_labels"] = sorted(equity_strategies)
         return empty
 
+    if col_field in ("sector", "subsector") and "symbol" in df.columns:
+        from app.sector_labels import apply_sector_labels
+        df = apply_sector_labels(df)
+
     cell_agg = (
         df.groupby(["strategy", col_field], dropna=False)
         .agg(
@@ -313,14 +317,17 @@ def _build_strategy_fit_matrix(
 
     # Sample-size and win-rate guarded callouts so we don't celebrate a
     # 1-trade fluke or a coin-flip strategy that lucked into R:R. Cells
-    # whose column value is "Unknown" are excluded from the narrative
-    # surface (sweet/soft callouts) — naming "Unknown" as edge isn't
-    # actionable. The cell stays in the matrix and the user can toggle
-    # the Unknown column on/off; we just don't editorialize about it.
+    # in the unclassified bucket are excluded from the narrative —
+    # naming "Unclassified" as edge isn't actionable. The cell stays in
+    # the matrix and the user can toggle that column; we don't
+    # editorialize about it.
+    from app.sector_labels import is_unclassified, sort_unclassified_last
+    if col_field in ("sector", "subsector"):
+        col_order = sort_unclassified_last(col_order)
     MIN_TRADES_FOR_CALLOUT = 5
     qualified = cell_agg[
         (cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
-        & (cell_agg[col_field].astype(str) != "Unknown")
+        & ~cell_agg[col_field].astype(str).map(is_unclassified)
     ].copy()
 
     sweet_spots: list = []
@@ -467,7 +474,9 @@ def render_strategy_fit_view():
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
 
-    drill_sector = request.args.get("sector", "")  # implies subsector mode
+    from app.sector_labels import canonical_sector_param
+    # Unknown bookmarks select the Unclassified column after the remap.
+    drill_sector = canonical_sector_param(request.args.get("sector", ""))
 
     # Resolve the column dimension. Drilling into a sector wins (for
     # backward URL compat) and forces subsector mode. Otherwise read ?dim=
@@ -525,6 +534,8 @@ def render_strategy_fit_view():
             summary_df.loc[:, col] = (
                 summary_df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
             )
+    from app.sector_labels import apply_sector_labels as _apply_sector_labels
+    summary_df = _apply_sector_labels(summary_df)
 
     accounts_for_filter = (
         sorted(user_accounts)

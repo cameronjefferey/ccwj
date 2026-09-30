@@ -214,8 +214,8 @@
             </div>
             <h1>AI Insights</h1>
             <p class="mb-0 opacity-90">
-                A mirror backed by curves other platforms never ingest — Discovery Lab contrasts your closes by calendar,
-                ticker, DTE tenor, and post-loss sequencing. The AI narrates once you generate; cards below refresh every session.
+                How your closes line up: by weekday, by symbol, by how long you held, and by the trade after a loss.
+                Generate a write-up when you want the cards narrated. The cards refresh on each visit.
             </p>
         </div>
 
@@ -233,8 +233,7 @@
                 <div>
                     <div class="section-label mb-1">Discovery Lab</div>
                     <p class="mb-0 small text-muted" style="max-width: 42rem;">
-                        Contrasts you cannot see in a broker blotter — computed from daily option marks + your sequencing.
-                        Evidence-backed, not adjectives.
+                        Patterns in your own closes. Each card is a contrast in your history, with the count behind it.
                     </p>
                 </div>
             </div>
@@ -274,7 +273,7 @@
             <div class="signal-grid">
                 <div class="signal-card">
                     <div class="signal-label">Total Left on Table</div>
-                    <div class="signal-value text-warning">${{ "{:,.0f}".format(total_given_back) }}</div>
+                    <div class="signal-value text-warning">{{ money(total_given_back, 0) }}</div>
                     <div class="signal-meta">across all strategies</div>
                 </div>
                 <div class="signal-card">
@@ -307,7 +306,7 @@
                     </div>
                 </div>
                 <div class="text-end">
-                    <div class="strat-giveback text-warning">${{ "{:,.0f}".format(s.pnl_given_back) }}</div>
+                    <div class="strat-giveback text-warning">{{ money(s.pnl_given_back, 0) }}</div>
                     <div class="strat-stats">{{ "{:.0f}".format(s.giveback_pct) }}% giveback</div>
                 </div>
             </div>
@@ -347,8 +346,8 @@
                             <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.actual_pnl }}">
                                 {{ money(e.actual_pnl, 0, true) }}
                             </td>
-                            <td class="text-end text-positive" data-val="{{ e.peak_pnl }}">${{ "{:,.0f}".format(e.peak_pnl) }}</td>
-                            <td class="text-end text-warning fw-semibold" data-val="{{ e.given_back }}">${{ "{:,.0f}".format(e.given_back) }}</td>
+                            <td class="text-end {% if e.peak_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.peak_pnl }}">{{ money(e.peak_pnl, 0, true) }}</td>
+                            <td class="text-end text-warning fw-semibold" data-val="{{ e.given_back }}">{{ money(e.given_back, 0) }}</td>
                             <td class="text-center" data-val="{{ e.days_past_peak }}">{{ e.days_past_peak }}d</td>
                         </tr>
                         {% endif %}
@@ -462,7 +461,7 @@
                 {{ insight.full_analysis_html }}
             </div>
             <div class="d-flex justify-content-between align-items-center mt-3">
-                <span class="insights-meta">Generated {{ insight.generated_at.strftime("%b %d, %Y at %-I:%M %p") if insight.generated_at and insight.generated_at.strftime else insight.generated_at }}</span>
+                <span class="insights-meta">Generated {% if insight.generated_at and insight.generated_at.strftime %}<time class="ht-local-time" datetime="{{ insight.generated_at.isoformat() }}{% if insight.generated_at.tzinfo is none %}Z{% endif %}">{{ insight.generated_at.strftime("%b %d, %Y at %-I:%M %p") }} UTC</time>{% else %}{{ insight.generated_at }}{% endif %}</span>
                 {% if gemini_available and not is_demo_user %}
                 <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -522,11 +521,10 @@
         </div>
         {% elif not scope_narrowed and gemini_available %}
         <div class="generate-card">
-            <h5>Get Your Behavioral Insights Report</h5>
+            <h5>Write up these cards</h5>
             <div class="mx-auto mb-4" style="max-width: 480px;">
                 <p>
-                    The AI will analyze your exit timing and DTE preferences —
-                    behavioral signals that no other retail tool can see.
+                    The write-up covers when you exit and how long you hold, using the cards on this page.
                 </p>
                 {% if coaching and coaching.has_data %}
                 <p class="small text-muted">

@@ -260,13 +260,13 @@
             {% if symbol_company %}
             <div class="text-white-50" style="font-size: .9rem; margin-top: -.15rem;">{{ symbol_company }}</div>
             {% endif %}
-            {% if (symbol_subsector and symbol_subsector != 'Unknown') or symbol_next_earnings %}
+            {% if (symbol_subsector and symbol_subsector not in ('Unknown', 'Unclassified', 'Other')) or symbol_next_earnings %}
             <div class="mt-1 d-flex flex-wrap gap-2 align-items-center">
-                {% if symbol_subsector and symbol_subsector != 'Unknown' %}
+                {% if symbol_subsector and symbol_subsector not in ('Unknown', 'Unclassified', 'Other') %}
                 <a href="{{ scoped_url('sectors') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
                    class="text-decoration-none"
                    style="display:inline-flex; align-items:center; gap:.4rem; background: rgba(255,255,255,.12); color: #fff; padding: .15rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;">
-                    {% if symbol_sector and symbol_sector != 'Unknown' %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_subsector }}
+                    {% if symbol_sector and symbol_sector not in ('Unknown', 'Unclassified', 'Other') %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_subsector }}
                 </a>
                 {% endif %}
                 {# Earnings pill — symbol-level context, hidden when no upcoming
@@ -634,7 +634,7 @@
         </div>
         {% endif %}
     </div>
-    <div style="height: 460px;">
+    <div style="height: 520px;">
         <canvas id="pnlChart"></canvas>
     </div>
     {% if story_days %}
@@ -1548,6 +1548,7 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: { padding: { top: 8, right: 8, bottom: 4, left: 4 } },
                 onHover: function (evt, elements) {
                     if (evt.native && evt.native.target) {
                         evt.native.target.style.cursor = markerHit(elements) ? 'pointer' : 'default';
@@ -1569,13 +1570,17 @@
                 },
                 plugins: {
                     legend: {
-                        position: 'top',
+                        // Bottom keeps the swatches off the plot. A top
+                        // legend with wide line swatches wrapped into the
+                        // series on names with several non-zero lines.
+                        position: 'bottom',
+                        align: 'start',
                         labels: {
                             usePointStyle: true,
                             pointStyle: 'line',
-                            boxWidth: 32,
-                            boxHeight: 8,
-                            padding: 14,
+                            boxWidth: 12,
+                            boxHeight: 4,
+                            padding: 16,
                             // Trade days is a scatter of per-dot colors with a
                             // white ring. Chart.js can't paint an array as a
                             // legend fill, so that swatch vanished. Force a
@@ -1638,13 +1643,15 @@
                 scales: {
                     x: {
                         grid: { display: false },
-                        ticks: { maxTicksLimit: 10 }
+                        ticks: { maxTicksLimit: 8, maxRotation: 0, autoSkip: true, padding: 8 }
                     },
                     y: {
                         type: 'linear',
                         display: true,
                         position: 'left',
                         ticks: {
+                            maxTicksLimit: 6,
+                            padding: 8,
                             callback: function(v) {
                                 var n = Number(v) || 0;
                                 var sign = n < 0 ? '-' : '';
@@ -1674,9 +1681,11 @@
                             return Math.max.apply(null, vals) * 1.02;
                         },
                         ticks: {
-                            callback: function(v) { return '$' + v.toFixed(2); }
+                            maxTicksLimit: 6,
+                            padding: 8,
+                            callback: function(v) { return window.htMoney(v, 2); }
                         },
-                        grid: { display: false }
+                        grid: { display: false, drawOnChartArea: false }
                     }
                     {% endif %}
                 }

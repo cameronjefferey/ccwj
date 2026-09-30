@@ -153,7 +153,7 @@
                 <div>
                     <div class="watch-sym">{{ d.symbol }}{% if d.source != 'calendar' %}<span class="watch-badge" title="Guessed from past cadence — not a declared date">projected</span>{% endif %}{% if d.subsector %}<span class="watch-badge">{{ d.subsector }}</span>{% endif %}</div>
                     <div class="watch-meta">
-                        {% if d.last_amount_per_share %}${{ "%.2f"|format(d.last_amount_per_share) }} last{% endif %}
+                        {% if d.last_amount_per_share %}{{ money(d.last_amount_per_share, 2) }} last{% endif %}
                         {% if d.shares_held %} · {{ '{:,.0f}'.format(d.shares_held) }} shares held{% endif %}
                         {% if d.source != 'calendar' and d.median_spacing_days %}&middot; ~{{ d.median_spacing_days }}d cadence{% endif %}
                     </div>
@@ -167,7 +167,7 @@
                        when we don't have both a last amount and a share count
                        (e.g. calendar-only symbols with no cadence history yet). #}
                     {% if d.est_income %}
-                    <div class="text-positive" style="font-weight:600;" title="${{ '%.2f'|format(d.last_amount_per_share) }}/share &times; {{ '{:,.0f}'.format(d.shares_held) }} shares held in this view. Every share, not the uncovered covered-call lots on Today.">
+                    <div class="text-positive" style="font-weight:600;" title="{{ money(d.last_amount_per_share, 2) }}/share &times; {{ '{:,.0f}'.format(d.shares_held) }} shares held in this view. Every share, not the uncovered covered-call lots on Today.">
                         est. +${{ "{:,.2f}".format(d.est_income) }}
                     </div>
                     {% endif %}
@@ -322,14 +322,14 @@
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
-                    <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
+                    <div class="cal-day-pnl">{{ money(c.daily_change, 0, true) }}</div>
                     {% endif %}
                 </a>
                 {% else %}
                 <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data and not c.is_future %}
-                    <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
+                    <div class="cal-day-pnl">{{ money(c.daily_change, 0, true) }}</div>
                     {% endif %}
                 </div>
                 {% endif %}

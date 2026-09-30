@@ -277,7 +277,7 @@
                title="{{ s.symbol }} · {{ _status_label }} · {{ _trades }} trade{{ 's' if _trades != 1 }}{% if _account %} · {{ _account }}{% endif %}{% if _strats %} · {{ _strats }}{% endif %}">
                 <span class="sym-tab__dot {{ _status }}"></span>
                 <span class="sym-tab__symbol">{{ s.symbol }}</span>
-                <span class="sym-tab__pnl {{ _pnl_class }}">${{ "{:,.0f}".format(_pnl) }}</span>
+                <span class="sym-tab__pnl {{ _pnl_class }}">{{ money(_pnl, 0) }}</span>
             </a>
             {% else %}
             <button type="button"
@@ -291,7 +291,7 @@
                     title="{{ s.symbol }} · {{ _status_label }} · {{ _trades }} trade{{ 's' if _trades != 1 }}{% if _account %} · {{ _account }}{% endif %}{% if _strats %} · {{ _strats }}{% endif %}">
                 <span class="sym-tab__dot {{ _status }}"></span>
                 <span class="sym-tab__symbol">{{ s.symbol }}</span>
-                <span class="sym-tab__pnl {{ _pnl_class }}">${{ "{:,.0f}".format(_pnl) }}</span>
+                <span class="sym-tab__pnl {{ _pnl_class }}">{{ money(_pnl, 0) }}</span>
             </button>
             {% endif %}
             {% endfor %}
@@ -307,7 +307,7 @@
         <select class="sym-tabstrip__select" aria-label="Jump to symbol">
             {% for s in tabs %}
             <option value="{{ s.symbol }}" {{ 'selected' if s.symbol == active_symbol }}>
-                {{ s.symbol }} — ${{ "{:,.0f}".format((s.total_return or 0)|float) }}
+                {{ s.symbol }} — {{ money((s.total_return or 0)|float, 0) }}
                 ({{ s.num_trades or 0 }} trade{{ 's' if (s.num_trades or 0) != 1 }})
             </option>
             {% endfor %}

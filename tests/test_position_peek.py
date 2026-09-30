@@ -84,6 +84,17 @@ def test_compose_rolls_summary_and_open_lots():
     assert equity["qty_label"] == "100 sh"
 
 
+def test_fractional_share_label_has_one_unit():
+    current = pd.DataFrame([_current(quantity=10.5)])
+    with app.test_request_context("/"):
+        out = compose_position_peek(
+            "NVDA", pd.DataFrame([_summary()]), current, today=date(2026, 8, 31),
+        )
+    equity = next(h for h in out["holdings"] if h["kind"] == "equity")
+    assert equity["qty_label"] == "10.5 sh"
+    assert "sh sh" not in equity["qty_label"]
+
+
 def test_compose_drops_expired_option_lots():
     current = pd.DataFrame([_current(
         instrument_type="Call", trade_symbol="NVDA  260828C00230000",

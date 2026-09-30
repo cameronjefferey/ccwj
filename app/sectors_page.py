@@ -20,6 +20,7 @@ from app.routes import (
     _tenants_for_scope,
     _user_account_list,
 )
+from app.sector_labels import apply_sector_labels, is_unclassified
 
 
 # ======================================================================
@@ -70,6 +71,7 @@ def _sector_rollups(df: pd.DataFrame) -> dict:
     once, so the header reads lower than the sum of the cards whenever one
     label (often Unknown) sits under two sectors.
     """
+    df = apply_sector_labels(df)
     overall_winners = int(df["num_winners"].sum())
     overall_losers = int(df["num_losers"].sum())
     overall_closed = overall_winners + overall_losers
@@ -183,7 +185,10 @@ def _sector_rollups(df: pd.DataFrame) -> dict:
         sector_agg["worst_symbol"] = ""
         sector_agg["worst_symbol_return"] = 0.0
 
-    sector_agg = sector_agg.sort_values("total_pnl", ascending=False)
+    sector_agg["_unclassified"] = sector_agg["sector"].map(is_unclassified).astype(int)
+    sector_agg = sector_agg.sort_values(
+        ["_unclassified", "total_pnl"], ascending=[True, False]
+    ).drop(columns=["_unclassified"])
     sector_rows = sector_agg.to_dict(orient="records")
     sectors_list = sector_agg["sector"].tolist()
 
@@ -198,7 +203,7 @@ def _sector_rollups(df: pd.DataFrame) -> dict:
         )
 
     unknown_count = int(
-        ((df["sector"] == "Unknown") | (df["subsector"] == "Unknown"))
+        df["sector"].map(is_unclassified)
         .pipe(lambda s: s.groupby([df["account"], df["symbol"]]).any())
         .sum()
     )
@@ -268,6 +273,7 @@ def sectors():
     for col in ("sector", "subsector"):
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+    df = apply_sector_labels(df)
 
     accounts_for_filter = (
         sorted(user_accounts)
