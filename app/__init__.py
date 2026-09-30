@@ -252,9 +252,11 @@ def _current_year() -> int:
 app.add_template_global(_current_year, name="current_year")
 
 from app.glossary import render_term as _render_term
+from app.glossary import render_term_link as _render_term_link
 from app.glossary import render_term_mark as _render_term_mark
 
 app.add_template_global(_render_term, name="term")
+app.add_template_global(_render_term_link, name="term_link")
 app.add_template_global(_render_term_mark, name="term_mark")
 
 

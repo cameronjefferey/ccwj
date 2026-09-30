@@ -1,11 +1,14 @@
 """Plain-English glossary tooltips."""
 
+from pathlib import Path
+
 from app.glossary import (
     LEARN_MORE_BASE,
     glossary_entries,
     learn_more_url,
     lookup_term,
     render_term,
+    render_term_link,
     render_term_mark,
 )
 
@@ -63,7 +66,11 @@ def test_learn_more_is_off_until_the_route_exists():
     assert learn_more_url("dte") is None
     html = str(render_term("DTE"))
     assert "ht-term-btn" in html
-    assert "days to expiration" in html.lower() or "Days to expiration" in html or "last day" in html or "option" in html.lower()
+    assert "ht-term-i" not in html
+    assert "aria-label" not in html
+    assert 'aria-describedby="ht-term-dte"' in html
+    assert ">DTE</button>" in html
+    assert "days to expiration" in html.lower()
     assert "Learn more" not in html
     assert 'type="button"' in html
 
@@ -81,5 +88,30 @@ def test_unknown_label_is_plain_text_and_mark_can_stand_beside_a_link():
     assert str(render_term("Symbol")) == "Symbol"
     mark = str(render_term_mark("Win Rate"))
     assert "ht-term-label" not in mark
-    assert "ht-term-btn" in mark
+    assert "ht-term-mark" in mark
+    assert "ht-term-i" in mark
+    assert 'aria-label="Definition of Win rate"' in mark
     assert "Win rate" in mark or "win rate" in mark.lower()
+
+
+def test_sort_link_is_the_trigger_and_escapes_the_href():
+    html = str(render_term_link("Realized", "/positions?sort=realized&dir=desc"))
+    assert 'class="ht-term-btn"' in html
+    assert 'href="/positions?sort=realized&amp;dir=desc"' in html
+    assert "<button" not in html
+    assert "ht-term-i" not in html
+    assert "aria-label" not in html
+    assert ">Realized</a>" in html
+    assert str(render_term_link("Symbol", "/positions?page=1")) == (
+        '<a href="/positions?page=1">Symbol</a>'
+    )
+
+
+def test_positions_headers_use_the_word_not_an_icon():
+    text = Path("app/templates/positions.html").read_text()
+    assert "term_mark(" not in text
+    assert "term_link('Realized'" in text
+    assert "term_link('Unrealized'" in text
+    assert "term_link('Win Rate'" in text
+    assert "term_link('Premium'" in text
+    assert "{{ term('Unrealized') }}" in text

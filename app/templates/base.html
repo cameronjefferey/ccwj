@@ -506,36 +506,67 @@
             .ht-header-scope .ht-ms-btn { max-width: 7.25rem; }
         }
 
-        /* Glossary tooltip. The "i" is the control; the popover is placed
-           with position:fixed in term-tips.js so tables do not clip it. */
+        /* Glossary tooltip. The header word is the control (dotted
+           underline) so a fixed-width column does not also pay for an
+           "i". The popover is position:fixed in term-tips.js so tables
+           do not clip it. .ht-term-mark is the small "i" used only when
+           the label text cannot be the control. */
         .ht-term {
-            display: inline-flex;
-            align-items: center;
-            gap: .2rem;
+            display: inline;
             position: relative;
-            max-width: 100%;
         }
-        .ht-term-label { border-bottom: 1px dotted rgba(91, 140, 255, .55); }
-        .ht-term-btn {
+        button.ht-term-btn,
+        a.ht-term-btn {
+            display: inline;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-bottom: 1px dotted rgba(91, 140, 255, .55);
+            border-radius: 0;
+            background: none;
+            color: inherit;
+            font: inherit;
+            letter-spacing: inherit;
+            text-transform: inherit;
+            line-height: inherit;
+            white-space: inherit;
+            cursor: help;
+            vertical-align: baseline;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+        button.ht-term-btn:hover,
+        a.ht-term-btn:hover,
+        button.ht-term-btn:focus-visible,
+        a.ht-term-btn:focus-visible {
+            border-bottom-color: #5b8cff;
+            color: inherit;
+            background: transparent;
+            outline: 2px solid #5b8cff;
+            outline-offset: 2px;
+        }
+        .ht-term-btn.ht-term-mark {
             display: inline-flex;
             align-items: center;
             justify-content: center;
             width: 1rem;
             height: 1rem;
-            padding: 0;
-            border-radius: 999px;
             border: 1px solid #5b8cff;
+            border-radius: 999px;
             background: transparent;
             color: #5b8cff;
             font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
             font-size: .62rem;
             font-weight: 700;
+            letter-spacing: 0;
+            text-transform: none;
             line-height: 1;
+            white-space: normal;
             cursor: pointer;
-            flex: 0 0 auto;
+            vertical-align: middle;
         }
-        .ht-term-btn:hover,
-        .ht-term-btn:focus-visible {
+        .ht-term-btn.ht-term-mark:hover,
+        .ht-term-btn.ht-term-mark:focus-visible {
             background: rgba(91, 140, 255, .15);
             color: #fff;
             outline: none;
