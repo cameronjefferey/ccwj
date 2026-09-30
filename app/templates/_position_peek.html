@@ -322,7 +322,10 @@
             }
             heldNum('Realized', data.held.realized_display, data.held.realized_pnl);
             heldNum('If held', data.held.if_held_display, data.held.pnl_if_held);
-            heldNum('Difference', data.held.difference_display, data.held.difference);
+            var phrase = data.held.outcome_phrase || data.held.difference_display;
+            var phraseTone = data.held.holding_better === true ? 1
+                : (data.held.holding_better === false ? -1 : 0);
+            heldNum('Difference', phrase, phraseTone);
             html += '</div>';
             html += heldSpark(data.held.points);
             html += '<div class="meta">Dashed line is intrinsic value from the stock\'s close, an estimate. Fees aren\'t included.</div>';

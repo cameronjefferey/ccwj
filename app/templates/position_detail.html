@@ -1197,9 +1197,10 @@
                         {% if o.held_id %}
                         <button type="button" class="held-trigger" data-held-open="{{ o.held_id }}"
                                 aria-haspopup="dialog" aria-controls="if-held"
-                                aria-label="If held to expiration, difference {{ o.held_difference }}">
+                                aria-label="If held to expiration: {{ o.held_difference }}">
                             <span aria-hidden="true">If held →</span>
-                            <span class="held-trigger-diff" aria-hidden="true">{{ o.held_difference }}</span>
+                            <span class="held-trigger-diff {{ 'held-more' if o.held_better else 'held-less' if o.held_better is sameas false else '' }}"
+                                  aria-hidden="true">{{ o.held_difference }}</span>
                         </button>
                         {% endif %}
                     </td>

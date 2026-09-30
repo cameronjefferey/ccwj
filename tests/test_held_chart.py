@@ -17,8 +17,10 @@ from app.held_chart import (
     UNDERLYING_CLOSES_QUERY,
     build_held_charts,
     fetch_held_series,
+    holding_did_better,
     intrinsic_per_share,
     option_mark_per_share,
+    outcome_phrase,
     peek_held_summary,
     pnl_if_held,
     stamp_held_triggers,
@@ -58,6 +60,19 @@ def _prices(pairs):
 
 def _kinds(chart):
     return [p["kind"] for p in chart["points"]]
+
+
+def test_outcome_phrase_is_the_users_gain_or_loss():
+    # ONON: closing early gave up $15,266 versus holding to expiry.
+    assert outcome_phrase(-15266) == "+$15,266 more if held"
+    assert holding_did_better(-15266) is True
+    # Closing early beat expiry, so holding would have booked less.
+    assert outcome_phrase(400) == "$400 less if held"
+    assert holding_did_better(400) is False
+    assert outcome_phrase(12.5) == "$12.50 less if held"
+    assert outcome_phrase(0) == "Same if held"
+    assert holding_did_better(0) is None
+    assert outcome_phrase(None) == ""
 
 
 def test_pnl_if_held_is_realized_minus_expiry_delta():
@@ -376,6 +391,8 @@ def test_peek_summary_is_the_largest_difference():
     peek = peek_held_summary(charts)
     assert peek["difference"] == -15266.0
     assert peek["pnl_if_held"] == 11933.0
+    assert peek["outcome_phrase"] == "+$15,266 more if held"
+    assert peek["holding_better"] is True
     assert peek["fees_note"] == "Fees aren't included."
     assert peek["points"][0]["kind"] == "open"
     assert peek_held_summary([]) is None
@@ -549,7 +566,8 @@ def test_stamp_held_trigger_on_the_close_card_and_the_leg():
     assert "held_id" not in story[0]["option_cards"][0]
     close = story[0]["option_cards"][1]
     assert close["held_id"] == charts[0]["dom_id"]
-    assert close["held_difference"] == "-$15,266"
+    assert close["held_difference"] == "+$15,266 more if held"
+    assert close["held_better"] is True
     assert outcomes[0]["held_id"] == charts[0]["dom_id"]
     assert "held_id" not in outcomes[1]
 

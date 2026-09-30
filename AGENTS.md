@@ -371,8 +371,10 @@ What's working:
   P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
   same dollar as the hindsight note. Open contracts are omitted. The
   chart is not a stack of cards on the page: the position review and
-  the closed-leg list carry a quiet "If held →" trigger with the
-  difference in muted text, and the chart opens in a right-side panel
+  the closed-leg list carry a quiet "If held →" trigger. The figure is
+  the gap from the trader's side: holding that finished higher is
+  "+$X more if held"; holding that finished lower is "$X less if held".
+  The peek drawer uses the same wording. The chart opens in a right-side panel
   (a full-screen bottom sheet on a phone). Chart.js runs when the panel
   opens. The peek drawer's "See the chart" link is `#if-held`, which
   opens that panel on the largest difference. The account name on the

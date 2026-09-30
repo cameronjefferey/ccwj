@@ -431,6 +431,9 @@ def test_template_renders_the_run_numbers():
             symbol="RKLB",
         )
     assert "Covered call runs" in html
+    # The section title sits on the left; the count badge stays on the right.
+    assert ".ht-runs-sum" in html and "justify-content: flex-start" in html
+    assert ".ht-runs-title { text-align: left; }" in html
     assert "A run is one stretch of selling calls against the same shares" in html
     assert "from first sale until the shares were called away or you stopped." in html
     assert "Sold 6 calls, Feb 20 – Apr 2" in html

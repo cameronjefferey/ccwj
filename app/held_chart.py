@@ -282,8 +282,11 @@ def stamp_held_triggers(story_days, charts, outcomes=None):
 
 def _attach_held(target, chart):
     target["held_id"] = chart.get("dom_id")
-    target["held_difference"] = chart.get("difference_display")
+    # The collapsed line reads the gap from the trader's side: holding
+    # that finished higher is "+$X more if held", not the signed delta.
+    target["held_difference"] = chart.get("outcome_phrase")
     target["held_difference_value"] = chart.get("difference")
+    target["held_better"] = chart.get("holding_better")
 
 
 def _is_close_headline(title):
@@ -340,6 +343,8 @@ def peek_held_summary(charts, limit=48):
         "realized_display": chart["realized_display"],
         "if_held_display": chart["if_held_display"],
         "difference_display": chart["difference_display"],
+        "outcome_phrase": chart["outcome_phrase"],
+        "holding_better": chart["holding_better"],
         "path_note": chart["path_note"],
         "fees_note": chart["fees_note"],
         "points": [
@@ -456,6 +461,8 @@ def _chart_for_row(row, prices, marks, *, keep, label_for):
         "realized_display": _signed_money(realized_r),
         "if_held_display": _signed_money(if_held),
         "difference_display": _signed_money(delta_r),
+        "outcome_phrase": outcome_phrase(delta_r),
+        "holding_better": holding_did_better(delta_r),
         "held_from_marks": held_from_marks,
         "held_estimated": held_estimated,
         "if_held_estimated": True,
@@ -663,6 +670,45 @@ def _fmt_day(d):
 
 def _fmt_long(d):
     return f"{d.strftime('%b')} {d.day}, {d.year}"
+
+
+def outcome_phrase(difference):
+    """Gap versus holding, from the trader's point of view.
+
+    ``difference`` is realized minus the expiry outcome (the warehouse
+    delta). A negative delta means holding finished higher, so the
+    collapsed line says ``+$15,266 more if held``. A positive delta
+    means holding finished lower: ``$400 less if held``.
+    """
+    if difference is None:
+        return ""
+    try:
+        gap = float(difference)
+    except (TypeError, ValueError):
+        return ""
+    if gap != gap:  # NaN
+        return ""
+    amount = abs(gap)
+    if amount < 0.005:
+        return "Same if held"
+    dec = 0 if amount >= 100 else 2
+    shown = fmt_money(amount, decimals=dec, signed=False)
+    if gap < 0:
+        return f"+{shown} more if held"
+    return f"{shown} less if held"
+
+
+def holding_did_better(difference):
+    """True when the expiry outcome beat the close; False when it lost; None when even."""
+    if difference is None:
+        return None
+    try:
+        gap = float(difference)
+    except (TypeError, ValueError):
+        return None
+    if gap != gap or abs(gap) < 0.005:
+        return None
+    return gap < 0
 
 
 def _signed_money(v):

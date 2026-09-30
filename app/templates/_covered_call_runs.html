@@ -108,12 +108,15 @@
     .ht-runs-sum {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: .75rem;
+        justify-content: flex-start;
+        gap: .5rem;
         padding: .7rem 1rem;
         font-weight: 650;
         font-size: .92rem;
+        text-align: left;
     }
+    .ht-runs-title { text-align: left; }
+    .ht-runs-count { margin-left: auto; }
     .ht-runs-sum::before, .ht-run-sum::before {
         content: "▸";
         color: #8a97b1;
