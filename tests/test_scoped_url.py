@@ -111,7 +111,7 @@ def test_trader_story_has_filter_bar():
     from pathlib import Path
     text = (Path(app.root_path) / "templates" / "trader_story.html").read_text()
     assert "_account_scope_filters.html" in text
-    assert "url_for('trader_story')" in text  # Reset still clears
+    assert "url_for('trader_story', scope='all')" in text  # Reset clears the saved scope
 
 
 def test_logo_and_cmdk_keep_scope():

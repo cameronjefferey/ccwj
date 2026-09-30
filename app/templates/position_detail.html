@@ -226,7 +226,7 @@
                 {{ '{:,.2f}'.format(ob.qty).rstrip('0').rstrip('.') }} shares were already held when your
                 history begins{% if ob.first_trade_date %} ({{ ob.first_trade_date }}){% endif %}.
                 Opening value {% if ob.price_source == 'broker_cost_basis' %}{{ money(ob.est_cost, 0) }},
-                taken from your broker's reported cost basis.{% elif ob.price_source == 'market_close' %}estimated
+                taken from your broker's reported {{ term('cost basis') }}.{% elif ob.price_source == 'market_close' %}estimated
                 at {{ money(ob.est_cost, 0) }} from the market close just before your first imported
                 trade.{% else %}estimated at {{ money(ob.est_cost, 0) }} from your first imported
                 fill price.{% endif %}
@@ -260,13 +260,13 @@
             {% if symbol_company %}
             <div class="text-white-50" style="font-size: .9rem; margin-top: -.15rem;">{{ symbol_company }}</div>
             {% endif %}
-            {% if (symbol_subsector and symbol_subsector != 'Unknown') or symbol_next_earnings %}
+            {% if (symbol_subsector and symbol_subsector not in ('Unknown', 'Unclassified', 'Other')) or symbol_next_earnings %}
             <div class="mt-1 d-flex flex-wrap gap-2 align-items-center">
-                {% if symbol_subsector and symbol_subsector != 'Unknown' %}
+                {% if symbol_subsector and symbol_subsector not in ('Unknown', 'Unclassified', 'Other') %}
                 <a href="{{ scoped_url('sectors') }}#{{ (symbol_sector or 'unknown')|replace(' ', '-')|lower }}"
                    class="text-decoration-none"
                    style="display:inline-flex; align-items:center; gap:.4rem; background: rgba(255,255,255,.12); color: #fff; padding: .15rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;">
-                    {% if symbol_sector and symbol_sector != 'Unknown' %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_subsector }}
+                    {% if symbol_sector and symbol_sector not in ('Unknown', 'Unclassified', 'Other') %}{{ symbol_sector }}<span style="opacity:.55;"> / </span>{% endif %}{{ symbol_subsector }}
                 </a>
                 {% endif %}
                 {# Earnings pill — symbol-level context, hidden when no upcoming
@@ -405,19 +405,19 @@
 {# ── KPI Row ── #}
 <div class="ht-statbar mb-3">
     <div class="ht-stat">
-        <span class="ht-stat-l">Realized P&amp;L</span>
+        <span class="ht-stat-l">{{ term('Realized P&L') }}</span>
         <span class="ht-stat-v {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.realized_pnl) }}</span>
     </div>
     <div class="ht-stat">
-        <span class="ht-stat-l">Unrealized P&amp;L</span>
+        <span class="ht-stat-l">{{ term('Unrealized P&L') }}</span>
         <span class="ht-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.unrealized_pnl) }}</span>
     </div>
     <div class="ht-stat">
-        <span class="ht-stat-l">Premium Collected</span>
+        <span class="ht-stat-l">{{ term('Premium Collected') }}</span>
         <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected) }}</span>
     </div>
     <div class="ht-stat">
-        <span class="ht-stat-l">Win Rate</span>
+        <span class="ht-stat-l">{{ term('Win Rate') }}</span>
         <span class="ht-stat-v">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</span>
     </div>
     <div class="ht-stat">
@@ -462,7 +462,13 @@
             url.searchParams.delete('leg');
             url.searchParams.delete('account');
             url.searchParams.delete('tenant');
-            if (checked.length === 0 || checked.length === inputs.length) {
+            const allOn = checked.length === 0 || checked.length === inputs.length;
+            if (window.htAccountScope && window.htAccountScope.writeTenantCookie) {
+                window.htAccountScope.writeTenantCookie(
+                    document, allOn ? '' : checked.join(',')
+                );
+            }
+            if (allOn) {
                 url.searchParams.delete('tenants');
             } else {
                 url.searchParams.set('tenants', checked.join(','));
@@ -634,7 +640,7 @@
         </div>
         {% endif %}
     </div>
-    <div style="height: 460px;">
+    <div style="height: 520px;">
         <canvas id="pnlChart"></canvas>
     </div>
     {% if story_days %}
@@ -773,7 +779,7 @@
             {% endfor %}
             {% if story_realized %}
             <div class="story-realized">
-                <div class="story-realized-label">Realized</div>
+                <div class="story-realized-label">{{ term('Realized') }}</div>
                 <div>
                     <div class="story-real-val {{ 'story-pos' if story_realized.shares > 0 else 'story-neg' if story_realized.shares < 0 else '' }}">
                         {% if story_realized.shares > 0 %}+{% endif %}{{ money(story_realized.shares) }}
@@ -805,6 +811,7 @@
 {% include "_story_review_css.html" %}
 {% endif %}
 
+{% include "_covered_call_runs.html" %}
 {% include "_held_to_expiry.html" %}
 
 {# ── First-visit calm: collapse the analytical breakdown behind one
@@ -818,10 +825,10 @@
 <div class="card stat-card p-3 mb-3" style="background:#121826; border:1px solid #243049; color:#e8edf7;">
     <p class="text-muted small mb-2">
         Quick terms, since strategy labels show up below: a <strong>leg</strong> is one
-        open&rarr;close stretch of this position. <strong>Covered Call</strong> = a short call
+        open&rarr;close stretch of this position. {{ term('Covered Call') }} = a short call
         backed by 100+ shares you own; <strong>Naked Call</strong> = a short call with no
-        shares backing it; <strong>Cash-Secured Put</strong> = a short put backed by cash to
-        buy the shares if assigned. A <strong>roll</strong> is closing one contract and
+        shares backing it; {{ term('Cash-Secured Put') }} = a short put backed by cash to
+        buy the shares if assigned. A {{ term('roll') }} is closing one contract and
         opening another the same day.
     </p>
     <details class="pd-toggle" id="pdAdvanced">
@@ -846,8 +853,8 @@
                 <tr>
                     <th>Type</th>
                     <th title="This type's contribution to Total Return (realized + unrealized; dividends are their own row).">Total Return</th>
-                    <th title="Closed-out P&amp;L: equity sale proceeds vs cost, settled options, cash dividends received.">Realized</th>
-                    <th title="Mark-to-market on what's still open. Dividends have no unrealized component.">Unrealized</th>
+                    <th>{{ term('Realized') }}</th>
+                    <th>{{ term('Unrealized') }}</th>
                     <th data-m="hide">Count</th>
                 </tr>
             </thead>
@@ -941,14 +948,14 @@
                     <th class="sortable" data-sort="str">Strategy</th>
                     <th class="sortable" data-sort="str">Status</th>
                     <th class="sortable" data-sort="num" title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">Total Return</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Realized</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
+                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
+                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
                     <th class="sortable" data-sort="num" data-m="hide" title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">Dividends</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Win Rate</th>
+                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Win Rate') }}</th>
                     <th class="sortable" data-sort="num" data-m="hide">Trades</th>
                     <th class="sortable" data-sort="num" data-m="hide">Avg P&amp;L</th>
                     <th class="sortable" data-sort="num" data-m="hide">Avg Days</th>
-                    <th class="sortable" data-sort="num" data-m="hide">Premium</th>
+                    <th class="sortable" data-sort="num" data-m="hide">{{ term('Premium') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -1019,7 +1026,7 @@
             <table class="table table-sm table-bordered align-middle mb-0 wl-matrix" style="font-size:.72rem;">
                 <thead>
                     <tr>
-                        <th class="wl-axis" style="min-width:60px;">DTE \ Strike Distance</th>
+                        <th class="wl-axis" style="min-width:60px;">{{ term('DTE') }} \ {{ term('Strike Distance', 'strike-price') }}</th>
                         {% for col in mat.col_headers %}
                         <th class="text-center wl-axis" style="min-width:96px;">{{ col }}</th>
                         {% endfor %}
@@ -1550,6 +1557,7 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: { padding: { top: 8, right: 8, bottom: 4, left: 4 } },
                 onHover: function (evt, elements) {
                     if (evt.native && evt.native.target) {
                         evt.native.target.style.cursor = markerHit(elements) ? 'pointer' : 'default';
@@ -1571,13 +1579,17 @@
                 },
                 plugins: {
                     legend: {
-                        position: 'top',
+                        // Bottom keeps the swatches off the plot. A top
+                        // legend with wide line swatches wrapped into the
+                        // series on names with several non-zero lines.
+                        position: 'bottom',
+                        align: 'start',
                         labels: {
                             usePointStyle: true,
                             pointStyle: 'line',
-                            boxWidth: 32,
-                            boxHeight: 8,
-                            padding: 14,
+                            boxWidth: 12,
+                            boxHeight: 4,
+                            padding: 16,
                             // Trade days is a scatter of per-dot colors with a
                             // white ring. Chart.js can't paint an array as a
                             // legend fill, so that swatch vanished. Force a
@@ -1640,13 +1652,15 @@
                 scales: {
                     x: {
                         grid: { display: false },
-                        ticks: { maxTicksLimit: 10 }
+                        ticks: { maxTicksLimit: 8, maxRotation: 0, autoSkip: true, padding: 8 }
                     },
                     y: {
                         type: 'linear',
                         display: true,
                         position: 'left',
                         ticks: {
+                            maxTicksLimit: 6,
+                            padding: 8,
                             callback: function(v) {
                                 var n = Number(v) || 0;
                                 var sign = n < 0 ? '-' : '';
@@ -1676,9 +1690,11 @@
                             return Math.max.apply(null, vals) * 1.02;
                         },
                         ticks: {
-                            callback: function(v) { return '$' + v.toFixed(2); }
+                            maxTicksLimit: 6,
+                            padding: 8,
+                            callback: function(v) { return window.htMoney(v, 2); }
                         },
-                        grid: { display: false }
+                        grid: { display: false, drawOnChartArea: false }
                     }
                     {% endif %}
                 }

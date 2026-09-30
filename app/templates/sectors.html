@@ -125,7 +125,7 @@
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('sectors') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('sectors', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -156,7 +156,7 @@
             <div class="val">{{ kpis.num_symbols }}</div>
         </div>
         <div class="ind-kpi">
-            <div class="lbl">Win Rate</div>
+            <div class="lbl">{{ term('Win Rate') }}</div>
             <div class="val">{{ "{:.0%}".format(kpis.win_rate) }}</div>
         </div>
     </div>
@@ -205,7 +205,7 @@
 
         <div class="stats">
             <div class="stat">
-                <div class="lbl">Win Rate</div>
+                <div class="lbl">{{ term('Win Rate') }}</div>
                 <div class="val">
                     {% if (s.num_winners + s.num_losers) > 0 %}
                         {{ "{:.0%}".format(s.win_rate) }}
@@ -217,15 +217,15 @@
                 <div class="val">{{ s.num_winners | int }} / {{ s.num_losers | int }}</div>
             </div>
             <div class="stat">
-                <div class="lbl">Premium</div>
+                <div class="lbl">{{ term('Premium') }}</div>
                 <div class="val">{{ money(s.premium_received or 0, 0) }}</div>
             </div>
         </div>
 
         <div class="splits">
-            <span class="k">Realized</span>
+            <span class="k">{{ term('Realized') }}</span>
             <span class="v {% if s.realized_pnl < 0 %}neg{% endif %}">{{ money(s.realized_pnl, 0) }}</span>
-            <span class="k">Unrealized</span>
+            <span class="k">{{ term('Unrealized') }}</span>
             <span class="v {% if s.unrealized_pnl < 0 %}neg{% endif %}">{{ money(s.unrealized_pnl, 0) }}</span>
             {% if s.dividend_income and s.dividend_income > 0 %}
             <span class="k">Dividends</span>
@@ -299,8 +299,8 @@
 
 {% if unknown_count and unknown_count > 0 %}
 <div class="ind-section-note">
-    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} couldn't be matched to a sector yet —
-    they'll show up under <em>Unknown</em>. They fill in automatically as the daily metadata refresh picks them up.
+    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} still {{ 'has' if unknown_count == 1 else 'have' }} no sector.
+    {{ 'It shows' if unknown_count == 1 else 'They show' }} under <em>Unclassified</em>, after the named sectors.
 </div>
 {% endif %}
 

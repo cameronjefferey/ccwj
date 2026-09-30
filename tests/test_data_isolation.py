@@ -1056,17 +1056,16 @@ class TestStrategyFitMatrixBuilder:
         m = _build_strategy_fit_matrix(df, col_field="sector")
         sweet_sectors = {s["sector"] for s in m["sweet_spots"]}
         soft_sectors = {s["sector"] for s in m["soft_spots"]}
-        assert "Unknown" not in sweet_sectors, (
-            "Unknown must never be celebrated as a sweet spot — it's noise."
-        )
-        assert "Unknown" not in soft_sectors, (
-            "Unknown must never be flagged as a soft spot — it's noise."
-        )
+        assert "Unknown" not in sweet_sectors
+        assert "Unclassified" not in sweet_sectors
+        assert "Unknown" not in soft_sectors
+        assert "Unclassified" not in soft_sectors
         # Verify the named-sector winners actually surface.
         assert "Technology" in sweet_sectors
         assert "Energy" in soft_sectors
-        # Sanity: the Unknown cells are still IN the matrix (just not narrated).
-        assert "Unknown" in m["col_labels"]
+        # The bucket stays in the matrix (just not narrated) and sorts last.
+        assert "Unclassified" in m["col_labels"]
+        assert m["col_labels"][-1] == "Unclassified"
 
     def test_row_and_column_symbol_counts_are_unique_names(self):
         """A ticker in two sectors is one symbol on the strategy row, not two.

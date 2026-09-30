@@ -63,7 +63,7 @@
             <div class="dd-date">Day review &middot; {{ day_label }}</div>
             {% if account_rows %}
             <div class="dd-delta {{ 'pos' if total_delta > 0 else 'neg' if total_delta < 0 else '' }}">
-                {{ "+" if total_delta > 0 else "" }}${{ "{:,.0f}".format(total_delta) }}
+                {{ money(total_delta, 0, true) }}
                 {% if total_delta_pct is not none %}
                 <span style="font-size:1rem; font-weight:600;">({{ "+" if total_delta_pct > 0 else "" }}{{ "%.2f"|format(total_delta_pct) }}%)</span>
                 {% endif %}
@@ -117,7 +117,7 @@
                 <td>{{ a.label }}</td>
                 <td class="dd-money">${{ "{:,.0f}".format(a.value) }}</td>
                 <td class="dd-money {{ 'pos' if a.delta > 0 else 'neg' if a.delta < 0 else '' }}">
-                    {{ "+" if a.delta > 0 else "" }}${{ "{:,.0f}".format(a.delta) }}
+                    {{ money(a.delta, 0, true) }}
                     {% if a.delta_pct is not none %}<span class="dd-muted">({{ "+" if a.delta_pct > 0 else "" }}{{ "%.2f"|format(a.delta_pct) }}%)</span>{% endif %}
                 </td>
             </tr>
@@ -164,7 +164,7 @@
                             {% endif %}
                         </td>
                         <td class="dd-money {{ 'pos' if t.amount is not none and t.amount > 0 else 'neg' if t.amount is not none and t.amount < 0 else '' }}">
-                            {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                            {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -185,7 +185,7 @@
                     {% for o in option_rows %}
                     <tr>
                         <td><a class="dd-sym" href="{{ scoped_url('position_detail', symbol=o.symbol) }}">{{ o.symbol }}</a></td>
-                        <td class="dd-money {{ 'pos' if o.impact > 0 else 'neg' }}">{{ "+" if o.impact > 0 else "" }}${{ "{:,.2f}".format(o.impact) }}</td>
+                        <td class="dd-money {{ 'pos' if o.impact > 0 else 'neg' }}">{{ money(o.impact, 2, true) }}</td>
                     </tr>
                     {% endfor %}
                 </table>
@@ -223,7 +223,7 @@
                     <tr>
                         <td>{{ c.verb }}{% if c.description %} <span class="dd-muted">{{ c.description|truncate(40) }}</span>{% endif %}</td>
                         <td class="dd-money {{ 'pos' if c.amount > 0 else 'neg' if c.amount < 0 else '' }}">
-                            {{ "+" if c.amount > 0 else "" }}${{ "{:,.2f}".format(c.amount) }}
+                            {{ money(c.amount, 2, true) }}
                         </td>
                     </tr>
                     {% endfor %}

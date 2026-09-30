@@ -115,6 +115,11 @@ def test_surface_css_for_the_demo_bugs():
     assert "W / L" not in positions
     assert ">W/L<" in positions
     assert "body:has(#positionsTable) .ht-page { max-width: none; }" in positions
+    # Laptop widths fit both Positions tables inside the card. A max-content
+    # table with its scrollbar at the bottom of the 75vh sticky box left
+    # Premium / W/L clipped at 1280x800.
+    assert "@media (min-width: 768px) and (max-width: 1366px)" in positions
+    assert positions.count("table-layout: fixed") >= 2
     assert "fit-col-short" in fit
     assert "fit-corner-short" in fit
     assert "max-width: 480px" in fit
