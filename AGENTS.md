@@ -370,7 +370,15 @@ What's working:
   (`int_option_marks_daily`) fill the held segment when they exist.
   P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
   same dollar as the hindsight note. Open contracts are omitted. The
-  peek drawer shows the largest one as a sparkline. Math lives in
+  chart is not a stack of cards on the page: the position review and
+  the closed-leg list carry a quiet "If held →" trigger with the
+  difference in muted text, and the chart opens in a right-side panel
+  (a full-screen bottom sheet on a phone). Chart.js runs when the panel
+  opens. The peek drawer's "See the chart" link is `#if-held`, which
+  opens that panel on the largest difference. The account name on the
+  peek chart goes through privacy mode (`shown_account`). One contract
+  is one chart — duplicate fills of the same `(tenant_id, trade_symbol)`
+  are not summed into the peek difference. Math lives in
   `app/held_chart.py`; no new market-data vendor. The two price queries
   (`stg_daily_prices`, `int_option_marks_daily`) are fetched outside the
   shared position batch (`fetch_held_series`) and fail to empty frames,
@@ -378,15 +386,17 @@ What's working:
 - **Covered call runs (Sep 2026).** A share lot and the calls written
   against it are one run, from the buy (or a put assignment, for a
   wheel) through the sale or assignment, or through today if the shares
-  are still held. The card under the position review lists each call
-  (strike, expiry, premium, outcome: expired / closed / assigned /
-  rolled / open), a running premium total, the share result, and one
-  net for the whole run. Broker fees are left out of that math and the
-  card says so. Multiple runs, partial sales, and partial coverage stay
-  on the same lot until the shares are flat. Built in
-  `app/covered_call_runs.py` from the fills the page already loaded
-  (tenant-scoped, before the leg filter so one leg click does not split
-  the cycle). Pinned by `tests/test_covered_call_runs.py`.
+  are still held. Under the position review this is a small section,
+  collapsed by default, with one sentence explaining a run and one line
+  per run (calls sold, the date stretch, premium, share result, net).
+  Opening a run lists each call (strike, expiry, premium, outcome:
+  expired / closed / assigned / rolled / open), a running premium
+  total, the share result, and one net. Broker fees are left out of
+  that math and the section says so. Multiple runs, partial sales, and
+  partial coverage stay on the same lot until the shares are flat.
+  Built in `app/covered_call_runs.py` from the fills the page already
+  loaded (tenant-scoped, before the leg filter so one leg click does
+  not split the cycle). Pinned by `tests/test_covered_call_runs.py`.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which

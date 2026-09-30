@@ -431,12 +431,18 @@ def test_template_renders_the_run_numbers():
             symbol="RKLB",
         )
     assert "Covered call runs" in html
+    assert "A run is one stretch of selling calls against the same shares" in html
+    assert "from first sale until the shares were called away or you stopped." in html
+    assert "Sold 6 calls, Feb 20 – Apr 2" in html
+    assert "Premium" in html and "+$1,006.00" in html
+    assert "Shares" in html and "-$600.00" in html
+    assert "Net" in html and "+$406.00" in html
+    assert '<details class="ht-runs" id="covered-call-runs">' in html
+    assert '<details class="ht-runs" id="covered-call-runs" open>' not in html
     assert "100 shares bought at $69" in html
     assert "Called away at $63" in html
     assert "+$931.00" in html
     assert "+$75.00" in html
-    assert "-$600.00" in html
-    assert "+$406.00" in html
     assert "Expired" in html
     assert "Assigned" in html
     assert "Broker fees are not included" in html

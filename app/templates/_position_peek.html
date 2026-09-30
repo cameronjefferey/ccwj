@@ -312,6 +312,7 @@
             html += '<div class="held-peek">';
             html += '<div class="sym">' + esc(data.held.label || '') + '</div>';
             html += '<div class="meta">' + esc(data.held.direction_label || '')
+                 + (data.held.show_account && data.held.account ? ' · ' + esc(data.held.account) : '')
                  + (data.held.expiry_label ? ' · exp ' + esc(data.held.expiry_label) : '')
                  + '</div>';
             html += '<div class="nums">';

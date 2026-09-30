@@ -1,35 +1,111 @@
-{# Closed-option "if held to expiration" charts. One card per gradeable
-   early close. Open contracts are not in held_charts. #}
+{# If-held charts stay off the page. A quiet trigger (review card or
+   closed leg) opens this panel. Charts are built on open, not on load.
+   Open contracts are not in held_charts. #}
 {% if held_charts %}
-<div class="card stat-card p-4 mb-4 held-section" id="if-held">
-    <div class="held-head">
-        <div>
-            <h6 class="fw-bold mb-1">If held to expiration</h6>
-            <p class="held-intro mb-0">
-                Each option closed before expiration.
-                Open and close mark the prices you traded.
-                The dashed line continues, day by day, to expiration.
-                {% if story_days %}Same comparison as the hindsight notes in the review above.{% endif %}
-            </p>
+<div class="held-drawer" id="if-held" role="dialog" aria-modal="true"
+     aria-labelledby="heldDrawerTitle" aria-hidden="true">
+    <div class="held-backdrop" data-held-close></div>
+    <div class="held-drawer-panel">
+        <div class="held-drawer-bar">
+            <h6 id="heldDrawerTitle">If held to expiration</h6>
+            <button type="button" class="held-drawer-x" data-held-close aria-label="Close">×</button>
         </div>
-    </div>
-
-    {% for c in held_charts if not c.collapsed %}
-    {% include "_held_chart_card.html" %}
-    {% endfor %}
-
-    {% set _more = held_charts | selectattr('collapsed') | list %}
-    {% if _more %}
-    <details class="held-more" id="heldMore">
-        <summary>{{ _more|length }} more closed option{{ 's' if _more|length != 1 else '' }}</summary>
-        {% for c in _more %}
-        {% include "_held_chart_card.html" %}
+        <p class="held-intro">
+            Open and close mark the prices you traded.
+            The dashed line continues, day by day, to expiration.
+            {% if story_days %}Same comparison as the hindsight notes in the review.{% endif %}
+        </p>
+        {% for c in held_charts %}
+        <div class="held-pane" data-held-pane="{{ c.dom_id }}" hidden>
+            {% include "_held_chart_card.html" %}
+        </div>
         {% endfor %}
-    </details>
-    {% endif %}
+    </div>
 </div>
 <style>
-    .held-section { background: #121826; border: 1px solid #243049; color: #e8edf7; }
+    .held-trigger {
+        appearance: none;
+        background: transparent;
+        border: 0;
+        padding: 0;
+        margin-top: .28rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: baseline;
+        gap: .35rem;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-size: .75rem;
+        font-weight: 600;
+        color: #8a97b1;
+        line-height: 1.3;
+    }
+    .held-trigger:hover, .held-trigger:focus-visible { color: #5b8cff; }
+    .held-trigger:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; border-radius: 4px; }
+    .held-trigger-diff {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        color: #8a97b1;
+    }
+    td .held-trigger { display: flex; }
+    .held-drawer {
+        position: fixed;
+        inset: 0;
+        z-index: 1060;
+        visibility: hidden;
+        pointer-events: none;
+    }
+    .held-drawer.is-open { visibility: visible; pointer-events: auto; }
+    .held-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(5, 7, 12, .55);
+        opacity: 0;
+        transition: opacity .22s ease;
+    }
+    .held-drawer.is-open .held-backdrop { opacity: 1; }
+    .held-drawer-panel {
+        position: absolute;
+        top: 0; right: 0; bottom: 0;
+        width: min(440px, 100vw);
+        background: #121826;
+        color: #e8edf7;
+        border-left: 1px solid #243049;
+        box-shadow: -16px 0 40px rgba(0, 0, 0, .35);
+        overflow: auto;
+        padding: 1rem 1.1rem 2rem;
+        transform: translateX(105%);
+        transition: transform .22s ease;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .held-drawer.is-open .held-drawer-panel { transform: none; }
+    .held-drawer-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        margin-bottom: .35rem;
+    }
+    .held-drawer-bar h6 {
+        margin: 0;
+        font-weight: 650;
+        font-size: 1rem;
+        letter-spacing: 0;
+    }
+    .held-drawer-x {
+        appearance: none;
+        border: 1px solid #243049;
+        background: #0a0e17;
+        color: #e8edf7;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        font-size: 1.15rem;
+        line-height: 1;
+        cursor: pointer;
+        flex: none;
+    }
+    .held-drawer-x:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; }
     .held-intro {
         color: #8a97b1;
         font-size: .85rem;
@@ -156,18 +232,18 @@
         margin: .55rem 0 0;
         font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
     }
-    .held-more { margin-top: 1rem; }
-    .held-more > summary {
-        cursor: pointer;
-        color: #5b8cff;
-        font-size: .85rem;
-        font-weight: 600;
-        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-    }
-    @media (max-width: 640px) {
+    @media (max-width: 720px) {
+        .held-drawer-panel {
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100%;
+            height: 100%;
+            border-left: 0;
+            border-radius: 0;
+            transform: translateY(105%);
+        }
+        .held-drawer.is-open .held-drawer-panel { transform: none; }
         .held-stat .val { font-size: 1.15rem; }
         .held-canvas-wrap { height: 220px; }
-        .held-section.p-4 { padding: 1rem !important; }
     }
     @media (min-width: 641px) {
         .held-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -440,30 +516,123 @@
                 btn.setAttribute('aria-pressed', btn.getAttribute('data-mode') === next ? 'true' : 'false');
             });
         }
+        card._heldChart = chart;
         card.querySelectorAll('.held-toggle button').forEach(function (btn) {
             btn.addEventListener('click', function () { apply(btn.getAttribute('data-mode')); });
         });
     }
 
-    function initVisible(root) {
-        (root || document).querySelectorAll('[data-held-card]').forEach(function (card) {
-            var det = card.closest('details');
-            if (det && !det.open) return;
-            initCard(card);
+    var drawer = document.getElementById('if-held');
+    if (!drawer) return;
+    var lastFocus = null;
+
+    function focusables() {
+        return Array.prototype.filter.call(
+            drawer.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+            function (el) {
+                if (el.disabled || el.getAttribute('aria-hidden') === 'true') return false;
+                if (el.closest('[hidden]')) return false;
+                return true;
+            }
+        );
+    }
+
+    function showPane(id) {
+        var panes = drawer.querySelectorAll('[data-held-pane]');
+        var chosen = null;
+        panes.forEach(function (pane) {
+            var on = pane.getAttribute('data-held-pane') === id;
+            if (on) chosen = pane;
+            pane.hidden = !on;
         });
+        if (!chosen && panes.length) {
+            chosen = panes[0];
+            chosen.hidden = false;
+        }
+        return chosen;
     }
-    function boot() { initVisible(document); }
-    if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(boot);
-    } else {
-        boot();
+
+    function paint(pane) {
+        var card = pane && pane.querySelector('[data-held-card]');
+        if (!card) return;
+        initCard(card);
+        if (card._heldChart) card._heldChart.resize();
     }
-    var more = document.getElementById('heldMore');
-    if (more) {
-        more.addEventListener('toggle', function () {
-            if (more.open) initVisible(more);
-        });
+
+    function openHeld(id, opener) {
+        var pane = showPane(id);
+        if (!pane) return;
+        if (!drawer.classList.contains('is-open')) {
+            lastFocus = opener || document.activeElement;
+        }
+        drawer.setAttribute('aria-hidden', 'false');
+        drawer.classList.add('is-open');
+        document.body.classList.add('held-drawer-open');
+        var closeBtn = drawer.querySelector('.held-drawer-x');
+        if (closeBtn) closeBtn.focus();
+        // Chart.js measures the panel. Wait until it has laid out.
+        requestAnimationFrame(function () { paint(pane); });
     }
+
+    function closeHeld() {
+        if (!drawer.classList.contains('is-open')) return;
+        drawer.classList.remove('is-open');
+        drawer.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('held-drawer-open');
+        var back = lastFocus;
+        lastFocus = null;
+        if (back && typeof back.focus === 'function') back.focus();
+        if (location.hash === '#if-held' || location.hash.indexOf('#held-') === 0) {
+            history.replaceState(null, '', location.pathname + location.search);
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('[data-held-open]');
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            openHeld(btn.getAttribute('data-held-open'), btn);
+            return;
+        }
+        if (e.target.closest && e.target.closest('[data-held-close]')) {
+            e.preventDefault();
+            closeHeld();
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (!drawer.classList.contains('is-open')) return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closeHeld();
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        var items = focusables();
+        if (!items.length) return;
+        var first = items[0];
+        var last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    });
+
+    function openFromHash() {
+        var hash = location.hash || '';
+        if (hash === '#if-held') {
+            var first = drawer.querySelector('[data-held-pane]');
+            if (first) openHeld(first.getAttribute('data-held-pane'));
+        } else if (hash.indexOf('#held-') === 0) {
+            openHeld(hash.slice(1));
+        }
+    }
+    openFromHash();
+    window.addEventListener('hashchange', openFromHash);
 })();
 </script>
 {% endif %}

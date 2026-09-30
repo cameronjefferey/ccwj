@@ -21,6 +21,7 @@ from app.held_chart import (
     option_mark_per_share,
     peek_held_summary,
     pnl_if_held,
+    stamp_held_triggers,
 )
 
 
@@ -474,6 +475,85 @@ def test_fetch_held_series_keeps_closes_when_only_marks_raise():
     assert marks.empty
 
 
+def test_duplicate_contract_rows_do_not_sum_into_the_peek():
+    """RKLB's peek difference is one contract's delta, not a sum.
+
+    A second row of the same (tenant, trade_symbol) — another fill, or
+    the same contract stamped with a different open date — is dropped.
+    A second account stays its own chart. The drawer shows the larger
+    difference, not the two added together.
+    """
+    primary = _row(
+        tenant_id="snaptrade:rklb",
+        account="RKLB account",
+        trade_symbol="RKLB  250620C00063000",
+        option_strike=63.0,
+        early_close_vs_expiry_delta=-61637.0,
+        realized_pnl=-1200.0,
+        contracts=10,
+        cost_to_close=-800.0,
+        proceeds_from_close=0.0,
+    )
+    duplicate = dict(primary)
+    duplicate["open_date"] = date(2025, 8, 11)
+    other = _row(
+        tenant_id="snaptrade:other",
+        account="Other account",
+        trade_symbol="RKLB  250620C00070000",
+        option_strike=70.0,
+        early_close_vs_expiry_delta=-200.0,
+        realized_pnl=50.0,
+        contracts=1,
+        cost_to_close=-40.0,
+        proceeds_from_close=0.0,
+    )
+    charts = build_held_charts(pd.DataFrame([primary, duplicate, other]), _prices([
+        (date(2025, 8, 11), 40.0),
+        (date(2025, 8, 12), 40.0),
+        (date(2025, 8, 13), 39.0),
+        (date(2025, 9, 12), 48.6364),
+    ]))
+    same = [c for c in charts if c["trade_symbol"] == primary["trade_symbol"]]
+    assert len(same) == 1
+    assert len(charts) == 2
+    peek = peek_held_summary(charts)
+    assert peek["difference"] == -61637.0
+    assert peek["pnl_if_held"] == 60437.0
+    assert peek["difference"] != -61637.0 + -200.0
+
+
+def test_stamp_held_trigger_on_the_close_card_and_the_leg():
+    charts = build_held_charts(pd.DataFrame([_row()]), _prices([
+        (date(2025, 8, 12), 40.0),
+        (date(2025, 8, 13), 39.0),
+        (date(2025, 9, 12), 48.6364),
+    ]))
+    story = [{
+        "type": "day",
+        "date_iso": "2025-08-13",
+        "option_cards": [
+            {"title": "Bought 25 contracts of the $41 call (Sep 12) — $7,158 at risk (bullish)."},
+            {"title": "Sold the $41 calls (Sep 12) for $3,825 — taking the $3,333 loss."},
+        ],
+    }]
+    outcomes = [{
+        "type": "option",
+        "tenant_id": "snaptrade:abc",
+        "trade_symbol": "ONON  250912C00041000",
+    }, {
+        "type": "equity",
+        "tenant_id": "snaptrade:abc",
+        "trade_symbol": "ONON",
+    }]
+    stamp_held_triggers(story, charts, outcomes)
+    assert "held_id" not in story[0]["option_cards"][0]
+    close = story[0]["option_cards"][1]
+    assert close["held_id"] == charts[0]["dom_id"]
+    assert close["held_difference"] == "-$15,266"
+    assert outcomes[0]["held_id"] == charts[0]["dom_id"]
+    assert "held_id" not in outcomes[1]
+
+
 def test_template_renders_the_summary_and_the_fees_note():
     from app import app
     charts = build_held_charts(pd.DataFrame([_row()]), _prices([
@@ -494,7 +574,12 @@ def test_template_renders_the_summary_and_the_fees_note():
     assert "Per share" in html
     assert "Contract $" in html
     assert 'id="if-held"' in html
+    assert "held-drawer" in html
+    assert 'data-held-pane="held-0" hidden' in html
     assert "hindsight notes" in html
+    # The chart is not drawn until the panel opens.
+    assert "initVisible" not in html
+    assert "openFromHash" in html
     # Open contracts are simply absent — an empty list renders nothing.
     with app.app_context():
         empty = app.jinja_env.get_template("_held_to_expiry.html").render(
@@ -621,3 +706,87 @@ def test_position_page_and_peek_render_when_held_queries_raise():
     assert body["total_pnl"] == -3333.0
     assert body.get("error") is None
     assert body.get("held") is None
+
+
+def _peek_prices(_client, sql, label=None):
+    if label == "underlying_closes":
+        return _prices([
+            (date(2025, 8, 12), 40.0),
+            (date(2025, 8, 13), 39.0),
+            (date(2025, 9, 12), 48.6364),
+        ])
+    return pd.DataFrame()
+
+
+def test_peek_held_account_is_masked_in_privacy_mode():
+    """The if-held line in the peek uses Account N when privacy is on.
+
+    The hindsight dollars stay visible. Two accounts make show_account
+    true, which is when the drawer prints the name.
+    """
+    from unittest.mock import patch
+    import app.position_detail as detail
+    import app.privacy as privacy
+    import app.query_cache as query_cache
+
+    big = _row(tenant_id="snaptrade:abc", account="Schwab Account")
+    small = _row(
+        tenant_id="snaptrade:other",
+        account="Joint",
+        trade_symbol="OTHER",
+        early_close_vs_expiry_delta=-20.0,
+        realized_pnl=10.0,
+        contracts=1,
+        cost_to_close=-30.0,
+        proceeds_from_close=0.0,
+        intrinsic_at_expiry=0.0,
+    )
+
+    def peek_batch(_client, queries):
+        return {
+            "summary": _summary_frame(),
+            "current": pd.DataFrame(),
+            "execution": pd.DataFrame([big, small]),
+        }
+
+    user = _logged_in_user()
+    labels = {
+        "snaptrade:abc": "Sara Schwab",
+        "snaptrade:other": "Joint",
+    }
+    original = query_cache.cached_query_df
+    query_cache.cached_query_df = _peek_prices
+    try:
+        def _hit(private):
+            slots = (
+                {"snaptrade:abc": "Account 1", "snaptrade:other": "Account 2"},
+                {"Sara Schwab": "Account 1", "Joint": "Account 2"},
+            )
+            with patch.object(detail, "current_user", user), \
+                 patch("flask_login.utils._get_user", lambda: user), \
+                 patch.object(detail, "_redirect_if_no_accounts", lambda: None), \
+                 patch.object(detail, "_tenants_for_scope",
+                              lambda *_a, **_k: ["snaptrade:abc", "snaptrade:other"]), \
+                 patch.object(detail, "_tenant_label_map_for_user", lambda *_a, **_k: labels), \
+                 patch.object(detail, "get_bigquery_client", lambda: object()), \
+                 patch.object(detail, "_bq_parallel", peek_batch), \
+                 patch.object(privacy, "privacy_mode_on", lambda: private), \
+                 patch.object(privacy, "viewer_slots", lambda: slots):
+                resp = detail.app.test_client().get("/api/position/ONON/peek")
+            assert resp.status_code == 200, resp.data[:500]
+            return resp.get_json()["held"]
+
+        masked = _hit(True)
+        plain = _hit(False)
+    finally:
+        query_cache.cached_query_df = original
+
+    from pathlib import Path
+    peek_js = Path("app/templates/_position_peek.html").read_text()
+    assert "data.held.show_account && data.held.account" in peek_js
+    assert masked["show_account"] is True
+    assert masked["account"] == "Account 1"
+    assert masked["difference"] == -15266.0
+    assert "Sara" not in masked["account"]
+    assert plain["account"] == "Sara Schwab"
+    assert plain["difference"] == -15266.0

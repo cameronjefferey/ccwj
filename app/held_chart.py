@@ -209,7 +209,11 @@ def build_held_charts(execution_df, prices_df, marks_df=None, *,
         chart = _chart_for_row(row, prices, marks, keep=keep, label_for=label_for)
         if chart is None:
             continue
-        key = (chart["tenant_id"], chart["trade_symbol"], chart["open_date"])
+        # One contract, one chart. The exit-quality mart is already one
+        # row per (tenant, trade_symbol); a second fill, leg stamp, or
+        # open-date variant of that same contract must not add another
+        # copy of the hindsight dollar into the peek or the page.
+        key = (chart["tenant_id"], chart["trade_symbol"])
         if key in seen:
             continue
         seen.add(key)
@@ -222,6 +226,100 @@ def build_held_charts(execution_df, prices_df, marks_df=None, *,
         chart["collapsed"] = i >= HELD_CHARTS_EXPANDED
         chart["show_account"] = multi
     return charts
+
+
+def stamp_held_triggers(story_days, charts, outcomes=None):
+    """Point each early close at its chart, on the review and the leg list.
+
+    Review cards match the close day plus the strike and call/put in the
+    headline (bought back, sold to close, or rolled). Closed-leg rows
+    match ``(tenant_id, trade_symbol)``. The page renders a quiet
+    "If held →" control from ``held_id``; it does not stack the charts.
+    """
+    remaining = list(charts or [])
+    for item in story_days or []:
+        if not isinstance(item, dict) or item.get("type") != "day":
+            continue
+        day = str(item.get("date_iso") or "")[:10]
+        for card in item.get("option_cards") or []:
+            if not isinstance(card, dict) or card.get("held_id"):
+                continue
+            title = str(card.get("title") or "").strip()
+            if not _is_close_headline(title):
+                continue
+            blob = " ".join(
+                str(card.get(k) or "") for k in ("title", "pill", "detail")
+            )
+            hit = _match_held_chart(day, blob, card.get("account"), remaining)
+            if hit is None:
+                continue
+            _attach_held(card, hit)
+            remaining.remove(hit)
+
+    by_key = {}
+    by_symbol = {}
+    for chart in charts or []:
+        tid = str(chart.get("tenant_id") or "").strip()
+        sym = str(chart.get("trade_symbol") or "").strip()
+        by_key[(tid, sym)] = chart
+        by_symbol.setdefault(sym, []).append(chart)
+    for outcome in outcomes or []:
+        if not isinstance(outcome, dict):
+            continue
+        if str(outcome.get("type") or "") == "equity":
+            continue
+        tid = str(outcome.get("tenant_id") or "").strip()
+        sym = str(outcome.get("trade_symbol") or "").strip()
+        hit = by_key.get((tid, sym))
+        if hit is None and sym:
+            hits = by_symbol.get(sym) or []
+            if len(hits) == 1:
+                hit = hits[0]
+        if hit is not None:
+            _attach_held(outcome, hit)
+    return story_days
+
+
+def _attach_held(target, chart):
+    target["held_id"] = chart.get("dom_id")
+    target["held_difference"] = chart.get("difference_display")
+    target["held_difference_value"] = chart.get("difference")
+
+
+def _is_close_headline(title):
+    low = title.lower()
+    return (
+        low.startswith("bought back")
+        or low.startswith("sold the ")
+        or low.startswith("rolled ")
+    )
+
+
+def _match_held_chart(day, text, account, remaining):
+    low = text.lower()
+    found = []
+    for chart in remaining:
+        if str(chart.get("close_date") or "")[:10] != day:
+            continue
+        label = str(chart.get("label") or "").strip()
+        strike = label.split()[0] if label else ""
+        if strike and strike.lower() not in low:
+            continue
+        kind = str(chart.get("option_type") or "")
+        if kind and kind not in low:
+            continue
+        found.append(chart)
+    if not found:
+        return None
+    if account:
+        acct = str(account).strip().lower()
+        named = [
+            chart for chart in found
+            if str(chart.get("account") or "").strip().lower() == acct
+        ]
+        if len(named) == 1:
+            return named[0]
+    return found[0]
 
 
 def peek_held_summary(charts, limit=48):

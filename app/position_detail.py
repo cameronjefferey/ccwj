@@ -1701,6 +1701,7 @@ from app.held_chart import (  # noqa: E402
     build_held_charts,
     fetch_held_series,
     peek_held_summary,
+    stamp_held_triggers,
 )
 
 
@@ -3372,6 +3373,11 @@ def position_detail(symbol):
         story_days, story_markers, story_mirror = [], [], []
         story_head = None
 
+    try:
+        stamp_held_triggers(story_days, held_charts, trade_outcomes)
+    except Exception as exc:
+        app.logger.warning("held-to-expiry triggers failed for %s: %s", symbol, exc)
+
     # Covered-call / wheel runs use the tenant-scoped fill stream from
     # before the leg filter, so clicking one leg does not split a cycle
     # into a share piece and a call piece. Fees stay out of the math.
@@ -3799,7 +3805,9 @@ def position_peek(symbol):
         marks_df = _filter_df_by_tenant_ids(marks_df, tenant_ids)
 
         def _peek_label(tid, acct):
-            return label_map.get(str(tid or "").strip(), acct or "")
+            from app.privacy import shown_account
+            raw = label_map.get(str(tid or "").strip(), acct or "")
+            return shown_account(raw or acct or "", tid)
 
         held_charts = build_held_charts(
             exec_df,

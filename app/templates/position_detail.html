@@ -1205,6 +1205,14 @@
                         {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
                         <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ o.close_type }}</span>
                         {% endif %}
+                        {% if o.held_id %}
+                        <button type="button" class="held-trigger" data-held-open="{{ o.held_id }}"
+                                aria-haspopup="dialog" aria-controls="if-held"
+                                aria-label="If held to expiration, difference {{ o.held_difference }}">
+                            <span aria-hidden="true">If held →</span>
+                            <span class="held-trigger-diff" aria-hidden="true">{{ o.held_difference }}</span>
+                        </button>
+                        {% endif %}
                     </td>
                     <td class="text-muted small">{{ o.strategy }}</td>
                     <td class="text-muted small" data-val="{{ (o.account_display or o.account) | account_label(o.tenant_id) }}">{{ (o.account_display or o.account) | account_label(o.tenant_id) }}</td>
@@ -1848,7 +1856,7 @@
     // Leg drill-down toggle
     document.querySelectorAll('.leg-toggle').forEach(function (row) {
         row.addEventListener('click', function (e) {
-            if (e.target.closest('.ht-share-btn')) return;
+            if (e.target.closest('.ht-share-btn') || e.target.closest('.held-trigger')) return;
             var targetId = this.getAttribute('data-target');
             var detail = document.getElementById(targetId);
             if (!detail) return;

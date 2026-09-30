@@ -682,6 +682,7 @@ def _present(run, mark, as_of):
     share_pnl, share_note = _share_pnl(run, mark)
     premium_total = rows[-1]["running_premium"] if rows else 0.0
     status = run.status
+    summary = _summary_line(run, rows)
     return {
         "tenant_id": run.tenant_id,
         "account_label": run.account_label,
@@ -691,6 +692,7 @@ def _present(run, mark, as_of):
         "start": run.start,
         "end": run.end,
         "when": _when(run),
+        "summary": summary,
         "share_sentence": _share_sentence(run),
         "share_note": share_note,
         "share_pnl": share_pnl,
@@ -778,6 +780,36 @@ def _when(run):
     if start:
         return f"Since {start}"
     return ""
+
+
+def _summary_line(run, rows):
+    """One plain line: how many calls, and the stretch they covered."""
+    n = 0.0
+    for row in rows:
+        if row.get("side") != "call":
+            continue
+        qty = row.get("contracts") or 0
+        n += qty if qty else 1
+    if abs(n - round(n)) < 0.001:
+        n_txt = str(int(round(n)))
+    else:
+        n_txt = f"{n:g}"
+    word = "call" if abs(n - 1) < 0.001 else "calls"
+    head = f"Sold {n_txt} {word}" if n > 0.001 else "No calls sold yet"
+    start = _fmt_short(run.start)
+    if run.status == "closed" and run.end and start:
+        return f"{head}, {start} – {_fmt_short(run.end)}"
+    if start:
+        return f"{head} since {start}"
+    return head
+
+
+def _fmt_short(value):
+    if isinstance(value, datetime):
+        value = value.date()
+    if not isinstance(value, date):
+        return ""
+    return f"{_MONTHS[value.month - 1]} {value.day}"
 
 
 def _contract_title(contract, qty):
