@@ -1,325 +1,464 @@
 {% extends "base.html" %}
 
 {% block meta_tags %}
-<meta name="description" content="HappyTrader helps options traders see what's really working. Connect a brokerage, sync your accounts, and get strategy auto-detection, performance charts, and AI insights.">
-<meta property="og:description" content="HappyTrader helps options traders see what's really working. Connect a brokerage, sync your accounts, and get strategy auto-detection, performance charts, and AI insights.">
+<meta name="description" content="HappyTrader is a trading mirror for options. Watch a 2.5-minute walkthrough, then connect a brokerage and see each trade, early closes, and covered-call runs. 30-day trial, no credit card.">
+<meta property="og:description" content="HappyTrader is a trading mirror for options. Watch a 2.5-minute walkthrough, then connect a brokerage and see each trade, early closes, and covered-call runs. 30-day trial, no credit card.">
 {% endblock %}
 
 {% block head %}
 <style>
+    .landing-hero h1 {
+        font-size: clamp(2rem, 5vw, 3.15rem);
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #fff;
+        margin: 0 0 0.85rem;
+        line-height: 1.12;
+    }
+    .ht-landing {
+        overflow-x: clip;
+        max-width: 100%;
+        color: #e8edf7;
+    }
+    .ht-wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+    }
     .landing-hero {
         background: transparent;
-        border-radius: 0;
-        padding: 4.5rem 0 3.5rem;
-        color: #e8edf7;
         text-align: center;
+        padding: 2.75rem 0 1.25rem;
         position: relative;
-        overflow: hidden;
-        border-bottom: 1px solid #1c2538;
-        margin-bottom: 0 !important;
     }
-    .landing-hero h1 { font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 650; margin-bottom: 1.25rem; letter-spacing: -0.03em; color: #fff; }
     .landing-hero .lead {
-        font-size: 1.05rem;
         color: #7d8aa3;
-        margin-bottom: 2rem;
+        font-size: 1.05rem;
+        line-height: 1.55;
         max-width: 36rem;
-        margin-left: auto;
-        margin-right: auto;
-        line-height: 1.6;
+        margin: 0 auto 1.5rem;
     }
-    .landing-hero .btn-light {
-        background: #5b8cff; color: #0a0e17; border: none; font-weight: 650;
-        border-radius: 0.45rem; padding: 0.75rem 1.15rem;
+    .ht-stage {
+        max-width: 920px;
+        margin: 0 auto 1.35rem;
     }
-    .landing-hero .btn-light:hover { filter: brightness(1.08); color: #0a0e17; }
-    .landing-hero .btn-outline-light {
-        background: rgba(255,255,255,.03); color: #fff; border: 1px solid #1c2538;
-        border-radius: 0.45rem; font-weight: 550;
-    }
-    .landing-hero .btn-outline-light:hover {
-        border-color: rgba(91,140,255,.45); background: rgba(91,140,255,.14); color: #fff;
-    }
-
-    .section-title {
-        font-size: 1.5rem;
-        font-weight: 700;
-        margin-bottom: 2rem;
-        text-align: center;
-    }
-    .feature-card {
-        border: 1px solid #1c2538;
-        border-radius: 0.55rem;
-        box-shadow: none;
+    .ht-frame {
+        position: relative;
         background: #0c111c;
-        padding: 1.25rem;
+        overflow: hidden;
+    }
+    .ht-frame-wide {
+        aspect-ratio: 16 / 9;
+        border-radius: 0.9rem;
+        border: 1px solid #243049;
+        box-shadow: 0 18px 50px rgba(0,0,0,.35);
+    }
+    .ht-frame-short {
+        aspect-ratio: 9 / 16;
+        border-radius: 1.35rem;
+    }
+    .ht-facade {
+        position: absolute;
+        inset: 0;
+        width: 100%;
         height: 100%;
-        transition: border-color .2s, filter .2s, transform .2s;
-        text-decoration: none;
-        color: #e8edf7;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        display: block;
+        cursor: pointer;
+        background: #121826;
+        color: inherit;
+    }
+    .ht-facade:focus-visible {
+        outline: none;
+        box-shadow: inset 0 0 0 2px #5b8cff;
+    }
+    .ht-poster {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
         display: block;
     }
-    .feature-card:hover {
-        transform: translateY(-1px);
-        border-color: rgba(255,255,255,.22);
-        filter: brightness(1.08);
+    .ht-art {
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(90% 70% at 50% 36%, rgba(91,140,255,.22), transparent 58%),
+            linear-gradient(180deg, #161d2e 0%, #0a0e17 80%);
+    }
+    .ht-art::after {
+        content: "";
+        position: absolute;
+        left: 10%;
+        top: 22%;
+        width: 42%;
+        height: 7px;
+        border-radius: 99px;
+        background: rgba(91,140,255,.9);
+        box-shadow:
+            0 18px 0 0 #243049,
+            0 36px 0 0 #1a2233,
+            0 54px 0 0 rgba(91,140,255,.35);
+    }
+    .ht-art-hero::after {
+        left: 10%;
+        right: 10%;
+        top: auto;
+        bottom: 14%;
+        width: auto;
+        height: 1px;
+        border-radius: 0;
+        background: rgba(91,140,255,.55);
+        box-shadow: none;
+    }
+    .ht-frame-wide .ht-play {
+        width: 4.75rem;
+        height: 4.75rem;
+    }
+    .ht-art-2::after { width: 58%; top: 28%; }
+    .ht-art-3::after { width: 34%; top: 18%; }
+    .ht-art-4::after { left: 18%; width: 50%; top: 34%; }
+    .ht-art-5::after { width: 40%; top: 24%; }
+    .ht-art-6::after { left: 14%; width: 62%; top: 20%; }
+    .ht-play {
+        position: absolute;
+        left: 50%;
+        top: 46%;
+        transform: translate(-50%, -50%);
+        width: 4.25rem;
+        height: 4.25rem;
+        border-radius: 999px;
+        background: #5b8cff;
+        color: #0a0e17;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 8px 28px rgba(10,14,23,.45);
+    }
+    .ht-facade:hover .ht-play { filter: brightness(1.08); }
+    .ht-play svg { margin-left: 3px; display: block; }
+    .ht-duration {
+        position: absolute;
+        left: 0.85rem;
+        bottom: 0.75rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.75rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
         color: #e8edf7;
+        background: rgba(10,14,23,.72);
+        border: 1px solid #243049;
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
     }
-    .feature-icon {
-        background: rgba(91,140,255,.14) !important;
-        color: #5b8cff !important;
-    }
-    .feature-icon {
-        width: 56px;
-        height: 56px;
-        border-radius: 14px;
-        display: flex;
+    .ht-cta-row { margin-top: 0.25rem; }
+    .ht-cta {
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.5rem;
-        margin-bottom: 1rem;
-    }
-    .feature-card h6 { font-weight: 700; margin-bottom: .5rem; }
-    .feature-card h6 { color: #fff; }
-    .feature-card p { color: #7d8aa3; font-size: .9rem; margin-bottom: 0; }
-
-    .how-step {
-        text-align: left;
-        padding: 1.25rem;
-        background: #0c111c;
-        border: 1px solid #1c2538;
-        border-radius: 0.55rem;
-        height: 100%;
-    }
-    .how-step-num {
-        color: #5b8cff;
-        font-weight: 650;
-        font-size: .7rem;
-        letter-spacing: .12em;
-        margin-bottom: .75rem;
-    }
-    .how-step h6 { font-weight: 650; margin-bottom: .5rem; color: #fff; }
-    .how-step p { color: #7d8aa3; font-size: .9rem; margin-bottom: 0; }
-
-    .cta-section {
-        background: #0c111c;
-        border: 1px solid #1c2538;
-        border-radius: 0.55rem;
-        padding: 3rem 1.5rem;
-        color: #e8edf7;
         text-align: center;
+        max-width: 100%;
+        white-space: normal;
+        line-height: 1.35;
+        background: #5b8cff;
+        color: #0a0e17;
+        font-weight: 650;
+        border-radius: 0.45rem;
+        padding: 0.85rem 1.2rem;
+        text-decoration: none;
     }
-    .cta-section h3 { font-weight: 700; margin-bottom: .75rem; }
-    .cta-section p { color: rgba(255,255,255,.85); margin-bottom: 1.5rem; }
-    .cta-section .btn { transition: transform .2s ease, box-shadow .2s ease, opacity .15s; }
-    .cta-section .btn-light:hover,
-    .cta-section .btn-light:focus-visible,
-    .cta-section .btn-outline-light:hover,
-    .cta-section .btn-outline-light:focus-visible {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(0,0,0,.2);
+    .ht-cta:hover, .ht-cta:focus-visible {
+        color: #0a0e17;
+        filter: brightness(1.08);
     }
-    .cta-section .btn-outline-light:active { transform: translateY(0); }
-
-    .section-title { color: #fff; }
-    .landing-footer {
-        padding: 2.5rem 0;
-        margin-top: 4rem;
+    .ht-note {
+        color: #7d8aa3;
+        font-size: 0.92rem;
+        line-height: 1.55;
+        max-width: 38rem;
+        margin: 0.9rem auto 0;
+    }
+    .ht-note a { color: #e8edf7; text-decoration: none; }
+    .ht-note a:hover { color: #5b8cff; }
+    .ht-story {
+        margin-top: 2.75rem;
+        text-align: left;
+    }
+    .ht-story-title {
+        text-align: center;
+        font-size: 1.35rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #fff;
+        margin: 0 0 0.35rem;
+    }
+    .ht-step {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1.15rem;
+        align-items: center;
+        padding: 2rem 0;
         border-top: 1px solid #1c2538;
     }
-    .landing-footer a { color: #7d8aa3; text-decoration: none; font-size: .9rem; }
-    .landing-footer a:hover { color: #5b8cff; text-decoration: underline; }
-
+    .ht-step-num {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        color: #5b8cff;
+        font-weight: 500;
+        font-size: 0.75rem;
+        letter-spacing: 0.14em;
+        margin-bottom: 0.45rem;
+    }
+    .ht-step h3 {
+        font-size: 1.35rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        color: #fff;
+        margin: 0 0 0.45rem;
+    }
+    .ht-step p {
+        color: #7d8aa3;
+        font-size: 0.98rem;
+        line-height: 1.55;
+        margin: 0;
+        max-width: 36rem;
+    }
+    .ht-step a {
+        color: #5b8cff;
+        text-decoration: none;
+    }
+    .ht-step a:hover { text-decoration: underline; }
+    .ht-phone {
+        width: min(17.25rem, 100%);
+        justify-self: center;
+        background: #0c111c;
+        border: 1px solid #243049;
+        border-radius: 1.85rem;
+        padding: 0.55rem 0.55rem 0.7rem;
+    }
+    .ht-phone-bar {
+        width: 4.25rem;
+        height: 0.28rem;
+        border-radius: 999px;
+        background: #243049;
+        margin: 0.2rem auto 0.5rem;
+    }
+    .ht-fine {
+        background: #0c111c;
+        border: 1px solid #1c2538;
+        border-radius: 0.55rem;
+        color: #7d8aa3;
+        font-size: 0.85rem;
+        line-height: 1.55;
+        padding: 0.9rem 1.05rem;
+        margin: 0.5rem 0 1.75rem;
+    }
+    .ht-fine a { color: #8a97b1; }
+    .ht-fine a:hover { color: #5b8cff; }
+    .ht-closer {
+        text-align: center;
+        padding: 0.5rem 0 1rem;
+    }
+    .ht-player {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        background: #0a0e17;
+    }
+    .ht-player iframe,
+    .ht-player video {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        display: block;
+        background: #000;
+    }
+    .ht-player-pending {
+        display: grid;
+        place-items: center;
+        padding: 1.25rem;
+        text-align: center;
+        color: #7d8aa3;
+        font-size: 0.92rem;
+    }
     @media (max-width: 640px) {
-        .landing-hero { padding: 2.75rem 1.25rem; border-radius: 16px; }
-        .landing-hero h1 { font-size: 1.85rem; margin-bottom: .85rem; }
-        .landing-hero .lead { font-size: 1rem; }
-        .landing-hero .btn { padding: .7rem 1.4rem; font-size: .95rem; }
-        .feature-card, .how-step { padding: 1.4rem; }
+        .landing-hero { padding-top: 1.75rem; }
+        .landing-hero h1 { font-size: 1.85rem; }
+        .ht-cta { width: 100%; }
+        .ht-play { width: 3.5rem; height: 3.5rem; }
+    }
+    @media (min-width: 880px) {
+        .ht-step {
+            grid-template-columns: minmax(0, 1fr) 17.25rem;
+            gap: 3.25rem;
+            padding: 2.75rem 0;
+        }
+        .ht-step.is-flip { grid-template-columns: 17.25rem minmax(0, 1fr); }
+        .ht-step.is-flip .ht-step-copy { order: 2; }
+        .ht-phone { justify-self: center; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
+{% macro trial_cta() %}
+{% if signup_enabled %}
+<a class="ht-cta" href="{{ url_for('signup') }}">
+    {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial, no credit card{%- endif -%}
+</a>
+{% endif %}
+{% endmacro %}
 
-{# ── Hero ── #}
-<div class="landing-hero mb-5 position-relative">
-    <h1>Know What's Working</h1>
-    <p class="lead">
-        Options traders finally have a clear view. HappyTrader classifies your trades,
-        tracks performance, and surfaces the insights that matter—so you can trade smarter.
-    </p>
-    <div class="d-flex gap-3 justify-content-center flex-wrap">
-        <a href="{{ url_for('demo_start') }}" class="btn btn-light">See the Live Demo</a>
-        {% if signup_enabled %}
-        <a href="{{ url_for('signup') }}" class="btn btn-outline-light">
-            {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}
-        </a>
+{% macro video_frame(v, wide=false) %}
+<div class="ht-frame {% if wide %}ht-frame-wide{% else %}ht-frame-short{% endif %}">
+    <button type="button" class="ht-facade"
+            data-youtube-id="{{ v.youtube_id }}"
+            data-mp4-url="{{ v.mp4_url }}"
+            data-title="{{ v.title }}"
+            aria-label="Play {{ v.title }}">
+        {% if v.poster_url %}
+        <img class="ht-poster" src="{{ v.poster_url }}" alt="">
+        {% else %}
+        <span class="ht-art ht-art-{{ v.step }}" aria-hidden="true"></span>
         {% endif %}
-        <a href="{{ url_for('login') }}" class="btn btn-outline-light">Sign In</a>
-    </div>
-    <p class="small mt-3 mb-0" style="color: rgba(255,255,255,.75)">
-        The demo is a live mirror of a trading bot's paper account &mdash; simulated
-        money, real market data, not a sample file. No sign-up required.
-    </p>
-    {% if signup_invite_required %}
-    <p class="small mt-2 mb-0" style="color: rgba(255,255,255,.75)">
-        Closed beta &mdash; account creation requires an invite code. Try the demo to look around.
-    </p>
-    {% endif %}
+        <span class="ht-play" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M4.5 2.8a1 1 0 0 1 1.53-.85l8 5.2a1 1 0 0 1 0 1.7l-8 5.2A1 1 0 0 1 4.5 13.2z"/>
+            </svg>
+        </span>
+        {% if v.duration_label %}
+        <span class="ht-duration">{{ v.duration_label }}</span>
+        {% endif %}
+    </button>
 </div>
+{% endmacro %}
 
-{# ── How it works ── #}
-<h2 class="section-title">How it works</h2>
-<div class="row g-4 mb-3">
-    <div class="col-md-4">
-        <div class="how-step">
-            <div class="how-step-num">01</div>
-            <h6>Connect your brokerage</h6>
-            <p>Sign in through SnapTrade — Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only access. HappyTrader never stores your broker password.</p>
+<div class="ht-landing">
+    <div class="ht-wrap">
+        <header class="landing-hero">
+            <h1>Watch the trading mirror</h1>
+            <p class="lead">{{ hero_video.caption }}</p>
+            <div class="ht-stage">
+                {{ video_frame(hero_video, wide=true) }}
+            </div>
+            <div class="ht-cta-row">
+                {{ trial_cta() }}
+            </div>
+            <p class="ht-note">
+                Full product for 30 days, no card. The clock starts when the first sync or CSV upload lands.
+                <a href="{{ url_for('login') }}">Sign in</a>
+                <span aria-hidden="true">·</span>
+                <a href="{{ url_for('demo_start') }}">See the live demo</a>
+                — a trading bot's paper account, simulated money, real market data.
+            </p>
+            {% if signup_invite_required %}
+            <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
+            {% endif %}
+        </header>
+
+        <section class="ht-story" aria-label="Product walkthrough">
+            <h2 class="ht-story-title">One feature at a time</h2>
+            {% for step in story_steps %}
+            <article class="ht-step{% if loop.index is even %} is-flip{% endif %}">
+                <div class="ht-step-copy">
+                    <div class="ht-step-num">{{ '%02d'|format(step.step) }}</div>
+                    <h3>{{ step.title }}</h3>
+                    <p>
+                        {{ step.caption }}
+                        {% if step.links_learn and learn_url %}
+                        <a href="{{ learn_url }}">Open the series</a>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="ht-phone">
+                    <div class="ht-phone-bar" aria-hidden="true"></div>
+                    {{ video_frame(step) }}
+                </div>
+            </article>
+            {% endfor %}
+        </section>
+
+        <p class="ht-fine">
+            Sync your accounts. {% include "_broker_sync_timing.html" %}
+            See your trading profile once the sync finishes.
+            Need older history? Broker sync is not a lifetime archive.
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
+            {% else %}
+            You can upload a CSV after you connect.
+            {% endif %}
+        </p>
+
+        <div class="ht-closer">
+            {{ trial_cta() }}
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="how-step">
-            <div class="how-step-num">02</div>
-            <h6>Sync your accounts</h6>
-            <p>{% include "_broker_sync_timing.html" %} We classify every position — Covered Calls, CSPs, Wheels, spreads — and link it to your account.</p>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="how-step">
-            <div class="how-step-num">03</div>
-            <h6>See your trading profile</h6>
-            <p>See what's working, where you're losing, and get a mirror of your process — including AI-powered insights.</p>
-        </div>
-    </div>
-</div>
-<p class="text-center text-muted small mb-5">
-    Need older history? Broker sync is not a lifetime archive.
-    {% if current_user.is_authenticated %}
-    <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
-    {% else %}
-    You can upload a CSV after you connect.
-    {% endif %}
-</p>
-
-{# ── Features ── #}
-<h2 class="section-title">Built for options traders</h2>
-<div class="row g-4 mb-5">
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('feature_detail', slug='strategy-auto-detection') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(91,140,255,.14); color:#a8b8ff">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M4 11H2v3h2zm5-4H7v7h2zm5-5h-2v12h2zm-2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM6 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1zm-5 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z"/>
-                </svg>
-            </div>
-            <h6>Strategy auto-detection</h6>
-            <p>Covered Call, Cash-Secured Put, Wheel, spreads, Buy and Hold—all classified automatically from your trade data.</p>
-        </a>
-    </div>
-    {% if insights_enabled %}
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('feature_detail', slug='ai-trading-insights') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(184,115,51,.14); color:var(--color-mirror)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
-                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
-                </svg>
-            </div>
-            <h6>AI trading insights</h6>
-            <p>Get a personalized analysis of your style, strengths, and weaknesses—with actionable suggestions to improve.</p>
-        </a>
-    </div>
-    {% endif %}
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('feature_detail', slug='performance-charts') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(253,126,20,.12); color:#fd7e14">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path fill-rule="evenodd" d="M0 0h1v15h15v1H0zm14.817 3.113a.5.5 0 0 1 .07.704l-4.5 5.5a.5.5 0 0 1-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 0 1-.808-.588l4-5.5a.5.5 0 0 1 .758-.06l2.609 2.61 4.15-5.073a.5.5 0 0 1 .704-.07"/>
-                </svg>
-            </div>
-            <h6>Performance charts</h6>
-            <p>Cumulative P&amp;L over time, strategy breakdowns, and symbol-level drill-down so you see the full picture.</p>
-        </a>
-    </div>
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('feature_detail', slug='position-detail') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(0,172,193,.12); color:#00acc1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M11 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2zm-5 4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H6zM2 9a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9z"/>
-                </svg>
-            </div>
-            <h6>Position detail</h6>
-            <p>Click any symbol to see full trade history, strategy timeline, current positions, and cumulative P&amp;L charts.</p>
-        </a>
-    </div>
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('sectors') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(94,234,212,.12); color:#5eead4">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M14.763.075A.5.5 0 0 1 15 .5v15a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V11h-1V8a.5.5 0 0 0-.5-.5H8.5v-1H7.515c-.146 0-.272-.044-.396-.118l-1.18-.708a.5.5 0 0 1-.063-.84l1.71-1.41a.5.5 0 0 1 .064-.041L11 1.232V.5a.5.5 0 0 1 .763-.425zM4.5 15a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V14h4z"/>
-                </svg>
-            </div>
-            <h6>Sector &amp; subsector insights</h6>
-            <p>See where you actually have edge. Each ticker tagged by sector and subsector, so you know which corners of the market are working for you.</p>
-        </a>
-    </div>
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('strategies', view='fit') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(240,85,109,.14); color:#f0556d">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M0 0h5v5H0V0zm6 0h5v5H6V0zm6 0h4v5h-4V0zM0 6h5v5H0V6zm6 0h5v5H6V6zm6 0h4v5h-4V6zM0 12h5v4H0v-4zm6 0h5v4H6v-4zm6 0h4v4h-4v-4z"/>
-                </svg>
-            </div>
-            <h6>Strategy fit matrix</h6>
-            <p>A heatmap of every strategy crossed with every sector you've traded. Spot your sweet spots and avoid the corners that quietly drain capital.</p>
-        </a>
-    </div>
-    <div class="col-sm-6 col-lg-4">
-        <a href="{{ url_for('feature_detail', slug='multi-account') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(138,151,177,.14); color:#8a97b1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M4 10.781c.087 2.664.415 4.223.857 5.418a4.484 4.484 0 0 0 1.508 1.718 8.975 8.975 0 0 1-2.227.992 4.502 4.502 0 0 1-.83-.258 4.25 4.25 0 0 1-1.4-1.053 4.503 4.503 0 0 1-.798-2.272c 0-.328.028-.65.083-.962a4.56 4.56 0 0 1 .208-1.004 2.5 2.5 0 0 1 .578-.914 4.35 4.35 0 0 1 1.28-.618A5.46 5.46 0 0 1 6.323 5.5H5.5v-.812h1.261a1.755 1.755 0 0 1-.38-1.492 4.5 4.5 0 0 1 1.054-1.63 5.5 5.5 0 0 1 2.043-.9V4h.5v1.123a5.5 5.5 0 0 1 2.043.9 4.5 4.5 0 0 1 1.054 1.63 1.755 1.755 0 0 1-.38 1.492h1.261V5.5h-.823a5.46 5.46 0 0 1-1.324.18 4.35 4.35 0 0 1-1.28.618 2.5 2.5 0 0 1-.578.914 4.56 4.56 0 0 1-.208 1.004 4.5 4.5 0 0 1-.083.962z"/>
-                </svg>
-            </div>
-            <h6>Multi-account</h6>
-            <p>Track every brokerage account in one place. Portfolio-wide views plus per-account breakdowns.</p>
-        </a>
-    </div>
 </div>
 
-{# ── CTA ── #}
-<div class="cta-section mb-5">
-    <h3>Ready to see what's really working?</h3>
-    <p class="mb-0">Try the demo — no signup. Or create a free account and connect a brokerage.</p>
-    <div class="d-flex gap-3 justify-content-center flex-wrap">
-        <a href="{{ url_for('demo_start') }}" class="btn btn-light">Try Demo</a>
-        {% if signup_enabled %}
-        <a href="{{ url_for('signup') }}" class="btn btn-outline-light btn-lg px-4 fw-semibold">
-            {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}
-        </a>
-        {% endif %}
-    </div>
-</div>
+<script>
+/* Click-to-play only. No iframe is in the initial HTML, and nothing plays
+   (with or without sound) until this handler runs. autoplay=1 is applied
+   to the embed created by that click so the visitor does not have to
+   press play a second time inside the player. */
+(function () {
+    var YT = "https://www.youtube-nocookie.com/embed/";
 
-{% endblock %}
+    function youtubeId(raw) {
+        return /^[A-Za-z0-9_-]{6,64}$/.test(raw || "") ? raw : "";
+    }
 
-{% block footer %}
-<footer class="landing-footer">
-    <div class="d-flex flex-wrap justify-content-center gap-4">
-        <a href="{{ url_for('demo_start') }}">Try Demo</a>
-        <a href="{{ url_for('login') }}">Sign In</a>
-        {% if signup_enabled %}
-        <a href="{{ url_for('signup') }}">
-            {% if signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}
-        </a>
-        {% endif %}
-        <a href="{{ url_for('pricing') }}">Pricing</a>
-        <a href="{{ url_for('faq') }}">FAQ</a>
-        <a href="{{ url_for('privacy') }}">Privacy</a>
-        <a href="{{ url_for('terms') }}">Terms</a>
-        <a href="{{ url_for('contact') }}">Contact</a>
-    </div>
-    <p class="text-center text-muted small mt-3 mb-0">&copy; {{ current_year() }} HappyTrader. All rights reserved. Options strategies made clear.</p>
-</footer>
+    function mediaUrl(raw) {
+        if (!raw) return "";
+        if (raw.charAt(0) === "/" && raw.charAt(1) !== "/") return raw;
+        try {
+            var parsed = new URL(raw, window.location.origin);
+            if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+            if (parsed.protocol === "http:" && parsed.origin !== window.location.origin) return "";
+            return parsed.href;
+        } catch (err) {
+            return "";
+        }
+    }
+
+    function mount(btn) {
+        var title = btn.getAttribute("data-title") || "Video";
+        var id = youtubeId(btn.getAttribute("data-youtube-id"));
+        var mp4 = mediaUrl(btn.getAttribute("data-mp4-url"));
+        var player = document.createElement("div");
+        player.className = "ht-player";
+        if (id) {
+            var iframe = document.createElement("iframe");
+            iframe.src = YT + encodeURIComponent(id) + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
+            iframe.title = title;
+            iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+            iframe.setAttribute("allowfullscreen", "");
+            iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+            player.appendChild(iframe);
+        } else if (mp4) {
+            var video = document.createElement("video");
+            video.src = mp4;
+            video.controls = true;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.setAttribute("playsinline", "");
+            player.appendChild(video);
+        } else {
+            player.className += " ht-player-pending";
+            player.setAttribute("role", "status");
+            player.textContent = "This video is not public yet.";
+        }
+        btn.replaceWith(player);
+        var focusTarget = player.querySelector("iframe, video") || player;
+        if (focusTarget.tabIndex < 0 && focusTarget === player) player.tabIndex = -1;
+        try { focusTarget.focus(); } catch (err) { /* focus is optional */ }
+    }
+
+    document.querySelectorAll(".ht-facade").forEach(function (btn) {
+        btn.addEventListener("click", function () { mount(btn); });
+    });
+})();
+</script>
 {% endblock %}
