@@ -225,16 +225,37 @@ def _friendly_time_filter(value):
 app.add_template_filter(_friendly_time_filter, name="friendly_time")
 
 
-def _human_date(value):
-    """ISO ``2026-09-21`` → ``Sep 21, 2026``. Other strings pass through."""
+def _parse_iso_date(value):
+    """First 10 characters as a date, or None when it is not ISO."""
     if value is None or value == "":
-        return ""
+        return None
     text = str(value)[:10]
     try:
-        parsed = datetime.strptime(text, "%Y-%m-%d")
+        return datetime.strptime(text, "%Y-%m-%d")
     except ValueError:
-        return str(value)
+        return None
+
+
+def _human_date(value):
+    """ISO ``2026-09-21`` → ``Sep 21, 2026``. Other strings pass through."""
+    parsed = _parse_iso_date(value)
+    if parsed is None:
+        return "" if value is None or value == "" else str(value)
     return parsed.strftime("%b %-d, %Y")
+
+
+def _compact_date(value):
+    """Dense table date. Current year drops the year (``Sep 25``).
+
+    Any other year keeps a short year (``Apr 23 '25``) so a multi-year
+    book stays readable without the width of ``Sep 25, 2026``.
+    """
+    parsed = _parse_iso_date(value)
+    if parsed is None:
+        return "" if value is None or value == "" else str(value)
+    if parsed.year == datetime.now().year:
+        return parsed.strftime("%b %-d")
+    return parsed.strftime("%b %-d '%y")
 
 
 def _win_rate_label(rate, winners=None, losers=None):
@@ -258,6 +279,7 @@ def _win_rate_label(rate, winners=None, losers=None):
 
 
 app.add_template_filter(_human_date, name="human_date")
+app.add_template_filter(_compact_date, name="compact_date")
 app.add_template_global(_win_rate_label, name="win_rate_label")
 
 
