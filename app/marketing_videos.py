@@ -6,7 +6,9 @@ is an optional https URL or a site-root path such as ``/static/...``.
 ``poster`` is optional. A site-relative static path, a root path, or an
 https URL. When it is empty and ``youtube_id`` is set, the page uses the
 YouTube ``maxresdefault`` thumbnail on i.ytimg.com. When both are empty,
-the poster is a CSS frame.
+the poster is a CSS frame. ``poster_srcset`` is optional pairs of
+``(path, "1280w")`` for a responsive poster. The hero uses that so the
+walkthrough does not show the YouTube still.
 
 The template never emits an iframe. ``landing.html`` builds a
 youtube-nocookie embed only after a click.
@@ -26,7 +28,13 @@ HERO_VIDEO = {
     "duration_label": "2:30",
     "youtube_id": "NpU79Lwkdn4",
     "mp4_url": "",
-    "poster": "",
+    # Custom still. The YouTube maxres frame shows account-wide totals.
+    "poster": "marketing/walkthrough_poster_1280.webp",
+    "poster_srcset": (
+        ("marketing/walkthrough_poster_1280.webp", "1280w"),
+        ("marketing/walkthrough_poster.webp", "1920w"),
+    ),
+    "poster_sizes": "(min-width: 960px) 920px, 100vw",
 }
 
 STORY_STEPS = [
@@ -164,17 +172,33 @@ def resolve_learn_url():
     return None
 
 
+def _static_poster(path):
+    path = (path or "").strip()
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://", "/")):
+        return path
+    from flask import url_for
+    return url_for("static", filename=path)
+
+
 def _poster_url(item):
     poster = (item.get("poster") or "").strip()
     youtube_id = (item.get("youtube_id") or "").strip()
     if poster:
-        if poster.startswith(("http://", "https://", "/")):
-            return poster
-        from flask import url_for
-        return url_for("static", filename=poster)
+        return _static_poster(poster)
     if youtube_id:
         return f"https://i.ytimg.com/vi/{youtube_id}/maxresdefault.jpg"
     return ""
+
+
+def _poster_srcset(item):
+    parts = []
+    for path, width in item.get("poster_srcset") or ():
+        url = _static_poster(path)
+        if url:
+            parts.append(f"{url} {width}")
+    return ", ".join(parts)
 
 
 def present_video(item):
@@ -184,6 +208,8 @@ def present_video(item):
     out["mp4_url"] = (item.get("mp4_url") or "").strip()
     out["poster"] = (item.get("poster") or "").strip()
     out["poster_url"] = _poster_url(out)
+    out["poster_srcset"] = _poster_srcset(out)
+    out["poster_sizes"] = (item.get("poster_sizes") or "").strip()
     out["links_learn"] = bool(item.get("links_learn"))
     return out
 
