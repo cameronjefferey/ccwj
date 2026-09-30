@@ -251,6 +251,12 @@ def _current_year() -> int:
 
 app.add_template_global(_current_year, name="current_year")
 
+from app.glossary import render_term as _render_term
+from app.glossary import render_term_mark as _render_term_mark
+
+app.add_template_global(_render_term, name="term")
+app.add_template_global(_render_term_mark, name="term_mark")
+
 
 @app.context_processor
 def _inject_feature_flags():
@@ -348,6 +354,7 @@ def _inject_feature_flags():
                 get_broker_tenants_for_user as _get_broker_tenants_for_user,
                 list_account_groups as _list_account_groups,
             )
+            from app.account_scope import picker_nickname_choices
             from app.routes import (
                 _account_rename_urls_for_rows,
                 _blank_query_text,
@@ -366,12 +373,9 @@ def _inject_feature_flags():
             _owned_rows = _get_broker_tenants_for_user(current_user.id) or []
             _label_map = _tenant_label_map_for_user(current_user.id) or {}
             account_rename_urls = _account_rename_urls_for_rows(_owned_rows)
-            scope_account_choices = [
-                {"tenant_id": tid, "label": lab}
-                for tid, lab in sorted(
-                    _label_map.items(), key=lambda kv: (kv[1] or "").lower()
-                )
-            ]
+            # Header picker: nicknames only. Masks and "Schwab Account"
+            # stay out of this menu. Table cells still use account_label.
+            scope_account_choices = picker_nickname_choices(_owned_rows)
             try:
                 _args = _req.args
             except Exception:
@@ -749,3 +753,8 @@ from app import profile_page  # noqa: F401  registers /profile (settings hub)
 from app import webhooks  # noqa: F401  registers /webhooks/* routes
 from app import billing  # noqa: F401  registers /billing/* + /webhooks/stripe
 from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuild-triggered flush + warm)
+
+# After the session-idle before_request so a timed-out session is logged
+# out before we redirect into a saved account scope.
+from app.account_scope import register_account_scope
+register_account_scope(app)

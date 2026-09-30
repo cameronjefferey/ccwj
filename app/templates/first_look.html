@@ -107,13 +107,13 @@
         <div class="col-6 col-md-3">
             <div class="fl-stat">
                 <div class="val text-positive">${{ "{:,.0f}".format(profile.premium_collected) }}</div>
-                <div class="lbl">Premium Collected</div>
+                <div class="lbl">{{ term('Premium Collected') }}</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="fl-stat">
                 <div class="val">{{ "{:.0%}".format(profile.win_rate) }}</div>
-                <div class="lbl">Win Rate</div>
+                <div class="lbl">{{ term('Win Rate') }}</div>
             </div>
         </div>
         <div class="col-6 col-md-3">

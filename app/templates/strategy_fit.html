@@ -151,7 +151,7 @@
         display: inline-flex; gap: 0; background: #121826; padding: 3px;
         border-radius: 0.45rem; border: 1px solid #243049;
     }
-    .metric-toggle button,
+    .metric-toggle button:not(.ht-term-btn),
     .metric-toggle a {
         background: transparent; border: 0; color: #8a97b1;
         padding: .35rem .85rem; border-radius: 0.35rem;
@@ -161,10 +161,11 @@
         text-decoration: none;
         display: inline-flex; align-items: center;
     }
-    .metric-toggle button.active,
+    .metric-toggle button:not(.ht-term-btn).active,
     .metric-toggle a.active { background: rgba(91,140,255,.15); color: #5b8cff; }
-    .metric-toggle button:hover:not(.active),
+    .metric-toggle button:not(.ht-term-btn):hover:not(.active),
     .metric-toggle a:hover:not(.active) { color: #fff; background: rgba(255,255,255,.04); }
+    .metric-toggle .ht-term { align-self: center; margin: 0 .15rem; }
 
     .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
     .visibility-toggles .form-check { font-size: .78rem; color: var(--ht-muted); }
@@ -661,9 +662,9 @@
             <a href="#" class="active" aria-current="page">Subsector</a>
             {% endif %}
             <a href="{{ scoped_url('strategies', view='fit', dim='dte', _anchor='fit-controls') }}"
-               class="{% if dim == 'dte' %}active{% endif %}">DTE</a>
+               class="{% if dim == 'dte' %}active{% endif %}">DTE</a>{{ term_mark('DTE') }}
             <a href="{{ scoped_url('strategies', view='fit', dim='moneyness', _anchor='fit-controls') }}"
-               class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>
+               class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>{{ term_mark('Moneyness') }}
         </div>
     </div>
 
@@ -672,7 +673,7 @@
         <div class="metric-toggle" id="metricToggle">
             <button type="button" data-metric="total_pnl" class="active">Total Return</button>
             <button type="button" data-metric="expectancy">Per trade</button>
-            <button type="button" data-metric="win_rate">Win rate</button>
+            <button type="button" data-metric="win_rate">Win rate</button>{{ term_mark('Win rate') }}
             <button type="button" data-metric="edge">Edge vs. you</button>
         </div>
     </div>
@@ -703,9 +704,9 @@
 {% if dim in ('dte', 'moneyness') %}
 <p class="text-muted small mb-2" style="margin-top: -0.4rem;">
     {% if dim == 'dte' %}
-    DTE = days to expiration when the contract was opened. Equity-only strategies (no option contracts) are shown for context but don't have data here.
+    {{ term('DTE') }} is days to expiration when the contract was opened. Equity-only strategies (no option contracts) are shown for context but don't have data here.
     {% elif dim == 'moneyness' %}
-    Moneyness is measured at the time the contract was opened (within ±2% of strike = ATM). Equity-only strategies are shown for context but don't have data here.
+    {{ term('Moneyness') }} is measured at the time the contract was opened (within ±2% of strike = {{ term('ATM', 'moneyness') }}). Equity-only strategies are shown for context but don't have data here.
     {% endif %}
 </p>
 {% endif %}
@@ -919,11 +920,11 @@
 
         <div class="panel-stats">
             <div class="stat"><div class="lbl">Trades</div><div class="val" id="panelTrades">0</div></div>
-            <div class="stat"><div class="lbl">Win rate</div><div class="val" id="panelWinRate">—</div></div>
+            <div class="stat"><div class="lbl">{{ term('Win rate') }}</div><div class="val" id="panelWinRate">—</div></div>
             <div class="stat"><div class="lbl">Per trade</div><div class="val" id="panelExpectancy">$0</div></div>
             <div class="stat"><div class="lbl">W / L</div><div class="val" id="panelWL">— / —</div></div>
-            <div class="stat"><div class="lbl">Realized</div><div class="val" id="panelRealized">$0</div></div>
-            <div class="stat"><div class="lbl">Unrealized</div><div class="val" id="panelUnrealized">$0</div></div>
+            <div class="stat"><div class="lbl">{{ term('Realized') }}</div><div class="val" id="panelRealized">$0</div></div>
+            <div class="stat"><div class="lbl">{{ term('Unrealized') }}</div><div class="val" id="panelUnrealized">$0</div></div>
         </div>
 
         <div class="panel-section-title" id="panelSymbolsTitle">Top symbols</div>

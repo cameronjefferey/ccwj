@@ -38,8 +38,8 @@
                         <th class="sortable text-end" data-sort="num">Net</th>
                         <th class="sortable text-end" data-sort="num" data-m="hide">Capital</th>
                         <th class="sortable text-end" data-sort="num" data-m="hide">Max Days</th>
-                        <th class="sortable text-end" data-sort="num">% Return</th>
-                        <th class="sortable text-end" data-sort="num" data-m="hide">Annualized</th>
+                        <th class="sortable text-end" data-sort="num">{{ term('% Return', 'return-on-capital') }}</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">{{ term('Annualized') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -175,7 +175,7 @@
         <h6 class="fw-bold mb-1">Position Breakdown</h6>
         <p class="text-muted small mb-3">
             Per symbol: equity P&amp;L vs option P&amp;L vs dividends, net total,
-            % return on capital deployed, and a holding-period annualized estimate
+            % {{ term('return on capital') }} deployed, and a holding-period {{ term('annualized') }} estimate
             (30-day minimum window, $200 capital floor so tiny/new lots don&rsquo;t
             extrapolate to absurd rates).
         </p>
@@ -193,8 +193,8 @@
                         <th class="sortable text-end" data-sort="num">Net</th>
                         <th class="sortable text-end" data-sort="num" data-m="hide">Capital</th>
                         <th class="sortable text-end" data-sort="num" data-m="hide">Days</th>
-                        <th class="sortable text-end" data-sort="num">% Return</th>
-                        <th class="sortable text-end" data-sort="num" data-m="hide">Annualized</th>
+                        <th class="sortable text-end" data-sort="num">{{ term('% Return', 'return-on-capital') }}</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">{{ term('Annualized') }}</th>
                         <th class="sortable" data-sort="str" data-m="hide">Status</th>
                     </tr>
                 </thead>

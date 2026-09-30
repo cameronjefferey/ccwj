@@ -2180,6 +2180,9 @@ def position_detail(symbol):
     # that's currently toggled off still appears and can be turned back on.
     accounts_all_df = _filter_df_by_tenant_ids(accounts_all_df, all_owned_scope)
     selected_tenant_set = set(tenant_scope) if tenant_scope is not None else None
+    from app.account_scope import nickname_map as _nickname_map
+    from app.models import get_broker_tenants_for_user as _tenants_for_picker
+    _picker_labels = _nickname_map(_tenants_for_picker(_viewer_id) or [])
     account_toggles = []
     if (
         accounts_all_df is not None
@@ -2194,7 +2197,7 @@ def position_detail(symbol):
             _seen_tids.add(_tid)
             account_toggles.append({
                 "tenant_id": _tid,
-                "label": _account_display_for(_tid, str(_r.get("account") or "")),
+                "label": _picker_labels.get(_tid) or "Unnamed account",
                 "selected": True if selected_tenant_set is None else (_tid in selected_tenant_set),
             })
         account_toggles.sort(key=lambda a: a["label"])
