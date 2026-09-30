@@ -383,8 +383,9 @@ What's working:
   it cannot widen the page. Each row opens that contract's chart. On a
   phone the chart is a full-viewport bottom sheet. The difference uses
   the same words on the card and in the panel ("$X more if held" /
-  "$X less if held"). The same pill
-  stays on the Position Legs row. The panel steps between charts,
+  "$X less if held"). The Position Legs cell shows that if-held P&L
+  in dollars, or an em dash when the expiry counterfactual does not
+  apply; the same sentence is the cell's tooltip. The panel steps between charts,
   largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
   name when privacy mode is on. Math lives in `app/held_chart.py`; no
