@@ -644,7 +644,10 @@ def test_several_charts_render_a_stepper():
         html = app.jinja_env.get_template("_held_to_expiry.html").render(
             held_charts=charts, held_summary=summary)
     assert "across 2 trades" in html
-    assert html.count("held-fold-row") == 2
+    # The class name also appears in the fold CSS and the keydown handler.
+    # Count the table rows themselves; one per early exit.
+    assert html.count('<tr class="held-fold-row"') == len(charts)
+    assert summary["count"] == len(charts) == len(summary["rows"])
     assert "data-held-prev" in html
     assert "data-held-next" in html
     assert 'data-held-pane="held-0"' in html
