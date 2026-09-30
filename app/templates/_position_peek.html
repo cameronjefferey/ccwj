@@ -322,7 +322,10 @@
             }
             heldNum('Realized', data.held.realized_display, data.held.realized_pnl);
             heldNum('If held', data.held.if_held_display, data.held.pnl_if_held);
-            heldNum('Difference', data.held.difference_display, data.held.difference);
+            // Negative warehouse delta means holding finished higher.
+            // Color that the same way as the "$X more if held" pill.
+            heldNum('Difference', data.held.difference_display,
+                data.held.difference == null ? null : -data.held.difference);
             html += '</div>';
             html += heldSpark(data.held.points);
             html += '<div class="meta">Dashed line is intrinsic value from the stock\'s close, an estimate. Fees aren\'t included.</div>';

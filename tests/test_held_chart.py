@@ -72,6 +72,53 @@ def test_pnl_if_held_is_realized_minus_expiry_delta():
     assert pnl_if_held(10.0, None) is None
 
 
+def test_rklb_seven_call_difference_is_close_cash_versus_settlement():
+    """One RKLB $7 call, expiry intrinsic $17, warehouse delta −$61,637.
+
+    The panel does not recompute that dollar. For a short, settlement
+    cash is −intrinsic × 100 × contracts, and the delta is closing cash
+    minus that settlement. Those inputs imply a $633.37/share buyback
+    against a $17 finish: paying $63,337 to close, versus $1,700 to
+    settle, is exactly $61,637. The chart divides that cash by
+    contracts × 100, so the marker is $633.37, not a second multiplier.
+    """
+    intrinsic = 17.0
+    contracts = 1
+    delta = -61637.0
+    settlement = -intrinsic * 100 * contracts
+    closing = delta + settlement
+    assert settlement == -1700.0
+    assert closing == -63337.0
+    realized = 200.0 + closing
+    charts = build_held_charts(pd.DataFrame([_row(
+        trade_symbol="RKLB  250912C00007000",
+        option_strike=7.0,
+        option_expiry=date(2025, 9, 12),
+        direction="Sold",
+        contracts=contracts,
+        realized_pnl=realized,
+        cost_to_close=closing,
+        proceeds_from_close=0.0,
+        intrinsic_at_expiry=intrinsic,
+        early_close_vs_expiry_delta=delta,
+        underlying_close_at_expiry=24.0,
+    )]), _prices([
+        (date(2025, 8, 12), 20.0),
+        (date(2025, 8, 13), 22.0),
+        (date(2025, 9, 12), 24.0),
+    ]))
+    assert len(charts) == 1
+    c = charts[0]
+    assert c["label"] == "$7 call"
+    assert c["contracts"] == 1
+    assert c["expiry_price"] == pytest.approx(17.0)
+    assert c["close_price"] == pytest.approx(633.37)
+    assert c["difference"] == -61637.0
+    assert c["pnl_if_held"] == pytest.approx(realized - delta)
+    assert c["difference_display"] == "$61,637 more if held"
+    assert outcome_pill(c["difference"]) == c["difference_display"]
+
+
 def test_intrinsic_calls_and_puts():
     assert intrinsic_per_share("C", 41, 48.5) == pytest.approx(7.5)
     assert intrinsic_per_share("Call", 41, 40) == 0
@@ -495,9 +542,10 @@ def test_headline_for_one_early_close_names_the_cost():
     assert summary["rows"][0]["contract"] == "$41 call Sep 12"
     assert summary["rows"][0]["contracts"] == 25
     assert summary["rows"][0]["closed"] == "Aug 13"
-    assert summary["rows"][0]["pill"] == "+$15,266 more"
+    assert summary["rows"][0]["pill"] == "$15,266 more if held"
     assert summary["rows"][0]["dom_id"] == "held-0"
-    assert outcome_pill(charts[0]["difference"]) == "+$15,266 more"
+    assert charts[0]["difference_display"] == "$15,266 more if held"
+    assert outcome_pill(charts[0]["difference"]) == "$15,266 more if held"
 
 
 def test_headline_sums_several_exits_and_opens_the_largest():
@@ -543,7 +591,8 @@ def test_headline_says_saved_when_early_exits_came_out_ahead():
     ]), _onon_prices())
     summary = held_page_summary(charts)
     assert summary["headline"] == "Closing early saved you $400 across 1 trade vs holding"
-    assert outcome_pill(400) == "$400 less"
+    assert outcome_pill(400) == "$400 less if held"
+    assert charts[0]["difference_display"] == "$400 less if held"
     assert outcome_pill(0) == "Same"
 
 
@@ -565,7 +614,7 @@ def test_stamp_marks_only_the_matching_option_row():
         {"type": "equity", "trade_symbol": "ONON", "open_date": "2025-08-12"},
     ]
     stamp_held_column(charts, outcomes)
-    assert outcomes[0]["held_pill"] == "+$15,266 more"
+    assert outcomes[0]["held_pill"] == "$15,266 more if held"
     assert outcomes[0]["held_better"] is True
     assert outcomes[0]["held_id"] == "held-0"
     assert "held_pill" not in outcomes[1]
@@ -591,7 +640,15 @@ def test_template_renders_the_headline_and_keeps_the_chart_card():
     assert "held-fold-row" in html
     assert "+$11,933" in html
     assert "-$3,333" in html
-    assert "-$15,266" in html
+    assert "$15,266 more if held" in html
+    assert "Opening cash plus intrinsic" not in html
+    assert "What you paid or received to open it" in html
+    assert "min-width: 34rem" not in html
+    assert "overflow: clip" in html
+    assert "100dvw" in html
+    assert "held-fold-card" in html
+    assert "incomingFromAbove" in html
+    assert "seriesCrosses" in html
     assert "Fees aren" in html and "t included." in html
     assert "Per share" in html
     assert "Contract $" in html
@@ -647,6 +704,7 @@ def test_several_charts_render_a_stepper():
     # The class name also appears in the fold CSS and the keydown handler.
     # Count the table rows themselves; one per early exit.
     assert html.count('<tr class="held-fold-row"') == len(charts)
+    assert html.count('class="held-fold-card held-fold-row"') == len(charts)
     assert summary["count"] == len(charts) == len(summary["rows"])
     assert "data-held-prev" in html
     assert "data-held-next" in html

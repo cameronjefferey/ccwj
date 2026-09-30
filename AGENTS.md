@@ -374,9 +374,14 @@ What's working:
   Just above the Position Legs table, a collapsed "If held to expiration"
   block is the headline: the total and a count ("Closing early cost you
   $X across N trades vs holding to expiration", or "saved you" when the
-  early exits came out ahead). Expanding it lists each early close
+  early exits came out ahead).   Expanding it lists each early close
   (contract, contracts, closed date, actual P&L, if-held P&L, difference
-  pill). Each of those rows opens that contract's chart. The same pill
+  pill). Below 576px each exit is a stacked card instead of that table,
+  so the difference stays on screen. The fold clips overflow so opening
+  it cannot widen the page. Each row opens that contract's chart. On a
+  phone the chart is a full-viewport bottom sheet. The difference uses
+  the same words on the card and in the panel ("$X more if held" /
+  "$X less if held"). The same pill
   stays on the Position Legs row. The panel steps between charts,
   largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
