@@ -359,49 +359,108 @@ def _next_term_id(slug):
     return f"ht-term-{slug}"
 
 
-def _tip_markup(entry, label_html):
-    tip_id = _next_term_id(entry["slug"])
+def _pop_html(entry, tip_id):
     definition = escape(entry["definition"])
-    title = escape(entry["title"])
     more = learn_more_url(entry["slug"])
     more_html = ""
     if more:
         more_html = (
             f'<a class="ht-term-more" href="{escape(more)}">Learn more</a>'
         )
-    # The button is a sibling of the label text so it is valid next to an
-    # <a>, and type="button" so it does not submit a filter form.
-    return Markup(
-        '<span class="ht-term">'
-        f'{label_html}'
-        f'<button type="button" class="ht-term-btn" aria-expanded="false" '
-        f'aria-controls="{tip_id}" aria-label="Definition of {title}">'
-        '<span class="ht-term-i" aria-hidden="true">i</span>'
-        '</button>'
+    return (
         f'<span id="{tip_id}" class="ht-term-pop" role="tooltip">'
         f'<span class="ht-term-def">{definition}</span>'
         f'{more_html}'
         '</span>'
+    )
+
+
+def _tip_markup(entry, trigger_html):
+    tip_id = _next_term_id(entry["slug"])
+    return Markup(
+        '<span class="ht-term">'
+        f'{trigger_html}'
+        f'{_pop_html(entry, tip_id)}'
         '</span>'
     )
 
 
 def render_term(label, slug=None):
-    """Label plus an accessible definition control.
+    """The label itself is the definition control (dotted underline).
 
-    Unknown labels render as escaped text with no control, so a header
-    can call this unconditionally.
+    No extra icon: Positions columns are fixed-width, and a sibling
+    "i" was wide enough to ellipsize the header. Unknown labels render
+    as escaped text, so a header can call this unconditionally.
+    ``type="button"`` so the control does not submit a filter form.
+    The visible word stays the accessible name; the definition is
+    ``aria-describedby``.
     """
     entry = lookup_term(label, slug)
     safe = escape(str(label or ""))
     if not entry:
         return Markup(safe)
-    return _tip_markup(entry, f'<span class="ht-term-label">{safe}</span>')
+    tip_id = _next_term_id(entry["slug"])
+    trigger = (
+        f'<button type="button" class="ht-term-btn" aria-expanded="false" '
+        f'aria-controls="{tip_id}" aria-describedby="{tip_id}">'
+        f'{safe}</button>'
+    )
+    return Markup(
+        '<span class="ht-term">'
+        f'{trigger}'
+        f'{_pop_html(entry, tip_id)}'
+        '</span>'
+    )
+
+
+def render_term_link(label, href, slug=None):
+    """Sortable header: the existing link is the definition control.
+
+    A second icon beside the link ellipsizes fixed-width columns.
+    Hover, focus, and a coarse-pointer tap still open the definition;
+    a fine-pointer click follows ``href``.
+    """
+    entry = lookup_term(label, slug)
+    safe = escape(str(label or ""))
+    url = escape(str(href or ""), quote=True)
+    if not entry:
+        return Markup(f'<a href="{url}">{safe}</a>')
+    tip_id = _next_term_id(entry["slug"])
+    trigger = (
+        f'<a class="ht-term-btn" href="{url}" aria-expanded="false" '
+        f'aria-controls="{tip_id}" aria-describedby="{tip_id}">'
+        f'{safe}</a>'
+    )
+    return Markup(
+        '<span class="ht-term">'
+        f'{trigger}'
+        f'{_pop_html(entry, tip_id)}'
+        '</span>'
+    )
 
 
 def render_term_mark(label, slug=None):
-    """Definition control only, for a header whose text is already a link."""
+    """Small "i" when the visible label cannot be the control.
+
+    Accounts KPI labels are rewritten with ``textContent``, which would
+    delete a button wrapped around that text. Those cards are not
+    fixed-width columns, so the icon can sit beside the label.
+    """
     entry = lookup_term(label, slug)
     if not entry:
         return Markup("")
-    return _tip_markup(entry, "")
+    tip_id = _next_term_id(entry["slug"])
+    title = escape(entry["title"])
+    trigger = (
+        f'<button type="button" class="ht-term-btn ht-term-mark" '
+        f'aria-expanded="false" aria-controls="{tip_id}" '
+        f'aria-label="Definition of {title}">'
+        '<span class="ht-term-i" aria-hidden="true">i</span>'
+        '</button>'
+    )
+    return Markup(
+        '<span class="ht-term">'
+        f'{trigger}'
+        f'{_pop_html(entry, tip_id)}'
+        '</span>'
+    )
