@@ -149,6 +149,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert (root / "app" / "static" / name).is_file()
     assert "marketing/amd-pnl.png" not in html
     assert "Real account · BE" in html
+    assert "Cumulative P&amp;L on BE trades, April to September 2026, with trade-day markers" in html
+    assert "account BE" not in html
     assert (
         "Every trade day on one line. The run-up, the drawdown and the recovery, "
         "with options and shares split out."
