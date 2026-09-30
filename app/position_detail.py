@@ -3077,6 +3077,8 @@ def position_detail(symbol):
 
     symbol_sector = _first_nonempty(summary_df, "sector") or _first_nonempty(current_df, "sector")
     symbol_subsector = _first_nonempty(summary_df, "subsector") or _first_nonempty(current_df, "subsector")
+    from app.sector_labels import classify_symbol
+    symbol_sector, symbol_subsector = classify_symbol(symbol, symbol_sector, symbol_subsector)
     symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
 
     # Next-earnings pill for the hero. dict form: {"date": "YYYY-MM-DD",
@@ -3605,7 +3607,11 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
                 if abs(qty - round(qty)) < 1e-6:
                     qty_label = f"{abs(round(qty)):,.0f} sh"
                 else:
-                    qty_label = f"{abs(qty):,.4f} sh".rstrip("0").rstrip(".") + " sh"
+                    # rstrip runs on the number only. Appending " sh" first
+                    # left the unit in the string, so a fractional lot
+                    # rendered as "10.5000 sh sh".
+                    qty_text = f"{abs(qty):,.4f}".rstrip("0").rstrip(".")
+                    qty_label = qty_text + " sh"
             holdings.append({
                 "kind": "option" if is_opt else "equity",
                 "label": label,

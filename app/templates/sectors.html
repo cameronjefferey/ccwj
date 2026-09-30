@@ -299,8 +299,8 @@
 
 {% if unknown_count and unknown_count > 0 %}
 <div class="ind-section-note">
-    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} couldn't be matched to a sector yet —
-    they'll show up under <em>Unknown</em>. They fill in automatically as the daily metadata refresh picks them up.
+    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} still {{ 'has' if unknown_count == 1 else 'have' }} no sector.
+    {{ 'It shows' if unknown_count == 1 else 'They show' }} under <em>Unclassified</em>, after the named sectors.
 </div>
 {% endif %}
 

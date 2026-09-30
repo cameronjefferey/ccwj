@@ -987,6 +987,25 @@
         var sign = v < 0 ? '-' : (signed && v > 0 ? '+' : '');
         return sign + '$' + abs;
     };
+    window.htLocalTimes = function (root) {
+        var nodes = (root || document).querySelectorAll('time.ht-local-time[datetime]');
+        nodes.forEach(function (el) {
+            var raw = el.getAttribute('datetime');
+            if (!raw) return;
+            var d = new Date(raw);
+            if (isNaN(d.getTime())) return;
+            el.textContent = d.toLocaleString(undefined, {
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: 'numeric', minute: '2-digit'
+            });
+            el.setAttribute('title', 'Your local time');
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { window.htLocalTimes(); });
+    } else {
+        window.htLocalTimes();
+    }
     </script>
     {% if session.get('_impersonator_id') %}
     <div style="background: #fef08a; color: #713f12; padding: .55rem 1rem;

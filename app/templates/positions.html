@@ -34,7 +34,19 @@
         body:has(#positionsTable) .ht-page { max-width: none; }
     }
     #positionsTable,
-    #symbolTable { font-size: .84rem; }
+    #symbolTable { font-size: .84rem; width: max-content; min-width: 100%; }
+    /* width:100% + nowrap clips the last columns inside the card.
+       max-content lets the table grow and the wrapper scroll. */
+    body:has(#positionsTable) .table-responsive,
+    body:has(#symbolTable) .table-responsive {
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    body:has(#positionsTable) .card,
+    body:has(#symbolTable) .card { max-width: 100%; min-width: 0; }
     #positionsTable th,
     #positionsTable th a,
     #symbolTable th,
@@ -523,7 +535,7 @@
     <div class="pos-axis">
         <span style="left: 0%">{{ '-' if ns.lo < 0 else '' }}${{ '%.0f'|format(ns.lo|abs / 1000) }}k</span>
         <span style="left: {{ _zero }}%">$0</span>
-        <span style="left: 100%">${{ '%.0f'|format(ns.hi / 1000) }}k</span>
+        <span style="left: 100%">{{ money(ns.hi / 1000, 0) }}k</span>
     </div>
 </div>
 {% endif %}
@@ -594,13 +606,13 @@
                     <tr data-href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">
                         <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
                         <td class="fw-semibold">
-                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
+                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none" data-symbol="{{ row.symbol }}">
                                 {{ row.symbol }}
                             </a>
                         </td>
                         <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
                             title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
-                            {% if row.subsector and row.subsector != 'Unknown' %}
+                            {% if row.subsector and row.subsector not in ('Unknown', 'Unclassified', 'Other') %}
                             <a href="{{ scoped_url('positions', subsector=row.subsector, _anchor='pos-filters') }}"
                                class="text-decoration-none text-muted">{{ row.subsector }}</a>
                             {% else %}
