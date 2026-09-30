@@ -1884,15 +1884,72 @@ def build_position_story(
 
     account_labels = []
     seen_labels = set()
+    label_tenants = {}
     for f in fills:
         lab = ((label_map or {}).get(f["state_key"]) or f.get("account") or "").strip()
         if lab and lab not in seen_labels:
             seen_labels.add(lab)
             account_labels.append(lab)
+            label_tenants.setdefault(lab, f.get("state_key"))
     stats["accounts"] = account_labels
+    # Strip real nicknames off headlines first. Privacy mode then rewrites
+    # the strings that actually render (header chip, card account line,
+    # chart tooltip) so a re-sort cannot put the nickname back.
     layout_story_items(story_items, account_labels)
+    _mask_story_account_labels(story_items, story_markers, stats, label_tenants)
 
     return story_items, story_markers, stats
+
+
+def _mask_story_account_labels(story_items, story_markers, stats, label_tenants):
+    """Replace nicknames with Account N when privacy mode is on.
+
+    Headlines are written with the real label so ``_strip_account`` can
+    peel the multi-account suffix. The page then sees only the masked
+    form: the review kicker, each card's account line, and the chart
+    tooltip (which is built from the unstripped headline).
+    """
+    from app.privacy import privacy_mode_on, shown_account
+
+    if not privacy_mode_on():
+        return
+    masked = {}
+
+    def _mask(lab):
+        lab = (lab or "").strip()
+        if not lab:
+            return lab
+        if lab not in masked:
+            masked[lab] = shown_account(lab, (label_tenants or {}).get(lab))
+        return masked[lab]
+
+    stats["accounts"] = [_mask(a) for a in (stats.get("accounts") or [])]
+    pairs = sorted(
+        (
+            (real, fake)
+            for real, fake in ((lab, _mask(lab)) for lab in (label_tenants or {}))
+            if real and fake and real != fake
+        ),
+        key=lambda pair: len(pair[0]),
+        reverse=True,
+    )
+
+    def _rewrite(text):
+        if not text or not pairs:
+            return text
+        for real, fake in pairs:
+            text = text.replace(f" — {real}", f" — {fake}")
+        return text
+
+    for item in story_items or []:
+        if item.get("headlines"):
+            item["headlines"] = [_rewrite(h) for h in item["headlines"]]
+        for key in ("option_cards", "share_cards"):
+            for card in item.get(key) or []:
+                if card.get("account"):
+                    card["account"] = _mask(card["account"])
+    for marker in story_markers or []:
+        marker["t"] = [_rewrite(line) for line in (marker.get("t") or [])]
 
 
 # ── The mirror: "here's you, in this position" ───────────────────────────

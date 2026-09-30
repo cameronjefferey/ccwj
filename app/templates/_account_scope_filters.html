@@ -12,7 +12,7 @@
 {% set _a_names = namespace(names=[]) %}
 {% for c in scope_account_choices %}
     {% if c.tenant_id in selected_tenant_ids %}
-        {% set _a_names.names = _a_names.names + [c.label] %}
+        {% set _a_names.names = _a_names.names + [c.label | privacy_account(c.tenant_id)] %}
     {% endif %}
 {% endfor %}
 
@@ -98,7 +98,7 @@
                 <label class="dropdown-item ht-ms-item">
                     <input type="checkbox" value="{{ c.tenant_id }}"
                            {% if c.tenant_id in selected_tenant_ids %}checked{% endif %}>
-                    <span>{{ c.label }}</span>
+                    <span>{{ c.label | privacy_account(c.tenant_id) }}</span>
                 </label>
                 {% if account_rename_urls is defined and c.tenant_id in account_rename_urls %}
                 <a class="ht-ms-rename" href="{{ account_rename_urls[c.tenant_id] }}">rename</a>
@@ -122,7 +122,7 @@
             onchange="this.form.submit()">
         <option value="">All Accounts</option>
         {% for a in scope_account_options %}
-        <option value="{{ a }}" {{ 'selected' if a == selected_account }}{% if account_select_extra_style %} style="color:#000"{% endif %}>{{ a }}</option>
+        <option value="{{ a }}" {{ 'selected' if a == selected_account }}{% if account_select_extra_style %} style="color:#000"{% endif %}>{{ a | account_label }}</option>
         {% endfor %}
     </select>
 </div>

@@ -26,7 +26,7 @@
 <div class="row justify-content-center">
     <div class="col-lg-7">
         <div class="portal-card">
-            <h1>{% if reconnect_broker_label %}Reconnect {{ reconnect_broker_label }}{% else %}Connect your brokerage{% endif %}</h1>
+            <h1>{% if reconnect_broker_label %}Reconnect {{ reconnect_broker_label | privacy_hide }}{% else %}Connect your brokerage{% endif %}</h1>
             <p class="text-muted">
                 HappyTrader uses <strong>SnapTrade</strong>, a separate connection service, to link your brokerage. You'll leave this page for their window, then come back.
             </p>

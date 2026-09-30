@@ -123,19 +123,19 @@
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Account Value</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(kpis.account_value) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(kpis.account_value) }}{% endif %}</div>
         </div>
     </div>
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Cash Balance</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(kpis.cash_balance) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(kpis.cash_balance) }}{% endif %}</div>
         </div>
     </div>
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Invested</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(kpis.invested_value) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(kpis.invested_value) }}{% endif %}</div>
         </div>
     </div>
     <div class="col">
@@ -162,7 +162,7 @@
         <div class="card kpi-card p-3 text-center" id="kpiNetDeposits">
             <div class="kpi-label">Net deposits</div>
             <div class="kpi-value {{ 'text-positive' if (kpis.net_deposits or 0) >= 0 else 'text-negative' }}">
-                {{ money(kpis.net_deposits or 0, 0) }}
+                {% if privacy_mode %}••••{% else %}{{ money(kpis.net_deposits or 0, 0) }}{% endif %}
             </div>
         </div>
     </div>
@@ -619,6 +619,10 @@
         var val = card.querySelector('.kpi-value');
         if (lab) lab.textContent = label;
         if (val) {
+            if (cardId === 'kpiNetDeposits' && window.htPrivacy) {
+                val.textContent = '••••';
+                return;
+            }
             val.textContent = window.htMoney(Math.round(value), 0);
             val.classList.toggle('text-positive', value >= 0);
             val.classList.toggle('text-negative', value < 0);

@@ -1102,6 +1102,8 @@
         var sign = v < 0 ? '-' : (signed && v > 0 ? '+' : '');
         return sign + '$' + abs;
     };
+    window.htPrivacy = {{ (privacy_mode if privacy_mode is defined else false)|tojson }};
+    try { localStorage.setItem('ht-privacy', window.htPrivacy ? '1' : '0'); } catch (e) {}
     window.htLocalTimes = function (root) {
         var nodes = (root || document).querySelectorAll('time.ht-local-time[datetime]');
         nodes.forEach(function (el) {
@@ -1128,7 +1130,7 @@
                 display: flex; align-items: center; gap: 1rem; justify-content: center;
                 flex-wrap: wrap;">
         <span>You are viewing the site as
-              <strong>@{{ current_user.username }}</strong>
+              <strong>@{{ current_user.username | privacy_hide }}</strong>
               (admin impersonation).</span>
         <a href="{{ url_for('admin_impersonate_stop') }}"
            style="background: #713f12; color: #fef9c3; padding: .25rem .85rem;
@@ -1263,6 +1265,7 @@
                 <li class="nav-item py-1 py-lg-0 me-lg-2 d-none d-lg-block">
                     <button type="button" class="ht-search-btn ht-palette-open" id="ht-palette-trigger"
                             data-cache-scope="{{ current_user.get_id() }}"
+                            data-privacy="{{ '1' if privacy_mode else '0' }}"
                             data-scope-qs="{{ scope_query_string }}"
                             aria-label="Quick switcher" title="Jump to a symbol or page">
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
@@ -1286,6 +1289,15 @@
                            (html.ht-pwa-installed, set in <head>). #}
                         <li id="ht-install-item">
                             <button type="button" class="dropdown-item" id="ht-install-link">Install app</button>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="post" action="{{ url_for('set_privacy_mode_route') }}" class="px-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
+                                <button type="submit" class="dropdown-item">{% if privacy_mode %}Privacy mode is on{% else %}Privacy mode{% endif %}</button>
+                            </form>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
@@ -1488,16 +1500,16 @@
                 {% if snaptrade_reauth_needed|length == 1 %}
                     {% set c = snaptrade_reauth_needed[0] %}
                     {% if c.kind == 'expiring' %}
-                        <strong>Your {{ c.broker_slug | title }} connection
+                        <strong>Your {{ c.broker_slug | title | privacy_hide }} connection
                         {% if c.expires_in_days > 0 %}expires in {{ c.expires_in_days }} day{{ 's' if c.expires_in_days != 1 }}{% else %}is expiring now{% endif %}.</strong>
                         <div class="small mt-1">
-                            Reconnect <code>{{ c.display_nickname or c.account_name }}</code> before it lapses so your daily sync keeps running.
+                            Reconnect <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code> before it lapses so your daily sync keeps running.
                         </div>
                     {% else %}
-                        <strong>Reconnect your {{ c.broker_slug | title }} connection.</strong>
+                        <strong>Reconnect your {{ c.broker_slug | title | privacy_hide }} connection.</strong>
                         <div class="small mt-1">
                             We haven&rsquo;t been able to sync
-                            <code>{{ c.display_nickname or c.account_name }}</code>
+                            <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code>
                             {% if c.stale_days and c.stale_days > 0 %}for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}since today{% endif %} &mdash;
                             your data is frozen until you reconnect.
                         </div>
@@ -1507,7 +1519,7 @@
                     <ul class="small mt-1 mb-0 ps-3">
                         {% for c in snaptrade_reauth_needed %}
                         <li>
-                            <code>{{ c.display_nickname or c.account_name }}</code> ({{ c.broker_slug | title }}) &mdash;
+                            <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code> ({{ c.broker_slug | title | privacy_hide }}) &mdash;
                             {% if c.kind == 'expiring' %}
                                 {% if c.expires_in_days > 0 %}expires in {{ c.expires_in_days }} day{{ 's' if c.expires_in_days != 1 }}{% else %}expiring now{% endif %}
                             {% else %}

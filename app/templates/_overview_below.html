@@ -298,7 +298,11 @@
                 {% if c.is_future %}
                     {% set bg = "var(--cal-blank-bg)" %}{% set fg = "var(--cal-blank-fg)" %}
                 {% elif c.has_data %}
-                    {% set intensity = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
+                    {% set _int = namespace(v=40) %}
+                    {% if not privacy_mode %}
+                    {% set _int.v = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
+                    {% endif %}
+                    {% set intensity = _int.v %}
                     {% if c.daily_change > 0 %}
                         {% set bg = "rgba(25,135,84," ~ (0.08 + intensity * 0.007) ~ ")" %}
                         {% set fg = "var(--cal-pos-fg)" %}
@@ -322,14 +326,14 @@
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
-                    <div class="cal-day-pnl">{{ money(c.daily_change, 0, true) }}</div>
+                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
                     {% endif %}
                 </a>
                 {% else %}
                 <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data and not c.is_future %}
-                    <div class="cal-day-pnl">{{ money(c.daily_change, 0, true) }}</div>
+                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
                     {% endif %}
                 </div>
                 {% endif %}
@@ -393,8 +397,8 @@
             <tbody>
                 {% for a in account_breakdown.rows %}
                 <tr data-href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}">
-                    <td class="left" data-val="{{ a.account_display }}">
-                        <a href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}" class="row-symbol">{{ a.account_display }}</a>
+                    <td class="left" data-val="{{ a.account_display | account_label(a.tenant_id) }}">
+                        <a href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}" class="row-symbol">{{ a.account_display | account_label(a.tenant_id) }}</a>
                         {% if account_rename_urls is defined and a.tenant_id in account_rename_urls %}
                         <a class="acct-rename" href="{{ account_rename_urls[a.tenant_id] }}">rename</a>
                         {% endif %}
@@ -508,7 +512,7 @@
             <tbody>
                 {% for r in tw.trades %}
                 <tr data-href="{{ scoped_url('position_detail', symbol=r.symbol, tenant=r.tenant_id or none) }}">
-                    <td class="left" data-val="{{ r.account_display }}">{{ r.account_display }}</td>
+                    <td class="left" data-val="{{ r.account_display | account_label(r.tenant_id) }}">{{ r.account_display | account_label(r.tenant_id) }}</td>
                     <td class="left" data-val="{{ r.symbol }}">
                         <a href="{{ scoped_url('position_detail', symbol=r.symbol, tenant=r.tenant_id or none) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}

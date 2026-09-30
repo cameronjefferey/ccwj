@@ -61,19 +61,19 @@
                 {% for c in generic_accounts %}
                 <div class="na-row">
                     <div class="na-who">
-                        <div class="name">{{ c.account_name }}</div>
+                        <div class="name">{{ c.account_name | account_label(c.tenant_id) }}</div>
                         {% set mask = c.account_number_masked | account_mask %}
                         {% if mask %}
                         <div class="meta">{{ mask }}</div>
                         {% elif c.broker_slug %}
-                        <div class="meta">{{ c.broker_slug|title }}</div>
+                        <div class="meta">{{ c.broker_slug|title | privacy_hide }}</div>
                         {% endif %}
                     </div>
                     <div class="na-input">
                         <input type="text" name="nickname_{{ c.snaptrade_account_id }}"
                                maxlength="80" class="form-control"
                                placeholder="e.g. Retirement, Sara's IRA, Trading"
-                               aria-label="Nickname for {{ c.account_name }}">
+                               aria-label="Nickname for {{ c.account_name | account_label(c.tenant_id) }}">
                     </div>
                 </div>
                 {% endfor %}
