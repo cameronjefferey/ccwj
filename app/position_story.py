@@ -10,8 +10,10 @@ Position Detail page:
                   and interludes (what happened BETWEEN trades, computed
                   from the daily-mark chart series — the data no broker
                   dashboard has).
-  story_markers — one dot per event day for the chart overlay; tooltip
-                  leads with the headline.
+  story_markers — one dot per event day for the chart overlay. ``t``
+                  is still the wrapped review headline (the chart-read
+                  brief). ``tips`` is the compact chart card: a short
+                  action label and the cash that changed hands.
 
 This is a deterministic fill state machine, not an LLM. It never reads
 Strategy Breakdown; it names maneuvers from the fills and the running
@@ -36,6 +38,8 @@ import re
 from datetime import date, timedelta
 
 import pandas as pd
+
+from app.chart_tooltip import format_tip_date, present_tip
 
 __all__ = [
     "build_position_story",
@@ -118,6 +122,14 @@ def _fmt_expiry(expiry, anchor):
 def _plural(n, word):
     n = int(round(abs(n)))
     return f"{n} {word}{'s' if n != 1 else ''}"
+
+
+def _qty_times(n):
+    """'2' / '1,500' / '12.5' — the count in a compact chart label."""
+    n = abs(n or 0)
+    if abs(n - round(n)) < 1e-6:
+        return f"{int(round(n)):,}"
+    return f"{n:,.2f}".rstrip("0").rstrip(".")
 
 
 def _shares(q):
@@ -254,7 +266,8 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
     Mutates per-account state as it consumes fills and accumulates the
     behavioral fingerprint into ``stats`` (the same detection that writes
     a sentence records the maneuver — the mirror never disagrees with the
-    story). Returns (sentences, dominant_kind).
+    story). Returns (sentences, dominant_kind, chart_tips). Chart tips are
+    the compact card on the cumulative P&L dot; sentences stay the review.
 
     ``exit_notes`` — optional {(tenant/account key, trade_symbol): verdict
     sentence} from the execution-review layer (app/execution_quality.py).
@@ -265,7 +278,16 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
     """
     sentences = []
     kinds = []
+    tips = []
     exit_notes = exit_notes or {}
+
+    def _stamp(tip):
+        if not tip:
+            return None
+        out = dict(tip)
+        if multi_account and account:
+            out["acct"] = account
+        return out
     label_map = label_map or {}
 
     def _note_for(fill):
@@ -320,6 +342,11 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
                     f"Dividend reinvested into {qtxt} more share"
                     f"{'s' if drip_q >= 1.995 else ''}.", account))
                 kinds.append("income")
+                tips.append(_stamp({
+                    "label": f"Reinvested {_qty_times(drip_q)} sh",
+                    "amount": None,
+                    "kind": "income",
+                }))
 
         # Assignments/short exercises arrive as an option row PLUS a
         # mechanical equity fill AT THE STRIKE. The lifecycle sentence
@@ -373,7 +400,10 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
                         continue  # same contract both ways isn't a roll
                     consumed.add(id(c))
                     consumed.add(id(o))
-                    sentences.append(_tag(_phrase_roll(c, o, short_side), account))
+                    sentence, roll_tip = _phrase_roll(c, o, short_side)
+                    sentences.append(_tag(sentence, account))
+                    if roll_tip:
+                        tips.append(_stamp(roll_tip))
                     note = _note_for(c)
                     if note:
                         sentences.append(_tag(note, account))
@@ -409,8 +439,10 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
             if f.get("uid") in planned_uids:
                 consumed.add(id(f))
                 _apply_option_open_state(f, st, stats)
-        for sentence, _uids, kind in completions:
+        for sentence, _uids, kind, tip in completions:
             sentences.append(_tag(sentence, account))
+            if tip:
+                tips.append(_stamp(tip))
             kinds.append(kind)
 
         remaining_opens = [
@@ -440,15 +472,18 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
             s = _phrase_equity(f, st, stats)
             if s:
                 sentences.append(_tag(s, account))
+                tips.append(_stamp(_equity_tip(f)))
                 kinds.append(_RAW_VERBS[f["action"]][1])
 
         # ── Remaining option fills.
         for f in opt_fills:
             if id(f) in consumed:
                 continue
+            short_exercise = _exercise_is_short(f, st, day_ctx)
             s = _phrase_option(f, st, day_ctx, stats)
             if s:
                 sentences.append(_tag(s, account))
+                tips.append(_stamp(_option_tip(f, short_exercise=short_exercise)))
                 kinds.append(_RAW_VERBS[f["action"]][1])
                 # Verdict from the execution-review layer, on the
                 # COMPLETING close only (net position back to zero) so a
@@ -472,7 +507,7 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         if k in kinds:
             dominant = k
             break
-    return sentences, dominant
+    return sentences, dominant, tips
 
 
 def _one_of_type(fills, otype):
@@ -571,7 +606,8 @@ def _try_iron(group):
     sentence = (
         f"{_opened_lead(name, legs, exp)}: {detail}, {_structure_cash(net)}."
     )
-    return sentence, legs, "sell" if net >= 0 else "buy"
+    kind = "sell" if net >= 0 else "buy"
+    return sentence, legs, kind, _opened_tip(name, exp, net)
 
 
 def _try_vertical(group):
@@ -594,7 +630,8 @@ def _try_vertical(group):
         f"{_opened_lead(f'a {otype} spread', legs, exp)}: {detail}, "
         f"{_structure_cash(net)}."
     )
-    return sentence, legs, "sell" if net >= 0 else "buy"
+    kind = "sell" if net >= 0 else "buy"
+    return sentence, legs, kind, _opened_tip(f"a {otype} spread", exp, net)
 
 
 def _try_strangle(group):
@@ -623,7 +660,7 @@ def _try_strangle(group):
         sentence = (
             f"{_opened_lead(name, legs, exp)}: {detail}, {_structure_cash(net)}."
         )
-        return sentence, legs, "sell"
+        return sentence, legs, "sell", _opened_tip(name, exp, net)
     if len(longs) == 2 and not shorts:
         lp, lc = _one_of_type(longs, "put"), _one_of_type(longs, "call")
         if not (lp and lc):
@@ -645,14 +682,14 @@ def _try_strangle(group):
         sentence = (
             f"{_opened_lead(name, legs, exp)}: {detail}, {_structure_cash(net)}."
         )
-        return sentence, legs, "buy"
+        return sentence, legs, "buy", _opened_tip(name, exp, net)
     return None
 
 
 def _all_planned_uids(structure_plan):
     out = set()
     for hits in (structure_plan or {}).values():
-        for _sentence, uids, _kind in hits:
+        for _sentence, uids, _kind, _tip in hits:
             out.update(uids)
     return out
 
@@ -679,12 +716,151 @@ def _plan_open_structures(all_fills):
         hit = _try_iron(group) or _try_vertical(group) or _try_strangle(group)
         if not hit:
             continue
-        sentence, struct_fills, kind = hit
+        sentence, struct_fills, kind, tip = hit
         last = max(f["date"] for f in struct_fills)
         sk = struct_fills[0]["state_key"]
         uids = [f["uid"] for f in struct_fills]
-        plan.setdefault((last, sk), []).append((sentence, uids, kind))
+        plan.setdefault((last, sk), []).append((sentence, uids, kind, tip))
     return plan
+
+
+def _exercise_is_short(f, st, day_ctx):
+    """Whether an exercise is the short side, read BEFORE state is mutated.
+
+    None when the fill is not an exercise. Mirrors the inference inside
+    ``_phrase_option`` so the chart label can say Assigned vs Exercised
+    without changing that sentence.
+    """
+    if f.get("action") != "option_exercised":
+        return None
+    occ = f.get("occ")
+    rec = st.opt(f["trade_symbol"])
+    was_short = rec["net"] < -0.0001
+    was_long = rec["net"] > 0.0001
+    if was_short or was_long or not occ:
+        return was_short
+    prices = (day_ctx or {}).get("sell_prices" if occ["option_type"] == "call" else "buy_prices") or []
+    strike = occ["strike"]
+    return any(abs(p - strike) <= max(0.005 * strike, 0.01) for p in prices)
+
+
+def _option_tip(f, short_exercise=None):
+    """Short chart label for one option fill. Cash is the fill, not P&L.
+
+    Opens keep the expiry ('Sold 2 × $320 call · Jun 26'). Closes do not
+    ('Bought back 2 × $285 call'). Expiry and assignment did not move cash
+    that day, so they carry no amount — the kept premium stays in the
+    review sentence, not on the card.
+    """
+    action = f.get("action")
+    n = abs(f.get("quantity") or 0)
+    amt = f.get("amount")
+    kind = _RAW_VERBS.get(action, ("Fill", "buy"))[1]
+    times = _qty_times(n)
+    occ = f.get("occ")
+    if not occ:
+        verb = {
+            "option_sell_to_open": "Sold",
+            "option_buy_to_open": "Bought",
+            "option_buy_to_close": "Bought back",
+            "option_sell_to_close": "Sold",
+            "option_expired": "Expired",
+            "option_assigned": "Assigned",
+            "option_exercised": "Exercised",
+        }.get(action, _RAW_VERBS.get(action, ("Fill",))[0])
+        cash = None if action in (
+            "option_expired", "option_assigned", "option_exercised") else amt
+        if action in ("option_expired", "option_assigned", "option_exercised"):
+            label = verb
+        else:
+            label = f"{verb} {times} × options"
+        return {"label": label, "amount": cash, "kind": kind}
+
+    strike = _fmt_strike(occ["strike"])
+    otype = occ["option_type"]
+    exp = _fmt_expiry(occ["expiry"], f["date"])
+    if action == "option_sell_to_open":
+        return {"label": f"Sold {times} × {strike} {otype} · {exp}", "amount": amt, "kind": "sell"}
+    if action == "option_buy_to_open":
+        return {"label": f"Bought {times} × {strike} {otype} · {exp}", "amount": amt, "kind": "buy"}
+    if action == "option_buy_to_close":
+        return {"label": f"Bought back {times} × {strike} {otype}", "amount": amt, "kind": "buy"}
+    if action == "option_sell_to_close":
+        return {"label": f"Sold {times} × {strike} {otype}", "amount": amt, "kind": "sell"}
+    if action == "option_expired":
+        return {"label": f"Expired · {strike} {otype}", "amount": None, "kind": "lifecycle"}
+    if action == "option_assigned":
+        return {"label": f"Assigned · {strike} {otype}", "amount": None, "kind": "lifecycle"}
+    if action == "option_exercised":
+        verb = "Assigned" if short_exercise else "Exercised"
+        return {"label": f"{verb} · {strike} {otype}", "amount": None, "kind": "lifecycle"}
+    return {"label": f"{_RAW_VERBS.get(action, ('Fill',))[0]} {times} × {strike} {otype}",
+            "amount": amt, "kind": kind}
+
+
+def _equity_tip(f):
+    """'Bought 100 sh' / 'Sold 50 sh' / 'Sold short 100 sh'. Amount is cash."""
+    action = f.get("action")
+    q = _qty_times(f.get("quantity"))
+    if action == "equity_sell_short":
+        label = f"Sold short {q} sh"
+    elif action == "equity_sell":
+        label = f"Sold {q} sh"
+    else:
+        label = f"Bought {q} sh"
+    return {"label": label, "amount": f.get("amount"), "kind": _RAW_VERBS.get(action, ("", "buy"))[1]}
+
+
+def _roll_tip(close_fill, open_fill, short_side):
+    """One line for a roll. The amount is the net cash, not 'premium'."""
+    c_occ, o_occ = close_fill["occ"], open_fill["occ"]
+    n = abs(open_fill["quantity"]) or abs(close_fill["quantity"])
+    otype = c_occ["option_type"]
+    anchor = close_fill["date"]
+    times = _qty_times(n)
+    cs, os_ = _fmt_strike(c_occ["strike"]), _fmt_strike(o_occ["strike"])
+    same_strike = abs(c_occ["strike"] - o_occ["strike"]) < 0.01
+    same_exp = c_occ["expiry"] == o_occ["expiry"]
+    if same_strike and not same_exp:
+        label = (
+            f"Rolled {times} × {cs} {otype} · "
+            f"{_fmt_expiry(c_occ['expiry'], anchor)} → {_fmt_expiry(o_occ['expiry'], anchor)}"
+        )
+    elif same_exp:
+        label = f"Rolled {times} × {cs} → {os_} {otype}"
+    else:
+        label = (
+            f"Rolled {times} × {cs} {_fmt_expiry(c_occ['expiry'], anchor)} → "
+            f"{os_} {_fmt_expiry(o_occ['expiry'], anchor)} {otype}"
+        )
+    return {
+        "label": label,
+        "amount": close_fill["amount"] + open_fill["amount"],
+        "kind": "sell" if short_side else "buy",
+    }
+
+
+def _opened_tip(name, exp, net):
+    """'Opened iron condor · Jul 17'. Net cash only — no 'collecting'."""
+    if name.startswith("an "):
+        short = name[3:]
+    elif name.startswith("a "):
+        short = name[2:]
+    else:
+        short = name
+    return {
+        "label": f"Opened {short} · {exp}",
+        "amount": net,
+        "kind": "sell" if net >= 0 else "buy",
+    }
+
+
+def _split_tip(ratio):
+    if ratio >= 1:
+        label = f"{ratio:g}-for-1 split"
+    else:
+        label = f"1-for-{1 / ratio:g} reverse split"
+    return {"label": label, "amount": None, "kind": "lifecycle"}
 
 
 def _phrase_roll(close_fill, open_fill, short_side):
@@ -713,12 +889,13 @@ def _phrase_roll(close_fill, open_fill, short_side):
 
     anchor = close_fill["date"]
     side = "short " if short_side else ""
-    return (
+    sentence = (
         f"Rolled the {side}{_fmt_strike(c_occ['strike'])} {otype}"
         f"{'s' if n > 1 else ''} {direction}: "
         f"{_fmt_strike(c_occ['strike'])} {_fmt_expiry(c_occ['expiry'], anchor)} "
         f"→ {_fmt_strike(o_occ['strike'])} {_fmt_expiry(o_occ['expiry'], anchor)}, {cash}."
     )
+    return sentence, _roll_tip(close_fill, open_fill, short_side)
 
 
 def _phrase_equity(f, st, stats=None):
@@ -1718,8 +1895,9 @@ def build_position_story(
     amount}``; interludes: ``{type:'interlude', date_iso, end_iso, text,
     delta}``.
 
-    story_markers — ``[{d, k, t:[line, ...]}]`` per event day for the
-    chart scatter overlay (tooltip lines lead with the headlines).
+    story_markers — ``[{d, k, t, when, tips}]`` per event day for the
+    chart scatter overlay. ``t`` is the wrapped review headline. ``tips``
+    is the compact chart card (short action, signed cash).
 
     ``splits_df`` (stg_split_events; symbol-grain public data) serves two
     jobs: a narrated story beat when shares were held through the split,
@@ -1849,6 +2027,7 @@ def build_position_story(
         # Splits apply BEFORE the day's fills (fills on a split day arrive
         # in post-split units) and narrate only when shares were held.
         split_headlines = []
+        split_tips = []
         for ratio in splits_by_day.get(d, []):
             before = sum(st.shares for st in state_by_account.values())
             for st in state_by_account.values():
@@ -1857,12 +2036,17 @@ def build_position_story(
             if before > 0.5:
                 stats["splits"] += 1
                 split_headlines.append(_phrase_split(ratio, before, after))
+                split_tips.append(_split_tip(ratio))
 
         day_fills = fills_by_day.get(d, [])
-        headlines, dominant = ([], "income") if not day_fills else _day_headline(
-            day_fills, state_by_account, multi_account, stats,
-            exit_notes=exit_notes, label_map=label_map,
-            structure_plan=structure_plan)
+        if not day_fills:
+            headlines, dominant, action_tips = [], "income", []
+        else:
+            headlines, dominant, action_tips = _day_headline(
+                day_fills, state_by_account, multi_account, stats,
+                exit_notes=exit_notes, label_map=label_map,
+                structure_plan=structure_plan)
+        day_tips = split_tips + list(action_tips or [])
         if split_headlines:
             headlines = split_headlines + headlines
             if not day_fills:
@@ -1874,6 +2058,11 @@ def build_position_story(
             headlines = headlines + [
                 f"Collected {_money(div_amt, 2)} in dividends."
             ]
+            day_tips.append({
+                "label": "Dividend",
+                "amount": div_amt,
+                "kind": "income",
+            })
 
         events = [_raw_event(f) for f in day_fills]
         if div_amt:
@@ -1900,7 +2089,15 @@ def build_position_story(
         tooltip_lines = []
         for h in headlines:
             tooltip_lines.extend(_wrap(h))
-        story_markers.append({"d": iso, "k": dominant, "t": tooltip_lines})
+        # ``t`` stays the wrapped review (chart-read). ``tips`` is the
+        # compact card. ``when`` is the short date for that card.
+        story_markers.append({
+            "d": iso,
+            "k": dominant,
+            "t": tooltip_lines,
+            "when": format_tip_date(d),
+            "tips": [p for p in (present_tip(t) for t in day_tips) if p],
+        })
         prev_event_day = d
 
     day_items = [i for i in story_items if i["type"] == "day"]
@@ -1936,7 +2133,8 @@ def _mask_story_account_labels(story_items, story_markers, stats, label_tenants)
     Headlines are written with the real label so ``_strip_account`` can
     peel the multi-account suffix. The page then sees only the masked
     form: the review kicker, each card's account line, and the chart
-    tooltip (which is built from the unstripped headline).
+    tooltip label and its account tag (the card is built from ``tips``,
+    not from the wrapped headline).
     """
     from app.privacy import privacy_mode_on, shown_account
 
@@ -1979,6 +2177,11 @@ def _mask_story_account_labels(story_items, story_markers, stats, label_tenants)
                     card["account"] = _mask(card["account"])
     for marker in story_markers or []:
         marker["t"] = [_rewrite(line) for line in (marker.get("t") or [])]
+        for tip in marker.get("tips") or []:
+            if tip.get("label"):
+                tip["label"] = _rewrite(tip["label"])
+            if tip.get("acct"):
+                tip["acct"] = _mask(tip["acct"])
 
 
 # ── The mirror: "here's you, in this position" ───────────────────────────

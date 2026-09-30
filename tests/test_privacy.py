@@ -130,7 +130,18 @@ def test_story_review_masks_account_labels(monkeypatch):
         "option_cards": [{"account": "Roth IRA", "title": "Sold", "lane": "options"}],
         "share_cards": [{"account": "Roth IRA", "title": "Trimmed", "lane": "shares"}],
     }]
-    markers = [{"d": "2026-01-02", "k": "sell", "t": ["Sold the $50 call — Roth IRA."]}]
+    markers = [{
+        "d": "2026-01-02",
+        "k": "sell",
+        "t": ["Sold the $50 call — Roth IRA."],
+        "tips": [{
+            "label": "Sold 1 × $50 call · Jan 16",
+            "amt": "+$120",
+            "sign": 1,
+            "kind": "sell",
+            "acct": "Roth IRA",
+        }],
+    }]
     stats = {"accounts": ["Roth IRA"]}
     _mask_story_account_labels(
         items, markers, stats, {"Roth IRA": "snaptrade:aaa"},
@@ -141,6 +152,8 @@ def test_story_review_masks_account_labels(monkeypatch):
     assert "Roth" not in items[0]["headlines"][0]
     assert "Account 1" in markers[0]["t"][0]
     assert "Roth" not in markers[0]["t"][0]
+    assert markers[0]["tips"][0]["acct"] == "Account 1"
+    assert "Roth" not in markers[0]["tips"][0]["label"]
 
 
 def test_story_review_keeps_names_when_privacy_is_off(monkeypatch):
@@ -152,7 +165,10 @@ def test_story_review_keeps_names_when_privacy_is_off(monkeypatch):
         "option_cards": [{"account": "Roth IRA"}],
         "share_cards": [],
     }]
-    markers = [{"t": ["Sold the $50 call — Roth IRA."]}]
+    markers = [{
+        "t": ["Sold the $50 call — Roth IRA."],
+        "tips": [{"label": "Sold 1 × $50 call", "acct": "Roth IRA"}],
+    }]
     stats = {"accounts": ["Roth IRA"]}
     _mask_story_account_labels(
         items, markers, stats, {"Roth IRA": "snaptrade:aaa"},
@@ -160,3 +176,4 @@ def test_story_review_keeps_names_when_privacy_is_off(monkeypatch):
     assert stats["accounts"] == ["Roth IRA"]
     assert items[0]["option_cards"][0]["account"] == "Roth IRA"
     assert "Roth IRA" in markers[0]["t"][0]
+    assert markers[0]["tips"][0]["acct"] == "Roth IRA"
