@@ -19,8 +19,9 @@
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   }
-  if (root && root.document) {
-    api.install(root.document);
+  if (root) {
+    root.htAccountScope = api;
+    if (root.document) api.install(root.document);
   }
 })(typeof window !== "undefined" ? window : globalThis, function () {
   function scopeCsv(param, checked, boxCount, reset) {
@@ -58,6 +59,53 @@
       var name = pair[0];
       var value = pair[1];
       if (!name || value == null || value === "") return;
+      params.append(name, String(value));
+    });
+    return params.toString();
+  }
+
+  var TENANT_COOKIE = "ht_tenants";
+  var TENANT_COOKIE_AGE = 60 * 60 * 24 * 365;
+
+  function tenantCookieAssignment(csv, secure) {
+    var tail = "; Path=/; SameSite=Lax" + (secure ? "; Secure" : "");
+    if (!csv) return TENANT_COOKIE + "=; Max-Age=0" + tail;
+    return (
+      TENANT_COOKIE + "=" + encodeURIComponent(csv) +
+      "; Max-Age=" + TENANT_COOKIE_AGE + tail
+    );
+  }
+
+  function writeTenantCookie(doc, csv) {
+    if (!doc) return;
+    var secure = false;
+    try {
+      secure = doc.location && doc.location.protocol === "https:";
+    } catch (err) {
+      secure = false;
+    }
+    doc.cookie = tenantCookieAssignment(csv, secure);
+  }
+
+  function mergePreservedQuery(currentSearch, fields) {
+    // Header picker: keep the rest of the page query (strategy, range,
+    // leg, …) and replace only the account scope.
+    var params = new URLSearchParams(
+      (currentSearch || "").replace(/^\?/, "")
+    );
+    ["account", "tenant", "tenants", "scope"].forEach(function (key) {
+      params.delete(key);
+    });
+    var replaced = {};
+    (fields || []).forEach(function (pair) {
+      var name = pair[0];
+      var value = pair[1];
+      if (!name) return;
+      if (!replaced[name]) {
+        params.delete(name);
+        replaced[name] = true;
+      }
+      if (value == null || value === "") return;
       params.append(name, String(value));
     });
     return params.toString();
@@ -142,10 +190,27 @@
         fields.push([name, value]);
       });
       var url = new URL(form.action || doc.location.href, doc.location.href);
-      url.search = searchFromFields(fields);
+      if (form.hasAttribute("data-ht-preserve-query")) {
+        url.search = mergePreservedQuery(doc.location.search, fields);
+      } else {
+        url.search = searchFromFields(fields);
+      }
+      if (param === "tenants" || form.hasAttribute("data-ht-persist-tenants")) {
+        var csv = "";
+        fields.forEach(function (pair) {
+          if (pair[0] === "tenants") csv = pair[1];
+        });
+        writeTenantCookie(doc, csv);
+      }
       url.hash = "";
       doc.location.assign(url.toString());
     }
+
+    doc.addEventListener("click", function (e) {
+      var resetLink = e.target && e.target.closest &&
+        e.target.closest("a.filter-reset");
+      if (resetLink) writeTenantCookie(doc, "");
+    }, true);
 
     doc.addEventListener("click", function (e) {
       var btn = e.target && e.target.closest &&
@@ -169,6 +234,9 @@
     scopeCsv: scopeCsv,
     pruneTenants: pruneTenants,
     searchFromFields: searchFromFields,
+    mergePreservedQuery: mergePreservedQuery,
+    tenantCookieAssignment: tenantCookieAssignment,
+    writeTenantCookie: writeTenantCookie,
     install: install,
   };
 });

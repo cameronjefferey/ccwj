@@ -35,7 +35,31 @@ broker_equity as (
         upper(trim(underlying_symbol)) as symbol
     from {{ ref('stg_current') }}
     where instrument_type = 'Equity'
-      and lower(coalesce(security_type_raw, '')) in ('equity', 'etfs & closed end funds')
+      and (
+          lower(coalesce(security_type_raw, '')) in (
+              'equity', 'etfs & closed end funds', 'etf', 'stock',
+              'common stock', 'cs', 'preferred stock', 'adr'
+          )
+          -- Colliding tickers (SNX / SEI / …) whose description names an
+          -- issuer are the stock even when security_type was stamped
+          -- Cryptocurrency from the whitelist.
+          or (
+              upper(trim(underlying_symbol)) in ('SNX', 'SEI', 'LINK', 'COMP', 'UNI', 'EOS')
+              and (
+                  regexp_contains(
+                      lower(coalesce(description, '')),
+                      r'\b(inc|incorporated|corp|corporation|ltd|limited|plc|company)\b'
+                  )
+                  or (
+                      regexp_contains(coalesce(description, ''), r'\s')
+                      and not regexp_contains(
+                          lower(description),
+                          r'\b(synthetix|chainlink|compound|uniswap|wormhole|eos|sei)\b'
+                      )
+                  )
+              )
+          )
+      )
 )
 
 select

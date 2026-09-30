@@ -55,19 +55,17 @@
         color: #8a97b1; margin-bottom: .2rem;
     }
 
-    /* Sparkline */
-    .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
-    .spark-bar {
-        flex: 1;
-        min-width: 4px;
-        max-width: 18px;
-        border-radius: 2px 2px 0 0;
-        transition: height .2s;
-    }
-    .spark-bar.positive { background: #28c08a; }
-    .spark-bar.negative { background: #f0556d; }
-    .spark-bar.zero { background: #243049; height: 2px !important; }
-    .spark-label { font-size: .62rem; color: #8a97b1; text-align: center; margin-top: .15rem; font-variant-numeric: tabular-nums; }
+    /* Last six months: equal marks, latest month written out. */
+    .month-strip { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .month-marks { display: flex; align-items: center; gap: 4px; }
+    .month-mark { width: 18px; height: 8px; border-radius: 2px; background: #243049; }
+    .month-mark.up { background: #28c08a; }
+    .month-mark.down { background: #f0556d; }
+    .month-latest { font-size: .82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .month-latest-name { color: #8a97b1; margin-right: .35rem; }
+    .month-latest-amt { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 600; color: #8a97b1; }
+    .month-latest-amt.up { color: #28c08a; }
+    .month-latest-amt.down { color: #f0556d; }
 
     /* Focus sections */
     .data-section { background: #121826; border: 1px solid #243049; border-radius: 0.75rem; box-shadow: none; padding: 1.15rem 1.25rem; margin-bottom: 1.25rem; color: #e8edf7; }
@@ -87,7 +85,7 @@
     .focus-stat { text-align: center; }
     .focus-stat-value { font-size: 1.25rem; font-weight: 650; line-height: 1.2; color: #fff; font-variant-numeric: tabular-nums; }
     .focus-stat-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: #8a97b1; margin-bottom: .2rem; }
-    .focus-stat-meta { font-size: .75rem; color: #6c757d; margin-top: .1rem; }
+    .focus-stat-meta { font-size: .75rem; color: var(--ht-muted); margin-top: .1rem; }
 
     .obs-card {
         border-radius: 12px;
@@ -98,9 +96,9 @@
         margin-bottom: .75rem;
         border-left: 4px solid;
     }
-    .obs-card.positive { background: rgba(25,135,84,.06); border-left-color: #198754; color: #166534; }
-    .obs-card.negative { background: rgba(220,53,69,.06); border-left-color: #dc3545; color: #7f1d1d; }
-    .obs-card.neutral  { background: rgba(13,110,253,.06); border-left-color: #0d6efd; color: #1e3a5f; }
+    .obs-card.positive { background: rgba(25,135,84,.06); border-left-color: #198754; color: #28c08a; }
+    .obs-card.negative { background: rgba(220,53,69,.06); border-left-color: #dc3545; color: #f0556d; }
+    .obs-card.neutral  { background: rgba(13,110,253,.06); border-left-color: #0d6efd; color: var(--ht-ink); }
 
     .dte-bar-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #f3f4f6; }
     .dte-bar-row:last-child { border-bottom: none; }
@@ -110,7 +108,7 @@
     .dte-bar-fill.good { background: #198754; }
     .dte-bar-fill.bad { background: #dc3545; }
     .dte-bar-fill.mid { background: #94a3b8; }
-    .dte-stats { width: 160px; text-align: right; font-size: .8rem; color: #6c757d; flex-shrink: 0; }
+    .dte-stats { width: 160px; text-align: right; font-size: .8rem; color: var(--ht-muted); flex-shrink: 0; }
 
     .conc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
     @media (max-width: 700px) { .conc-grid { grid-template-columns: 1fr; } }
@@ -134,7 +132,7 @@
 
     .sym-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; font-weight: 600; }
     .sym-table td { font-size: .88rem; }
-    .sym-table .sym-link { font-weight: 600; text-decoration: none; color: #0f172a; }
+    .sym-table .sym-link { font-weight: 600; text-decoration: none; color: var(--ht-ink); }
     .sym-table .sym-link:hover { text-decoration: underline; }
 </style>
 {% endblock %}
@@ -161,7 +159,7 @@
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('strategies') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('strategies', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -194,7 +192,7 @@
             {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none) }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none, scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -234,7 +232,7 @@
         {% if summary.overall_win_rate is not none %}
         <div class="hero-stat">
             <div class="hero-stat-value">{{ "%.0f"|format(summary.overall_win_rate) }}%</div>
-            <div class="hero-stat-label">Win Rate</div>
+            <div class="hero-stat-label">{{ term('Win Rate') }}</div>
         </div>
         {% endif %}
         {# Net Premium hero stat removed — for options traders the sign of
@@ -258,18 +256,18 @@
     <div class="row g-0 text-center">
         <div class="col focus-stat" style="border-right: 1px solid #243049">
             <div class="focus-stat-value {{ 'text-positive' if focus_strategy.total_return >= 0 else 'text-negative' }}">
-                {{ "+" if focus_strategy.total_return >= 0 else "" }}${{ "{:,.0f}".format(focus_strategy.total_return) }}
+                {{ money(focus_strategy.total_return, 0, true) }}
             </div>
             <div class="focus-stat-label">Total Return</div>
         </div>
         <div class="col focus-stat" style="border-right: 1px solid #243049">
             {% if focus_strategy.win_rate is not none %}
             <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.win_rate) }}%</div>
-            <div class="focus-stat-label">Win Rate</div>
+            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
             <div class="focus-stat-meta">{{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L</div>
             {% else %}
             <div class="focus-stat-value text-muted">&mdash;</div>
-            <div class="focus-stat-label">Win Rate</div>
+            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
             {% endif %}
         </div>
         <div class="col focus-stat" style="border-right: 1px solid #243049">
@@ -279,9 +277,9 @@
         {% if focus_strategy.premium_received %}
         <div class="col focus-stat">
             <div class="focus-stat-value {{ 'text-positive' if (focus_strategy.premium_received - focus_strategy.premium_paid) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(focus_strategy.premium_received - focus_strategy.premium_paid) }}
+                {{ money(focus_strategy.premium_received - focus_strategy.premium_paid, 0) }}
             </div>
-            <div class="focus-stat-label">Net Premium</div>
+            <div class="focus-stat-label">{{ term('Net Premium') }}</div>
         </div>
         {% endif %}
     </div>
@@ -300,8 +298,8 @@
                 <tr>
                     <th>Type</th>
                     <th class="text-end">Total Return</th>
-                    <th class="text-end">Realized</th>
-                    <th class="text-end">Unrealized</th>
+                    <th class="text-end">{{ term('Realized') }}</th>
+                    <th class="text-end">{{ term('Unrealized') }}</th>
                     <th data-m="hide">Detail</th>
                 </tr>
             </thead>
@@ -310,17 +308,17 @@
                 <tr>
                     <td><strong>{{ r.type }}</strong></td>
                     <td class="text-end {{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-semibold">
-                        {{ "+" if r.total >= 0 else "" }}${{ "{:,.2f}".format(r.total) }}
+                        {{ money(r.total, 2, true) }}
                         {% if r.suffix %}<span class="text-muted fw-normal ms-1 small">{{ r.suffix }}</span>{% endif %}
                     </td>
                     <td class="text-end {{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
-                        {{ "+" if r.realized >= 0 else "" }}${{ "{:,.2f}".format(r.realized) }}
+                        {{ money(r.realized, 2, true) }}
                     </td>
                     <td class="text-end {% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
                         {% if r.unrealized is none %}
                         &mdash;
                         {% else %}
-                        {{ "+" if r.unrealized >= 0 else "" }}${{ "{:,.2f}".format(r.unrealized) }}
+                        {{ money(r.unrealized, 2, true) }}
                         {% endif %}
                     </td>
                     <td class="small text-muted">
@@ -339,7 +337,7 @@
             <tfoot>
                 <tr class="border-top">
                     <th>Total</th>
-                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ "+" if _bd_tot >= 0 else "" }}${{ "{:,.2f}".format(_bd_tot) }}</th>
+                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ money(_bd_tot, 2, true) }}</th>
                     <th colspan="3"></th>
                 </tr>
             </tfoot>
@@ -380,7 +378,7 @@
 {# DTE breakdown #}
 {% if focus_dte_breakdown %}
 <div class="data-section">
-    <div class="section-label">Performance by DTE</div>
+    <div class="section-label">Performance by {{ term('DTE') }}</div>
     {% for d in focus_dte_breakdown %}
     <div class="dte-bar-row">
         <div class="dte-label">{{ d.dte_bucket }}</div>
@@ -393,7 +391,7 @@
         <div class="dte-stats">
             {% if d.win_rate_pct is not none %}{{ "%.0f"|format(d.win_rate_pct) }}% WR{% endif %}
             &middot; {{ d.num_trades }} trades
-            &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ "+" if d.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(d.total_pnl) }}</span>
+            &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ money(d.total_pnl, 0, true) }}</span>
         </div>
     </div>
     {% endfor %}
@@ -461,7 +459,7 @@
             <tr>
                 <th class="sortable" data-sort="str">Account</th>
                 <th class="sortable text-end" data-sort="num">Trades</th>
-                <th class="sortable text-end" data-sort="num">Win Rate</th>
+                <th class="sortable text-end" data-sort="num">{{ term('Win Rate') }}</th>
                 <th class="sortable text-end" data-sort="num">Total Return</th>
             </tr>
         </thead>
@@ -473,7 +471,7 @@
                 <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
                 <td class="text-end" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
                 <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}" data-val="{{ a.total_return }}">
-                    {{ "+" if a.total_return >= 0 else "" }}${{ "{:,.2f}".format(a.total_return) }}
+                    {{ money(a.total_return, 2, true) }}
                 </td>
             </tr>
             {% endfor %}
@@ -513,13 +511,13 @@
         </div>
         <div class="strat-card-stats">
             <div>
-                <div class="sc-stat-label">Win Rate</div>
+                <div class="sc-stat-label">{{ term('Win Rate') }}</div>
                 <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
             </div>
             <div>
                 <div class="sc-stat-label">Total Return</div>
                 <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
-                    {{ "+" if s.total_return >= 0 else "" }}${{ "{:,.0f}".format(s.total_return) }}
+                    {{ money(s.total_return, 0, true) }}
                 </div>
             </div>
             {% if s.avg_days > 0 %}
@@ -530,24 +528,18 @@
             {% endif %}
         </div>
         {% if s.sparkline %}
-        <div>
-            <div class="sparkline">
-                {% set max_pnl = namespace(val=1) %}
+        {% set _mo = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+        {% set last = s.sparkline[-1] %}
+        <div class="month-strip">
+            <div class="month-marks">
                 {% for m in s.sparkline %}
-                    {% if m.pnl|abs > max_pnl.val %}{% set max_pnl.val = m.pnl|abs %}{% endif %}
-                {% endfor %}
-                {% for m in s.sparkline %}
-                    {% set h = (m.pnl|abs / max_pnl.val * 24)|round(0)|int %}
-                    {% if h < 2 %}{% set h = 2 %}{% endif %}
-                    <div class="spark-bar {% if m.pnl > 0 %}positive{% elif m.pnl < 0 %}negative{% else %}zero{% endif %}"
-                         style="height:{{ h }}px"
-                         title="{{ m.month }}: {{ '+' if m.pnl >= 0 else '' }}${{ '{:,.0f}'.format(m.pnl) }} ({{ m.trades }} trades, {{ m.win_rate }}% WR)"></div>
+                <span class="month-mark {% if m.pnl > 0 %}up{% elif m.pnl < 0 %}down{% endif %}"
+                      title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {{ money(m.pnl, 0, true) }} ({{ m.trades }} trades{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
                 {% endfor %}
             </div>
-            <div class="d-flex justify-content-between" style="padding: 0 1px;">
-                {% for m in s.sparkline %}
-                <div class="spark-label">{{ m.month[-2:] }}</div>
-                {% endfor %}
+            <div class="month-latest">
+                <span class="month-latest-name">{{ _mo[last.month[-2:]|int] }}</span>
+                <span class="month-latest-amt {% if last.pnl > 0 %}up{% elif last.pnl < 0 %}down{% endif %}">{{ money(last.pnl, 0, true) }}</span>
             </div>
         </div>
         {% endif %}
@@ -599,8 +591,7 @@
                         label: function(ctx) {
                             const row = data[ctx.dataIndex] || {};
                             const v = ctx.parsed.y;
-                            const pnl = (v >= 0 ? '+' : '') + '$' +
-                                Math.round(v).toLocaleString();
+                            const pnl = window.htMoney(v, 0, true);
                             const bits = ['P&L ' + pnl];
                             if (row.win_rate != null) bits.push(row.win_rate + '% win');
                             if (row.trades != null) bits.push(row.trades + ' trade' + (row.trades === 1 ? '' : 's'));
@@ -615,9 +606,9 @@
                     ticks: {
                         maxTicksLimit: 4,
                         callback: function(v) {
-                            const sign = v >= 0 ? '+' : '';
-                            if (Math.abs(v) >= 1000) return sign + '$' + (v / 1000).toFixed(0) + 'k';
-                            return sign + '$' + Math.round(v);
+                            const sign = v < 0 ? '-' : (v > 0 ? '+' : '');
+                            if (Math.abs(v) >= 1000) return sign + '$' + Math.abs(v / 1000).toFixed(0) + 'k';
+                            return window.htMoney(v, 0, true);
                         },
                         font: { size: 11 }
                     },

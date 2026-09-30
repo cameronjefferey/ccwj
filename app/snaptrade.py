@@ -875,6 +875,11 @@ def snaptrade_name_accounts():
     generic = _snaptrade_accounts_needing_nickname(rows)
     if not generic:
         return redirect(continue_url)
+    from app.privacy import sort_rows_by_masked_label
+    generic = sort_rows_by_masked_label(
+        generic,
+        lambda r: (r.get("account_name"), r.get("tenant_id")),
+    )
     return render_template(
         "name_accounts.html",
         title="Name your accounts",
@@ -1108,6 +1113,15 @@ def _group_accounts_by_connection(rows):
         if r.get("connection_broken_at"):
             g["needs_reconnect"] = True
         g["accounts"].append(r)
+    from app.privacy import sort_rows_by_masked_label
+    for g in groups:
+        g["accounts"] = sort_rows_by_masked_label(
+            g["accounts"],
+            lambda r: (
+                r.get("display_nickname") or r.get("account_name"),
+                r.get("tenant_id"),
+            ),
+        )
     return groups
 
 

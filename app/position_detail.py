@@ -310,16 +310,19 @@ def _matching_open_session(position, sessions_list):
 
 def _annotate_open_legs(current_positions, sessions_list, symbol, today=None):
     """Opened / days / fractional qty / Crypto label for live holdings."""
-    from app.upload import is_crypto_symbol
+    from app.upload import holding_is_crypto
 
     today = today or date.today()
-    symbol_is_crypto = is_crypto_symbol(symbol)
     for position in current_positions or []:
         inst = str(position.get("instrument_type") or "")
         trade_sym = str(position.get("trade_symbol") or "")
         row_sym = str(position.get("symbol") or symbol or "")
+        sec_type = str(position.get("security_type") or position.get("security_type_raw") or "")
+        desc = str(position.get("description") or "")
         if inst not in ("Call", "Put") and (
-            symbol_is_crypto or is_crypto_symbol(row_sym) or is_crypto_symbol(trade_sym)
+            holding_is_crypto(symbol, sec_type, desc)
+            or holding_is_crypto(row_sym, sec_type, desc)
+            or holding_is_crypto(trade_sym, sec_type, desc)
         ):
             position["leg_kind"] = "Crypto"
         else:
@@ -1355,7 +1358,7 @@ def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFr
     """
     if current_df is None or current_df.empty:
         return pd.DataFrame()
-    from app.upload import is_crypto_symbol
+    from app.upload import holding_is_crypto
     rows = []
     for _, r in current_df.iterrows():
         acct = str(r.get("account", "") or "").strip()
@@ -1366,11 +1369,14 @@ def _synthetic_open_strategy_from_current(current_df: pd.DataFrame) -> pd.DataFr
         elif it == "Put":
             lab = "Long Put"
         elif it == "Equity":
-            # Equity rows for crypto symbols (Coinbase via SnapTrade
-            # currently ship as security_type='Equity') get the Crypto
-            # label so the strategy breakdown matches what the warehouse
-            # would have surfaced via int_strategy_classification.
-            lab = "Crypto" if is_crypto_symbol(sym) else "Buy and Hold"
+            # Equity rows for real crypto (Coinbase BTC) get the Crypto
+            # label. Colliding tickers (SNX, SEI) stay Buy and Hold unless
+            # the broker type and description name the token.
+            lab = "Crypto" if holding_is_crypto(
+                sym,
+                str(r.get("security_type") or r.get("security_type_raw") or ""),
+                str(r.get("description") or ""),
+            ) else "Buy and Hold"
         else:
             lab = "Open"
         u = float(r.get("unrealized_pnl") or 0)
@@ -1445,8 +1451,8 @@ def _compute_breakdown_by_type(
     rounding (positions_summary uses rounded P&L per strategy; the mart's
     open_options unrealized has full precision).
     """
-    from app.upload import is_crypto_symbol
-    is_crypto = is_crypto_symbol(safe_symbol)
+    from app.upload import symbol_defaults_to_crypto
+    is_crypto = symbol_defaults_to_crypto(safe_symbol)
     eq_realized = 0.0
     eq_unrealized = 0.0
     eq_session_count = 0
@@ -1740,10 +1746,18 @@ from app.position_story import (  # noqa: E402
     compose_mirror,
     story_header,
 )
+from app.covered_call_runs import build_covered_call_runs  # noqa: E402
 from app.execution_quality import (  # noqa: E402
     POSITION_EXECUTION_QUERY,
     exit_notes as _execution_exit_notes,
     symbol_execution_sentences as _symbol_execution_sentences,
+)
+from app.held_chart import (  # noqa: E402
+    build_held_charts,
+    fetch_held_series,
+    held_page_summary,
+    peek_held_summary,
+    stamp_held_column,
 )
 
 
@@ -1753,7 +1767,7 @@ def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
     Shared by the view and the cache warmer so warmed keys match a request.
     ``safe_symbol`` is already SQL-escaped (``'`` → ``''``).
     """
-    from app.upload import is_crypto_symbol
+    from app.upload import symbol_defaults_to_crypto
 
     _pos_acct = _tenant_sql_and(tenant_scope)
     _pos_all_acct = _tenant_sql_and(all_owned_scope)
@@ -1796,8 +1810,11 @@ def position_detail_query_batch(safe_symbol, tenant_scope, all_owned_scope):
         "opening": POSITION_OPENING_BALANCES_QUERY.format(
             symbol=safe_symbol, tenant_filter=_pos_acct
         ),
+        # Underlying closes and option marks are NOT in this batch.
+        # fetch_held_series loads them on their own and swallows errors
+        # so a bad marks/price query cannot blank this page.
     }
-    if not is_crypto_symbol(safe_symbol):
+    if not symbol_defaults_to_crypto(safe_symbol):
         queries["dividends"] = POSITION_DIVIDENDS_QUERY.format(
             symbol=safe_symbol, tenant_filter=_pos_acct
         )
@@ -1976,8 +1993,8 @@ def position_detail(symbol):
 
     _fetch_t0 = time.perf_counter()
     try:
-        from app.upload import is_crypto_symbol
-        _is_crypto = is_crypto_symbol(safe_symbol)
+        from app.upload import symbol_defaults_to_crypto
+        _is_crypto = symbol_defaults_to_crypto(safe_symbol)
         _pos_queries = position_detail_query_batch(
             safe_symbol, tenant_scope, all_owned_scope)
         dfs = _bq_parallel(client, _pos_queries)
@@ -2033,6 +2050,9 @@ def position_detail(symbol):
             story_days=[],
             story_markers_json="[]",
             story_mirror=[],
+            covered_call_runs=[],
+            held_charts=[],
+            held_summary=None,
             has_underlying_price=False,
             symbol_sector="",
             symbol_subsector="",
@@ -2044,6 +2064,20 @@ def position_detail(symbol):
             tab_href_base="/position/",
             tab_href_suffix="",
             mode="navigate",
+        )
+
+    # If-held series, outside the batch that blanks the page on failure.
+    # Public closes have no tenant column — do not tenant-filter them.
+    # Option marks are tenant data and are filtered below with the rest.
+    underlying_closes_df = pd.DataFrame()
+    option_marks_df = pd.DataFrame()
+    try:
+        underlying_closes_df, option_marks_df = fetch_held_series(
+            client, safe_symbol, _tenant_sql_and(tenant_scope)
+        )
+    except Exception as exc:
+        app.logger.warning(
+            "if-held series fetch failed for %s: %s", symbol, exc
         )
 
     # Diagnostic timers (Sep 2026): "story"/"chart"/"matrix" already report
@@ -2104,6 +2138,7 @@ def position_detail(symbol):
     # Tab strip data has the same tenancy boundary as everything else above.
     tabs_df = _filter_df_by_tenant_ids(tabs_df, tenant_scope)
     opening_df = _filter_df_by_tenant_ids(opening_df, tenant_scope)
+    option_marks_df = _filter_df_by_tenant_ids(option_marks_df, tenant_scope)
     # earnings_df is symbol-grain PUBLIC market data (stg_earnings_calendar
     # has no tenant/account/user column at all — it cannot leak tenant rows).
     # It must NOT go through _filter_df_by_tenant_ids: the filter fails
@@ -2205,7 +2240,9 @@ def position_detail(symbol):
         if not label:
             raw = account_raw or ""
             label = _acct_nick_map.get(raw, raw)
-        return label or "Account"
+        label = label or "Account"
+        from app.privacy import shown_account
+        return shown_account(label, tenant_id)
 
     for s in sessions_list:
         s["account_display"] = _account_display_for(
@@ -2222,13 +2259,22 @@ def position_detail(symbol):
             "label": _sess[0].get("account_display") or "Account",
             "sessions": _sess,
         })
-    legs_by_account.sort(key=lambda g: g["label"])
+    legs_by_account.sort(key=lambda g: (g.get("label") or "").lower())
+    from app.privacy import sort_masked_account_choices
+    legs_by_account = sort_masked_account_choices(legs_by_account)
 
     # ── Account toggle bar (turn entire accounts on/off) ──
     # Built from the FULL owned-tenant set (accounts_all_df), so an account
     # that's currently toggled off still appears and can be turned back on.
     accounts_all_df = _filter_df_by_tenant_ids(accounts_all_df, all_owned_scope)
     selected_tenant_set = set(tenant_scope) if tenant_scope is not None else None
+    from app.account_scope import nickname_map as _nickname_map
+    from app.models import get_broker_tenants_for_user as _tenants_for_picker
+    try:
+        _picker_labels = _nickname_map(_tenants_for_picker(_viewer_id) or [])
+    except Exception as exc:
+        app.logger.warning("position account nicknames failed: %s", exc)
+        _picker_labels = {}
     account_toggles = []
     if (
         accounts_all_df is not None
@@ -2243,12 +2289,17 @@ def position_detail(symbol):
             _seen_tids.add(_tid)
             account_toggles.append({
                 "tenant_id": _tid,
-                "label": _account_display_for(_tid, str(_r.get("account") or "")),
+                "label": _picker_labels.get(_tid) or "Unnamed account",
                 "selected": True if selected_tenant_set is None else (_tid in selected_tenant_set),
             })
-        account_toggles.sort(key=lambda a: a["label"])
+        account_toggles.sort(key=lambda a: (a.get("label") or "").lower())
+        account_toggles = sort_masked_account_choices(account_toggles)
     # Preserve the current account subset on leg "Show All" / navigation.
     tenants_param = request.args.get("tenants", "").strip()
+    if isinstance(tenant_scope, list):
+        share_tenants = ",".join(str(t) for t in tenant_scope if t)
+    else:
+        share_tenants = ""
 
     leg_param, selected_legs = _resolve_position_leg_filter(
         sessions_list, request.args.get("leg", "")
@@ -2280,6 +2331,10 @@ def position_detail(symbol):
     # Snapshot before leg filter so hero + chart can use full symbol history
     # when the selected leg has no trade rows in-range (common for new option legs).
     trades_pre_leg = trades_df.copy()
+    # Live marks for an open covered-call run. Captured before a closed-leg
+    # filter empties current_df — the run is the whole share cycle, and the
+    # open lot still needs today's price.
+    covered_call_current = current_df.copy() if current_df is not None else pd.DataFrame()
 
     # Apply leg filter to trades
     if leg_param and "trade_date" in trades_df.columns and _leg_ranges:
@@ -3131,6 +3186,8 @@ def position_detail(symbol):
 
     symbol_sector = _first_nonempty(summary_df, "sector") or _first_nonempty(current_df, "sector")
     symbol_subsector = _first_nonempty(summary_df, "subsector") or _first_nonempty(current_df, "subsector")
+    from app.sector_labels import classify_symbol
+    symbol_sector, symbol_subsector = classify_symbol(symbol, symbol_sector, symbol_subsector)
     symbol_company = _first_nonempty(summary_df, "company_name") or _first_nonempty(current_df, "company_name")
 
     # Next-earnings pill for the hero. dict form: {"date": "YYYY-MM-DD",
@@ -3289,6 +3346,7 @@ def position_detail(symbol):
                 if qty <= 0:
                     continue
                 opening_balances.append({
+                    "tenant_id": str(ob.get("tenant_id") or "").strip() or None,
                     "account": _account_display_for(
                         str(ob.get("tenant_id") or "").strip() or None,
                         ob.get("account"),
@@ -3301,6 +3359,39 @@ def position_detail(symbol):
     except Exception as exc:
         app.logger.warning("opening-balance banner build failed for %s: %s", symbol, exc)
         opening_balances = []
+
+    # ── If held to expiration: one price path per closed option ──────
+    # Reuses int_option_exit_quality (the hindsight dollar) plus the
+    # underlying's daily closes and, when the snapshot history has them,
+    # daily option marks. Open contracts are not in that grain.
+    held_charts = []
+    try:
+        _held_exec = _filter_df_by_tenant_ids(execution_df, tenant_scope)
+        if (
+            leg_param and _leg_ranges
+            and _held_exec is not None and not _held_exec.empty
+            and "open_date" in _held_exec.columns
+        ):
+            _held_exec = _held_exec.copy()
+            _held_exec["_od"] = pd.to_datetime(
+                _held_exec["open_date"], errors="coerce"
+            ).dt.date
+            _held_exec = _held_exec[
+                _held_exec["_od"].apply(
+                    lambda d: pd.notna(d) and _in_leg_range(d)
+                )
+            ]
+        held_charts = build_held_charts(
+            _held_exec,
+            underlying_closes_df,
+            option_marks_df,
+            label_for=_account_display_for,
+        )
+        stamp_held_column(held_charts, trade_outcomes)
+    except Exception as exc:
+        app.logger.warning("held-to-expiry chart build failed for %s: %s", symbol, exc)
+        held_charts = []
+    held_summary = held_page_summary(held_charts)
 
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
@@ -3356,6 +3447,24 @@ def position_detail(symbol):
         app.logger.warning("position story build failed for %s: %s", symbol, exc)
         story_days, story_markers, story_mirror = [], [], []
         story_head = None
+
+    # Covered-call / wheel runs use the tenant-scoped fill stream from
+    # before the leg filter, so clicking one leg does not split a cycle
+    # into a share piece and a call piece. Inferred opening balances restore
+    # shares acquired before the broker's history window. Fees stay out.
+    covered_call_runs = []
+    try:
+        covered_call_runs = build_covered_call_runs(
+            trades_pre_leg,
+            current_df=covered_call_current,
+            splits_df=splits_df,
+            opening_df=opening_df,
+            as_of=user_local_today(),
+            label_map=_tenant_label_map,
+        )
+    except Exception as exc:
+        app.logger.warning("covered call runs failed for %s: %s", symbol, exc)
+        covered_call_runs = []
 
     # _stats set once near the top (right after the initial query batch);
     # reused here and after render_template below.
@@ -3416,6 +3525,7 @@ def position_detail(symbol):
         all_user_tags=all_user_tags,
         account_toggles=account_toggles,
         tenants_param=tenants_param,
+        share_tenants=share_tenants,
         selected_legs=selected_legs,
         leg_param=leg_param,
         chart_data_json=json.dumps(_chart_data_for_json(chart_data)),
@@ -3425,6 +3535,9 @@ def position_detail(symbol):
         story_header=story_head,
         story_realized=_story_realized_footer(breakdown_rows),
         story_share_label="Coins" if _is_crypto else "Shares",
+        covered_call_runs=covered_call_runs,
+        held_charts=held_charts,
+        held_summary=held_summary,
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,
@@ -3549,6 +3662,7 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
     tenant_id → display nickname.
     """
     from app.option_formatting import format_option_symbol
+    from app.privacy import shown_account
 
     symbol = str(symbol or "").strip().upper()
     label_map = label_map or {}
@@ -3615,7 +3729,9 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
             tid = str(r.get("tenant_id") or "").strip()
             bucket = per_account.setdefault(tid, {
                 "tenant_id": tid,
-                "account": label_map.get(tid, str(r.get("account") or "")),
+                "account": shown_account(
+                    label_map.get(tid, str(r.get("account") or "")), tid,
+                ),
                 "total_pnl": 0.0,
                 "status": st,
             })
@@ -3659,7 +3775,11 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
                 if abs(qty - round(qty)) < 1e-6:
                     qty_label = f"{abs(round(qty)):,.0f} sh"
                 else:
-                    qty_label = f"{abs(qty):,.4f} sh".rstrip("0").rstrip(".") + " sh"
+                    # rstrip runs on the number only. Appending " sh" first
+                    # left the unit in the string, so a fractional lot
+                    # rendered as "10.5000 sh sh".
+                    qty_text = f"{abs(qty):,.4f}".rstrip("0").rstrip(".")
+                    qty_label = qty_text + " sh"
             holdings.append({
                 "kind": "option" if is_opt else "equity",
                 "label": label,
@@ -3669,7 +3789,9 @@ def compose_position_peek(symbol, summary_df, current_df, label_map=None,
                 "market_value": _peek_num(r.get("market_value")),
                 "cost_basis": _peek_num(r.get("cost_basis")),
                 "unrealized_pnl": _peek_num(r.get("unrealized_pnl")),
-                "account": label_map.get(tid, str(r.get("account") or "")),
+                "account": shown_account(
+                    label_map.get(tid, str(r.get("account") or "")), tid,
+                ),
                 "tenant_id": tid,
             })
         holdings.sort(key=lambda h: (0 if h["kind"] == "equity" else 1, h["label"]))
@@ -3728,6 +3850,8 @@ def position_peek(symbol):
                 symbol=safe_symbol, tenant_filter=tenant_filter),
             "current": POSITION_CURRENT_QUERY.format(
                 symbol=safe_symbol, tenant_filter=tenant_filter),
+            "execution": POSITION_EXECUTION_QUERY.format(
+                symbol=safe_symbol, tenant_filter=tenant_filter),
         })
     except Exception as exc:
         _log.warning("position peek query failed for %s: %s", symbol, exc)
@@ -3742,6 +3866,33 @@ def position_peek(symbol):
     label_map = _tenant_label_map_for_user(current_user.id)
     payload = compose_position_peek(
         symbol, summary_df, current_df, label_map=label_map)
+    # Closed-option if-held sparkline. Open contracts aren't in the
+    # exit-quality grain, so a still-open position leaves this empty.
+    # Underlying closes are public market data — not tenant-filtered.
+    try:
+        # Separate from the peek batch: a marks or price failure must
+        # not 503 the drawer. fetch_held_series already returns empty
+        # frames instead of raising; the except is the second guard.
+        closes_df, marks_df = fetch_held_series(
+            client, safe_symbol, tenant_filter)
+        exec_df = _filter_df_by_tenant_ids(batch.get("execution"), tenant_ids)
+        marks_df = _filter_df_by_tenant_ids(marks_df, tenant_ids)
+
+        def _peek_label(tid, acct):
+            from app.privacy import shown_account
+            raw = label_map.get(str(tid or "").strip(), acct or "")
+            return shown_account(raw, tid)
+
+        held_charts = build_held_charts(
+            exec_df,
+            closes_df,
+            marks_df,
+            label_for=_peek_label,
+        )
+        payload["held"] = peek_held_summary(held_charts)
+    except Exception as exc:
+        _log.warning("position peek held chart failed for %s: %s", symbol, exc)
+        payload["held"] = None
     qs = []
     for key in ("account", "tenant", "tenants", "groups"):
         val = request.args.get(key)
@@ -3749,6 +3900,8 @@ def position_peek(symbol):
             qs.append(f"{key}={quote_plus(val)}")
     if qs:
         payload["position_url"] = payload["position_url"] + "?" + "&".join(qs)
+    if payload.get("held"):
+        payload["held"]["chart_url"] = payload["position_url"] + "#if-held"
     return jsonify(payload)
 
 

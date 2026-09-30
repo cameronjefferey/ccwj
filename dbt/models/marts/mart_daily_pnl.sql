@@ -493,7 +493,11 @@ filled as (
         equity_sell_proceeds,
         equity_sell_qty,
         other_amount,
-        last_value(close_price ignore nulls) over (
+        -- A stored 0 is not a close (a missing print, or a token-price
+        -- hole on a colliding ticker). Treat it as null so the previous
+        -- positive close carries forward instead of zeroing unrealized
+        -- for that day and every day after until the next print.
+        last_value(nullif(close_price, 0) ignore nulls) over (
             partition by tenant_id, account, user_id, symbol order by date
             rows between unbounded preceding and current row
         ) as close_price,

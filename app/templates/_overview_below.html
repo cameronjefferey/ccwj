@@ -23,7 +23,7 @@
             </div>
             {% if overview_radar.earnings %}
             <div class="ov-lane">
-                <div class="ov-ln" style="color:#b06a00">Earnings</div>
+                <div class="ov-ln" style="color:#e8c07a">Earnings</div>
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.earnings_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.earnings %}
@@ -34,7 +34,7 @@
             {% endif %}
             {% if overview_radar.options %}
             <div class="ov-lane">
-                <div class="ov-ln" style="color:#4b3fd1">Options</div>
+                <div class="ov-ln" style="color:#a8b8ff">Options</div>
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.options_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.options %}
@@ -45,7 +45,7 @@
             {% endif %}
             {% if overview_radar.dividends %}
             <div class="ov-lane">
-                <div class="ov-ln" style="color:#17804d">Ex-dividends</div>
+                <div class="ov-ln" style="color:#5eead4">Ex-dividends</div>
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.dividends_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.dividends %}
@@ -153,7 +153,7 @@
                 <div>
                     <div class="watch-sym">{{ d.symbol }}{% if d.source != 'calendar' %}<span class="watch-badge" title="Guessed from past cadence — not a declared date">projected</span>{% endif %}{% if d.subsector %}<span class="watch-badge">{{ d.subsector }}</span>{% endif %}</div>
                     <div class="watch-meta">
-                        {% if d.last_amount_per_share %}${{ "%.2f"|format(d.last_amount_per_share) }} last{% endif %}
+                        {% if d.last_amount_per_share %}{{ money(d.last_amount_per_share, 2) }} last{% endif %}
                         {% if d.shares_held %} · {{ '{:,.0f}'.format(d.shares_held) }} shares held{% endif %}
                         {% if d.source != 'calendar' and d.median_spacing_days %}&middot; ~{{ d.median_spacing_days }}d cadence{% endif %}
                     </div>
@@ -167,7 +167,7 @@
                        when we don't have both a last amount and a share count
                        (e.g. calendar-only symbols with no cadence history yet). #}
                     {% if d.est_income %}
-                    <div class="text-positive" style="font-weight:600;" title="${{ '%.2f'|format(d.last_amount_per_share) }}/share &times; {{ '{:,.0f}'.format(d.shares_held) }} shares held in this view. Every share, not the uncovered covered-call lots on Today.">
+                    <div class="text-positive" style="font-weight:600;" title="{{ money(d.last_amount_per_share, 2) }}/share &times; {{ '{:,.0f}'.format(d.shares_held) }} shares held in this view. Every share, not the uncovered covered-call lots on Today.">
                         est. +${{ "{:,.2f}".format(d.est_income) }}
                     </div>
                     {% endif %}
@@ -298,7 +298,11 @@
                 {% if c.is_future %}
                     {% set bg = "var(--cal-blank-bg)" %}{% set fg = "var(--cal-blank-fg)" %}
                 {% elif c.has_data %}
-                    {% set intensity = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
+                    {% set _int = namespace(v=40) %}
+                    {% if not privacy_mode %}
+                    {% set _int.v = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
+                    {% endif %}
+                    {% set intensity = _int.v %}
                     {% if c.daily_change > 0 %}
                         {% set bg = "rgba(25,135,84," ~ (0.08 + intensity * 0.007) ~ ")" %}
                         {% set fg = "var(--cal-pos-fg)" %}
@@ -322,14 +326,14 @@
                    title="What happened {{ c.month_short }} {{ c.day }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
-                    <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
+                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
                     {% endif %}
                 </a>
                 {% else %}
                 <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data and not c.is_future %}
-                    <div class="cal-day-pnl">{% if c.daily_change != 0 %}{{ "+" if c.daily_change > 0 else "" }}${{ "{:,.0f}".format(c.daily_change) }}{% else %}$0{% endif %}</div>
+                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
                     {% endif %}
                 </div>
                 {% endif %}
@@ -387,14 +391,14 @@
                     <th data-m="hide">Dividend</th>
                     <th>Total</th>
                     <th data-m="hide">G/L %</th>
-                    <th data-m="hide">Annualized</th>
+                    <th data-m="hide">{{ term('Annualized') }}</th>
                 </tr>
             </thead>
             <tbody>
                 {% for a in account_breakdown.rows %}
                 <tr data-href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}">
-                    <td class="left" data-val="{{ a.account_display }}">
-                        <a href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}" class="row-symbol">{{ a.account_display }}</a>
+                    <td class="left" data-val="{{ a.account_display | account_label(a.tenant_id) }}">
+                        <a href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}" class="row-symbol">{{ a.account_display | account_label(a.tenant_id) }}</a>
                         {% if account_rename_urls is defined and a.tenant_id in account_rename_urls %}
                         <a class="acct-rename" href="{{ account_rename_urls[a.tenant_id] }}">rename</a>
                         {% endif %}
@@ -508,7 +512,7 @@
             <tbody>
                 {% for r in tw.trades %}
                 <tr data-href="{{ scoped_url('position_detail', symbol=r.symbol, tenant=r.tenant_id or none) }}">
-                    <td class="left" data-val="{{ r.account_display }}">{{ r.account_display }}</td>
+                    <td class="left" data-val="{{ r.account_display | account_label(r.tenant_id) }}">{{ r.account_display | account_label(r.tenant_id) }}</td>
                     <td class="left" data-val="{{ r.symbol }}">
                         <a href="{{ scoped_url('position_detail', symbol=r.symbol, tenant=r.tenant_id or none) }}" class="row-symbol">{{ r.symbol }}</a>
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}

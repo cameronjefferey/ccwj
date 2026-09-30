@@ -1,0 +1,47 @@
+<div class="held-card" data-held-card>
+    <div class="held-card-top">
+        <div>
+            <div class="held-title" title="{{ c.trade_symbol }}">
+                {{ c.label }}
+                <span style="color:#8a97b1; font-weight:500;">· {{ c.expiry_label }}</span>
+            </div>
+            <div class="held-sub">
+                {{ c.direction_label }}{% if c.show_account and c.account %} · {{ c.account }}{% endif %}
+                · {{ c.contracts }} contract{{ 's' if c.contracts != 1 else '' }}
+                · open <span class="held-px">{{ c.open_date_label }} {{ c.open_price_display }}</span>
+                · close <span class="held-px">{{ c.close_date_label }} {{ c.close_price_display }}</span>
+                · expiration <span class="held-px">{{ c.expiry_price_display }}</span>
+            </div>
+        </div>
+        <div class="held-toggle" role="group" aria-label="Price scale">
+            <button type="button" data-mode="share" aria-pressed="true">Per share</button>
+            <button type="button" data-mode="total" aria-pressed="false">Contract $</button>
+        </div>
+    </div>
+    <div class="held-stats">
+        <div class="held-stat">
+            <div class="lbl">Realized</div>
+            <div class="val {{ 'pos' if c.realized_pnl > 0 else 'neg' if c.realized_pnl < 0 else '' }}">{{ c.realized_display }}</div>
+            <div class="hint">What the close booked</div>
+        </div>
+        <div class="held-stat">
+            <div class="lbl">If held to expiration</div>
+            <div class="val {{ 'pos' if c.pnl_if_held > 0 else 'neg' if c.pnl_if_held < 0 else '' }}">{{ c.if_held_display }}</div>
+            <div class="hint">What you paid or received to open it, plus its value at expiration</div>
+        </div>
+        <div class="held-stat">
+            <div class="lbl">Difference</div>
+            <div class="val held-diff {{ 'pos' if c.difference < 0 else 'neg' if c.difference > 0 else '' }}">{{ c.difference_display }}</div>
+            <div class="hint">Compared with what the close booked</div>
+        </div>
+    </div>
+    <div class="held-legend" aria-hidden="true">
+        <span><i></i>{{ c.held_legend }}</span>
+        <span><i class="dash"></i>{{ c.if_held_legend }}</span>
+    </div>
+    <div class="held-canvas-wrap">
+        <canvas id="{{ c.dom_id }}" aria-label="{{ c.label }} price from open to expiration"></canvas>
+    </div>
+    <p class="held-note">{{ c.path_note }}</p>
+    <script type="application/json" class="held-spec">{{ c | tojson }}</script>
+</div>

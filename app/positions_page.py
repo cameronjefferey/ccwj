@@ -670,6 +670,8 @@ def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
     for c in ["sector", "subsector"]:
         if c in grouped.columns:
             grouped[c] = grouped[c].fillna("Unknown")
+    from app.sector_labels import apply_sector_labels
+    grouped = apply_sector_labels(grouped)
 
     return grouped
 
@@ -700,7 +702,8 @@ def positions():
     selected_subsector = (
         request.args.get("subsector", "") or request.args.get("industry", "")
     )
-    selected_sector = request.args.get("sector", "")
+    from app.sector_labels import canonical_sector_param
+    selected_sector = canonical_sector_param(request.args.get("sector", ""))
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
     # User-defined leg tag filter (Postgres). Normalized to match stored tags.
@@ -774,15 +777,20 @@ def positions():
         if col in df.columns:
             df[col] = df[col].astype(str).replace("NaT", "")
 
+    from app.sector_labels import apply_sector_labels, canonical_sector_param, sort_unclassified_last
+    df = apply_sector_labels(df)
+    if selected_subsector:
+        selected_subsector = canonical_sector_param(selected_subsector) or selected_subsector
+
     accounts = sorted(df["account"].dropna().unique())
     strategies = sorted(df["strategy"].dropna().unique())
     symbols = sorted(df["symbol"].dropna().unique())
     subsectors = (
-        sorted(df["subsector"].dropna().unique())
+        sort_unclassified_last(sorted(df["subsector"].dropna().unique()))
         if "subsector" in df.columns else []
     )
     sectors = (
-        sorted(df["sector"].dropna().unique())
+        sort_unclassified_last(sorted(df["sector"].dropna().unique()))
         if "sector" in df.columns else []
     )
     # User-defined leg tags (Postgres) for the filter dropdown.
@@ -996,10 +1004,12 @@ def positions():
     def _label_rows(_rows):
         for _r in _rows:
             _tid = _r.get("tenant_id")
-            _r["account_display"] = (
+            _raw_label = (
                 (_tenant_labels.get(_tid) if _tid else None)
                 or _norm_account_label(_r.get("account"))
             )
+            from app.privacy import shown_account
+            _r["account_display"] = shown_account(_raw_label, _tid)
         return _rows
 
     _label_rows(all_rows)

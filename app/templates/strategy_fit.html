@@ -55,7 +55,7 @@
         font-size: 1.05rem; font-weight: 650; margin: 0; color: #fff;
     }
     .ai-card .ai-head .when {
-        font-size: .72rem; color: #64748b;
+        font-size: .72rem; color: var(--ht-muted);
         margin-left: auto;
     }
     .ai-card .ai-summary {
@@ -76,14 +76,14 @@
         display: none;
         margin-top: .85rem; padding-top: .85rem;
         border-top: 1px dashed #e2e8f0;
-        color: #1e293b;
+        color: var(--ht-ink);
         font-size: .88rem;
         line-height: 1.55;
     }
     .ai-card.expanded .ai-full { display: block; }
     .ai-card .ai-full h2 {
         font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
-        color: #64748b; font-weight: 700; margin: 0 0 .45rem;
+        color: var(--ht-muted); font-weight: 700; margin: 0 0 .45rem;
     }
     .ai-card .ai-full ul { padding-left: 1.1rem; margin: .45rem 0 .45rem; }
     .ai-card .ai-full li { margin-bottom: .45rem; }
@@ -105,7 +105,7 @@
     }
 
     .ai-card.empty .ai-summary {
-        color: #64748b; font-weight: 400;
+        color: var(--ht-muted); font-weight: 400;
     }
     .ai-generate-btn {
         background: #5b8cff;
@@ -145,13 +145,13 @@
     .callouts-card .pair .pnl-big.neg { color: #f0556d; }
 
     .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; scroll-margin-top: 4.5rem; }
-    .fit-controls label.lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: .25rem; display: block; }
+    .fit-controls label.lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ht-muted); margin-bottom: .25rem; display: block; }
 
     .metric-toggle {
         display: inline-flex; gap: 0; background: #121826; padding: 3px;
         border-radius: 0.45rem; border: 1px solid #243049;
     }
-    .metric-toggle button,
+    .metric-toggle button:not(.ht-term-btn),
     .metric-toggle a {
         background: transparent; border: 0; color: #8a97b1;
         padding: .35rem .85rem; border-radius: 0.35rem;
@@ -161,13 +161,14 @@
         text-decoration: none;
         display: inline-flex; align-items: center;
     }
-    .metric-toggle button.active,
+    .metric-toggle button:not(.ht-term-btn).active,
     .metric-toggle a.active { background: rgba(91,140,255,.15); color: #5b8cff; }
-    .metric-toggle button:hover:not(.active),
+    .metric-toggle button:not(.ht-term-btn):hover:not(.active),
     .metric-toggle a:hover:not(.active) { color: #fff; background: rgba(255,255,255,.04); }
+    .metric-toggle .ht-term { align-self: center; margin: 0 .15rem; }
 
     .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
-    .visibility-toggles .form-check { font-size: .78rem; color: #475569; }
+    .visibility-toggles .form-check { font-size: .78rem; color: var(--ht-muted); }
 
     .fit-card {
         background: #121826; border: 1px solid #243049; border-radius: 0.75rem; box-shadow: none; color: #e8edf7;
@@ -181,7 +182,7 @@
     }
     .fit-scroll-hint {
         display: flex; align-items: center; gap: .4rem;
-        font-size: .75rem; color: #334155; font-weight: 600;
+        font-size: .75rem; color: var(--ht-ink); font-weight: 600;
         margin: -.25rem 0 .55rem;
     }
     .fit-scroll-hint[hidden] { display: none !important; }
@@ -241,9 +242,9 @@
         margin-top: .15rem; font-size: .8rem; text-transform: none; letter-spacing: 0;
     }
     table.fit thead th .col-pnl.pos { color: #059669; }
-    table.fit thead th .col-pnl.neg { color: #b91c1c; }
+    table.fit thead th .col-pnl.neg { color: #f0556d; }
     table.fit thead th .col-meta {
-        display: block; font-size: .62rem; color: #64748b; font-weight: 500;
+        display: block; font-size: .62rem; color: var(--ht-muted); font-weight: 500;
         text-transform: none; letter-spacing: 0; margin-top: .1rem;
     }
     table.fit thead th.totals { background: #1e293b; color: #fff; }
@@ -260,7 +261,7 @@
         box-shadow: -2px 0 0 rgba(15, 23, 42, .35);
     }
     table.fit tbody th.strategy .row-meta {
-        display: block; font-size: .65rem; color: #64748b; font-weight: 500; margin-top: .1rem;
+        display: block; font-size: .65rem; color: var(--ht-muted); font-weight: 500; margin-top: .1rem;
     }
 
     table.fit td.cell {
@@ -272,10 +273,35 @@
         table.fit td.cell { min-width: 72px; }
         table.fit tbody th.strategy { min-width: 108px; }
     }
+    .fit-col-short, .fit-corner-short { display: none; }
+    @media (max-width: 480px) {
+        /* At ~400px a 108px strategy pin plus a sticky total left room
+           for one sector. Narrow the cells, abbreviate headers, and let
+           the total scroll so several sectors fit. */
+        .fit-col-full, .fit-corner-full { display: none; }
+        .fit-col-short, .fit-corner-short { display: inline; }
+        table.fit { border-spacing: 2px; font-size: .72rem; }
+        table.fit th, table.fit td { padding: .28rem .22rem; }
+        table.fit td.cell { min-width: 52px; }
+        table.fit thead th.row-head,
+        table.fit tbody th.strategy {
+            min-width: 68px;
+            max-width: 84px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        table.fit thead th .col-meta { display: none; }
+        table.fit thead th.totals,
+        table.fit tbody tr:not(.totals-row) > td.total-cell,
+        table.fit tr.totals-row > td.total-cell.grand {
+            position: static;
+            box-shadow: none;
+        }
+    }
     table.fit td.cell.has-data { cursor: pointer; }
     table.fit td.cell.has-data:hover { transform: scale(1.03); box-shadow: 0 3px 8px rgba(0,0,0,.1); z-index: 1; position: relative; }
     table.fit td.cell .cell-pnl { font-weight: 700; display: block; line-height: 1.1; }
-    table.fit td.cell .cell-meta { font-size: .65rem; color: #475569; display: block; margin-top: .15rem; }
+    table.fit td.cell .cell-meta { font-size: .65rem; color: var(--ht-muted); display: block; margin-top: .15rem; }
 
     /* Low-N de-emphasis — cells with <3 trades fade to suppress noise */
     table.fit td.cell.low-n { opacity: .35; }
@@ -294,7 +320,7 @@
         background: #121826; color: #8a97b1; font-weight: 600;
     }
     table.fit tr.equity-na th.strategy .row-meta {
-        color: #78716c;
+        color: var(--ht-muted);
     }
     table.fit tr.equity-na th.strategy .equity-badge {
         display: inline-block;
@@ -327,11 +353,11 @@
     table.fit tr.totals-row td.total-cell.grand { background: #5b8cff !important; }
 
     .pos { color: #059669; }
-    .neg { color: #b91c1c; }
+    .neg { color: #f0556d; }
 
     .fit-legend {
         display: flex; gap: .9rem; align-items: center; flex-wrap: wrap;
-        font-size: .72rem; color: #64748b; margin-top: .6rem;
+        font-size: .72rem; color: var(--ht-muted); margin-top: .6rem;
     }
     .fit-legend .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: .35rem; }
 
@@ -342,7 +368,7 @@
     [data-bs-theme="dark"] table.fit tbody th.strategy { background: #1c1e26; color: #e2e8f0; box-shadow: 2px 0 0 #2e313a; }
     [data-bs-theme="dark"] table.fit tr.totals-row th.strategy { background: #1e293b; }
 
-    .fit-empty { padding: 2rem; text-align: center; color: #64748b; }
+    .fit-empty { padding: 2rem; text-align: center; color: var(--ht-muted); }
 
     /* Hidden Unknown column toggle */
     .hide-unknown table.fit th.col-unknown,
@@ -371,19 +397,22 @@
     .fit-panel.open { transform: translateX(0); }
 
     .fit-panel header {
-        padding: 1.1rem 1.2rem .9rem;
+        padding: 1.1rem 5.5rem .9rem 1.2rem;
         border-bottom: 1px solid #e7e5e4;
         background: #1a1a2e;
         color: #fff;
     }
-    .fit-panel header .close {
-        position: absolute; top: .8rem; right: .9rem;
-        background: rgba(255,255,255,.15); border: 0; color: #fff;
-        width: 30px; height: 30px; border-radius: 999px;
-        cursor: pointer; font-size: 1.05rem;
-        display: flex; align-items: center; justify-content: center;
+    .fit-panel header .ht-fit-close {
+        position: absolute; top: .7rem; right: .85rem;
+        color: #e8edf7;
+        border-color: #243049;
+        background: transparent;
     }
-    .fit-panel header .close:hover { background: rgba(255,255,255,.25); }
+    .fit-panel header .ht-fit-close:hover {
+        color: #0a0e17;
+        background: #5b8cff;
+        border-color: #5b8cff;
+    }
     .fit-panel header .tags {
         display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .3rem;
     }
@@ -408,10 +437,10 @@
     .panel-stats .stat {
         background: #1a2233; padding: .6rem .75rem; border-radius: 9px;
     }
-    .panel-stats .stat .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
-    .panel-stats .stat .val { font-size: .95rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .panel-stats .stat .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ht-muted); }
+    .panel-stats .stat .val { font-size: .95rem; font-weight: 700; color: var(--ht-ink); font-variant-numeric: tabular-nums; }
     .panel-stats .stat .val.pos { color: #059669; }
-    .panel-stats .stat .val.neg { color: #b91c1c; }
+    .panel-stats .stat .val.neg { color: #f0556d; }
 
     .panel-edge {
         background: #1a2233; border-left: 3px solid var(--color-mirror);
@@ -423,7 +452,7 @@
 
     .panel-section-title {
         font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
-        color: #64748b; font-weight: 700;
+        color: var(--ht-muted); font-weight: 700;
         margin: 1rem 0 .55rem;
     }
 
@@ -436,7 +465,7 @@
         transition: background .12s ease;
     }
     .symbol-row:hover { background: #1a2233; color: inherit; }
-    .symbol-row .sym { font-weight: 700; color: #0f172a; min-width: 60px; font-variant-numeric: tabular-nums; }
+    .symbol-row .sym { font-weight: 700; color: var(--ht-ink); min-width: 60px; font-variant-numeric: tabular-nums; }
     .symbol-row .bar { height: 6px; border-radius: 3px; background: #e2e8f0; position: relative; }
     .symbol-row .bar > span {
         position: absolute; top: 0; bottom: 0; left: 0;
@@ -445,22 +474,14 @@
     .symbol-row .bar > span.neg { background: #ef4444; }
     .symbol-row .pnl { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: .85rem; }
     .symbol-row .pnl.pos { color: #059669; }
-    .symbol-row .pnl.neg { color: #b91c1c; }
-    .symbol-row .meta { font-size: .65rem; color: #64748b; margin-top: .15rem; }
+    .symbol-row .pnl.neg { color: #f0556d; }
+    .symbol-row .meta { font-size: .65rem; color: var(--ht-muted); margin-top: .15rem; }
 
     .panel-actions {
-        display: flex; gap: .5rem; margin-top: 1.1rem;
-        padding-top: .9rem; border-top: 1px solid #e7e5e4;
+        display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1.1rem;
+        padding-top: .9rem; border-top: 1px solid #243049;
     }
-    .panel-actions a {
-        flex: 1; text-align: center; padding: .55rem .85rem;
-        border-radius: 999px; font-size: .8rem; font-weight: 600;
-        text-decoration: none;
-    }
-    .panel-actions a.primary { background: #0f172a; color: #fafaf9; }
-    .panel-actions a.primary:hover { background: #1e293b; color: #fafaf9; }
-    .panel-actions a.secondary { background: #1a2233; color: #e8edf7; border: 1px solid #243049; }
-    .panel-actions a.secondary:hover { background: #1a2233; }
+    .panel-actions .btn { flex: 1; }
 </style>
 {% endblock %}
 
@@ -493,7 +514,7 @@
     <div class="fit-baselines">
         <div class="fit-baseline">
             <div class="lbl">Your baseline expectancy</div>
-            <div class="val">${{ "{:,.2f}".format(baseline_expectancy) }}/trade</div>
+            <div class="val">{{ money(baseline_expectancy, 2) }}/trade</div>
         </div>
         <div class="fit-baseline">
             <div class="lbl">Your baseline win rate</div>
@@ -505,7 +526,7 @@
         </div>
         <div class="fit-baseline">
             <div class="lbl">Total Return</div>
-            <div class="val">${{ "{:,.0f}".format(grand_total.total_pnl) }}</div>
+            <div class="val">{{ money(grand_total.total_pnl, 0) }}</div>
         </div>
     </div>
     {% endif %}
@@ -546,7 +567,7 @@
         <span class="badge-ai">AI Insight</span>
         <h2>What we noticed</h2>
         {% if ai_generated_at %}
-        <span class="when">Updated {{ ai_generated_at.strftime('%b %d, %I:%M %p') }}</span>
+        <span class="when">Updated <time class="ht-local-time" datetime="{{ ai_generated_at.isoformat() }}{% if ai_generated_at.tzinfo is none %}Z{% endif %}">{{ ai_generated_at.strftime('%b %d, %I:%M %p') }} UTC</time></span>
         {% endif %}
     </div>
     <div class="ai-summary">{{ ai_summary }}</div>
@@ -558,7 +579,7 @@
         {{ ai_full_html|safe }}
     </div>
     <div class="ai-actions">
-        <form method="post" action="{{ url_for('generate_strategy_fit_insights', account=selected_account, sector=drill_sector) }}" style="margin: 0;">
+        <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin: 0;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="ai-refresh" title="Regenerate insights from your latest data">↻ Refresh</button>
         </form>
@@ -579,7 +600,7 @@
         {% endif %}
     </div>
     {% if ai_available %}
-    <form method="post" action="{{ url_for('generate_strategy_fit_insights', account=selected_account, sector=drill_sector) }}" style="margin-top: .35rem;">
+    <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin-top: .35rem;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="ai-generate-btn">Generate insights</button>
     </form>
@@ -599,8 +620,8 @@
             <span class="strat-tag">{{ c.strategy }}</span>
             <span class="text-muted small">in</span>
             <span class="ind-tag">{{ c[col_field] }}</span>
-            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · ${{ "{:,.0f}".format(c.expectancy) }}/trade</span>
-            <span class="pnl-big pos">+${{ "{:,.0f}".format(c.total_pnl) }}</span>
+            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
+            <span class="pnl-big pos">{{ money(c.total_pnl, 0, true) }}</span>
         </div>
         {% endfor %}
     </div>
@@ -613,8 +634,8 @@
             <span class="strat-tag">{{ c.strategy }}</span>
             <span class="text-muted small">in</span>
             <span class="ind-tag">{{ c[col_field] }}</span>
-            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · ${{ "{:,.0f}".format(c.expectancy) }}/trade</span>
-            <span class="pnl-big neg">${{ "{:,.0f}".format(c.total_pnl) }}</span>
+            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
+            <span class="pnl-big neg">{{ money(c.total_pnl, 0) }}</span>
         </div>
         {% endfor %}
     </div>
@@ -636,9 +657,9 @@
             <a href="#" class="active" aria-current="page">Subsector</a>
             {% endif %}
             <a href="{{ scoped_url('strategies', view='fit', dim='dte', _anchor='fit-controls') }}"
-               class="{% if dim == 'dte' %}active{% endif %}">DTE</a>
+               class="{% if dim == 'dte' %}active{% endif %}">DTE</a>{{ term_mark('DTE') }}
             <a href="{{ scoped_url('strategies', view='fit', dim='moneyness', _anchor='fit-controls') }}"
-               class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>
+               class="{% if dim == 'moneyness' %}active{% endif %}">Moneyness</a>{{ term_mark('Moneyness') }}
         </div>
     </div>
 
@@ -647,7 +668,7 @@
         <div class="metric-toggle" id="metricToggle">
             <button type="button" data-metric="total_pnl" class="active">Total Return</button>
             <button type="button" data-metric="expectancy">Per trade</button>
-            <button type="button" data-metric="win_rate">Win rate</button>
+            <button type="button" data-metric="win_rate">Win rate</button>{{ term_mark('Win rate') }}
             <button type="button" data-metric="edge">Edge vs. you</button>
         </div>
     </div>
@@ -657,7 +678,7 @@
         <div class="visibility-toggles">
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="hideUnknown" checked>
-                <label class="form-check-label" for="hideUnknown">Hide Unknown</label>
+                <label class="form-check-label" for="hideUnknown">Hide unclassified</label>
             </div>
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="dimLowN" checked>
@@ -678,9 +699,9 @@
 {% if dim in ('dte', 'moneyness') %}
 <p class="text-muted small mb-2" style="margin-top: -0.4rem;">
     {% if dim == 'dte' %}
-    DTE = days to expiration when the contract was opened. Equity-only strategies (no option contracts) are shown for context but don't have data here.
+    {{ term('DTE') }} is days to expiration when the contract was opened. Equity-only strategies (no option contracts) are shown for context but don't have data here.
     {% elif dim == 'moneyness' %}
-    Moneyness is measured at the time the contract was opened (within ±2% of strike = ATM). Equity-only strategies are shown for context but don't have data here.
+    {{ term('Moneyness') }} is measured at the time the contract was opened (within ±2% of strike = {{ term('ATM', 'moneyness') }}). Equity-only strategies are shown for context but don't have data here.
     {% endif %}
 </p>
 {% endif %}
@@ -699,10 +720,29 @@
         data-max-edge="{{ max_abs_edge }}">
         <thead>
             <tr>
-                <th class="row-head">Strategy ↓ &nbsp;/ &nbsp;{{ dim_label }} →</th>
+                <th class="row-head">
+                    <span class="fit-corner-full">Strategy ↓ &nbsp;/ &nbsp;{{ dim_label }} →</span>
+                    <span class="fit-corner-short">Strat</span>
+                </th>
                 {% for col in col_labels %}
+                {% set _short = {
+                    'Technology': 'Tech',
+                    'Healthcare': 'Health',
+                    'Financial Services': 'Fin',
+                    'Consumer Cyclical': 'Cycl',
+                    'Communication Services': 'Comm',
+                    'Industrials': 'Ind',
+                    'Consumer Defensive': 'Def',
+                    'Basic Materials': 'Matl',
+                    'Real Estate': 'RE',
+                    'Energy': 'Enrgy',
+                    'Utilities': 'Util',
+                    'Unknown': 'Unc.',
+                    'Unclassified': 'Unc.',
+                    'Other': 'Unc.'
+                }.get(col, col[:4]) %}
                 {% set ct = col_totals.get(col) %}
-                <th class="{% if col == 'Unknown' %}col-unknown{% endif %}"
+                <th class="{% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}"
                     {% if ct %}
                     data-total-pnl="{{ ct.total_pnl }}"
                     data-num-trades="{{ ct.num_trades | int }}"
@@ -711,12 +751,12 @@
                     {% endif %}>
                     {% if dim == 'sector' %}
                     <a href="{{ scoped_url('strategies', view='fit', sector=col, _anchor='fit-controls') }}"
-                       title="Drill into {{ col }} subsectors">{{ col }}</a>
+                       title="Drill into {{ col }} subsectors"><span class="fit-col-full">{{ col }}</span><span class="fit-col-short">{{ _short }}</span></a>
                     {% else %}
-                    {{ col }}
+                    <span class="fit-col-full">{{ col }}</span><span class="fit-col-short">{{ _short }}</span>
                     {% endif %}
                     {% if ct %}
-                    <span class="col-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">${{ "{:,.0f}".format(ct.total_pnl) }}</span>
+                    <span class="col-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">{{ money(ct.total_pnl, 0) }}</span>
                     <span class="col-meta" title="Unique symbols in this {{ dim_label|lower }}">
                         {{ ct.num_symbols }} sym ·
                         {% if (ct.num_winners + ct.num_losers) > 0 %}{{ "{:.0%}".format(ct.win_rate) }} win{% else %}—{% endif %}
@@ -734,7 +774,7 @@
             {% set rt = row_totals.get(strat) %}
             {% set is_equity_na = strat in equity_set %}
             <tr {% if is_equity_na %}class="equity-na"{% endif %}>
-                <th class="strategy">
+                <th class="strategy" title="{{ strat }}">
                     {{ strat }}
                     {% if is_equity_na %}
                     <span class="equity-badge" title="This strategy has no option contracts, so {{ dim_label }} doesn't apply.">N/A · equity</span>
@@ -755,7 +795,7 @@
                         {% else %}
                             {% set drill_url = '' %}
                         {% endif %}
-                        <td class="cell has-data {% if col == 'Unknown' %}col-unknown{% endif %} {% if c.num_trades < 3 %}low-n{% endif %}"
+                        <td class="cell has-data {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %} {% if c.num_trades < 3 %}low-n{% endif %}"
                             data-strategy="{{ strat }}"
                             data-col="{{ col }}"
                             data-col-label="{{ dim_label }}"
@@ -771,14 +811,14 @@
                             data-num-losers="{{ c.num_losers | int }}"
                             data-num-symbols="{{ c.num_symbols | int }}"
                             data-positions-url="{{ drill_url }}"
-                            title="{{ strat }} in {{ col }} · {{ c.num_trades | int }} trades · {{ '{:.0%}'.format(c.win_rate) }} win · ${{ '{:,.2f}'.format(c.expectancy) }}/trade · ${{ '{:,.0f}'.format(c.total_pnl) }} total · click for details">
+                            title="{{ strat }} in {{ col }} · {{ c.num_trades | int }} trades · {{ '{:.0%}'.format(c.win_rate) }} win · {{ money(c.expectancy, 2) }}/trade · {{ money(c.total_pnl, 0) }} total · click for details">
                             <span class="cell-pnl"></span>
                             <span class="cell-meta">{{ c.num_trades | int }}t{% if (c.num_winners + c.num_losers) > 0 %} · {{ "{:.0%}".format(c.win_rate) }}{% endif %}</span>
                         </td>
                     {% elif is_equity_na %}
-                        <td class="cell na {% if col == 'Unknown' %}col-unknown{% endif %}">N/A</td>
+                        <td class="cell na {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}">N/A</td>
                     {% else %}
-                        <td class="cell empty {% if col == 'Unknown' %}col-unknown{% endif %}">—</td>
+                        <td class="cell empty {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}">—</td>
                     {% endif %}
                 {% endfor %}
                 {% if is_equity_na %}
@@ -790,7 +830,7 @@
                     data-win-rate="{{ rt.win_rate }}"
                     data-num-closed="{{ (rt.num_winners + rt.num_losers) | int }}">
                     <span class="cell-pnl {% if rt.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                        {% if rt.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(rt.total_pnl) }}
+                        {{ money(rt.total_pnl, 0, true) }}
                     </span>
                     <span class="cell-meta">
                         {{ rt.num_trades | int }}t
@@ -808,13 +848,13 @@
                 {% for col in col_labels %}
                     {% set ct = col_totals.get(col) %}
                     {% if ct %}
-                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}"
+                    <td class="total-cell {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}"
                         data-total-pnl="{{ ct.total_pnl }}"
                         data-num-trades="{{ ct.num_trades | int }}"
                         data-win-rate="{{ ct.win_rate }}"
                         data-num-closed="{{ (ct.num_winners + ct.num_losers) | int }}">
                         <span class="cell-pnl {% if ct.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                            {% if ct.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(ct.total_pnl) }}
+                            {{ money(ct.total_pnl, 0, true) }}
                         </span>
                         <span class="cell-meta">
                             {{ ct.num_trades | int }}t
@@ -822,7 +862,7 @@
                         </span>
                     </td>
                     {% else %}
-                    <td class="total-cell {% if col == 'Unknown' %}col-unknown{% endif %}">—</td>
+                    <td class="total-cell {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}">—</td>
                     {% endif %}
                 {% endfor %}
                 {% if grand_total %}
@@ -832,7 +872,7 @@
                     data-win-rate="{{ grand_total.win_rate }}"
                     data-num-closed="{{ (grand_total.num_winners + grand_total.num_losers) | int }}">
                     <span class="cell-pnl {% if grand_total.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                        {% if grand_total.total_pnl >= 0 %}+{% endif %}${{ "{:,.0f}".format(grand_total.total_pnl) }}
+                        {{ money(grand_total.total_pnl, 0, true) }}
                     </span>
                     <span class="cell-meta">
                         {{ grand_total.num_trades | int }}t · {{ "{:.0%}".format(grand_total.win_rate) }}
@@ -859,7 +899,7 @@
 <div class="fit-panel-backdrop" id="fitPanelBackdrop"></div>
 <aside class="fit-panel" id="fitPanel" aria-hidden="true">
     <header style="position: relative;">
-        <button type="button" class="close" id="fitPanelClose" aria-label="Close">×</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary ht-fit-close" id="fitPanelClose" aria-label="Close">Close</button>
         <div class="tags">
             <span class="strat-tag" id="panelStrategy">—</span>
             <span class="text-white-50 small" style="align-self: center;">in</span>
@@ -877,11 +917,11 @@
 
         <div class="panel-stats">
             <div class="stat"><div class="lbl">Trades</div><div class="val" id="panelTrades">0</div></div>
-            <div class="stat"><div class="lbl">Win rate</div><div class="val" id="panelWinRate">—</div></div>
+            <div class="stat"><div class="lbl">{{ term('Win rate') }}</div><div class="val" id="panelWinRate">—</div></div>
             <div class="stat"><div class="lbl">Per trade</div><div class="val" id="panelExpectancy">$0</div></div>
             <div class="stat"><div class="lbl">W / L</div><div class="val" id="panelWL">— / —</div></div>
-            <div class="stat"><div class="lbl">Realized</div><div class="val" id="panelRealized">$0</div></div>
-            <div class="stat"><div class="lbl">Unrealized</div><div class="val" id="panelUnrealized">$0</div></div>
+            <div class="stat"><div class="lbl">{{ term('Realized') }}</div><div class="val" id="panelRealized">$0</div></div>
+            <div class="stat"><div class="lbl">{{ term('Unrealized') }}</div><div class="val" id="panelUnrealized">$0</div></div>
         </div>
 
         <div class="panel-section-title" id="panelSymbolsTitle">Top symbols</div>
@@ -890,8 +930,8 @@
         </div>
 
         <div class="panel-actions">
-            <a href="#" id="panelOpenPositions" class="primary">Open in Positions →</a>
-            <button type="button" class="secondary" id="panelCloseBottom">Close</button>
+            <a href="#" id="panelOpenPositions" class="btn btn-sm btn-primary">Open in Positions</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="panelCloseBottom">Close</button>
         </div>
     </div>
 </aside>

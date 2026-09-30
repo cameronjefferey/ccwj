@@ -306,6 +306,11 @@ def test_money_sign_sits_before_the_dollar():
     assert _fmt_money(-35323) == "-$35,323.00"
     assert _fmt_money(-35323, 0) == "-$35,323"
     assert _fmt_money(12.5) == "$12.50"
+    assert _fmt_money(-1318, 0) == "-$1,318"
+    assert _fmt_money(-30042.5) == "-$30,042.50"
+    assert "$-" not in _fmt_money(-1318)
+    assert _fmt_money(668, 0, signed=True) == "+$668"
+    assert _fmt_money(None) == "—"
 
 
 def test_human_date_and_zero_win_rate_label():

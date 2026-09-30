@@ -1,0 +1,976 @@
+{# If-held charts stay in a panel. The headline sits above the trades
+   table; a pill on each early-closed option row opens the same panel.
+   Charts are built on open, not on load. #}
+{% if held_charts %}
+{% if held_summary %}
+<details class="held-fold" id="if-held-summary">
+    <summary class="held-fold-sum">
+        <span class="held-fold-kicker">If held to expiration</span>
+        <span class="held-fold-line">{{ held_summary.headline }}</span>
+        <span class="held-fold-count">{{ held_summary.count }}</span>
+    </summary>
+    <div class="held-fold-body">
+        <table class="held-fold-table">
+            <thead>
+                <tr>
+                    <th>Contract</th>
+                    <th class="num">Contracts</th>
+                    <th>Closed</th>
+                    <th class="num">Actual</th>
+                    <th class="num">If held</th>
+                    <th class="num"><span class="sr">Difference</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in held_summary.rows %}
+                <tr class="held-fold-row" data-held-open="{{ row.dom_id }}" tabindex="0">
+                    <td class="held-fold-contract">{{ row.contract }}</td>
+                    <td class="num">{{ row.contracts }}</td>
+                    <td>{{ row.closed }}</td>
+                    <td class="num {{ 'pos' if row.realized_pnl > 0 else 'neg' if row.realized_pnl < 0 else '' }}">{{ row.realized_display }}</td>
+                    <td class="num {{ 'pos' if row.pnl_if_held > 0 else 'neg' if row.pnl_if_held < 0 else '' }}">{{ row.if_held_display }}</td>
+                    <td class="num">
+                        {% if row.pill %}
+                        <button type="button" class="held-pill {{ 'held-more' if row.held_better else 'held-less' if row.pill != 'Same' else 'held-same' }}"
+                                data-held-open="{{ row.dom_id }}">{{ row.pill }}</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="held-fold-cards">
+            {% for row in held_summary.rows %}
+            <div class="held-fold-card held-fold-row" data-held-open="{{ row.dom_id }}" tabindex="0">
+                <div class="held-fold-contract">{{ row.contract }}</div>
+                <div class="held-fold-card-metrics">
+                    <div>
+                        <span class="k">Actual</span>
+                        <span class="v {{ 'pos' if row.realized_pnl > 0 else 'neg' if row.realized_pnl < 0 else '' }}">{{ row.realized_display }}</span>
+                    </div>
+                    <div>
+                        <span class="k">If held</span>
+                        <span class="v {{ 'pos' if row.pnl_if_held > 0 else 'neg' if row.pnl_if_held < 0 else '' }}">{{ row.if_held_display }}</span>
+                    </div>
+                    <div class="held-fold-card-pill">
+                        {% if row.pill %}
+                        <button type="button" class="held-pill {{ 'held-more' if row.held_better else 'held-less' if row.pill != 'Same' else 'held-same' }}"
+                                data-held-open="{{ row.dom_id }}">{{ row.pill }}</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</details>
+{% endif %}
+<div class="held-drawer" id="if-held" role="dialog" aria-modal="true"
+     aria-labelledby="heldDrawerTitle" aria-hidden="true">
+    <div class="held-backdrop" data-held-close></div>
+    <div class="held-drawer-panel">
+        <div class="held-drawer-bar">
+            <h6 id="heldDrawerTitle">If held to expiration</h6>
+            {% if held_charts|length > 1 %}
+            <div class="held-step">
+                <button type="button" data-held-prev aria-label="Previous trade" disabled>‹</button>
+                <span data-held-step-label>1 of {{ held_charts|length }}</span>
+                <button type="button" data-held-next aria-label="Next trade">›</button>
+            </div>
+            {% endif %}
+            <button type="button" class="held-drawer-x" data-held-close aria-label="Close">×</button>
+        </div>
+        <p class="held-intro">
+            Open and close mark the prices you traded.
+            The dashed line continues, day by day, to expiration.
+        </p>
+        {% for c in held_charts %}
+        <div class="held-pane" data-held-pane="{{ c.dom_id }}" hidden>
+            {% include "_held_chart_card.html" %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<style>
+
+    .held-fold {
+        background: #121826;
+        border: 1px solid #243049;
+        color: #e8edf7;
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        max-width: 100%;
+        min-width: 0;
+        overflow: clip;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .held-fold-sum {
+        display: flex;
+        align-items: center;
+        gap: .75rem;
+        padding: .85rem 1rem;
+        cursor: pointer;
+        list-style: none;
+    }
+    .held-fold-sum::-webkit-details-marker { display: none; }
+    .held-fold-sum::before {
+        content: "▸";
+        color: #8a97b1;
+        font-size: .8rem;
+        flex: none;
+    }
+    .held-fold[open] > .held-fold-sum::before { content: "▾"; }
+    .held-fold-kicker {
+        flex: none;
+        font-weight: 650;
+        font-size: .95rem;
+        letter-spacing: 0;
+    }
+    .held-fold-line {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: #e8edf7;
+        font-size: .9rem;
+        line-height: 1.35;
+    }
+    .held-fold-count {
+        flex: none;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .75rem;
+        font-weight: 500;
+        color: #8a97b1;
+        border: 1px solid #243049;
+        border-radius: 999px;
+        padding: .05rem .5rem;
+    }
+    .held-fold-body {
+        padding: 0 .85rem .85rem 2rem;
+        max-width: 100%;
+        min-width: 0;
+        overflow: clip;
+    }
+    .held-fold-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .8rem;
+    }
+    .held-fold-table th {
+        text-align: left;
+        font-size: .66rem;
+        font-weight: 650;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: #8a97b1;
+        padding: .35rem .4rem;
+        border-bottom: 1px solid #243049;
+    }
+    .held-fold-table td {
+        padding: .45rem .4rem;
+        border-bottom: 1px solid #243049;
+        vertical-align: middle;
+    }
+    .held-fold-table tr:last-child td { border-bottom: 0; }
+    .held-fold-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .held-fold-table .num, .held-fold-contract {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+    }
+    .held-fold-contract { color: #e8edf7; }
+    .held-fold-table .pos { color: #28c08a; }
+    .held-fold-table .neg { color: #f0556d; }
+    .held-fold-row { cursor: pointer; }
+    .held-fold-row:hover, .held-fold-row:focus-visible { background: rgba(91, 140, 255, .08); }
+    .held-fold-row:focus-visible { outline: 2px solid #5b8cff; outline-offset: -2px; }
+    .held-fold-cards { display: none; }
+    .held-fold-card {
+        border: 1px solid #243049;
+        border-radius: 10px;
+        padding: .7rem .75rem;
+        margin-bottom: .5rem;
+        background: #0a0e17;
+    }
+    .held-fold-card:last-child { margin-bottom: 0; }
+    .held-fold-card-metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: .35rem .6rem;
+        align-items: end;
+        margin-top: .45rem;
+    }
+    .held-fold-card-metrics .k {
+        display: block;
+        font-size: .62rem;
+        font-weight: 650;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: #8a97b1;
+    }
+    .held-fold-card-metrics .v {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .85rem;
+        color: #e8edf7;
+    }
+    .held-fold-card-metrics .v.pos { color: #28c08a; }
+    .held-fold-card-metrics .v.neg { color: #f0556d; }
+    .held-fold-card-pill { text-align: right; }
+    .sr {
+        position: absolute;
+        width: 1px; height: 1px;
+        padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0, 0, 0, 0);
+        border: 0;
+    }
+    @media (max-width: 720px) {
+        .held-fold-sum { flex-wrap: wrap; }
+        .held-fold-line { flex: 1 1 100%; order: 3; min-width: 0; }
+        .held-fold-body { padding-left: .75rem; }
+    }
+    @media (max-width: 576px) {
+        .held-fold-table { display: none; }
+        .held-fold-cards { display: block; }
+        .held-fold-body { padding-left: .75rem; padding-right: .75rem; }
+    }
+    .held-pill {
+        appearance: none;
+        border: 1px solid #243049;
+        background: #0a0e17;
+        border-radius: 999px;
+        padding: .1rem .45rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .68rem;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        line-height: 1.35;
+        color: #8a97b1;
+    }
+    .held-pill.held-more { color: #28c08a; }
+    .held-pill.held-less { color: #f0556d; }
+    .held-pill:hover, .held-pill:focus-visible { border-color: #5b8cff; }
+    .held-pill:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; }
+    .held-step {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        margin-left: auto;
+        color: #8a97b1;
+        font-size: .78rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .held-step button {
+        appearance: none;
+        border: 1px solid #243049;
+        background: #0a0e17;
+        color: #e8edf7;
+        width: 1.7rem;
+        height: 1.7rem;
+        border-radius: 999px;
+        cursor: pointer;
+        line-height: 1;
+    }
+    .held-step button:disabled { opacity: .35; cursor: default; }
+    .held-step button:focus-visible, .held-drawer-x:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; }
+    body.held-drawer-open { overflow: hidden; }
+    .held-drawer {
+        position: fixed;
+        inset: 0;
+        z-index: 1060;
+        visibility: hidden;
+        pointer-events: none;
+    }
+    .held-drawer.is-open { visibility: visible; pointer-events: auto; }
+    .held-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(5, 7, 12, .55);
+        opacity: 0;
+        transition: opacity .22s ease;
+    }
+    .held-drawer.is-open .held-backdrop { opacity: 1; }
+    .held-drawer-panel {
+        position: absolute;
+        top: 0; right: 0; bottom: 0;
+        width: min(440px, 100vw);
+        background: #121826;
+        color: #e8edf7;
+        border-left: 1px solid #243049;
+        box-shadow: -16px 0 40px rgba(0, 0, 0, .35);
+        overflow: auto;
+        padding: 1rem 1.1rem 2rem;
+        transform: translateX(105%);
+        transition: transform .22s ease;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .held-drawer.is-open .held-drawer-panel { transform: none; }
+    .held-drawer-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        margin-bottom: .35rem;
+    }
+    .held-drawer-bar h6 {
+        margin: 0;
+        font-weight: 650;
+        font-size: 1rem;
+        letter-spacing: 0;
+    }
+    .held-drawer-x {
+        appearance: none;
+        border: 1px solid #243049;
+        background: #0a0e17;
+        color: #e8edf7;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        font-size: 1.15rem;
+        line-height: 1;
+        cursor: pointer;
+        flex: none;
+    }
+    .held-drawer-x:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; }
+    .held-intro {
+        color: #8a97b1;
+        font-size: .85rem;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        max-width: 46rem;
+    }
+    .held-card {
+        margin-top: 1.15rem;
+        padding-top: 1.1rem;
+        border-top: 1px solid #243049;
+    }
+    .held-card-top {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .75rem;
+        margin-bottom: .85rem;
+    }
+    .held-card-top > div:first-child {
+        flex: 1 1 14rem;
+        min-width: 0;
+    }
+    .held-title {
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-weight: 650;
+        font-size: 1.02rem;
+        letter-spacing: -0.01em;
+    }
+    .held-sub {
+        color: #8a97b1;
+        font-size: .8rem;
+        margin-top: .15rem;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .held-sub .held-px {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        color: #e8edf7;
+    }
+    .held-toggle {
+        display: inline-flex;
+        border: 1px solid #243049;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #0a0e17;
+        flex: 0 0 auto;
+    }
+    .held-toggle button {
+        appearance: none;
+        background: transparent;
+        color: #8a97b1;
+        border: 0;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-size: .75rem;
+        font-weight: 600;
+        padding: .35rem .75rem;
+        cursor: pointer;
+    }
+    .held-toggle button[aria-pressed="true"] {
+        background: rgba(91, 140, 255, .16);
+        color: #5b8cff;
+    }
+    .held-stats {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: .7rem;
+        margin-bottom: .85rem;
+    }
+    .held-stat .lbl {
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-size: .68rem;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: #8a97b1;
+        margin-bottom: .12rem;
+    }
+    .held-stat .val {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        font-size: 1.35rem;
+        line-height: 1.15;
+        color: #e8edf7;
+    }
+    .held-stat .val.pos { color: #28c08a; }
+    .held-stat .val.neg { color: #f0556d; }
+    .held-stat .val.held-diff {
+        font-size: 1rem;
+        line-height: 1.3;
+    }
+    .held-stat .hint {
+        color: #8a97b1;
+        font-size: .72rem;
+        margin-top: .15rem;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .held-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .85rem;
+        margin: 0 0 .35rem;
+        color: #8a97b1;
+        font-size: .75rem;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .held-legend i {
+        display: inline-block;
+        width: 1.4rem;
+        height: 0;
+        border-top: 2px solid #5b8cff;
+        margin-right: .35rem;
+        vertical-align: middle;
+    }
+    .held-legend i.dash {
+        border-top-style: dashed;
+        border-top-color: #8a97b1;
+    }
+    .held-canvas-wrap {
+        position: relative;
+        height: 240px;
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+    }
+    .held-note {
+        color: #8a97b1;
+        font-size: .75rem;
+        line-height: 1.45;
+        margin: .55rem 0 0;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    @media (max-width: 720px) {
+        .held-drawer {
+            position: fixed;
+            inset: 0;
+            width: 100dvw;
+            max-width: 100dvw;
+            height: 100dvh;
+            max-height: 100dvh;
+        }
+        .held-drawer-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: auto;
+            bottom: 0;
+            width: 100dvw;
+            max-width: 100dvw;
+            height: 100dvh;
+            max-height: 100dvh;
+            border-left: 0;
+            border-radius: 0;
+            box-sizing: border-box;
+            overflow-x: hidden;
+            overflow-y: auto;
+            transform: translateY(105%);
+        }
+        .held-drawer.is-open .held-drawer-panel { transform: none; }
+        .held-stat .val { font-size: 1.15rem; }
+        .held-stat .val.held-diff { font-size: .95rem; }
+        .held-canvas-wrap { height: 220px; }
+    }
+    @media (min-width: 641px) {
+        .held-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .held-canvas-wrap { height: 300px; }
+    }
+</style>
+<script>
+(function () {
+    function money(n, digits) {
+        if (n === null || n === undefined || n !== n) return '—';
+        var sign = n > 0 ? '+' : (n < 0 ? '-' : '');
+        return sign + '$' + Math.abs(n).toLocaleString('en-US', {
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits
+        });
+    }
+    function sourceLabel(src) {
+        if (src === 'fill') return 'fill price';
+        if (src === 'mark') return 'recorded option price';
+        return 'intrinsic value, estimated';
+    }
+    function kindLabel(kind) {
+        if (kind === 'open') return 'Open';
+        if (kind === 'close') return 'Close';
+        if (kind === 'open_close') return 'Open / close';
+        if (kind === 'expiry') return 'Expiration';
+        if (kind === 'if_held') return 'If held';
+        return 'While held';
+    }
+
+    function anchorElement(chart, index, kind) {
+        var ds = (kind === 'expiry') ? 1 : 0;
+        var meta = chart.getDatasetMeta(ds);
+        var el = meta && meta.data ? meta.data[index] : null;
+        if (el && !el.skip) return el;
+        meta = chart.getDatasetMeta(ds === 0 ? 1 : 0);
+        el = meta && meta.data ? meta.data[index] : null;
+        return (el && !el.skip) ? el : null;
+    }
+
+    var labelPlugin = {
+        id: 'heldPointLabels',
+        afterDatasetsDraw: function (chart) {
+            var pts = (chart.canvas && chart.canvas.$heldPoints) || chart.$points || [];
+            var ctx = chart.ctx;
+            var area = chart.chartArea;
+            if (!area) return;
+            var narrow = chart.width < 520;
+            ctx.save();
+            ctx.font = '500 11px "JetBrains Mono", ui-monospace, monospace';
+            var lineH = 14;
+            var placed = [];
+            function hits(a, b) {
+                return a.left < b.right && a.right > b.left &&
+                    a.top < b.bottom && a.bottom > b.top;
+            }
+            function seriesCrosses(left, top, width, height) {
+                var meta = chart.getDatasetMeta(1);
+                if (!meta || !meta.data) return false;
+                for (var n = 0; n < meta.data.length; n++) {
+                    var pt = meta.data[n];
+                    if (!pt || pt.skip) continue;
+                    if (pt.x < left - 2 || pt.x > left + width + 2) continue;
+                    if (pt.y > top - 8 && pt.y < top + height + 8) return true;
+                }
+                return false;
+            }
+            function boxFor(x, top, w) {
+                return {left: x, right: x + w, top: top, bottom: top + lineH * 2};
+            }
+            pts.forEach(function (p, i) {
+                if (p.kind !== 'open' && p.kind !== 'close' &&
+                    p.kind !== 'expiry' && p.kind !== 'open_close') return;
+                var el = anchorElement(chart, i, p.kind);
+                if (!el) return;
+                var mode = (chart.canvas && chart.canvas.$heldMode) || chart.$mode || 'share';
+                var px = mode === 'total'
+                    ? money(p.total, Math.abs(p.total) >= 100 ? 0 : 2).replace('+', '')
+                    : money(p.price, 2).replace('+', '');
+                var name = kindLabel(p.kind);
+                var line1 = narrow ? name : (name + '  ' + p.tick);
+                var line2 = px;
+                var w = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width);
+                // Open sits above the fill (the line leaves downward).
+                // Close sits below it. A one-day hold otherwise stacks
+                // the two captions on the same pixels.
+                var above = (p.kind === 'open');
+                // The dashed line arrives from the left and ends on the
+                // expiration point. A caption on the line's side of that
+                // point sits on the stroke (RKLB "$17.00" on the tail).
+                // Put the caption on the clear side of the point instead.
+                if (p.kind === 'expiry') {
+                    var prev = pts[i - 1];
+                    var prevEl = prev ? anchorElement(chart, i - 1, prev.kind) : null;
+                    var incomingFromAbove = !!(prevEl && prevEl.y < el.y - 2);
+                    above = !incomingFromAbove;
+                }
+                if (p.kind === 'close' && el.y + 8 + lineH * 2 > area.bottom) above = true;
+                if (p.kind !== 'expiry' && above && el.y - 8 - lineH * 2 < area.top) above = false;
+                var align = 'left';
+                var x = el.x + 8;
+                var gap = p.kind === 'expiry' ? (narrow ? 28 : 18) : 8;
+                if (p.kind === 'expiry') {
+                    align = 'right';
+                    x = el.x - 8;
+                }
+                var top = above ? el.y - gap - lineH * 2 : el.y + gap;
+                if (p.kind === 'expiry' && above && top < 2) top = 2;
+                if (p.kind === 'expiry' && !above && top + lineH * 2 > chart.height - 2) {
+                    above = true;
+                    top = Math.max(2, el.y - gap - lineH * 2);
+                }
+                if (align === 'right') x = x - w;
+                if (align === 'center') x = x - w / 2;
+                var guard = 0;
+                var box = boxFor(x, top, w);
+                while (guard < 14 && placed.some(function (b) { return hits(box, b); })) {
+                    x += 18;
+                    box = boxFor(x, top, w);
+                    guard++;
+                }
+                if (box.right > chart.width - 4) {
+                    x -= box.right - (chart.width - 4);
+                    box = boxFor(x, top, w);
+                }
+                if (box.left < 4) {
+                    x += 4 - box.left;
+                    box = boxFor(x, top, w);
+                }
+                if (p.kind === 'expiry') {
+                    var lift = 0;
+                    while (lift < 10 && seriesCrosses(x, top, w, lineH * 2)) {
+                        top -= 14;
+                        lift++;
+                    }
+                    if (top < 2) top = 2;
+                    box = boxFor(x, top, w);
+                }
+                placed.push({
+                    left: box.left - 6, right: box.right + 6,
+                    top: box.top - 3, bottom: box.bottom + 3
+                });
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillStyle = '#e8edf7';
+                ctx.fillText(line1, x, top);
+                ctx.fillStyle = '#8a97b1';
+                ctx.fillText(line2, x, top + lineH);
+            });
+            ctx.restore();
+        }
+    };
+
+    function series(points, mode, which) {
+        var key = mode === 'total' ? 'total' : 'price';
+        return points.map(function (p) {
+            var held = p.kind === 'open' || p.kind === 'held' || p.kind === 'close' || p.kind === 'open_close';
+            var after = p.kind === 'close' || p.kind === 'open_close' || p.kind === 'if_held' || p.kind === 'expiry';
+            if (which === 'held' && held) return p[key];
+            if (which === 'after' && after) return p[key];
+            return null;
+        });
+    }
+    function radii(points, which) {
+        return points.map(function (p) {
+            var anchor = p.kind === 'open' || p.kind === 'close' || p.kind === 'expiry' || p.kind === 'open_close';
+            if (!anchor) return 0;
+            if (which === 'held' && (p.kind === 'open' || p.kind === 'close' || p.kind === 'open_close')) return 5;
+            if (which === 'after' && p.kind === 'expiry') return 5;
+            return 0;
+        });
+    }
+
+    function initCard(card) {
+        if (card.dataset.ready === '1' || !window.Chart) return;
+        var specEl = card.querySelector('.held-spec');
+        var canvas = card.querySelector('canvas');
+        if (!specEl || !canvas) return;
+        var spec;
+        try { spec = JSON.parse(specEl.textContent); }
+        catch (e) { return; }
+        var points = spec.points || [];
+        if (!points.length) return;
+        card.dataset.ready = '1';
+        var mode = 'share';
+        canvas.$heldPoints = points;
+        canvas.$heldMode = mode;
+        var chart = new Chart(canvas, {
+            type: 'line',
+            plugins: [labelPlugin],
+            data: {
+                labels: points.map(function (p) { return p.tick; }),
+                datasets: [
+                    {
+                        label: spec.held_legend || 'While held',
+                        data: series(points, mode, 'held'),
+                        borderColor: '#5b8cff',
+                        backgroundColor: '#5b8cff',
+                        tension: 0,
+                        spanGaps: false,
+                        borderWidth: 2,
+                        pointRadius: radii(points, 'held'),
+                        pointHoverRadius: 6,
+                        pointHitRadius: 8,
+                        pointBackgroundColor: '#5b8cff',
+                        pointBorderColor: '#0a0e17',
+                        pointBorderWidth: 1.5
+                    },
+                    {
+                        label: spec.if_held_legend || 'If held',
+                        data: series(points, mode, 'after'),
+                        borderColor: '#8a97b1',
+                        backgroundColor: '#8a97b1',
+                        borderDash: [5, 4],
+                        tension: 0,
+                        spanGaps: false,
+                        borderWidth: 2,
+                        pointRadius: radii(points, 'after'),
+                        pointHoverRadius: 6,
+                        pointHitRadius: 8,
+                        pointBackgroundColor: '#8a97b1',
+                        pointBorderColor: '#0a0e17',
+                        pointBorderWidth: 1.5
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                layout: { padding: { top: 44, right: 12, left: 0, bottom: 8 } },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: function (items) {
+                                var i = items[0] && items[0].dataIndex;
+                                var p = points[i];
+                                return p ? (p.date + ' · ' + kindLabel(p.kind)) : '';
+                            },
+                            label: function (item) {
+                                var p = points[item.dataIndex];
+                                if (!p || item.raw === null || item.raw === undefined) return null;
+                                if (item.datasetIndex === 1 &&
+                                    (p.kind === 'close' || p.kind === 'open_close')) return null;
+                                var share = money(p.price, 2).replace('+', '');
+                                var total = money(p.total, Math.abs(p.total) >= 100 ? 0 : 2);
+                                return share + ' per share · ' + total + ' for ' + spec.contracts
+                                    + (spec.contracts === 1 ? ' contract' : ' contracts')
+                                    + ' · ' + sourceLabel(p.source);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#8a97b1',
+                            maxTicksLimit: 6,
+                            maxRotation: 0,
+                            autoSkip: true,
+                            font: { family: '"JetBrains Mono", ui-monospace, monospace', size: 10 }
+                        },
+                        grid: { color: 'rgba(36, 48, 73, .65)' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grace: '18%',
+                        title: {
+                            display: true,
+                            text: 'Price per share',
+                            color: '#8a97b1',
+                            font: { family: '"Instrument Sans", ui-sans-serif, system-ui, sans-serif', size: 11 }
+                        },
+                        ticks: {
+                            color: '#8a97b1',
+                            maxTicksLimit: 6,
+                            callback: function (v) {
+                                if (mode === 'total') {
+                                    return money(v, Math.abs(v) >= 100 ? 0 : 2).replace('+', '');
+                                }
+                                return money(v, 2).replace('+', '');
+                            },
+                            font: { family: '"JetBrains Mono", ui-monospace, monospace', size: 10 }
+                        },
+                        grid: { color: 'rgba(36, 48, 73, .65)' }
+                    }
+                }
+            }
+        });
+        chart.$points = points;
+        chart.$mode = mode;
+
+        function apply(next) {
+            mode = next;
+            chart.$mode = next;
+            canvas.$heldMode = next;
+            chart.data.datasets[0].data = series(points, next, 'held');
+            chart.data.datasets[1].data = series(points, next, 'after');
+            chart.options.scales.y.title.text = next === 'total'
+                ? 'Contract $ (price × 100 × quantity)'
+                : 'Price per share';
+            chart.update();
+            card.querySelectorAll('.held-toggle button').forEach(function (btn) {
+                btn.setAttribute('aria-pressed', btn.getAttribute('data-mode') === next ? 'true' : 'false');
+            });
+        }
+        card._heldChart = chart;
+        card.querySelectorAll('.held-toggle button').forEach(function (btn) {
+            btn.addEventListener('click', function () { apply(btn.getAttribute('data-mode')); });
+        });
+    }
+
+    var drawer = document.getElementById('if-held');
+    if (!drawer) return;
+    // A transformed ancestor makes position:fixed stick to that box.
+    // On a phone that box is the widened page, so the sheet opens
+    // off-screen. Hang the drawer on the body so it tracks the viewport.
+    if (drawer.parentNode !== document.body) {
+        document.body.appendChild(drawer);
+    }
+    var lastFocus = null;
+
+    function focusables() {
+        return Array.prototype.filter.call(
+            drawer.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+            function (el) {
+                if (el.disabled || el.getAttribute('aria-hidden') === 'true') return false;
+                if (el.closest('[hidden]')) return false;
+                return true;
+            }
+        );
+    }
+
+    function showPane(id) {
+        var panes = drawer.querySelectorAll('[data-held-pane]');
+        var chosen = null;
+        panes.forEach(function (pane) {
+            var on = pane.getAttribute('data-held-pane') === id;
+            if (on) chosen = pane;
+            pane.hidden = !on;
+        });
+        if (!chosen && panes.length) {
+            chosen = panes[0];
+            chosen.hidden = false;
+        }
+        return chosen;
+    }
+
+    function paint(pane) {
+        var card = pane && pane.querySelector('[data-held-card]');
+        if (!card) return;
+        initCard(card);
+        if (card._heldChart) card._heldChart.resize();
+    }
+
+    function paneList() {
+        return Array.prototype.slice.call(drawer.querySelectorAll('[data-held-pane]'));
+    }
+    function paneIndex(id) {
+        var list = paneList();
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].getAttribute('data-held-pane') === id) return i;
+        }
+        return 0;
+    }
+    var current = 0;
+    function syncStep(id) {
+        var list = paneList();
+        current = paneIndex(id);
+        var label = drawer.querySelector('[data-held-step-label]');
+        var prev = drawer.querySelector('[data-held-prev]');
+        var next = drawer.querySelector('[data-held-next]');
+        if (label) label.textContent = (current + 1) + ' of ' + list.length;
+        if (prev) prev.disabled = current <= 0;
+        if (next) next.disabled = current >= list.length - 1;
+    }
+    function step(delta) {
+        var list = paneList();
+        if (!list.length) return;
+        var next = current + delta;
+        if (next < 0 || next > list.length - 1) return;
+        openHeld(list[next].getAttribute('data-held-pane'));
+    }
+
+    function openHeld(id, opener) {
+        var pane = showPane(id);
+        if (!pane) return;
+        syncStep(pane.getAttribute('data-held-pane'));
+        if (!drawer.classList.contains('is-open')) {
+            lastFocus = opener || document.activeElement;
+        }
+        drawer.setAttribute('aria-hidden', 'false');
+        drawer.classList.add('is-open');
+        document.body.classList.add('held-drawer-open');
+        var closeBtn = drawer.querySelector('.held-drawer-x');
+        if (closeBtn) closeBtn.focus();
+        // Chart.js measures the panel. Wait until it has laid out.
+        requestAnimationFrame(function () { paint(pane); });
+    }
+
+    function closeHeld() {
+        if (!drawer.classList.contains('is-open')) return;
+        drawer.classList.remove('is-open');
+        drawer.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('held-drawer-open');
+        var back = lastFocus;
+        lastFocus = null;
+        if (back && typeof back.focus === 'function') back.focus();
+        if (location.hash === '#if-held' || location.hash.indexOf('#held-') === 0) {
+            history.replaceState(null, '', location.pathname + location.search);
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        var prevBtn = e.target.closest && e.target.closest('[data-held-prev]');
+        var nextBtn = e.target.closest && e.target.closest('[data-held-next]');
+        if (prevBtn || nextBtn) {
+            e.preventDefault();
+            step(prevBtn ? -1 : 1);
+            return;
+        }
+        var btn = e.target.closest && e.target.closest('[data-held-open]');
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            openHeld(btn.getAttribute('data-held-open'), btn);
+            return;
+        }
+        if (e.target.closest && e.target.closest('[data-held-close]')) {
+            e.preventDefault();
+            closeHeld();
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var row = e.target.closest && e.target.closest('.held-fold-row');
+        if (!row || (e.target.closest && e.target.closest('.held-pill'))) return;
+        if (!drawer.classList.contains('is-open')) {
+            e.preventDefault();
+            openHeld(row.getAttribute('data-held-open'), row);
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (!drawer.classList.contains('is-open')) return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closeHeld();
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        var items = focusables();
+        if (!items.length) return;
+        var first = items[0];
+        var last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    });
+
+    function openFromHash() {
+        var hash = location.hash || '';
+        if (hash === '#if-held') {
+            var first = drawer.querySelector('[data-held-pane]');
+            if (first) openHeld(first.getAttribute('data-held-pane'));
+        } else if (hash.indexOf('#held-') === 0) {
+            openHeld(hash.slice(1));
+        }
+    }
+    openFromHash();
+    window.addEventListener('hashchange', openFromHash);
+})();
+</script>
+{% endif %}

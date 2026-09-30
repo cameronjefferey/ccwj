@@ -50,6 +50,21 @@ def test_snapshot_table_numeric_columns_line_up():
     assert "font-variant-numeric: tabular-nums;" in src
 
 
+def test_radar_lane_text_is_light_on_the_dark_desk():
+    """Options used to be indigo (#4b3fd1 / #2c2470) on the dark card."""
+    styles = (ROOT / "app/templates/_review_styles.html").read_text()
+    below = (ROOT / "app/templates/_overview_below.html").read_text()
+    assert "#4b3fd1" not in styles
+    assert "#2c2470" not in styles
+    assert "#4b3fd1" not in below
+    verdict = styles.split(".ov-ev.vd {", 1)[1].split("}", 1)[0]
+    assert "#e8edf7" in verdict
+    assert "#a8b8ff" in verdict
+    assert 'style="color:#a8b8ff"' in below
+    assert 'style="color:#e8c07a"' in below
+    assert 'style="color:#5eead4"' in below
+
+
 def test_day_detail_muted_uses_token():
     src = (ROOT / "app/templates/day_detail.html").read_text()
     assert ".dd-muted { color: var(--ht-muted);" in src

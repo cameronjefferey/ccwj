@@ -20,7 +20,7 @@
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('today_view') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('today_view', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -142,7 +142,7 @@
                     {% endif %}
                 </td>
                 <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
-                    {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                    {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}
                 </td>
                 <td>
                     {% with symbol=t.symbol, tenant_id=t.tenant_id, open_date=t.leg_open_date, tags=t.tags %}
@@ -225,7 +225,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
-                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
                     <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
@@ -257,7 +257,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
-                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
                     <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
@@ -276,13 +276,13 @@
     <div style="margin-top:.9rem;">
         <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
             Dividends paid today
-            <span style="color:#15803d;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+            <span style="color:#28c08a;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
             <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
                data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
-               style="font-size:.75rem; padding:.45em .8em; background:#dcfce7; color:#15803d;">
+               style="font-size:.75rem; padding:.45em .8em; background:rgba(40,192,138,.16); color:#e8edf7; border:1px solid #5eead4;">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
             </a>
             {% endfor %}
