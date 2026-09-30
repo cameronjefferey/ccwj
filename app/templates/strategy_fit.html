@@ -579,7 +579,7 @@
         {{ ai_full_html|safe }}
     </div>
     <div class="ai-actions">
-        <form method="post" action="{{ url_for('generate_strategy_fit_insights', account=selected_account, sector=drill_sector) }}" style="margin: 0;">
+        <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin: 0;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="ai-refresh" title="Regenerate insights from your latest data">↻ Refresh</button>
         </form>
@@ -600,7 +600,7 @@
         {% endif %}
     </div>
     {% if ai_available %}
-    <form method="post" action="{{ url_for('generate_strategy_fit_insights', account=selected_account, sector=drill_sector) }}" style="margin-top: .35rem;">
+    <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin-top: .35rem;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="ai-generate-btn">Generate insights</button>
     </form>

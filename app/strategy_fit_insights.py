@@ -33,7 +33,12 @@ from app.models import (
     save_strategy_fit_insight,
     get_user_llm_model,
 )
-from app.routes import _tenants_for_scope, _tenant_sql_and, _filter_df_by_tenant_ids
+from app.routes import (
+    _filter_df_by_tenant_ids,
+    _scope_keep_kwargs,
+    _tenant_sql_and,
+    _tenants_for_scope,
+)
 from app.utils import demo_block_writes
 
 
@@ -537,11 +542,12 @@ def generate_strategy_fit_insights():
         return blocked
     selected_account = request.args.get("account", "")
     drill_sector     = request.args.get("sector", "")
-    redir_kwargs = {"view": "fit"}
-    if selected_account:
-        redir_kwargs["account"] = selected_account
+    selected_dim = request.args.get("dim", "")
+    redir_kwargs = {"view": "fit", **_scope_keep_kwargs(request.args)}
     if drill_sector:
         redir_kwargs["sector"] = drill_sector
+    if selected_dim:
+        redir_kwargs["dim"] = selected_dim
     redir = url_for("strategies", **redir_kwargs)
 
     if not app.config.get("INSIGHTS_ENABLED", True):
@@ -554,6 +560,10 @@ def generate_strategy_fit_insights():
     try:
         client = get_bigquery_client()
         accounts = _user_accounts(selected_account)
+        from app.account_scope import account_scope_cache_key
+        insight_scope_key = account_scope_cache_key(
+            request.args, selected_account, accounts,
+        )
         brief_text, _brief = _build_strategy_fit_brief(client, accounts)
         if not brief_text:
             flash("Not enough data yet to summarize. Add a few more trades and try again.", "warning")
@@ -570,7 +580,7 @@ def generate_strategy_fit_insights():
         summary, full = result
         save_strategy_fit_insight(
             current_user.id,
-            account_filter=selected_account or "",
+            account_filter=insight_scope_key,
             summary=summary,
             full_analysis=full,
             brief_text=brief_text,

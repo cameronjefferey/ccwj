@@ -3390,13 +3390,15 @@ def position_detail(symbol):
 
     # Covered-call / wheel runs use the tenant-scoped fill stream from
     # before the leg filter, so clicking one leg does not split a cycle
-    # into a share piece and a call piece. Fees stay out of the math.
+    # into a share piece and a call piece. Inferred opening balances restore
+    # shares acquired before the broker's history window. Fees stay out.
     covered_call_runs = []
     try:
         covered_call_runs = build_covered_call_runs(
             trades_pre_leg,
             current_df=covered_call_current,
             splits_df=splits_df,
+            opening_df=opening_df,
             as_of=user_local_today(),
             label_map=_tenant_label_map,
         )

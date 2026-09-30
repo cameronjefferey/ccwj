@@ -22,6 +22,7 @@ from app.routes import (
     _bq_parallel,
     _df_normalize_account_column,
     _redirect_if_no_accounts,
+    _scope_keep_kwargs,
     _tenants_for_scope,
     _user_account_list,
 )
@@ -361,7 +362,7 @@ def _build_strategy_fit_matrix(
     }
 
 
-def _strategy_fit_insight_context(selected_account: str) -> dict:
+def _strategy_fit_insight_context(scope_key: str) -> dict:
     """Pull the cached AI strategy-fit insight for the current user/account
     scope and convert its markdown to HTML for the template.
 
@@ -378,7 +379,7 @@ def _strategy_fit_insight_context(selected_account: str) -> dict:
         return ctx
     try:
         cached = get_strategy_fit_insight_for_user(
-            current_user.id, tenant_filter=selected_account or ""
+            current_user.id, tenant_filter=scope_key or ""
         )
     except Exception:
         cached = None
@@ -456,8 +457,8 @@ def _strategy_fit_render_payload(
 @login_required
 def strategy_fit():
     """Legacy URL — permanently moved to /strategies?view=fit."""
-    args = {"view": "fit"}
-    for key in ("account", "tenant", "dim", "sector"):
+    args = {"view": "fit", **_scope_keep_kwargs(request.args)}
+    for key in ("dim", "sector"):
         val = (request.args.get(key) or "").strip()
         if val:
             args[key] = val
@@ -473,6 +474,10 @@ def render_strategy_fit_view():
     selected_account = request.args.get("account", "")
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
+    from app.account_scope import account_scope_cache_key
+    insight_scope_key = account_scope_cache_key(
+        request.args, selected_account, tenant_ids,
+    )
 
     from app.sector_labels import canonical_sector_param
     # Unknown bookmarks select the Unclassified column after the remap.
@@ -492,7 +497,7 @@ def render_strategy_fit_view():
     else:
         dim = "sector"
 
-    insight_ctx = _strategy_fit_insight_context(selected_account)
+    insight_ctx = _strategy_fit_insight_context(insight_scope_key)
 
     # Fan out the queries we need. positions_summary is always needed —
     # for sector/subsector it's the data source, and for dte/moneyness
