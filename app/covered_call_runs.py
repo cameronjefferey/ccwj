@@ -52,15 +52,19 @@ def build_covered_call_runs(
     trades_df,
     current_df=None,
     splits_df=None,
+    opening_df=None,
     as_of=None,
     label_map=None,
 ):
     """Group share lots and the calls written against them.
 
     ``trades_df`` is the position page's fill frame (already limited to
-    one symbol and to the viewer's tenants). ``current_df`` supplies the
-    live share price for a run that is still open. ``splits_df`` is the
-    public split calendar so a later sell in post-split units still
+    one symbol and to the viewer's tenants). ``opening_df`` supplies
+    inferred pre-history shares from ``int_opening_balances``; its
+    today-unit quantity is converted back to opening-date units before
+    the split-aware state machine consumes it. ``current_df`` supplies
+    the live share price for a run that is still open. ``splits_df`` is
+    the public split calendar so a later sell in post-split units still
     closes the same lot. ``as_of`` decides whether an untouched contract
     has expired. ``label_map`` is tenant_id → display name.
 
@@ -68,6 +72,9 @@ def build_covered_call_runs(
     symbol has no covered-call or wheel cycle.
     """
     fills = _normalize_fills(trades_df)
+    splits = _normalize_splits(splits_df)
+    fills.extend(_normalize_openings(opening_df, splits))
+    fills.sort(key=lambda f: (f["date"], f["trade_symbol"], f["kind"]))
     if not fills:
         return []
     if as_of is None:
@@ -75,7 +82,6 @@ def build_covered_call_runs(
     elif isinstance(as_of, datetime):
         as_of = as_of.date()
 
-    splits = _normalize_splits(splits_df)
     marks = _equity_marks(current_df)
     labels = label_map or {}
 
@@ -300,6 +306,62 @@ def _normalize_splits(splits_df):
         if when and ratio and ratio > 0 and abs(ratio - 1.0) > 1e-9:
             out.append((when, ratio))
     out.sort()
+    return out
+
+
+def _normalize_openings(opening_df, splits):
+    """Synthetic buys for positions whose acquisition predates history.
+
+    ``opening_qty`` is already in today's units. The run simulator applies
+    split events chronologically, so convert it back to opening-date units
+    first. Cash is split-invariant and comes from the warehouse estimate.
+    Unpriced openings stay omitted rather than inventing a zero-cost lot.
+    """
+    if opening_df is None:
+        return []
+    try:
+        empty = opening_df.empty
+    except AttributeError:
+        empty = False
+    if empty:
+        return []
+
+    out = []
+    for row in opening_df.to_dict(orient="records"):
+        when = _as_date(_cell(row, "opening_date"))
+        qty_today = _num(_cell(row, "opening_qty"))
+        amount = _num(_cell(row, "est_amount"))
+        if when is None or qty_today is None or qty_today <= _FLAT:
+            continue
+        if amount is None or abs(amount) <= _FLAT:
+            continue
+        factor = 1.0
+        for split_date, ratio in splits:
+            if split_date > when:
+                factor *= ratio
+        if factor <= 0:
+            continue
+        qty = qty_today / factor
+        if qty <= _FLAT:
+            continue
+        tenant_id = _text(_cell(row, "tenant_id"))
+        account = _text(_cell(row, "account"))
+        out.append({
+            "date": when,
+            "kind": "buy",
+            "action": "synthetic_opening_balance",
+            "qty": qty,
+            "price": abs(amount) / qty,
+            "amount": amount,
+            "fees": 0.0,
+            "trade_symbol": _text(_cell(row, "symbol")),
+            "option_type": None,
+            "strike": None,
+            "expiry": None,
+            "tenant_id": tenant_id,
+            "account": account,
+            "tenant_key": _tenant_key(tenant_id, account),
+        })
     return out
 
 

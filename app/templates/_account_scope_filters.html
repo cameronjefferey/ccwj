@@ -71,7 +71,10 @@
 <input type="hidden" name="tenants" value="{{ tenants_query }}">
 {% endif %}
 {% if header_account_only or not _header_has_picker %}
-{% set _acct_choices = scope_account_choices if header_account_only else visible_account_choices %}
+{# A selected group limits the Account picker to that group's members.
+   Using the full list here lets a user select an out-of-group tenant;
+   the server correctly intersects it to an empty scope and the page blanks. #}
+{% set _acct_choices = visible_account_choices|default(scope_account_choices) %}
 {% if _acct_choices and (_acct_choices|length > 1 or _show_acct or selected_tenant_ids) %}
 <div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="tenants">
     <label class="lblh">Account</label>

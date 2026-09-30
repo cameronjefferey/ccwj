@@ -30,6 +30,7 @@ from google.cloud import bigquery
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.extensions import limiter
 from app.tenant_scope import filter_df_by_tenant_ids, tenant_sql_and
 
 DISCLAIMER = "For learning only · not investment advice"
@@ -325,12 +326,15 @@ def _owned_tenant_ids(user_id):
 
 
 def _query_df(sql, params):
+    from app.query_cache import cached_query_df
+
     client = get_bigquery_client()
-    job = client.query(
+    return cached_query_df(
+        client,
         sql,
         job_config=bigquery.QueryJobConfig(query_parameters=params),
+        label="share_card",
     )
-    return job.to_dataframe()
 
 
 def _fetch(sql_template, tenant_ids, params, col="tenant_id"):
@@ -633,6 +637,7 @@ def card_for_viewer(args, owned_tenant_ids):
 
 @app.route("/share/card.png")
 @login_required
+@limiter.limit("60 per minute; 300 per day")
 def share_card_png():
     """Authenticated, unstored PNG. Numbers come from the viewer's warehouse."""
     layout = (request.args.get("layout") or "square").strip().lower()

@@ -9,6 +9,7 @@ import io
 import pandas as pd
 from PIL import Image
 
+import app.share_card as share_card_module
 from app.share_card import (
     DISCLAIMER,
     WORDMARK,
@@ -19,6 +20,36 @@ from app.share_card import (
     parse_share_ref,
     render_share_png,
 )
+
+
+def test_share_lookup_uses_shared_parameterized_query_cache(monkeypatch):
+    client = object()
+    expected = pd.DataFrame([{"tenant_id": "snaptrade:mine"}])
+    seen = {}
+
+    monkeypatch.setattr(
+        share_card_module, "get_bigquery_client", lambda: client,
+    )
+
+    def fake_cached_query_df(got_client, sql, job_config=None, label=None):
+        seen.update(
+            client=got_client,
+            sql=sql,
+            params=job_config.query_parameters,
+            label=label,
+        )
+        return expected
+
+    monkeypatch.setattr(
+        "app.query_cache.cached_query_df", fake_cached_query_df,
+    )
+    params = [share_card_module._param("symbol", "JEPI")]
+    result = share_card_module._query_df("SELECT @symbol", params)
+    assert result is expected
+    assert seen["client"] is client
+    assert seen["sql"] == "SELECT @symbol"
+    assert seen["params"] == params
+    assert seen["label"] == "share_card"
 
 
 def test_hindsight_matches_the_sold_versus_hold_example():
