@@ -273,18 +273,18 @@
         {% for g in connection_groups %}
         <div class="broker-group{% if g.needs_reconnect %} is-broken{% endif %}">
             <div class="broker-group-head">
-                <span class="broker-tag">{{ g.broker_label }}</span>
+                <span class="broker-tag">{{ g.broker_label | privacy_hide }}</span>
                 <span class="broker-group-count">{{ g.accounts|length }} account{{ 's' if g.accounts|length != 1 else '' }}</span>
             </div>
 
             {% if g.needs_reconnect %}
             <div class="reconnect-banner">
                 <div class="reconnect-banner-text">
-                    <div class="rb-title">Reconnect your {{ g.broker_label }} connection</div>
+                    <div class="rb-title">Reconnect your {{ g.broker_label | privacy_hide }} connection</div>
                     <div class="rb-sub">
-                        Your link to {{ g.broker_label }} expired or was revoked, so it
+                        Your link to {{ g.broker_label | privacy_hide }} expired or was revoked, so it
                         can't pull fresh data. Reconnecting fixes
-                        {% if g.accounts|length > 1 %}all {{ g.accounts|length }} {{ g.broker_label }} accounts{% else %}this account{% endif %}
+                        {% if g.accounts|length > 1 %}all {{ g.accounts|length }} {{ g.broker_label | privacy_hide }} accounts{% else %}this account{% endif %}
                         at once — your already-synced data is safe.
                     </div>
                 </div>
@@ -294,19 +294,19 @@
                     {% if g.authorization_id %}
                     <input type="hidden" name="reconnect_authorization_id" value="{{ g.authorization_id }}">
                     {% endif %}
-                    <button type="submit" class="btn reconnect-btn">Reconnect {{ g.broker_label }}</button>
+                    <button type="submit" class="btn reconnect-btn">Reconnect {{ g.broker_label | privacy_hide }}</button>
                 </form>
             </div>
             {% endif %}
 
             {% for c in g.accounts %}
-            {% set heading = c.display_nickname or c.account_name %}
-            {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
+            {% set heading = (c.display_nickname or c.account_name) | account_label(c.tenant_id) %}
+            {% set show_label = (not privacy_mode) and c.display_nickname and c.display_nickname != c.account_name %}
             <div class="broker-row" id="acct-{{ c.snaptrade_account_id }}">
                 <div class="who">
                     <div class="name">{{ heading }}</div>
                     {% if show_label %}
-                    <div class="label">{{ c.account_name }}</div>
+                    <div class="label">{{ c.account_name | account_label(c.tenant_id) }}</div>
                     {% endif %}
                     {% set mask = c.account_number_masked | account_mask %}
                     {% if mask %}
@@ -318,10 +318,11 @@
                     <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
                     <input type="text" name="nickname" maxlength="80"
                            class="form-control form-control-sm nick-input"
-                           placeholder="Add a nickname"
-                           value="{{ c.display_nickname or '' }}"
-                           data-original="{{ c.display_nickname or '' }}"
-                           aria-label="Nickname for {{ c.account_name }}">
+                           placeholder="{% if privacy_mode %}••••{% else %}Add a nickname{% endif %}"
+                           value="{% if privacy_mode %}{% else %}{{ c.display_nickname or '' }}{% endif %}"
+                           data-original="{% if privacy_mode %}{% else %}{{ c.display_nickname or '' }}{% endif %}"
+                           {% if privacy_mode %}disabled{% endif %}
+                           aria-label="Nickname for {{ (c.account_name or '') | account_label(c.tenant_id) }}">
                     <button type="submit" class="btn btn-sm btn-outline-secondary nick-save" disabled>Save</button>
                 </form>
                 <div class="meta">
@@ -376,15 +377,15 @@
                     <div class="complete-account-body">
                         {% if _is_schwab %}
                         <p class="small text-body-secondary mb-2">
-                            Schwab only hands SnapTrade a recent window of trade history.
-                            If you have an older Schwab CSV export, upload it here to fill in
+                            {% if privacy_mode %}Your broker{% else %}Schwab{% endif %} only hands SnapTrade a recent window of trade history.
+                            If you have an older {% if privacy_mode %}broker{% else %}Schwab{% endif %} CSV export, upload it here to fill in
                             the years before this account connected.
                         </p>
                         <a href="{{ url_for('upload', tenant=_tenant_id) }}"
-                           class="btn btn-sm btn-outline-primary">Upload older Schwab CSV</a>
+                           class="btn btn-sm btn-outline-primary">Upload older {% if privacy_mode %}{% else %}Schwab {% endif %}CSV</a>
                         {% else %}
                         <p class="small text-body-secondary mb-2">
-                            We don't have a CSV parser for {{ c.broker_slug|title if c.broker_slug else 'this broker' }}
+                            We don't have a CSV parser for {{ (c.broker_slug|title if c.broker_slug else 'this broker') | privacy_hide }}
                             yet, so pre-window history can't be backfilled here.
                             <a href="{{ url_for('upload', tenant=_tenant_id) }}">Request it</a> and we'll use it to
                             decide which broker to parse next.

@@ -188,7 +188,7 @@
 {% elif wealth_no_match %}
 <div class="alert alert-warning">
     <strong>Unknown account filter.</strong>
-    <p class="mb-0 mt-2 small"><code>{{ selected_account }}</code> is not one of your linked account names.
+    <p class="mb-0 mt-2 small"><code>{{ selected_account | account_label }}</code> is not one of your linked account names.
         Use the account menu in the header (or pick an account on your
         <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page) so the label matches exactly.</p>
 </div>
@@ -257,7 +257,7 @@
     <div class="col-md-6">
         <div class="kpi-card">
             <div class="kpi-label">Total value · as of {{ summary.as_of }}</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(summary.account_value) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.account_value) }}{% endif %}</div>
             {# Sub-bar visualizes the cash / equity / options split. We
                compute widths inline so the bar reflects today's state
                without sending another data payload. Falls back to a
@@ -272,9 +272,9 @@
                 <div class="alloc-bar-segment alloc-bar-options" style="width: {{ option_pct }}%;"></div>
             </div>
             <div class="alloc-legend">
-                <span><span class="alloc-dot alloc-dot-cash"></span>Cash ${{ "{:,.0f}".format(summary.cash_value) }}</span>
-                <span><span class="alloc-dot alloc-dot-equity"></span>Equity ${{ "{:,.0f}".format(summary.equity_value) }}</span>
-                <span><span class="alloc-dot alloc-dot-options"></span>Options ${{ "{:,.0f}".format(summary.option_value) }}</span>
+                <span><span class="alloc-dot alloc-dot-cash"></span>Cash {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.cash_value) }}{% endif %}</span>
+                <span><span class="alloc-dot alloc-dot-equity"></span>Equity {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.equity_value) }}{% endif %}</span>
+                <span><span class="alloc-dot alloc-dot-options"></span>Options {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.option_value) }}{% endif %}</span>
             </div>
         </div>
     </div>
@@ -289,7 +289,7 @@
                 {% if summary.change_in_range.abs > 0 %}kpi-delta-pos
                 {% elif summary.change_in_range.abs < 0 %}kpi-delta-neg
                 {% else %}kpi-delta-flat{% endif %}">
-                {{ money(summary.change_in_range.abs, 0, true) }}
+                {% if privacy_mode %}••••{% else %}{{ money(summary.change_in_range.abs, 0, true) }}{% endif %}
             </div>
             <div class="kpi-meta">
                 {% if summary.change_in_range.pct is not none %}
@@ -304,7 +304,7 @@
             {% if summary.has_transfers %}
             <div class="kpi-meta" style="margin-top:.25rem;">
                 Net {{ 'deposited' if summary.net_deposits_in_range >= 0 else 'withdrawn' }}
-                ${{ "{:,.0f}".format(summary.net_deposits_in_range|abs) }} this window
+                {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.net_deposits_in_range|abs) }}{% endif %} this window
             </div>
             {% endif %}
         </div>
@@ -321,7 +321,7 @@
                 {% if summary.change_90d.abs > 0 %}kpi-delta-pos
                 {% elif summary.change_90d.abs < 0 %}kpi-delta-neg
                 {% else %}kpi-delta-flat{% endif %}">
-                {{ money(summary.change_90d.abs, 0, true) }}
+                {% if privacy_mode %}••••{% else %}{{ money(summary.change_90d.abs, 0, true) }}{% endif %}
             </div>
             <div class="kpi-meta">
                 {% if summary.change_90d.pct is not none %}
@@ -381,7 +381,7 @@
             <div class="income-value
                 {% if income_panel.net_deposits > 0 %}kpi-delta-pos
                 {% elif income_panel.net_deposits < 0 %}kpi-delta-neg{% endif %}">
-                {{ money(income_panel.net_deposits, 2, true) }}
+                {% if privacy_mode %}••••{% else %}{{ money(income_panel.net_deposits, 2, true) }}{% endif %}
             </div>
             <div class="income-meta">Money you moved in (+) or out (−)</div>
         </div>
@@ -551,6 +551,7 @@
                     callbacks: {
                         label: function (ctx) {
                             const v = ctx.parsed.y;
+                            if (window.htPrivacy) return ctx.dataset.label + ': ••••';
                             return ctx.dataset.label + ': ' + (v == null ? '—' : window.htMoney(v, 0));
                         }
                     }
@@ -579,6 +580,7 @@
                     stacked: false,
                     ticks: {
                         callback: function (v) {
+                            if (window.htPrivacy) return '••••';
                             var sign = v < 0 ? '-' : '';
                             var a = Math.abs(v);
                             if (a >= 1_000_000) return sign + '$' + (a / 1_000_000).toFixed(1) + 'M';

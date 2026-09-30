@@ -316,7 +316,7 @@
                                     {% if not upload_cfg_ok %}disabled{% endif %}>
                                 <option value="" {% if not preselect_tenant %}selected{% endif %}>-- Select an account --</option>
                                 {% for choice in account_choices|default([]) %}
-                                <option value="{{ choice.tenant_id }}" {% if preselect_tenant and choice.tenant_id == preselect_tenant %}selected{% endif %}>{{ choice.label }}</option>
+                                <option value="{{ choice.tenant_id }}" {% if preselect_tenant and choice.tenant_id == preselect_tenant %}selected{% endif %}>{{ choice.label | privacy_account(choice.tenant_id) }}</option>
                                 {% endfor %}
                                 <option value="__new__">+ Create new account...</option>
                             </select>
@@ -418,7 +418,7 @@
                     <ul class="list-group list-group-flush">
                         {% for acct in linked_accounts %}
                         <li class="list-group-item d-flex justify-content-between align-items-center px-0">
-                            {{ acct.label }}
+                            {{ acct.label | account_label(acct.tenant_id) }}
                             {% if acct.removable %}
                             <form method="POST" action="{{ url_for('unclaim_account') }}" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -596,7 +596,7 @@
         const errEl = document.getElementById('csvReqError');
         const okEl = document.getElementById('csvReqOk');
         const submitBtn = document.getElementById('csvReqSubmit');
-        const username = {{ (current_user.username or '')|tojson }};
+        const username = {{ ('' if privacy_mode else (current_user.username or ''))|tojson }};
 
         function fillPrefill(brokerName) {
             const lines = [];

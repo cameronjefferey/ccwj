@@ -125,7 +125,7 @@
         <div class="gs-hero">
             <h1>Your brokerages</h1>
             <p>
-                Welcome back, {{ current_user.username }}. Add another account,
+                Welcome back, {{ current_user.username | privacy_hide }}. Add another account,
                 or manage the ones already connected.
             </p>
         </div>
@@ -171,7 +171,7 @@
         <div class="gs-hero">
             <h1>Connect your brokerage</h1>
             <p>
-                Welcome, {{ current_user.username }}. The next step is a read-only
+                Welcome, {{ current_user.username | privacy_hide }}. The next step is a read-only
                 connection through SnapTrade. You sign in on your broker's page.
                 HappyTrader never stores your broker password.
             </p>
@@ -211,7 +211,7 @@
 
         {% else %}
         <div class="gs-hero">
-            <h1>Welcome, {{ current_user.username }}</h1>
+            <h1>Welcome, {{ current_user.username | privacy_hide }}</h1>
             <p>Broker connect isn't available in this environment. Upload a CSV to start mirroring your trades.</p>
         </div>
         <div class="gs-path featured mb-3">

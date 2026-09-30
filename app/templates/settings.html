@@ -74,7 +74,7 @@
             <div class="card-body">
                 <div class="settings-field">
                     <div class="field-label">Username</div>
-                    <div class="fw-semibold fs-6">{{ current_user.username }}</div>
+                    <div class="fw-semibold fs-6">{{ current_user.username | privacy_hide }}</div>
                 </div>
 
                 <div class="settings-field">

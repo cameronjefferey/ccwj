@@ -49,11 +49,11 @@
     {% set pos = comp.delta_pct >= 0 %}
     <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{{ "+" if pos else "" }}{{ "%.2f"|format(comp.delta_pct) }}%</div>
     {% if comp.delta is not none %}
-    <div class="ov-sub {% if comp.delta >= 0 %}pos{% else %}neg{% endif %}">{% if comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
+    <div class="ov-sub {% if comp.delta >= 0 %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
     {% endif %}
     {% elif comp and comp.has_data and comp.delta is not none %}
     {% set pos = comp.delta >= 0 %}
-    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{% if pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
+    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
     {% else %}
     <div class="ov-pct ov-dash">—</div>
     {% endif %}
@@ -78,7 +78,7 @@
         <div>
             <div class="ov-k">Total value{% if _book_n %} across {{ _book_n }} account{{ 's' if _book_n != 1 }}{% endif %}</div>
             {% if _book_value is not none %}
-            <div class="ov-big">${{ "{:,.0f}".format(_book_value) }}</div>
+            <div class="ov-big">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(_book_value) }}{% endif %}</div>
             {% else %}
             <div class="ov-big ov-dash">—</div>
             {% endif %}
@@ -96,7 +96,7 @@
             {% if equity_snapshot and equity_snapshot.pct_invested is not none %}
             <div class="ov-big ov-invest">{{ "%.0f"|format(equity_snapshot.pct_invested) }}%</div>
             {% if equity_snapshot.cash_balance is not none %}
-            <div class="ov-bench">${{ "{:,.0f}".format(equity_snapshot.cash_balance) }} cash</div>
+            <div class="ov-bench">{% if privacy_mode %}•••• cash{% else %}${{ "{:,.0f}".format(equity_snapshot.cash_balance) }} cash{% endif %}</div>
             {% endif %}
             {% else %}
             <div class="ov-big ov-dash">—</div>
@@ -181,13 +181,13 @@
     </div>
     {% if comp.delta is not none %}
     <div class="snap-cell-pct {% if comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-        {% if comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+        {% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
     </div>
     {% endif %}
     {% elif comp and comp.has_data and comp.delta is not none %}
     {% set pos = comp.delta >= 0 %}
     <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
-        {% if pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+        {% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
     </div>
     {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
 {% endmacro %}
@@ -235,7 +235,7 @@
             <div class="snap-col-share">{{ share_cell(snap.today_value, _share_total or snap.today_value) }}</div>
             <div>
                 {% if snap.today_value is not none %}
-                <div class="snap-cell-val">${{ "{:,.0f}".format(snap.today_value) }}</div>
+                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(snap.today_value) }}{% endif %}</div>
                 {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(snap.comparisons.day) }}</div>
@@ -252,7 +252,7 @@
             <div class="snap-col-share"></div>
             <div>
                 {% if today_snapshots_total.today_value is not none %}
-                <div class="snap-cell-val">${{ "{:,.0f}".format(today_snapshots_total.today_value) }}</div>
+                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(today_snapshots_total.today_value) }}{% endif %}</div>
                 {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
