@@ -88,7 +88,7 @@
   }
 
   function mergePreservedQuery(currentSearch, fields) {
-    // Header picker: keep the rest of the page query (strategy, range,
+    // Page-header picker: keep the rest of the page query (strategy, range,
     // leg, …) and replace only the account scope.
     var params = new URLSearchParams(
       (currentSearch || "").replace(/^\?/, "")

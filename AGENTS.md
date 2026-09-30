@@ -190,11 +190,14 @@ What's working:
 - Session hero: brand and the Group filter sit in the dark
  bar (same bar on Today, Positions, Accounts, Strategies, Sectors,
  Trader Profile, Position Detail, Earnings, and Insights; the global
- nav stays until that header replaces it). The Account control is in
- the app header when the user has two or more accounts. It shows
- nicknames only, stays hidden for a single account, writes `?tenants=`,
- and a cookie restores that shareable URL on the next visit. Groups
- stay on the page toolbar. Date of the close, then total value, the last close's move
+ nav stays until that header replaces it). The Account control is a
+ compact filter in that page header (Overview, Today, Positions,
+ Accounts, Strategies, Sectors, Trader Profile, Position Detail,
+ Earnings, Insights, and the day review) when the user has two or more
+ accounts. It is not in the top nav. It shows nicknames only, stays
+ hidden for a single account, writes `?tenants=`, and a cookie restores
+ that shareable URL on the next visit. Groups stay beside it on the
+ same toolbar. Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
  This week, and percent invested. The one-line takeaway calls these
  **account-value changes** and lists one-week benchmark figures without
@@ -935,7 +938,8 @@ Users trade multiple accounts. All logic must:
 Users can **group** accounts (kids / sara / 401ks) on Settings → Accounts & data.
 Membership is many-to-many on `tenant_id`; `?groups=` is the union of selected
 groups' members, then intersected with `?account=` / `?tenant=` / `?tenants=`.
-The Account control lives in the app header. It lists nicknames only
+The Account control lives in the page header of surfaces whose data
+follows the account scope (not the top nav). It lists nicknames only
 (no broker masks or account numbers) and is hidden when the user has
 one account. It writes `?tenants=` so a filtered view stays shareable.
 A cookie (`ht_tenants`) restores that URL on a later visit that has no

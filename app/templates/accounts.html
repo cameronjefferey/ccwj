@@ -38,8 +38,8 @@
 {% block content %}
 <div class="review-hero acct-hero">
     <div class="ov-bar">
-        {% if (accounts and accounts|length > 1) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero">
+        {% if scope_account_choices|length > 1 or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% include "_account_scope_filters.html" %}
             <input type="hidden" name="range" value="{{ selected_range or 'ALL' }}">
             {% if scope_is_filtered %}
