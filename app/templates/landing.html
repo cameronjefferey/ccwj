@@ -30,12 +30,21 @@
     }
     .ht-band-hero { background: #0a0e17; }
     .ht-band-proof { background: #121826; }
-    .ht-band-features {
+    .ht-band-how {
         background:
-            radial-gradient(70% 80% at 0% 0%, rgba(91,140,255,.2), transparent 55%),
+            radial-gradient(70% 90% at 100% 0%, rgba(91,140,255,.18), transparent 55%),
             linear-gradient(180deg, #10182a 0%, #17243a 100%);
     }
-    .ht-band-shorts { background: #0c111c; }
+    .ht-band-demo { background: #1a2744; }
+    .ht-band-story { background: #0c111c; }
+    .ht-band-shot-a { background: #121826; }
+    .ht-band-shot-b {
+        background:
+            radial-gradient(60% 80% at 0% 100%, rgba(91,140,255,.16), transparent 60%),
+            #0a0e17;
+    }
+    .ht-band-covered { background: #10182a; }
+    .ht-band-privacy { background: #17243a; }
     .ht-band-learn {
         background: #1a2744;
         border-top: 1px solid rgba(91,140,255,.35);
@@ -194,6 +203,15 @@
         list-style: none;
     }
     .ht-proof li { min-width: 0; }
+    .ht-kicker {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #5b8cff;
+        margin-bottom: 0.4rem;
+    }
     .ht-proof-k {
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
@@ -224,102 +242,53 @@
     .ht-fine a { color: #8a97b1; }
     .ht-fine a:hover { color: #5b8cff; }
 
-    .ht-band-features { padding: 3rem 0 3.15rem; }
+    .ht-section {
+        padding: 3.35rem 0;
+    }
     .ht-section-title {
-        font-size: clamp(1.35rem, 3vw, 1.85rem);
+        font-size: clamp(1.4rem, 3vw, 1.95rem);
         font-weight: 700;
         letter-spacing: -0.01em;
         color: #fff;
-        margin: 0 0 0.4rem;
+        margin: 0 0 0.55rem;
+        line-height: 1.2;
     }
-    .ht-section-lead {
-        color: #8a97b1;
-        margin: 0 0 1.35rem;
-        max-width: 36rem;
-        line-height: 1.5;
+    .ht-section-lead,
+    .ht-copy p {
+        color: #c5d0e4;
+        margin: 0;
+        line-height: 1.55;
+        font-size: 1.02rem;
     }
-    .ht-grid {
+    .ht-copy p + p { margin-top: 0.65rem; }
+    .ht-copy .ht-section-lead { color: #8a97b1; font-size: 0.95rem; }
+
+    .ht-how-grid,
+    .ht-split {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 0.75rem;
+        gap: 1.75rem;
+        align-items: center;
     }
-    .ht-card {
-        background: rgba(10,14,23,.55);
-        border: 1px solid rgba(91,140,255,.28);
-        border-radius: 0.7rem;
-        padding: 1.1rem 1.15rem 1.15rem;
-        min-width: 0;
+    .ht-steps {
+        display: grid;
+        gap: 1.15rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
     }
-    .ht-card-num {
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-variant-numeric: tabular-nums;
-        color: #5b8cff;
-        font-size: 0.72rem;
-        letter-spacing: 0.12em;
-        margin-bottom: 0.45rem;
-    }
-    .ht-card h3 {
+    .ht-steps li { min-width: 0; }
+    .ht-steps h3 {
         color: #fff;
         font-size: 1.05rem;
         font-weight: 650;
         letter-spacing: -0.01em;
-        margin: 0 0 0.4rem;
+        margin: 0 0 0.3rem;
     }
-    .ht-card p {
+    .ht-steps p {
         margin: 0;
         color: #c5d0e4;
-        font-size: 0.92rem;
+        font-size: 0.95rem;
         line-height: 1.5;
-    }
-
-    .ht-band-shorts { padding: 3rem 0 2.5rem; }
-    .ht-reel-head {
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-    .ht-reel-head .ht-section-lead { margin-bottom: 0; }
-    .ht-reel-nav { display: flex; gap: 0.4rem; flex: none; }
-    .ht-reel-btn {
-        width: 2.25rem;
-        height: 2.25rem;
-        border-radius: 999px;
-        border: 1px solid #243049;
-        background: #121826;
-        color: #e8edf7;
-        font-size: 1.15rem;
-        line-height: 1;
-        cursor: pointer;
-    }
-    .ht-reel-btn:hover { border-color: #5b8cff; color: #fff; }
-    .ht-reel-btn:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; }
-    .ht-reel {
-        display: flex;
-        gap: 0.9rem;
-        overflow-x: auto;
-        scroll-snap-type: x mandatory;
-        padding: 0.15rem 0 0.85rem;
-        scrollbar-color: #243049 transparent;
-    }
-    .ht-reel-item {
-        flex: 0 0 min(16.5rem, 78%);
-        scroll-snap-align: start;
-        min-width: 0;
-    }
-    .ht-reel-item h3 {
-        color: #fff;
-        font-size: 0.98rem;
-        font-weight: 650;
-        letter-spacing: -0.01em;
-        margin: 0.75rem 0 0.3rem;
-    }
-    .ht-reel-item p {
-        margin: 0;
-        color: #8a97b1;
-        font-size: 0.86rem;
-        line-height: 1.45;
     }
     .ht-phone {
         width: 100%;
@@ -335,14 +304,66 @@
         background: #243049;
         margin: 0.2rem auto 0.5rem;
     }
+    .ht-phone-block h3 {
+        color: #fff;
+        font-size: 0.95rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        margin: 0.7rem 0 0;
+    }
+    .ht-phone-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        align-items: start;
+    }
+    .ht-phone-single { max-width: 16.5rem; }
 
-    .ht-band-learn { padding: 3rem 0; }
+    .ht-band-demo { text-align: center; padding: 4.25rem 0; }
+    .ht-band-demo .ht-section-title { font-size: clamp(1.7rem, 4vw, 2.45rem); }
+    .ht-band-demo .ht-section-lead {
+        max-width: 36rem;
+        margin: 0 auto 1.25rem;
+        color: #c5d0e4;
+        font-size: 1.05rem;
+    }
+    .ht-demo-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #5b8cff;
+        color: #0a0e17;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        border-radius: 0.5rem;
+        padding: 0.8rem 1.2rem;
+        text-decoration: none;
+    }
+    .ht-demo-btn:hover, .ht-demo-btn:focus-visible { color: #0a0e17; filter: brightness(1.08); }
+
+    .ht-shot { margin: 0; }
+    .ht-shot img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 0.75rem;
+        border: 1px solid #243049;
+        background: #0c111c;
+    }
+    .ht-shot figcaption {
+        margin-top: 0.5rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #7d8aa3;
+    }
     .ht-learn {
         display: grid;
         gap: 1.5rem;
         align-items: center;
     }
-    .ht-learn h2 { margin-bottom: 0.55rem; }
     .ht-learn p {
         color: #c5d0e4;
         font-size: 1.02rem;
@@ -424,12 +445,15 @@
     @media (min-width: 768px) {
         .ht-landing { --bleed: 1.5rem; }
         .ht-proof { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-        .ht-grid { grid-template-columns: 1fr 1fr; }
         .ht-learn { grid-template-columns: minmax(0, 1fr) 16.5rem; }
         .ht-learn-phone { justify-self: end; }
     }
-    @media (prefers-reduced-motion: reduce) {
-        .ht-reel { scroll-behavior: auto; }
+    @media (min-width: 900px) {
+        .ht-how-grid { grid-template-columns: 16rem minmax(0, 1fr); }
+        .ht-split { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 2.5rem; }
+        .ht-split.media-end { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
+        .ht-split.media-end .ht-copy { order: -1; }
+        .ht-phone-single { justify-self: center; }
     }
 </style>
 {% endblock %}
@@ -460,6 +484,16 @@
         <span class="ht-duration">{{ v.duration_label }}</span>
         {% endif %}
     </button>
+</div>
+{% endmacro %}
+
+{% macro phone(step) %}
+<div class="ht-phone-block">
+    <div class="ht-phone">
+        <div class="ht-phone-bar" aria-hidden="true"></div>
+        {{ video_frame(step) }}
+    </div>
+    <h3>{{ step.title }}</h3>
 </div>
 {% endmacro %}
 
@@ -523,55 +557,157 @@
         </div>
     </section>
 
-    <section class="ht-band ht-band-features" aria-label="What the mirror shows">
-        <div class="ht-wrap">
-            <h2 class="ht-section-title">What the mirror shows</h2>
-            <p class="ht-section-lead">Four parts of the record. The clips below are the same pages, shorter.</p>
-            <div class="ht-grid">
-                {% for step in story_steps if step.step in [1, 2, 3, 4] %}
-                <article class="ht-card">
-                    <div class="ht-card-num">{{ '%02d'|format(step.step) }}</div>
-                    <h3>{{ step.title }}</h3>
-                    <p>{{ step.caption }}</p>
-                </article>
-                {% endfor %}
+    <section class="ht-band ht-band-how ht-section" aria-label="How it works">
+        <div class="ht-wrap ht-how-grid">
+            {% for step in story_steps if step.step == 1 %}
+            <div class="ht-media ht-phone-single">
+                {{ phone(step) }}
+            </div>
+            {% endfor %}
+            <div>
+                <div class="ht-kicker">How it works</div>
+                <h2 class="ht-section-title">Three steps, then the record</h2>
+                <ol class="ht-steps">
+                    <li>
+                        <div class="ht-kicker">01</div>
+                        <h3>Connect your brokerage</h3>
+                        <p>Read-only, through SnapTrade. Schwab, Fidelity, Vanguard, Robinhood, and others. HappyTrader never stores your broker password.</p>
+                    </li>
+                    <li>
+                        <div class="ht-kicker">02</div>
+                        <h3>Strategies detected</h3>
+                        <p>Covered calls, cash-secured puts, spreads, and the other labels are read from the fills and from the shares held when the option was written.</p>
+                    </li>
+                    <li>
+                        <div class="ht-kicker">03</div>
+                        <h3>See what's working</h3>
+                        <p>Positions, strategies, and the fit matrix show where the P&amp;L came from. The page is the record. It does not tell you what to trade next.</p>
+                    </li>
+                </ol>
             </div>
         </div>
     </section>
 
-    <section class="ht-band ht-band-shorts" aria-label="Short videos">
+    <section class="ht-band ht-band-demo" aria-label="Live demo">
         <div class="ht-wrap">
-            <div class="ht-reel-head">
-                <div>
-                    <h2 class="ht-section-title">Watch a piece at a time</h2>
-                    <p class="ht-section-lead">Five shorts. Scroll sideways.</p>
-                </div>
-                <div class="ht-reel-nav">
-                    <button type="button" class="ht-reel-btn" data-reel-dir="-1" aria-label="Previous short">&#8249;</button>
-                    <button type="button" class="ht-reel-btn" data-reel-dir="1" aria-label="Next short">&#8250;</button>
-                </div>
-            </div>
-            <div class="ht-reel" tabindex="0">
-                {% for step in story_steps if not step.links_learn %}
-                <article class="ht-reel-item">
-                    <div class="ht-phone">
-                        <div class="ht-phone-bar" aria-hidden="true"></div>
-                        {{ video_frame(step) }}
-                    </div>
-                    <h3>{{ step.title }}</h3>
-                    {% if step.step == 5 %}
-                    <p>{{ step.caption }}</p>
-                    {% endif %}
-                </article>
+            <div class="ht-kicker">Live demo</div>
+            <h2 class="ht-section-title">A mirror of a paper account</h2>
+            <p class="ht-section-lead">The live demo is a mirror of a trading bot's paper account. Simulated money, real market data, including the losing trades. The pages are the same ones a connected brokerage opens.</p>
+            <a class="ht-demo-btn" href="{{ url_for('demo_start') }}">See the live demo</a>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-story ht-section" aria-label="Every position's full story">
+        <div class="ht-wrap ht-split media-end">
+            <div class="ht-media ht-phone-row">
+                {% for step in story_steps if step.step in [2, 3] %}
+                {{ phone(step) }}
                 {% endfor %}
+            </div>
+            <div class="ht-copy">
+                <div class="ht-kicker">Shorts</div>
+                <h2 class="ht-section-title">Every position's full story</h2>
+                <p>Each symbol opens to the fills, the open lots, and a chart of equity, options, and dividends.</p>
+                <p>An early close also keeps the P&amp;L if that contract had been held to expiration. The line after the close is an estimate.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-shot-a ht-section" aria-label="Position P and L">
+        <div class="ht-wrap ht-split">
+            <figure class="ht-media ht-shot">
+                <img src="{{ url_for('static', filename='marketing/amd-pnl.png') }}"
+                     alt="Cumulative P&amp;L chart for AMD in the demo account, with equity, options, and dividends."
+                     width="1400" height="834" loading="lazy">
+                <figcaption>Demo account</figcaption>
+            </figure>
+            <div class="ht-copy">
+                <h2 class="ht-section-title">The result, day by day</h2>
+                <p>Equity, options, and dividends on one chart. Dots mark the days a trade was placed.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-shot-b ht-section" aria-label="If held to expiration">
+        <div class="ht-wrap ht-split media-end">
+            <figure class="ht-media ht-shot">
+                <img src="{{ url_for('static', filename='marketing/msft-if-held.png') }}"
+                     alt="If held to expiration summary for MSFT in the demo account."
+                     width="1400" height="315" loading="lazy">
+                <figcaption>Demo account</figcaption>
+            </figure>
+            <div class="ht-copy">
+                <h2 class="ht-section-title">If held to expiration</h2>
+                <p>On an early close, the P&amp;L you took sits next to the P&amp;L if the contract had been held. The gap is what closing early cost or saved.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-covered ht-section" aria-label="Covered-call income tracked">
+        <div class="ht-wrap ht-split">
+            {% for step in story_steps if step.step == 4 %}
+            <div class="ht-media ht-phone-single">
+                {{ phone(step) }}
+            </div>
+            <div class="ht-copy">
+                <div class="ht-kicker">Short</div>
+                <h2 class="ht-section-title">Covered-call income tracked</h2>
+                <p>{{ step.caption }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-shot-a ht-section" aria-label="Which strategies actually work">
+        <div class="ht-wrap ht-split media-end">
+            <figure class="ht-media ht-shot">
+                <img src="{{ url_for('static', filename='marketing/strategies.png') }}"
+                     alt="Strategy cards from the demo account, with return, win rate, and a six-month strip."
+                     width="1400" height="748" loading="lazy">
+                <figcaption>Demo account</figcaption>
+            </figure>
+            <div class="ht-copy">
+                <h2 class="ht-section-title">Which strategies actually work</h2>
+                <p>Each label rolls up from the trades in that account. The dollars are the record, not a suggestion of what to trade next.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-privacy ht-section" aria-label="Privacy mode and share cards">
+        <div class="ht-wrap ht-split">
+            {% for step in story_steps if step.step == 5 %}
+            <div class="ht-media ht-phone-single">
+                {{ phone(step) }}
+            </div>
+            <div class="ht-copy">
+                <div class="ht-kicker">Short</div>
+                <h2 class="ht-section-title">{{ step.title }}</h2>
+                <p>{{ step.caption }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-shot-b ht-section" aria-label="Where your edge is">
+        <div class="ht-wrap ht-split media-end">
+            <figure class="ht-media ht-shot">
+                <img src="{{ url_for('static', filename='marketing/fit-matrix.png') }}"
+                     alt="Strategy fit matrix from the demo account, return by strategy and sector."
+                     width="1400" height="641" loading="lazy">
+                <figcaption>Demo account</figcaption>
+            </figure>
+            <div class="ht-copy">
+                <h2 class="ht-section-title">Where your edge is</h2>
+                <p>Win rate and return by strategy and sector, from the closes in the account. Cells with no trades stay empty.</p>
             </div>
         </div>
     </section>
 
     {% for step in story_steps if step.links_learn %}
-    <section class="ht-band ht-band-learn" aria-label="Options 101">
+    <section class="ht-band ht-band-learn ht-section" aria-label="Options 101">
         <div class="ht-wrap ht-learn">
             <div>
+                <div class="ht-kicker">Options 101</div>
                 <h2 class="ht-section-title">{{ step.title }}</h2>
                 <p>
                     {{ step.caption }}
@@ -663,17 +799,6 @@
 
     document.querySelectorAll(".ht-facade").forEach(function (btn) {
         btn.addEventListener("click", function () { mount(btn); });
-    });
-
-    var reel = document.querySelector(".ht-reel");
-    document.querySelectorAll(".ht-reel-btn").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-            if (!reel) return;
-            var dir = Number(btn.getAttribute("data-reel-dir")) || 1;
-            var reduce = false;
-            try { reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (err) {}
-            reel.scrollBy({ left: dir * Math.round(reel.clientWidth * 0.8), behavior: reduce ? "auto" : "smooth" });
-        });
     });
 })();
 </script>
