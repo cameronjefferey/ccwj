@@ -313,6 +313,7 @@
             html += '<div class="sym">' + esc(data.held.label || '') + '</div>';
             html += '<div class="meta">' + esc(data.held.direction_label || '')
                  + (data.held.expiry_label ? ' · exp ' + esc(data.held.expiry_label) : '')
+                 + (data.held.show_account && data.held.account ? ' · ' + esc(data.held.account) : '')
                  + '</div>';
             html += '<div class="nums">';
             function heldNum(lbl, display, n) {

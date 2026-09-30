@@ -370,11 +370,21 @@ What's working:
   (`int_option_marks_daily`) fill the held segment when they exist.
   P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
   same dollar as the hindsight note. Open contracts are omitted. The
-  peek drawer shows the largest one as a sparkline. Math lives in
-  `app/held_chart.py`; no new market-data vendor. The two price queries
-  (`stg_daily_prices`, `int_option_marks_daily`) are fetched outside the
-  shared position batch (`fetch_held_series`) and fail to empty frames,
-  so a marks-table miss cannot blank the page or the peek drawer.
+  charts stay in a right-side panel (a full-screen sheet on phones).
+  Just above the Position Legs table, a collapsed "If held to expiration"
+  block is the headline: the total and a count ("Closing early cost you
+  $X across N trades vs holding to expiration", or "saved you" when the
+  early exits came out ahead). Expanding it lists each early close
+  (contract, contracts, closed date, actual P&L, if-held P&L, difference
+  pill). Each of those rows opens that contract's chart. The same pill
+  stays on the Position Legs row. The panel steps between charts,
+  largest first. The peek
+  drawer still links to that panel (`#if-held`) and masks the account
+  name when privacy mode is on. Math lives in `app/held_chart.py`; no
+  new market-data vendor. The two price queries (`stg_daily_prices`,
+  `int_option_marks_daily`) are fetched outside the shared position
+  batch (`fetch_held_series`) and fail to empty frames, so a
+  marks-table miss cannot blank the page or the peek drawer.
 - **Covered call runs (Sep 2026).** A share lot and the calls written
   against it are one run, from the buy (or a put assignment, for a
   wheel) through the sale or assignment, or through today if the shares

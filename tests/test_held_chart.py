@@ -17,10 +17,13 @@ from app.held_chart import (
     UNDERLYING_CLOSES_QUERY,
     build_held_charts,
     fetch_held_series,
+    held_page_summary,
     intrinsic_per_share,
     option_mark_per_share,
+    outcome_pill,
     peek_held_summary,
     pnl_if_held,
+    stamp_held_column,
 )
 
 
@@ -474,19 +477,118 @@ def test_fetch_held_series_keeps_closes_when_only_marks_raise():
     assert marks.empty
 
 
-def test_template_renders_the_summary_and_the_fees_note():
-    from app import app
-    charts = build_held_charts(pd.DataFrame([_row()]), _prices([
+def _onon_prices():
+    return _prices([
         (date(2025, 8, 12), 40.0),
         (date(2025, 8, 13), 39.0),
         (date(2025, 9, 12), 48.6364),
+    ])
+
+
+def test_headline_for_one_early_close_names_the_cost():
+    charts = build_held_charts(pd.DataFrame([_row()]), _onon_prices())
+    summary = held_page_summary(charts)
+    assert summary["headline"] == (
+        "Closing early cost you $15,266 across 1 trade vs holding to expiration"
+    )
+    assert summary["count"] == 1
+    assert summary["rows"][0]["contract"] == "$41 call Sep 12"
+    assert summary["rows"][0]["contracts"] == 25
+    assert summary["rows"][0]["closed"] == "Aug 13"
+    assert summary["rows"][0]["pill"] == "+$15,266 more"
+    assert summary["rows"][0]["dom_id"] == "held-0"
+    assert outcome_pill(charts[0]["difference"]) == "+$15,266 more"
+
+
+def test_headline_sums_several_exits_and_opens_the_largest():
+    rows = [
+        _row(),
+        _row(
+            trade_symbol="ONON  251017C00045000",
+            option_strike=45.0,
+            option_expiry=date(2025, 10, 17),
+            open_date=date(2025, 9, 1),
+            close_date=date(2025, 9, 2),
+            contracts=1,
+            realized_pnl=-100.0,
+            proceeds_from_close=50.0,
+            early_close_vs_expiry_delta=-1168.0,
+            intrinsic_at_expiry=12.0,
+        ),
+    ]
+    charts = build_held_charts(pd.DataFrame(rows), _prices([
+        (date(2025, 8, 12), 40.0),
+        (date(2025, 8, 13), 39.0),
+        (date(2025, 9, 1), 44.0),
+        (date(2025, 9, 2), 44.0),
+        (date(2025, 9, 12), 48.6364),
+        (date(2025, 10, 17), 57.0),
     ]))
+    assert len(charts) == 2
+    assert charts[0]["dom_id"] == "held-0"
+    assert abs(charts[0]["difference"]) >= abs(charts[1]["difference"])
+    summary = held_page_summary(charts)
+    assert summary["headline"] == (
+        "Closing early cost you $16,434 across 2 trades vs holding to expiration"
+    )
+    assert summary["count"] == 2
+    assert len(summary["rows"]) == 2
+    assert summary["open_id"] == charts[0]["dom_id"]
+
+
+def test_headline_says_saved_when_early_exits_came_out_ahead():
+    charts = build_held_charts(pd.DataFrame([
+        _row(early_close_vs_expiry_delta=400.0, realized_pnl=250.0,
+             proceeds_from_close=500.0),
+    ]), _onon_prices())
+    summary = held_page_summary(charts)
+    assert summary["headline"] == "Closing early saved you $400 across 1 trade vs holding"
+    assert outcome_pill(400) == "$400 less"
+    assert outcome_pill(0) == "Same"
+
+
+def test_stamp_marks_only_the_matching_option_row():
+    charts = build_held_charts(pd.DataFrame([_row()]), _onon_prices())
+    outcomes = [
+        {
+            "type": "option",
+            "tenant_id": "snaptrade:abc",
+            "trade_symbol": "ONON  250912C00041000",
+            "open_date": "2025-08-12",
+        },
+        {
+            "type": "option",
+            "tenant_id": "snaptrade:abc",
+            "trade_symbol": "ONON  251017P00040000",
+            "open_date": "2025-09-01",
+        },
+        {"type": "equity", "trade_symbol": "ONON", "open_date": "2025-08-12"},
+    ]
+    stamp_held_column(charts, outcomes)
+    assert outcomes[0]["held_pill"] == "+$15,266 more"
+    assert outcomes[0]["held_better"] is True
+    assert outcomes[0]["held_id"] == "held-0"
+    assert "held_pill" not in outcomes[1]
+    assert "held_pill" not in outcomes[2]
+
+
+def test_template_renders_the_headline_and_keeps_the_chart_card():
+    from pathlib import Path
+    from app import app
+    charts = build_held_charts(pd.DataFrame([_row()]), _onon_prices())
+    summary = held_page_summary(charts)
     with app.app_context():
         html = app.jinja_env.get_template("_held_to_expiry.html").render(
             held_charts=charts,
-            story_days=[{"type": "day"}],
+            held_summary=summary,
         )
+    assert summary["headline"] in html
+    assert "$41 call Sep 12" in html
+    assert "See chart" not in html
+    assert 'data-held-open="held-0"' in html
     assert "If held to expiration" in html
+    assert 'class="held-fold"' in html
+    assert "held-fold-row" in html
     assert "+$11,933" in html
     assert "-$3,333" in html
     assert "-$15,266" in html
@@ -494,12 +596,62 @@ def test_template_renders_the_summary_and_the_fees_note():
     assert "Per share" in html
     assert "Contract $" in html
     assert 'id="if-held"' in html
-    assert "hindsight notes" in html
-    # Open contracts are simply absent — an empty list renders nothing.
+    assert "held-section" not in html
+    assert "hindsight notes" not in html
+    assert "Previous trade" not in html
+    page = Path("app/templates/position_detail.html").read_text()
+    held_at = page.find('{% include "_held_to_expiry.html" %}')
+    runs_at = page.find('{% include "_covered_call_runs.html" %}')
+    legs_at = page.rfind("Position Legs")
+    assert runs_at < held_at < legs_at
+    assert legs_at - held_at < 400
+    assert page.count('{% include "_held_to_expiry.html" %}') == 1
+    if_held = page.find(">If held<")
+    assert if_held > held_at
+    header_start = page.rfind("<th", held_at, if_held)
+    assert 'data-m="hide"' not in page[header_start:if_held]
+    assert 'colspan="14"' in page
+    assert "held-pill" in page
     with app.app_context():
         empty = app.jinja_env.get_template("_held_to_expiry.html").render(
-            held_charts=[], story_days=[])
+            held_charts=[], held_summary=None)
     assert empty.strip() == ""
+
+
+def test_several_charts_render_a_stepper():
+    from app import app
+    rows = [
+        _row(),
+        _row(
+            trade_symbol="ONON  251017C00045000",
+            option_strike=45.0,
+            option_expiry=date(2025, 10, 17),
+            open_date=date(2025, 9, 1),
+            close_date=date(2025, 9, 2),
+            early_close_vs_expiry_delta=-200.0,
+        ),
+    ]
+    charts = build_held_charts(pd.DataFrame(rows), _prices([
+        (date(2025, 8, 12), 40.0),
+        (date(2025, 8, 13), 39.0),
+        (date(2025, 9, 1), 44.0),
+        (date(2025, 9, 2), 44.0),
+        (date(2025, 9, 12), 48.6364),
+        (date(2025, 10, 17), 50.0),
+    ]))
+    summary = held_page_summary(charts)
+    with app.app_context():
+        html = app.jinja_env.get_template("_held_to_expiry.html").render(
+            held_charts=charts, held_summary=summary)
+    assert "across 2 trades" in html
+    # The class name also appears in the fold CSS and the keydown handler.
+    # Count the table rows themselves; one per early exit.
+    assert html.count('<tr class="held-fold-row"') == len(charts)
+    assert summary["count"] == len(charts) == len(summary["rows"])
+    assert "data-held-prev" in html
+    assert "data-held-next" in html
+    assert 'data-held-pane="held-0"' in html
+    assert 'data-held-pane="held-1"' in html
 
 
 def _logged_in_user():
@@ -621,3 +773,71 @@ def test_position_page_and_peek_render_when_held_queries_raise():
     assert body["total_pnl"] == -3333.0
     assert body.get("error") is None
     assert body.get("held") is None
+
+
+def test_peek_masks_the_account_and_links_the_chart():
+    from unittest.mock import patch
+    import app.position_detail as detail
+    from pathlib import Path
+
+    prices = _onon_prices()
+    second = _row(
+        tenant_id="snaptrade:def",
+        account="Fidelity Account",
+        trade_symbol="ONON  251017C00045000",
+        option_strike=45.0,
+        option_expiry=date(2025, 10, 17),
+        open_date=date(2025, 9, 1),
+        close_date=date(2025, 9, 2),
+        early_close_vs_expiry_delta=-200.0,
+    )
+    execution = pd.DataFrame([_row(), second])
+
+    def peek_batch(_client, queries):
+        return {
+            "summary": _summary_frame(),
+            "current": pd.DataFrame([{
+                "tenant_id": "snaptrade:abc",
+                "account": "Schwab Account",
+                "symbol": "ONON",
+                "instrument_type": "Equity",
+                "trade_symbol": "ONON",
+                "quantity": 0.0,
+                "current_price": 48.0,
+                "market_value": 0.0,
+                "cost_basis": 0.0,
+                "unrealized_pnl": 0.0,
+                "option_expiry": None,
+            }]),
+            "execution": execution,
+        }
+
+    user = _logged_in_user()
+    slots = (
+        {"snaptrade:abc": "Account 1", "snaptrade:def": "Account 2"},
+        {"Schwab Account": "Account 1", "Fidelity Account": "Account 2"},
+    )
+    with patch.object(detail, "current_user", user), \
+         patch("flask_login.utils._get_user", lambda: user), \
+         patch.object(detail, "_redirect_if_no_accounts", lambda: None), \
+         patch.object(detail, "_tenants_for_scope", lambda *_a, **_k: [
+             "snaptrade:abc", "snaptrade:def"]), \
+         patch.object(detail, "_tenant_label_map_for_user", lambda *_a, **_k: {
+             "snaptrade:abc": "Schwab Account",
+             "snaptrade:def": "Fidelity Account",
+         }), \
+         patch.object(detail, "get_bigquery_client", lambda: object()), \
+         patch.object(detail, "fetch_held_series", lambda *_a, **_k: (prices, pd.DataFrame())), \
+         patch.object(detail, "_bq_parallel", peek_batch), \
+         patch("app.privacy.privacy_mode_on", lambda: True), \
+         patch("app.privacy.viewer_slots", lambda: slots):
+        peek = detail.app.test_client().get("/api/position/ONON/peek")
+    assert peek.status_code == 200, peek.data[:800]
+    held = peek.get_json()["held"]
+    assert held["show_account"] is True
+    assert held["account"] == "Account 1"
+    assert "Schwab" not in held["account"]
+    assert held["chart_url"].endswith("#if-held")
+    peek_js = Path("app/templates/_position_peek.html").read_text()
+    assert "data.held.show_account && data.held.account" in peek_js
+    assert "See the chart" in peek_js

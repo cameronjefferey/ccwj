@@ -35,6 +35,16 @@
     .kpi-mini { text-align: center; }
     .kpi-mini .label { font-size: .7rem; text-transform: uppercase; letter-spacing: .6px; color: var(--ht-muted); }
     .kpi-mini .value { font-size: 1.3rem; font-weight: 700; }
+    .pd-legs { width: 100%; max-width: 100%; table-layout: fixed; font-size: .72rem; }
+    .pd-legs th, .pd-legs td {
+        padding: .28rem .22rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .pd-legs .pd-pnl { white-space: normal; }
+    .pd-legs .pd-ifheld { text-align: right; }
+    .pd-legs .held-pill { max-width: 100%; }
     .leg-toggle { cursor: pointer; user-select: none; }
     .leg-toggle:hover { opacity: .7; }
     .leg-detail-row { display: none; }
@@ -818,7 +828,6 @@
 {% endif %}
 
 {% include "_covered_call_runs.html" %}
-{% include "_held_to_expiry.html" %}
 
 {# ── First-visit calm: collapse the analytical breakdown behind one
    toggle so a brand-new user's first Position Detail load is hero + one
@@ -1083,6 +1092,7 @@
 {% endif %}
 
 {# ── All Legs (Open + Closed) ── #}
+{% include "_held_to_expiry.html" %}
 {% if current_positions or trade_outcomes %}
 <div class="card stat-card p-4 mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -1098,13 +1108,21 @@
         </h6>
     </div>
     <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
-        <table class="table table-sm table-hover align-middle mb-0" style="font-size:.8rem;">
+        <table class="table table-sm table-hover align-middle mb-0 pd-legs">
+            <colgroup>
+                <col style="width:3%"><col style="width:4%"><col style="width:13%">
+                <col style="width:7%"><col style="width:7%"><col style="width:4%">
+                <col style="width:8%"><col style="width:8%"><col style="width:4%">
+                <col style="width:7%"><col style="width:8%"><col style="width:9%">
+                <col style="width:13%"><col style="width:5%">
+            </colgroup>
             <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
                 <tr>
                     {# data-m="hide": collapsed on phones (tables.js) — the
-                       expander + Contract + P&L + Return stay tappable. #}
+                       expander + Contract + P&L + If held + Return stay tappable.
+                       If held has no data-m so the pill is not dropped on a phone. #}
                     <th></th>
-                    <th class="text-center" style="width:3rem;" data-m="hide">Leg</th>
+                    <th class="text-center" data-m="hide">Leg</th>
                     <th>Contract / Leg</th>
                     <th data-m="hide">Strategy</th>
                     <th data-m="hide">Account</th>
@@ -1115,6 +1133,7 @@
                     <th class="text-end" data-m="hide">Cost</th>
                     <th class="text-end" data-m="hide">Value / Proceeds</th>
                     <th class="text-end">P&amp;L</th>
+                    <th class="text-end pd-ifheld">If held</th>
                     <th class="text-end">Return</th>
                 </tr>
             </thead>
@@ -1135,17 +1154,18 @@
                     <td><span class="badge bg-success bg-opacity-25 text-success" style="font-size:.6rem;">Open</span></td>
                     <td class="text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
                     <td class="fw-semibold small" {% if p.trade_symbol %}title="{{ p.trade_symbol }}"{% endif %}>{{ (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else p.description }}</td>
-                    <td class="text-muted small">{{ p.leg_kind or p.instrument_type }}</td>
-                    <td class="text-muted small" data-val="{{ (p.account_display or p.account) | account_label(p.tenant_id) }}">{{ (p.account_display or p.account) | account_label(p.tenant_id) }}</td>
+                    <td class="text-muted small clip">{{ p.leg_kind or p.instrument_type }}</td>
+                    <td class="text-muted small clip" data-val="{{ (p.account_display or p.account) | account_label(p.tenant_id) }}">{{ (p.account_display or p.account) | account_label(p.tenant_id) }}</td>
                     <td class="text-end">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
                     <td class="text-nowrap">{{ p.open_date|human_date if p.open_date else '—' }}</td>
                     <td class="text-nowrap">—</td>
                     <td class="text-end text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
                     <td class="text-end">{{ money(p.cost_basis) }}</td>
                     <td class="text-end">{{ money(p.market_value) }}</td>
-                    <td class="text-end fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
+                    <td class="text-end pd-pnl fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
                         {{ money(p.unrealized_pnl) }}
                     </td>
+                    <td class="pd-ifheld"></td>
                     <td class="text-end {{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
                         {{ "{:.1f}%".format(p.unrealized_pnl_pct) }}
                     </td>
@@ -1160,13 +1180,14 @@
                         {{ money(opnl) }}
                     </td>
                     <td></td>
+                    <td></td>
                 </tr>
                 {% endif %}
 
                 {# ── Separator ── #}
                 {% if current_positions and trade_outcomes %}
                 <tr>
-                    <td colspan="13" class="text-center text-muted py-1" style="font-size:.65rem; background: #1a2233; letter-spacing:.5px;">
+                    <td colspan="14" class="text-center text-muted py-1" style="font-size:.65rem; background: #1a2233; letter-spacing:.5px;">
                         CLOSED TRADES
                     </td>
                 </tr>
@@ -1195,15 +1216,15 @@
                         <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ o.close_type }}</span>
                         {% endif %}
                     </td>
-                    <td class="text-muted small">{{ o.strategy }}</td>
-                    <td class="text-muted small" data-val="{{ (o.account_display or o.account) | account_label(o.tenant_id) }}">{{ (o.account_display or o.account) | account_label(o.tenant_id) }}</td>
+                    <td class="text-muted small clip">{{ o.strategy }}</td>
+                    <td class="text-muted small clip" data-val="{{ (o.account_display or o.account) | account_label(o.tenant_id) }}">{{ (o.account_display or o.account) | account_label(o.tenant_id) }}</td>
                     <td class="text-end">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
                     <td class="text-nowrap">{{ o.open_date|human_date }}</td>
                     <td class="text-nowrap">{{ o.close_date|human_date }}</td>
                     <td class="text-end text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
                     <td class="text-end">{{ money(o.cost) }}</td>
                     <td class="text-end">{{ money(o.proceeds) }}</td>
-                    <td class="text-end fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
+                    <td class="text-end pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
                         <div>{{ money(o.pnl) }}</div>
                         <button type="button" class="ht-share-btn"
                                 {% if o.type == 'equity' %}
@@ -1219,13 +1240,19 @@
                                 data-trade-symbol="{{ o.trade_symbol or '' }}"
                                 {% endif %}>Share</button>
                     </td>
+                    <td class="pd-ifheld">
+                        {% if o.held_pill %}
+                        <button type="button" class="held-pill {{ 'held-more' if o.held_better else 'held-less' if o.held_pill != 'Same' else 'held-same' }}"
+                                data-held-open="{{ o.held_id }}">{{ o.held_pill }}</button>
+                        {% endif %}
+                    </td>
                     <td class="text-end {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else '' }}">
                         {% if o.return_pct is not none %}{{ o.return_pct }}%{% else %}—{% endif %}
                     </td>
                 </tr>
                 {% if o.raw_trades %}
                 <tr class="leg-detail-row" id="leg-detail-{{ loop.index0 }}">
-                    <td colspan="13" class="leg-detail-cell">
+                    <td colspan="14" class="leg-detail-cell">
                         <table class="table leg-detail-table mb-0">
                             <thead>
                                 <tr>
@@ -1274,6 +1301,7 @@
                         {{ money(cpnl) }}
                     </td>
                     <td></td>
+                    <td></td>
                 </tr>
                 {% if current_positions %}
                 <tr class="fw-semibold border-top border-secondary" style="font-size:.8rem;">
@@ -1283,6 +1311,7 @@
                     <td class="text-end {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
                         {{ money(gpnl) }}
                     </td>
+                    <td></td>
                     <td></td>
                 </tr>
                 {% endif %}
@@ -1843,7 +1872,7 @@
     // Leg drill-down toggle
     document.querySelectorAll('.leg-toggle').forEach(function (row) {
         row.addEventListener('click', function (e) {
-            if (e.target.closest('.ht-share-btn')) return;
+            if (e.target.closest('.ht-share-btn') || e.target.closest('.held-pill')) return;
             var targetId = this.getAttribute('data-target');
             var detail = document.getElementById(targetId);
             if (!detail) return;

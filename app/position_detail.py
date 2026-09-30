@@ -1700,7 +1700,9 @@ from app.execution_quality import (  # noqa: E402
 from app.held_chart import (  # noqa: E402
     build_held_charts,
     fetch_held_series,
+    held_page_summary,
     peek_held_summary,
+    stamp_held_column,
 )
 
 
@@ -1995,6 +1997,7 @@ def position_detail(symbol):
             story_mirror=[],
             covered_call_runs=[],
             held_charts=[],
+            held_summary=None,
             has_underlying_price=False,
             symbol_sector="",
             symbol_subsector="",
@@ -3324,9 +3327,11 @@ def position_detail(symbol):
             option_marks_df,
             label_for=_account_display_for,
         )
+        stamp_held_column(held_charts, trade_outcomes)
     except Exception as exc:
         app.logger.warning("held-to-expiry chart build failed for %s: %s", symbol, exc)
         held_charts = []
+    held_summary = held_page_summary(held_charts)
 
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
@@ -3470,6 +3475,7 @@ def position_detail(symbol):
         story_share_label="Coins" if _is_crypto else "Shares",
         covered_call_runs=covered_call_runs,
         held_charts=held_charts,
+        held_summary=held_summary,
         has_underlying_price=chart_data.get("has_underlying_price", False),
         prices_through_date=prices_through_date,
         accounts=all_accounts,
@@ -3811,7 +3817,9 @@ def position_peek(symbol):
         marks_df = _filter_df_by_tenant_ids(marks_df, tenant_ids)
 
         def _peek_label(tid, acct):
-            return label_map.get(str(tid or "").strip(), acct or "")
+            from app.privacy import shown_account
+            raw = label_map.get(str(tid or "").strip(), acct or "")
+            return shown_account(raw, tid)
 
         held_charts = build_held_charts(
             exec_df,
