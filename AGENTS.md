@@ -394,9 +394,12 @@ What's working:
   net for the whole run. Broker fees are left out of that math and the
   card says so. Multiple runs, partial sales, and partial coverage stay
   on the same lot until the shares are flat. Built in
-  `app/covered_call_runs.py` from the fills the page already loaded
-  (tenant-scoped, before the leg filter so one leg click does not split
-  the cycle). Pinned by `tests/test_covered_call_runs.py`.
+  `app/covered_call_runs.py` from the fills and inferred opening balances
+  the page already loaded (tenant-scoped, before the leg filter so one leg
+  click does not split the cycle). Opening quantities are converted from
+  today's units back to their opening-date units before split events are
+  replayed, so pre-history holdings do not disappear or double-split.
+  Pinned by `tests/test_covered_call_runs.py`.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
