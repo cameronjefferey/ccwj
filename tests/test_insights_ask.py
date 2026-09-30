@@ -208,12 +208,15 @@ def test_coaching_brief_collapses_covered_call_across_accounts(monkeypatch):
 
     from jinja2 import Environment
     from pathlib import Path
+    from app.money import fmt_money
     src = Path(__file__).resolve().parents[1].joinpath(
         "app/templates/insights.html"
     ).read_text()
     start = src.index("{% for s in coaching.signals %}")
     end = src.index("{% endfor %}", start) + len("{% endfor %}")
-    html = Environment().from_string(src[start:end]).render(coaching=data)
+    env = Environment()
+    env.globals["money"] = fmt_money
+    html = env.from_string(src[start:end]).render(coaching=data)
     assert html.count('class="strat-name"') == 1
     assert "Covered Call" in html
     assert "Covered Call ·" not in html

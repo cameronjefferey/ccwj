@@ -463,6 +463,152 @@
         }
         .ht-ms-apply-row .btn { flex: 1; }
 
+        /* Header account picker — same multi-select as the page toolbar,
+           sitting in the nav so every page can filter. */
+        .ht-header-scope {
+            display: flex;
+            align-items: center;
+            margin: 0 .35rem 0 .15rem;
+        }
+        .ht-header-scope .ht-ms-dd { flex-direction: row; align-items: center; gap: .35rem; }
+        .ht-header-scope .lblh {
+            margin: 0;
+            color: #8a97b1;
+            font-size: .62rem;
+        }
+        .ht-header-scope .ht-ms-btn {
+            min-width: 0;
+            max-width: 11rem;
+            background: #121826;
+            color: #e8edf7;
+            border-color: #243049;
+            font-size: .8rem;
+        }
+        .ht-header-scope .ht-ms-btn:hover,
+        .ht-header-scope .ht-ms-btn:focus {
+            background: #1a2233;
+            color: #fff;
+            border-color: #5b8cff;
+        }
+        .ht-header-scope .dropdown-menu {
+            background: #121826;
+            border: 1px solid #243049;
+            z-index: 1050;
+        }
+        .ht-header-scope .ht-ms-item { color: #e8edf7; }
+        .ht-header-scope .ht-ms-item:hover { background: #1a2233; color: #fff; }
+        .ht-header-scope .ht-ms-apply-row {
+            background: #121826;
+            border-top-color: #243049;
+        }
+        @media (max-width: 991.98px) {
+            .ht-header-scope .lblh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+            .ht-header-scope .ht-ms-btn { max-width: 7.25rem; }
+        }
+
+        /* Glossary tooltip. The header word is the control (dotted
+           underline) so a fixed-width column does not also pay for an
+           "i". The popover is position:fixed in term-tips.js so tables
+           do not clip it. .ht-term-mark is the small "i" used only when
+           the label text cannot be the control. */
+        .ht-term {
+            display: inline;
+            position: relative;
+        }
+        button.ht-term-btn,
+        a.ht-term-btn {
+            display: inline;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-bottom: 1px dotted rgba(91, 140, 255, .55);
+            border-radius: 0;
+            background: none;
+            color: inherit;
+            font: inherit;
+            letter-spacing: inherit;
+            text-transform: inherit;
+            line-height: inherit;
+            white-space: inherit;
+            cursor: help;
+            vertical-align: baseline;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+        button.ht-term-btn:hover,
+        a.ht-term-btn:hover,
+        button.ht-term-btn:focus-visible,
+        a.ht-term-btn:focus-visible {
+            border-bottom-color: #5b8cff;
+            color: inherit;
+            background: transparent;
+            outline: 2px solid #5b8cff;
+            outline-offset: 2px;
+        }
+        .ht-term-btn.ht-term-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1rem;
+            height: 1rem;
+            border: 1px solid #5b8cff;
+            border-radius: 999px;
+            background: transparent;
+            color: #5b8cff;
+            font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+            font-size: .62rem;
+            font-weight: 700;
+            letter-spacing: 0;
+            text-transform: none;
+            line-height: 1;
+            white-space: normal;
+            cursor: pointer;
+            vertical-align: middle;
+        }
+        .ht-term-btn.ht-term-mark:hover,
+        .ht-term-btn.ht-term-mark:focus-visible {
+            background: rgba(91, 140, 255, .15);
+            color: #fff;
+            outline: none;
+        }
+        .ht-term-pop {
+            display: none;
+            position: fixed;
+            z-index: 1080;
+            max-width: 16rem;
+            padding: .55rem .7rem;
+            background: #121826;
+            color: #e8edf7;
+            border: 1px solid #243049;
+            border-radius: .55rem;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+            font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+            font-size: .78rem;
+            font-weight: 400;
+            line-height: 1.4;
+            letter-spacing: 0;
+            text-transform: none;
+            text-align: left;
+            white-space: normal;
+        }
+        .ht-term.is-open .ht-term-pop { display: block; }
+        .ht-term-pop[hidden] { display: none !important; }
+        .ht-term-def { display: block; }
+        .ht-term-more {
+            display: inline-block;
+            margin-top: .35rem;
+            color: #5b8cff;
+            font-size: .72rem;
+            font-weight: 600;
+        }
+        th .ht-term, .ht-stat-l .ht-term, .kpi-label-row .ht-term { vertical-align: middle; }
+        .kpi-label-row {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .25rem;
+        }
+
         /* Pill segmented toggle. Used for "Slice by", "View metric",
            "Status", and date presets. Active state is dark-navy on cream
            — high contrast so the current selection reads at a glance. */
@@ -978,13 +1124,44 @@
     {% endif %}
 </head>
 <body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}">
+    <script>
+    window.htMoney = function(n, digits, signed) {
+        var v = Number(n);
+        if (!isFinite(v)) return '\u2014';
+        var d = digits == null ? 2 : digits;
+        var abs = Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
+        var sign = v < 0 ? '-' : (signed && v > 0 ? '+' : '');
+        return sign + '$' + abs;
+    };
+    window.htPrivacy = {{ (privacy_mode if privacy_mode is defined else false)|tojson }};
+    try { localStorage.setItem('ht-privacy', window.htPrivacy ? '1' : '0'); } catch (e) {}
+    window.htLocalTimes = function (root) {
+        var nodes = (root || document).querySelectorAll('time.ht-local-time[datetime]');
+        nodes.forEach(function (el) {
+            var raw = el.getAttribute('datetime');
+            if (!raw) return;
+            var d = new Date(raw);
+            if (isNaN(d.getTime())) return;
+            el.textContent = d.toLocaleString(undefined, {
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: 'numeric', minute: '2-digit'
+            });
+            el.setAttribute('title', 'Your local time');
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { window.htLocalTimes(); });
+    } else {
+        window.htLocalTimes();
+    }
+    </script>
     {% if session.get('_impersonator_id') %}
     <div style="background: #fef08a; color: #713f12; padding: .55rem 1rem;
                 border-bottom: 2px solid #f59e0b; font-weight: 600; font-size: .9rem;
                 display: flex; align-items: center; gap: 1rem; justify-content: center;
                 flex-wrap: wrap;">
         <span>You are viewing the site as
-              <strong>@{{ current_user.username }}</strong>
+              <strong>@{{ current_user.username | privacy_hide }}</strong>
               (admin impersonation).</span>
         <a href="{{ url_for('admin_impersonate_stop') }}"
            style="background: #713f12; color: #fef9c3; padding: .25rem .85rem;
@@ -995,6 +1172,18 @@
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
             <a class="navbar-brand ht-wordmark" href="{{ scoped_url('weekly_review') if current_user.is_authenticated else url_for('index') }}">happy<span>trader</span></a>
+            {% if current_user.is_authenticated and scope_account_choices|length > 1 %}
+            {# One account control for every page. Writes ?tenants= so the
+               link stays shareable, and scope-filters.js stores the choice.
+               Hidden when the user has a single account. Nicknames only. #}
+            <form method="get" class="ht-header-scope" action="{{ request.path }}"
+                  data-ht-preserve-query="1" data-ht-persist-tenants="1"
+                  aria-label="Account filter">
+                {% with header_account_only=true %}
+                {% include "_account_scope_filters.html" %}
+                {% endwith %}
+            </form>
+            {% endif %}
             <div class="d-flex align-items-center gap-2">
                 {% if current_user.is_authenticated %}
                 {# Phone-only palette trigger OUTSIDE the collapse: on mobile
@@ -1107,6 +1296,7 @@
                 <li class="nav-item py-1 py-lg-0 me-lg-2 d-none d-lg-block">
                     <button type="button" class="ht-search-btn ht-palette-open" id="ht-palette-trigger"
                             data-cache-scope="{{ current_user.get_id() }}"
+                            data-privacy="{{ '1' if privacy_mode else '0' }}"
                             data-scope-qs="{{ scope_query_string }}"
                             aria-label="Quick switcher" title="Jump to a symbol or page">
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>
@@ -1130,6 +1320,15 @@
                            (html.ht-pwa-installed, set in <head>). #}
                         <li id="ht-install-item">
                             <button type="button" class="dropdown-item" id="ht-install-link">Install app</button>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="post" action="{{ url_for('set_privacy_mode_route') }}" class="px-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
+                                <button type="submit" class="dropdown-item">{% if privacy_mode %}Privacy mode is on{% else %}Privacy mode{% endif %}</button>
+                            </form>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
@@ -1335,16 +1534,16 @@
                 {% if snaptrade_reauth_needed|length == 1 %}
                     {% set c = snaptrade_reauth_needed[0] %}
                     {% if c.kind == 'expiring' %}
-                        <strong>Your {{ c.broker_slug | title }} connection
+                        <strong>Your {{ c.broker_slug | title | privacy_hide }} connection
                         {% if c.expires_in_days > 0 %}expires in {{ c.expires_in_days }} day{{ 's' if c.expires_in_days != 1 }}{% else %}is expiring now{% endif %}.</strong>
                         <div class="small mt-1">
-                            Reconnect <code>{{ c.display_nickname or c.account_name }}</code> before it lapses so your daily sync keeps running.
+                            Reconnect <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code> before it lapses so your daily sync keeps running.
                         </div>
                     {% else %}
-                        <strong>Reconnect your {{ c.broker_slug | title }} connection.</strong>
+                        <strong>Reconnect your {{ c.broker_slug | title | privacy_hide }} connection.</strong>
                         <div class="small mt-1">
                             We haven&rsquo;t been able to sync
-                            <code>{{ c.display_nickname or c.account_name }}</code>
+                            <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code>
                             {% if c.stale_days and c.stale_days > 0 %}for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}since today{% endif %} &mdash;
                             your data is frozen until you reconnect.
                         </div>
@@ -1354,7 +1553,7 @@
                     <ul class="small mt-1 mb-0 ps-3">
                         {% for c in snaptrade_reauth_needed %}
                         <li>
-                            <code>{{ c.display_nickname or c.account_name }}</code> ({{ c.broker_slug | title }}) &mdash;
+                            <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code> ({{ c.broker_slug | title | privacy_hide }}) &mdash;
                             {% if c.kind == 'expiring' %}
                                 {% if c.expires_in_days > 0 %}expires in {{ c.expires_in_days }} day{{ 's' if c.expires_in_days != 1 }}{% else %}expiring now{% endif %}
                             {% else %}
@@ -1484,6 +1683,7 @@
         });
     </script>
     <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/term-tips.js') }}"></script>
     {% if current_user.is_authenticated %}
     <script defer src="{{ url_for('static', filename='js/nav.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/scope-filters.js') }}"></script>

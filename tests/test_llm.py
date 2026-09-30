@@ -54,6 +54,21 @@ def test_default_model_prefers_unpaid(monkeypatch):
     assert llm.default_model_key() == "claude-haiku-4-5"
 
 
+def test_paid_only_configuration_fails_closed_without_entitlement(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("SELECTABLE_LLM_MODELS", "claude-opus-4-8")
+    monkeypatch.setenv("LLM_PROVIDER", "claude")
+
+    assert llm.default_model_key() is None
+    assert llm.resolve_model_key(None, allow_paid=False) is None
+    assert llm.resolve_model_key("claude-opus-4-8", allow_paid=False) is None
+    assert (
+        llm.resolve_model_key("claude-opus-4-8", allow_paid=True)
+        == "claude-opus-4-8"
+    )
+
+
 def test_normalized_history_drops_junk():
     assert llm._normalized_history([
         {"role": "user", "content": "hello"},

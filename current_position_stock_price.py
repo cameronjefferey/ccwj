@@ -113,6 +113,13 @@ def _get_crypto_symbols():
     return _CRYPTO_SYMBOLS_CACHE
 
 
+# Yahoo's bare ticker for these names is the listed stock (SNX = TD
+# SYNNEX, SEI = Solaris Energy, COMP = Compass). Mapping them to
+# SYM-USD marks the stock with the token. LINK is NOT in this set:
+# Yahoo's bare LINK is Interlink Electronics, and the token is LINK-USD.
+_YAHOO_BARE_IS_THE_STOCK = frozenset({"SNX", "SEI", "COMP"})
+
+
 def _yahoo_symbol_candidates(broker_sym, crypto_symbols=None):
     """Return ordered list of Yahoo-symbol candidates to try for one broker symbol.
 
@@ -123,7 +130,10 @@ def _yahoo_symbol_candidates(broker_sym, crypto_symbols=None):
     ``crypto_symbols`` is the curated crypto whitelist; when omitted it is
     loaded (and cached) from the dbt seed. A whitelisted crypto ticker maps
     to ``<SYM>-USD`` EXCLUSIVELY (see the module comment above) — never the
-    bare ticker, which resolves to a colliding equity.
+    bare ticker, which resolves to a colliding equity. Exception:
+    ``SNX`` / ``SEI`` / ``COMP``, whose Yahoo bare symbol is the listed
+    stock (TD SYNNEX, Solaris Energy, Compass). Those stay on the bare
+    ticker so a stock holding is not marked with the token.
     """
     if not isinstance(broker_sym, str):
         return []
@@ -133,7 +143,13 @@ def _yahoo_symbol_candidates(broker_sym, crypto_symbols=None):
     if crypto_symbols is None:
         crypto_symbols = _get_crypto_symbols()
     if sym.upper() in crypto_symbols:
-        return [f"{sym}-USD"]
+        # The stock wins for tickers whose Yahoo bare symbol is that
+        # stock. Everything else on the whitelist stays exclusive -USD
+        # so LINK does not fetch Interlink Electronics.
+        if sym.upper() in _YAHOO_BARE_IS_THE_STOCK:
+            pass  # fall through to the bare-ticker candidates below
+        else:
+            return [f"{sym}-USD"]
     candidates = [sym]
     m = _PREFERRED_CANDIDATE_RE.match(sym)
     if m and not sym.startswith(m.group(1) + "-P"):

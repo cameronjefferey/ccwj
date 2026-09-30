@@ -284,6 +284,8 @@ def profile():
             if row.get("tenant_id")
         ]
         group_tenant_choices.sort(key=lambda r: (r["label"] or "").lower())
+        from app.privacy import sort_masked_account_choices
+        group_tenant_choices = sort_masked_account_choices(group_tenant_choices)
     except Exception:
         group_tenant_choices = []
 

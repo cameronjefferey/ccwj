@@ -26,10 +26,124 @@
     .badge-closed { background: #6c757d; }
     .badge-mixed  { background: #ffc107; color: #000; }
 
-    /* Table */
-    #positionsTable th { white-space: nowrap; }
+    /* Table. The page shell caps at 72rem (~1152px), which squeezes
+       12–13 columns at 1280–1600px until the last columns clip. Widen
+       this page at laptop widths and keep headers on one line. */
+    @media (min-width: 1200px) {
+        body:has(#positionsTable) .ht-page { max-width: none; }
+    }
+    #positionsTable,
+    #symbolTable { font-size: .84rem; width: max-content; min-width: 100%; }
+    /* The symbol table's strategy badges used to push Premium / W/L
+       past the card. The wrapper could scroll, but its scrollbar sits
+       at the bottom of the 75vh sticky box — below an 800px window
+       when the header is on screen — so the right columns looked cut
+       off. At laptop widths, fit the table to the card instead. */
+    body:has(#positionsTable) .table-responsive,
+    body:has(#symbolTable) .table-responsive {
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: auto;
+        scrollbar-color: #8a97b1 #1a2233;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar {
+        height: 12px;
+        width: 12px;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar-thumb,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar-thumb {
+        background: #8a97b1;
+        border-radius: 8px;
+        border: 2px solid #1a2233;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar-track,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar-track {
+        background: #1a2233;
+    }
+    body:has(#positionsTable) .card,
+    body:has(#symbolTable) .card { max-width: 100%; min-width: 0; }
+    /* 768–1366: share the card width so no column runs past the edge.
+       Phones keep tables.js data-m="hide" (max-width 767) instead.
+       Glossary headers are the dotted word (no extra "i"). A few
+       columns are a fraction wider so the uppercase label plus the
+       sort glyph still fits at 1280 and 1366. */
+    @media (min-width: 768px) and (max-width: 1366px) {
+        #symbolTable {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 0;
+        }
+        #symbolTable th,
+        #symbolTable td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #symbolTable td:nth-child(4) {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+        }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 10%; }
+        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 11%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 13.6%; }
+        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 9.6%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 8%; }
+        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 8.2%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 7.4%; }
+        #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 6.6%; }
+        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 6%; }
+        #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 5%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 8.6%; }
+        /* Strategy detail is 13 columns. Same idea: stay inside the card.
+           Money columns keep enough width for "-$00,000.00". */
+        #positionsTable {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 0;
+        }
+        #positionsTable th,
+        #positionsTable td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #positionsTable td:nth-child(2) {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+        }
+        #positionsTable th:nth-child(1), #positionsTable td:nth-child(1) { width: 9%; }
+        #positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 12.4%; }
+        #positionsTable th:nth-child(3), #positionsTable td:nth-child(3) { width: 5.5%; }
+        #positionsTable th:nth-child(4), #positionsTable td:nth-child(4) { width: 9.6%; }
+        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 8%; }
+        #positionsTable th:nth-child(6), #positionsTable td:nth-child(6) { width: 8.3%; }
+        #positionsTable th:nth-child(7), #positionsTable td:nth-child(7) { width: 7.5%; }
+        #positionsTable th:nth-child(8), #positionsTable td:nth-child(8) { width: 6.5%; }
+        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9) { width: 5.9%; }
+        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 5.5%; }
+        #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 7.5%; }
+        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 6.8%; }
+        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 7.5%; }
+    }
+    #positionsTable th,
+    #positionsTable th a,
+    #positionsTable th .ht-term-btn,
+    #symbolTable th,
+    #symbolTable th a,
+    #symbolTable th .ht-term-btn {
+        white-space: nowrap;
+        letter-spacing: 0;
+    }
+    #positionsTable thead th,
+    #symbolTable thead th { font-size: .68rem; letter-spacing: 0; }
     #positionsTable th.sortable a { color: inherit; text-decoration: none; }
-    #positionsTable td { white-space: nowrap; }
+    #positionsTable td,
+    #symbolTable td { white-space: nowrap; }
     /* Sortable-header + row-click styles are global (see static/js/tables.js). */
 
     /* Mobile horizontal-scroll affordance */
@@ -160,7 +274,7 @@
             {% if selected_start_date %}<input type="hidden" name="start_date" value="{{ selected_start_date }}">{% endif %}
             {% if selected_end_date %}<input type="hidden" name="end_date" value="{{ selected_end_date }}">{% endif %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('positions', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -179,15 +293,15 @@
             <div class="ov-big {% if kpis.total_return > 0 %}pos{% elif kpis.total_return < 0 %}neg{% endif %}">{% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k">Realized</div>
+            <div class="ov-k">{{ term('Realized') }}</div>
             <div class="ov-pct {% if kpis.realized_pnl > 0 %}pos{% elif kpis.realized_pnl < 0 %}neg{% endif %}">{% if kpis.realized_pnl > 0 %}+{% endif %}{{ money(kpis.realized_pnl, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k">Unrealized</div>
+            <div class="ov-k">{{ term('Unrealized') }}</div>
             <div class="ov-pct {% if kpis.unrealized_pnl > 0 %}pos{% elif kpis.unrealized_pnl < 0 %}neg{% endif %}">{% if kpis.unrealized_pnl > 0 %}+{% endif %}{{ money(kpis.unrealized_pnl, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k">Win rate</div>
+            <div class="ov-k">{{ term('Win rate') }}</div>
             <div class="ov-big ov-invest">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</div>
         </div>
     </div>
@@ -389,7 +503,7 @@
         </div>
     </div>
     {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_tag or selected_statuses or selected_start_date or selected_end_date or selected_group_ids or selected_tenant_ids %}
-    <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
+    <a class="filter-reset" href="{{ url_for('positions', scope='all') }}">Reset</a>
     {% endif %}
 </form>
 </div>
@@ -506,7 +620,7 @@
     <div class="pos-axis">
         <span style="left: 0%">{{ '-' if ns.lo < 0 else '' }}${{ '%.0f'|format(ns.lo|abs / 1000) }}k</span>
         <span style="left: {{ _zero }}%">$0</span>
-        <span style="left: 100%">${{ '%.0f'|format(ns.hi / 1000) }}k</span>
+        <span style="left: 100%">{{ money(ns.hi / 1000, 0) }}k</span>
     </div>
 </div>
 {% endif %}
@@ -563,27 +677,27 @@
                             title="Realized + unrealized + dividends — the headline P&amp;L for this symbol.">
                             Total Return
                         </th>
-                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
-                        <th class="sortable" data-sort="num">Win Rate</th>
+                        <th class="sortable" data-sort="num">{{ term('Win Rate') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Trades</th>
-                        <th class="sortable" data-sort="num" data-m="hide">W / L</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
+                        <th class="sortable" data-sort="num" data-m="hide">W/L</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Premium') }}</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in symbol_rows %}
                     <tr data-href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">
-                        <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
+                        <td data-val="{{ (row.account_display or row.account) | account_label(row.tenant_id) }}">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</td>
                         <td class="fw-semibold">
-                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
+                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none" data-symbol="{{ row.symbol }}">
                                 {{ row.symbol }}
                             </a>
                         </td>
                         <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
                             title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
-                            {% if row.subsector and row.subsector != 'Unknown' %}
+                            {% if row.subsector and row.subsector not in ('Unknown', 'Unclassified', 'Other') %}
                             <a href="{{ scoped_url('positions', subsector=row.subsector, _anchor='pos-filters') }}"
                                class="text-decoration-none text-muted">{{ row.subsector }}</a>
                             {% else %}
@@ -670,18 +784,18 @@
                             title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">
                             <a href="{{ pos_sort('total_return') }}">Total Return</a>
                         </th>
-                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('realized') }}">Realized</a></th>
-                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('unrealized') }}">Unrealized</a></th>
+                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Realized', pos_sort('realized')) }}</th>
+                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Unrealized', pos_sort('unrealized')) }}</th>
                         <th class="sortable {% if sort_key == 'dividends' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"
                             title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">
                             <a href="{{ pos_sort('dividends') }}">Dividends</a>
                         </th>
-                        <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('win_rate') }}">Win Rate</a></th>
+                        <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Win Rate', pos_sort('win_rate')) }}</th>
                         <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('trades') }}">Trades</a></th>
-                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W / L</a></th>
+                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W/L</a></th>
                         <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
                         <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_days') }}">Avg Days</a></th>
-                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('premium') }}">Premium</a></th>
+                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Premium', pos_sort('premium')) }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -710,7 +824,7 @@
 
                     {% for row in rows %}
                     <tr data-href="{{ scoped_url('strategies', tenant=row.tenant_id, tenants=none, strategy=row.strategy, status=selected_statuses, start_date=selected_start_date, end_date=selected_end_date) }}">
-                        <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
+                        <td data-val="{{ (row.account_display or row.account) | account_label(row.tenant_id) }}">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</td>
                         <td>
                             <a href="{{ scoped_url('strategies',
                                                 tenant=row.tenant_id,
@@ -795,7 +909,7 @@
         </nav>
         {% endif %}
         {% else %}
-        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-decoration-underline">connecting your broker</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
+        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions', scope='all') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-decoration-underline">connecting your broker</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
         {% endif %}
     </div>
 </div>

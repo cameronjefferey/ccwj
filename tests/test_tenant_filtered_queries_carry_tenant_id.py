@@ -64,6 +64,7 @@ FILTERED_QUERIES = [
     ("app.weekly_review", "DAY_ACCOUNTS_QUERY"),
     ("app.weekly_review", "DAY_TRADES_QUERY"),
     ("app.weekly_review", "COVERED_CALL_UNWRITTEN_QUERY"),
+    ("app.insights", "INSIGHTS_DATA_QUERY"),
     ("app.insights", "BEHAVIOR_OBSERVATIONS_QUERY"),
     ("app.insights", "COACHING_SIGNALS_QUERY"),
     ("app.insights", "EXIT_COVERAGE_QUERY"),
@@ -77,6 +78,10 @@ FILTERED_QUERIES = [
     ("app.execution_quality", "EXECUTION_REVIEW_QUERY"),
     ("app.execution_quality", "POSITION_EXECUTION_QUERY"),
     ("app.execution_quality", "OPEN_OPTION_RECORD_QUERY"),
+    ("app.held_chart", "OPTION_MARKS_QUERY"),
+    ("app.share_card", "SHARE_POSITION_QUERY"),
+    ("app.share_card", "SHARE_OPTION_QUERY"),
+    ("app.share_card", "SHARE_EQUITY_QUERY"),
 ]
 
 

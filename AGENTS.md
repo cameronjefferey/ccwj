@@ -187,13 +187,19 @@ The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', 
 callers don't break.
 
 What's working:
-- Session hero: brand and the Group / Account filters sit in the dark
+- Session hero: brand and the Group filter sit in the dark
  bar (same bar on Today, Positions, Accounts, Strategies, Sectors,
  Trader Profile, Position Detail, Earnings, and Insights; the global
- nav stays until that header replaces it). Date of the close, then total value, the last close's move
+ nav stays until that header replaces it). The Account control is in
+ the app header when the user has two or more accounts. It shows
+ nicknames only, stays hidden for a single account, writes `?tenants=`,
+ and a cookie restores that shareable URL on the next visit. Groups
+ stay on the page toolbar. Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
- This week, and percent invested. A one-line takeaway only claims what
- those numbers and the snapshot benchmark rows support. Pills name the
+ This week, and percent invested. The one-line takeaway calls these
+ **account-value changes** and lists one-week benchmark figures without
+ saying ahead/behind: snapshot deltas include deposits and withdrawals,
+ so they are not investment returns. Pills name the
  session (pre-market / open / after hours), that session's fill count,
  the trailing-week SPY/QQQ line, and a link to the live page. Account
  table adds share-of-book and leads each move with the percent.
@@ -231,7 +237,7 @@ What's working:
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Clicking a mover opens the same right-side position drawer as Today.
-- Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the close date. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
+- Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the current New York market date. It must not start on the older settled close: doing so shortens the forward window every weekend / pre-market and hides day-14 events whenever any earlier chip makes the radar replace the legacy list. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
 - Current positions strip (open-position cards with live prices)
 - Position / strategy / sector / subsector scorecards (performance by account). The account scorecard is **lifetime P&amp;L for currently-open positions plus anything closed since the Monday of the close on screen** (Friday's session → that Friday's Monday, not calendar-today's ISO Monday, which is still ahead of the close on Monday morning). Dividends on those rows are lifetime too — not a week-to-date clock. Copy names that Monday, not "this week's result". Ex-div share counts are every share held in the current scope; Today's "No short call open" list is uncovered covered-call lots only.
@@ -358,6 +364,49 @@ What's working:
   .total_fees` — sourced from `int_option_contracts.total_fees` for
   options and the new `int_equity_sessions.total_fees` for equity, both
   informational-only for the same double-subtract reason).
+- **If held to expiration (Sep 2026).** On each gradeable early close
+  (the same `int_option_exit_quality` rows as the hindsight notes), a
+  chart from open to expiration. Open and close are fill prices. The
+  dashed segment after the close is intrinsic value from
+  `stg_daily_prices` (an estimate). Daily option marks
+  (`int_option_marks_daily`) fill the held segment when they exist.
+  P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
+  same dollar as the hindsight note. Open contracts are omitted. The
+  charts stay in a right-side panel (a full-screen sheet on phones).
+  Just above the Position Legs table, a collapsed "If held to expiration"
+  block is the headline: the total and a count ("Closing early cost you
+  $X across N trades vs holding to expiration", or "saved you" when the
+  early exits came out ahead).   Expanding it lists each early close
+  (contract, contracts, closed date, actual P&L, if-held P&L, difference
+  pill). Below 576px each exit is a stacked card instead of that table,
+  so the difference stays on screen. The fold clips overflow so opening
+  it cannot widen the page. Each row opens that contract's chart. On a
+  phone the chart is a full-viewport bottom sheet. The difference uses
+  the same words on the card and in the panel ("$X more if held" /
+  "$X less if held"). The same pill
+  stays on the Position Legs row. The panel steps between charts,
+  largest first. The peek
+  drawer still links to that panel (`#if-held`) and masks the account
+  name when privacy mode is on. Math lives in `app/held_chart.py`; no
+  new market-data vendor. The two price queries (`stg_daily_prices`,
+  `int_option_marks_daily`) are fetched outside the shared position
+  batch (`fetch_held_series`) and fail to empty frames, so a
+  marks-table miss cannot blank the page or the peek drawer.
+- **Covered call runs (Sep 2026).** A share lot and the calls written
+  against it are one run, from the buy (or a put assignment, for a
+  wheel) through the sale or assignment, or through today if the shares
+  are still held. The card under the position review lists each call
+  (strike, expiry, premium, outcome: expired / closed / assigned /
+  rolled / open), a running premium total, the share result, and one
+  net for the whole run. Broker fees are left out of that math and the
+  card says so. Multiple runs, partial sales, and partial coverage stay
+  on the same lot until the shares are flat. Built in
+  `app/covered_call_runs.py` from the fills and inferred opening balances
+  the page already loaded (tenant-scoped, before the leg filter so one leg
+  click does not split the cycle). Opening quantities are converted from
+  today's units back to their opening-date units before split events are
+  replayed, so pre-history holdings do not disappear or double-split.
+  Pinned by `tests/test_covered_call_runs.py`.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
@@ -727,7 +776,10 @@ Connected but still waiting on data: manage accounts, with Connect
 another account first. `/first-look` 301s here. New signups land here.
 Cancelling the SnapTrade portal returns to `/snaptrade/accounts` with
 an honest "nothing new was connected" message — not name-now claiming
-"Connected N accounts". The post-upload and post-sync processing pages
+"Connected N accounts". An unchanged account list is still treated as a
+successful recovery when a returned account is broken or has not completed
+its first sync; that path must clear health state and kick the catch-up pull,
+not be mistaken for cancel. The post-upload and post-sync processing pages
 land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the
@@ -849,18 +901,25 @@ Users trade multiple accounts. All logic must:
 Users can **group** accounts (kids / sara / 401ks) on Settings → Accounts & data.
 Membership is many-to-many on `tenant_id`; `?groups=` is the union of selected
 groups' members, then intersected with `?account=` / `?tenant=` / `?tenants=`.
-The Groups and Account controls are multi-select dropdowns to the left of
-other filters, each with Apply and Reset. Account values are `tenant_id`
-(`?tenants=`). Groups always lists every group (picking an account must not
-hide the others). Selecting groups limits the account list to members.
+The Account control lives in the app header. It lists nicknames only
+(no broker masks or account numbers) and is hidden when the user has
+one account. It writes `?tenants=` so a filtered view stays shareable.
+A cookie (`ht_tenants`) restores that URL on a later visit that has no
+account query. An explicit `?tenants=` / `?tenant=` / `?account=` on a
+link wins and does not overwrite the cookie. `?scope=all` (Reset)
+clears the cookie and the filter. Groups stay a multi-select on the
+page toolbar, to the left of the other filters, with Apply and Reset.
+Account values are `tenant_id` (`?tenants=`). Groups always lists every
+group (picking an account must not hide the others). Selecting groups
+limits the account list to members.
 With two or more accounts and no groups yet, the Groups slot is a quiet
 "Group accounts" link to Settings → Accounts & data (`#account-groups`) —
 not an empty dropdown. Never key groups on the SnapTrade `"Schwab Account"`
 label. In-page links (status pills, movers, pagination, Cmd+K, the logo)
 must keep `?tenants=` / `?groups=` via the `scoped_url` template global —
-plain `url_for` drops the picker. Reset links keep using `url_for` so they
-actually clear. Drill-ins to one physical account use `tenant=<tenant_id>`,
-never the colliding display label.
+plain `url_for` drops the picker. Reset links use `url_for(..., scope='all')`
+so they clear the saved account filter as well as the query. Drill-ins to
+one physical account use `tenant=<tenant_id>`, never the colliding display label.
 
 ### 4. Performance Rules
 
@@ -1408,7 +1467,11 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   required to keep running-share state honest across pre/post-split
   fill units), assignment/exercise voice (short vs long inferred from
   tracked state or the same-day mechanical share fill at the strike,
-  which is swallowed rather than double-narrated). Between trade days
+  which is swallowed rather than double-narrated). Assignment/exercise
+  cards receive a realized-P&L chip only when exactly one closed
+  contract/session owns the matched warehouse close date; multi-close
+  dates stay blank rather than assigning the day's net to one event.
+  Between trade days
   it narrates INTERLUDES from the daily-mark chart series — "A quiet 13
   weeks: +$3,434 with no trades placed" — the data only HappyTrader has
   (per-day option marks), plus "no activity / fully out of the position"

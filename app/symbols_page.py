@@ -74,7 +74,8 @@ def symbols_detail():
 NAV_SYMBOLS_QUERY = """
 SELECT
     symbol,
-    MAX(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) AS has_open
+    MAX(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) AS has_open,
+    ANY_VALUE(company_name) AS company_name
 FROM `ccwj-dbt.analytics.positions_summary`
 WHERE symbol IS NOT NULL AND symbol != ''
   {tenant_filter}
@@ -103,7 +104,11 @@ def api_nav_symbols():
     for _, r in df.iterrows():
         sym = str(r.get("symbol") or "").strip()
         if sym:
-            out.append({"s": sym, "open": bool(int(r.get("has_open") or 0))})
+            item = {"s": sym, "open": bool(int(r.get("has_open") or 0))}
+            company = str(r.get("company_name") or "").strip()
+            if company and company.lower() not in ("none", "nan"):
+                item["n"] = company
+            out.append(item)
     return jsonify({"symbols": out, "accounts": accounts})
 
 
@@ -131,8 +136,9 @@ def _nav_account_entries():
         label = str(entry.get("label") or "").strip()
         tid = str(entry.get("tenant_id") or "").strip()
         if label and tid:
+            from app.privacy import shown_account
             out.append({
-                "s": label,
+                "s": shown_account(label, tid),
                 "href": "/accounts?tenant=" + quote(tid, safe=":"),
             })
     return out

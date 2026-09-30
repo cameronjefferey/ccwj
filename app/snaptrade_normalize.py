@@ -43,6 +43,7 @@ from app.upload import (
     CURRENT_SEED_COLUMNS,
     HISTORY_SEED_COLUMNS,
     canonicalize_crypto_pair_symbol,
+    symbol_defaults_to_crypto,
 )
 
 _log = logging.getLogger(__name__)
@@ -115,8 +116,11 @@ def _is_crypto(symbol_obj: Mapping) -> bool:
     if saw_type_block:
         return False
     # No broker type info → curated whitelist fallback (step 3).
+    # Ambiguous tickers (SNX = TD SYNNEX, SEI = Solaris Energy, …) fail
+    # toward Equity. A missing type on those names used to stamp
+    # Cryptocurrency and the warehouse then trusted that stamp.
     underlying = _underlying_from_symbol(symbol_obj).upper()
-    return underlying in CRYPTO_SYMBOLS
+    return symbol_defaults_to_crypto(underlying)
 
 
 # ---------------------------------------------------------------------------

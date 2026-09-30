@@ -25,6 +25,7 @@ from app import app
 from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df
 from app.skeleton import skeleton_page
+from app.privacy import shown_account as _privacy_account_label
 from app.models import (
     get_user_profile,
     bump_review_visit,
@@ -152,6 +153,7 @@ WITH prices AS (
     FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE symbol IN ('SPY', 'QQQ')
       AND date >= @ytd_start
+      AND date <= @as_of
       AND close_price IS NOT NULL AND close_price > 0
 ),
 week_prior AS (
@@ -217,6 +219,7 @@ def _get_market_performance(week_start, today, prefetched_df=None):
             cfg = bigquery.QueryJobConfig(query_parameters=[
                 bigquery.ScalarQueryParameter("week_start", "DATE", week_start),
                 bigquery.ScalarQueryParameter("ytd_start", "DATE", ytd_start),
+                bigquery.ScalarQueryParameter("as_of", "DATE", today),
             ])
             df = cached_query_df(client, MARKET_PERF_QUERY, job_config=cfg, label="market_perf")
         for _, row in df.iterrows():
@@ -337,7 +340,7 @@ WITH prices AS (
     FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE symbol IN ('SPY', 'QQQ')
       AND close_price IS NOT NULL AND close_price > 0
-      AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 70 DAY)
+      AND date BETWEEN DATE_SUB(@as_of, INTERVAL 70 DAY) AND @as_of
 ),
 latest AS (
     SELECT symbol, MAX(date) AS latest_date FROM prices GROUP BY symbol
@@ -358,6 +361,24 @@ SELECT
 FROM px
 GROUP BY symbol
 """
+
+
+def _market_context_query_specs(as_of):
+    """Benchmark queries capped to the close displayed by Overview."""
+    market_cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter(
+            "week_start", "DATE", _iso_week_start(as_of)),
+        bigquery.ScalarQueryParameter(
+            "ytd_start", "DATE", date(as_of.year, 1, 1)),
+        bigquery.ScalarQueryParameter("as_of", "DATE", as_of),
+    ])
+    benchmark_cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("as_of", "DATE", as_of),
+    ])
+    return {
+        "benchmark_snapshot": (BENCHMARK_SNAPSHOT_QUERY, benchmark_cfg),
+        "market_perf": (MARKET_PERF_QUERY, market_cfg),
+    }
 
 # Compact labels for the snapshot benchmark rows.
 BENCHMARK_SHORT_LABELS = {"SPY": "S&P 500", "QQQ": "Nasdaq 100"}
@@ -2229,68 +2250,48 @@ def _market_line_source(market, benchmark_snapshot):
 
 
 def _overview_takeaway(day_pct, week_pct, benchmarks):
-    """One sentence under the Overview hero. Only claims the numbers support.
+    """One factual line under the Overview hero.
 
-    ``benchmarks`` is the snapshot index rows (S&P 500, Nasdaq 100) with
-    ``day_pct`` and ``week_pct``. Missing pieces are left out rather than
-    filled in.
+    Account snapshot deltas are balance changes, not transfer-adjusted
+    investment returns. A deposit can move them sharply, so never describe
+    them as ahead of / behind market-return benchmarks.
     """
-    day_bits = []
-    for row in benchmarks or []:
-        pct = row.get("day_pct")
-        if pct is not None:
-            day_bits.append(pct)
-    week_bits = []
-    week_labels = []
-    for row in benchmarks or []:
-        pct = row.get("week_pct")
-        if pct is not None:
-            week_bits.append(pct)
-            week_labels.append(row.get("label") or row.get("symbol") or "the index")
-
     clauses = []
     if day_pct is not None:
-        verb = "Up" if day_pct > 0 else "Down" if day_pct < 0 else "Flat"
-        moved = f"{abs(day_pct):.2f}%" if day_pct != 0 else ""
-        if len(day_bits) >= 2 and all(p < 0 for p in day_bits):
-            backdrop = "on a day both indexes fell"
-        elif len(day_bits) >= 2 and all(p > 0 for p in day_bits):
-            backdrop = "on a day both indexes rose"
+        if day_pct > 0:
+            clauses.append(
+                f"Account value rose {abs(day_pct):.2f}% since the prior close"
+            )
+        elif day_pct < 0:
+            clauses.append(
+                f"Account value fell {abs(day_pct):.2f}% since the prior close"
+            )
         else:
-            backdrop = "on the day"
-        if day_pct == 0:
-            clauses.append(f"Flat {backdrop}")
-        else:
-            clauses.append(f"{verb} {moved} {backdrop}")
+            clauses.append("Account value was flat since the prior close")
 
-    if week_pct is not None and len(week_bits) >= 2:
-        names = f"the {week_labels[0]} and {week_labels[1]}"
-        if week_pct > max(week_bits):
-            clauses.append(f"ahead of {names} for the week")
-        elif week_pct < min(week_bits):
-            clauses.append(f"behind {names} for the week")
-        else:
-            clauses.append(f"between {names} for the week")
-    elif week_pct is not None and len(week_bits) == 1:
-        name = week_labels[0]
-        if week_pct > week_bits[0]:
-            clauses.append(f"ahead of the {name} for the week")
-        elif week_pct < week_bits[0]:
-            clauses.append(f"behind the {name} for the week")
-        else:
-            clauses.append(f"in line with the {name} for the week")
+    week_parts = []
+    if week_pct is not None:
+        week_parts.append(f"account {week_pct:+.2f}%")
+    for row in benchmarks or []:
+        pct = row.get("week_pct")
+        if pct is None:
+            continue
+        label = row.get("label") or row.get("symbol") or "index"
+        week_parts.append(f"{label} {pct:+.2f}%")
+    if week_parts:
+        clauses.append("one-week change: " + ", ".join(week_parts))
 
     if not clauses:
         return None
-    if len(clauses) == 1:
-        return clauses[0] + "."
-    return clauses[0] + ", and " + clauses[1] + "."
+    return "; ".join(clauses) + "."
 
 
 def _overview_radar(start, earnings, options, dividends, pending, n_days=15):
-    """15-day radar for Overview. Columns start on ``start`` (the close
-    on screen). Events outside the window are omitted. Chips span up to
-    three days so the label fits, and stop at the window edge.
+    """15-day radar for Overview, anchored on the current ET market date.
+
+    The source lists are also forward-looking from today. Anchoring on the
+    older settled close would shorten their visible horizon every weekend or
+    pre-market and silently omit otherwise valid events near day 14.
     """
     start = _coerce_date(start)
     if start is None:
@@ -2923,6 +2924,10 @@ def _build_position_breakdown(attribution_df, strategy_by_symbol, *, week_start=
             "sector": str(r.get("sector") or "Unknown") or "Unknown",
             "subsector": str(r.get("subsector") or "Unknown") or "Unknown",
         })
+        from app.sector_labels import classify_symbol
+        _sec, _sub = classify_symbol(sym, rows[-1]["sector"], rows[-1]["subsector"])
+        rows[-1]["sector"] = _sec
+        rows[-1]["subsector"] = _sub
 
     # Daily Review scope: open positions + positions closed this week.
     # ``last_activity_date`` is the actual close_date for Closed symbols
@@ -3191,7 +3196,9 @@ def _build_account_breakdown(attribution_df, label_map=None, *, week_start=None)
         ann = _annualized_pct(net, cap, s["max_days_held"])
         rows.append({
             "tenant_id": tid,
-            "account_display": label_map.get(tid) or s["account"] or tid,
+            "account_display": _privacy_account_label(
+                label_map.get(tid) or s["account"] or tid, tid,
+            ),
             "equity_pnl": round(s["equity_pnl"], 2),
             "option_pnl": round(s["option_pnl"], 2),
             "dividend_income": round(s["dividend_income"], 2),
@@ -3940,7 +3947,9 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
             g = {
                 "symbol": symbol,
                 "tenant_id": tid,
-                "account_display": label_map.get(tid) or str(r.get("account") or ""),
+                "account_display": _privacy_account_label(
+                    label_map.get(tid) or str(r.get("account") or ""), tid,
+                ),
                 "strategies": set(),
                 "contracts": [],
                 "realized": 0.0,
@@ -4171,8 +4180,8 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
     Performance-by-Account scorecard. It is not calendar today's ISO
     Monday — on Monday morning that Monday is still ahead of Friday's
     close, and the scorecard copy would name a future date. Weekly
-    trades, the calendar, and the ISO-week market query stay on
-    ``this_week``.
+    trades and the calendar stay on ``this_week``; market context follows
+    the displayed close.
     """
     scorecard_week = attribution_week or this_week
     cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
@@ -4187,16 +4196,9 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
         bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
     ])
 
-    # SPY/QQQ week/YTD context. Independent of the batch results (only
-    # needs the calendar dates), so fold it into the parallel wave rather
-    # than paying a serial ~1-2s round trip after the batch.
-    market_perf_cfg = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
-        bigquery.ScalarQueryParameter("ytd_start", "DATE", date(today.year, 1, 1)),
-    ])
-
     as_of = moves_as_of or trades_as_of or today
     moves_cfg = _moves_job_config(as_of)
+    market_context_specs = _market_context_query_specs(as_of)
 
     return {
         "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
@@ -4224,8 +4226,7 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
             tenant_filter, trades_as_of or today),
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
             tenant_filter=tenant_filter, week_start=scorecard_week.isoformat()),
-        "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
-        "market_perf": (MARKET_PERF_QUERY, market_perf_cfg),
+        **market_context_specs,
         # Execution verdicts (int_option_exit_quality): early closes whose
         # expiry arrived recently (the verdict "landed") + the pending
         # open loop. Windowing happens in Python; the frame is small.
@@ -4436,7 +4437,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
         context["daily_calendar_no_query_rows"] = True
         context["calendar_grid"] = _build_calendar_grid({}, today)
     context["overview_radar"] = _overview_radar(
-        context.get("review_date") or today,
+        market_today,
         (context.get("upcoming_earnings_this_week") or [])
         + (context.get("upcoming_earnings_next_week") or []),
         context.get("expiring_options"),
@@ -4662,6 +4663,16 @@ def weekly_review():
                 client, {"attribution": rewound_attribution_query})
             batch["attribution"] = _filter_df_by_tenant_ids(
                 rewound.get("attribution", pd.DataFrame()), tenant_ids)
+        if snap_cutoff and snap_cutoff != session_date:
+            # SPY/QQQ must follow the same settled close. The first batch was
+            # capped to the nominal session; movers can prove that close is
+            # missing and rewind Overview farther.
+            rewound_market = _bq_parallel(
+                client, _market_context_query_specs(snap_cutoff))
+            batch["benchmark_snapshot"] = rewound_market.get(
+                "benchmark_snapshot", pd.DataFrame())
+            batch["market_perf"] = rewound_market.get(
+                "market_perf", pd.DataFrame())
         session_date = snap_cutoff
         context["review_date"] = snap_cutoff
         if snap_cutoff:
@@ -5973,7 +5984,11 @@ def day_detail(day_str):
         delta = float(r.get("delta_1d") or 0)
         prev_value = value - delta
         account_rows.append({
-            "label": label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+            "tenant_id": str(r.get("tenant_id") or ""),
+            "label": _privacy_account_label(
+                label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+                str(r.get("tenant_id") or ""),
+            ),
             "value": value,
             "delta": delta,
             "delta_pct": (delta / prev_value * 100) if prev_value else None,
