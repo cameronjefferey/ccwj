@@ -195,7 +195,8 @@ def build_share_card(
     open_label = _date_label(open_date)
     close_label = _date_label(close_date)
     if open_label and close_label and open_label != close_label:
-        dates = f"{open_label}  →  {close_label}"
+        # "to", not an arrow: Instrument Sans has no U+2192, so → draws as a box.
+        dates = f"{open_label} to {close_label}"
     else:
         dates = close_label or open_label
     return {
@@ -460,7 +461,9 @@ def parse_share_ref(args):
         return None
     spec = {"kind": kind, "symbol": symbol}
     if kind == "option":
-        trade_symbol = " ".join(str(args.get("trade_symbol") or "").split())
+        # OCC roots are space-padded to 6 characters ("ONON  250613C00058000").
+        # Collapsing inner whitespace makes the warehouse lookup miss.
+        trade_symbol = str(args.get("trade_symbol") or "").strip()
         if not trade_symbol or len(trade_symbol) > 64:
             return None
         spec["trade_symbol"] = trade_symbol

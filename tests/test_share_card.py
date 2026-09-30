@@ -44,7 +44,8 @@ def test_card_payload_has_no_identity_or_balance_fields():
     )
     assert card["symbol"] == "JEPI"
     assert card["strategy"] == "Covered Call"
-    assert "Jan" in card["dates"] and "Mar" in card["dates"]
+    assert "Jan" in card["dates"] and " to " in card["dates"] and "Mar" in card["dates"]
+    assert "→" not in card["dates"]
     assert card["realized_label"] == "-$3,333"
     assert card["hindsight"] == "Sold for -$3,333 · Holding would have made +$11,933"
     assert card["wordmark"] == WORDMARK
@@ -149,7 +150,8 @@ def test_option_card_uses_warehouse_numbers_not_the_query_string(monkeypatch):
     assert card["strategy"] == "Covered Call"
     assert card["realized_label"] == "-$3,333"
     assert card["realized_pnl"] == -3333
-    assert "Jan" in card["dates"] and "Mar" in card["dates"]
+    assert "Jan" in card["dates"] and " to " in card["dates"] and "Mar" in card["dates"]
+    assert "→" not in card["dates"]
     assert "1999" not in card["dates"]
     assert card["hindsight"] == (
         "Closed for -$3,333 · Holding would have made +$11,933"
@@ -337,6 +339,116 @@ def test_share_route_png_ignores_forged_numbers(monkeypatch):
     assert mime_a == "image/png" and mime_b == "image/png"
     assert png_a == png_b
     assert len(png_a) > 1000
+
+
+def test_padded_occ_symbol_survives_the_share_button_url(monkeypatch):
+    """The option Share button's URL keeps OCC padding, and the lookup uses it.
+
+    ``ONON  250613C00058000`` has two spaces. Collapsing them 404s the card.
+    """
+    import json
+    import subprocess
+    from html.parser import HTMLParser
+    from pathlib import Path
+
+    from flask_login import login_user
+
+    from app import app
+    from app.share_card import share_card_png
+
+    padded = "ONON  250613C00058000"
+    assert padded.count(" ") == 2
+
+    template = Path(app.root_path, "templates", "position_detail.html").read_text()
+    marker = 'data-ref="option"'
+    start = template.rfind("<button", 0, template.index(marker))
+    end = template.index("</button>", start) + len("</button>")
+    snippet = template[start:end]
+    rendered = app.jinja_env.from_string(snippet).render(
+        symbol="ONON",
+        o={
+            "type": "option",
+            "tenant_id": "snaptrade:mine",
+            "trade_symbol": padded,
+            "session_id": None,
+            "close_date": "",
+        },
+    )
+
+    class _Attrs(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.attrs = {}
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "button":
+                self.attrs = dict(attrs)
+
+    parser = _Attrs()
+    parser.feed(rendered)
+    assert parser.attrs.get("data-trade-symbol") == padded
+    assert parser.attrs.get("data-ref") == "option"
+
+    url = subprocess.check_output(
+        [
+            "node",
+            "-e",
+            r"""
+            const fs = require("fs");
+            const src = fs.readFileSync(process.argv[1], "utf8");
+            const match = src.match(/function cardUrl\(btn, layout\) \{[\s\S]*?\n  \}/);
+            if (!match) process.exit(2);
+            const cardUrl = eval("(" + match[0] + ")");
+            const attrs = JSON.parse(process.argv[2]);
+            const btn = { getAttribute(name) { return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null; } };
+            process.stdout.write(cardUrl(btn, "square"));
+            """,
+            str(Path(app.root_path, "static", "js", "share-card.js")),
+            json.dumps({
+                "data-ref": parser.attrs["data-ref"],
+                "data-symbol": parser.attrs["data-symbol"],
+                "data-tenant": parser.attrs["data-tenant"],
+                "data-trade-symbol": parser.attrs["data-trade-symbol"],
+            }),
+        ],
+        text=True,
+    )
+    assert "ONON++250613C00058000" in url or "ONON%20%20250613C00058000" in url
+    assert "ONON+250613" not in url.replace("ONON++", "")
+
+    seen = {}
+
+    def _query(sql, params):
+        seen["trade_symbol"] = next(p.value for p in params if p.name == "trade_symbol")
+        if seen["trade_symbol"] != padded:
+            return pd.DataFrame()
+        return pd.DataFrame([_option_row(
+            symbol="ONON",
+            trade_symbol=padded,
+            strategy="Long Call",
+        )])
+
+    monkeypatch.setattr("app.share_card._query_df", _query)
+    monkeypatch.setattr("app.share_card._owned_tenant_ids", lambda user_id: _OWNED)
+
+    class _Viewer:
+        is_authenticated = True
+        is_active = True
+        is_anonymous = False
+        id = 7
+
+        def get_id(self):
+            return "7"
+
+    with app.test_request_context(url):
+        login_user(_Viewer())
+        resp = share_card_png()
+        resp.direct_passthrough = False
+        body = resp.get_data()
+    assert seen["trade_symbol"] == padded
+    assert resp.status_code == 200
+    assert resp.mimetype == "image/png"
+    assert len(body) > 1000
 
 
 def test_anonymous_share_url_is_not_an_image():
