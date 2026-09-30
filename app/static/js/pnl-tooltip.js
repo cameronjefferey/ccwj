@@ -8,9 +8,9 @@
 (function (global) {
   var COLORS = {
     buy: "#1d4ed8",
-    sell: "#b91c1c",
+    sell: "#f0556d",
     lifecycle: "#6d28d9",
-    income: "#047857"
+    income: "#28c08a"
   };
   var MONTHS = [
     "January", "February", "March", "April", "May", "June",

@@ -413,6 +413,12 @@ What's working:
   today's units back to their opening-date units before split events are
   replayed, so pre-history holdings do not disappear or double-split.
   Pinned by `tests/test_covered_call_runs.py`.
+- Position Detail reads as one story: the review card, then Cumulative
+  P&amp;L, then What worked (strategy rows and If held, details on expand),
+  then Details (Position Legs, Breakdown by Type, Raw Transaction Log).
+  The Win/Loss matrix stays behind a disclosure. Gain and loss on this
+  page use one green and one red (`--pd-gain` / `--pd-loss`). The strategy
+  column that is premium received is labeled Collected.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
