@@ -1,10 +1,11 @@
 """Logged-out homepage: video facade, trial CTA, and auth links."""
 
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 from app import app
-from app.marketing_videos import HERO_VIDEO, STORY_STEPS, resolve_learn_url
+from app.marketing_videos import HERO_VIDEO, STORY_STEPS, TRADE_STORIES, resolve_learn_url
 from app.models import User
 
 
@@ -29,13 +30,27 @@ def _open_signup(monkeypatch):
     monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
 
 
-def test_video_catalog_is_a_placeholder_list():
-    rows = [HERO_VIDEO, *STORY_STEPS]
-    assert [row["step"] for row in rows] == ["hero", 1, 2, 3, 4, 5, 6]
+_YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def test_video_catalog_uses_public_ids():
+    rows = [HERO_VIDEO, *STORY_STEPS, *TRADE_STORIES]
+    assert [row["step"] for row in [HERO_VIDEO, *STORY_STEPS]] == ["hero", 1, 2, 3, 4, 5, 6]
+    assert [row["youtube_id"] for row in rows] == [
+        "NpU79Lwkdn4",
+        "GZ3mPiagkLo",
+        "uAmHW-4RtaA",
+        "sCZVeeY_6SA",
+        "u_YWl5fKEjo",
+        "jKMUBsGDETc",
+        "BwVHe9MmA9c",
+        "VssdUIrHcjs",
+        "kqxo9BPDMcs",
+    ]
     for row in rows:
         assert {"step", "title", "caption", "youtube_id", "mp4_url", "poster"} <= set(row)
-        assert isinstance(row["youtube_id"], str)
-        assert isinstance(row["mp4_url"], str)
+        assert _YOUTUBE_ID.fullmatch(row["youtube_id"])
+        assert row["mp4_url"] == ""
         assert isinstance(row["poster"], str)
         assert row["title"]
         assert row["caption"]
@@ -52,7 +67,13 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
 
     assert "Watch the trading mirror" in html
     assert "Start your 30-day free trial, no credit card" in html
-    assert html.count('class="ht-facade"') == 7
+    assert html.count('class="ht-facade"') == 9
+    assert 'data-youtube-id=""' not in html
+    assert "https://i.ytimg.com/vi/NpU79Lwkdn4/maxresdefault.jpg" in html
+    assert "https://i.ytimg.com/vi/uAmHW-4RtaA/maxresdefault.jpg" in html
+    assert "ht-band-trades" in html
+    assert "Two closed trades, written out" in html
+    assert "Privacy mode masks account names" in html
     assert "ht-band-proof" in html
     assert "ht-band-how" in html
     assert "How it works" in html
@@ -89,11 +110,14 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
 
     for title in (
         "Connect your brokerage",
+        "Which strategies work",
         "See every trade and position",
         "If held to expiration",
         "Covered-call runs",
-        "Privacy mode and share cards",
+        "The fit matrix",
         "Learn options",
+        "ONON calls, closed early",
+        "RKLB covered calls",
     ):
         assert title in html
 

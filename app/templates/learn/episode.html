@@ -26,6 +26,7 @@
 {% block content %}
 <article class="learn-page learn-episode" data-slug="{{ episode.slug }}" data-number="{{ episode.number }}" data-title="{{ episode.title }}" data-published="{{ '1' if episode.published else '0' }}">
     <p class="learn-back"><a href="{{ url_for('learn_index') }}">All episodes</a></p>
+    <p class="learn-playlist"><a href="{{ series.playlist_url }}" target="_blank" rel="noopener">Options 101 on YouTube</a></p>
     <p class="learn-kicker">
         Episode {{ episode.number }}
         {% if episode.duration %}<span class="ht-num"> · {{ episode.duration }}</span>{% endif %}

@@ -50,16 +50,38 @@ def test_learn_routes_return_200():
     assert missing.status_code == 404
 
 
-def test_seed_is_ten_episodes_and_first_three_wait_on_youtube_ids():
+def test_seed_is_ten_published_episodes_with_real_ids():
     rows = catalog.episodes()
     assert [episode["number"] for episode in rows] == list(range(1, 11))
-    assert [episode["slug"] for episode in rows[:3]] == [
+    assert [episode["slug"] for episode in rows] == [
         "what-is-an-option",
         "calls-and-puts",
         "strike-expiration-premium",
+        "buying-and-selling",
+        "covered-calls",
+        "cash-secured-puts",
+        "the-wheel",
+        "spreads",
+        "options-risk",
+        "reading-a-position",
     ]
-    assert all(episode["published"] and episode["youtube_id"] is None for episode in rows[:3])
-    assert all(not episode["published"] for episode in rows[3:])
+    assert [episode["youtube_id"] for episode in rows] == [
+        "lin6soSWnmI",
+        "B1EsiHXS2UA",
+        "aQP_JvJPN2I",
+        "MGpmYPm2-xc",
+        "4Ei7inl8c6Q",
+        "7QdlwSDnT6Q",
+        "2neL6HYfWRM",
+        "CIFL_UWQLY0",
+        "4FgyBSbTCRA",
+        "2Qq8FayvJ5c",
+    ]
+    assert all(episode["published"] for episode in rows)
+    assert all(catalog.valid_youtube_id(episode["youtube_id"]) for episode in rows)
+    for episode in rows:
+        assert len(episode["shorts"]) == 4
+        assert all(catalog.valid_youtube_id(short["youtube_id"]) for short in episode["shorts"])
     assert "price lock" in rows[0]["summary"].lower()
     assert "100 shares" in rows[2]["recap"].lower()
     assert "expires worthless" in rows[2]["recap"].lower()
@@ -69,39 +91,59 @@ def test_seed_is_ten_episodes_and_first_three_wait_on_youtube_ids():
     assert series["cta_note"] == "Full access · No credit card"
     assert series["cta_heading"] == "See which option strategies actually work for you"
     assert series["disclaimer"] == "For learning only · not investment advice."
+    assert series["playlist_url"] == "https://www.youtube.com/playlist?list=PLcVwygMVS3Ig"
 
 
-def test_index_lists_coming_soon_cards_without_watch_links():
+def test_index_links_every_episode_and_the_playlist():
     html = _html("/learn")
     assert "<title>Options 101 - HappyTrader</title>" in html
     assert "Options 101: options explained in plain English" in html
     assert "Start with Episode 1" in html
     assert html.count('class="learn-card"') == 10
-    assert 'class="learn-watch"' not in html
-    assert html.count("Coming soon") >= 10
-    assert 'href="/learn/what-is-an-option"' in html
-    assert 'href="/learn/calls-and-puts"' not in html
-    assert 'href="/learn/buying-and-selling"' not in html
+    assert html.count('class="learn-watch"') == 10
+    assert "Coming soon" not in html
+    for episode in catalog.episodes():
+        assert f'href="/learn/{episode["slug"]}"' in html
+        assert f"https://i.ytimg.com/vi/{episode['youtube_id']}/maxresdefault.jpg" in html
+    assert html.count('class="yt-lite yt-lite-short"') == 40
+    assert "https://www.youtube-nocookie.com/embed/BwVHe9MmA9c?" in html
+    assert 'href="https://www.youtube.com/playlist?list=PLcVwygMVS3Ig"' in html
     assert ">Learn</a>" in html
-    assert "youtube.com" not in html
-    assert "youtube-nocookie.com" not in html
+    assert "https://www.youtube.com/embed" not in html
+    assert "<iframe" not in html
+    assert "https://i.ytimg.com/vi/lin6soSWnmI/maxresdefault.jpg" in html
     assert 'name="twitter:card" content="summary_large_image"' in html
     assert 'property="og:image"' in html
     assert "application/ld+json" not in html
     _assert_public_copy(html)
 
 
-def test_episode_page_is_coming_soon_until_an_id_is_set():
+def test_episode_page_is_click_to_play():
     html = _html("/learn/what-is-an-option")
     assert "<title>What is an option? · Options 101 - HappyTrader</title>" in html
     assert "Words you&#39;ll learn" in html or "Words you'll learn" in html
     assert "A price lock" in html
     assert "Premium" in html
     assert 'href="/learn/calls-and-puts"' in html
-    assert "Coming soon" in html
+    assert "Coming soon" not in html
     assert "<iframe" not in html
-    assert "application/ld+json" not in html
+    assert "https://www.youtube-nocookie.com/embed/lin6soSWnmI?" in html
+    assert "https://www.youtube.com/embed" not in html
+    assert 'data-seek="80"' in html
+    assert html.count('class="learn-short"') == 4
+    assert "https://www.youtube-nocookie.com/embed/-EWMyYDpuTo?" not in html
+    assert 'href="https://www.youtube.com/playlist?list=PLcVwygMVS3Ig"' in html
     assert 'name="robots" content="noindex"' not in html
+    payload = json.loads(
+        re.search(
+            r'<script type="application/ld\+json">(.+?)</script>',
+            html,
+        ).group(1)
+    )
+    assert payload["@type"] == "VideoObject"
+    assert payload["embedUrl"].startswith(
+        "https://www.youtube-nocookie.com/embed/lin6soSWnmI"
+    )
     _assert_public_copy(html)
 
     third = _html("/learn/strike-expiration-premium")
@@ -109,18 +151,22 @@ def test_episode_page_is_coming_soon_until_an_id_is_set():
     assert "Expires worthless" in third
     assert _description(html) != _description(third)
 
+    hyphen = _html("/learn/cash-secured-puts")
+    assert "https://www.youtube-nocookie.com/embed/-EWMyYDpuTo?" in hyphen
+    assert "<iframe" not in hyphen
 
-def test_unpublished_episode_is_noindex_and_off_the_sitemap():
+
+def test_every_episode_is_indexed():
     html = _html("/learn/covered-calls")
-    assert 'name="robots" content="noindex"' in html
-    assert "Coming soon" in html
+    assert 'name="robots" content="noindex"' not in html
+    assert "Coming soon" not in html
+    assert "https://www.youtube-nocookie.com/embed/4Ei7inl8c6Q?" in html
     sitemap = _client().get("/sitemap.xml").get_data(as_text=True)
     assert "/learn" in sitemap
-    assert "/learn/what-is-an-option" in sitemap
-    assert "/learn/calls-and-puts" in sitemap
-    assert "/learn/strike-expiration-premium" in sitemap
-    assert "/learn/covered-calls" not in sitemap
-    assert "/learn/buying-and-selling" not in sitemap
+    for episode in catalog.episodes():
+        assert f"/learn/{episode['slug']}" in sitemap
+    assert "/learn/assignment-and-exercise" not in sitemap
+    assert "/learn/the-greeks" not in sitemap
 
 
 def test_descriptions_are_unique_across_learn_pages():
@@ -246,7 +292,7 @@ def test_resume_is_local_until_a_signed_in_account_saves_it():
     assert 'src="/static/js/learn-progress.js"' in html
     assert 'data-slug="what-is-an-option"' in html
     assert 'data-published="1"' in html
-    assert 'data-published="0"' in html
+    assert 'data-published="0"' not in html
     episode = _html("/learn/what-is-an-option")
     assert 'data-slug="what-is-an-option"' in episode
     assert 'id="learn-resume"' in episode

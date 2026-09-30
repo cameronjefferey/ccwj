@@ -6,13 +6,14 @@ repo-wide, so this file is the explicit exception.
 Restart the app after editing the file (it is read once at import).
 
 Add a YouTube video
-    Episodes 1–3 are already ``published: true``. Set ``youtube_id`` to the
-    11-character id in the watch URL (``https://www.youtube.com/watch?v=THIS``).
-    Leave it null until the video is public. A null id renders as Coming soon:
-    no embed, and the series grid does not link the card.
+    Set ``youtube_id`` to the 11-character id in the watch URL
+    (``https://www.youtube.com/watch?v=THIS``). A null id renders as Coming
+    soon: no embed, and the series grid does not link the card. Episodes
+    1–10 are published and already carry public ids.
 
     Shorts use the same ``youtube_id`` field. Null stays a Coming soon tile.
-    A real id becomes a vertical lite embed.
+    A real id becomes a vertical lite embed. The series playlist is
+    ``series.playlist_url``.
 
 Add an episode
     Append an object with the same keys and a new ``slug`` (lowercase words
@@ -57,6 +58,7 @@ _SERIES_KEYS = (
     "cta_button",
     "cta_note",
     "disclaimer",
+    "playlist_url",
 )
 
 _NOCOOKIE_EMBED = "https://www.youtube-nocookie.com/embed/{youtube_id}"
@@ -114,7 +116,7 @@ def thumbnail_source(episode):
         return thumb
     youtube_id = episode.get("youtube_id")
     if valid_youtube_id(youtube_id):
-        return f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
+        return f"https://i.ytimg.com/vi/{youtube_id}/maxresdefault.jpg"
     return None
 
 
@@ -264,6 +266,8 @@ def _load(path=None):
     if missing:
         raise ValueError(f"series missing {', '.join(missing)}")
     series_out = {key: str(series_raw[key]).strip() for key in _SERIES_KEYS}
+    if not series_out["playlist_url"].startswith("https://"):
+        raise ValueError("series playlist_url must be an https URL")
     raw_episodes = payload.get("episodes")
     if not isinstance(raw_episodes, list) or not raw_episodes:
         raise ValueError("learn catalog needs at least one episode")

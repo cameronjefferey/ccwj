@@ -6,7 +6,8 @@
     "cta_heading": "See which option strategies actually work for you",
     "cta_button": "Start your free 30-day trial",
     "cta_note": "Full access · No credit card",
-    "disclaimer": "For learning only · not investment advice."
+    "disclaimer": "For learning only · not investment advice.",
+    "playlist_url": "https://www.youtube.com/playlist?list=PLcVwygMVS3Ig"
   },
   "episodes": [
     {
@@ -14,7 +15,7 @@
       "number": 1,
       "title": "What is an option?",
       "summary": "An option is like a price lock you pay a small fee for.",
-      "youtube_id": null,
+      "youtube_id": "lin6soSWnmI",
       "duration": "6 min",
       "thumbnail": null,
       "vocab": ["Option", "Underlying", "Premium", "Contract"],
@@ -26,8 +27,10 @@
       ],
       "recap": "An option is a contract on a stock or ETF. That stock or ETF is the underlying. You pay a small fee, called the premium, for the right to buy or sell the underlying at a locked price before a deadline. You do not have to use the right.\n\nIf the lock never becomes useful, you can let the contract end. The fee is what you spent. If it does become useful, you can use the contract or sell it to someone else before the deadline.\n\nThat is the whole idea. Later episodes name the two directions, calls and puts, then the locked price, the deadline, and why one standard contract covers 100 shares.",
       "shorts": [
-        {"youtube_id": null, "title": "An option is a price lock"},
-        {"youtube_id": null, "title": "What the premium is"}
+        {"youtube_id": "BwVHe9MmA9c", "title": "Stock options in 40 seconds"},
+        {"youtube_id": "C3S65GKtfqU", "title": "What a couch deposit teaches you about options"},
+        {"youtube_id": "irBRKi7KNZ0", "title": "$2 to lock a price"},
+        {"youtube_id": "RLz_2xAJ7UU", "title": "Who gets the money when you buy an option?"}
       ],
       "published": true
     },
@@ -36,7 +39,7 @@
       "number": 2,
       "title": "Calls and puts",
       "summary": "A call is the right to buy. A put is the right to sell.",
-      "youtube_id": null,
+      "youtube_id": "B1EsiHXS2UA",
       "duration": "7 min",
       "thumbnail": null,
       "vocab": ["Call", "Put", "Long", "Short"],
@@ -48,7 +51,10 @@
       ],
       "recap": "A call is the right to buy the underlying at the locked price. A put is the right to sell it at the locked price. Same kind of contract, opposite direction.\n\nThe buyer pays the premium and holds the right. The seller collects the premium and takes on the obligation if the buyer uses the contract. Long means you bought. Short means you sold.\n\nYou will see both words on every option ticket. They name the two sides of the contract. They are not instructions about what to do next.",
       "shorts": [
-        {"youtube_id": null, "title": "Call or put?"}
+        {"youtube_id": "AR-Vrm8bdag", "title": "Call vs put in 30 seconds"},
+        {"youtube_id": "GAMBS9cR2AU", "title": "What's a put?"},
+        {"youtube_id": "T6ggTmsLjpY", "title": "What's a call?"},
+        {"youtube_id": "jgrZ02v3K-4", "title": "Why do stocks have those letter codes?"}
       ],
       "published": true
     },
@@ -57,7 +63,7 @@
       "number": 3,
       "title": "Strike, expiration, premium",
       "summary": "The locked price, the deadline, and the fee — and why one contract means 100 shares.",
-      "youtube_id": null,
+      "youtube_id": "aQP_JvJPN2I",
       "duration": "8 min",
       "thumbnail": null,
       "vocab": ["Strike", "Expiration", "Premium", "Expires worthless"],
@@ -70,8 +76,10 @@
       ],
       "recap": "Three words describe almost every option. The strike is the locked price. The expiration is the deadline. The premium is the fee you pay, or collect, for the contract.\n\nOne standard contract covers 100 shares. A $1.50 premium is $1.50 per share, so the contract is $150 before fees. Brokers usually show both the per-share price and the contract total. Multiply the quoted premium by 100 when you want the dollars for one contract.\n\nExpires worthless means the deadline arrived and the right was not worth using. The contract settles at zero. The buyer’s premium is spent. The seller keeps the premium they were paid. The contract simply ends.",
       "shorts": [
-        {"youtube_id": null, "title": "Why one contract is 100 shares"},
-        {"youtube_id": null, "title": "Expires worthless"}
+        {"youtube_id": "wLJLTefAqgc", "title": "Strike, expiration, premium"},
+        {"youtube_id": "kO1rHIma6jI", "title": "Why a $1.50 option costs $150"},
+        {"youtube_id": "rq8_vx9Owbo", "title": "What expires worthless means"},
+        {"youtube_id": "9gGkPQIwbsY", "title": "How a $2 option costs $200"}
       ],
       "published": true
     },
@@ -80,98 +88,133 @@
       "number": 4,
       "title": "Buying and selling",
       "summary": "How the buyer and the seller sit on opposite sides of the same contract.",
-      "youtube_id": null,
+      "youtube_id": "MGpmYPm2-xc",
       "duration": null,
       "thumbnail": null,
-      "vocab": [],
+      "vocab": ["Buyer", "Seller", "Exercise", "Assignment"],
       "chapters": [],
-      "recap": "",
-      "shorts": [],
-      "published": false
+      "recap": "Every option has two sides. The buyer pays the premium and holds the right. The seller collects the premium and takes on the obligation if the buyer uses the contract.\n\nUsing the right is exercise. Being required to fulfill it is assignment. Long means you bought. Short means you sold. Open means the contract is still on. Close means it is done.",
+      "shorts": [
+        {"youtube_id": "nNrl5I8pzOc", "title": "Every option has two sides"},
+        {"youtube_id": "SyzA0ix8SGc", "title": "Exercise vs assignment"},
+        {"youtube_id": "o3xW-AJrYPY", "title": "Long, short, open, close"},
+        {"youtube_id": "wwaoJ-u_ki8", "title": "Why would anyone sell an option?"}
+      ],
+      "published": true
     },
     {
       "slug": "covered-calls",
       "number": 5,
       "title": "Covered calls",
       "summary": "A short call with shares set aside behind it.",
-      "youtube_id": null,
+      "youtube_id": "4Ei7inl8c6Q",
       "duration": null,
       "thumbnail": null,
-      "vocab": [],
+      "vocab": ["Covered call", "Called away", "In the money", "Out of the money"],
       "chapters": [],
-      "recap": "",
-      "shorts": [],
-      "published": false
+      "recap": "A covered call is a short call with shares set aside to deliver if the call is assigned. The seller collects the premium while the shares sit there.\n\nIf the call finishes out of the money, it expires and the shares stay. If it finishes in the money, the shares can be called away at the strike. The premium is part of that result. It does not remove the chance that the shares are sold.",
+      "shorts": [
+        {"youtube_id": "EECg6nvFXMA", "title": "Get paid while the shares sit there"},
+        {"youtube_id": "3r-NAMaoeQY", "title": "What called away means"},
+        {"youtube_id": "sr-4h2GT-Uw", "title": "In the money vs out of the money"},
+        {"youtube_id": "jFRlNnxcXcA", "title": "Covered calls have two catches"}
+      ],
+      "published": true
     },
     {
       "slug": "cash-secured-puts",
       "number": 6,
       "title": "Cash-secured puts",
       "summary": "A short put with cash set aside for the shares.",
-      "youtube_id": null,
+      "youtube_id": "7QdlwSDnT6Q",
       "duration": null,
       "thumbnail": null,
-      "vocab": [],
+      "vocab": ["Cash-secured put", "Buying power", "At the money", "DTE"],
       "chapters": [],
-      "recap": "",
-      "shorts": [],
-      "published": false
+      "recap": "A cash-secured put is a short put with cash set aside to buy the shares if the put is assigned. The seller collects the premium while waiting.\n\nThe cash set aside is why buying power drops when the put is sold. If the shares are assigned, the premium lowers the price actually paid for them. At the money means the strike is near the current price. DTE is the days left until expiration.",
+      "shorts": [
+        {"youtube_id": "v9oafaCy0l0", "title": "Get paid to wait for a lower price"},
+        {"youtube_id": "-EWMyYDpuTo", "title": "Why buying power drops after a short put"},
+        {"youtube_id": "1OBj3rcapP0", "title": "Buy at $45, really pay $43.80"},
+        {"youtube_id": "gAx3fQpIdoY", "title": "At the money and DTE"}
+      ],
+      "published": true
+    },
+    {
+      "slug": "the-wheel",
+      "number": 7,
+      "title": "The wheel",
+      "summary": "A cash-secured put, then covered calls if the shares are assigned.",
+      "youtube_id": "2neL6HYfWRM",
+      "duration": null,
+      "thumbnail": null,
+      "vocab": ["Wheel", "Rolling", "Assignment", "Covered call"],
+      "chapters": [],
+      "recap": "The wheel is two steps in order. First a cash-secured put. If that put is assigned, the shares are purchased, and covered calls are written on them.\n\nRolling moves a contract to a different strike or expiration before it ends. A quoted annual rate on a wheel is the premium divided into the capital tied up. It is not a forecast of what the next cycle will return.",
+      "shorts": [
+        {"youtube_id": "U0FqZkCIIwU", "title": "The wheel in 30 seconds"},
+        {"youtube_id": "Y0Fu7bwUls0", "title": "What rolling an option means"},
+        {"youtube_id": "iziplMKaoWs", "title": "60% a year? Read the fine print"},
+        {"youtube_id": "F-YNup_JT_E", "title": "When the wheel breaks"}
+      ],
+      "published": true
     },
     {
       "slug": "spreads",
-      "number": 7,
+      "number": 8,
       "title": "Spreads",
       "summary": "Two contracts used together, so the risk has a boundary.",
-      "youtube_id": null,
+      "youtube_id": "CIFL_UWQLY0",
       "duration": null,
       "thumbnail": null,
-      "vocab": [],
+      "vocab": ["Spread", "Long leg", "Short leg", "Defined risk"],
       "chapters": [],
-      "recap": "",
-      "shorts": [],
-      "published": false
+      "recap": "A spread is two option contracts used together, usually one bought and one sold. The long leg and the short leg share a direction and an expiration, and they differ by strike.\n\nBecause both contracts are on at once, the most the position can make and the most it can lose are known at the start. A move in the stock does not have to move the spread by the same amount.",
+      "shorts": [
+        {"youtube_id": "UQ7ZqYtaKuE", "title": "What is an option spread?"},
+        {"youtube_id": "XOyPpqlBkgo", "title": "Know the best and worst case first"},
+        {"youtube_id": "LfVjJGhIRIs", "title": "Why a trade can lose while the stock rises"},
+        {"youtube_id": "Pg1UM6qJzwE", "title": "The chart every options trader reads"}
+      ],
+      "published": true
     },
     {
-      "slug": "assignment-and-exercise",
-      "number": 8,
-      "title": "Assignment and exercise",
-      "summary": "What it means when the right in the contract is actually used.",
-      "youtube_id": null,
-      "duration": null,
-      "thumbnail": null,
-      "vocab": [],
-      "chapters": [],
-      "recap": "",
-      "shorts": [],
-      "published": false
-    },
-    {
-      "slug": "the-greeks",
+      "slug": "options-risk",
       "number": 9,
-      "title": "The Greeks, lightly",
-      "summary": "Delta, theta, and the other words that show up on an option chain.",
-      "youtube_id": null,
+      "title": "Options risk",
+      "summary": "How much one trade can lose, and the words delta and theta.",
+      "youtube_id": "4FgyBSbTCRA",
       "duration": null,
       "thumbnail": null,
-      "vocab": [],
+      "vocab": ["Delta", "Theta", "Premium", "Risk"],
       "chapters": [],
-      "recap": "",
-      "shorts": [],
-      "published": false
+      "recap": "The size of one trade is the amount that can be lost if the contract goes to zero, or to its worst defined case. That amount is known before the fill.\n\nDelta is how much the option price tends to move when the stock moves one dollar. Theta is how much the option price tends to change as time passes. Premium also tends to rise before a known event, and every fill has a fee.",
+      "shorts": [
+        {"youtube_id": "TRNoR_-jyxY", "title": "How much should one trade risk?"},
+        {"youtube_id": "nqf_9Ir1wVk", "title": "Why options get expensive before news"},
+        {"youtube_id": "6RkyLVCJrVQ", "title": "The cost of every option trade"},
+        {"youtube_id": "EqGnOK2NAhk", "title": "Theta and delta in 30 seconds"}
+      ],
+      "published": true
     },
     {
       "slug": "reading-a-position",
       "number": 10,
       "title": "Reading a position",
       "summary": "How one option shows up once it is in an account.",
-      "youtube_id": null,
+      "youtube_id": "2Qq8FayvJ5c",
       "duration": null,
       "thumbnail": null,
-      "vocab": [],
+      "vocab": ["Realized", "Unrealized", "Win rate", "Strategy"],
       "chapters": [],
-      "recap": "",
-      "shorts": [],
-      "published": false
+      "recap": "Realized P&L is the result of contracts that have closed. Unrealized P&L is the mark on contracts that are still open. A high win rate can sit next to a loss when the losing trades are larger than the winners.\n\nThe strategy label is read from the fills. The dollars under that label are the record of what those trades returned. They are not a suggestion of what to trade next.",
+      "shorts": [
+        {"youtube_id": "cvPAAVkCTKg", "title": "80% win rate, still losing money"},
+        {"youtube_id": "tdh-qbe96CM", "title": "Realized vs unrealized P&L"},
+        {"youtube_id": "EL0NiQ6wX9s", "title": "Which strategy actually makes the money?"},
+        {"youtube_id": "M8PK6RGmWCE", "title": "$110 or $50: which trade did better?"}
+      ],
+      "published": true
     }
   ]
 }

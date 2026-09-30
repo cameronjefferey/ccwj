@@ -1,14 +1,12 @@
 """Public homepage videos.
 
-The walkthrough and Shorts are not on YouTube yet. Leave ``youtube_id``
-and ``mp4_url`` empty until a real source exists, then drop in either:
-
-- ``youtube_id``: the 11-character id only (not a full URL)
-- ``mp4_url``: an https URL or a site-root path such as ``/static/...``
+``youtube_id`` is the 11-character id only (not a full URL). ``mp4_url``
+is an optional https URL or a site-root path such as ``/static/...``.
 
 ``poster`` is optional. A site-relative static path, a root path, or an
 https URL. When it is empty and ``youtube_id`` is set, the page uses the
-YouTube thumbnail. When both are empty, the poster is a CSS frame.
+YouTube ``maxresdefault`` thumbnail on i.ytimg.com. When both are empty,
+the poster is a CSS frame.
 
 The template never emits an iframe. ``landing.html`` builds a
 youtube-nocookie embed only after a click.
@@ -26,7 +24,7 @@ HERO_VIDEO = {
         "open the same pages on your history."
     ),
     "duration_label": "2:30",
-    "youtube_id": "",
+    "youtube_id": "NpU79Lwkdn4",
     "mp4_url": "",
     "poster": "",
 }
@@ -34,13 +32,13 @@ HERO_VIDEO = {
 STORY_STEPS = [
     {
         "step": 1,
-        "title": "Connect your brokerage",
+        "title": "Which strategies work",
         "caption": (
-            "Read-only, through SnapTrade. Schwab, Fidelity, Vanguard, "
-            "Robinhood, and others. HappyTrader never stores your broker password."
+            "Covered calls by days to expiry. The label is read from the "
+            "fills and from the shares held when the option was written."
         ),
         "duration_label": "Short",
-        "youtube_id": "",
+        "youtube_id": "GZ3mPiagkLo",
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
@@ -53,7 +51,7 @@ STORY_STEPS = [
             "of equity, options, and dividends."
         ),
         "duration_label": "Short",
-        "youtube_id": "",
+        "youtube_id": "uAmHW-4RtaA",
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
@@ -67,7 +65,7 @@ STORY_STEPS = [
             "closing early cost or saved. The line after the close is an estimate."
         ),
         "duration_label": "Short",
-        "youtube_id": "",
+        "youtube_id": "sCZVeeY_6SA",
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
@@ -81,22 +79,20 @@ STORY_STEPS = [
             "and one net. Broker fees stay out of that math."
         ),
         "duration_label": "Short",
-        "youtube_id": "",
+        "youtube_id": "u_YWl5fKEjo",
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
     },
     {
         "step": 5,
-        "title": "Privacy mode and share cards",
+        "title": "The fit matrix",
         "caption": (
-            "Privacy mode masks account names and balances on your screen. "
-            "A share card is a picture of one closed trade — symbol, strategy, "
-            "dates, and realized P&L — and it leaves out the account, the broker, "
-            "and the balance."
+            "Win rate and return by strategy and sector. Opening a cell "
+            "shows the trades behind that pair. Cells with no trades stay empty."
         ),
         "duration_label": "Short",
-        "youtube_id": "",
+        "youtube_id": "jKMUBsGDETc",
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
@@ -109,10 +105,39 @@ STORY_STEPS = [
             "including strike, expiration, and covered call."
         ),
         "duration_label": "Short",
-        "youtube_id": "",
+        "youtube_id": "BwVHe9MmA9c",
         "mp4_url": "",
         "poster": "",
         "links_learn": True,
+    },
+]
+
+# Full-length trade stories. The matching Shorts are sCZVeeY_6SA (ONON,
+# also the if-held phone above) and IFay1hJfpSc (RKLB).
+TRADE_STORIES = [
+    {
+        "step": "onon",
+        "title": "ONON calls, closed early",
+        "caption": (
+            "The close was -$3,333. Holding to expiration would have been "
+            "about +$11,933. The line after the close is an estimate."
+        ),
+        "duration_label": "",
+        "youtube_id": "VssdUIrHcjs",
+        "mp4_url": "",
+        "poster": "",
+    },
+    {
+        "step": "rklb",
+        "title": "RKLB covered calls",
+        "caption": (
+            "Five covered calls expired. The sixth was assigned, and the "
+            "shares were called away."
+        ),
+        "duration_label": "",
+        "youtube_id": "kqxo9BPDMcs",
+        "mp4_url": "",
+        "poster": "",
     },
 ]
 
@@ -148,7 +173,7 @@ def _poster_url(item):
         from flask import url_for
         return url_for("static", filename=poster)
     if youtube_id:
-        return f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
+        return f"https://i.ytimg.com/vi/{youtube_id}/maxresdefault.jpg"
     return ""
 
 
@@ -169,3 +194,7 @@ def hero_video():
 
 def story_steps():
     return [present_video(step) for step in STORY_STEPS]
+
+
+def trade_stories():
+    return [present_video(story) for story in TRADE_STORIES]

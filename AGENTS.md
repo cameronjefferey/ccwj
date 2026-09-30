@@ -495,20 +495,21 @@ Known issues:
 
 Logged-out `/` is a banded marketing page (`app/templates/landing.html`,
 catalog in `app/marketing_videos.py`). Order: a click-to-play walkthrough
-of about 2:30 (poster frame; the youtube-nocookie iframe is created only
-on click; nothing autoplays on load), a qualitative proof strip, How it
-works (connect read-only, strategies detected, see what's working), then
-the live demo as its own band — a mirror of a trading bot's paper
-account. Shorts are themed bands with one or two phones beside the copy
-(every position's story, covered-call income, privacy and share cards),
-not one sideways row. Still frames from the demo account sit in their
-own bands: a position P&amp;L chart, the if-held summary, strategy cards,
-and the fit matrix (`app/static/marketing/`). Those crops do not show
-ORCL, CFLT, or the Earnings or Admin tabs. Options 101 and the
-full-width trial close stay. The Options 101 step links to `/learn` only
-when that exact route exists. YouTube ids and mp4 URLs are empty
-placeholders until the videos are public. Primary CTA: "Start your
-30-day free trial, no credit card".
+of about 2:30 (`NpU79Lwkdn4`; poster is the YouTube `maxresdefault` still;
+the youtube-nocookie iframe is created only on click; nothing autoplays
+on load), a qualitative proof strip, How it works (connect read-only,
+strategies detected, see what's working), then the live demo as its own
+band — a mirror of a trading bot's paper account. Shorts are themed bands
+with one or two phones beside the copy (which strategies work, every
+position's story, if held, covered-call income, the fit matrix), not one
+sideways row. A Real trades band plays the ONON and RKLB stories wide.
+Privacy mode and share cards stay a sentence on the proof strip (there is
+no matching upload). Still frames from the demo account sit in their own
+bands: a position P&amp;L chart, the if-held summary, strategy cards, and
+the fit matrix (`app/static/marketing/`). Those crops do not show ORCL,
+CFLT, or the Earnings or Admin tabs. Options 101 and the full-width trial
+close stay. The Options 101 step links to `/learn` only when that exact
+route exists. Primary CTA: "Start your 30-day free trial, no credit card".
 
 There is no separate dashboard page — Overview is the authenticated home.
 
@@ -517,13 +518,16 @@ There is no separate dashboard page — Overview is the authenticated home.
 
 Logged-out nav and footer link here. Logged-in users can open the same pages.
 Copy and video ids live in `app/learn_episodes.json` (loaded by
-`app/learn_catalog.py`). An episode with no `youtube_id` renders as Coming
-soon: no embed, and the series grid does not link that card. Episodes 1–3
-are already `published`, so adding the 11-character YouTube id is enough to
-turn on the Watch link, the nocookie lite embed, chapter seek, and
-VideoObject JSON-LD. `published: false` (episodes 4–10) stays out of the
-sitemap and is `noindex`. Shorts use the same id field and render as 9:16
-cards. The series page remembers the last episode in this browser
+`app/learn_catalog.py`). All 10 episodes are published with public YouTube
+ids, in series order (the wheel is episode 7, spreads 8, options risk 9).
+The series page links the playlist
+`https://www.youtube.com/playlist?list=PLcVwygMVS3Ig`. Each episode page
+is a click-to-play nocookie embed (no iframe until click), with that
+lesson’s four Shorts. An episode with no `youtube_id` would still render
+as Coming soon: no embed, and the series grid would not link that card.
+A published id turns on the Watch link, the nocookie lite embed, chapter
+seek, and VideoObject JSON-LD. `published: false` stays out of the
+sitemap and is `noindex`. The series page remembers the last episode in this browser
 (`ht-learn-progress` in localStorage) and says Continue plus “N of M
 watched” once a video actually finishes. Signed-in accounts other than
 the shared demo user also keep that blob in `learn_progress` so it follows
