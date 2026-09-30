@@ -16,7 +16,7 @@
     {% endif %}
 {% endfor %}
 
-{% if not header_account_only and account_groups %}
+{% if account_groups %}
 <div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="groups">
     <label class="lblh">Groups</label>
     <div class="dropdown">
@@ -54,7 +54,7 @@
     </div>
     {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
 </div>
-{% elif not header_account_only and scope_account_choices|length > 1 %}
+{% elif scope_account_choices|length > 1 %}
 {# Same Groups slot, no fake dropdown. Only if they have accounts to group. #}
 <div class="ht-ms-dd">
     <span class="lblh">Groups</span>
@@ -62,21 +62,16 @@
 </div>
 {% endif %}
 
-{% set _show_acct = account_filter_always|default(false) %}
-{# Multi-account users get the Account control in the app header.
-   Page toolbars keep Groups and a hidden tenants field so other
-   filters still submit the current scope. #}
-{% set _header_has_picker = scope_account_choices|length > 1 %}
-{% if tenants_query and not header_account_only %}
+{# Account control lives in the page header, only when this user has
+   more than one account. A selected group limits the list to that
+   group's members — the full list would let someone pick a tenant the
+   server then intersects away, and the page would go blank. #}
+{% set _acct_choices = visible_account_choices|default(scope_account_choices) %}
+{% if tenants_query %}
 <input type="hidden" name="tenants" value="{{ tenants_query }}">
 {% endif %}
-{% if header_account_only or not _header_has_picker %}
-{# A selected group limits the Account picker to that group's members.
-   Using the full list here lets a user select an out-of-group tenant;
-   the server correctly intersects it to an empty scope and the page blanks. #}
-{% set _acct_choices = visible_account_choices|default(scope_account_choices) %}
-{% if _acct_choices and (_acct_choices|length > 1 or _show_acct or selected_tenant_ids) %}
-<div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="tenants">
+{% if scope_account_choices|length > 1 and _acct_choices %}
+<div class="ht-ms-dd ht-page-acct" data-ht-ms-dd data-ht-ms-param="tenants">
     <label class="lblh">Account</label>
     <div class="dropdown">
         <button type="button"
@@ -94,7 +89,7 @@
             {{ _a_names.names|length }} accounts
             {% endif %}
         </button>
-        <div class="dropdown-menu ht-ms-menu{% if header_account_only %} dropdown-menu-end{% endif %}">
+        <div class="dropdown-menu ht-ms-menu dropdown-menu-end">
             <div class="ht-ms-list">
                 {% for c in _acct_choices %}
                 <div class="ht-ms-item-row">
@@ -115,21 +110,19 @@
             </div>
         </div>
     </div>
-    {% if header_account_only and tenants_query %}<input type="hidden" name="tenants" value="{{ tenants_query }}">{% endif %}
 </div>
-{% elif not header_account_only and scope_account_options is defined and scope_account_options and (scope_account_options|length > 1 or _show_acct) %}
-<div>
+{% elif scope_account_options is defined and scope_account_options and scope_account_options|length > 1 %}
+<div class="ht-page-acct">
     <label class="lblh">Account</label>
     <select name="account" class="form-select form-select-sm {{ account_select_extra_class|default('') }}"
             {% if account_select_extra_style %}style="{{ account_select_extra_style }}"{% endif %}
             onchange="this.form.submit()">
-        <option value="">All Accounts</option>
+        <option value="">All accounts</option>
         {% for a in scope_account_options %}
         <option value="{{ a }}" {{ 'selected' if a == selected_account }}{% if account_select_extra_style %} style="color:#000"{% endif %}>{{ a | account_label }}</option>
         {% endfor %}
     </select>
 </div>
-{% endif %}
 {% endif %}
 {# Apply / Reset live in static/js/scope-filters.js (capture-phase).
    An inline bubble handler here used to submit after the menu closed

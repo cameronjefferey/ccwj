@@ -255,8 +255,8 @@
 {# ── Hero ── #}
 <div class="review-hero pos-hero">
     <div class="ov-bar">
-        {% if (accounts|length > 1 and not (account_toggles and account_toggles|length > 1)) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero">
+        {% if scope_account_choices|length > 1 or (accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% for _leg in request.args.getlist('leg') %}
             <input type="hidden" name="leg" value="{{ _leg }}">
             {% endfor %}
