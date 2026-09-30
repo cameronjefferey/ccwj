@@ -16,19 +16,37 @@
         line-height: 1.12;
     }
     .ht-landing {
+        --bleed: 0.5rem;
+        margin-left: calc(var(--bleed) * -1);
+        margin-right: calc(var(--bleed) * -1);
+        width: calc(100% + var(--bleed) * 2);
         overflow-x: clip;
-        max-width: 100%;
         color: #e8edf7;
     }
     .ht-wrap {
-        max-width: 1040px;
+        max-width: 1080px;
         margin: 0 auto;
+        padding: 0 1.25rem;
     }
+    .ht-band-hero { background: #0a0e17; }
+    .ht-band-proof { background: #121826; }
+    .ht-band-features {
+        background:
+            radial-gradient(70% 80% at 0% 0%, rgba(91,140,255,.2), transparent 55%),
+            linear-gradient(180deg, #10182a 0%, #17243a 100%);
+    }
+    .ht-band-shorts { background: #0c111c; }
+    .ht-band-learn {
+        background: #1a2744;
+        border-top: 1px solid rgba(91,140,255,.35);
+        border-bottom: 1px solid rgba(91,140,255,.35);
+    }
+    .ht-band-cta { background: #5b8cff; color: #0a0e17; }
+
     .landing-hero {
         background: transparent;
         text-align: center;
-        padding: 2.75rem 0 1.25rem;
-        position: relative;
+        padding: 2.75rem 0 2.25rem;
     }
     .landing-hero .lead {
         color: #7d8aa3;
@@ -39,7 +57,7 @@
     }
     .ht-stage {
         max-width: 920px;
-        margin: 0 auto 1.35rem;
+        margin: 0 auto 1.15rem;
     }
     .ht-frame {
         position: relative;
@@ -113,10 +131,7 @@
         background: rgba(91,140,255,.55);
         box-shadow: none;
     }
-    .ht-frame-wide .ht-play {
-        width: 4.75rem;
-        height: 4.75rem;
-    }
+    .ht-frame-wide .ht-play { width: 4.75rem; height: 4.75rem; }
     .ht-art-2::after { width: 58%; top: 28%; }
     .ht-art-3::after { width: 34%; top: 18%; }
     .ht-art-4::after { left: 18%; width: 50%; top: 34%; }
@@ -153,86 +168,161 @@
         border-radius: 999px;
         padding: 0.2rem 0.55rem;
     }
-    .ht-cta-row { margin-top: 0.25rem; }
-    .ht-cta {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        max-width: 100%;
-        white-space: normal;
-        line-height: 1.35;
-        background: #5b8cff;
-        color: #0a0e17;
+    .ht-text-cta {
+        color: #5b8cff;
         font-weight: 650;
-        border-radius: 0.45rem;
-        padding: 0.85rem 1.2rem;
         text-decoration: none;
     }
-    .ht-cta:hover, .ht-cta:focus-visible {
-        color: #0a0e17;
-        filter: brightness(1.08);
-    }
+    .ht-text-cta:hover { color: #fff; }
     .ht-note {
         color: #7d8aa3;
         font-size: 0.92rem;
         line-height: 1.55;
         max-width: 38rem;
-        margin: 0.9rem auto 0;
+        margin: 0.85rem auto 0;
     }
     .ht-note a { color: #e8edf7; text-decoration: none; }
     .ht-note a:hover { color: #5b8cff; }
-    .ht-story {
-        margin-top: 2.75rem;
-        text-align: left;
+
+    .ht-band-proof { padding: 1.75rem 0 1.5rem; }
+    .ht-proof {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.15rem 1.25rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
     }
-    .ht-story-title {
-        text-align: center;
-        font-size: 1.35rem;
+    .ht-proof li { min-width: 0; }
+    .ht-proof-k {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        color: #5b8cff;
+        margin-bottom: 0.35rem;
+    }
+    .ht-proof strong {
+        display: block;
+        color: #fff;
+        font-weight: 650;
+        font-size: 0.98rem;
+        margin-bottom: 0.2rem;
+    }
+    .ht-proof p {
+        margin: 0;
+        color: #8a97b1;
+        font-size: 0.86rem;
+        line-height: 1.45;
+    }
+    .ht-fine {
+        color: #7d8aa3;
+        font-size: 0.82rem;
+        line-height: 1.55;
+        margin: 1.15rem 0 0;
+    }
+    .ht-fine a { color: #8a97b1; }
+    .ht-fine a:hover { color: #5b8cff; }
+
+    .ht-band-features { padding: 3rem 0 3.15rem; }
+    .ht-section-title {
+        font-size: clamp(1.35rem, 3vw, 1.85rem);
         font-weight: 700;
         letter-spacing: -0.01em;
         color: #fff;
-        margin: 0 0 0.35rem;
+        margin: 0 0 0.4rem;
     }
-    .ht-step {
+    .ht-section-lead {
+        color: #8a97b1;
+        margin: 0 0 1.35rem;
+        max-width: 36rem;
+        line-height: 1.5;
+    }
+    .ht-grid {
         display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        gap: 1.15rem;
-        align-items: center;
-        padding: 2rem 0;
-        border-top: 1px solid #1c2538;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
     }
-    .ht-step-num {
+    .ht-card {
+        background: rgba(10,14,23,.55);
+        border: 1px solid rgba(91,140,255,.28);
+        border-radius: 0.7rem;
+        padding: 1.1rem 1.15rem 1.15rem;
+        min-width: 0;
+    }
+    .ht-card-num {
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
         color: #5b8cff;
-        font-weight: 500;
-        font-size: 0.75rem;
-        letter-spacing: 0.14em;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
         margin-bottom: 0.45rem;
     }
-    .ht-step h3 {
-        font-size: 1.35rem;
+    .ht-card h3 {
+        color: #fff;
+        font-size: 1.05rem;
         font-weight: 650;
         letter-spacing: -0.01em;
-        color: #fff;
-        margin: 0 0 0.45rem;
+        margin: 0 0 0.4rem;
     }
-    .ht-step p {
-        color: #7d8aa3;
-        font-size: 0.98rem;
-        line-height: 1.55;
+    .ht-card p {
         margin: 0;
-        max-width: 36rem;
+        color: #c5d0e4;
+        font-size: 0.92rem;
+        line-height: 1.5;
     }
-    .ht-step a {
-        color: #5b8cff;
-        text-decoration: none;
+
+    .ht-band-shorts { padding: 3rem 0 2.5rem; }
+    .ht-reel-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
     }
-    .ht-step a:hover { text-decoration: underline; }
+    .ht-reel-head .ht-section-lead { margin-bottom: 0; }
+    .ht-reel-nav { display: flex; gap: 0.4rem; flex: none; }
+    .ht-reel-btn {
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: 999px;
+        border: 1px solid #243049;
+        background: #121826;
+        color: #e8edf7;
+        font-size: 1.15rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+    .ht-reel-btn:hover { border-color: #5b8cff; color: #fff; }
+    .ht-reel-btn:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; }
+    .ht-reel {
+        display: flex;
+        gap: 0.9rem;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        padding: 0.15rem 0 0.85rem;
+        scrollbar-color: #243049 transparent;
+    }
+    .ht-reel-item {
+        flex: 0 0 min(16.5rem, 78%);
+        scroll-snap-align: start;
+        min-width: 0;
+    }
+    .ht-reel-item h3 {
+        color: #fff;
+        font-size: 0.98rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        margin: 0.75rem 0 0.3rem;
+    }
+    .ht-reel-item p {
+        margin: 0;
+        color: #8a97b1;
+        font-size: 0.86rem;
+        line-height: 1.45;
+    }
     .ht-phone {
-        width: min(17.25rem, 100%);
-        justify-self: center;
+        width: 100%;
         background: #0c111c;
         border: 1px solid #243049;
         border-radius: 1.85rem;
@@ -245,22 +335,62 @@
         background: #243049;
         margin: 0.2rem auto 0.5rem;
     }
-    .ht-fine {
-        background: #0c111c;
-        border: 1px solid #1c2538;
-        border-radius: 0.55rem;
-        color: #7d8aa3;
-        font-size: 0.85rem;
+
+    .ht-band-learn { padding: 3rem 0; }
+    .ht-learn {
+        display: grid;
+        gap: 1.5rem;
+        align-items: center;
+    }
+    .ht-learn h2 { margin-bottom: 0.55rem; }
+    .ht-learn p {
+        color: #c5d0e4;
+        font-size: 1.02rem;
         line-height: 1.55;
-        padding: 0.9rem 1.05rem;
-        margin: 0.5rem 0 1.75rem;
+        margin: 0 0 0.85rem;
+        max-width: 36rem;
     }
-    .ht-fine a { color: #8a97b1; }
-    .ht-fine a:hover { color: #5b8cff; }
-    .ht-closer {
+    .ht-learn a { color: #5b8cff; font-weight: 650; text-decoration: none; }
+    .ht-learn a:hover { color: #fff; }
+    .ht-learn-phone { width: min(16.5rem, 100%); }
+
+    .ht-band-cta { padding: 4rem 0; text-align: center; }
+    .ht-cta-kicker {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.75rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(10,14,23,.72);
+        margin: 0 0 0.7rem;
+    }
+    .ht-cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         text-align: center;
-        padding: 0.5rem 0 1rem;
+        max-width: 16em;
+        white-space: normal;
+        text-wrap: balance;
+        line-height: 1.25;
+        background: #0a0e17;
+        color: #fff;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        font-size: clamp(1.35rem, 3vw, 2.15rem);
+        border-radius: 0.55rem;
+        padding: 0.9rem 1.25rem;
+        text-decoration: none;
     }
+    .ht-cta:hover, .ht-cta:focus-visible { color: #fff; filter: brightness(1.12); }
+    .ht-cta-note {
+        margin: 0.9rem auto 0;
+        max-width: 34rem;
+        color: rgba(10,14,23,.78);
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+
     .ht-player {
         position: absolute;
         inset: 0;
@@ -287,29 +417,26 @@
     @media (max-width: 640px) {
         .landing-hero { padding-top: 1.75rem; }
         .landing-hero h1 { font-size: 1.85rem; }
-        .ht-cta { width: 100%; }
         .ht-play { width: 3.5rem; height: 3.5rem; }
+        .ht-frame-wide .ht-play { width: 3.75rem; height: 3.75rem; }
+        .ht-cta { width: 100%; max-width: 100%; font-size: 1.2rem; }
     }
-    @media (min-width: 880px) {
-        .ht-step {
-            grid-template-columns: minmax(0, 1fr) 17.25rem;
-            gap: 3.25rem;
-            padding: 2.75rem 0;
-        }
-        .ht-step.is-flip { grid-template-columns: 17.25rem minmax(0, 1fr); }
-        .ht-step.is-flip .ht-step-copy { order: 2; }
-        .ht-phone { justify-self: center; }
+    @media (min-width: 768px) {
+        .ht-landing { --bleed: 1.5rem; }
+        .ht-proof { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .ht-grid { grid-template-columns: 1fr 1fr; }
+        .ht-learn { grid-template-columns: minmax(0, 1fr) 16.5rem; }
+        .ht-learn-phone { justify-self: end; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .ht-reel { scroll-behavior: auto; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-{% macro trial_cta() %}
-{% if signup_enabled %}
-<a class="ht-cta" href="{{ url_for('signup') }}">
-    {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial, no credit card{%- endif -%}
-</a>
-{% endif %}
+{% macro trial_label() %}
+{%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial, no credit card{%- endif -%}
 {% endmacro %}
 
 {% macro video_frame(v, wide=false) %}
@@ -337,18 +464,17 @@
 {% endmacro %}
 
 <div class="ht-landing">
-    <div class="ht-wrap">
-        <header class="landing-hero">
+    <header class="ht-band ht-band-hero landing-hero">
+        <div class="ht-wrap">
             <h1>Watch the trading mirror</h1>
             <p class="lead">{{ hero_video.caption }}</p>
             <div class="ht-stage">
                 {{ video_frame(hero_video, wide=true) }}
             </div>
-            <div class="ht-cta-row">
-                {{ trial_cta() }}
-            </div>
+            {% if signup_enabled %}
+            <a class="ht-text-cta" href="{{ url_for('signup') }}">{{ trial_label() }}</a>
+            {% endif %}
             <p class="ht-note">
-                Full product for 30 days, no card. The clock starts when the first sync or CSV upload lands.
                 <a href="{{ url_for('login') }}">Sign in</a>
                 <span aria-hidden="true">·</span>
                 <a href="{{ url_for('demo_start') }}">See the live demo</a>
@@ -357,45 +483,124 @@
             {% if signup_invite_required %}
             <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
             {% endif %}
-        </header>
+        </div>
+    </header>
 
-        <section class="ht-story" aria-label="Product walkthrough">
-            <h2 class="ht-story-title">One feature at a time</h2>
-            {% for step in story_steps %}
-            <article class="ht-step{% if loop.index is even %} is-flip{% endif %}">
-                <div class="ht-step-copy">
-                    <div class="ht-step-num">{{ '%02d'|format(step.step) }}</div>
+    <section class="ht-band ht-band-proof" aria-label="How the trial works">
+        <div class="ht-wrap">
+            <ul class="ht-proof">
+                <li>
+                    <div class="ht-proof-k">01</div>
+                    <strong>Read-only</strong>
+                    <p>Through SnapTrade. Schwab, Fidelity, Vanguard, Robinhood, and others.</p>
+                </li>
+                <li>
+                    <div class="ht-proof-k">02</div>
+                    <strong>Your password stays put</strong>
+                    <p>HappyTrader never stores your broker password.</p>
+                </li>
+                <li>
+                    <div class="ht-proof-k">30</div>
+                    <strong>Days, no card</strong>
+                    <p>The clock starts when the first sync or CSV upload lands.</p>
+                </li>
+                <li>
+                    <div class="ht-proof-k">Demo</div>
+                    <strong>Paper account</strong>
+                    <p>A live mirror of a trading bot. Simulated money, real market data.</p>
+                </li>
+            </ul>
+            <p class="ht-fine">
+                Sync your accounts. {% include "_broker_sync_timing.html" %}
+                See your trading profile once the sync finishes.
+                Need older history? Broker sync is not a lifetime archive.
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
+                {% else %}
+                You can upload a CSV after you connect.
+                {% endif %}
+            </p>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-features" aria-label="What the mirror shows">
+        <div class="ht-wrap">
+            <h2 class="ht-section-title">What the mirror shows</h2>
+            <p class="ht-section-lead">Four parts of the record. The clips below are the same pages, shorter.</p>
+            <div class="ht-grid">
+                {% for step in story_steps if step.step in [1, 2, 3, 4] %}
+                <article class="ht-card">
+                    <div class="ht-card-num">{{ '%02d'|format(step.step) }}</div>
                     <h3>{{ step.title }}</h3>
-                    <p>
-                        {{ step.caption }}
-                        {% if step.links_learn and learn_url %}
-                        <a href="{{ learn_url }}">Open the series</a>
-                        {% endif %}
-                    </p>
+                    <p>{{ step.caption }}</p>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-shorts" aria-label="Short videos">
+        <div class="ht-wrap">
+            <div class="ht-reel-head">
+                <div>
+                    <h2 class="ht-section-title">Watch a piece at a time</h2>
+                    <p class="ht-section-lead">Five shorts. Scroll sideways.</p>
                 </div>
+                <div class="ht-reel-nav">
+                    <button type="button" class="ht-reel-btn" data-reel-dir="-1" aria-label="Previous short">&#8249;</button>
+                    <button type="button" class="ht-reel-btn" data-reel-dir="1" aria-label="Next short">&#8250;</button>
+                </div>
+            </div>
+            <div class="ht-reel" tabindex="0">
+                {% for step in story_steps if not step.links_learn %}
+                <article class="ht-reel-item">
+                    <div class="ht-phone">
+                        <div class="ht-phone-bar" aria-hidden="true"></div>
+                        {{ video_frame(step) }}
+                    </div>
+                    <h3>{{ step.title }}</h3>
+                    {% if step.step == 5 %}
+                    <p>{{ step.caption }}</p>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    {% for step in story_steps if step.links_learn %}
+    <section class="ht-band ht-band-learn" aria-label="Options 101">
+        <div class="ht-wrap ht-learn">
+            <div>
+                <h2 class="ht-section-title">{{ step.title }}</h2>
+                <p>
+                    {{ step.caption }}
+                    {% if learn_url %}
+                    <a href="{{ learn_url }}">Open the series</a>
+                    {% endif %}
+                </p>
+            </div>
+            <div class="ht-learn-phone">
                 <div class="ht-phone">
                     <div class="ht-phone-bar" aria-hidden="true"></div>
                     {{ video_frame(step) }}
                 </div>
-            </article>
-            {% endfor %}
-        </section>
-
-        <p class="ht-fine">
-            Sync your accounts. {% include "_broker_sync_timing.html" %}
-            See your trading profile once the sync finishes.
-            Need older history? Broker sync is not a lifetime archive.
-            {% if current_user.is_authenticated %}
-            <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
-            {% else %}
-            You can upload a CSV after you connect.
-            {% endif %}
-        </p>
-
-        <div class="ht-closer">
-            {{ trial_cta() }}
+            </div>
         </div>
-    </div>
+    </section>
+    {% endfor %}
+
+    <section class="ht-band ht-band-cta" aria-label="Start a trial">
+        <div class="ht-wrap">
+            <p class="ht-cta-kicker">30 days · no card</p>
+            {% if signup_enabled %}
+            <a class="ht-cta" href="{{ url_for('signup') }}">{{ trial_label() }}</a>
+            {% else %}
+            <a class="ht-cta" href="{{ url_for('login') }}">Sign in</a>
+            {% endif %}
+            <p class="ht-cta-note">Full product. The 30 days start when the first sync or CSV upload lands.</p>
+        </div>
+    </section>
 </div>
 
 <script>
@@ -458,6 +663,17 @@
 
     document.querySelectorAll(".ht-facade").forEach(function (btn) {
         btn.addEventListener("click", function () { mount(btn); });
+    });
+
+    var reel = document.querySelector(".ht-reel");
+    document.querySelectorAll(".ht-reel-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            if (!reel) return;
+            var dir = Number(btn.getAttribute("data-reel-dir")) || 1;
+            var reduce = false;
+            try { reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (err) {}
+            reel.scrollBy({ left: dir * Math.round(reel.clientWidth * 0.8), behavior: reduce ? "auto" : "smooth" });
+        });
     });
 })();
 </script>

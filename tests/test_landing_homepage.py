@@ -52,6 +52,12 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "Watch the trading mirror" in html
     assert "Start your 30-day free trial, no credit card" in html
     assert html.count('class="ht-facade"') == 7
+    assert "ht-band-proof" in html
+    assert "ht-band-features" in html
+    assert "ht-reel" in html
+    assert "ht-band-learn" in html
+    assert "ht-band-cta" in html
+    assert "is-flip" not in html
     assert 'href="/signup"' in html or "signup" in html
     assert 'href="/login"' in html
     assert "Sign in" in html

@@ -483,15 +483,16 @@ Known issues:
 ### Home (`/`, `/index`)
 **Status: Working. Public landing page; logged-in users redirect to Overview.**
 
-Logged-out `/` is a video story (`app/templates/landing.html`, catalog in
-`app/marketing_videos.py`). The hero is a click-to-play walkthrough of
-about 2:30: a poster frame, with the youtube-nocookie iframe created only
-on click. Nothing autoplays on load. Under it, six vertical Shorts —
-connect a brokerage, every trade and position, if held to expiration,
-covered-call runs, privacy mode and share cards, and Options 101. The
-Options 101 step links to `/learn` only when that exact route exists.
-YouTube ids and mp4 URLs are empty placeholders until the videos are
-public. Primary CTA: "Start your 30-day free trial, no credit card".
+Logged-out `/` is a banded marketing page (`app/templates/landing.html`,
+catalog in `app/marketing_videos.py`). The hero is a click-to-play
+walkthrough of about 2:30: a poster frame, with the youtube-nocookie
+iframe created only on click. Nothing autoplays on load. Under it: a
+qualitative proof strip, a four-card feature grid, a horizontal row of
+Shorts (connect, trades, if held, covered-call runs, privacy and share
+cards), an Options 101 band, and a full-width trial close. The Options
+101 step links to `/learn` only when that exact route exists. YouTube
+ids and mp4 URLs are empty placeholders until the videos are public.
+Primary CTA: "Start your 30-day free trial, no credit card".
 
 There is no separate dashboard page — Overview is the authenticated home.
 
