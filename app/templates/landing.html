@@ -178,27 +178,82 @@
         border-radius: 999px;
         padding: 0.2rem 0.55rem;
     }
-    .ht-text-cta {
-        color: #5b8cff;
-        font-weight: 650;
+    .ht-hero-cta {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.7rem;
+        width: 100%;
+        max-width: 28rem;
+        margin: 1.35rem auto 0;
+    }
+    .ht-hero-primary,
+    .ht-hero-secondary {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        text-align: center;
+        text-decoration: none;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 1.25;
+        border-radius: 0.65rem;
+        box-sizing: border-box;
+    }
+    .ht-hero-primary {
+        background: #5b8cff;
+        color: #0a0e17;
+        font-size: clamp(1.2rem, 2.6vw, 1.55rem);
+        padding: 1.15rem 1.6rem;
+    }
+    .ht-hero-primary:hover,
+    .ht-hero-primary:focus-visible {
+        color: #0a0e17;
+        filter: brightness(1.08);
+    }
+    .ht-hero-sub {
+        margin: -0.15rem 0 0.1rem;
+        color: #c5d0e4;
+        font-size: 1rem;
+        font-weight: 500;
+    }
+    .ht-hero-secondary {
+        background: transparent;
+        color: #e8edf7;
+        font-size: 1.12rem;
+        padding: 0.95rem 1.4rem;
+        border: 2px solid #5b8cff;
+    }
+    .ht-hero-secondary:hover,
+    .ht-hero-secondary:focus-visible {
+        color: #0a0e17;
+        background: #5b8cff;
+    }
+    .ht-hero-signin {
+        margin: 0.25rem 0 0;
+        font-size: 0.85rem;
+    }
+    .ht-hero-signin a {
+        color: #7d8aa3;
         text-decoration: none;
     }
-    .ht-text-cta:hover { color: #fff; }
+    .ht-hero-signin a:hover { color: #5b8cff; }
     .ht-note {
         color: #7d8aa3;
         font-size: 0.92rem;
         line-height: 1.55;
         max-width: 38rem;
-        margin: 0.85rem auto 0;
+        margin: 0.35rem auto 0;
     }
     .ht-note a { color: #e8edf7; text-decoration: none; }
     .ht-note a:hover { color: #5b8cff; }
 
-    .ht-band-proof { padding: 1.75rem 0 1.5rem; }
+    .ht-band-proof { padding: 1.05rem 0 0.95rem; }
     .ht-proof {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 1.15rem 1.25rem;
+        gap: 0.85rem 1.1rem;
         margin: 0;
         padding: 0;
         list-style: none;
@@ -238,7 +293,7 @@
         color: #7d8aa3;
         font-size: 0.82rem;
         line-height: 1.55;
-        margin: 1.15rem 0 0;
+        margin: 0.75rem 0 0;
     }
     .ht-fine a { color: #8a97b1; }
     .ht-fine a:hover { color: #5b8cff; }
@@ -527,18 +582,21 @@
             <div class="ht-stage">
                 {{ video_frame(hero_video, wide=true) }}
             </div>
-            {% if signup_enabled %}
-            <a class="ht-text-cta" href="{{ url_for('signup') }}">{{ trial_label() }}</a>
-            {% endif %}
-            <p class="ht-note">
-                <a href="{{ url_for('login') }}">Sign in</a>
-                <span aria-hidden="true">·</span>
-                <a href="{{ url_for('demo_start') }}">See the live demo</a>
-                — a trading bot's paper account, simulated money, real market data.
-            </p>
-            {% if signup_invite_required %}
-            <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
-            {% endif %}
+            <div class="ht-hero-cta">
+                {% if signup_enabled %}
+                <a class="ht-hero-primary" href="{{ url_for('signup') }}">
+                    {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial{%- endif -%}
+                </a>
+                {% if not signup_invite_required %}
+                <p class="ht-hero-sub">No credit card</p>
+                {% endif %}
+                {% endif %}
+                <a class="ht-hero-secondary" href="{{ url_for('demo_start') }}">Try the live demo</a>
+                <p class="ht-hero-signin"><a href="{{ url_for('login') }}">Sign in</a></p>
+                {% if signup_invite_required %}
+                <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
+                {% endif %}
+            </div>
         </div>
     </header>
 
@@ -642,14 +700,14 @@
     <section class="ht-band ht-band-shot-a ht-section" aria-label="Position P and L">
         <div class="ht-wrap ht-split">
             <figure class="ht-media ht-shot">
-                <img src="{{ url_for('static', filename='marketing/amd-pnl.png') }}"
-                     alt="Cumulative P&amp;L chart for AMD in the demo account, with equity, options, and dividends."
-                     width="1400" height="834" loading="lazy">
-                <figcaption>Demo account</figcaption>
+                <img src="{{ url_for('static', filename='marketing/pnl_real.webp') }}"
+                     alt="Cumulative P&amp;L for account BE: the run-up, the drawdown, and the recovery, with options and shares split out."
+                     width="1600" height="804" loading="lazy">
+                <figcaption>Real account · BE</figcaption>
             </figure>
             <div class="ht-copy">
                 <h2 class="ht-section-title">The result, day by day</h2>
-                <p>Equity, options, and dividends on one chart. Dots mark the days a trade was placed.</p>
+                <p>Every trade day on one line. The run-up, the drawdown and the recovery, with options and shares split out.</p>
             </div>
         </div>
     </section>
