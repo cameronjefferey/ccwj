@@ -86,11 +86,22 @@ def test_rklb_analog_one_run_nets_406():
     assert run["premium_total"] == 1006.0
     assert run["share_pnl"] == -600.0
     assert run["net"] == 406.0
-    assert run["premium_label"] == "Premium kept"
+    assert run["premium_label"] == "Calls net"
+    assert run["call_count"] == 6
+    assert run["call_count_label"] == "6 calls"
     assert run["net_label"] == "Whole run"
 
     outcomes = [c["outcome"] for c in run["calls"]]
     assert outcomes == ["expired", "expired", "expired", "expired", "expired", "assigned"]
+    groups = run["outcome_groups"]
+    assert [g["outcome"] for g in groups] == ["expired", "assigned"]
+    assert groups[0]["count_label"] == "5 calls"
+    assert groups[0]["net"] == 931.0
+    assert groups[1]["count_label"] == "1 call"
+    assert groups[1]["net"] == 75.0
+    assert [c["expiry"] for c in groups[0]["calls"]] == [
+        "2026-02-27", "2026-03-06", "2026-03-13", "2026-03-20", "2026-03-27",
+    ]
     assert run["calls"][4]["running_premium"] == 931.0
     assert run["calls"][5]["premium"] == 75.0
     assert run["calls"][5]["running_premium"] == 1006.0
@@ -279,6 +290,8 @@ def test_roll_is_its_own_outcome_and_the_new_call_is_a_new_row():
     assert [c["outcome"] for c in run["calls"]] == ["rolled", "expired"]
     assert [c["premium"] for c in run["calls"]] == [80.0, 90.0]
     assert [c["running_premium"] for c in run["calls"]] == [80.0, 170.0]
+    assert [g["outcome"] for g in run["outcome_groups"]] == ["expired", "rolled"]
+    assert [g["net"] for g in run["outcome_groups"]] == [90.0, 80.0]
     assert run["share_pnl"] == 0.0
     assert run["net"] == 170.0
 
@@ -501,6 +514,93 @@ def test_long_put_exercise_does_not_invent_a_wheel():
     assert build_covered_call_runs(_frame(rows), as_of=date(2026, 1, 20)) == []
 
 
+def test_outcome_groups_sort_by_net_and_keep_date_order():
+    """Expired, closed, assigned, and rolled land in one run.
+
+    Group nets sort descending. Calls inside a group stay in open-date
+    order, including when a later expired call is the one with the
+    bigger credit.
+    """
+    rows = [
+        _row(date(2026, 1, 2), "equity_buy", "Equity", "RKLB", 100, 50.0, -5000.0),
+        _row(
+            date(2026, 1, 5), "option_sell_to_open", "Call",
+            _occ("RKLB", date(2026, 2, 6), "C", 60), 1, 0.40, 40.0,
+        ),
+        _row(
+            date(2026, 1, 6), "option_sell_to_open", "Call",
+            _occ("RKLB", date(2026, 3, 20), "C", 65), 1, 1.00, 100.0,
+        ),
+        _row(
+            date(2026, 1, 20), "option_buy_to_close", "Call",
+            _occ("RKLB", date(2026, 3, 20), "C", 65), 1, 0.30, -30.0,
+        ),
+        _row(
+            date(2026, 2, 2), "option_sell_to_open", "Call",
+            _occ("RKLB", date(2026, 2, 20), "C", 70), 1, 0.90, 90.0,
+        ),
+        _row(
+            date(2026, 3, 2), "option_sell_to_open", "Call",
+            _occ("RKLB", date(2026, 3, 21), "C", 55), 1, 2.00, 200.0,
+        ),
+        _row(
+            date(2026, 3, 9), "option_buy_to_close", "Call",
+            _occ("RKLB", date(2026, 3, 21), "C", 55), 1, 2.60, -260.0,
+        ),
+        _row(
+            date(2026, 3, 9), "option_sell_to_open", "Call",
+            _occ("RKLB", date(2026, 4, 17), "C", 80), 1, 0.50, 50.0,
+        ),
+        _row(
+            date(2026, 4, 1), "option_sell_to_open", "Call",
+            _occ("RKLB", date(2026, 4, 18), "C", 52), 1, 0.30, 30.0,
+        ),
+        _row(
+            date(2026, 4, 18), "option_assigned", "Call",
+            _occ("RKLB", date(2026, 4, 18), "C", 52), 1, None, 0.0,
+        ),
+        _row(date(2026, 4, 18), "equity_sell", "Equity", "RKLB", 100, 52.0, 5200.0),
+    ]
+    runs = build_covered_call_runs(_frame(rows), as_of=date(2026, 4, 19))
+    assert len(runs) == 1
+    run = runs[0]
+    groups = run["outcome_groups"]
+    assert [g["outcome"] for g in groups] == ["expired", "closed", "assigned", "rolled"]
+    assert [g["net"] for g in groups] == [180.0, 70.0, 30.0, -60.0]
+    assert [g["count_label"] for g in groups] == ["3 calls", "1 call", "1 call", "1 call"]
+    assert [c["title"] for c in groups[0]["calls"]] == ["$60 call", "$70 call", "$80 call"]
+    assert sum(g["net"] for g in groups) == run["premium_total"] == 220.0
+    assert sum(g["count"] for g in groups) == run["call_count"] == 6
+    assert run["call_count_label"] == "6 calls"
+    assert run["premium_label"] == "Calls net"
+
+    with app.app_context():
+        html = app.jinja_env.get_template("_covered_call_runs.html").render(
+            covered_call_runs=runs,
+            symbol="RKLB",
+        )
+    assert "Calls net" in html
+    assert ">Net<" in html
+    assert "Running premium" not in html
+    assert "Premium" not in html
+    assert "3 calls" in html
+    assert "+$180.00" in html
+    assert "-$60.00" in html
+    order = [html.find(f'ht-run-pill-{name}') for name in (
+        "expired", "closed", "assigned", "rolled",
+    )]
+    assert order == sorted(order)
+    assert 'aria-expanded="false"' in html
+    assert html.count('aria-expanded="false"') == 5
+    assert 'aria-controls="ht-run-1-groups"' in html
+    assert 'id="ht-run-1-groups"' in html
+    assert 'aria-controls="ht-run-1-g-1"' in html
+    assert 'id="ht-run-1-g-1"' in html
+    assert "<details" in html
+    assert " open>" not in html
+    assert " open " not in html
+
+
 def test_template_renders_the_run_numbers():
     runs = build_covered_call_runs(_rklb_cycle(), as_of=date(2026, 4, 3))
     with app.app_context():
@@ -519,6 +619,12 @@ def test_template_renders_the_run_numbers():
     assert "Assigned" in html
     assert "Broker fees are not included" in html
     assert "Whole run" in html
+    assert "Calls net" in html
+    assert ">Net<" in html
+    assert "Running premium" not in html
+    assert "Premium" not in html
+    assert 'aria-expanded="false"' in html
+    assert " open>" not in html
     assert 'class="ht-run"' in html
 
 

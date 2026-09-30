@@ -398,11 +398,13 @@ What's working:
 - **Covered call runs (Sep 2026).** A share lot and the calls written
   against it are one run, from the buy (or a put assignment, for a
   wheel) through the sale or assignment, or through today if the shares
-  are still held. The card under the position review lists each call
-  (strike, expiry, premium, outcome: expired / closed / assigned /
-  rolled / open), a running premium total, the share result, and one
-  net for the whole run. Broker fees are left out of that math and the
-  card says so. Multiple runs, partial sales, and partial coverage stay
+  are still held. The card under the position review keeps the run
+  header, then a collapsed calls-net row (outcome groups inside it,
+  each group collapsed to its badge, count, and net, sorted by that
+  net). Opening a group lists that outcome's calls (strike, expiry,
+  net — expired / closed / assigned / rolled / open) in date order.
+  The share result and one whole-run net stay on the card. Broker
+  fees are left out of that math and the card says so. Multiple runs, partial sales, and partial coverage stay
   on the same lot until the shares are flat. Built in
   `app/covered_call_runs.py` from the fills and inferred opening balances
   the page already loaded (tenant-scoped, before the leg filter so one leg
