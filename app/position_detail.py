@@ -2212,7 +2212,11 @@ def position_detail(symbol):
     selected_tenant_set = set(tenant_scope) if tenant_scope is not None else None
     from app.account_scope import nickname_map as _nickname_map
     from app.models import get_broker_tenants_for_user as _tenants_for_picker
-    _picker_labels = _nickname_map(_tenants_for_picker(_viewer_id) or [])
+    try:
+        _picker_labels = _nickname_map(_tenants_for_picker(_viewer_id) or [])
+    except Exception as exc:
+        app.logger.warning("position account nicknames failed: %s", exc)
+        _picker_labels = {}
     account_toggles = []
     if (
         accounts_all_df is not None
