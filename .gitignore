@@ -23,6 +23,7 @@ profiles.yml
 .env
 *.json
 !dbt/dbt_project.yml
+!app/learn_episodes.json
 # Agent automation config (no secrets) — see .cursor/hooks/
 !.cursor/hooks.json
 

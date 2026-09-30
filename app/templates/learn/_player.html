@@ -1,0 +1,84 @@
+<script>
+(function () {
+    var ORIGIN = "https://www.youtube-nocookie.com";
+    function withStart(base, start) {
+        try {
+            var url = new URL(base);
+            if (url.origin !== ORIGIN) return null;
+            if (start > 0) url.searchParams.set("start", String(start));
+            url.searchParams.set("autoplay", "1");
+            return url.toString();
+        } catch (err) {
+            return null;
+        }
+    }
+    function mount(host, start) {
+        if (!host || host.querySelector("iframe")) {
+            return host ? host.querySelector("iframe") : null;
+        }
+        var src = withStart(host.getAttribute("data-src"), start || 0);
+        if (!src) return null;
+        var iframe = document.createElement("iframe");
+        iframe.src = src;
+        iframe.title = host.getAttribute("data-title") || "Video";
+        iframe.loading = "lazy";
+        iframe.allowFullscreen = true;
+        iframe.setAttribute(
+            "allow",
+            "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        );
+        iframe.addEventListener("load", function () {
+            iframe.dataset.ready = "1";
+        });
+        host.replaceChildren(iframe);
+        host.classList.add("is-active");
+        host.removeAttribute("role");
+        host.removeAttribute("tabindex");
+        host.removeAttribute("aria-label");
+        if (window.__htLearnPlayer) window.__htLearnPlayer(iframe);
+        return iframe;
+    }
+    function startAt(host, explicit) {
+        if (explicit > 0) return explicit;
+        var saved = parseInt(host.getAttribute("data-resume") || "0", 10);
+        return isFinite(saved) && saved > 0 ? saved : 0;
+    }
+    function note(seconds) {
+        if (window.__htLearnNote) window.__htLearnNote(seconds, null, false);
+    }
+    function activate(host) {
+        host.addEventListener("click", function () { mount(host, startAt(host, 0)); });
+        host.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                mount(host, startAt(host, 0));
+            }
+        });
+    }
+    document.querySelectorAll(".yt-lite").forEach(activate);
+    document.querySelectorAll("[data-seek]").forEach(function (button) {
+        button.addEventListener("click", function () {
+            var host = document.getElementById("episode-player");
+            if (!host) return;
+            var start = parseInt(button.getAttribute("data-seek"), 10);
+            if (!isFinite(start) || start < 0) start = 0;
+            note(start);
+            var iframe = host.querySelector("iframe");
+            if (!iframe) {
+                mount(host, start);
+                return;
+            }
+            if (iframe.dataset.ready === "1" && iframe.contentWindow) {
+                iframe.contentWindow.postMessage(JSON.stringify({
+                    event: "command",
+                    func: "seekTo",
+                    args: [start, true]
+                }), ORIGIN);
+                return;
+            }
+            var next = withStart(host.getAttribute("data-src"), start);
+            if (next) iframe.src = next;
+        });
+    });
+})();
+</script>

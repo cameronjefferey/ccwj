@@ -495,6 +495,23 @@ Known issues:
 
 There is no separate dashboard page — Overview is the authenticated home.
 
+### Learn (`/learn`, `/learn/<slug>`)
+**Status: Working. Public Options 101 series. No login.**
+
+Logged-out nav and footer link here. Logged-in users can open the same pages.
+Copy and video ids live in `app/learn_episodes.json` (loaded by
+`app/learn_catalog.py`). An episode with no `youtube_id` renders as Coming
+soon: no embed, and the series grid does not link that card. Episodes 1–3
+are already `published`, so adding the 11-character YouTube id is enough to
+turn on the Watch link, the nocookie lite embed, chapter seek, and
+VideoObject JSON-LD. `published: false` (episodes 4–10) stays out of the
+sitemap and is `noindex`. Shorts use the same id field and render as 9:16
+cards. The series page remembers the last episode in this browser
+(`ht-learn-progress` in localStorage) and says Continue plus “N of M
+watched” once a video actually finishes. Signed-in accounts other than
+the shared demo user also keep that blob in `learn_progress` so it follows
+them after signup (`/learn/progress`, merged on the next signed-in page).
+
 ### Campaign landing (`/start`, endpoint `campaign_start`)
 **Status: Working. Ad destination. Logged-in visitors redirect to Overview.**
 

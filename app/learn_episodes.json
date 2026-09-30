@@ -1,0 +1,177 @@
+{
+  "series": {
+    "title": "Options 101: options explained in plain English",
+    "subhead": "Calls, puts, strike, expiration, and premium — the short version, in that order.",
+    "description": "Options explained in plain English: what an option is, calls and puts, and how strike, expiration, and premium fit together.",
+    "cta_heading": "See which option strategies actually work for you",
+    "cta_button": "Start your free 30-day trial",
+    "cta_note": "Full access · No credit card",
+    "disclaimer": "For learning only · not investment advice."
+  },
+  "episodes": [
+    {
+      "slug": "what-is-an-option",
+      "number": 1,
+      "title": "What is an option?",
+      "summary": "An option is like a price lock you pay a small fee for.",
+      "youtube_id": null,
+      "duration": "6 min",
+      "thumbnail": null,
+      "vocab": ["Option", "Underlying", "Premium", "Contract"],
+      "chapters": [
+        {"t": 0, "label": "A price lock"},
+        {"t": 80, "label": "The fee you pay"},
+        {"t": 160, "label": "You can walk away"},
+        {"t": 240, "label": "Where this series goes"}
+      ],
+      "recap": "An option is a contract on a stock or ETF. That stock or ETF is the underlying. You pay a small fee, called the premium, for the right to buy or sell the underlying at a locked price before a deadline. You do not have to use the right.\n\nIf the lock never becomes useful, you can let the contract end. The fee is what you spent. If it does become useful, you can use the contract or sell it to someone else before the deadline.\n\nThat is the whole idea. Later episodes name the two directions, calls and puts, then the locked price, the deadline, and why one standard contract covers 100 shares.",
+      "shorts": [
+        {"youtube_id": null, "title": "An option is a price lock"},
+        {"youtube_id": null, "title": "What the premium is"}
+      ],
+      "published": true
+    },
+    {
+      "slug": "calls-and-puts",
+      "number": 2,
+      "title": "Calls and puts",
+      "summary": "A call is the right to buy. A put is the right to sell.",
+      "youtube_id": null,
+      "duration": "7 min",
+      "thumbnail": null,
+      "vocab": ["Call", "Put", "Long", "Short"],
+      "chapters": [
+        {"t": 0, "label": "Two directions"},
+        {"t": 70, "label": "A call is the right to buy"},
+        {"t": 150, "label": "A put is the right to sell"},
+        {"t": 230, "label": "Buyer and seller"}
+      ],
+      "recap": "A call is the right to buy the underlying at the locked price. A put is the right to sell it at the locked price. Same kind of contract, opposite direction.\n\nThe buyer pays the premium and holds the right. The seller collects the premium and takes on the obligation if the buyer uses the contract. Long means you bought. Short means you sold.\n\nYou will see both words on every option ticket. They name the two sides of the contract. They are not instructions about what to do next.",
+      "shorts": [
+        {"youtube_id": null, "title": "Call or put?"}
+      ],
+      "published": true
+    },
+    {
+      "slug": "strike-expiration-premium",
+      "number": 3,
+      "title": "Strike, expiration, premium",
+      "summary": "The locked price, the deadline, and the fee — and why one contract means 100 shares.",
+      "youtube_id": null,
+      "duration": "8 min",
+      "thumbnail": null,
+      "vocab": ["Strike", "Expiration", "Premium", "Expires worthless"],
+      "chapters": [
+        {"t": 0, "label": "Strike: the locked price"},
+        {"t": 60, "label": "Expiration: the deadline"},
+        {"t": 130, "label": "Premium: the fee"},
+        {"t": 200, "label": "One contract is 100 shares"},
+        {"t": 270, "label": "Expires worthless"}
+      ],
+      "recap": "Three words describe almost every option. The strike is the locked price. The expiration is the deadline. The premium is the fee you pay, or collect, for the contract.\n\nOne standard contract covers 100 shares. A $1.50 premium is $1.50 per share, so the contract is $150 before fees. Brokers usually show both the per-share price and the contract total. Multiply the quoted premium by 100 when you want the dollars for one contract.\n\nExpires worthless means the deadline arrived and the right was not worth using. The contract settles at zero. The buyer’s premium is spent. The seller keeps the premium they were paid. The contract simply ends.",
+      "shorts": [
+        {"youtube_id": null, "title": "Why one contract is 100 shares"},
+        {"youtube_id": null, "title": "Expires worthless"}
+      ],
+      "published": true
+    },
+    {
+      "slug": "buying-and-selling",
+      "number": 4,
+      "title": "Buying and selling",
+      "summary": "How the buyer and the seller sit on opposite sides of the same contract.",
+      "youtube_id": null,
+      "duration": null,
+      "thumbnail": null,
+      "vocab": [],
+      "chapters": [],
+      "recap": "",
+      "shorts": [],
+      "published": false
+    },
+    {
+      "slug": "covered-calls",
+      "number": 5,
+      "title": "Covered calls",
+      "summary": "A short call with shares set aside behind it.",
+      "youtube_id": null,
+      "duration": null,
+      "thumbnail": null,
+      "vocab": [],
+      "chapters": [],
+      "recap": "",
+      "shorts": [],
+      "published": false
+    },
+    {
+      "slug": "cash-secured-puts",
+      "number": 6,
+      "title": "Cash-secured puts",
+      "summary": "A short put with cash set aside for the shares.",
+      "youtube_id": null,
+      "duration": null,
+      "thumbnail": null,
+      "vocab": [],
+      "chapters": [],
+      "recap": "",
+      "shorts": [],
+      "published": false
+    },
+    {
+      "slug": "spreads",
+      "number": 7,
+      "title": "Spreads",
+      "summary": "Two contracts used together, so the risk has a boundary.",
+      "youtube_id": null,
+      "duration": null,
+      "thumbnail": null,
+      "vocab": [],
+      "chapters": [],
+      "recap": "",
+      "shorts": [],
+      "published": false
+    },
+    {
+      "slug": "assignment-and-exercise",
+      "number": 8,
+      "title": "Assignment and exercise",
+      "summary": "What it means when the right in the contract is actually used.",
+      "youtube_id": null,
+      "duration": null,
+      "thumbnail": null,
+      "vocab": [],
+      "chapters": [],
+      "recap": "",
+      "shorts": [],
+      "published": false
+    },
+    {
+      "slug": "the-greeks",
+      "number": 9,
+      "title": "The Greeks, lightly",
+      "summary": "Delta, theta, and the other words that show up on an option chain.",
+      "youtube_id": null,
+      "duration": null,
+      "thumbnail": null,
+      "vocab": [],
+      "chapters": [],
+      "recap": "",
+      "shorts": [],
+      "published": false
+    },
+    {
+      "slug": "reading-a-position",
+      "number": 10,
+      "title": "Reading a position",
+      "summary": "How one option shows up once it is in an account.",
+      "youtube_id": null,
+      "duration": null,
+      "thumbnail": null,
+      "vocab": [],
+      "chapters": [],
+      "recap": "",
+      "shorts": [],
+      "published": false
+    }
+  ]
+}

@@ -524,6 +524,15 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_usage_events_user_created
         ON usage_events (user_id, created_at DESC)
         """,
+        # Options 101 resume point. One small JSON blob per account.
+        # The shared demo user never writes here.
+        """
+        CREATE TABLE IF NOT EXISTS learn_progress (
+            user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            progress    JSONB NOT NULL,
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
         # Account groups — user-defined labels (kids / sara / 401ks).
         # Membership is tenant-addressed so colliding "Schwab Account"
         # labels don't fuse. An account can sit in many groups; the

@@ -1343,6 +1343,9 @@
             {% else %}
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
+                        <a class="nav-link{% if request.endpoint in ('learn_index', 'learn_episode') %} active{% endif %}" href="{{ url_for('learn_index') }}">Learn</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pricing') }}">Pricing</a>
                     </li>
                     <li class="nav-item">
@@ -1579,6 +1582,7 @@
                     {% if signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}
                 </a>
                 {% endif %}
+                <a href="{{ url_for('learn_index') }}">Learn</a>
                 <a href="{{ url_for('pricing') }}">Pricing</a>
                 <a href="{{ url_for('faq') }}">FAQ</a>
             </div>
@@ -1771,6 +1775,9 @@
             });
         }
     </script>
+    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode') %}
+    {% include "learn/_progress.html" %}
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

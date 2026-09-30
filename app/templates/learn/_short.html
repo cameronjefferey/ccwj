@@ -1,0 +1,25 @@
+<div class="learn-short">
+    <div class="learn-short-frame">
+        {% if short.watchable %}
+        <div class="yt-lite yt-lite-short"
+             role="button"
+             tabindex="0"
+             aria-label="Play {{ short.title }}"
+             data-title="{{ short.title }}"
+             data-src="{{ short.embed_src }}">
+            {% if short.thumb %}
+            <img src="{{ short.thumb }}" alt="" width="480" height="360" loading="lazy">
+            {% endif %}
+            <span class="yt-play" aria-hidden="true"></span>
+        </div>
+        {% else %}
+        <div>
+            <p class="learn-soon">Coming soon</p>
+            <p class="learn-short-title">{{ short.title }}</p>
+        </div>
+        {% endif %}
+    </div>
+    {% if short.watchable %}
+    <p class="learn-short-title">{{ short.title }}</p>
+    {% endif %}
+</div>
