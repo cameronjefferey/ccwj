@@ -289,7 +289,7 @@
                 {% if summary.change_in_range.abs > 0 %}kpi-delta-pos
                 {% elif summary.change_in_range.abs < 0 %}kpi-delta-neg
                 {% else %}kpi-delta-flat{% endif %}">
-                {% if privacy_mode %}••••{% else %}{{ '+' if summary.change_in_range.abs > 0 }}${{ "{:,.0f}".format(summary.change_in_range.abs) }}{% endif %}
+                {% if privacy_mode %}••••{% else %}{{ money(summary.change_in_range.abs, 0, true) }}{% endif %}
             </div>
             <div class="kpi-meta">
                 {% if summary.change_in_range.pct is not none %}
@@ -321,7 +321,7 @@
                 {% if summary.change_90d.abs > 0 %}kpi-delta-pos
                 {% elif summary.change_90d.abs < 0 %}kpi-delta-neg
                 {% else %}kpi-delta-flat{% endif %}">
-                {% if privacy_mode %}••••{% else %}{{ '+' if summary.change_90d.abs > 0 }}${{ "{:,.0f}".format(summary.change_90d.abs) }}{% endif %}
+                {% if privacy_mode %}••••{% else %}{{ money(summary.change_90d.abs, 0, true) }}{% endif %}
             </div>
             <div class="kpi-meta">
                 {% if summary.change_90d.pct is not none %}
@@ -381,7 +381,7 @@
             <div class="income-value
                 {% if income_panel.net_deposits > 0 %}kpi-delta-pos
                 {% elif income_panel.net_deposits < 0 %}kpi-delta-neg{% endif %}">
-                {% if privacy_mode %}••••{% else %}{{ '+' if income_panel.net_deposits > 0 }}${{ "{:,.2f}".format(income_panel.net_deposits) }}{% endif %}
+                {% if privacy_mode %}••••{% else %}{{ money(income_panel.net_deposits, 2, true) }}{% endif %}
             </div>
             <div class="income-meta">Money you moved in (+) or out (−)</div>
         </div>
@@ -394,7 +394,7 @@
             <div class="income-value
                 {% if income_panel.dividends > 0 %}kpi-delta-pos
                 {% elif income_panel.dividends < 0 %}kpi-delta-neg{% endif %}">
-                {{ '+' if income_panel.dividends > 0 }}${{ "{:,.2f}".format(income_panel.dividends) }}
+                {{ money(income_panel.dividends, 2, true) }}
             </div>
             <div class="income-meta">From cash &amp; special dividends</div>
         </div>
@@ -406,7 +406,7 @@
             <div class="income-value
                 {% if income_panel.interest_net > 0 %}kpi-delta-pos
                 {% elif income_panel.interest_net < 0 %}kpi-delta-neg{% endif %}">
-                {{ '+' if income_panel.interest_net > 0 }}${{ "{:,.2f}".format(income_panel.interest_net) }}
+                {{ money(income_panel.interest_net, 2, true) }}
             </div>
             <div class="income-meta">Credit interest minus margin interest</div>
         </div>

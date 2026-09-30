@@ -2924,6 +2924,10 @@ def _build_position_breakdown(attribution_df, strategy_by_symbol, *, week_start=
             "sector": str(r.get("sector") or "Unknown") or "Unknown",
             "subsector": str(r.get("subsector") or "Unknown") or "Unknown",
         })
+        from app.sector_labels import classify_symbol
+        _sec, _sub = classify_symbol(sym, rows[-1]["sector"], rows[-1]["subsector"])
+        rows[-1]["sector"] = _sec
+        rows[-1]["subsector"] = _sub
 
     # Daily Review scope: open positions + positions closed this week.
     # ``last_activity_date`` is the actual close_date for Closed symbols

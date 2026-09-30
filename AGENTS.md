@@ -187,10 +187,14 @@ The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', 
 callers don't break.
 
 What's working:
-- Session hero: brand and the Group / Account filters sit in the dark
+- Session hero: brand and the Group filter sit in the dark
  bar (same bar on Today, Positions, Accounts, Strategies, Sectors,
  Trader Profile, Position Detail, Earnings, and Insights; the global
- nav stays until that header replaces it). Date of the close, then total value, the last close's move
+ nav stays until that header replaces it). The Account control is in
+ the app header when the user has two or more accounts. It shows
+ nicknames only, stays hidden for a single account, writes `?tenants=`,
+ and a cookie restores that shareable URL on the next visit. Groups
+ stay on the page toolbar. Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
  This week, and percent invested. A one-line takeaway only claims what
  those numbers and the snapshot benchmark rows support. Pills name the
@@ -358,6 +362,18 @@ What's working:
   .total_fees` — sourced from `int_option_contracts.total_fees` for
   options and the new `int_equity_sessions.total_fees` for equity, both
   informational-only for the same double-subtract reason).
+- **Covered call runs (Sep 2026).** A share lot and the calls written
+  against it are one run, from the buy (or a put assignment, for a
+  wheel) through the sale or assignment, or through today if the shares
+  are still held. The card under the position review lists each call
+  (strike, expiry, premium, outcome: expired / closed / assigned /
+  rolled / open), a running premium total, the share result, and one
+  net for the whole run. Broker fees are left out of that math and the
+  card says so. Multiple runs, partial sales, and partial coverage stay
+  on the same lot until the shares are flat. Built in
+  `app/covered_call_runs.py` from the fills the page already loaded
+  (tenant-scoped, before the leg filter so one leg click does not split
+  the cycle). Pinned by `tests/test_covered_call_runs.py`.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
@@ -832,18 +848,25 @@ Users trade multiple accounts. All logic must:
 Users can **group** accounts (kids / sara / 401ks) on Settings → Accounts & data.
 Membership is many-to-many on `tenant_id`; `?groups=` is the union of selected
 groups' members, then intersected with `?account=` / `?tenant=` / `?tenants=`.
-The Groups and Account controls are multi-select dropdowns to the left of
-other filters, each with Apply and Reset. Account values are `tenant_id`
-(`?tenants=`). Groups always lists every group (picking an account must not
-hide the others). Selecting groups limits the account list to members.
+The Account control lives in the app header. It lists nicknames only
+(no broker masks or account numbers) and is hidden when the user has
+one account. It writes `?tenants=` so a filtered view stays shareable.
+A cookie (`ht_tenants`) restores that URL on a later visit that has no
+account query. An explicit `?tenants=` / `?tenant=` / `?account=` on a
+link wins and does not overwrite the cookie. `?scope=all` (Reset)
+clears the cookie and the filter. Groups stay a multi-select on the
+page toolbar, to the left of the other filters, with Apply and Reset.
+Account values are `tenant_id` (`?tenants=`). Groups always lists every
+group (picking an account must not hide the others). Selecting groups
+limits the account list to members.
 With two or more accounts and no groups yet, the Groups slot is a quiet
 "Group accounts" link to Settings → Accounts & data (`#account-groups`) —
 not an empty dropdown. Never key groups on the SnapTrade `"Schwab Account"`
 label. In-page links (status pills, movers, pagination, Cmd+K, the logo)
 must keep `?tenants=` / `?groups=` via the `scoped_url` template global —
-plain `url_for` drops the picker. Reset links keep using `url_for` so they
-actually clear. Drill-ins to one physical account use `tenant=<tenant_id>`,
-never the colliding display label.
+plain `url_for` drops the picker. Reset links use `url_for(..., scope='all')`
+so they clear the saved account filter as well as the query. Drill-ins to
+one physical account use `tenant=<tenant_id>`, never the colliding display label.
 
 ### 4. Performance Rules
 

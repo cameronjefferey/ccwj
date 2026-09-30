@@ -158,7 +158,8 @@
           // A payload from before nicknames shipped has no accounts array.
           // Refetch so Cmd+K can find "Keeley" instead of serving that cache.
           if (parsed && parsed.ts && Date.now() - parsed.ts < 10 * 60 * 1000
-              && Array.isArray(parsed.symbols) && Array.isArray(parsed.accounts)) {
+              && Array.isArray(parsed.symbols) && parsed.symbols.length
+              && Array.isArray(parsed.accounts)) {
             symbols = parsed.symbols;
             accounts = parsed.accounts;
             return Promise.resolve(symbols);
@@ -171,7 +172,9 @@
       .then(function (j) {
         symbols = (j && j.symbols) || [];
         accounts = (j && j.accounts) || [];
-        if (SYMBOL_CACHE_KEY) {
+        // An empty book is usually a failed or not-yet-built response.
+        // Caching it for 10 minutes makes every ticker search miss.
+        if (SYMBOL_CACHE_KEY && symbols.length) {
           try {
             sessionStorage.setItem(
               SYMBOL_CACHE_KEY,
@@ -186,7 +189,8 @@
 
   function score(name, q) {
     // Prefix > word-boundary > substring. Case-insensitive.
-    var n = name.toLowerCase(), s = q.toLowerCase();
+    var n = (name || "").toLowerCase(), s = q.toLowerCase();
+    if (!n) return -1;
     if (n === s) return 0;
     if (n.startsWith(s)) return 1;
     if (n.indexOf(" " + s) >= 0) return 2;
@@ -194,9 +198,70 @@
     return -1;
   }
 
+  function itemScore(item, q) {
+    var best = score(item.s, q);
+    if (item.n) {
+      var named = score(item.n, q);
+      if (named >= 0 && (best < 0 || named < best)) best = named;
+    }
+    return best;
+  }
+
+  function harvestPageSymbols() {
+    // Symbols already on this page (tab strip, position rows) so a
+    // search works before /api/nav/symbols returns.
+    var found = [];
+    var seen = {};
+    var nodes = document.querySelectorAll("[data-symbol]");
+    for (var i = 0; i < nodes.length; i++) {
+      var raw = (nodes[i].getAttribute("data-symbol") || "").trim();
+      if (!raw || seen[raw]) continue;
+      seen[raw] = true;
+      var openAttr = nodes[i].getAttribute("data-open");
+      found.push({
+        s: raw,
+        open: openAttr === "1" || openAttr === "true",
+        n: nodes[i].getAttribute("data-name") || ""
+      });
+    }
+    return found;
+  }
+
+  function mergeSymbols(primary, extra) {
+    var seen = {};
+    var out = [];
+    function add(list) {
+      (list || []).forEach(function (x) {
+        if (!x || !x.s) return;
+        var key = String(x.s);
+        if (seen[key]) {
+          if (x.n && !seen[key].n) seen[key].n = x.n;
+          if (x.open) seen[key].open = true;
+          return;
+        }
+        var copy = { s: x.s, open: !!x.open, n: x.n || "" };
+        seen[key] = copy;
+        out.push(copy);
+      });
+    }
+    add(primary);
+    add(extra);
+    return out;
+  }
+
   function render(q) {
     q = (q || "").trim();
-    var syms = symbols || [];
+    var syms = symbols;
+    if (syms === null) {
+      var harvested = harvestPageSymbols();
+      if (q && !harvested.length) {
+        results = [];
+        selected = 0;
+        list.innerHTML = '<div class="ht-palette-empty">Searching…</div>';
+        return;
+      }
+      syms = harvested;
+    }
     var items = [];
     if (!q) {
       // Empty query: open positions first, then pages.
@@ -207,8 +272,8 @@
     } else {
       var scored = [];
       syms.forEach(function (x) {
-        var sc = score(x.s, q);
-        if (sc >= 0) scored.push({ sc: sc - (x.open ? 0.5 : 0), item: { s: x.s, href: "/position/" + encodeURIComponent(x.s), kind: x.open ? "open" : "closed" } });
+        var sc = itemScore(x, q);
+        if (sc >= 0) scored.push({ sc: sc - (x.open ? 0.5 : 0), item: { s: x.s, n: x.n || "", href: "/position/" + encodeURIComponent(x.s), kind: x.open ? "open" : "closed" } });
       });
       (accounts || []).forEach(function (a) {
         var sc = score(a.s, q);
@@ -272,8 +337,15 @@
     if (!overlay) buildOverlay();
     overlay.classList.add("show");
     input.value = "";
-    fetchSymbols().then(function () { render(""); });
-    render(""); // immediate render with whatever we have
+    // Keep the text in the box. Resetting to an empty query after the
+    // fetch used to drop a ticker typed while the list was in flight,
+    // so Ctrl+K "RKLB" showed the default page list instead of RKLB.
+    fetchSymbols().then(function () {
+      var harvested = harvestPageSymbols();
+      if (harvested.length) symbols = mergeSymbols(symbols || [], harvested);
+      if (overlay && overlay.classList.contains("show")) render(input.value);
+    });
+    render(input.value);
     setTimeout(function () { input.focus(); }, 10);
   }
 

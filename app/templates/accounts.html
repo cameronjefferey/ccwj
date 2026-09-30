@@ -43,7 +43,7 @@
             {% include "_account_scope_filters.html" %}
             <input type="hidden" name="range" value="{{ selected_range or 'ALL' }}">
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('accounts') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('accounts', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -140,7 +140,7 @@
     </div>
     <div class="col">
         <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Unrealized P&amp;L</div>
+            <div class="kpi-label">{{ term('Unrealized P&L') }}</div>
             <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
                 {{ money(kpis.unrealized_pnl, 0) }}
             </div>
@@ -170,7 +170,10 @@
        time frame changes (see updateCards() in the scripts block). #}
     <div class="col">
         <div class="card kpi-card p-3 text-center" id="kpiRealized">
-            <div class="kpi-label">{{ 'Realized (period)' if period_kpis else 'Realized P&L' }}</div>
+            <div class="kpi-label-row">
+                <div class="kpi-label">{{ 'Realized (period)' if period_kpis else 'Realized P&L' }}</div>
+                {{ term_mark('Realized P&L') }}
+            </div>
             <div class="kpi-value {{ 'text-positive' if (period_kpis.realized if period_kpis else kpis.realized_pnl) >= 0 else 'text-negative' }}">
                 {{ money(period_kpis.realized if period_kpis else kpis.realized_pnl, 0) }}
             </div>
@@ -280,12 +283,12 @@
                         <th>Account</th>
                         <th>Strategy</th>
                         <th class="sortable" data-sort="num" title="Realized + unrealized + dividends. Same number as Total Return on Positions.">Total Return</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Win Rate</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Win Rate') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Trades</th>
                         <th class="sortable" data-sort="num" data-m="hide">W / L</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Premium') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
                     </tr>
                 </thead>
@@ -382,7 +385,7 @@
                         <th class="sortable text-end" data-sort="num">G/L Stock</th>
                         <th class="sortable text-end" data-sort="num">G/L Option</th>
                         <th class="sortable text-end" data-sort="num">Net</th>
-                        <th class="sortable text-end" data-sort="num" data-m="hide">Win rate</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">{{ term('Win rate') }}</th>
                     </tr>
                 </thead>
                 <tbody>

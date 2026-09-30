@@ -12,11 +12,11 @@
 {% set _a_names = namespace(names=[]) %}
 {% for c in scope_account_choices %}
     {% if c.tenant_id in selected_tenant_ids %}
-        {% set _a_names.names = _a_names.names + [c.label | account_label(c.tenant_id)] %}
+        {% set _a_names.names = _a_names.names + [c.label | privacy_account(c.tenant_id)] %}
     {% endif %}
 {% endfor %}
 
-{% if account_groups %}
+{% if not header_account_only and account_groups %}
 <div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="groups">
     <label class="lblh">Groups</label>
     <div class="dropdown">
@@ -54,7 +54,7 @@
     </div>
     {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
 </div>
-{% elif scope_account_choices|length > 1 %}
+{% elif not header_account_only and scope_account_choices|length > 1 %}
 {# Same Groups slot, no fake dropdown. Only if they have accounts to group. #}
 <div class="ht-ms-dd">
     <span class="lblh">Groups</span>
@@ -63,7 +63,16 @@
 {% endif %}
 
 {% set _show_acct = account_filter_always|default(false) %}
-{% if visible_account_choices and (visible_account_choices|length > 1 or _show_acct or selected_tenant_ids) %}
+{# Multi-account users get the Account control in the app header.
+   Page toolbars keep Groups and a hidden tenants field so other
+   filters still submit the current scope. #}
+{% set _header_has_picker = scope_account_choices|length > 1 %}
+{% if tenants_query and not header_account_only %}
+<input type="hidden" name="tenants" value="{{ tenants_query }}">
+{% endif %}
+{% if header_account_only or not _header_has_picker %}
+{% set _acct_choices = scope_account_choices if header_account_only else visible_account_choices %}
+{% if _acct_choices and (_acct_choices|length > 1 or _show_acct or selected_tenant_ids) %}
 <div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="tenants">
     <label class="lblh">Account</label>
     <div class="dropdown">
@@ -82,14 +91,14 @@
             {{ _a_names.names|length }} accounts
             {% endif %}
         </button>
-        <div class="dropdown-menu ht-ms-menu">
+        <div class="dropdown-menu ht-ms-menu{% if header_account_only %} dropdown-menu-end{% endif %}">
             <div class="ht-ms-list">
-                {% for c in visible_account_choices %}
+                {% for c in _acct_choices %}
                 <div class="ht-ms-item-row">
                 <label class="dropdown-item ht-ms-item">
                     <input type="checkbox" value="{{ c.tenant_id }}"
                            {% if c.tenant_id in selected_tenant_ids %}checked{% endif %}>
-                    <span>{{ c.label | account_label(c.tenant_id) }}</span>
+                    <span>{{ c.label | privacy_account(c.tenant_id) }}</span>
                 </label>
                 {% if account_rename_urls is defined and c.tenant_id in account_rename_urls %}
                 <a class="ht-ms-rename" href="{{ account_rename_urls[c.tenant_id] }}">rename</a>
@@ -103,9 +112,9 @@
             </div>
         </div>
     </div>
-    {% if tenants_query %}<input type="hidden" name="tenants" value="{{ tenants_query }}">{% endif %}
+    {% if header_account_only and tenants_query %}<input type="hidden" name="tenants" value="{{ tenants_query }}">{% endif %}
 </div>
-{% elif scope_account_options is defined and scope_account_options and (scope_account_options|length > 1 or _show_acct) %}
+{% elif not header_account_only and scope_account_options is defined and scope_account_options and (scope_account_options|length > 1 or _show_acct) %}
 <div>
     <label class="lblh">Account</label>
     <select name="account" class="form-select form-select-sm {{ account_select_extra_class|default('') }}"
@@ -117,6 +126,7 @@
         {% endfor %}
     </select>
 </div>
+{% endif %}
 {% endif %}
 {# Apply / Reset live in static/js/scope-filters.js (capture-phase).
    An inline bubble handler here used to submit after the menu closed

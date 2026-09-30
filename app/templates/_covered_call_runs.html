@@ -1,0 +1,196 @@
+{# One card per covered-call or wheel cycle. Numbers are fees-excluded:
+   premium kept (or collected, if a call is still open) plus the share
+   result. The page says so under the list. #}
+{% if covered_call_runs %}
+<section class="ht-runs card stat-card p-4 mb-4" id="covered-call-runs" aria-label="Covered call runs">
+    <h6 class="fw-bold mb-1">Covered call runs</h6>
+    <p class="text-muted small mb-3">
+        Each run is the shares and the calls written against them, from the
+        buy through the sale or assignment. A wheel starts when a put is
+        assigned into the shares.
+    </p>
+    {% for run in covered_call_runs %}
+    <article class="ht-run">
+        <header class="ht-run-top">
+            <div>
+                <div class="ht-run-kicker">{{ run.label }}{% if run.when %} · {{ run.when }}{% endif %}</div>
+                {% if run.show_account and run.account_label %}
+                <div class="ht-run-acct">{{ run.account_label }}</div>
+                {% endif %}
+                <p class="ht-run-share">{{ run.share_sentence }}</p>
+            </div>
+            <span class="ht-run-status">{{ run.status_label }}</span>
+        </header>
+
+        <div class="ht-run-head" aria-hidden="true">
+            <span>Call</span>
+            <span>Outcome</span>
+            <span>Premium</span>
+            <span>Running premium</span>
+        </div>
+        <div class="ht-run-timeline" role="table">
+            {% for call in run.calls %}
+            <div class="ht-run-call" role="row">
+                <div role="cell">
+                    <span class="lbl">Call</span>
+                    <span class="ht-run-title ht-num">{{ call.title }}</span>
+                    {% if call.expiry_label %}
+                    <span class="ht-run-exp">exp {{ call.expiry_label }}</span>
+                    {% endif %}
+                    {% if call.partial_note %}
+                    <span class="ht-run-part">{{ call.partial_note }}</span>
+                    {% endif %}
+                </div>
+                <div role="cell">
+                    <span class="lbl">Outcome</span>
+                    <span class="ht-run-pill ht-run-pill-{{ call.outcome }}">{{ call.outcome_label }}</span>
+                </div>
+                <div role="cell" class="ht-run-money">
+                    <span class="lbl">Premium</span>
+                    <span class="ht-num {{ 'text-positive' if call.premium > 0 else 'text-negative' if call.premium < 0 else 'text-muted' }}">{{ money(call.premium, 2, true) }}</span>
+                </div>
+                <div role="cell" class="ht-run-money">
+                    <span class="lbl">Running premium</span>
+                    <span class="ht-num {{ 'text-positive' if call.running_premium > 0 else 'text-negative' if call.running_premium < 0 else 'text-muted' }}">{{ money(call.running_premium, 2, true) }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="ht-run-totals">
+            <div>
+                <span class="ht-run-l">{{ run.premium_label }}</span>
+                <span class="ht-num ht-run-v {{ 'text-positive' if run.premium_total > 0 else 'text-negative' if run.premium_total < 0 else '' }}">{{ money(run.premium_total, 2, true) }}</span>
+            </div>
+            <div>
+                <span class="ht-run-l">Share result</span>
+                <span class="ht-num ht-run-v {{ 'text-positive' if run.share_pnl > 0 else 'text-negative' if run.share_pnl < 0 else '' }}">{{ money(run.share_pnl, 2, true) }}</span>
+                {% if run.share_note %}
+                <span class="ht-run-sub">{{ run.share_note }}</span>
+                {% endif %}
+            </div>
+            <div class="ht-run-net">
+                <span class="ht-run-l">{{ run.net_label }}</span>
+                <span class="ht-num ht-run-v {{ 'text-positive' if run.net > 0 else 'text-negative' if run.net < 0 else '' }}">{{ money(run.net, 2, true) }}</span>
+            </div>
+        </div>
+        {% if run.has_open_call %}
+        <p class="ht-run-footnote">Premium on an open call is what you collected. It is not locked in yet.</p>
+        {% endif %}
+    </article>
+    {% endfor %}
+    <p class="text-muted small mb-0">Broker fees are not included in these numbers.</p>
+</section>
+<style>
+    .ht-runs { background: var(--ht-surface); border: 1px solid var(--ht-line); color: var(--ht-ink); }
+    .ht-run {
+        background: var(--ht-surface-2);
+        border: 1px solid var(--ht-line);
+        border-left: 3px solid var(--ht-blue);
+        border-radius: 10px;
+        padding: 0.9rem 1rem 0.75rem;
+        margin-bottom: 0.85rem;
+    }
+    .ht-run-top { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; }
+    .ht-run-kicker {
+        font-size: 0.78rem;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+        color: var(--ht-blue);
+    }
+    .ht-run-acct { font-size: 0.75rem; color: var(--ht-muted); margin-top: 0.1rem; }
+    .ht-run-share { margin: 0.35rem 0 0; font-size: 0.95rem; color: var(--ht-ink); }
+    .ht-run-status {
+        flex: none;
+        font-size: 0.68rem;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--ht-muted);
+        border: 1px solid var(--ht-line);
+        border-radius: 999px;
+        padding: 0.15rem 0.5rem;
+    }
+    .ht-run-head, .ht-run-call {
+        display: grid;
+        grid-template-columns: minmax(8.5rem, 1.7fr) 6.5rem 7rem 8.5rem;
+        gap: 0.65rem;
+        align-items: center;
+    }
+    .ht-run-head {
+        margin-top: 0.85rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid var(--ht-line);
+        font-size: 0.66rem;
+        font-weight: 650;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--ht-muted);
+    }
+    .ht-run-head span:nth-child(n+3), .ht-run-money { text-align: right; }
+    .ht-run-call { padding: 0.55rem 0; border-bottom: 1px solid var(--ht-line); }
+    .ht-run-call:last-child { border-bottom: none; }
+    .ht-run-title { display: block; font-size: 0.92rem; }
+    .ht-run-exp, .ht-run-part, .ht-run-sub, .ht-run-footnote {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--ht-muted);
+    }
+    .ht-run-part { margin-top: 0.1rem; }
+    .ht-run-pill {
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 650;
+        border-radius: 999px;
+        padding: 0.12rem 0.5rem;
+        background: var(--ht-mint-wash);
+        color: var(--ht-ink);
+    }
+    .ht-run-pill-open { color: var(--ht-blue); }
+    .ht-run-totals {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+        padding-top: 0.7rem;
+        border-top: 1px solid var(--ht-line);
+    }
+    .ht-run-l {
+        display: block;
+        font-size: 0.66rem;
+        font-weight: 650;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--ht-muted);
+        margin-bottom: 0.15rem;
+    }
+    .ht-run-v { font-size: 1.05rem; }
+    .ht-run-net {
+        background: var(--ht-mint-wash);
+        border-radius: 8px;
+        padding: 0.45rem 0.6rem;
+    }
+    .ht-run-footnote { margin: 0.55rem 0 0; }
+    .ht-run-call .lbl { display: none; }
+    @media (max-width: 700px) {
+        .ht-run-head { display: none; }
+        .ht-run-call {
+            grid-template-columns: 1fr 1fr;
+            gap: 0.45rem 0.75rem;
+            padding: 0.75rem 0;
+        }
+        .ht-run-call .lbl {
+            display: block;
+            font-size: 0.64rem;
+            font-weight: 650;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--ht-muted);
+            margin-bottom: 0.1rem;
+        }
+        .ht-run-money { text-align: left; }
+        .ht-run-totals { grid-template-columns: 1fr; }
+        .ht-run { padding: 0.8rem 0.75rem 0.65rem; }
+    }
+</style>
+{% endif %}

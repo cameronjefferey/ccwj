@@ -20,7 +20,7 @@
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('today_view') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('today_view', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -142,7 +142,7 @@
                     {% endif %}
                 </td>
                 <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
-                    {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                    {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}
                 </td>
                 <td>
                     {% with symbol=t.symbol, tenant_id=t.tenant_id, open_date=t.leg_open_date, tags=t.tags %}
@@ -225,7 +225,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
-                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
                     <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
@@ -257,7 +257,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
-                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
                     <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>

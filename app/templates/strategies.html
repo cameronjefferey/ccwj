@@ -159,7 +159,7 @@
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('strategies') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('strategies', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -192,7 +192,7 @@
             {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none) }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none, scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -232,7 +232,7 @@
         {% if summary.overall_win_rate is not none %}
         <div class="hero-stat">
             <div class="hero-stat-value">{{ "%.0f"|format(summary.overall_win_rate) }}%</div>
-            <div class="hero-stat-label">Win Rate</div>
+            <div class="hero-stat-label">{{ term('Win Rate') }}</div>
         </div>
         {% endif %}
         {# Net Premium hero stat removed — for options traders the sign of
@@ -263,11 +263,11 @@
         <div class="col focus-stat" style="border-right: 1px solid #243049">
             {% if focus_strategy.win_rate is not none %}
             <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.win_rate) }}%</div>
-            <div class="focus-stat-label">Win Rate</div>
+            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
             <div class="focus-stat-meta">{{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L</div>
             {% else %}
             <div class="focus-stat-value text-muted">&mdash;</div>
-            <div class="focus-stat-label">Win Rate</div>
+            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
             {% endif %}
         </div>
         <div class="col focus-stat" style="border-right: 1px solid #243049">
@@ -279,7 +279,7 @@
             <div class="focus-stat-value {{ 'text-positive' if (focus_strategy.premium_received - focus_strategy.premium_paid) >= 0 else 'text-negative' }}">
                 {{ money(focus_strategy.premium_received - focus_strategy.premium_paid, 0) }}
             </div>
-            <div class="focus-stat-label">Net Premium</div>
+            <div class="focus-stat-label">{{ term('Net Premium') }}</div>
         </div>
         {% endif %}
     </div>
@@ -298,8 +298,8 @@
                 <tr>
                     <th>Type</th>
                     <th class="text-end">Total Return</th>
-                    <th class="text-end">Realized</th>
-                    <th class="text-end">Unrealized</th>
+                    <th class="text-end">{{ term('Realized') }}</th>
+                    <th class="text-end">{{ term('Unrealized') }}</th>
                     <th data-m="hide">Detail</th>
                 </tr>
             </thead>
@@ -378,7 +378,7 @@
 {# DTE breakdown #}
 {% if focus_dte_breakdown %}
 <div class="data-section">
-    <div class="section-label">Performance by DTE</div>
+    <div class="section-label">Performance by {{ term('DTE') }}</div>
     {% for d in focus_dte_breakdown %}
     <div class="dte-bar-row">
         <div class="dte-label">{{ d.dte_bucket }}</div>
@@ -459,7 +459,7 @@
             <tr>
                 <th class="sortable" data-sort="str">Account</th>
                 <th class="sortable text-end" data-sort="num">Trades</th>
-                <th class="sortable text-end" data-sort="num">Win Rate</th>
+                <th class="sortable text-end" data-sort="num">{{ term('Win Rate') }}</th>
                 <th class="sortable text-end" data-sort="num">Total Return</th>
             </tr>
         </thead>
@@ -511,7 +511,7 @@
         </div>
         <div class="strat-card-stats">
             <div>
-                <div class="sc-stat-label">Win Rate</div>
+                <div class="sc-stat-label">{{ term('Win Rate') }}</div>
                 <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
             </div>
             <div>

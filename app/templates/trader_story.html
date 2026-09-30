@@ -312,7 +312,7 @@
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('trader_story') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('trader_story', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}

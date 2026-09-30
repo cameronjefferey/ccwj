@@ -133,9 +133,22 @@ def _privacy_hide_filter(value):
     return mask_secret(value)
 
 
+def _privacy_account_filter(name, tenant_id=None):
+    """Mask a picker nickname. Leave it unchanged when privacy mode is off.
+
+    Header and upload pickers already show the nickname (#156). Running
+    them through ``account_label`` would swap that for the disambiguated
+    broker label. This filter only applies Account N.
+    """
+    from app.privacy import mask_account_label
+    masked = mask_account_label(name, tenant_id)
+    return masked if masked is not None else name
+
+
 app.add_template_filter(_privacy_balance_filter, name="privacy_balance")
 app.add_template_filter(_privacy_signed_filter, name="privacy_signed")
 app.add_template_filter(_privacy_hide_filter, name="privacy_hide")
+app.add_template_filter(_privacy_account_filter, name="privacy_account")
 
 
 def friendly_timestamp(value, tz_name=None):
@@ -281,6 +294,12 @@ def _current_year() -> int:
 
 app.add_template_global(_current_year, name="current_year")
 
+from app.glossary import render_term as _render_term
+from app.glossary import render_term_mark as _render_term_mark
+
+app.add_template_global(_render_term, name="term")
+app.add_template_global(_render_term_mark, name="term_mark")
+
 
 @app.context_processor
 def _inject_feature_flags():
@@ -379,6 +398,7 @@ def _inject_feature_flags():
                 get_broker_tenants_for_user as _get_broker_tenants_for_user,
                 list_account_groups as _list_account_groups,
             )
+            from app.account_scope import picker_nickname_choices
             from app.routes import (
                 _account_rename_urls_for_rows,
                 _blank_query_text,
@@ -397,12 +417,9 @@ def _inject_feature_flags():
             _owned_rows = _get_broker_tenants_for_user(current_user.id) or []
             _label_map = _tenant_label_map_for_user(current_user.id) or {}
             account_rename_urls = _account_rename_urls_for_rows(_owned_rows)
-            scope_account_choices = [
-                {"tenant_id": tid, "label": lab}
-                for tid, lab in sorted(
-                    _label_map.items(), key=lambda kv: (kv[1] or "").lower()
-                )
-            ]
+            # Header picker: nicknames only. Masks and "Schwab Account"
+            # stay out of this menu. Table cells still use account_label.
+            scope_account_choices = picker_nickname_choices(_owned_rows)
             try:
                 _args = _req.args
             except Exception:
@@ -788,3 +805,8 @@ from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuil
 from app.privacy import register_privacy_routes
 register_privacy_routes(app)
 from app import share_card  # noqa: F401  registers /share/card.png
+
+# After the session-idle before_request so a timed-out session is logged
+# out before we redirect into a saved account scope.
+from app.account_scope import register_account_scope
+register_account_scope(app)
