@@ -1,8 +1,16 @@
 /*
  * Glossary tooltips (app/glossary.py, class ht-term).
  *
- * Desktop: hover or keyboard focus opens the definition.
- * Phone: tap the "i" toggles it. Escape or a tap outside closes it.
+ * The header word is the control (dotted underline). A separate "i"
+ * is only .ht-term-mark, used where the visible label cannot be the
+ * control.
+ *
+ * Fine pointer: hover or keyboard focus opens the definition. A click
+ * on a sort header or a sort link is left alone so the column still
+ * sorts or the link still navigates.
+ * Coarse pointer: the first tap opens the definition and does not
+ * sort or follow the link. A second tap on that same word does.
+ * Escape, scroll, resize, or a tap outside closes it.
  * The popover is position:fixed so a table's overflow does not clip it.
  */
 (function (root, factory) {
@@ -58,6 +66,28 @@
     });
   }
 
+  // Sort headers and sort links keep their click. The compact "i"
+  // never does — it only exists to open the definition.
+  function keepsClick(btn) {
+    if (!btn || !btn.tagName) return false;
+    if (btn.classList && btn.classList.contains("ht-term-mark")) return false;
+    if (String(btn.tagName).toUpperCase() === "A") return true;
+    return !!(btn.closest && btn.closest("th.sortable"));
+  }
+
+  // prevent/stop: swallow the click. open/close: tooltip state.
+  function clickAction(btn, opts) {
+    var coarse = !!(opts && opts.coarse);
+    var open = !!(opts && opts.open);
+    if (!keepsClick(btn)) {
+      return { prevent: true, stop: true, open: !open, close: !!open };
+    }
+    if (coarse && !open) {
+      return { prevent: true, stop: true, open: true, close: false };
+    }
+    return { prevent: false, stop: false, open: false, close: true };
+  }
+
   function install(doc, win) {
     if (!doc || !doc.documentElement) return;
     if (doc.documentElement.dataset.htTermTips) return;
@@ -72,12 +102,17 @@
     doc.addEventListener("click", function (e) {
       var btn = e.target && e.target.closest && e.target.closest(".ht-term-btn");
       if (btn) {
-        e.preventDefault();
-        e.stopPropagation();
         var tip = btn.closest(".ht-term");
         var open = tip && tip.classList.contains("is-open");
-        closeAll(doc, null);
-        if (!open) openTip(tip);
+        var action = clickAction(btn, { coarse: coarse, open: !!open });
+        if (action.prevent) e.preventDefault();
+        if (action.stop) e.stopPropagation();
+        if (action.open) {
+          closeAll(doc, tip);
+          openTip(tip);
+        } else if (action.close) {
+          closeTip(tip);
+        }
         return;
       }
       if (!e.target.closest || !e.target.closest(".ht-term")) {
@@ -126,5 +161,10 @@
     });
   }
 
-  return { install: install, place: place };
+  return {
+    install: install,
+    place: place,
+    keepsClick: keepsClick,
+    clickAction: clickAction,
+  };
 });
