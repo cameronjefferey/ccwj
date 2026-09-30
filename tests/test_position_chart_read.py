@@ -1,10 +1,14 @@
 """Equity line vs options line on the position chart."""
 import inspect
+import time
 from types import SimpleNamespace
 
 from app.position_chart_read import (
     _SYSTEM,
+    _is_small_sum,
     _too_long,
+    _ungrounded,
+    _waiting_cost,
     chart_path_facts,
     chart_read_sentences,
     review_brief,
@@ -65,6 +69,15 @@ def test_review_brief_is_the_lines_and_the_prompt_picks_no_lesson():
     assert review_brief(markers[:2]) is None
 
 
+def test_review_brief_never_silently_truncates_long_positions():
+    markers = [
+        {"d": f"2026-01-{(i % 28) + 1:02d}", "t": [f"Trade day {i}."]}
+        for i in range(81)
+    ]
+
+    assert review_brief(markers) is None
+
+
 def test_short_or_flat_chart_stays_quiet():
     eq = [0, 10, 20]
     opt = [0, 1, 2]
@@ -73,6 +86,69 @@ def test_short_or_flat_chart_stays_quiet():
     flat_eq = [100] * 20
     moving_opt = [i * 40 for i in range(20)]
     assert chart_path_facts(_series(flat_eq, moving_opt), []) is None
+
+
+def test_small_sum_accepts_two_to_four_distinct_source_amounts():
+    assert _is_small_sum(10, {1, 9})
+    assert _is_small_sum(6, {1, 2, 3})
+    assert _is_small_sum(10, {1, 2, 3, 4})
+    assert not _is_small_sum(10, {10})
+
+
+def test_small_sum_validation_is_bounded_for_long_reviews():
+    amounts = {float(value) for value in range(1, 241)}
+
+    started = time.perf_counter()
+    matched = _is_small_sum(10_000, amounts)
+    elapsed = time.perf_counter() - started
+
+    assert matched is False
+    assert elapsed < 1.0
+
+
+def test_waiting_cost_counts_each_same_day_exit():
+    lines = [{
+        "date": "2026-06-19",
+        "line": (
+            "One contract expired worthless — that close gave up $100 vs holding. "
+            "Another contract expired worthless — that close gave up $200 vs holding."
+        ),
+    }]
+
+    assert _waiting_cost(lines) == 300
+
+
+def test_waiting_cost_does_not_cross_same_day_event_boundaries():
+    lines = [{
+        "date": "2026-06-19",
+        "line": (
+            "One contract finished in the money — that close gave up $900 vs holding. "
+            "Another contract expired worthless — that close gave up $200 vs holding."
+        ),
+    }]
+
+    assert _waiting_cost(lines) == 200
+
+
+def test_canonical_waiting_total_may_sum_more_than_four_exits():
+    lines = [
+        {
+            "date": f"2026-06-{day:02d}",
+            "line": (
+                "The contract expired worthless — that close gave up "
+                f"${amount:,} vs holding."
+            ),
+        }
+        for day, amount in enumerate((100, 200, 300, 400, 500), start=1)
+    ]
+    draft = (
+        "You closed five contracts before expiry. "
+        "Those closes cost $1,500. "
+        "The lesson from this chart is that closing cost $1,500."
+    )
+
+    assert _waiting_cost(lines) == 1_500
+    assert _ungrounded(draft, lines) is None
 
 
 def test_locked_chart_read_never_exposes_paid_remainder():

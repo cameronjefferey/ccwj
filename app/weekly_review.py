@@ -153,6 +153,7 @@ WITH prices AS (
     FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE symbol IN ('SPY', 'QQQ')
       AND date >= @ytd_start
+      AND date <= @as_of
       AND close_price IS NOT NULL AND close_price > 0
 ),
 week_prior AS (
@@ -218,6 +219,7 @@ def _get_market_performance(week_start, today, prefetched_df=None):
             cfg = bigquery.QueryJobConfig(query_parameters=[
                 bigquery.ScalarQueryParameter("week_start", "DATE", week_start),
                 bigquery.ScalarQueryParameter("ytd_start", "DATE", ytd_start),
+                bigquery.ScalarQueryParameter("as_of", "DATE", today),
             ])
             df = cached_query_df(client, MARKET_PERF_QUERY, job_config=cfg, label="market_perf")
         for _, row in df.iterrows():
@@ -338,7 +340,7 @@ WITH prices AS (
     FROM `ccwj-dbt.analytics.stg_daily_prices`
     WHERE symbol IN ('SPY', 'QQQ')
       AND close_price IS NOT NULL AND close_price > 0
-      AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 70 DAY)
+      AND date BETWEEN DATE_SUB(@as_of, INTERVAL 70 DAY) AND @as_of
 ),
 latest AS (
     SELECT symbol, MAX(date) AS latest_date FROM prices GROUP BY symbol
@@ -359,6 +361,24 @@ SELECT
 FROM px
 GROUP BY symbol
 """
+
+
+def _market_context_query_specs(as_of):
+    """Benchmark queries capped to the close displayed by Overview."""
+    market_cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter(
+            "week_start", "DATE", _iso_week_start(as_of)),
+        bigquery.ScalarQueryParameter(
+            "ytd_start", "DATE", date(as_of.year, 1, 1)),
+        bigquery.ScalarQueryParameter("as_of", "DATE", as_of),
+    ])
+    benchmark_cfg = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("as_of", "DATE", as_of),
+    ])
+    return {
+        "benchmark_snapshot": (BENCHMARK_SNAPSHOT_QUERY, benchmark_cfg),
+        "market_perf": (MARKET_PERF_QUERY, market_cfg),
+    }
 
 # Compact labels for the snapshot benchmark rows.
 BENCHMARK_SHORT_LABELS = {"SPY": "S&P 500", "QQQ": "Nasdaq 100"}
@@ -4160,8 +4180,8 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
     Performance-by-Account scorecard. It is not calendar today's ISO
     Monday — on Monday morning that Monday is still ahead of Friday's
     close, and the scorecard copy would name a future date. Weekly
-    trades, the calendar, and the ISO-week market query stay on
-    ``this_week``.
+    trades and the calendar stay on ``this_week``; market context follows
+    the displayed close.
     """
     scorecard_week = attribution_week or this_week
     cal_start = this_week - timedelta(days=(DAILY_CALENDAR_WEEKS - 1) * 7)
@@ -4176,16 +4196,9 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
         bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
     ])
 
-    # SPY/QQQ week/YTD context. Independent of the batch results (only
-    # needs the calendar dates), so fold it into the parallel wave rather
-    # than paying a serial ~1-2s round trip after the batch.
-    market_perf_cfg = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ScalarQueryParameter("week_start", "DATE", this_week),
-        bigquery.ScalarQueryParameter("ytd_start", "DATE", date(today.year, 1, 1)),
-    ])
-
     as_of = moves_as_of or trades_as_of or today
     moves_cfg = _moves_job_config(as_of)
+    market_context_specs = _market_context_query_specs(as_of)
 
     return {
         "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
@@ -4213,8 +4226,7 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
             tenant_filter, trades_as_of or today),
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
             tenant_filter=tenant_filter, week_start=scorecard_week.isoformat()),
-        "benchmark_snapshot": BENCHMARK_SNAPSHOT_QUERY,
-        "market_perf": (MARKET_PERF_QUERY, market_perf_cfg),
+        **market_context_specs,
         # Execution verdicts (int_option_exit_quality): early closes whose
         # expiry arrived recently (the verdict "landed") + the pending
         # open loop. Windowing happens in Python; the frame is small.
@@ -4651,6 +4663,16 @@ def weekly_review():
                 client, {"attribution": rewound_attribution_query})
             batch["attribution"] = _filter_df_by_tenant_ids(
                 rewound.get("attribution", pd.DataFrame()), tenant_ids)
+        if snap_cutoff and snap_cutoff != session_date:
+            # SPY/QQQ must follow the same settled close. The first batch was
+            # capped to the nominal session; movers can prove that close is
+            # missing and rewind Overview farther.
+            rewound_market = _bq_parallel(
+                client, _market_context_query_specs(snap_cutoff))
+            batch["benchmark_snapshot"] = rewound_market.get(
+                "benchmark_snapshot", pd.DataFrame())
+            batch["market_perf"] = rewound_market.get(
+                "market_perf", pd.DataFrame())
         session_date = snap_cutoff
         context["review_date"] = snap_cutoff
         if snap_cutoff:

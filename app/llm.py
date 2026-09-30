@@ -160,17 +160,22 @@ def selectable_model_keys() -> set[str]:
     return {m["key"] for m in selectable_models()}
 
 
-def default_model_key() -> str | None:
+def default_model_key(*, allow_paid: bool = False) -> str | None:
     """The model to use when the user hasn't chosen (or chose one that's no
     longer offerable). Prefers a non-paid model matching the legacy
-    LLM_PROVIDER env so existing deployments keep their current behavior;
-    otherwise the first selectable unpaid model, then any selectable.
-    Returns None when nothing is selectable."""
+    LLM_PROVIDER env so existing deployments keep their current behavior.
+    A paid-only deployment has no default unless the caller has explicitly
+    passed the add-on entitlement through ``allow_paid``."""
     models = selectable_models()
     if not models:
         return None
     unpaid = [m for m in models if m["tier"] != "paid"]
-    pool = unpaid or models
+    if unpaid:
+        pool = unpaid
+    elif allow_paid:
+        pool = models
+    else:
+        return None
     pref_provider = active_provider()
     for m in pool:
         if m["provider"] == pref_provider:
@@ -195,9 +200,9 @@ def resolve_model_key(model_key: str | None, *, allow_paid: bool = False) -> str
     burn Opus on a trial account."""
     if model_key and model_key in selectable_model_keys():
         if model_is_paid(model_key) and not allow_paid:
-            return default_model_key()
+            return default_model_key(allow_paid=False)
         return model_key
-    return default_model_key()
+    return default_model_key(allow_paid=allow_paid)
 
 
 def model_label(model_key: str | None) -> str:
