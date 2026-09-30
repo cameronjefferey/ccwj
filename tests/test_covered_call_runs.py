@@ -11,6 +11,7 @@ from datetime import date
 
 import pandas as pd
 
+from app import app
 from app.covered_call_runs import build_covered_call_runs
 
 
@@ -422,8 +423,6 @@ def test_long_put_exercise_does_not_invent_a_wheel():
 
 
 def test_template_renders_the_run_numbers():
-    from app import app
-
     runs = build_covered_call_runs(_rklb_cycle(), as_of=date(2026, 4, 3))
     with app.app_context():
         html = app.jinja_env.get_template("_covered_call_runs.html").render(
@@ -442,3 +441,27 @@ def test_template_renders_the_run_numbers():
     assert "Broker fees are not included" in html
     assert "Whole run" in html
     assert 'class="ht-run"' in html
+
+
+def test_template_masks_multi_account_run_label_in_privacy_mode(monkeypatch):
+    runs = build_covered_call_runs(
+        _rklb_cycle(), as_of=date(2026, 4, 3),
+        label_map={"snaptrade:acct": "Family IRA"},
+    )
+    # Account labels only render when the position spans multiple tenants.
+    runs[0]["show_account"] = True
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr(
+        "app.privacy.viewer_slots",
+        lambda: (
+            {"snaptrade:acct": "Account 2"},
+            {"Family IRA": "Account 2"},
+        ),
+    )
+    with app.test_request_context("/position/RKLB"):
+        html = app.jinja_env.get_template("_covered_call_runs.html").render(
+            covered_call_runs=runs,
+            symbol="RKLB",
+        )
+    assert "Account 2" in html
+    assert "Family IRA" not in html
