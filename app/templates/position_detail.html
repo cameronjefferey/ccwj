@@ -27,6 +27,76 @@
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
         padding: 1.25rem;
     }
+    .pnl-chart-box { position: relative; height: 520px; }
+    .ht-pnl-tip {
+        position: absolute;
+        z-index: 6;
+        box-sizing: border-box;
+        width: max-content;
+        max-width: 240px;
+        padding: 8px 10px 9px;
+        background: #0a0e17;
+        color: #e8edf7;
+        border: 1px solid #243049;
+        border-radius: 10px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.35;
+        pointer-events: none;
+        overflow-wrap: anywhere;
+    }
+    .ht-pnl-tip[hidden] { display: none !important; }
+    .ht-pnl-tip-date {
+        color: #8a97b1;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .ht-pnl-tip-row {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        margin-top: 5px;
+    }
+    .ht-pnl-tip-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        margin-top: 5px;
+        flex: none;
+    }
+    .ht-pnl-tip-label {
+        font-weight: 500;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .ht-pnl-tip-num {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+    }
+    .ht-pnl-tip-amt {
+        margin: 1px 0 0 13px;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+        font-size: 13px;
+    }
+    .ht-pnl-tip-amt.pos { color: #28c08a; }
+    .ht-pnl-tip-amt.neg { color: #f0556d; }
+    .ht-pnl-tip-more {
+        margin: 4px 0 0 13px;
+        color: #8a97b1;
+        font-size: 12px;
+    }
+    .ht-pnl-tip-total {
+        margin-top: 6px;
+        color: #8a97b1;
+        font-size: 11px;
+    }
+    .ht-pnl-tip-total .ht-pnl-tip-num { color: #c5cedd; }
     .narrative-card {
         background: #121826; border-radius: 16px;
         box-shadow: 0 2px 16px rgba(0,0,0,.05);
@@ -701,7 +771,7 @@
         </div>
         {% endif %}
     </div>
-    <div style="height: 520px;">
+    <div class="pnl-chart-box">
         <canvas id="pnlChart"></canvas>
     </div>
     {% if story_days %}
@@ -1510,6 +1580,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/pnl-tooltip.js') }}"></script>
 <script>
 (function () {
     var box = document.getElementById('chartRead');
@@ -1548,11 +1619,26 @@
     // ── Story markers: one dot per trade day, riding the Total line ──
     // Index chart dates once, then place each marker at its date's Total
     // value (walking back to the last non-null Total for sparse spines).
-    var MARKER_COLORS = {
+    var MARKER_COLORS = (window.htPnlTooltip && window.htPnlTooltip.colors) || {
         buy: '#1d4ed8', sell: '#b91c1c', lifecycle: '#6d28d9', income: '#047857'
     };
     var markerDataset = null;
     var markerIndexByDate = {};   // story date iso -> point index in the marker dataset
+    var markerByDate = {};
+    storyMarkers.forEach(function (m) { markerByDate[m.d] = m; });
+    function totalAt(iso) {
+        if (!chartData.dates || !chartData.total) return null;
+        var i = chartData.dates.indexOf(iso);
+        if (i < 0) return null;
+        var y = null, j = i;
+        while (j >= 0 && (y === null || y === undefined)) { y = chartData.total[j]; j--; }
+        return (y === null || y === undefined) ? null : y;
+    }
+    function isoFromPoint(dp) {
+        if (!dp) return null;
+        if (dp.raw && dp.raw._date) return dp.raw._date;
+        return dp.label || null;
+    }
     if (storyMarkers.length && chartData.dates && chartData.dates.length) {
         var dateIdx = {};
         chartData.dates.forEach(function (d, i) { dateIdx[d] = i; });
@@ -1564,7 +1650,7 @@
             while (j >= 0 && (y === null || y === undefined)) { y = chartData.total[j]; j--; }
             if (y === null || y === undefined) y = 0;
             markerIndexByDate[m.d] = pts.length;
-            pts.push({ x: chartData.dates[i], y: y, _story: m.t, _date: m.d });
+            pts.push({ x: chartData.dates[i], y: y, _date: m.d });
             colors.push(MARKER_COLORS[m.k] || '#64748b');
         });
         if (pts.length) {
@@ -1577,6 +1663,7 @@
                 borderWidth: 1.5,
                 pointRadius: 4.5,
                 pointHoverRadius: 7,
+                pointHitRadius: 16,
                 pointStyle: 'circle',
                 order: -1
             };
@@ -1802,16 +1889,26 @@
                         }
                     },
                     tooltip: {
-                        callbacks: {
-                            label: function(ctx) {
-                                // Story markers: show the day's events verbatim.
-                                if (ctx.dataset.label === 'Trade days') {
-                                    return (ctx.raw && ctx.raw._story) || null;
-                                }
-                                var y = ctx.parsed.y;
-                                if (y == null) return null;
-                                return ctx.dataset.label + ': ' + window.htMoney(y, 2);
-                            }
+                        enabled: false,
+                        mode: 'nearest',
+                        intersect: false,
+                        axis: 'x',
+                        external: function (context) {
+                            if (!window.htPnlTooltip) return;
+                            window.htPnlTooltip.external(context, function (tooltip) {
+                                var points = tooltip.dataPoints || [];
+                                var iso = isoFromPoint(points[0]);
+                                if (!iso) return null;
+                                var marker = markerByDate[iso];
+                                var when = (window.htPnlTooltip.formatDate(iso))
+                                    || (marker && marker.when) || iso;
+                                return {
+                                    when: when,
+                                    kind: marker ? marker.k : null,
+                                    tips: (marker && marker.tips) || [],
+                                    total: totalAt(iso)
+                                };
+                            });
                         }
                     }
                 },
