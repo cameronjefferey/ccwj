@@ -49,11 +49,11 @@
     {% set pos = comp.delta_pct >= 0 %}
     <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{{ "+" if pos else "" }}{{ "%.2f"|format(comp.delta_pct) }}%</div>
     {% if comp.delta is not none %}
-    <div class="ov-sub {% if comp.delta >= 0 %}pos{% else %}neg{% endif %}">{% if comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
+    <div class="ov-sub {% if comp.delta >= 0 %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
     {% endif %}
     {% elif comp and comp.has_data and comp.delta is not none %}
     {% set pos = comp.delta >= 0 %}
-    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{% if pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
+    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
     {% else %}
     <div class="ov-pct ov-dash">—</div>
     {% endif %}
@@ -67,7 +67,7 @@
         <form method="get" class="filter-bar filter-bar-hero">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('weekly_review') }}">Reset</a>
+            <a class="filter-reset" href="{{ url_for('weekly_review', scope='all') }}">Reset</a>
             {% endif %}
         </form>
         {% endif %}
@@ -78,7 +78,7 @@
         <div>
             <div class="ov-k">Total value{% if _book_n %} across {{ _book_n }} account{{ 's' if _book_n != 1 }}{% endif %}</div>
             {% if _book_value is not none %}
-            <div class="ov-big">${{ "{:,.0f}".format(_book_value) }}</div>
+            <div class="ov-big">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(_book_value) }}{% endif %}</div>
             {% else %}
             <div class="ov-big ov-dash">—</div>
             {% endif %}
@@ -96,7 +96,7 @@
             {% if equity_snapshot and equity_snapshot.pct_invested is not none %}
             <div class="ov-big ov-invest">{{ "%.0f"|format(equity_snapshot.pct_invested) }}%</div>
             {% if equity_snapshot.cash_balance is not none %}
-            <div class="ov-bench">${{ "{:,.0f}".format(equity_snapshot.cash_balance) }} cash</div>
+            <div class="ov-bench">{% if privacy_mode %}•••• cash{% else %}${{ "{:,.0f}".format(equity_snapshot.cash_balance) }} cash{% endif %}</div>
             {% endif %}
             {% else %}
             <div class="ov-big ov-dash">—</div>
@@ -134,14 +134,14 @@
    anything is broken. Say so before they conclude the product is empty.
    ════════════════════════════════════ #}
 {% if building_history %}
-<div class="review-section" style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:1rem 1.25rem;">
+<div class="review-section" style="background:rgba(91,140,255,.10); border:1px solid #5b8cff; border-radius:12px; padding:1rem 1.25rem;">
     <div style="display:flex; gap:.75rem; align-items:flex-start;">
         <div style="font-size:1.4rem; line-height:1;">&#128200;</div>
         <div style="flex:1; min-width:0;">
-            <div style="font-weight:700; color:#1e40af; font-size:.95rem;">
+            <div style="font-weight:700; color:#e8edf7; font-size:.95rem;">
                 Building your history &mdash; day {{ building_history.day_number }}
             </div>
-            <div style="color:#1e3a5f; font-size:.85rem; margin-top:.25rem;">
+            <div style="color:#8a97b1; font-size:.85rem; margin-top:.25rem;">
                 Your full trade history is already in &mdash; positions, P&amp;L and the breakdowns below
                 are complete from day one. What takes time are the <em>comparisons</em>: HappyTrader
                 snapshots your account value once a day, so vs prior close unlocks tomorrow,
@@ -149,17 +149,17 @@
                 trading day. Cells showing &ldquo;&mdash;&rdquo; aren&rsquo;t broken, they&rsquo;re waiting on history.
             </div>
             {% if building_history.facts %}
-            <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-top:.75rem; padding-top:.75rem; border-top:1px solid #bfdbfe;">
+            <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-top:.75rem; padding-top:.75rem; border-top:1px solid #243049;">
                 {% for f in building_history.facts %}
                 <div>
-                    <div style="font-size:1.05rem; font-weight:700; color:#1e40af;">{{ f.value }}</div>
-                    <div style="font-size:.68rem; color:#1e3a5f; text-transform:uppercase; letter-spacing:.05em; font-weight:600;">{{ f.label }}</div>
-                    <div style="font-size:.75rem; color:#1e3a5f; opacity:.8;">{{ f.detail }}</div>
+                    <div style="font-size:1.05rem; font-weight:700; color:#e8edf7;">{{ f.value }}</div>
+                    <div style="font-size:.68rem; color:#8a97b1; text-transform:uppercase; letter-spacing:.05em; font-weight:600;">{{ f.label }}</div>
+                    <div style="font-size:.75rem; color:#8a97b1;">{{ f.detail }}</div>
                 </div>
                 {% endfor %}
             </div>
             <div style="margin-top:.6rem;">
-                <a href="{{ scoped_url('trader_story') }}" style="font-size:.8rem; color:#1e40af; font-weight:600; text-decoration:none;">
+                <a href="{{ scoped_url('trader_story') }}" style="font-size:.8rem; color:#a8b8ff; font-weight:600; text-decoration:none;">
                     See your full trader profile &rarr;
                 </a>
             </div>
@@ -181,13 +181,13 @@
     </div>
     {% if comp.delta is not none %}
     <div class="snap-cell-pct {% if comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-        {% if comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+        {% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
     </div>
     {% endif %}
     {% elif comp and comp.has_data and comp.delta is not none %}
     {% set pos = comp.delta >= 0 %}
     <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
-        {% if pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+        {% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
     </div>
     {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
 {% endmacro %}
@@ -235,7 +235,7 @@
             <div class="snap-col-share">{{ share_cell(snap.today_value, _share_total or snap.today_value) }}</div>
             <div>
                 {% if snap.today_value is not none %}
-                <div class="snap-cell-val">${{ "{:,.0f}".format(snap.today_value) }}</div>
+                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(snap.today_value) }}{% endif %}</div>
                 {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(snap.comparisons.day) }}</div>
@@ -252,7 +252,7 @@
             <div class="snap-col-share"></div>
             <div>
                 {% if today_snapshots_total.today_value is not none %}
-                <div class="snap-cell-val">${{ "{:,.0f}".format(today_snapshots_total.today_value) }}</div>
+                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(today_snapshots_total.today_value) }}{% endif %}</div>
                 {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
             </div>
             <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
@@ -334,7 +334,7 @@
                     {% endif %}
                 </td>
                 <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
-                    {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                    {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}
                 </td>
                 <td>
                     {% with symbol=t.symbol, tenant_id=t.tenant_id, open_date=t.leg_open_date, tags=t.tags %}
@@ -355,7 +355,7 @@
         <tr>
             <td>{{ c.verb }}{% if c.description %} <span class="tt-muted">{{ c.description|truncate(40) }}</span>{% endif %}</td>
             <td class="tt-money {% if c.amount > 0 %}text-positive{% elif c.amount < 0 %}text-negative{% endif %}">
-                {{ "+" if c.amount > 0 else "" }}${{ "{:,.2f}".format(c.amount) }}
+                {{ money(c.amount, 2, true) }}
             </td>
         </tr>
         {% endfor %}
@@ -430,7 +430,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
-                        <div class="mover-meta">+${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
                     <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
@@ -462,7 +462,7 @@
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
-                        <div class="mover-meta">${{ "{:,.2f}".format(m.price_change) }}/sh</div>
+                        <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
                     <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
@@ -482,13 +482,13 @@
     <div style="margin-top:.9rem;">
         <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
             Dividends paid {{ tm_day }}
-            <span style="color:#15803d;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+            <span style="color:#28c08a;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
             <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
                data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
-               style="font-size:.75rem; padding:.45em .8em; background:#dcfce7; color:#15803d;">
+               style="font-size:.75rem; padding:.45em .8em; background:rgba(40,192,138,.16); color:#e8edf7; border:1px solid #5eead4;">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
             </a>
             {% endfor %}

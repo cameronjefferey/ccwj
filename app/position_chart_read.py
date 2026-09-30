@@ -313,6 +313,11 @@ def visible_chart_read(body: str | None, *, unlocked: bool) -> tuple[str, str]:
     if len(parts) == 1:
         return (cleaned, "") if unlocked else ("A chart read is ready.", "")
     lead = parts[0]
+    if not unlocked and "the lesson from this chart" in lead.lower():
+        # Fail closed for cached/model drafts that put the paid takeaway
+        # first despite the prompt. The validator protects new writes; this
+        # guard also protects prose stored before that validation shipped.
+        return "A chart read is ready.", ""
     rest = parts[1] if len(parts) > 1 and unlocked else ""
     return lead, rest
 
@@ -418,7 +423,7 @@ def _too_long(cleaned: str) -> str | None:
         return "cut off; finish the last sentence"
     if len(re.findall(r"\$", cleaned)) > 6:
         return "too many dollar figures; name only the ones the lesson uses"
-    if "the lesson from this chart" not in cleaned.lower():
+    if not sentences[-1].lower().startswith("the lesson from this chart"):
         return 'the last sentence must start with "The lesson from this chart"'
     return _plain_language(cleaned)
 

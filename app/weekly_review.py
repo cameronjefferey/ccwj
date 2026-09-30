@@ -25,6 +25,7 @@ from app import app
 from app.bigquery_client import get_bigquery_client
 from app.query_cache import cached_query_df
 from app.skeleton import skeleton_page
+from app.privacy import shown_account as _privacy_account_label
 from app.models import (
     get_user_profile,
     bump_review_visit,
@@ -2943,6 +2944,10 @@ def _build_position_breakdown(attribution_df, strategy_by_symbol, *, week_start=
             "sector": str(r.get("sector") or "Unknown") or "Unknown",
             "subsector": str(r.get("subsector") or "Unknown") or "Unknown",
         })
+        from app.sector_labels import classify_symbol
+        _sec, _sub = classify_symbol(sym, rows[-1]["sector"], rows[-1]["subsector"])
+        rows[-1]["sector"] = _sec
+        rows[-1]["subsector"] = _sub
 
     # Daily Review scope: open positions + positions closed this week.
     # ``last_activity_date`` is the actual close_date for Closed symbols
@@ -3211,7 +3216,9 @@ def _build_account_breakdown(attribution_df, label_map=None, *, week_start=None)
         ann = _annualized_pct(net, cap, s["max_days_held"])
         rows.append({
             "tenant_id": tid,
-            "account_display": label_map.get(tid) or s["account"] or tid,
+            "account_display": _privacy_account_label(
+                label_map.get(tid) or s["account"] or tid, tid,
+            ),
             "equity_pnl": round(s["equity_pnl"], 2),
             "option_pnl": round(s["option_pnl"], 2),
             "dividend_income": round(s["dividend_income"], 2),
@@ -3960,7 +3967,9 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
             g = {
                 "symbol": symbol,
                 "tenant_id": tid,
-                "account_display": label_map.get(tid) or str(r.get("account") or ""),
+                "account_display": _privacy_account_label(
+                    label_map.get(tid) or str(r.get("account") or ""), tid,
+                ),
                 "strategies": set(),
                 "contracts": [],
                 "realized": 0.0,
@@ -5995,7 +6004,11 @@ def day_detail(day_str):
         delta = float(r.get("delta_1d") or 0)
         prev_value = value - delta
         account_rows.append({
-            "label": label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+            "tenant_id": str(r.get("tenant_id") or ""),
+            "label": _privacy_account_label(
+                label_map.get(str(r.get("tenant_id") or ""), str(r.get("account") or "")),
+                str(r.get("tenant_id") or ""),
+            ),
             "value": value,
             "delta": delta,
             "delta_pct": (delta / prev_value * 100) if prev_value else None,

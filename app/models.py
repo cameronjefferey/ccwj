@@ -160,6 +160,7 @@ def init_db():
             product_update_email            BOOLEAN NOT NULL DEFAULT TRUE,
             email_unsubscribe_token         TEXT,
             compact_tables                  BOOLEAN NOT NULL DEFAULT FALSE,
+            privacy_mode                    BOOLEAN NOT NULL DEFAULT FALSE,
             show_account_names_on_published BOOLEAN NOT NULL DEFAULT FALSE,
             profile_visibility              TEXT NOT NULL DEFAULT 'private',
             created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -569,6 +570,7 @@ def init_db():
     _migrate_broker_account_id_columns()
     _migrate_onboarding_responses_v2()
     _migrate_user_profiles_email_prefs()
+    _migrate_user_profiles_privacy_mode()
     _migrate_users_email_verified_column()
     _migrate_users_preferred_llm_model_column()
     _migrate_users_plan_columns()
@@ -889,6 +891,18 @@ def _migrate_user_profiles_email_prefs():
             execute(ddl)
         except Exception as exc:
             _log.warning("user_profiles email-prefs migration skipped: %s", exc)
+
+
+def _migrate_user_profiles_privacy_mode():
+    """Idempotent: privacy mode is a per-user flag. CREATE TABLE does not
+    add the column on databases that already have user_profiles."""
+    try:
+        execute(
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+            "privacy_mode BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+    except Exception as exc:
+        _log.warning("user_profiles privacy_mode migration skipped: %s", exc)
 
 
 def _migrate_schwab_first_sync_column():
@@ -2979,7 +2993,7 @@ def get_snaptrade_account_nicknames(user_id):
 _PROFILE_COLUMNS = (
     "user_id, display_name, headline, bio, accent, timezone, week_starts_monday, "
     "default_route, digest_email, weekly_preview_email, product_update_email, "
-    "email_unsubscribe_token, compact_tables, show_account_names_on_published, "
+    "email_unsubscribe_token, compact_tables, privacy_mode, show_account_names_on_published, "
     "profile_visibility, created_at, updated_at"
 )
 
@@ -3000,6 +3014,7 @@ def _default_profile_row(user_id):
         "product_update_email": True,
         "email_unsubscribe_token": None,
         "compact_tables": False,
+        "privacy_mode": False,
         "show_account_names_on_published": False,
         "profile_visibility": "private",
         "created_at": None,
@@ -3058,6 +3073,7 @@ def update_user_profile(user_id, **fields):
         "weekly_preview_email",
         "product_update_email",
         "compact_tables",
+        "privacy_mode",
         "show_account_names_on_published",
         "profile_visibility",
     }
@@ -3568,38 +3584,15 @@ def ensure_demo_user():
 
 
 def _ensure_demo_insight(demo_user_id):
-    """Seed a pre-generated insight for the demo user so it's ready on first visit."""
-    if get_insight_for_user(demo_user_id):
-        return  # already has one
-    summary = (
-        "Years of consistent options trading across Covered Calls, CSPs, Wheels, and PMCC. "
-        "Account growth, strong win rates, and disciplined execution. Your Mirror Score trend "
-        "shows real progress—this is what a mature, intentional options trader looks like."
-    )
-    full_analysis = """## Summary
+    """Do not seed a static AI write-up.
 
-You've built a track record over multiple years: diversified options strategies, steady premium income, and clear improvement in discipline and alignment with your plan. Your data shows wins and losses, assignments and expirations, and a portfolio that has grown while you've refined your approach.
-
-## Trading Style Overview
-
-You trade like someone who's been at this for years. Covered Calls and Cash-Secured Puts on quality names (AAPL, NVDA, META, GOOGL, COST, SPY). You run the Wheel when assignment makes sense, and you've added Poor Man's Covered Call (PMCC) on names like PLTR. You mix income with occasional directional plays (long calls/puts) and keep position sizing in the picture.
-
-## What's Working
-
-- **Strategy variety** — CSPs, Covered Calls, Wheels, PMCC, and selective directional trades. You're not stuck in one playbook.
-- **Mirror Score trend** — Your discipline and intent scores have trended up over time. That's the kind of progress that separates long-term traders from one-off gamblers.
-- **Premium and assignments** — You collect premium, take assignment when it fits the plan, and close or roll with intention.
-
-## What This Demo Shows
-
-This profile is built to show what the platform looks like when it's full: weekly review with real numbers, Mirror Score history, strategy breakdowns, and AI Insights. Every section is populated so you can see the full experience.
-
-## Next Steps for You
-
-1. **Upload your own data** — Replace this demo with your real accounts and watch your own trends.
-2. **Use AI Insights** — Ask questions about your trades; the AI reads only your data and surfaces patterns, not advice.
-3. **Track over time** — The more you upload, the more accurate your snapshots and Mirror Score become."""
-    save_insight(demo_user_id, summary, full_analysis)
+    The public demo used to insert one essay on first boot and then refuse
+    to replace it (``get_insight_for_user`` short-circuit + demo writes
+    blocked). That row described a different book and stayed dated the day
+    it was inserted. ``/insights`` now composes the analysis from the demo
+    account's current positions on each view (``app.demo_analysis``).
+    """
+    return None
 
 
 def _seed_demo_mirror_scores(demo_user_id):

@@ -72,6 +72,13 @@ def _account_label_filter(account_name, tenant_id=None):
     if not account_name and not tenant_id:
         return account_name
     try:
+        from app.privacy import mask_account_label
+        masked = mask_account_label(account_name, tenant_id)
+        if masked is not None:
+            return masked
+    except Exception:
+        pass
+    try:
         from flask import g
         from flask_login import current_user
         if not current_user.is_authenticated:
@@ -101,11 +108,47 @@ app.add_template_filter(_account_label_filter, name="account_label")
 
 
 def _account_mask_filter(raw):
+    from app.privacy import mask_secret, privacy_mode_on
+    if privacy_mode_on() and raw:
+        return mask_secret(raw)
     from app.linked_accounts import format_account_mask
     return format_account_mask(raw)
 
 
 app.add_template_filter(_account_mask_filter, name="account_mask")
+
+
+def _privacy_balance_filter(value, digits=0):
+    from app.privacy import format_privacy_balance
+    return format_privacy_balance(value, digits)
+
+
+def _privacy_signed_filter(value, digits=0):
+    from app.privacy import format_privacy_signed
+    return format_privacy_signed(value, digits)
+
+
+def _privacy_hide_filter(value):
+    from app.privacy import mask_secret
+    return mask_secret(value)
+
+
+def _privacy_account_filter(name, tenant_id=None):
+    """Mask a picker nickname. Leave it unchanged when privacy mode is off.
+
+    Header and upload pickers already show the nickname (#156). Running
+    them through ``account_label`` would swap that for the disambiguated
+    broker label. This filter only applies Account N.
+    """
+    from app.privacy import mask_account_label
+    masked = mask_account_label(name, tenant_id)
+    return masked if masked is not None else name
+
+
+app.add_template_filter(_privacy_balance_filter, name="privacy_balance")
+app.add_template_filter(_privacy_signed_filter, name="privacy_signed")
+app.add_template_filter(_privacy_hide_filter, name="privacy_hide")
+app.add_template_filter(_privacy_account_filter, name="privacy_account")
 
 
 def friendly_timestamp(value, tz_name=None):
@@ -251,6 +294,14 @@ def _current_year() -> int:
 
 app.add_template_global(_current_year, name="current_year")
 
+from app.glossary import render_term as _render_term
+from app.glossary import render_term_link as _render_term_link
+from app.glossary import render_term_mark as _render_term_mark
+
+app.add_template_global(_render_term, name="term")
+app.add_template_global(_render_term_link, name="term_link")
+app.add_template_global(_render_term_mark, name="term_mark")
+
 
 @app.context_processor
 def _inject_feature_flags():
@@ -291,6 +342,7 @@ def _inject_feature_flags():
             "ai_billing_enabled": False,
             "price_ai": None,
             "compact_tables": False,
+            "privacy_mode": False,
         }
 
     is_admin_user = False
@@ -348,6 +400,8 @@ def _inject_feature_flags():
                 get_broker_tenants_for_user as _get_broker_tenants_for_user,
                 list_account_groups as _list_account_groups,
             )
+            from app.account_scope import picker_nickname_choices
+            from app.privacy import sort_masked_account_choices
             from app.routes import (
                 _account_rename_urls_for_rows,
                 _blank_query_text,
@@ -366,12 +420,11 @@ def _inject_feature_flags():
             _owned_rows = _get_broker_tenants_for_user(current_user.id) or []
             _label_map = _tenant_label_map_for_user(current_user.id) or {}
             account_rename_urls = _account_rename_urls_for_rows(_owned_rows)
-            scope_account_choices = [
-                {"tenant_id": tid, "label": lab}
-                for tid, lab in sorted(
-                    _label_map.items(), key=lambda kv: (kv[1] or "").lower()
-                )
-            ]
+            # Header picker: nicknames only. Masks and "Schwab Account"
+            # stay out of this menu. Table cells still use account_label.
+            scope_account_choices = sort_masked_account_choices(
+                picker_nickname_choices(_owned_rows)
+            )
             try:
                 _args = _req.args
             except Exception:
@@ -382,6 +435,9 @@ def _inject_feature_flags():
             visible_account_groups, visible_account_choices = _scope_filter_options(
                 account_groups, selected_group_ids, selected_tenant_ids,
                 scope_account_choices,
+            )
+            visible_account_choices = sort_masked_account_choices(
+                visible_account_choices
             )
             scope_is_filtered = bool(
                 selected_group_ids or selected_tenant_ids
@@ -426,12 +482,16 @@ def _inject_feature_flags():
         price_ai = None
 
     compact_tables = False
+    privacy_mode = False
     try:
         if current_user.is_authenticated:
             _prof = _viewer_profile() or {}
             compact_tables = bool(_prof.get("compact_tables"))
+            from app.privacy import privacy_mode_on
+            privacy_mode = privacy_mode_on()
     except Exception:
         compact_tables = False
+        privacy_mode = False
 
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
@@ -461,6 +521,7 @@ def _inject_feature_flags():
         "ai_billing_enabled": ai_billing_enabled,
         "price_ai": price_ai,
         "compact_tables": compact_tables,
+        "privacy_mode": privacy_mode,
     }
 
 
@@ -749,3 +810,11 @@ from app import profile_page  # noqa: F401  registers /profile (settings hub)
 from app import webhooks  # noqa: F401  registers /webhooks/* routes
 from app import billing  # noqa: F401  registers /billing/* + /webhooks/stripe
 from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuild-triggered flush + warm)
+from app.privacy import register_privacy_routes
+register_privacy_routes(app)
+from app import share_card  # noqa: F401  registers /share/card.png
+
+# After the session-idle before_request so a timed-out session is logged
+# out before we redirect into a saved account scope.
+from app.account_scope import register_account_scope
+register_account_scope(app)

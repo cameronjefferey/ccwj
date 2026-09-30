@@ -17,6 +17,20 @@ def test_quick_switcher_cache_is_scoped_to_authenticated_user():
     assert "SYMBOL_CACHE_KEY," in script
 
 
+def test_quick_switcher_keeps_the_typed_query_after_symbols_load():
+    script = (ROOT / "app/static/js/nav.js").read_text()
+    # Typing before the fetch returns used to be wiped by render("").
+    assert "render(input.value)" in script
+    assert 'render("")' not in script
+    assert "Searching" in script
+    assert "itemScore" in script
+    assert "parsed.symbols.length" in script
+
+    page = (ROOT / "app/symbols_page.py").read_text()
+    assert "company_name" in page
+    assert '"n": company' in page or "item[\"n\"]" in page
+
+
 def test_quick_switcher_never_reads_legacy_unscoped_cache():
     script = (ROOT / "app/static/js/nav.js").read_text()
 

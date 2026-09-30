@@ -49,12 +49,12 @@
         font-weight: 600;
         letter-spacing: .02em;
         text-transform: uppercase;
-        color: #6c757d;
+        color: var(--ht-muted);
         margin-bottom: .35rem;
     }
     .settings-field .field-hint {
         font-size: .8125rem;
-        color: #6c757d;
+        color: var(--ht-muted);
         line-height: 1.45;
         margin-bottom: .75rem;
     }
@@ -74,7 +74,7 @@
             <div class="card-body">
                 <div class="settings-field">
                     <div class="field-label">Username</div>
-                    <div class="fw-semibold fs-6">{{ current_user.username }}</div>
+                    <div class="fw-semibold fs-6">{{ current_user.username | privacy_hide }}</div>
                 </div>
 
                 <div class="settings-field">

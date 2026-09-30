@@ -217,25 +217,14 @@ def _render_signup_form(
     *,
     username="",
     email="",
-    password="",
-    confirm="",
-    invite="",
 ):
-    """Re-render signup with the values just submitted.
-
-    A redirect on validation failure drops every field (the password
-    mismatch bug). Passwords stay in the response only for this retry —
-    they are not stored.
-    """
+    """Re-render signup without reflecting submitted credentials."""
     return render_template(
         "signup.html",
         title="Sign Up",
         invite_required=invite_required,
         form_username=username,
         form_email=email,
-        form_password=password,
-        form_confirm=confirm,
-        form_invite=invite,
     )
 
 
@@ -263,9 +252,6 @@ def signup():
                 invite_required,
                 username=username,
                 email=(email_raw or "").strip(),
-                password=password,
-                confirm=confirm,
-                invite=invite,
             )
 
         # Closed-beta gate: when SIGNUP_INVITE_CODE is set in the env, the

@@ -621,7 +621,10 @@ def _build_income_panel(df):
 def wealth():
     """Legacy URL — permanently moved to /accounts?view=value."""
     args = {"view": "value"}
-    for key in ("account", "tenant", "range", "exclude_transfers"):
+    for key in (
+        "account", "tenant", "tenants", "groups", "scope",
+        "range", "exclude_transfers",
+    ):
         val = _blank_query_text(request.args.get(key))
         if val:
             args[key] = val

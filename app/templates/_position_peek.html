@@ -82,7 +82,7 @@
         color: var(--ht-ink, #0f172a);
     }
     .ht-peek .panel-stats .stat .val.pos { color: #059669; }
-    .ht-peek .panel-stats .stat .val.neg { color: #b91c1c; }
+    .ht-peek .panel-stats .stat .val.neg { color: #f0556d; }
 
     .ht-peek .panel-section-title {
         font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
@@ -106,9 +106,56 @@
         white-space: nowrap;
     }
     .ht-peek .hold-row .pnl.pos, .ht-peek .acct-row .pnl.pos { color: #059669; }
-    .ht-peek .hold-row .pnl.neg, .ht-peek .acct-row .pnl.neg { color: #b91c1c; }
+    .ht-peek .hold-row .pnl.neg, .ht-peek .acct-row .pnl.neg { color: #f0556d; }
     .ht-peek .ht-peek-empty { color: var(--ht-muted, #64748b); font-size: .82rem; padding: .4rem 0; }
-    .ht-peek .ht-peek-err { color: #b91c1c; font-size: .85rem; }
+    .ht-peek .ht-peek-err { color: #f0556d; font-size: .85rem; }
+    .ht-peek .held-peek {
+        background: #0a0e17;
+        border: 1px solid #243049;
+        border-radius: 10px;
+        padding: .7rem .75rem .65rem;
+        margin-top: .35rem;
+    }
+    .ht-peek .held-peek .sym {
+        font-weight: 650;
+        font-size: .88rem;
+        color: #e8edf7;
+    }
+    .ht-peek .held-peek .meta {
+        color: #8a97b1;
+        font-size: .72rem;
+        margin-top: .2rem;
+        line-height: 1.4;
+    }
+    .ht-peek .held-peek .nums {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem .85rem;
+        margin-top: .45rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .78rem;
+    }
+    .ht-peek .held-peek .nums .pos { color: #28c08a; }
+    .ht-peek .held-peek .nums .neg { color: #f0556d; }
+    .ht-peek .held-peek .nums .k {
+        display: block;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-size: .62rem;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: #8a97b1;
+        margin-bottom: .05rem;
+    }
+    .ht-peek .held-peek svg { width: 100%; height: 72px; display: block; margin-top: .4rem; }
+    .ht-peek .held-peek a.chart-link {
+        display: inline-block;
+        margin-top: .35rem;
+        color: #5b8cff;
+        font-size: .75rem;
+        font-weight: 600;
+        text-decoration: none;
+    }
 
     .ht-peek .panel-actions {
         display: flex; gap: .5rem; margin-top: 1.1rem;
@@ -260,6 +307,34 @@
             });
         }
 
+        if (data.held && data.held.points && data.held.points.length) {
+            html += '<div class="panel-section-title">If held to expiration</div>';
+            html += '<div class="held-peek">';
+            html += '<div class="sym">' + esc(data.held.label || '') + '</div>';
+            html += '<div class="meta">' + esc(data.held.direction_label || '')
+                 + (data.held.expiry_label ? ' · exp ' + esc(data.held.expiry_label) : '')
+                 + (data.held.show_account && data.held.account ? ' · ' + esc(data.held.account) : '')
+                 + '</div>';
+            html += '<div class="nums">';
+            function heldNum(lbl, display, n) {
+                html += '<div><span class="k">' + lbl + '</span>'
+                     + '<span class="' + tone(n) + '">' + esc(display) + '</span></div>';
+            }
+            heldNum('Realized', data.held.realized_display, data.held.realized_pnl);
+            heldNum('If held', data.held.if_held_display, data.held.pnl_if_held);
+            // Negative warehouse delta means holding finished higher.
+            // Color that the same way as the "$X more if held" pill.
+            heldNum('Difference', data.held.difference_display,
+                data.held.difference == null ? null : -data.held.difference);
+            html += '</div>';
+            html += heldSpark(data.held.points);
+            html += '<div class="meta">Dashed line is intrinsic value from the stock\'s close, an estimate. Fees aren\'t included.</div>';
+            if (data.held.chart_url) {
+                html += '<a class="chart-link" href="' + esc(data.held.chart_url) + '">See the chart</a>';
+            }
+            html += '</div>';
+        }
+
         var accts = data.accounts || [];
         if (accts.length > 1) {
             html += '<div class="panel-section-title">By account</div>';
@@ -274,6 +349,51 @@
 
         bodyEl.innerHTML = html;
         if (data.position_url) openEl.href = data.position_url;
+    }
+
+    function heldSpark(points) {
+        if (!points || points.length < 2) return '';
+        var w = 360, h = 72, padX = 8, padY = 8;
+        var max = 0;
+        points.forEach(function (p) { if (p.price > max) max = p.price; });
+        if (max <= 0) max = 1;
+        function X(i) {
+            return padX + (w - padX * 2) * (i / (points.length - 1));
+        }
+        function Y(price) {
+            return h - padY - (h - padY * 2) * (price / max);
+        }
+        var solid = '';
+        var dash = '';
+        var closeAt = -1;
+        points.forEach(function (p, i) {
+            if (p.kind === 'close' || p.kind === 'open_close') closeAt = i;
+        });
+        points.forEach(function (p, i) {
+            var cmd = (solid ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.price).toFixed(1);
+            if (p.kind === 'if_held' || p.kind === 'expiry') return;
+            solid += cmd + ' ';
+        });
+        if (closeAt >= 0) {
+            dash = 'M' + X(closeAt).toFixed(1) + ' ' + Y(points[closeAt].price).toFixed(1);
+            points.forEach(function (p, i) {
+                if (i <= closeAt) return;
+                if (p.kind !== 'if_held' && p.kind !== 'expiry') return;
+                dash += ' L' + X(i).toFixed(1) + ' ' + Y(p.price).toFixed(1);
+            });
+        }
+        var dots = '';
+        points.forEach(function (p, i) {
+            if (p.kind !== 'open' && p.kind !== 'close' && p.kind !== 'expiry' && p.kind !== 'open_close') return;
+            var color = p.kind === 'expiry' ? '#8a97b1' : '#5b8cff';
+            dots += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(p.price).toFixed(1)
+                 + '" r="3.5" fill="' + color + '" stroke="#0a0e17" stroke-width="1.5"/>';
+        });
+        return '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Option price through expiration">'
+            + '<path d="' + solid.trim() + '" fill="none" stroke="#5b8cff" stroke-width="2"/>'
+            + '<path d="' + dash.trim() + '" fill="none" stroke="#8a97b1" stroke-width="2" stroke-dasharray="4 3"/>'
+            + dots
+            + '</svg>';
     }
 
     function openPeek(symbol, href, impact) {
