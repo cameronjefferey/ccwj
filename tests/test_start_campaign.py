@@ -13,6 +13,7 @@ from app.campaign import (
     reddit_pixel_context,
     stamp_signup,
     summarize_funnel,
+    summarize_places,
 )
 
 
@@ -35,7 +36,15 @@ def test_start_explains_the_mirror_and_the_honest_offer(monkeypatch):
     assert "Read-only" in body
     assert "5 years" not in body
     assert "five years" not in body.lower()
-    assert 'href="/start/go/signup?utm_source=reddit' in body
+    assert 'href="/start/go/signup/hero?utm_source=reddit' in body
+    assert 'href="/start/go/signup/chart?' in body
+    assert 'href="/start/go/demo/profile?' in body
+    assert "See the sequence" in body
+    assert "See your chart" in body
+    assert "Read the trades" in body
+    assert "See your profile" in body
+    assert "See your strategies" in body
+    assert "Start the 30 days" in body
     assert "utm_content=score" in body
     assert "ht_acq=" in (resp.headers.get("Set-Cookie") or "")
     assert 'name="robots" content="noindex"' in body
@@ -53,6 +62,54 @@ def test_start_refresh_does_not_log_a_second_visit(monkeypatch):
     assert events == ["visit"]
     assert client.get(qs).status_code == 200
     assert events == ["visit"]
+
+
+def test_campaign_write_routes_are_rate_limited(monkeypatch):
+    """Anonymous traffic cannot turn campaign logging into unbounded DB writes."""
+    from app.extensions import limiter
+
+    monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", True)
+    remote = {"REMOTE_ADDR": "203.0.113.42"}
+    attr = {
+        "visit_id": "a" * 32,
+        "utm_source": "",
+        "utm_campaign": "",
+        "utm_content": "",
+        "visit_logged": True,
+    }
+
+    limiter.reset()
+    try:
+        start_calls = []
+        monkeypatch.setattr(
+            "app.campaign.begin_visit",
+            lambda: start_calls.append(True) or dict(attr),
+        )
+        client = _client()
+        statuses = [
+            client.get("/start", environ_base=remote).status_code
+            for _ in range(21)
+        ]
+        assert statuses[:20] == [200] * 20
+        assert statuses[20] == 302  # HTML 429 handler redirects home.
+        assert len(start_calls) == 20
+
+        limiter.reset()
+        click_calls = []
+        monkeypatch.setattr(
+            "app.campaign.log_click",
+            lambda *a, **k: click_calls.append(True) or dict(attr),
+        )
+        responses = [
+            client.get("/start/go/demo/hero", environ_base=remote)
+            for _ in range(21)
+        ]
+        assert all(r.status_code == 302 for r in responses)
+        assert all("/demo/start" in r.location for r in responses[:20])
+        assert responses[20].location.endswith("/index")
+        assert len(click_calls) == 20
+    finally:
+        limiter.reset()
 
 
 def test_new_creative_starts_a_new_visit(monkeypatch):
@@ -111,6 +168,20 @@ def test_demo_click_redirects_without_following(monkeypatch):
 
 def test_unknown_destination_is_404():
     assert _client().get("/start/go/pricing").status_code == 404
+    assert _client().get("/start/go/signup/nope").status_code == 404
+
+
+def test_card_click_records_which_button(monkeypatch):
+    events = []
+
+    def _record(event, attr, **kwargs):
+        events.append((event, kwargs.get("place")))
+
+    monkeypatch.setattr("app.campaign.record_event", _record)
+    resp = _client().get("/start/go/demo/chart?utm_source=reddit&utm_content=score")
+    assert resp.status_code == 302
+    assert "/demo/start" in (resp.headers.get("Location") or "")
+    assert events[-1] == ("demo_click", "chart")
 
 
 def test_record_event_writes_visit_id_into_session_id(monkeypatch):
@@ -207,6 +278,26 @@ def test_funnel_counts_connects_separately_from_signups():
 
     only_you = filter_funnel_events(events, creative="you")
     assert {ev["utm_content"] for ev in only_you} == {"you"}
+
+
+def test_place_counts_are_separate_from_the_creative_funnel():
+    events = [
+        {"event": "signup_click", "visit_id": "v1", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "score", "place": "chart"},
+        {"event": "signup_click", "visit_id": "v1", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "score", "place": "chart"},
+        {"event": "demo_click", "visit_id": "v2", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "score", "place": "profile"},
+        {"event": "signup_click", "visit_id": "v3", "user_id": None,
+         "utm_campaign": "mirror-v1", "utm_content": "you", "place": None},
+    ]
+    rows = {row["place"]: row for row in summarize_places(events)}
+    assert rows["chart"]["signup_clicks"] == 1
+    assert rows["chart"]["primary"] == "See your chart"
+    assert rows["profile"]["demo_clicks"] == 1
+    assert rows["hero"]["signup_clicks"] == 0
+    assert rows[""]["where"] == "Earlier"
+    assert rows[""]["signup_clicks"] == 1
 
 
 def test_stamp_signup_writes_the_cookie_onto_the_user(monkeypatch):

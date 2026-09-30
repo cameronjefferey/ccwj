@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     /* CSS class names are legacy internal selectors; page copy uses
        sector / subsector terminology. */
@@ -23,8 +24,8 @@
     .sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
 
     .sec-card {
-        background: #fff;
-        border: 1px solid #e7e5e4;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 14px;
         padding: 1.1rem 1.2rem;
         display: flex; flex-direction: column; gap: .75rem;
@@ -32,35 +33,35 @@
     }
     .sec-card:hover { box-shadow: 0 10px 24px rgba(0,0,0,.06); }
     .sec-card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; }
-    .sec-card .name { font-size: 1.1rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
-    .sec-card .meta { font-size: .72rem; color: #64748b; margin-top: .15rem; text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .name { font-size: 1.1rem; font-weight: 700; color: var(--ht-ink); line-height: 1.2; }
+    .sec-card .meta { font-size: .72rem; color: var(--ht-muted); margin-top: .15rem; text-transform: uppercase; letter-spacing: .04em; }
     .sec-card .pnl { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
     .sec-card .pnl.pos { color: #059669; }
-    .sec-card .pnl.neg { color: #b91c1c; }
-    .sec-card .pnl-sub { font-size: .7rem; color: #64748b; text-align: right; margin-top: .15rem; }
+    .sec-card .pnl.neg { color: #f0556d; }
+    .sec-card .pnl-sub { font-size: .7rem; color: var(--ht-muted); text-align: right; margin-top: .15rem; }
 
     .sec-card .stats {
         display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem;
-        background: #f8fafc; border-radius: 10px; padding: .55rem .65rem;
+        background: #1a2233; border-radius: 10px; padding: .55rem .65rem;
     }
-    .sec-card .stat .lbl { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
-    .sec-card .stat .val { font-size: .9rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .sec-card .stat .lbl { font-size: .65rem; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .stat .val { font-size: .9rem; font-weight: 700; color: var(--ht-ink); font-variant-numeric: tabular-nums; }
 
     .sec-card .splits {
         display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .9rem;
         font-size: .78rem;
     }
-    .sec-card .splits .k { color: #64748b; }
-    .sec-card .splits .v { font-weight: 600; color: #0f172a; font-variant-numeric: tabular-nums; text-align: right; }
-    .sec-card .splits .v.neg { color: #b91c1c; }
+    .sec-card .splits .k { color: var(--ht-muted); }
+    .sec-card .splits .v { font-weight: 600; color: var(--ht-ink); font-variant-numeric: tabular-nums; text-align: right; }
+    .sec-card .splits .v.neg { color: #f0556d; }
 
     .sec-card .extremes { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; font-size: .76rem; }
-    .sec-card .extremes .ex { background: #f8fafc; border-radius: 8px; padding: .45rem .6rem; }
-    .sec-card .extremes .ex .lbl { font-size: .62rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
-    .sec-card .extremes .ex .sym { font-weight: 700; color: #0f172a; }
+    .sec-card .extremes .ex { background: #1a2233; border-radius: 8px; padding: .45rem .6rem; }
+    .sec-card .extremes .ex .lbl { font-size: .62rem; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; }
+    .sec-card .extremes .ex .sym { font-weight: 700; color: var(--ht-ink); }
     .sec-card .extremes .ex .ret { font-variant-numeric: tabular-nums; }
     .sec-card .extremes .ex .ret.pos { color: #059669; }
-    .sec-card .extremes .ex .ret.neg { color: #b91c1c; }
+    .sec-card .extremes .ex .ret.neg { color: #f0556d; }
 
     .sec-card .actions { display: flex; gap: .5rem; }
     .sec-card .btn-toggle {
@@ -73,12 +74,12 @@
     .sec-card .btn-toggle .chev { transition: transform .15s ease; display: inline-block; margin-left: .3rem; }
     .sec-card.expanded .btn-toggle .chev { transform: rotate(180deg); }
     .sec-card .btn-positions {
-        background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0;
+        background: #1a2233; color: #e8edf7; border: 1px solid #243049;
         padding: .5rem .85rem; border-radius: 999px;
         font-size: .78rem; font-weight: 600; text-decoration: none;
         white-space: nowrap;
     }
-    .sec-card .btn-positions:hover { background: #f3e6d4; }
+    .sec-card .btn-positions:hover { background: #1a2233; }
 
     /* Subsector breakdown — only visible when sector is expanded */
     .sec-card .ind-list { display: none; flex-direction: column; gap: .4rem; padding-top: .25rem; }
@@ -87,30 +88,30 @@
         display: grid; grid-template-columns: 1fr auto auto; align-items: center;
         gap: .55rem;
         padding: .5rem .65rem;
-        background: #fafafa;
-        border: 1px solid #f1f5f9;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 8px;
         font-size: .82rem;
     }
-    .ind-row .ind-name { font-weight: 600; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ind-row .ind-name { font-weight: 600; color: var(--ht-ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ind-row .ind-name a { color: inherit; text-decoration: none; }
     .ind-row .ind-name a:hover { text-decoration: underline; }
-    .ind-row .ind-meta { font-size: .68rem; color: #64748b; font-weight: 500; margin-top: .1rem; }
+    .ind-row .ind-meta { font-size: .68rem; color: var(--ht-muted); font-weight: 500; margin-top: .1rem; }
     .ind-row .ind-pnl { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .ind-row .ind-pnl.pos { color: #059669; }
-    .ind-row .ind-pnl.neg { color: #b91c1c; }
+    .ind-row .ind-pnl.neg { color: #f0556d; }
     .ind-row .ind-link {
-        background: #fff; border: 1px solid #e2e8f0; border-radius: 999px;
+        background: #121826; border: 1px solid #243049; border-radius: 999px;
         padding: .15rem .55rem; font-size: .68rem; font-weight: 600;
-        color: #0f172a; text-decoration: none; white-space: nowrap;
+        color: #e8edf7; text-decoration: none; white-space: nowrap;
     }
-    .ind-row .ind-link:hover { background: #f3e6d4; }
+    .ind-row .ind-link:hover { background: #1a2233; }
 
-    .ind-empty { color: #78716c; font-size: .85rem; padding: 2rem; text-align: center; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+    .ind-empty { color: #8a97b1; font-size: .85rem; padding: 2rem; text-align: center; background: #121826; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
 
     .ind-section-note {
-        background: #fff; border-radius: 10px; padding: .75rem 1rem;
-        font-size: .8rem; color: #64748b;
+        background: #121826; border-radius: 10px; padding: .75rem 1rem;
+        font-size: .8rem; color: #8a97b1;
         border: 1px dashed #e7e5e4; margin-top: 1rem;
     }
 </style>
@@ -118,7 +119,17 @@
 
 {% block content %}
 
-<div class="ind-hero">
+<div class="review-hero ind-hero">
+    <div class="ov-bar">
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% include "_account_scope_filters.html" %}
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('sectors', scope='all') }}">Reset</a>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
     <div>
         <h1>Sectors</h1>
         <p class="lede">How your trading breaks down by sector. Click a sector to see the specific subsectors you've traded inside it.</p>
@@ -129,7 +140,7 @@
         <div class="ind-kpi">
             <div class="lbl">Total Return</div>
             <div class="val {% if kpis.total_pnl < 0 %}ind-neg{% elif kpis.total_pnl > 0 %}ind-pos{% endif %}">
-                ${{ "{:,.2f}".format(kpis.total_pnl) }}
+                {{ money(kpis.total_pnl, 2) }}
             </div>
         </div>
         <div class="ind-kpi">
@@ -145,7 +156,7 @@
             <div class="val">{{ kpis.num_symbols }}</div>
         </div>
         <div class="ind-kpi">
-            <div class="lbl">Win Rate</div>
+            <div class="lbl">{{ term('Win Rate') }}</div>
             <div class="val">{{ "{:.0%}".format(kpis.win_rate) }}</div>
         </div>
     </div>
@@ -170,15 +181,6 @@
 </div>
 {% else %}
 
-{% if (accounts and accounts|length > 1) or account_groups %}
-<form method="get" class="filter-bar">
-    {% include "_account_scope_filters.html" %}
-    {% if scope_is_filtered %}
-    <a class="filter-reset" href="{{ url_for('sectors') }}">Reset</a>
-    {% endif %}
-</form>
-{% endif %}
-
 <div class="sec-grid">
     {% for s in sector_rows %}
     {% set sec_id = s.sector|replace(' ', '-')|lower %}
@@ -195,7 +197,7 @@
             </div>
             <div>
                 <div class="pnl {% if s.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                    ${{ "{:,.0f}".format(s.total_pnl) }}
+                    {{ money(s.total_pnl, 0) }}
                 </div>
                 <div class="pnl-sub">total P&amp;L</div>
             </div>
@@ -203,7 +205,7 @@
 
         <div class="stats">
             <div class="stat">
-                <div class="lbl">Win Rate</div>
+                <div class="lbl">{{ term('Win Rate') }}</div>
                 <div class="val">
                     {% if (s.num_winners + s.num_losers) > 0 %}
                         {{ "{:.0%}".format(s.win_rate) }}
@@ -215,19 +217,19 @@
                 <div class="val">{{ s.num_winners | int }} / {{ s.num_losers | int }}</div>
             </div>
             <div class="stat">
-                <div class="lbl">Premium</div>
-                <div class="val">${{ "{:,.0f}".format(s.premium_received or 0) }}</div>
+                <div class="lbl">{{ term('Premium') }}</div>
+                <div class="val">{{ money(s.premium_received or 0, 0) }}</div>
             </div>
         </div>
 
         <div class="splits">
-            <span class="k">Realized</span>
-            <span class="v {% if s.realized_pnl < 0 %}neg{% endif %}">${{ "{:,.0f}".format(s.realized_pnl) }}</span>
-            <span class="k">Unrealized</span>
-            <span class="v {% if s.unrealized_pnl < 0 %}neg{% endif %}">${{ "{:,.0f}".format(s.unrealized_pnl) }}</span>
+            <span class="k">{{ term('Realized') }}</span>
+            <span class="v {% if s.realized_pnl < 0 %}neg{% endif %}">{{ money(s.realized_pnl, 0) }}</span>
+            <span class="k">{{ term('Unrealized') }}</span>
+            <span class="v {% if s.unrealized_pnl < 0 %}neg{% endif %}">{{ money(s.unrealized_pnl, 0) }}</span>
             {% if s.dividend_income and s.dividend_income > 0 %}
             <span class="k">Dividends</span>
-            <span class="v">${{ "{:,.0f}".format(s.dividend_income) }}</span>
+            <span class="v">{{ money(s.dividend_income, 0) }}</span>
             {% endif %}
         </div>
 
@@ -239,7 +241,7 @@
                 <a href="{{ scoped_url('position_detail', symbol=s.top_symbol) }}"
                    class="text-decoration-none d-block">
                     <span class="sym">{{ s.top_symbol }}</span>
-                    <span class="ret pos">${{ "{:,.0f}".format(s.top_symbol_return or 0) }}</span>
+                    <span class="ret pos">{{ money(s.top_symbol_return or 0, 0) }}</span>
                 </a>
             </div>
             {% endif %}
@@ -250,7 +252,7 @@
                 <a href="{{ scoped_url('position_detail', symbol=s.worst_symbol) }}"
                    class="text-decoration-none d-block">
                     <span class="sym">{{ s.worst_symbol }}</span>
-                    <span class="ret neg">${{ "{:,.0f}".format(s.worst_symbol_return or 0) }}</span>
+                    <span class="ret neg">{{ money(s.worst_symbol_return or 0, 0) }}</span>
                 </a>
             </div>
             {% endif %}
@@ -284,7 +286,7 @@
                     </div>
                 </div>
                 <div class="ind-pnl {% if r.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                    ${{ "{:,.0f}".format(r.total_pnl) }}
+                    {{ money(r.total_pnl, 0) }}
                 </div>
                 <a class="ind-link" href="{{ scoped_url('positions', subsector=r.subsector) }}">View</a>
             </div>
@@ -297,8 +299,8 @@
 
 {% if unknown_count and unknown_count > 0 %}
 <div class="ind-section-note">
-    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} couldn't be matched to a sector yet —
-    they'll show up under <em>Unknown</em>. They fill in automatically as the daily metadata refresh picks them up.
+    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} still {{ 'has' if unknown_count == 1 else 'have' }} no sector.
+    {{ 'It shows' if unknown_count == 1 else 'They show' }} under <em>Unclassified</em>, after the named sectors.
 </div>
 {% endif %}
 

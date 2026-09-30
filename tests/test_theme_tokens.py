@@ -14,11 +14,11 @@ def test_base_defines_paired_theme_tokens():
     assert "--ht-ink:" in src
     assert "--ht-muted:" in src
     assert "--ht-surface:" in src
-    # Dark values live on the attribute selector so they inherit.
+    # Dark desk values live on the attribute selector so they inherit.
     dark_idx = src.index('[data-bs-theme="dark"]')
     dark_block = src[dark_idx:dark_idx + 800]
-    assert "--ht-ink: #f4f0ea" in dark_block
-    assert "--ht-surface: #1c1e26" in dark_block
+    assert "--ht-ink: #e8edf7" in dark_block
+    assert "--ht-surface: #121826" in dark_block
 
 
 def test_daily_review_identity_text_uses_tokens():
@@ -50,13 +50,28 @@ def test_snapshot_table_numeric_columns_line_up():
     assert "font-variant-numeric: tabular-nums;" in src
 
 
+def test_radar_lane_text_is_light_on_the_dark_desk():
+    """Options used to be indigo (#4b3fd1 / #2c2470) on the dark card."""
+    styles = (ROOT / "app/templates/_review_styles.html").read_text()
+    below = (ROOT / "app/templates/_overview_below.html").read_text()
+    assert "#4b3fd1" not in styles
+    assert "#2c2470" not in styles
+    assert "#4b3fd1" not in below
+    verdict = styles.split(".ov-ev.vd {", 1)[1].split("}", 1)[0]
+    assert "#e8edf7" in verdict
+    assert "#a8b8ff" in verdict
+    assert 'style="color:#a8b8ff"' in below
+    assert 'style="color:#e8c07a"' in below
+    assert 'style="color:#5eead4"' in below
+
+
 def test_day_detail_muted_uses_token():
     src = (ROOT / "app/templates/day_detail.html").read_text()
     assert ".dd-muted { color: var(--ht-muted);" in src
 
 
-def test_brand_fonts_and_copper_accent_not_inter_or_bootstrap_purple():
-    """Sep 2026 de-AI pass: Public Sans + Plex, copper accent, flat navy."""
+def test_brand_fonts_and_desk_accent_not_inter_or_bootstrap_purple():
+    """Dark desk: Instrument Sans + JetBrains Mono, mint wordmark, blue links."""
     base = (ROOT / "app/templates/base.html").read_text()
     skeleton = (ROOT / "app/templates/_skeleton.html").read_text()
     landing = (ROOT / "app/templates/landing.html").read_text()
@@ -64,25 +79,27 @@ def test_brand_fonts_and_copper_accent_not_inter_or_bootstrap_purple():
     assert "family=Inter" not in base
     assert "font-family: \"Inter\"" not in base
     assert "font-family: Inter" not in skeleton
-    assert "family=Public+Sans" in base
-    assert "family=IBM+Plex+Mono" in base
-    assert "Public Sans" in base
-    assert "IBM Plex Mono" in base
-    assert "Public Sans" in skeleton
+    assert "family=Instrument+Sans" in base
+    assert "family=JetBrains+Mono" in base
+    assert "Instrument Sans" in base
+    assert "JetBrains Mono" in base
+    assert "Instrument Sans" in skeleton
 
     assert "--color-mirror: #6f42c1" not in base
-    assert "--color-mirror: #b87333" in base
-    assert "--color-mirror: #e0b56a" in base
+    assert "--color-mirror: #b87333" not in base
+    assert "--ht-mint: #5b8cff" in base
+    assert "#5bffc5" not in base
+    assert "--color-mirror: #5b8cff" in base
     assert "#7c3aed" not in base
     assert "linear-gradient(135deg, #1a1a2e 0%, #16213e" not in base
-    assert "--nav-bg: #1a1a2e" in base
-    assert "background: #f4f5f7" in base
+    assert "--ht-page: #0a0e17" in base
+    assert "background: #f4f5f7" not in base
     assert "background: #f7f5f2" not in base
-    assert "--ht-surface: #ffffff" in base
+    assert "--ht-surface: #121826" in base
     assert "--ht-surface: #fffcf8" not in base
 
     assert "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" not in landing
-    assert "background: #1a1a2e" in landing
+    assert "background: #0c111c" in landing
     assert "font-weight: 800" not in landing.split(".landing-hero h1")[1].split("}")[0]
 
     # Strategy swatches are data colors. CSP / PMCC still share #6f42c1;

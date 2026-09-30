@@ -74,4 +74,6 @@ toward the winner.
 - Do not raise the budget until that connect rate holds for a week.
 
 Connected, on the admin funnel, is a signup who linked a broker or uploaded
-a CSV. A signup that never links is not a win.
+a CSV. A signup that never links is not a win. The same card lists which
+button was clicked (hero, the trades, the chart, the review, the profile,
+strategy fit, close). A click counts once per landing.

@@ -22,6 +22,7 @@ from app.routes import (
     _bq_parallel,
     _df_normalize_account_column,
     _redirect_if_no_accounts,
+    _scope_keep_kwargs,
     _tenants_for_scope,
     _user_account_list,
 )
@@ -158,6 +159,10 @@ def _build_strategy_fit_matrix(
         if equity_strategies:
             empty["row_labels"] = sorted(equity_strategies)
         return empty
+
+    if col_field in ("sector", "subsector") and "symbol" in df.columns:
+        from app.sector_labels import apply_sector_labels
+        df = apply_sector_labels(df)
 
     cell_agg = (
         df.groupby(["strategy", col_field], dropna=False)
@@ -313,14 +318,17 @@ def _build_strategy_fit_matrix(
 
     # Sample-size and win-rate guarded callouts so we don't celebrate a
     # 1-trade fluke or a coin-flip strategy that lucked into R:R. Cells
-    # whose column value is "Unknown" are excluded from the narrative
-    # surface (sweet/soft callouts) — naming "Unknown" as edge isn't
-    # actionable. The cell stays in the matrix and the user can toggle
-    # the Unknown column on/off; we just don't editorialize about it.
+    # in the unclassified bucket are excluded from the narrative —
+    # naming "Unclassified" as edge isn't actionable. The cell stays in
+    # the matrix and the user can toggle that column; we don't
+    # editorialize about it.
+    from app.sector_labels import is_unclassified, sort_unclassified_last
+    if col_field in ("sector", "subsector"):
+        col_order = sort_unclassified_last(col_order)
     MIN_TRADES_FOR_CALLOUT = 5
     qualified = cell_agg[
         (cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
-        & (cell_agg[col_field].astype(str) != "Unknown")
+        & ~cell_agg[col_field].astype(str).map(is_unclassified)
     ].copy()
 
     sweet_spots: list = []
@@ -354,7 +362,7 @@ def _build_strategy_fit_matrix(
     }
 
 
-def _strategy_fit_insight_context(selected_account: str) -> dict:
+def _strategy_fit_insight_context(scope_key: str) -> dict:
     """Pull the cached AI strategy-fit insight for the current user/account
     scope and convert its markdown to HTML for the template.
 
@@ -371,7 +379,7 @@ def _strategy_fit_insight_context(selected_account: str) -> dict:
         return ctx
     try:
         cached = get_strategy_fit_insight_for_user(
-            current_user.id, tenant_filter=selected_account or ""
+            current_user.id, tenant_filter=scope_key or ""
         )
     except Exception:
         cached = None
@@ -449,8 +457,8 @@ def _strategy_fit_render_payload(
 @login_required
 def strategy_fit():
     """Legacy URL — permanently moved to /strategies?view=fit."""
-    args = {"view": "fit"}
-    for key in ("account", "tenant", "dim", "sector"):
+    args = {"view": "fit", **_scope_keep_kwargs(request.args)}
+    for key in ("dim", "sector"):
         val = (request.args.get(key) or "").strip()
         if val:
             args[key] = val
@@ -466,8 +474,14 @@ def render_strategy_fit_view():
     selected_account = request.args.get("account", "")
     tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
+    from app.account_scope import account_scope_cache_key
+    insight_scope_key = account_scope_cache_key(
+        request.args, selected_account, tenant_ids,
+    )
 
-    drill_sector = request.args.get("sector", "")  # implies subsector mode
+    from app.sector_labels import canonical_sector_param
+    # Unknown bookmarks select the Unclassified column after the remap.
+    drill_sector = canonical_sector_param(request.args.get("sector", ""))
 
     # Resolve the column dimension. Drilling into a sector wins (for
     # backward URL compat) and forces subsector mode. Otherwise read ?dim=
@@ -483,7 +497,7 @@ def render_strategy_fit_view():
     else:
         dim = "sector"
 
-    insight_ctx = _strategy_fit_insight_context(selected_account)
+    insight_ctx = _strategy_fit_insight_context(insight_scope_key)
 
     # Fan out the queries we need. positions_summary is always needed —
     # for sector/subsector it's the data source, and for dte/moneyness
@@ -525,6 +539,8 @@ def render_strategy_fit_view():
             summary_df.loc[:, col] = (
                 summary_df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
             )
+    from app.sector_labels import apply_sector_labels as _apply_sector_labels
+    summary_df = _apply_sector_labels(summary_df)
 
     accounts_for_filter = (
         sorted(user_accounts)

@@ -187,9 +187,14 @@ The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', 
 callers don't break.
 
 What's working:
-- Session hero: brand and the Group / Account filters sit in the dark
- bar (the pattern to roll out site-wide; the global nav stays until
- then). Date of the close, then total value, the last close's move
+- Session hero: brand and the Group filter sit in the dark
+ bar (same bar on Today, Positions, Accounts, Strategies, Sectors,
+ Trader Profile, Position Detail, Earnings, and Insights; the global
+ nav stays until that header replaces it). The Account control is in
+ the app header when the user has two or more accounts. It shows
+ nicknames only, stays hidden for a single account, writes `?tenants=`,
+ and a cookie restores that shareable URL on the next visit. Groups
+ stay on the page toolbar. Date of the close, then total value, the last close's move
  labeled Today (percent, then dollars, with the S&amp;P 500 under it),
  This week, and percent invested. The one-line takeaway calls these
  **account-value changes** and lists one-week benchmark figures without
@@ -240,11 +245,12 @@ What's working:
 - Execution Review: verdicts that matured in the **last 7 days**, labeled as such — not "this week".
 
 ### Today (`/today`, endpoint `today_view`) — LIVE SESSION
-**Status: In-session last-trade / last-sync page with an always-on delay disclaimer.**
+**Status: In-session last-trade / last-sync page with an always-on delay disclaimer. Same dark hero bar as Overview.**
 
-This is the only surface allowed to say "today". Banner: numbers can lag the
-broker; they are not the official close (that's Overview). Nav sits in the
-same Overview dropdown. Weekend and pre-market are **not** a live session:
+This is the only surface allowed to say "today" as the live session. The hero
+line says the numbers can lag the broker and are not the official close
+(that's Overview). Nav sits in the same Overview dropdown. Weekend and
+pre-market are **not** a live session:
 do not replay Friday's close (or 24/7 crypto bars) as "today" — Overview
 already has the last completed session. `/today` then shows an empty
 "no live session" state.
@@ -358,6 +364,49 @@ What's working:
   .total_fees` — sourced from `int_option_contracts.total_fees` for
   options and the new `int_equity_sessions.total_fees` for equity, both
   informational-only for the same double-subtract reason).
+- **If held to expiration (Sep 2026).** On each gradeable early close
+  (the same `int_option_exit_quality` rows as the hindsight notes), a
+  chart from open to expiration. Open and close are fill prices. The
+  dashed segment after the close is intrinsic value from
+  `stg_daily_prices` (an estimate). Daily option marks
+  (`int_option_marks_daily`) fill the held segment when they exist.
+  P&L if held is `realized_pnl − early_close_vs_expiry_delta` — the
+  same dollar as the hindsight note. Open contracts are omitted. The
+  charts stay in a right-side panel (a full-screen sheet on phones).
+  Just above the Position Legs table, a collapsed "If held to expiration"
+  block is the headline: the total and a count ("Closing early cost you
+  $X across N trades vs holding to expiration", or "saved you" when the
+  early exits came out ahead).   Expanding it lists each early close
+  (contract, contracts, closed date, actual P&L, if-held P&L, difference
+  pill). Below 576px each exit is a stacked card instead of that table,
+  so the difference stays on screen. The fold clips overflow so opening
+  it cannot widen the page. Each row opens that contract's chart. On a
+  phone the chart is a full-viewport bottom sheet. The difference uses
+  the same words on the card and in the panel ("$X more if held" /
+  "$X less if held"). The same pill
+  stays on the Position Legs row. The panel steps between charts,
+  largest first. The peek
+  drawer still links to that panel (`#if-held`) and masks the account
+  name when privacy mode is on. Math lives in `app/held_chart.py`; no
+  new market-data vendor. The two price queries (`stg_daily_prices`,
+  `int_option_marks_daily`) are fetched outside the shared position
+  batch (`fetch_held_series`) and fail to empty frames, so a
+  marks-table miss cannot blank the page or the peek drawer.
+- **Covered call runs (Sep 2026).** A share lot and the calls written
+  against it are one run, from the buy (or a put assignment, for a
+  wheel) through the sale or assignment, or through today if the shares
+  are still held. The card under the position review lists each call
+  (strike, expiry, premium, outcome: expired / closed / assigned /
+  rolled / open), a running premium total, the share result, and one
+  net for the whole run. Broker fees are left out of that math and the
+  card says so. Multiple runs, partial sales, and partial coverage stay
+  on the same lot until the shares are flat. Built in
+  `app/covered_call_runs.py` from the fills and inferred opening balances
+  the page already loaded (tenant-scoped, before the leg filter so one leg
+  click does not split the cycle). Opening quantities are converted from
+  today's units back to their opening-date units before split events are
+  replayed, so pre-history holdings do not disappear or double-split.
+  Pinned by `tests/test_covered_call_runs.py`.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
   path rebuilds rows from `int_strategy_classification` filtered by
   `open_date in_leg_range` instead of using `positions_summary` (which
@@ -451,11 +500,17 @@ There is no separate dashboard page — Overview is the authenticated home.
 
 Separate from the homepage so a Reddit test can be measured on its own.
 Copy is the mirror (broker number vs the trade sequence), 30 days, no card.
+The page walks the product in order: the trades behind one number, one
+symbol marked every day (equity and options, both with realized gains),
+that position written out trade by trade, the trader profile, and the
+strategy-fit matrix.
 History is whatever the broker still has (often a year or two) plus an
 optional CSV — the page does not promise five years. Visits, signup clicks,
-demo clicks, and signups land in `campaign_events` (`app/campaign.py`); the
-cookie is stamped onto `users.acquisition_*` at signup. Admin overview shows
-the funnel, including who actually connected a broker or uploaded a CSV.
+demo clicks, and signups land in `campaign_events` (`app/campaign.py`); each
+click also stores which button (`place`: hero, trades, chart, story, profile,
+fit, close). The cookie is stamped onto `users.acquisition_*` at signup.
+Admin overview shows the funnel, including who actually connected a broker
+or uploaded a CSV, and which button was clicked.
 `REDDIT_PIXEL_ID` adds PageVisit on `/start` and SignUp after signup.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
@@ -489,7 +544,9 @@ Lists all positions with strategy tags, P&L, status. Links to position detail.
 Pagination in Python (`per_page = 25`).
 
 What's working:
-- Hero "X open / Y closed" chips **and** the "Across N accounts" line honor
+- Hero uses the same dark bar as Overview (brand and account filters).
+  Total return, realized, unrealized, and win rate sit in that bar.
+  "X open / Y closed" chips **and** the "Across N accounts" line honor
   every active filter (account,
   strategy, symbol, status, subsector, sector, date range). Pre-fix the
   chips read off the unfiltered df and lied about the body. "Open" is the
@@ -827,18 +884,25 @@ Users trade multiple accounts. All logic must:
 Users can **group** accounts (kids / sara / 401ks) on Settings → Accounts & data.
 Membership is many-to-many on `tenant_id`; `?groups=` is the union of selected
 groups' members, then intersected with `?account=` / `?tenant=` / `?tenants=`.
-The Groups and Account controls are multi-select dropdowns to the left of
-other filters, each with Apply and Reset. Account values are `tenant_id`
-(`?tenants=`). Groups always lists every group (picking an account must not
-hide the others). Selecting groups limits the account list to members.
+The Account control lives in the app header. It lists nicknames only
+(no broker masks or account numbers) and is hidden when the user has
+one account. It writes `?tenants=` so a filtered view stays shareable.
+A cookie (`ht_tenants`) restores that URL on a later visit that has no
+account query. An explicit `?tenants=` / `?tenant=` / `?account=` on a
+link wins and does not overwrite the cookie. `?scope=all` (Reset)
+clears the cookie and the filter. Groups stay a multi-select on the
+page toolbar, to the left of the other filters, with Apply and Reset.
+Account values are `tenant_id` (`?tenants=`). Groups always lists every
+group (picking an account must not hide the others). Selecting groups
+limits the account list to members.
 With two or more accounts and no groups yet, the Groups slot is a quiet
 "Group accounts" link to Settings → Accounts & data (`#account-groups`) —
 not an empty dropdown. Never key groups on the SnapTrade `"Schwab Account"`
 label. In-page links (status pills, movers, pagination, Cmd+K, the logo)
 must keep `?tenants=` / `?groups=` via the `scoped_url` template global —
-plain `url_for` drops the picker. Reset links keep using `url_for` so they
-actually clear. Drill-ins to one physical account use `tenant=<tenant_id>`,
-never the colliding display label.
+plain `url_for` drops the picker. Reset links use `url_for(..., scope='all')`
+so they clear the saved account filter as well as the query. Drill-ins to
+one physical account use `tenant=<tenant_id>`, never the colliding display label.
 
 ### 4. Performance Rules
 
@@ -1480,29 +1544,20 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
 global "Design refresh" style block that owns the app's look. Full
 token list: `docs/VISUAL_BRAND.md`. Short version agents must follow:
 
-- **UI face:** Public Sans (400–700) from Google Fonts. Body stack is
-  `"Public Sans", system-ui, sans-serif`. Do not load Inter, Geist,
-  Plus Jakarta Sans, Manrope, Space Grotesk, or Outfit.
-- **Numbers:** IBM Plex Mono (400–600) on KPI values, `.ht-statbar`
-  values, and the `.ht-num` / `.font-mono-nums` utilities. Plex is not
-  loaded at 700/800 — don't faux-bold it. Chart tick labels use the
-  same face via the Chart.js default in base.html.
-- **Accent:** copper `#b87333` (`--color-mirror`). Small text on light
-  surfaces uses `--color-mirror-ink` (`#7a4a1e`); dark mode lightens
-  both to `#e0b56a`. This is the only brand accent for CTAs, focus
-  rings, and primary chrome. Bootstrap purple `#6f42c1` is not the
-  AI/mirror color. P&L tape is `--color-positive: #3f7d5c` and
-  `--color-negative: #b55249`.
-- **Navy is flat.** Nav, landing heroes, and the other dark bands are
-  solid `#1a1a2e` (`--nav-bg`). No 3-stop night-sky gradient
-  (`#1a1a2e → #16213e → #0f3460`) and no blue→purple progress bar.
-  The progress bar is charcoal → copper.
-- **Neutral canvas.** Light page background `#f4f5f7`. Cards,
-  tables, and `.ht-statbar` use `--ht-surface: #ffffff` with a
-  hairline `--ht-line` (`#e5e7eb`), not a soft drop shadow and not a
-  cream fill. `#f7f5f2` / `#fffcf8` were tried and rejected. Dark
-  canvas is `#12141a`; dark cards are `--ht-surface: #1c1e26`.
-  Marketing `.feature-card` may keep a mild hover-lift.
+- **UI face:** Instrument Sans (400–700) from Google Fonts. Body stack is
+  `"Instrument Sans", ui-sans-serif, system-ui, sans-serif`. Do not load
+  Inter, Geist, Public Sans, Plus Jakarta Sans, Manrope, Space Grotesk, or Outfit.
+- **Numbers:** JetBrains Mono on tickers, prices, P&L, and table dates.
+  All figures use `font-variant-numeric: tabular-nums`.
+- **The field is dark.** Public pages are `#05070c`. The logged-in app is
+  `#0a0e17` with cards `#121826`. There is no light theme.
+- **Brand `#5b8cff`** (purply-blue) is the wordmark tail (`trader`) and the
+  primary button (text `#0a0e17`). Green is only for gains.
+- **Blue `#5b8cff`** is selected nav, links, and focus. Selected nav is
+  blue at 15% fill with blue text.
+- **Up `#28c08a` is only a gain. Down `#f0556d` is only a loss.**
+- **Wordmark:** lowercase `happy` in white plus `trader` in mint, weight
+  650, tracking `-0.03em`. No icon, no all-caps.
 - **Strategy swatches are not the brand.** Covered Call / CSP / Wheel
   color maps (including CSP and Poor Man's Covered Call at `#6f42c1`)
   stay as data colors. Do not retint them to copper.

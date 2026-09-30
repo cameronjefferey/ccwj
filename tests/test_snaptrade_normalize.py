@@ -920,6 +920,25 @@ def test_orders_df_real_alpaca_payload_buy_yields_negative_amount():
     assert abs(float(row["Quantity"]) * float(row["Price"]) + float(row["Amount"])) <= 0.01
 
 
+def test_orders_df_crypto_pair_uses_same_base_symbol_as_activities():
+    """Coinbase order/activity symbol drift must not duplicate one fill."""
+    order = {
+        **_ALPACA_ORDER_NVDA_BUY,
+        "universal_symbol": {
+            "raw_symbol": "BTC-USD",
+            "description": "Bitcoin / U.S. Dollar",
+        },
+        "filled_quantity": "0.01",
+        "total_quantity": "0.01",
+        "execution_price": "60000",
+    }
+    df = orders_to_history_df(
+        [order], account_name="Coinbase Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert df.iloc[0]["Symbol"] == "BTC"
+
+
 def test_orders_df_sell_yields_positive_amount():
     """A SELL is cash IN; sign convention matches activities so the
     cross-source dedup keys agree."""
@@ -1285,3 +1304,41 @@ def test_is_crypto_symbol_helper_is_case_insensitive_and_strips():
     assert is_crypto_symbol("PLTR") is False
     assert is_crypto_symbol("") is False
     assert is_crypto_symbol(None) is False  # type: ignore[arg-type]
+
+
+def test_positions_df_ambiguous_ticker_without_type_stays_equity():
+    """SNX is both Synthetix and TD SYNNEX. A missing type code used to
+    stamp Cryptocurrency from the whitelist. Ambiguous tickers fail
+    toward the stock; BTC still falls back to crypto."""
+    snx = {
+        "symbol": {
+            "symbol": {
+                "raw_symbol": "SNX",
+                "symbol": "SNX",
+                "description": "TD SYNNEX",
+            },
+            "description": "TD SYNNEX",
+        },
+        "units": 20,
+        "price": 148.0,
+        "average_purchase_price": 140.0,
+        "open_pnl": 160.0,
+    }
+    df = positions_to_current_df(
+        [snx], account_name="Alpaca Paper Account", user_id=1, tenant_id=TENANT_SNAPTRADE
+    )
+    assert df.iloc[0]["Symbol"] == "SNX"
+    assert df.iloc[0]["security_type"] == "Equity"
+
+
+def test_holding_is_crypto_does_not_tag_the_stock():
+    from app.upload import holding_is_crypto, symbol_defaults_to_crypto
+
+    assert symbol_defaults_to_crypto("SNX") is False
+    assert symbol_defaults_to_crypto("BTC") is True
+    assert holding_is_crypto("SNX", "Cryptocurrency", "TD SYNNEX Corporation") is False
+    assert holding_is_crypto("SNX", "Cryptocurrency", "TD SYNNEX") is False
+    assert holding_is_crypto("SNX", "", "TD SYNNEX Corporation") is False
+    assert holding_is_crypto("SNX", "Cryptocurrency", "Synthetix") is True
+    assert holding_is_crypto("BTC") is True
+    assert holding_is_crypto("AAPL", "Equity", "Apple Inc") is False

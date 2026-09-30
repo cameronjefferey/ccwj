@@ -63,7 +63,7 @@ def test_landing_how_it_works_is_broker_first():
     assert "few hours" in html
 
 
-def test_signup_explains_snaptrade_next_and_keeps_fields_on_mismatch(monkeypatch):
+def test_signup_explains_snaptrade_next_without_reflecting_passwords(monkeypatch):
     monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
     monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
     monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
@@ -90,8 +90,8 @@ def test_signup_explains_snaptrade_next_and_keeps_fields_on_mismatch(monkeypatch
     assert "Passwords do not match." in html
     assert 'value="ada_trader"' in html
     assert 'value="ada@example.com"' in html
-    assert 'value="Secret1pass"' in html
-    assert 'value="Secret2pass"' in html
+    assert "Secret1pass" not in html
+    assert "Secret2pass" not in html
 
 
 def test_get_started_without_broker_is_connect_first(monkeypatch):

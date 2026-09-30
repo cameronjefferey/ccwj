@@ -5,7 +5,7 @@ names, but the old labels are never removed, so that table drifts (10
 names, including phantoms, while 7 live connections remain).
 
 The connection a person can open is one ``snaptrade_accounts`` row
-(``snaptrade:<snaptrade_account_id>``), plus a CSV-only manual tenant.
+(using its persisted ``tenant_id``), plus a CSV-only manual tenant.
 Leftover ``broker_tenants`` rows that no longer have a SnapTrade account
 are not a second copy of the same book. Distinct SnapTrade institution
 names are the broker count — one Schwab login with six accounts is still
@@ -41,7 +41,16 @@ def distinct_broker_names(snaptrade_accounts):
 
 
 def snaptrade_tenant_id(row):
-    """``snaptrade:<uuid>`` for one SnapTrade account row, or ``""``."""
+    """Canonical tenant for one SnapTrade account row, or ``""``.
+
+    A deleted and re-added broker connection gets a new SnapTrade account
+    UUID, while ``snaptrade_accounts.tenant_id`` intentionally keeps the
+    retained warehouse tenant. Prefer that persisted mapping so account
+    links and CSV targets continue to address the user's existing data.
+    """
+    tenant_id = str((row or {}).get("tenant_id") or "").strip()
+    if tenant_id:
+        return tenant_id
     aid = str((row or {}).get("snaptrade_account_id") or "").strip()
     return f"snaptrade:{aid}" if aid else ""
 

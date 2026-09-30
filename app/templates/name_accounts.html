@@ -18,7 +18,7 @@
     .na-hero h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: .35rem; }
     .na-hero p { font-size: .95rem; margin-bottom: 0; opacity: .9; }
     .na-card {
-        background: #fff;
+        background: #121826;
         border: 1px solid #e9ecef;
         border-radius: 12px;
         padding: 1.5rem 1.75rem;
@@ -33,8 +33,8 @@
     }
     .na-row:last-child { border-bottom: none; }
     .na-who { flex: 0 0 auto; min-width: 200px; }
-    .na-who .name { font-weight: 600; color: #212529; font-size: .92rem; }
-    .na-who .meta { color: #6c757d; font-size: .78rem; }
+    .na-who .name { font-weight: 600; color: var(--ht-ink); font-size: .92rem; }
+    .na-who .meta { color: var(--ht-muted); font-size: .78rem; }
     .na-input { flex: 1; }
     .na-actions {
         display: flex; justify-content: space-between; align-items: center;
@@ -61,19 +61,19 @@
                 {% for c in generic_accounts %}
                 <div class="na-row">
                     <div class="na-who">
-                        <div class="name">{{ c.account_name }}</div>
+                        <div class="name">{{ c.account_name | account_label(c.tenant_id) }}</div>
                         {% set mask = c.account_number_masked | account_mask %}
                         {% if mask %}
                         <div class="meta">{{ mask }}</div>
                         {% elif c.broker_slug %}
-                        <div class="meta">{{ c.broker_slug|title }}</div>
+                        <div class="meta">{{ c.broker_slug|title | privacy_hide }}</div>
                         {% endif %}
                     </div>
                     <div class="na-input">
                         <input type="text" name="nickname_{{ c.snaptrade_account_id }}"
                                maxlength="80" class="form-control"
                                placeholder="e.g. Retirement, Sara's IRA, Trading"
-                               aria-label="Nickname for {{ c.account_name }}">
+                               aria-label="Nickname for {{ c.account_name | account_label(c.tenant_id) }}">
                     </div>
                 </div>
                 {% endfor %}

@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .chart-wrapper {
-        background: #fff;
+        background: #121826;
         border-radius: 12px;
         box-shadow: 0 2px 12px rgba(0,0,0,.06);
         padding: 1.25rem;
@@ -35,7 +36,18 @@
 {% endblock %}
 
 {% block content %}
-<div class="acct-hero">
+<div class="review-hero acct-hero">
+    <div class="ov-bar">
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% include "_account_scope_filters.html" %}
+            <input type="hidden" name="range" value="{{ selected_range or 'ALL' }}">
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('accounts', scope='all') }}">Reset</a>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
     <h1>Account performance</h1>
     <p class="lede">A side-by-side view of every account you've connected &mdash; current value, what's invested, and how realized vs unrealized P&amp;L is trending over time.</p>
 </div>
@@ -70,16 +82,6 @@
     <p class="mb-0 mt-2 small">Refresh in a minute, or try <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync">syncing your broker</a> or <a href="{{ url_for('upload') }}">uploading your trade history</a> again.</p>
 </div>
 {% else %}
-
-{# ── Filters ──────────────────────────────────────────────────────── #}
-{% if (accounts and accounts|length > 1) or account_groups %}
-<form method="get" class="filter-bar">
-    {% include "_account_scope_filters.html" %}
-    {% if scope_is_filtered %}
-    <a class="filter-reset" href="{{ url_for('accounts') }}">Reset</a>
-    {% endif %}
-</form>
-{% endif %}
 
 {# ── Time frame ────────────────────────────────────────────────────────
    Buttons are <a> links (bookmarkable + no-JS fallback) but JS intercepts the
@@ -121,26 +123,26 @@
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Account Value</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(kpis.account_value) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(kpis.account_value) }}{% endif %}</div>
         </div>
     </div>
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Cash Balance</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(kpis.cash_balance) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(kpis.cash_balance) }}{% endif %}</div>
         </div>
     </div>
     <div class="col">
         <div class="card kpi-card p-3 text-center">
             <div class="kpi-label">Invested</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(kpis.invested_value) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(kpis.invested_value) }}{% endif %}</div>
         </div>
     </div>
     <div class="col">
         <div class="card kpi-card p-3 text-center">
-            <div class="kpi-label">Unrealized P&amp;L</div>
+            <div class="kpi-label">{{ term('Unrealized P&L') }}</div>
             <div class="kpi-value {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.unrealized_pnl) }}
+                {{ money(kpis.unrealized_pnl, 0) }}
             </div>
         </div>
     </div>
@@ -160,7 +162,7 @@
         <div class="card kpi-card p-3 text-center" id="kpiNetDeposits">
             <div class="kpi-label">Net deposits</div>
             <div class="kpi-value {{ 'text-positive' if (kpis.net_deposits or 0) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(kpis.net_deposits or 0) }}
+                {% if privacy_mode %}••••{% else %}{{ money(kpis.net_deposits or 0, 0) }}{% endif %}
             </div>
         </div>
     </div>
@@ -168,9 +170,12 @@
        time frame changes (see updateCards() in the scripts block). #}
     <div class="col">
         <div class="card kpi-card p-3 text-center" id="kpiRealized">
-            <div class="kpi-label">{{ 'Realized (period)' if period_kpis else 'Realized P&L' }}</div>
+            <div class="kpi-label-row">
+                <div class="kpi-label">{{ 'Realized (period)' if period_kpis else 'Realized P&L' }}</div>
+                {{ term_mark('Realized P&L') }}
+            </div>
             <div class="kpi-value {{ 'text-positive' if (period_kpis.realized if period_kpis else kpis.realized_pnl) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(period_kpis.realized if period_kpis else kpis.realized_pnl) }}
+                {{ money(period_kpis.realized if period_kpis else kpis.realized_pnl, 0) }}
             </div>
         </div>
     </div>
@@ -191,7 +196,7 @@
         <div class="card kpi-card p-3 text-center" id="kpiNet">
             <div class="kpi-label">{{ 'Net P&L this period' if period_kpis else 'Total Return' }}</div>
             <div class="kpi-value {{ 'text-positive' if (period_kpis.net if period_kpis else kpis.total_return) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(period_kpis.net if period_kpis else kpis.total_return) }}
+                {{ money(period_kpis.net if period_kpis else kpis.total_return, 0) }}
             </div>
         </div>
     </div>
@@ -278,12 +283,12 @@
                         <th>Account</th>
                         <th>Strategy</th>
                         <th class="sortable" data-sort="num" title="Realized + unrealized + dividends. Same number as Total Return on Positions.">Total Return</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Win Rate</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Win Rate') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Trades</th>
                         <th class="sortable" data-sort="num" data-m="hide">W / L</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Premium') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
                     </tr>
                 </thead>
@@ -302,15 +307,15 @@
                         </td>
                         <td data-val="{{ row.total_return }}"
                             class="{{ 'text-positive' if row.total_return >= 0 else 'text-negative' }} fw-semibold">
-                            ${{ "{:,.2f}".format(row.total_return) }}
+                            {{ money(row.total_return, 2) }}
                         </td>
                         <td data-val="{{ row.realized_pnl }}"
                             class="{{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.realized_pnl) }}
+                            {{ money(row.realized_pnl, 2) }}
                         </td>
                         <td data-val="{{ row.unrealized_pnl }}"
                             class="{{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
-                            ${{ "{:,.2f}".format(row.unrealized_pnl) }}
+                            {{ money(row.unrealized_pnl, 2) }}
                         </td>
                         <td data-val="{{ row.win_rate }}">
                             {{ "{:.0%}".format(row.win_rate) }}
@@ -380,7 +385,7 @@
                         <th class="sortable text-end" data-sort="num">G/L Stock</th>
                         <th class="sortable text-end" data-sort="num">G/L Option</th>
                         <th class="sortable text-end" data-sort="num">Net</th>
-                        <th class="sortable text-end" data-sort="num" data-m="hide">Win rate</th>
+                        <th class="sortable text-end" data-sort="num" data-m="hide">{{ term('Win rate') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -614,7 +619,11 @@
         var val = card.querySelector('.kpi-value');
         if (lab) lab.textContent = label;
         if (val) {
-            val.textContent = '$' + Math.round(value).toLocaleString();
+            if (cardId === 'kpiNetDeposits' && window.htPrivacy) {
+                val.textContent = '••••';
+                return;
+            }
+            val.textContent = window.htMoney(Math.round(value), 0);
             val.classList.toggle('text-positive', value >= 0);
             val.classList.toggle('text-negative', value < 0);
         }
@@ -755,7 +764,7 @@
         if (hasData(summaryData.options)) {
             datasets.push({
                 label: 'Options', _key: 'options', data: summaryData.options.slice(),
-                borderColor: '#b87333', backgroundColor: 'rgba(184,115,51,.10)',
+                borderColor: '#5b8cff', backgroundColor: 'rgba(184,115,51,.10)',
                 fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
         }
@@ -780,12 +789,17 @@
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 15 } },
-                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
+                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': ' + window.htMoney(ctx.parsed.y, 2); } } }
                 },
                 scales: {
                     x: { ticks: { maxTicksLimit: 14, maxRotation: 45, callback: function (v) { return shortAxisDate(this.getLabelForValue(v)); } }, grid: { display: false } },
                     y: {
-                        ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
+                        ticks: { callback: function (v) {
+                            var n = Number(v) || 0;
+                            var sign = n < 0 ? '-' : '';
+                            var a = Math.abs(n);
+                            return sign + '$' + (a >= 1000 ? (a / 1000).toFixed(1) + 'k' : a.toFixed(0));
+                        } },
                         grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }
                     }
                 }
@@ -814,12 +828,17 @@
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 30, padding: 12, font: { size: 11 } } },
-                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits:2}); } } }
+                    tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': ' + window.htMoney(ctx.parsed.y, 2); } } }
                 },
                 scales: {
                     x: { ticks: { maxTicksLimit: 14, maxRotation: 45, callback: function (v) { return shortAxisDate(this.getLabelForValue(v)); } }, grid: { display: false } },
                     y: {
-                        ticks: { callback: function (v) { return '$' + (Math.abs(v)>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0)); } },
+                        ticks: { callback: function (v) {
+                            var n = Number(v) || 0;
+                            var sign = n < 0 ? '-' : '';
+                            var a = Math.abs(n);
+                            return sign + '$' + (a >= 1000 ? (a / 1000).toFixed(1) + 'k' : a.toFixed(0));
+                        } },
                         grid: { color: function (ctx) { return ctx.tick.value === 0 ? '#333' : '#e9ecef'; } }
                     }
                 }

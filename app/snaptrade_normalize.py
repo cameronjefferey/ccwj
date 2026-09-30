@@ -42,6 +42,8 @@ from app.upload import (
     CRYPTO_SYMBOLS,
     CURRENT_SEED_COLUMNS,
     HISTORY_SEED_COLUMNS,
+    canonicalize_crypto_pair_symbol,
+    symbol_defaults_to_crypto,
 )
 
 _log = logging.getLogger(__name__)
@@ -114,8 +116,11 @@ def _is_crypto(symbol_obj: Mapping) -> bool:
     if saw_type_block:
         return False
     # No broker type info → curated whitelist fallback (step 3).
+    # Ambiguous tickers (SNX = TD SYNNEX, SEI = Solaris Energy, …) fail
+    # toward Equity. A missing type on those names used to stamp
+    # Cryptocurrency and the warehouse then trusted that stamp.
     underlying = _underlying_from_symbol(symbol_obj).upper()
-    return underlying in CRYPTO_SYMBOLS
+    return symbol_defaults_to_crypto(underlying)
 
 
 # ---------------------------------------------------------------------------
@@ -443,23 +448,7 @@ def _crypto_pair_base(symbol: str) -> str:
     no review, no raw log). USDC itself is a base and is left alone.
     Option OSI symbols (spaces, or longer than a pair) are not rewritten.
     """
-    raw = str(symbol or "").strip().upper()
-    if not raw or raw in CRYPTO_SYMBOLS:
-        return raw
-    if " " in raw or len(raw) > 12:
-        return raw
-    for sep in ("-", "/"):
-        if sep in raw:
-            base, _, quote = raw.partition(sep)
-            if quote in ("USD", "USDT", "USDC") and base in CRYPTO_SYMBOLS:
-                return base
-            return raw
-    for quote in ("USDT", "USDC", "USD"):
-        if raw.endswith(quote) and len(raw) > len(quote):
-            base = raw[: -len(quote)]
-            if base in CRYPTO_SYMBOLS:
-                return base
-    return raw
+    return canonicalize_crypto_pair_symbol(symbol)
 
 
 def _underlying_from_symbol(symbol_obj: Mapping) -> str:
@@ -741,7 +730,9 @@ def orders_to_history_df(
                 continue
 
             usym = order.get("universal_symbol") or {}
-            sym_str = (usym.get("raw_symbol") or usym.get("symbol") or "").strip()
+            sym_str = _crypto_pair_base(
+                usym.get("raw_symbol") or usym.get("symbol") or ""
+            )
             if not sym_str:
                 continue
 

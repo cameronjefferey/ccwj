@@ -8,6 +8,7 @@
     .dd-hero {
         background: #1a1a2e;
         border-radius: 14px; color: #fff; padding: 1.5rem 1.75rem;
+        scroll-margin-top: 4.5rem;
     }
     .dd-hero .dd-date { font-size: .78rem; letter-spacing: 1px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
     .dd-hero .dd-delta { font-size: 2rem; font-weight: 600; }
@@ -19,18 +20,18 @@
     .dd-card { border: 0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
     .dd-card h2 { font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; color: var(--ht-label); font-weight: 700; margin-bottom: .85rem; }
     .dd-table { width: 100%; font-size: .9rem; }
-    .dd-table td { padding: .45rem .4rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .dd-table td { padding: .45rem .4rem; border-bottom: 1px solid #243049; vertical-align: middle; }
     .dd-table tr:last-child td { border-bottom: 0; }
     .dd-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
     .dd-money.pos { color: var(--color-positive); }
     .dd-money.neg { color: var(--color-negative); }
     .dd-muted { color: var(--ht-muted); font-size: .8rem; }
-    .dd-roll-ok { color: #166534; font-size: .75rem; font-weight: 600; }
-    .dd-roll-miss { color: #9a3412; font-size: .75rem; font-weight: 600; }
+    .dd-roll-ok { color: #28c08a; font-size: .75rem; font-weight: 600; }
+    .dd-roll-miss { color: #e8c07a; font-size: .75rem; font-weight: 600; }
     .dd-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
     .dd-verb.buy { background: #eff6ff; color: #1d4ed8; }
-    .dd-verb.sell { background: #fef2f2; color: #b91c1c; }
-    .dd-verb.lifecycle { background: #f5f3ff; color: #6d28d9; }
+    .dd-verb.sell { background: rgba(240,85,109,.12); color: #e8edf7; }
+    .dd-verb.lifecycle { background: rgba(176,107,255,.14); color: #e8edf7; }
     .dd-sym { font-weight: 700; color: var(--ht-ink); }
     .dd-empty { color: var(--ht-faint); font-size: .9rem; padding: .35rem 0; }
     .dd-card .card-body { overflow-x: auto; }
@@ -56,18 +57,18 @@
     [data-bs-theme="dark"] .dd-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
 </style>
 
-<div class="dd-hero mb-4">
+<div class="dd-hero mb-4" id="day-review">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <div class="dd-date">Day review &middot; {{ day_label }}</div>
             {% if account_rows %}
             <div class="dd-delta {{ 'pos' if total_delta > 0 else 'neg' if total_delta < 0 else '' }}">
-                {{ "+" if total_delta > 0 else "" }}${{ "{:,.0f}".format(total_delta) }}
+                {% if privacy_mode %}••••{% else %}{{ money(total_delta, 0, true) }}{% endif %}
                 {% if total_delta_pct is not none %}
                 <span style="font-size:1rem; font-weight:600;">({{ "+" if total_delta_pct > 0 else "" }}{{ "%.2f"|format(total_delta_pct) }}%)</span>
                 {% endif %}
             </div>
-            <div class="dd-sub">${{ "{:,.0f}".format(total_value) }} total account value at that close</div>
+            <div class="dd-sub">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(total_value) }}{% endif %} total account value at that close</div>
             {% elif is_weekend %}
             <div class="dd-delta">Weekend</div>
             <div class="dd-sub">Markets were closed — any rows below are broker postings dated that day.</div>
@@ -88,13 +89,13 @@
             <a href="{{ scoped_url('day_detail', day_str=prev_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants) }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
+                                tenants=selected_tenants, _anchor='day-review') }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
             {% if next_day %}
-            <span class="mx-1" style="color:#475569;">|</span>
+            <span class="mx-1" style="color:#8a97b1;">|</span>
             <a href="{{ scoped_url('day_detail', day_str=next_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants) }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
+                                tenants=selected_tenants, _anchor='day-review') }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
             {% endif %}
             <div class="mt-2">
                 <a href="{{ scoped_url('weekly_review',
@@ -113,10 +114,10 @@
         <table class="dd-table">
             {% for a in account_rows %}
             <tr>
-                <td>{{ a.label }}</td>
-                <td class="dd-money">${{ "{:,.0f}".format(a.value) }}</td>
+                <td data-val="{{ a.label | account_label(a.tenant_id) }}">{{ a.label | account_label(a.tenant_id) }}</td>
+                <td class="dd-money">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(a.value) }}{% endif %}</td>
                 <td class="dd-money {{ 'pos' if a.delta > 0 else 'neg' if a.delta < 0 else '' }}">
-                    {{ "+" if a.delta > 0 else "" }}${{ "{:,.0f}".format(a.delta) }}
+                    {% if privacy_mode %}••••{% else %}{{ money(a.delta, 0, true) }}{% endif %}
                     {% if a.delta_pct is not none %}<span class="dd-muted">({{ "+" if a.delta_pct > 0 else "" }}{{ "%.2f"|format(a.delta_pct) }}%)</span>{% endif %}
                 </td>
             </tr>
@@ -163,7 +164,7 @@
                             {% endif %}
                         </td>
                         <td class="dd-money {{ 'pos' if t.amount is not none and t.amount > 0 else 'neg' if t.amount is not none and t.amount < 0 else '' }}">
-                            {% if t.amount is not none %}{{ "+" if t.amount > 0 else "" }}${{ "{:,.2f}".format(t.amount) }}{% else %}&mdash;{% endif %}
+                            {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -184,7 +185,7 @@
                     {% for o in option_rows %}
                     <tr>
                         <td><a class="dd-sym" href="{{ scoped_url('position_detail', symbol=o.symbol) }}">{{ o.symbol }}</a></td>
-                        <td class="dd-money {{ 'pos' if o.impact > 0 else 'neg' }}">{{ "+" if o.impact > 0 else "" }}${{ "{:,.2f}".format(o.impact) }}</td>
+                        <td class="dd-money {{ 'pos' if o.impact > 0 else 'neg' }}">{{ money(o.impact, 2, true) }}</td>
                     </tr>
                     {% endfor %}
                 </table>
@@ -222,7 +223,7 @@
                     <tr>
                         <td>{{ c.verb }}{% if c.description %} <span class="dd-muted">{{ c.description|truncate(40) }}</span>{% endif %}</td>
                         <td class="dd-money {{ 'pos' if c.amount > 0 else 'neg' if c.amount < 0 else '' }}">
-                            {{ "+" if c.amount > 0 else "" }}${{ "{:,.2f}".format(c.amount) }}
+                            {{ money(c.amount, 2, true) }}
                         </td>
                     </tr>
                     {% endfor %}

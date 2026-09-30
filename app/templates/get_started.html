@@ -13,7 +13,7 @@
     .gs-hero p { font-size: 1rem; margin-bottom: 0; opacity: .92; }
 
     .gs-step {
-        background: #fff;
+        background: #121826;
         border: 1px solid #e9ecef;
         border-radius: 12px;
         padding: 1.5rem 1.65rem;
@@ -30,10 +30,10 @@
     }
     .gs-step-pending { background: #0d6efd; color: #fff; }
     .gs-step-done    { background: #198754; color: #fff; }
-    .gs-step-waiting { background: #e9ecef; color: #6c757d; }
+    .gs-step-waiting { background: #1a2233; color: #8a97b1; }
     .gs-step-body { flex: 1; min-width: 0; }
     .gs-step-body h6 { font-weight: 700; margin-bottom: .35rem; font-size: 1.05rem; }
-    .gs-step-body .lead-sub { color: #6c757d; font-size: .92rem; margin-bottom: 1rem; }
+    .gs-step-body .lead-sub { color: var(--ht-muted); font-size: .92rem; margin-bottom: 1rem; }
 
     .gs-path-row { display: grid; gap: 1rem; margin-top: .75rem; }
     .gs-path-row.dual   { grid-template-columns: 1fr 1fr; }
@@ -45,7 +45,7 @@
         border: 1px solid #e2e6ea;
         border-radius: 12px;
         padding: 1.25rem;
-        background: #fff;
+        background: #121826;
         display: flex; flex-direction: column;
     }
     .gs-path.featured {
@@ -54,46 +54,46 @@
     }
     .gs-path .gs-label {
         font-size: .68rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .04em; color: #6c757d; margin-bottom: .35rem;
+        letter-spacing: .04em; color: var(--ht-muted); margin-bottom: .35rem;
     }
-    .gs-path .gs-label.featured { color: #0d6efd; }
+    .gs-path .gs-label.featured { color: #5b8cff; }
     .gs-path h6 { font-weight: 700; font-size: 1.05rem; margin-bottom: .4rem; }
-    .gs-path .pitch { font-size: .9rem; color: #495057; margin-bottom: .85rem; }
+    .gs-path .pitch { font-size: .9rem; color: var(--ht-muted); margin-bottom: .85rem; }
     .gs-path ul.checklist {
         list-style: none; padding: 0; margin: 0 0 1.1rem;
-        font-size: .85rem; color: #495057;
+        font-size: .85rem; color: var(--ht-muted);
     }
     .gs-path ul.checklist li {
         padding-left: 1.35rem; position: relative; margin-bottom: .3rem;
     }
     .gs-path ul.checklist li::before {
-        content: "✓"; position: absolute; left: 0; color: #198754; font-weight: 700;
+        content: "✓"; position: absolute; left: 0; color: #28c08a; font-weight: 700;
     }
     .gs-path .cta-row { margin-top: auto; padding-top: .25rem; }
     .gs-path .fine-print {
-        font-size: .78rem; color: #6c757d; margin: .85rem 0 0;
+        font-size: .78rem; color: var(--ht-muted); margin: .85rem 0 0;
         padding-top: .85rem; border-top: 1px solid #f1f3f5;
     }
 
     details.gs-export {
         margin-top: .85rem; padding: .65rem .85rem;
-        background: #f8f9fa; border-radius: 8px;
+        background: #1a2233; border-radius: 8px;
         font-size: .85rem;
     }
     details.gs-export[open] { padding-bottom: 1rem; }
     details.gs-export summary {
-        cursor: pointer; font-weight: 600; color: #495057;
+        cursor: pointer; font-weight: 600; color: var(--ht-muted);
         list-style: none;
     }
     details.gs-export summary::-webkit-details-marker { display: none; }
     details.gs-export summary::after {
-        content: "▾"; float: right; transition: transform .15s; color: #6c757d;
+        content: "▾"; float: right; transition: transform .15s; color: var(--ht-muted);
     }
     details.gs-export[open] summary::after { transform: rotate(180deg); }
     details.gs-export ol { margin: .5rem 0 .35rem 1.35rem; padding: 0; }
     details.gs-export ol li { margin-bottom: .2rem; }
     details.gs-export .step-block { margin-top: .65rem; }
-    details.gs-export strong { color: #212529; }
+    details.gs-export strong { color: var(--ht-ink); }
 
     .gs-done {
         background: linear-gradient(135deg, #198754 0%, #157347 100%);
@@ -104,10 +104,10 @@
     .gs-done p { opacity: .9; margin-bottom: 1.1rem; }
 
     .gs-server-note {
-        margin-top: .85rem; font-size: .85rem; color: #6c757d;
-        background: #f1f3f5; padding: .65rem .85rem; border-radius: 8px;
+        margin-top: .85rem; font-size: .85rem; color: var(--ht-muted);
+        background: #1a2233; padding: .65rem .85rem; border-radius: 8px;
     }
-    .gs-server-note strong { color: #495057; }
+    .gs-server-note strong { color: var(--ht-muted); }
 </style>
 {% endblock %}
 
@@ -125,7 +125,7 @@
         <div class="gs-hero">
             <h1>Your brokerages</h1>
             <p>
-                Welcome back, {{ current_user.username }}. Add another account,
+                Welcome back, {{ current_user.username | privacy_hide }}. Add another account,
                 or manage the ones already connected.
             </p>
         </div>
@@ -171,7 +171,7 @@
         <div class="gs-hero">
             <h1>Connect your brokerage</h1>
             <p>
-                Welcome, {{ current_user.username }}. The next step is a read-only
+                Welcome, {{ current_user.username | privacy_hide }}. The next step is a read-only
                 connection through SnapTrade. You sign in on your broker's page.
                 HappyTrader never stores your broker password.
             </p>
@@ -211,7 +211,7 @@
 
         {% else %}
         <div class="gs-hero">
-            <h1>Welcome, {{ current_user.username }}</h1>
+            <h1>Welcome, {{ current_user.username | privacy_hide }}</h1>
             <p>Broker connect isn't available in this environment. Upload a CSV to start mirroring your trades.</p>
         </div>
         <div class="gs-path featured mb-3">

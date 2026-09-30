@@ -85,16 +85,35 @@ crypto_symbols as (
 -- match is OVERRIDDEN to non-crypto when the broker explicitly reports the
 -- holding as a conventional equity/ETF (the SEI-on-Schwab case). Closed
 -- positions aren't in stg_current, so they fall back to the whitelist.
+-- Tickers that are also listed equities. A whitelist hit, or a
+-- Cryptocurrency stamp written from that whitelist when the broker
+-- omitted a type code, is not enough. SNX is TD SYNNEX, SEI is Solaris
+-- Energy, COMP is Compass, LINK is Interlink Electronics.
+ambiguous_equity_tickers as (
+    select symbol from unnest(['SNX', 'SEI', 'LINK', 'COMP', 'UNI', 'EOS']) as symbol
+),
+
 broker_security_signal as (
     select
         tenant_id,
         account,
         user_id,
         upper(trim(underlying_symbol)) as symbol,
-        max(case when lower(coalesce(security_type_raw, '')) = 'cryptocurrency'
+        max(case when lower(coalesce(security_type_raw, '')) in (
+                      'cryptocurrency', 'crypto', 'digital_asset', 'digital asset')
                  then 1 else 0 end) as broker_says_crypto,
-        max(case when lower(coalesce(security_type_raw, '')) in ('equity', 'etfs & closed end funds')
-                 then 1 else 0 end) as broker_says_equity
+        -- Any conventional security type, not only the two Schwab strings.
+        -- Alpaca/SnapTrade ship 'cs', 'Common Stock', 'ETF', etc.
+        max(case when lower(coalesce(security_type_raw, '')) in (
+                      'equity', 'etfs & closed end funds', 'etf', 'stock',
+                      'common stock', 'cs', 'preferred stock', 'adr')
+                 then 1 else 0 end) as broker_says_equity,
+        max(case when regexp_contains(
+                      lower(coalesce(description, '')),
+                      r'\b(inc|incorporated|corp|corporation|ltd|limited|plc|company)\b')
+                 then 1 else 0 end) as looks_like_issuer,
+        -- any_value is enough: a position has one description.
+        any_value(description) as description
     from {{ ref('stg_current') }}
     where instrument_type = 'Equity'
     group by 1, 2, 3, 4
@@ -750,10 +769,32 @@ equity_classified as (
             -- Real case: SEI, user 9, 1 tracking share + long call, closed
             -- 2026-07-30 → read as 'Crypto' instead of folding into Long Call
             -- (regression test tracker_lot_folds_into_option_strategy).
-            when coalesce(bss.broker_says_crypto, 0) = 1
-                 or (cs.symbol is not null
-                     and coalesce(bss.broker_says_equity, 0) = 0
-                     and coalesce(eos.num_option_contracts, 0) = 0)
+            -- Ambiguous tickers (SNX, SEI, LINK, COMP, UNI, EOS) are the
+            -- stock unless the broker said crypto AND the description
+            -- names the token (Synthetix, Chainlink, …) rather than an
+            -- issuer ("TD SYNNEX Corporation"). A whitelist match alone,
+            -- or a Cryptocurrency stamp produced by that whitelist when
+            -- the broker omitted a type, must not label the stock Crypto.
+            when (
+                    coalesce(bss.broker_says_crypto, 0) = 1
+                    and aeq.symbol is null
+                 )
+                 or (
+                    coalesce(bss.broker_says_crypto, 0) = 1
+                    and aeq.symbol is not null
+                    and coalesce(bss.broker_says_equity, 0) = 0
+                    and coalesce(bss.looks_like_issuer, 0) = 0
+                    and regexp_contains(
+                        lower(coalesce(bss.description, '')),
+                        r'\b(synthetix|chainlink|compound|uniswap|wormhole|eos|sei)\b')
+                 )
+                 or (
+                    cs.symbol is not null
+                    and aeq.symbol is null
+                    and coalesce(bss.broker_says_crypto, 0) = 0
+                    and coalesce(bss.broker_says_equity, 0) = 0
+                    and coalesce(eos.num_option_contracts, 0) = 0
+                 )
                 then 'Crypto'
             when efa.session_id is not null and eos.num_sold_calls > 0
                 then 'Wheel'
@@ -834,6 +875,8 @@ equity_classified as (
         and e.session_id = sr.session_id
     left join crypto_symbols cs
         on upper(trim(e.symbol)) = cs.symbol
+    left join ambiguous_equity_tickers aeq
+        on upper(trim(e.symbol)) = aeq.symbol
     left join broker_security_signal bss
         on e.account = bss.account
         and (e.user_id is not distinct from bss.user_id)

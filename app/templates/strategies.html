@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .strat-hero {
-        background: #1a1a2e;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 16px;
         padding: 2.25rem 2rem;
         color: #fff;
@@ -16,67 +18,74 @@
     .hero-stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .4px; color: rgba(255,255,255,.45); margin-top: .2rem; }
 
     /* Strategy cards */
-    .strat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .strat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .85rem; margin-bottom: 1.5rem; }
     .strat-card {
-        background: #fff;
-        border-radius: 14px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.25rem 1.5rem;
+        background: #121826;
+        border: 1px solid #243049;
+        border-radius: 0.75rem;
+        box-shadow: none;
+        padding: 1rem 1.1rem;
         text-decoration: none;
-        color: inherit;
-        transition: box-shadow .15s, transform .1s;
+        color: #e8edf7;
+        transition: border-color .2s, filter .2s, transform .2s;
         display: flex;
         flex-direction: column;
-        gap: .75rem;
+        gap: .85rem;
     }
-    .strat-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); transform: translateY(-1px); }
-    .strat-card.selected { border: 2px solid #3b82f6; }
-    .strat-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
-    .strat-card-name { font-weight: 700; font-size: 1.05rem; }
-    .strat-card-meta { font-size: .78rem; color: #9ca3af; margin-top: .15rem; }
+    .strat-card:hover { border-color: rgba(255,255,255,.22); filter: brightness(1.08); transform: translateY(-1px); color: #e8edf7; }
+    .strat-card.selected { border-color: #5b8cff; }
+    .strat-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
+    .strat-card-name { font-weight: 650; font-size: 1.05rem; color: #fff; letter-spacing: -0.02em; }
+    .strat-card-meta { font-size: .78rem; color: #8a97b1; margin-top: .15rem; }
     .trend-badge {
-        font-size: .7rem; font-weight: 700; padding: .2rem .55rem; border-radius: 6px;
-        text-transform: uppercase; letter-spacing: .3px; white-space: nowrap;
+        font-size: .65rem; font-weight: 650; padding: .15rem .45rem; border-radius: 0.35rem;
+        text-transform: uppercase; letter-spacing: .08em; white-space: nowrap;
+        background: rgba(91,140,255,.15); color: #5b8cff;
     }
-    .trend-badge.improving { background: rgba(25,135,84,.1); color: #166534; }
-    .trend-badge.declining { background: rgba(220,53,69,.1); color: #7f1d1d; }
-    .trend-badge.stable { background: rgba(100,116,139,.1); color: #475569; }
-    .trend-badge.new { background: rgba(13,110,253,.08); color: #1e40af; }
+    .trend-badge.declining { background: rgba(240,85,109,.14); color: #f0556d; }
+    .trend-badge.stable { background: rgba(255,255,255,.06); color: #8a97b1; }
     .strat-card-stats { display: flex; gap: 1.25rem; }
-    .sc-stat-value { font-size: 1rem; font-weight: 700; line-height: 1.2; }
-    .sc-stat-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .3px; color: #9ca3af; margin-top: .1rem; }
-
-    /* Sparkline */
-    .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
-    .spark-bar {
-        flex: 1;
-        min-width: 4px;
-        max-width: 18px;
-        border-radius: 2px 2px 0 0;
-        transition: height .2s;
+    .sc-stat-value {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 1.15rem; font-weight: 650; line-height: 1.2; color: #fff;
     }
-    .spark-bar.positive { background: #198754; }
-    .spark-bar.negative { background: #dc3545; }
-    .spark-bar.zero { background: #e5e7eb; height: 2px !important; }
-    .spark-label { font-size: .62rem; color: #9ca3af; text-align: center; margin-top: .15rem; }
+    .sc-stat-label {
+        font-size: .65rem; text-transform: uppercase; letter-spacing: .1em;
+        color: #8a97b1; margin-bottom: .2rem;
+    }
+
+    /* Last six months: equal marks, latest month written out. */
+    .month-strip { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .month-marks { display: flex; align-items: center; gap: 4px; }
+    .month-mark { width: 18px; height: 8px; border-radius: 2px; background: #243049; }
+    .month-mark.up { background: #28c08a; }
+    .month-mark.down { background: #f0556d; }
+    .month-latest { font-size: .82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .month-latest-name { color: #8a97b1; margin-right: .35rem; }
+    .month-latest-amt { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 600; color: #8a97b1; }
+    .month-latest-amt.up { color: #28c08a; }
+    .month-latest-amt.down { color: #f0556d; }
 
     /* Focus sections */
-    .data-section { background: #fff; border-radius: 16px; box-shadow: 0 1px 8px rgba(0,0,0,.05); padding: 1.5rem 1.75rem; margin-bottom: 1.25rem; }
+    .data-section { background: #121826; border: 1px solid #243049; border-radius: 0.75rem; box-shadow: none; padding: 1.15rem 1.25rem; margin-bottom: 1.25rem; color: #e8edf7; }
     .section-label { font-size: .72rem; text-transform: uppercase; letter-spacing: 1.1px; color: #9ca3af; font-weight: 600; margin-bottom: 1rem; }
     .trend-chart-wrap { position: relative; height: 140px; }
     @media (max-width: 720px) { .trend-chart-wrap { height: 120px; } }
 
     .focus-header {
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.5rem 1.75rem;
+        background: #121826;
+        border: 1px solid #243049;
+        border-radius: 0.75rem;
+        box-shadow: none;
+        padding: 1.15rem 1.25rem;
         margin-bottom: 1.25rem;
+        color: #e8edf7;
     }
     .focus-stat { text-align: center; }
-    .focus-stat-value { font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
-    .focus-stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-top: .2rem; }
-    .focus-stat-meta { font-size: .75rem; color: #6c757d; margin-top: .1rem; }
+    .focus-stat-value { font-size: 1.25rem; font-weight: 650; line-height: 1.2; color: #fff; font-variant-numeric: tabular-nums; }
+    .focus-stat-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: #8a97b1; margin-bottom: .2rem; }
+    .focus-stat-meta { font-size: .75rem; color: var(--ht-muted); margin-top: .1rem; }
 
     .obs-card {
         border-radius: 12px;
@@ -87,19 +96,19 @@
         margin-bottom: .75rem;
         border-left: 4px solid;
     }
-    .obs-card.positive { background: rgba(25,135,84,.06); border-left-color: #198754; color: #166534; }
-    .obs-card.negative { background: rgba(220,53,69,.06); border-left-color: #dc3545; color: #7f1d1d; }
-    .obs-card.neutral  { background: rgba(13,110,253,.06); border-left-color: #0d6efd; color: #1e3a5f; }
+    .obs-card.positive { background: rgba(25,135,84,.06); border-left-color: #198754; color: #28c08a; }
+    .obs-card.negative { background: rgba(220,53,69,.06); border-left-color: #dc3545; color: #f0556d; }
+    .obs-card.neutral  { background: rgba(13,110,253,.06); border-left-color: #0d6efd; color: var(--ht-ink); }
 
     .dte-bar-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #f3f4f6; }
     .dte-bar-row:last-child { border-bottom: none; }
     .dte-label { width: 90px; font-size: .82rem; font-weight: 600; flex-shrink: 0; }
-    .dte-bar-track { flex: 1; height: 22px; background: #f3f4f6; border-radius: 4px; overflow: hidden; position: relative; }
+    .dte-bar-track { flex: 1; height: 22px; background: #1a2233; border-radius: 4px; overflow: hidden; position: relative; }
     .dte-bar-fill { height: 100%; border-radius: 4px; }
     .dte-bar-fill.good { background: #198754; }
     .dte-bar-fill.bad { background: #dc3545; }
     .dte-bar-fill.mid { background: #94a3b8; }
-    .dte-stats { width: 160px; text-align: right; font-size: .8rem; color: #6c757d; flex-shrink: 0; }
+    .dte-stats { width: 160px; text-align: right; font-size: .8rem; color: var(--ht-muted); flex-shrink: 0; }
 
     .conc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
     @media (max-width: 700px) { .conc-grid { grid-template-columns: 1fr; } }
@@ -123,7 +132,7 @@
 
     .sym-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; font-weight: 600; }
     .sym-table td { font-size: .88rem; }
-    .sym-table .sym-link { font-weight: 600; text-decoration: none; color: #0f172a; }
+    .sym-table .sym-link { font-weight: 600; text-decoration: none; color: var(--ht-ink); }
     .sym-table .sym-link:hover { text-decoration: underline; }
 </style>
 {% endblock %}
@@ -141,22 +150,21 @@
 
 {% include "_history_window_note.html" %}
 
-{# ── Account / group filter ── #}
-{% if (accounts and accounts|length > 1) or account_groups %}
-<form method="get" class="filter-bar">
-    {# Preserve the strategy drill-in selection across account changes
-       so the user doesn't lose context when scoping by account. #}
-    {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
-    {% include "_account_scope_filters.html" %}
-    {% if scope_is_filtered %}
-    <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none) }}">Reset</a>
-    {% endif %}
-</form>
-{% endif %}
-
 {% if error %}<div class="alert alert-danger small">We're having trouble loading your strategies right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
 {% if not strategies %}
+<div class="review-hero">
+    <div class="ov-bar" style="border-bottom:0; margin-bottom:0; padding-bottom:0;">
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% include "_account_scope_filters.html" %}
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('strategies', scope='all') }}">Reset</a>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
+</div>
 <div class="data-section text-center py-5">
     {% if auth_accounts and auth_accounts|length > 0 %}
     <h5 class="mb-3">No strategy data to show yet</h5>
@@ -177,7 +185,18 @@
 {# ══════════════════════════════
    HERO
    ══════════════════════════════ #}
-<div class="strat-hero">
+<div class="review-hero strat-hero">
+    <div class="ov-bar">
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
+            {% include "_account_scope_filters.html" %}
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('strategies', strategy=selected_strategy or none, scope='all') }}">Reset</a>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
     {% if selected_strategy and focus_strategy %}
     <div class="mb-2">
         <a href="{{ scoped_url('strategies') }}"
@@ -213,7 +232,7 @@
         {% if summary.overall_win_rate is not none %}
         <div class="hero-stat">
             <div class="hero-stat-value">{{ "%.0f"|format(summary.overall_win_rate) }}%</div>
-            <div class="hero-stat-label">Win Rate</div>
+            <div class="hero-stat-label">{{ term('Win Rate') }}</div>
         </div>
         {% endif %}
         {# Net Premium hero stat removed — for options traders the sign of
@@ -233,34 +252,34 @@
 {% if selected_strategy and focus_strategy %}
 
 {# Key stats #}
-<div class="focus-header">
+<div class="focus-header" id="strategy-focus">
     <div class="row g-0 text-center">
-        <div class="col focus-stat" style="border-right: 1px solid #f0f0f0">
+        <div class="col focus-stat" style="border-right: 1px solid #243049">
             <div class="focus-stat-value {{ 'text-positive' if focus_strategy.total_return >= 0 else 'text-negative' }}">
-                {{ "+" if focus_strategy.total_return >= 0 else "" }}${{ "{:,.0f}".format(focus_strategy.total_return) }}
+                {{ money(focus_strategy.total_return, 0, true) }}
             </div>
             <div class="focus-stat-label">Total Return</div>
         </div>
-        <div class="col focus-stat" style="border-right: 1px solid #f0f0f0">
+        <div class="col focus-stat" style="border-right: 1px solid #243049">
             {% if focus_strategy.win_rate is not none %}
             <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.win_rate) }}%</div>
-            <div class="focus-stat-label">Win Rate</div>
+            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
             <div class="focus-stat-meta">{{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L</div>
             {% else %}
             <div class="focus-stat-value text-muted">&mdash;</div>
-            <div class="focus-stat-label">Win Rate</div>
+            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
             {% endif %}
         </div>
-        <div class="col focus-stat" style="border-right: 1px solid #f0f0f0">
+        <div class="col focus-stat" style="border-right: 1px solid #243049">
             <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.avg_days) }}d</div>
             <div class="focus-stat-label">Avg Hold</div>
         </div>
         {% if focus_strategy.premium_received %}
         <div class="col focus-stat">
             <div class="focus-stat-value {{ 'text-positive' if (focus_strategy.premium_received - focus_strategy.premium_paid) >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(focus_strategy.premium_received - focus_strategy.premium_paid) }}
+                {{ money(focus_strategy.premium_received - focus_strategy.premium_paid, 0) }}
             </div>
-            <div class="focus-stat-label">Net Premium</div>
+            <div class="focus-stat-label">{{ term('Net Premium') }}</div>
         </div>
         {% endif %}
     </div>
@@ -279,8 +298,8 @@
                 <tr>
                     <th>Type</th>
                     <th class="text-end">Total Return</th>
-                    <th class="text-end">Realized</th>
-                    <th class="text-end">Unrealized</th>
+                    <th class="text-end">{{ term('Realized') }}</th>
+                    <th class="text-end">{{ term('Unrealized') }}</th>
                     <th data-m="hide">Detail</th>
                 </tr>
             </thead>
@@ -289,17 +308,17 @@
                 <tr>
                     <td><strong>{{ r.type }}</strong></td>
                     <td class="text-end {{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-semibold">
-                        {{ "+" if r.total >= 0 else "" }}${{ "{:,.2f}".format(r.total) }}
+                        {{ money(r.total, 2, true) }}
                         {% if r.suffix %}<span class="text-muted fw-normal ms-1 small">{{ r.suffix }}</span>{% endif %}
                     </td>
                     <td class="text-end {{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
-                        {{ "+" if r.realized >= 0 else "" }}${{ "{:,.2f}".format(r.realized) }}
+                        {{ money(r.realized, 2, true) }}
                     </td>
                     <td class="text-end {% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
                         {% if r.unrealized is none %}
                         &mdash;
                         {% else %}
-                        {{ "+" if r.unrealized >= 0 else "" }}${{ "{:,.2f}".format(r.unrealized) }}
+                        {{ money(r.unrealized, 2, true) }}
                         {% endif %}
                     </td>
                     <td class="small text-muted">
@@ -318,7 +337,7 @@
             <tfoot>
                 <tr class="border-top">
                     <th>Total</th>
-                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ "+" if _bd_tot >= 0 else "" }}${{ "{:,.2f}".format(_bd_tot) }}</th>
+                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ money(_bd_tot, 2, true) }}</th>
                     <th colspan="3"></th>
                 </tr>
             </tfoot>
@@ -359,7 +378,7 @@
 {# DTE breakdown #}
 {% if focus_dte_breakdown %}
 <div class="data-section">
-    <div class="section-label">Performance by DTE</div>
+    <div class="section-label">Performance by {{ term('DTE') }}</div>
     {% for d in focus_dte_breakdown %}
     <div class="dte-bar-row">
         <div class="dte-label">{{ d.dte_bucket }}</div>
@@ -372,7 +391,7 @@
         <div class="dte-stats">
             {% if d.win_rate_pct is not none %}{{ "%.0f"|format(d.win_rate_pct) }}% WR{% endif %}
             &middot; {{ d.num_trades }} trades
-            &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ "+" if d.total_pnl >= 0 else "" }}${{ "{:,.0f}".format(d.total_pnl) }}</span>
+            &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ money(d.total_pnl, 0, true) }}</span>
         </div>
     </div>
     {% endfor %}
@@ -440,19 +459,19 @@
             <tr>
                 <th class="sortable" data-sort="str">Account</th>
                 <th class="sortable text-end" data-sort="num">Trades</th>
-                <th class="sortable text-end" data-sort="num">Win Rate</th>
+                <th class="sortable text-end" data-sort="num">{{ term('Win Rate') }}</th>
                 <th class="sortable text-end" data-sort="num">Total Return</th>
             </tr>
         </thead>
         <tbody>
             {% for a in focus_accounts %}
-            <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none) }}">
+            <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none, _anchor='strategy-focus') }}">
                 {% set _acct = a.account | account_label(a.tenant_id) %}
                 <td class="fw-semibold" data-val="{{ _acct }}">{{ _acct }}</td>
                 <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
                 <td class="text-end" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
                 <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}" data-val="{{ a.total_return }}">
-                    {{ "+" if a.total_return >= 0 else "" }}${{ "{:,.2f}".format(a.total_return) }}
+                    {{ money(a.total_return, 2, true) }}
                 </td>
             </tr>
             {% endfor %}
@@ -473,7 +492,7 @@
    ══════════════════════════════ #}
 <div class="strat-cards">
     {% for s in strategies %}
-    <a href="{{ scoped_url('strategies', strategy=s.strategy) }}"
+    <a href="{{ scoped_url('strategies', strategy=s.strategy, _anchor='strategy-focus') }}"
        class="strat-card {% if s.is_selected %}selected{% endif %}">
         <div class="strat-card-header">
             <div>
@@ -492,41 +511,35 @@
         </div>
         <div class="strat-card-stats">
             <div>
+                <div class="sc-stat-label">{{ term('Win Rate') }}</div>
                 <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
-                <div class="sc-stat-label">Win Rate</div>
             </div>
             <div>
-                <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
-                    {{ "+" if s.total_return >= 0 else "" }}${{ "{:,.0f}".format(s.total_return) }}
-                </div>
                 <div class="sc-stat-label">Total Return</div>
+                <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
+                    {{ money(s.total_return, 0, true) }}
+                </div>
             </div>
             {% if s.avg_days > 0 %}
             <div>
-                <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>
                 <div class="sc-stat-label">Avg Hold</div>
+                <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>
             </div>
             {% endif %}
         </div>
         {% if s.sparkline %}
-        <div>
-            <div class="sparkline">
-                {% set max_pnl = namespace(val=1) %}
+        {% set _mo = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+        {% set last = s.sparkline[-1] %}
+        <div class="month-strip">
+            <div class="month-marks">
                 {% for m in s.sparkline %}
-                    {% if m.pnl|abs > max_pnl.val %}{% set max_pnl.val = m.pnl|abs %}{% endif %}
-                {% endfor %}
-                {% for m in s.sparkline %}
-                    {% set h = (m.pnl|abs / max_pnl.val * 24)|round(0)|int %}
-                    {% if h < 2 %}{% set h = 2 %}{% endif %}
-                    <div class="spark-bar {% if m.pnl > 0 %}positive{% elif m.pnl < 0 %}negative{% else %}zero{% endif %}"
-                         style="height:{{ h }}px"
-                         title="{{ m.month }}: {{ '+' if m.pnl >= 0 else '' }}${{ '{:,.0f}'.format(m.pnl) }} ({{ m.trades }} trades, {{ m.win_rate }}% WR)"></div>
+                <span class="month-mark {% if m.pnl > 0 %}up{% elif m.pnl < 0 %}down{% endif %}"
+                      title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {{ money(m.pnl, 0, true) }} ({{ m.trades }} trades{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
                 {% endfor %}
             </div>
-            <div class="d-flex justify-content-between" style="padding: 0 1px;">
-                {% for m in s.sparkline %}
-                <div class="spark-label">{{ m.month[-2:] }}</div>
-                {% endfor %}
+            <div class="month-latest">
+                <span class="month-latest-name">{{ _mo[last.month[-2:]|int] }}</span>
+                <span class="month-latest-amt {% if last.pnl > 0 %}up{% elif last.pnl < 0 %}down{% endif %}">{{ money(last.pnl, 0, true) }}</span>
             </div>
         </div>
         {% endif %}
@@ -578,8 +591,7 @@
                         label: function(ctx) {
                             const row = data[ctx.dataIndex] || {};
                             const v = ctx.parsed.y;
-                            const pnl = (v >= 0 ? '+' : '') + '$' +
-                                Math.round(v).toLocaleString();
+                            const pnl = window.htMoney(v, 0, true);
                             const bits = ['P&L ' + pnl];
                             if (row.win_rate != null) bits.push(row.win_rate + '% win');
                             if (row.trades != null) bits.push(row.trades + ' trade' + (row.trades === 1 ? '' : 's'));
@@ -594,9 +606,9 @@
                     ticks: {
                         maxTicksLimit: 4,
                         callback: function(v) {
-                            const sign = v >= 0 ? '+' : '';
-                            if (Math.abs(v) >= 1000) return sign + '$' + (v / 1000).toFixed(0) + 'k';
-                            return sign + '$' + Math.round(v);
+                            const sign = v < 0 ? '-' : (v > 0 ? '+' : '');
+                            if (Math.abs(v) >= 1000) return sign + '$' + Math.abs(v / 1000).toFixed(0) + 'k';
+                            return window.htMoney(v, 0, true);
                         },
                         font: { size: 11 }
                     },

@@ -255,11 +255,21 @@ def test_hero_chips_track_filter_account(routed_app):
 
 
 def _hero_block(html):
-    """The rendered hero card, not the `.pos-hero` CSS rule."""
-    marker = 'class="pos-hero"'
+    """The rendered hero card, not a CSS rule."""
+    marker = 'class="review-hero pos-hero"'
     start = html.find(marker)
     assert start != -1, "hero card missing from rendered page"
-    return html[start: html.find("filter-bar", start)]
+    end = html.find("<!-- /pos-hero -->", start)
+    assert end != -1, "hero card end marker missing"
+    return html[start:end]
+
+
+def _hero_line(html):
+    """The account sentence, not the account picker's full option list."""
+    hero = _hero_block(html)
+    start = hero.find('class="ov-line"')
+    assert start != -1, "hero account line missing"
+    return hero[start:hero.find("</p>", start)]
 
 
 def test_hero_subtitle_tracks_filter_account(routed_app):
@@ -268,7 +278,7 @@ def test_hero_subtitle_tracks_filter_account(routed_app):
     but the subtitle still listed every linked account."""
     r = routed_app.get("/positions?account=Cameron%20Investment")
     assert r.status_code == 200
-    hero = _hero_block(r.data.decode())
+    hero = _hero_line(r.data.decode())
     assert "Across " not in hero
     assert "Sara Investment" not in hero
     assert "Cameron Investment" in hero
@@ -277,7 +287,7 @@ def test_hero_subtitle_tracks_filter_account(routed_app):
 def test_hero_subtitle_all_accounts_lists_both(routed_app):
     r = routed_app.get("/positions")
     assert r.status_code == 200
-    hero = _hero_block(r.data.decode())
+    hero = _hero_line(r.data.decode())
     assert "Across 2 accounts:" in hero
     assert "Cameron Investment" in hero
     assert "Sara Investment" in hero
@@ -288,7 +298,7 @@ def test_hero_subtitle_tracks_strategy_accounts(routed_app):
     Across 2 accounts while the KPIs are Cameron-only."""
     r = routed_app.get("/positions?strategy=Long%20Call")
     assert r.status_code == 200
-    hero = _hero_block(r.data.decode())
+    hero = _hero_line(r.data.decode())
     assert "Across " not in hero
     assert "Sara Investment" not in hero
     assert "Cameron Investment" in hero
@@ -297,9 +307,9 @@ def test_hero_subtitle_tracks_strategy_accounts(routed_app):
 def test_strategy_chart_payload_is_realized_unrealized(routed_app):
     html = routed_app.get("/positions").data.decode()
     assert "Realized vs unrealized" in html
-    assert '"realized"' in html
-    assert '"unrealized"' in html
-    assert 'label: \'Realized\'' in html or 'label: "Realized"' in html
+    assert "pos-legend" in html
+    assert "> Realized</span>" in html
+    assert "> Unrealized</span>" in html
 
 
 def test_quick_stats_accounts_in_view_counts_colliding_broker_labels():
@@ -342,12 +352,6 @@ def test_quick_stats_accounts_in_view_counts_colliding_broker_labels():
             r = c.get("/positions")
     assert r.status_code == 200, r.data[:300]
     html = r.data.decode()
-    m = re.search(
-        r"Accounts in view</td>\s*<td[^>]*>\s*(\d+)",
-        html,
-    )
-    assert m, "Quick Stats Accounts in view row missing"
-    assert m.group(1) == "3", html[m.start(): m.end() + 40]
     hero = _hero_block(html)
     assert "Across 3 accounts:" in hero
 
@@ -494,7 +498,7 @@ def test_quick_stats_winners_uses_raw_count_not_derived(routed_app):
     html = r.data.decode()
     # Look for 'Winners / Losers' row in Quick Stats
     m = re.search(
-        r"Winners / Losers</td>.*?text-positive\">([\d,]+).*?text-negative\">([\d,]+)",
+        r'pos-wl".*?text-positive">([\d,]+).*?text-negative">([\d,]+)',
         html,
         re.DOTALL,
     )
@@ -599,8 +603,8 @@ def test_strategy_chart_rows_splits_realized_unrealized_and_folds_dividends():
     assert by_name["Covered Call"]["unrealized"] == 40.0
     assert by_name["Dividend"]["realized"] == 400.0
     assert by_name["Dividend"]["unrealized"] == 10.0
-    # Sorted by net total ascending: Covered Call 165, Long Call 120, Dividend 410
-    assert [r["strategy"] for r in rows] == ["Long Call", "Covered Call", "Dividend"]
+    # Largest net first so the chart leads with the biggest result.
+    assert [r["strategy"] for r in rows] == ["Dividend", "Covered Call", "Long Call"]
 
 
 if __name__ == "__main__":

@@ -1286,13 +1286,19 @@ def _resolve_position_leg_filter(sessions_list, leg_param):
     if len(tenant_ids) > 1:
         return "", all_leg_ids
 
+    valid_leg_ids = set(all_leg_ids)
     selected_legs = []
     for value in raw.split(","):
         try:
-            selected_legs.append(int(value.strip()))
+            leg_id = int(value.strip())
         except ValueError:
-            pass
-    return raw, selected_legs
+            continue
+        if leg_id in valid_leg_ids and leg_id not in selected_legs:
+            selected_legs.append(leg_id)
+    if not selected_legs:
+        return "", all_leg_ids
+    selected_legs.sort()
+    return ",".join(str(leg_id) for leg_id in selected_legs), selected_legs
 
 
 def _parse_date(value):

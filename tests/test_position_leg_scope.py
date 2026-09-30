@@ -30,3 +30,29 @@ def test_ambiguous_leg_filter_is_dropped_across_tenants():
 
     assert leg_param == ""
     assert selected == [1, 2, 1]
+
+
+def test_leg_filter_is_canonicalized_to_valid_unique_ids():
+    sessions = [
+        _session("snaptrade:aaa", 1),
+        _session("snaptrade:aaa", 2),
+    ]
+
+    leg_param, selected = _resolve_position_leg_filter(
+        sessions, "2,1,2,999,not-a-leg"
+    )
+
+    assert leg_param == "1,2"
+    assert selected == [1, 2]
+
+
+def test_invalid_leg_filter_falls_back_to_unfiltered_scope():
+    sessions = [
+        _session("snaptrade:aaa", 1),
+        _session("snaptrade:aaa", 2),
+    ]
+
+    leg_param, selected = _resolve_position_leg_filter(sessions, "999")
+
+    assert leg_param == ""
+    assert selected == [1, 2]

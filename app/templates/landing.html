@@ -8,44 +8,38 @@
 {% block head %}
 <style>
     .landing-hero {
-        background: #1a1a2e;
-        border-radius: 20px;
-        padding: 5rem 3rem;
-        color: #fff;
+        background: transparent;
+        border-radius: 0;
+        padding: 4.5rem 0 3.5rem;
+        color: #e8edf7;
         text-align: center;
         position: relative;
         overflow: hidden;
+        border-bottom: 1px solid #1c2538;
+        margin-bottom: 0 !important;
     }
-    .landing-hero::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        right: -15%;
-        width: 500px;
-        height: 500px;
-        background: radial-gradient(circle, rgba(25,135,84,.12) 0%, transparent 70%);
-        border-radius: 50%;
-    }
-    .landing-hero h1 { font-size: 3rem; font-weight: 700; margin-bottom: 1.25rem; letter-spacing: -0.01em; }
+    .landing-hero h1 { font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 650; margin-bottom: 1.25rem; letter-spacing: -0.03em; color: #fff; }
     .landing-hero .lead {
-        font-size: 1.2rem;
-        color: rgba(255,255,255,.9);
+        font-size: 1.05rem;
+        color: #7d8aa3;
         margin-bottom: 2rem;
-        max-width: 600px;
+        max-width: 36rem;
         margin-left: auto;
         margin-right: auto;
+        line-height: 1.6;
     }
-    .landing-hero .btn { padding: .85rem 2rem; font-weight: 600; border-radius: 10px; font-size: 1rem; }
-    .landing-hero .btn-light,
-    .landing-hero .btn-outline-light { transition: transform .2s ease, box-shadow .2s ease, opacity .15s; }
-    .landing-hero .btn-light:hover,
-    .landing-hero .btn-light:focus-visible,
-    .landing-hero .btn-outline-light:hover,
-    .landing-hero .btn-outline-light:focus-visible {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(0,0,0,.2);
+    .landing-hero .btn-light {
+        background: #5b8cff; color: #0a0e17; border: none; font-weight: 650;
+        border-radius: 0.45rem; padding: 0.75rem 1.15rem;
     }
-    .landing-hero .btn-outline-light:active { transform: translateY(0); }
+    .landing-hero .btn-light:hover { filter: brightness(1.08); color: #0a0e17; }
+    .landing-hero .btn-outline-light {
+        background: rgba(255,255,255,.03); color: #fff; border: 1px solid #1c2538;
+        border-radius: 0.45rem; font-weight: 550;
+    }
+    .landing-hero .btn-outline-light:hover {
+        border-color: rgba(91,140,255,.45); background: rgba(91,140,255,.14); color: #fff;
+    }
 
     .section-title {
         font-size: 1.5rem;
@@ -54,20 +48,26 @@
         text-align: center;
     }
     .feature-card {
-        border: none;
-        border-radius: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,.06);
-        padding: 2rem;
+        border: 1px solid #1c2538;
+        border-radius: 0.55rem;
+        box-shadow: none;
+        background: #0c111c;
+        padding: 1.25rem;
         height: 100%;
-        transition: transform .2s, box-shadow .2s;
+        transition: border-color .2s, filter .2s, transform .2s;
         text-decoration: none;
-        color: inherit;
+        color: #e8edf7;
         display: block;
     }
     .feature-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 30px rgba(0,0,0,.1);
-        color: inherit;
+        transform: translateY(-1px);
+        border-color: rgba(255,255,255,.22);
+        filter: brightness(1.08);
+        color: #e8edf7;
+    }
+    .feature-icon {
+        background: rgba(91,140,255,.14) !important;
+        color: #5b8cff !important;
     }
     .feature-icon {
         width: 56px;
@@ -80,33 +80,33 @@
         margin-bottom: 1rem;
     }
     .feature-card h6 { font-weight: 700; margin-bottom: .5rem; }
-    .feature-card p { color: #6c757d; font-size: .9rem; margin-bottom: 0; }
+    .feature-card h6 { color: #fff; }
+    .feature-card p { color: #7d8aa3; font-size: .9rem; margin-bottom: 0; }
 
     .how-step {
-        text-align: center;
-        padding: 1.5rem;
+        text-align: left;
+        padding: 1.25rem;
+        background: #0c111c;
+        border: 1px solid #1c2538;
+        border-radius: 0.55rem;
+        height: 100%;
     }
     .how-step-num {
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        background: #1a1a2e;
-        color: #fff;
-        font-weight: 700;
-        font-size: 1.25rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1rem;
+        color: #5b8cff;
+        font-weight: 650;
+        font-size: .7rem;
+        letter-spacing: .12em;
+        margin-bottom: .75rem;
     }
-    .how-step h6 { font-weight: 700; margin-bottom: .5rem; }
-    .how-step p { color: #6c757d; font-size: .9rem; margin-bottom: 0; }
+    .how-step h6 { font-weight: 650; margin-bottom: .5rem; color: #fff; }
+    .how-step p { color: #7d8aa3; font-size: .9rem; margin-bottom: 0; }
 
     .cta-section {
-        background: #1a1a2e;
-        border-radius: 20px;
-        padding: 3rem;
-        color: #fff;
+        background: #0c111c;
+        border: 1px solid #1c2538;
+        border-radius: 0.55rem;
+        padding: 3rem 1.5rem;
+        color: #e8edf7;
         text-align: center;
     }
     .cta-section h3 { font-weight: 700; margin-bottom: .75rem; }
@@ -121,13 +121,14 @@
     }
     .cta-section .btn-outline-light:active { transform: translateY(0); }
 
+    .section-title { color: #fff; }
     .landing-footer {
         padding: 2.5rem 0;
         margin-top: 4rem;
-        border-top: 1px solid #e9ecef;
+        border-top: 1px solid #1c2538;
     }
-    .landing-footer a { color: #6c757d; text-decoration: none; font-size: .9rem; }
-    .landing-footer a:hover { color: #1a1a2e; }
+    .landing-footer a { color: #7d8aa3; text-decoration: none; font-size: .9rem; }
+    .landing-footer a:hover { color: #5b8cff; text-decoration: underline; }
 
     @media (max-width: 640px) {
         .landing-hero { padding: 2.75rem 1.25rem; border-radius: 16px; }
@@ -173,21 +174,21 @@
 <div class="row g-4 mb-3">
     <div class="col-md-4">
         <div class="how-step">
-            <div class="how-step-num">1</div>
+            <div class="how-step-num">01</div>
             <h6>Connect your brokerage</h6>
             <p>Sign in through SnapTrade — Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only access. HappyTrader never stores your broker password.</p>
         </div>
     </div>
     <div class="col-md-4">
         <div class="how-step">
-            <div class="how-step-num">2</div>
+            <div class="how-step-num">02</div>
             <h6>Sync your accounts</h6>
             <p>{% include "_broker_sync_timing.html" %} We classify every position — Covered Calls, CSPs, Wheels, spreads — and link it to your account.</p>
         </div>
     </div>
     <div class="col-md-4">
         <div class="how-step">
-            <div class="how-step-num">3</div>
+            <div class="how-step-num">03</div>
             <h6>See your trading profile</h6>
             <p>See what's working, where you're losing, and get a mirror of your process — including AI-powered insights.</p>
         </div>
@@ -207,7 +208,7 @@
 <div class="row g-4 mb-5">
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('feature_detail', slug='strategy-auto-detection') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(13,110,253,.12); color:#0d6efd">
+            <div class="feature-icon" style="background:rgba(91,140,255,.14); color:#a8b8ff">
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M4 11H2v3h2zm5-4H7v7h2zm5-5h-2v12h2zm-2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM6 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1zm-5 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z"/>
                 </svg>
@@ -254,7 +255,7 @@
     </div>
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('sectors') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(13,148,136,.12); color:#0d9488">
+            <div class="feature-icon" style="background:rgba(94,234,212,.12); color:#5eead4">
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M14.763.075A.5.5 0 0 1 15 .5v15a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V11h-1V8a.5.5 0 0 0-.5-.5H8.5v-1H7.515c-.146 0-.272-.044-.396-.118l-1.18-.708a.5.5 0 0 1-.063-.84l1.71-1.41a.5.5 0 0 1 .064-.041L11 1.232V.5a.5.5 0 0 1 .763-.425zM4.5 15a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V14h4z"/>
                 </svg>
@@ -265,7 +266,7 @@
     </div>
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('strategies', view='fit') if current_user.is_authenticated else url_for('signup') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(220,53,69,.12); color:#dc3545">
+            <div class="feature-icon" style="background:rgba(240,85,109,.14); color:#f0556d">
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M0 0h5v5H0V0zm6 0h5v5H6V0zm6 0h4v5h-4V0zM0 6h5v5H0V6zm6 0h5v5H6V6zm6 0h4v5h-4V6zM0 12h5v4H0v-4zm6 0h5v4H6v-4zm6 0h4v4h-4v-4z"/>
                 </svg>
@@ -276,7 +277,7 @@
     </div>
     <div class="col-sm-6 col-lg-4">
         <a href="{{ url_for('feature_detail', slug='multi-account') }}" class="card feature-card">
-            <div class="feature-icon" style="background:rgba(108,117,125,.12); color:#6c757d">
+            <div class="feature-icon" style="background:rgba(138,151,177,.14); color:#8a97b1">
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M4 10.781c.087 2.664.415 4.223.857 5.418a4.484 4.484 0 0 0 1.508 1.718 8.975 8.975 0 0 1-2.227.992 4.502 4.502 0 0 1-.83-.258 4.25 4.25 0 0 1-1.4-1.053 4.503 4.503 0 0 1-.798-2.272c 0-.328.028-.65.083-.962a4.56 4.56 0 0 1 .208-1.004 2.5 2.5 0 0 1 .578-.914 4.35 4.35 0 0 1 1.28-.618A5.46 5.46 0 0 1 6.323 5.5H5.5v-.812h1.261a1.755 1.755 0 0 1-.38-1.492 4.5 4.5 0 0 1 1.054-1.63 5.5 5.5 0 0 1 2.043-.9V4h.5v1.123a5.5 5.5 0 0 1 2.043.9 4.5 4.5 0 0 1 1.054 1.63 1.755 1.755 0 0 1-.38 1.492h1.261V5.5h-.823a5.46 5.46 0 0 1-1.324.18 4.35 4.35 0 0 1-1.28.618 2.5 2.5 0 0 1-.578.914 4.56 4.56 0 0 1-.208 1.004 4.5 4.5 0 0 1-.083.962z"/>
                 </svg>
@@ -292,7 +293,7 @@
     <h3>Ready to see what's really working?</h3>
     <p class="mb-0">Try the demo — no signup. Or create a free account and connect a brokerage.</p>
     <div class="d-flex gap-3 justify-content-center flex-wrap">
-        <a href="{{ url_for('demo_start') }}" class="btn btn-light btn-lg px-4 fw-semibold">Try Demo</a>
+        <a href="{{ url_for('demo_start') }}" class="btn btn-light">Try Demo</a>
         {% if signup_enabled %}
         <a href="{{ url_for('signup') }}" class="btn btn-outline-light btn-lg px-4 fw-semibold">
             {% if signup_invite_required %}Sign Up (invite){% else %}Create Free Account{% endif %}

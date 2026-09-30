@@ -27,7 +27,8 @@ from app.routes import (
     _user_account_list,
     _scope_keep_kwargs,
 )
-from app.utils import demo_block_writes
+from app.utils import demo_block_writes, is_demo_user
+from app.demo_analysis import compose_demo_analysis
 from app.llm import (
     call_llm, llm_available, selectable_models,
     selectable_model_keys,
@@ -94,7 +95,7 @@ LIMIT 20
 
 INSIGHTS_DATA_QUERY = """
 SELECT
-    account, symbol, strategy, status,
+    account, tenant_id, symbol, strategy, status,
     total_pnl, realized_pnl, unrealized_pnl,
     total_premium_received, total_premium_paid,
     num_trade_groups, num_individual_trades,
@@ -344,11 +345,11 @@ def _discovery_cards_from_series(r: pd.Series):
         bf = _safe_float(r.get("best_dow_avg_gb"))
         cards.append({
             "tag": "Calendar",
-            "title": "Your exits do not behave the same every day of the week",
+            "title": "Your closes look different by weekday",
             "stat": f"+{dow_spread:.0f} pp",
             "body": (
-                f"When you close on **{ww}**, you surrender about **{wf:.0f}%** of peak unrealized profit on "
-                f"average (from daily marks). Your best-reviewed weekday cluster is **{bw}** (~{bf:.0f}% avg giveback)."
+                f"On **{ww}** closes, about **{wf:.0f}%** of the peak unrealized gain was gone by the time you closed, "
+                f"on average. On **{bw}**, that average is about **{bf:.0f}%**."
             ),
             "score": dow_spread * 3.5,
             "muted": "",
@@ -360,12 +361,11 @@ def _discovery_cards_from_series(r: pd.Series):
     if conc is not None and tot_gb and tot_gb > 200 and conc >= 34 and pd.notna(tsym):
         cards.append({
             "tag": "Concentration",
-            "title": "One ticker owns an outsized share of “money left after the peak”",
+            "title": "One symbol accounts for a large share of giveback",
             "stat": f"{conc:.0f}% of ${tot_gb:,.0f}",
             "body": (
-                f"Around **{conc:.0f}%** of the dollars you theoretically left on the table vs peak "
-                f"clusters on **{tsym}** — worth asking whether sizing or exits differ there versus the rest "
-                f"of your book."
+                f"About **{conc:.0f}%** of the dollars between the peak mark and the close is on **{tsym}**. "
+                f"The rest of the book is smaller."
             ),
             "score": conc * 2.8,
             "muted": "",
@@ -380,27 +380,26 @@ def _discovery_cards_from_series(r: pd.Series):
         if dte_gap > 0:
             cards.append({
                 "tag": "Timing",
-                "title": "Short-DTE shorts show more peak giveback than your long-leg opens",
+                "title": "Short-dated shorts give back more of the peak than longer-dated ones",
                 "stat": f"+{dte_gap:.0f} pp avg giveback",
                 "body": (
-                    f"Selling premium **inside ~14 DTE** shows **{sh:.0f}%** avg giveback vs peak snapshots; "
-                    f"Opens **beyond ~45 DTE** average **{lg:.0f}%**. That differential is measurable only "
-                    f"because we mark every day — not broker cash alone."
+                    f"Shorts opened inside about 14 days to expiry give back about **{sh:.0f}%** of the peak mark, "
+                    f"on average. Shorts opened beyond about 45 days give back about **{lg:.0f}%**."
                 ),
                 "score": abs(dte_gap) * 2.9,
-                "muted": "Sold short legs only.",
+                "muted": "Sold short options only.",
             })
         else:
             cards.append({
                 "tag": "Timing",
-                "title": "Your long-dated short premium behaves differently than short-dated",
-                "stat": f"{dte_gap:+.0f} pp avg giveback (long worse)",
+                "title": "Longer-dated shorts give back more of the peak than short-dated ones",
+                "stat": f"{dte_gap:+.0f} pp avg giveback",
                 "body": (
-                    f"Holds on **extended-dated shorts** correlate with higher giveback vs peak (**{lg:.0f}%** avg) "
-                    f"than very short ladders (**{sh:.0f}%**) — unusual and worth inspecting by symbol."
+                    f"Shorts opened beyond about 45 days to expiry give back about **{lg:.0f}%** of the peak mark. "
+                    f"Shorts opened inside about 14 days give back about **{sh:.0f}%**."
                 ),
                 "score": abs(dte_gap) * 2.9,
-                "muted": "Sold short legs only.",
+                "muted": "Sold short options only.",
             })
 
     rgap = _safe_float(r.get("rebound_vs_overall_gap"))
@@ -414,12 +413,11 @@ def _discovery_cards_from_series(r: pd.Series):
         if rgap >= 0.07:
             cards.append({
                 "tag": "Sequence",
-                "title": "You bounce harder after losses than almost anyone tracks",
-                "stat": f"+{rgap * 100:.1f} pts vs baseline WR",
+                "title": "Win rate is higher on the trade after a loss",
+                "stat": f"+{rgap * 100:.1f} pts vs your usual win rate",
                 "body": (
-                    f"When the **prior** closed trade was a loser, your next listed option-trade win rate runs "
-                    f"**~{pct_al:.0f}%** vs **~{pct_overall:.0f}%** overall (n≥{n_al} sequencing windows). Retail "
-                    f"risk tools never quantify that."
+                    f"After a losing close, the next option trade won about **{pct_al:.0f}%** of the time, "
+                    f"versus about **{pct_overall:.0f}%** overall. That is {n_al} trades after a loss."
                 ),
                 "score": abs(rgap) * 500,
                 "muted": f"Across {n_seq:,} qualifying closed trades in sequence.",
@@ -427,11 +425,11 @@ def _discovery_cards_from_series(r: pd.Series):
         elif rgap <= -0.07:
             cards.append({
                 "tag": "Sequence",
-                "title": "Win rate dips right after losses — sequencing you can now see",
-                "stat": f"{rgap * 100:.1f} pts vs baseline WR",
+                "title": "Win rate is lower on the trade after a loss",
+                "stat": f"{rgap * 100:.1f} pts vs your usual win rate",
                 "body": (
-                    f"The trade **after** a losing close wins **~{pct_al:.0f}%** vs **~{pct_overall:.0f}%** overall; "
-                    f"that's a disciplined thing to stare at rather than intuit."
+                    f"After a losing close, the next option trade won about **{pct_al:.0f}%** of the time, "
+                    f"versus about **{pct_overall:.0f}%** overall."
                 ),
                 "score": abs(rgap) * 520,
                 "muted": f"Across {n_seq:,} qualifying closed trades in sequence.",
@@ -1090,8 +1088,7 @@ STRATEGY BREAKDOWN
 
 SYSTEM_PROMPT = """You are narrating a trader's behavioral insights report. The data below
 contains PRE-COMPUTED signals about their option trading behavior — exit timing
-and DTE performance. These signals come from daily option
-mark-to-market data that no other retail tool tracks.
+and DTE performance. These signals come from daily option marks on the trader's own closes.
 
 You surface OBSERVATIONS, not financial advice. Never recommend trades,
 strikes, expirations, position sizes, or strategies; describe the patterns
@@ -1421,6 +1418,36 @@ def _require_insights_feature():
     return None
 
 
+def _live_demo_insight(client, tenant_ids, coaching_data):
+    """Analysis for the public demo, rebuilt from the current book.
+
+    The stored ``insights`` row is ignored. Demo writes are blocked, so a
+    cached generation can never stay current, and the old seed described
+    a different account.
+    """
+    portfolio = pd.DataFrame()
+    if client is not None:
+        try:
+            where = _tenant_sql_filter(tenant_ids)
+            portfolio = cached_query_df(
+                client,
+                INSIGHTS_DATA_QUERY.format(where=where),
+                label="insights_demo_book",
+            )
+            portfolio = _filter_df_by_tenant_ids(portfolio, tenant_ids)
+        except Exception as exc:
+            app.logger.warning("demo insights: portfolio read failed: %s", exc)
+            portfolio = pd.DataFrame()
+    summary, full_analysis, generated_at = compose_demo_analysis(
+        portfolio, coaching_data,
+    )
+    return {
+        "summary": summary,
+        "full_analysis": full_analysis,
+        "generated_at": generated_at,
+    }
+
+
 @app.route("/insights")
 @login_required
 def insights():
@@ -1473,11 +1500,17 @@ def insights():
         "pct_reliable": 0,
         "exit_timing": None,
     }
+    client = None
     try:
         client = get_bigquery_client()
         _, coaching_data = _build_coaching_brief(client, tenant_ids)
     except Exception as exc:
         app.logger.warning("insights: coaching brief failed (page renders without coach data): %s", exc)
+
+    # The demo's stored insight is a one-shot seed. Compose from the
+    # warehouse book instead of rendering that row.
+    if is_demo_user():
+        cached = _live_demo_insight(client, tenant_ids, coaching_data)
 
     insight_conflict = None
     if cached and not scope_narrowed:

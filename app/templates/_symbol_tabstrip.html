@@ -27,8 +27,8 @@
         position: sticky;
         top: 0;
         z-index: 30;
-        background: #fff;
-        border-bottom: 1px solid #e5e7eb;
+        background: #121826;
+        border-bottom: 1px solid #243049;
         padding: .5rem .25rem .35rem;
         margin: 0 -.25rem 1rem;
     }
@@ -50,10 +50,10 @@
         padding: .25rem .55rem .25rem 1.6rem;
         border: 1px solid #d1d5db;
         border-radius: 6px;
-        background: #f9fafb;
+        background: #1a2233;
     }
     .sym-tabstrip__search input:focus {
-        background: #fff;
+        background: #121826;
         outline: none;
         border-color: var(--color-mirror-ink);
         box-shadow: 0 0 0 3px rgba(184,115,51,.14);
@@ -82,7 +82,7 @@
     .sym-tabstrip__sort {
         display: inline-flex;
         gap: .15rem;
-        background: #f3f4f6;
+        background: #1a2233;
         border-radius: 6px;
         padding: 2px;
     }
@@ -92,14 +92,14 @@
         padding: .2rem .55rem;
         border: 0;
         background: transparent;
-        color: #6b7280;
+        color: var(--ht-muted);
         border-radius: 4px;
         cursor: pointer;
         white-space: nowrap;
     }
     .sym-tabstrip__sort button.active {
-        background: #fff;
-        color: #111827;
+        background: #121826;
+        color: var(--ht-ink);
         font-weight: 700;
         box-shadow: 0 1px 2px rgba(0,0,0,.06);
     }
@@ -110,7 +110,7 @@
     }
     .sym-tabstrip__count {
         font-size: .72rem;
-        color: #6b7280;
+        color: var(--ht-muted);
         margin-left: auto;
     }
 
@@ -137,11 +137,11 @@
         align-items: center;
         gap: .4rem;
         padding: .35rem .7rem;
-        border: 1px solid #e5e7eb;
+        border: 1px solid #243049;
         border-bottom: 2px solid transparent;
         border-radius: 8px 8px 4px 4px;
-        background: #fafbfc;
-        color: #374151;
+        background: #121826;
+        color: var(--ht-ink);
         font-size: .8rem;
         font-weight: 600;
         cursor: pointer;
@@ -150,13 +150,13 @@
         transition: background .12s, border-color .12s, color .12s;
     }
     .sym-tab:hover {
-        background: #f3f4f6;
-        color: #111827;
+        background: #1a2233;
+        color: var(--ht-ink);
         text-decoration: none;
     }
     .sym-tab.active {
-        background: #fff;
-        color: #0f172a;
+        background: #121826;
+        color: #e8edf7;
         border-color: var(--color-mirror-ink);
         border-bottom-color: var(--color-mirror-ink);
         box-shadow: 0 1px 4px rgba(0,0,0,.05);
@@ -187,16 +187,16 @@
         padding-left: .35rem;
     }
     .sym-tabstrip__nav button {
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
+        background: #1a2233;
+        border: 1px solid #243049;
         border-radius: 6px;
         padding: .2rem .5rem;
         font-size: .9rem;
         line-height: 1;
-        color: #374151;
+        color: var(--ht-ink);
         cursor: pointer;
     }
-    .sym-tabstrip__nav button:hover { background: #e5e7eb; }
+    .sym-tabstrip__nav button:hover { background: #243049; }
     .sym-tabstrip__nav button:disabled { opacity: .35; cursor: not-allowed; }
 
     /* Mobile: collapse the strip into a dropdown + prev/next chevrons */
@@ -218,12 +218,12 @@
             padding: .35rem .5rem;
             border: 1px solid #d1d5db;
             border-radius: 6px;
-            background: #fff;
+            background: #121826;
             font-weight: 600;
         }
         .sym-tabstrip__mobile button {
-            background: #f3f4f6;
-            border: 1px solid #e5e7eb;
+            background: #1a2233;
+            border: 1px solid #243049;
             border-radius: 6px;
             padding: .35rem .65rem;
             font-size: 1rem;
@@ -267,7 +267,7 @@
             {% set _account = s.account or '' %}
             {% if _mode == 'navigate' %}
             <a class="sym-tab {{ 'active' if _is_active }}"
-               href="{{ _href_base }}{{ s.symbol|urlencode }}{{ _href_suffix }}"
+               href="{{ _href_base }}{{ s.symbol|urlencode }}{{ _href_suffix }}#{{ _strip_id }}"
                role="tab"
                aria-selected="{{ 'true' if _is_active else 'false' }}"
                data-symbol="{{ s.symbol }}"
@@ -277,7 +277,7 @@
                title="{{ s.symbol }} · {{ _status_label }} · {{ _trades }} trade{{ 's' if _trades != 1 }}{% if _account %} · {{ _account }}{% endif %}{% if _strats %} · {{ _strats }}{% endif %}">
                 <span class="sym-tab__dot {{ _status }}"></span>
                 <span class="sym-tab__symbol">{{ s.symbol }}</span>
-                <span class="sym-tab__pnl {{ _pnl_class }}">${{ "{:,.0f}".format(_pnl) }}</span>
+                <span class="sym-tab__pnl {{ _pnl_class }}">{{ money(_pnl, 0) }}</span>
             </a>
             {% else %}
             <button type="button"
@@ -291,7 +291,7 @@
                     title="{{ s.symbol }} · {{ _status_label }} · {{ _trades }} trade{{ 's' if _trades != 1 }}{% if _account %} · {{ _account }}{% endif %}{% if _strats %} · {{ _strats }}{% endif %}">
                 <span class="sym-tab__dot {{ _status }}"></span>
                 <span class="sym-tab__symbol">{{ s.symbol }}</span>
-                <span class="sym-tab__pnl {{ _pnl_class }}">${{ "{:,.0f}".format(_pnl) }}</span>
+                <span class="sym-tab__pnl {{ _pnl_class }}">{{ money(_pnl, 0) }}</span>
             </button>
             {% endif %}
             {% endfor %}
@@ -307,7 +307,7 @@
         <select class="sym-tabstrip__select" aria-label="Jump to symbol">
             {% for s in tabs %}
             <option value="{{ s.symbol }}" {{ 'selected' if s.symbol == active_symbol }}>
-                {{ s.symbol }} — ${{ "{:,.0f}".format((s.total_return or 0)|float) }}
+                {{ s.symbol }} — {{ money((s.total_return or 0)|float, 0) }}
                 ({{ s.num_trades or 0 }} trade{{ 's' if (s.num_trades or 0) != 1 }})
             </option>
             {% endfor %}
@@ -347,6 +347,29 @@
     /* Wait one frame so layout has settled. */
     requestAnimationFrame(scrollActiveIntoView);
 
+    /* Keep the section already on screen (chart, legs, accounts).
+       A symbol change is a new URL; without a fragment the browser
+       opens it at the top. */
+    function sectionHash() {
+        var ids = ['position-chart', 'position-legs', 'position-accounts', strip.id];
+        var nav = 72;
+        var pick = strip.id;
+        var best = 1e9;
+        ids.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var top = el.getBoundingClientRect().top;
+            if (top > nav + 40) return;
+            if (top <= -el.offsetHeight) return;
+            var score = nav - top;
+            if (score < best) {
+                best = score;
+                pick = id;
+            }
+        });
+        return pick;
+    }
+
     /* ── Activate a tab (mode-dependent) ──────────────────────── */
     function activateBySymbol(symbol, opts) {
         opts = opts || {};
@@ -354,7 +377,7 @@
         const tab = tabs.find(t => t.dataset.symbol === symbol);
         if (!tab) return;
         if (mode === 'navigate') {
-            window.location.href = hrefBase + encodeURIComponent(symbol) + hrefSfx;
+            window.location.href = hrefBase + encodeURIComponent(symbol) + hrefSfx + '#' + sectionHash();
             return;
         }
         /* swap mode: parent page provides window.symbolTabSwap(symbol) */
@@ -411,7 +434,7 @@
         if (next) {
             const sym = next.dataset.symbol;
             if (mode === 'navigate') {
-                window.location.href = hrefBase + encodeURIComponent(sym) + hrefSfx;
+                window.location.href = hrefBase + encodeURIComponent(sym) + hrefSfx + '#' + sectionHash();
             } else {
                 activateBySymbol(sym);
             }

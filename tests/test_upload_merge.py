@@ -1204,6 +1204,30 @@ def test_dedup_collapses_orders_row_with_richer_activities_row():
         f"expected activities Description to win, got {kept_desc!r}"
 
 
+def test_dedup_collapses_crypto_pair_order_with_bare_activity_symbol():
+    """An existing pair-symbol order must collapse when activity catches up.
+
+    This also repairs rows written before order normalization shipped: dbt
+    maps both ``BTC-USD`` and ``BTC`` to BTC, so retaining both raw rows
+    would double the fill in every downstream model.
+    """
+    df = pd.DataFrame([
+        _row(
+            "Coinbase Account", 9, "9/21/2026", "Buy", "BTC-USD",
+            0.01, 60000, -600,
+            desc="Bitcoin / U.S. Dollar",
+        ),
+        _row(
+            "Coinbase Account", 9, "9/21/2026", "Buy", "BTC",
+            0.01, 60000, -600,
+            desc="Bought 0.01 BTC at market",
+        ),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1
+    assert str(out.iloc[0]["Description"]) == "Bought 0.01 BTC at market"
+
+
 def test_dedup_keeps_orders_row_when_activities_not_yet_caught_up():
     """Sync 1: only the orders-source row exists (activities lag).
     The orders row must survive — it's the only signal we have."""

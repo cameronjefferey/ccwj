@@ -10,6 +10,8 @@ from app.routes import (
     _equity_raw_trades_for_partial_close_outcome,
     _legs_df_to_sessions_list,
     _merge_position_strategy_breakdown,
+    _realized_pnl_from_closed_frames,
+    _rollup_int_strategy_to_summary_shape,
     _supplement_summary_with_rolled,
 )
 
@@ -400,6 +402,139 @@ def test_merge_does_not_repeat_stock_already_inside_covered_call():
     )
     assert list(out["strategy"]) == ["Covered Call"]
     assert float(out.iloc[0]["total_pnl"]) == 1824.16
+
+
+def test_merge_does_not_repeat_interim_stock_sale_on_open_covered_call():
+    """Open marks must not hide that realized stock is already attributed.
+
+    The summary total includes remaining stock and option MTM, while
+    closed_equity contains only the interim sale. Comparing those two totals
+    used to synthesize a second Buy and Hold row for the realized stock.
+    """
+    summary_row = _summary_row(
+        "Schwab Account", "Covered Call", "Open", 2500.0, symbol="SMTC",
+    )
+    summary_row.update({
+        "realized_pnl": 1200.0,
+        "unrealized_pnl": 1300.0,
+        "total_return": 2500.0,
+    })
+    summary = pd.DataFrame([summary_row])
+    closed_legs = pd.DataFrame([{
+        "account": "Schwab Account",
+        "strategy": "Covered Call",
+        "total_pnl": 200.0,
+        "premium_received": 500.0,
+        "premium_paid": 300.0,
+        "days_in_trade": 14,
+        "open_date": pd.Timestamp("2026-08-20"),
+        "close_date": pd.Timestamp("2026-09-03"),
+    }])
+    closed_equity = pd.DataFrame([{
+        "account": "Schwab Account",
+        "session_id": 1,
+        "open_date": pd.Timestamp("2026-08-20"),
+        "close_date": pd.NaT,
+        "realized_pnl": 1000.0,
+        "status": "Open",
+        "description": "Equity Sold",
+    }])
+
+    out = _merge_position_strategy_breakdown(
+        "SMTC", summary, closed_legs, closed_equity,
+    )
+
+    assert list(out["strategy"]) == ["Covered Call"]
+    assert float(out.iloc[0]["total_pnl"]) == 2500.0
+
+
+def test_merge_does_not_repeat_stock_when_open_option_was_partially_closed():
+    """An Open option's realized wedge is absent from closed_legs_df."""
+    summary_row = _summary_row(
+        "Schwab Account", "Covered Call", "Open", 2500.0, symbol="SMTC",
+    )
+    summary_row.update({
+        "realized_pnl": 1200.0,
+        "unrealized_pnl": 1300.0,
+        "total_return": 2500.0,
+    })
+    components = pd.DataFrame([
+        {
+            "account": "Schwab Account",
+            "trade_group_type": "option_contract",
+            "status": "Open",
+            "realized_pnl": 200.0,
+        },
+        {
+            "account": "Schwab Account",
+            "trade_group_type": "equity_session",
+            "status": "Open",
+            "realized_pnl": 1000.0,
+        },
+    ])
+    closed_equity = pd.DataFrame([{
+        "account": "Schwab Account",
+        "session_id": 1,
+        "realized_pnl": 1000.0,
+        "status": "Open",
+        "description": "Equity Sold",
+    }])
+
+    out = _merge_position_strategy_breakdown(
+        "SMTC",
+        pd.DataFrame([summary_row]),
+        pd.DataFrame(),
+        closed_equity,
+        strategy_components_df=components,
+    )
+
+    assert list(out["strategy"]) == ["Covered Call"]
+
+
+def test_strategy_rollup_keeps_partial_option_close_realized():
+    components = pd.DataFrame([{
+        "account": "Schwab Account",
+        "tenant_id": "snaptrade:abc",
+        "symbol": "SMTC",
+        "strategy": "Covered Call",
+        "status": "Open",
+        "trade_group_type": "option_contract",
+        "total_pnl": 500.0,
+        "realized_pnl": 200.0,
+        "unrealized_pnl": 300.0,
+        "num_trades": 2,
+        "is_winner": True,
+        "premium_received": 700.0,
+        "premium_paid": 200.0,
+        "days_in_trade": 14,
+        "open_date": pd.Timestamp("2026-08-20"),
+        "close_date": pd.NaT,
+    }])
+
+    out = _rollup_int_strategy_to_summary_shape(components)
+
+    assert float(out.iloc[0]["realized_pnl"]) == 200.0
+    assert float(out.iloc[0]["unrealized_pnl"]) == 300.0
+
+
+def test_realized_total_includes_closed_part_of_open_option():
+    closed_equity = pd.DataFrame([{"realized_pnl": 1000.0}])
+    current = pd.DataFrame([
+        {
+            "instrument_type": "Call",
+            "option_realized_pnl": 200.0,
+        },
+        {
+            "instrument_type": "Equity",
+            "option_realized_pnl": 9999.0,
+        },
+    ])
+
+    total = _realized_pnl_from_closed_frames(
+        pd.DataFrame(), closed_equity, current
+    )
+
+    assert total == 1200.0
 
 
 def test_merge_still_adds_stock_when_only_the_option_is_in_the_mart():

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .ew-hero {
         background: #1a1a2e;
@@ -22,39 +23,39 @@
     .ew-section { margin-bottom: 1.6rem; }
     .ew-section-label {
         font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
-        color: #64748b; font-weight: 700; margin-bottom: .6rem;
+        color: var(--ht-muted); font-weight: 700; margin-bottom: .6rem;
     }
     .ew-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .8rem; }
 
     .ew-card {
-        background: #fff; border: 1px solid #e7e5e4; border-radius: 12px;
+        background: #121826; border: 1px solid #243049; border-radius: 12px;
         padding: .85rem 1rem; display: flex; flex-direction: column; gap: .5rem;
     }
     .ew-card .top { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
-    .ew-card .sym a { font-size: 1.05rem; font-weight: 800; color: #0f172a; text-decoration: none; }
+    .ew-card .sym a { font-size: 1.05rem; font-weight: 800; color: var(--ht-ink); text-decoration: none; }
     .ew-card .sym a:hover { text-decoration: underline; }
-    .ew-card .company { font-size: .72rem; color: #64748b; margin-top: .1rem; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ew-card .company { font-size: .72rem; color: var(--ht-muted); margin-top: .1rem; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ew-card .when { text-align: right; font-variant-numeric: tabular-nums; }
     .ew-card .when .big { font-size: 1.05rem; font-weight: 800; line-height: 1; }
     .ew-card .when .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
-    .ew-card .when.soon .big { color: #b45309; }
-    .ew-card .when.imminent .big { color: #b91c1c; }
+    .ew-card .when.soon .big { color: #e8c07a; }
+    .ew-card .when.imminent .big { color: #f0556d; }
     .ew-card .move { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
     .ew-card .move.pos { color: #059669; }
-    .ew-card .move.neg { color: #b91c1c; }
+    .ew-card .move.neg { color: #f0556d; }
     .ew-badge {
-        display: inline-block; font-size: .62rem; font-weight: 600; color: #475569;
-        background: #f1f5f9; border-radius: 999px; padding: .1rem .5rem; margin-left: .3rem;
+        display: inline-block; font-size: .62rem; font-weight: 600; color: #8a97b1;
+        background: #1a2233; border-radius: 999px; padding: .1rem .5rem; margin-left: .3rem;
     }
     .ew-card .ef-link {
-        font-size: .72rem; font-weight: 600; color: #1e3a8a; text-decoration: none;
-        border-top: 1px solid #f1f5f9; padding-top: .5rem;
+        font-size: .72rem; font-weight: 600; color: #5b8cff; text-decoration: none;
+        border-top: 1px solid #243049; padding-top: .5rem;
     }
     .ew-card .ef-link:hover { text-decoration: underline; }
 
     .ew-empty {
-        color: #78716c; font-size: .85rem; padding: 1.5rem; text-align: center;
-        background: #fff; border-radius: 12px; border: 1px dashed #e7e5e4;
+        color: #8a97b1; font-size: .85rem; padding: 1.5rem; text-align: center;
+        background: #121826; border-radius: 12px; border: 1px dashed #e7e5e4;
     }
     .ew-empty-slim { padding: .8rem 1rem; text-align: left; font-style: italic; }
 
@@ -63,12 +64,12 @@
     .ew-group-head {
         display: flex; align-items: center; justify-content: space-between;
         gap: .8rem; flex-wrap: wrap; margin-bottom: .6rem;
-        padding: .55rem .8rem; background: #f1f5f9; border-radius: 10px;
+        padding: .55rem .8rem; background: #1a2233; border-radius: 10px;
     }
     .ew-group-held { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
     .ew-group-held .lbl {
         font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
-        color: #64748b; font-weight: 700; margin-right: .15rem;
+        color: var(--ht-muted); font-weight: 700; margin-right: .15rem;
     }
     .ew-held-pill {
         display: inline-block; padding: .2rem .6rem; border-radius: 999px;
@@ -76,22 +77,29 @@
         text-decoration: none;
     }
     .ew-held-pill:hover { background: #1e3a8a; color: #fff; }
-    .ew-group-sector { font-size: .72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
-    .ew-group-sub { font-size: .76rem; color: #64748b; margin-top: .35rem; }
+    .ew-group-sector { font-size: .72rem; font-weight: 700; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .ew-group-sub { font-size: .76rem; color: var(--ht-muted); margin-top: .35rem; }
     .ew-card .move-lbl {
         font-size: .6rem; text-transform: uppercase; letter-spacing: .04em;
         color: #94a3b8; text-align: right; margin-top: .1rem;
     }
     .ew-note {
-        background: #fff; border-radius: 10px; padding: .75rem 1rem;
-        font-size: .78rem; color: #64748b; border: 1px dashed #e7e5e4; margin-top: 1rem;
+        background: #121826; border-radius: 10px; padding: .75rem 1rem;
+        font-size: .78rem; color: #8a97b1; border: 1px dashed #e7e5e4; margin-top: 1rem;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 
-<div class="ew-hero">
+<div class="review-hero ew-hero">
+    <div class="ov-bar" style="flex:1 0 100%;">
+        {% if (accounts and accounts|length > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% include "_account_scope_filters.html" %}
+        </form>
+        {% endif %}
+    </div>
     <div>
         <h1>Earnings Watch</h1>
         <p class="lede">Which of your positions report next, and big recent movers in the sectors you hold &mdash; context that can move your prices before you do.</p>
@@ -103,12 +111,6 @@
 
 {% if error %}
 <div class="alert alert-danger">{{ error }} Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>
-{% endif %}
-
-{% if (accounts and accounts|length > 1) or account_groups %}
-<form method="get" class="filter-bar mb-3">
-    {% include "_account_scope_filters.html" %}
-</form>
 {% endif %}
 
 {# ── Your positions reporting soon ───────────────────────────────── #}
@@ -173,7 +175,7 @@
                             {% if earnings_follower_enabled %}
                             <a href="{{ m.ef_url }}" target="_blank" rel="noopener">{{ m.symbol }}</a>
                             {% else %}
-                            <span style="font-size:1.05rem; font-weight:800; color:#0f172a;">{{ m.symbol }}</span>
+                            <span style="font-size:1.05rem; font-weight:800; color:#e8edf7;">{{ m.symbol }}</span>
                             {% endif %}
                             {% if m.subsector %}<span class="ew-badge">{{ m.subsector }}</span>{% endif %}
                         </div>

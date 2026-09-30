@@ -40,6 +40,8 @@ def test_browser_navigation_gets_shell():
     assert "sk-shimmer" in body
     # The shell must re-request with the full-render header.
     assert "X-HT-Full" in body
+    assert "location.hash" in body
+    assert "scrollIntoView" in body
 
 
 def test_full_header_gets_real_page_and_warm_cookie():

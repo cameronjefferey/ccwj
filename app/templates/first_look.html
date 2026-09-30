@@ -10,7 +10,7 @@
         margin-bottom: 2rem;
     }
     .fl-section {
-        background: #fff;
+        background: #121826;
         border-radius: 16px;
         box-shadow: 0 2px 16px rgba(0,0,0,.05);
         padding: 2rem;
@@ -20,7 +20,7 @@
         font-size: .85rem;
         text-transform: uppercase;
         letter-spacing: 1.2px;
-        color: #6c757d;
+        color: var(--ht-muted);
         margin-bottom: 1.25rem;
     }
     .fl-stat {
@@ -28,15 +28,15 @@
         padding: 1rem .5rem;
     }
     .fl-stat .val { font-size: 1.6rem; font-weight: 700; }
-    .fl-stat .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; color: #6c757d; }
+    .fl-stat .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; color: var(--ht-muted); }
     .strat-card {
-        background: #f8f9fa;
+        background: #1a2233;
         border-radius: 12px;
         padding: 1rem 1.25rem;
         margin-bottom: .75rem;
     }
     .insight-box {
-        background: #f8f1e7;
+        background: #1a2233;
         border-left: 5px solid var(--color-mirror);
         border-radius: 0 16px 16px 0;
         padding: 2rem;
@@ -99,7 +99,7 @@
         <div class="col-6 col-md-3">
             <div class="fl-stat">
                 <div class="val {{ 'text-positive' if profile.total_return >= 0 else 'text-negative' }}">
-                    ${{ "{:,.0f}".format(profile.total_return) }}
+                    {{ money(profile.total_return, 0) }}
                 </div>
                 <div class="lbl">Total Return</div>
             </div>
@@ -107,13 +107,13 @@
         <div class="col-6 col-md-3">
             <div class="fl-stat">
                 <div class="val text-positive">${{ "{:,.0f}".format(profile.premium_collected) }}</div>
-                <div class="lbl">Premium Collected</div>
+                <div class="lbl">{{ term('Premium Collected') }}</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="fl-stat">
                 <div class="val">{{ "{:.0%}".format(profile.win_rate) }}</div>
-                <div class="lbl">Win Rate</div>
+                <div class="lbl">{{ term('Win Rate') }}</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
@@ -133,7 +133,7 @@
     <p class="narrative mb-3">
         Your primary strategy is <strong>{{ profile.top_strategy.strategy }}</strong>
         ({{ profile.top_strategy.total_trades }} trades, {{ "{:.0%}".format(profile.top_strategy.win_rate) }} win rate,
-        ${{ "{:,.0f}".format(profile.top_strategy.total_return) }} total return).
+        {{ money(profile.top_strategy.total_return, 0) }} total return).
         {% if profile.strategies|length > 1 %}
         You also use
         {% for s in profile.strategies[1:3] %}{{ s.strategy }}{% if not loop.last %} and {% endif %}{% endfor %}.
@@ -150,7 +150,7 @@
         <div class="d-flex gap-3 align-items-center">
             <span class="small">{{ "{:.0%}".format(s.win_rate) }} win</span>
             <span class="fw-bold {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
-                ${{ "{:,.0f}".format(s.total_return) }}
+                {{ money(s.total_return, 0) }}
             </span>
         </div>
     </div>
@@ -170,7 +170,7 @@
                 <a href="{{ scoped_url('position_detail', symbol=profile.best_symbol.symbol) }}"
                    class="h5 text-decoration-none fw-bold d-block mb-1">{{ profile.best_symbol.symbol }}</a>
                 <div class="small text-muted">{{ profile.best_symbol.strategies }}</div>
-                <div class="h4 fw-bold text-positive mt-2 mb-0">${{ "{:,.2f}".format(profile.best_symbol.total_return) }}</div>
+                <div class="h4 fw-bold text-positive mt-2 mb-0">{{ money(profile.best_symbol.total_return, 2) }}</div>
             </div>
         </div>
         {% endif %}
@@ -181,7 +181,7 @@
                 <a href="{{ scoped_url('position_detail', symbol=profile.worst_symbol.symbol) }}"
                    class="h5 text-decoration-none fw-bold d-block mb-1">{{ profile.worst_symbol.symbol }}</a>
                 <div class="small text-muted">{{ profile.worst_symbol.strategies }}</div>
-                <div class="h4 fw-bold text-negative mt-2 mb-0">${{ "{:,.2f}".format(profile.worst_symbol.total_return) }}</div>
+                <div class="h4 fw-bold text-negative mt-2 mb-0">{{ money(profile.worst_symbol.total_return, 2) }}</div>
             </div>
         </div>
         {% endif %}
@@ -234,7 +234,7 @@
 {# ── THE KEY INSIGHT — the one thing that makes this page worth visiting ── #}
 {% if profile.key_insight %}
 <div class="insight-box mb-4">
-    <div class="small text-uppercase fw-bold mb-2" style="letter-spacing:1.5px; color:#6c757d;">One thing to think about</div>
+    <div class="small text-uppercase fw-bold mb-2" style="letter-spacing:1.5px; color:#8a97b1;">One thing to think about</div>
     <h2>{{ profile.key_insight.title }}</h2>
     <p class="narrative mb-3">{{ profile.key_insight.body }}</p>
     <div class="prompt-card" style="background:rgba(255,255,255,.6);">

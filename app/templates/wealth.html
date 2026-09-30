@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     /* ── Hero ───────────────────────────────────────────────────── */
     .wealth-hero {
@@ -22,7 +23,7 @@
     .range-toggle {
         display: inline-flex;
         gap: .25rem;
-        background: #f1f5f9;
+        background: #1a2233;
         padding: .25rem;
         border-radius: 8px;
     }
@@ -31,24 +32,24 @@
         border-radius: 6px;
         font-size: .82rem;
         font-weight: 500;
-        color: #475569;
+        color: var(--ht-muted);
         text-decoration: none;
         transition: background-color .15s;
     }
     .range-toggle a:hover { background: rgba(184,115,51,.12); color: var(--color-mirror-ink); }
-    .range-toggle a.active { background: #b87333; color: #fff; }
+    .range-toggle a.active { background: #5b8cff; color: #fff; }
 
     /* ── KPI cards ─────────────────────────────────────────────── */
     .kpi-card {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 10px;
         padding: 1rem 1.1rem;
     }
     .kpi-label {
         font-size: .72rem;
         font-weight: 600;
-        color: #64748b;
+        color: var(--ht-muted);
         text-transform: uppercase;
         letter-spacing: .05em;
         margin-bottom: .35rem;
@@ -56,18 +57,18 @@
     .kpi-value {
         font-size: 1.5rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
         font-variant-numeric: tabular-nums;
         line-height: 1.1;
     }
     .kpi-meta {
         font-size: .78rem;
-        color: #64748b;
+        color: var(--ht-muted);
         margin-top: .35rem;
     }
     .kpi-delta-pos { color: #16a34a; font-weight: 600; }
-    .kpi-delta-neg { color: #dc2626; font-weight: 600; }
-    .kpi-delta-flat { color: #64748b; }
+    .kpi-delta-neg { color: #f0556d; font-weight: 600; }
+    .kpi-delta-flat { color: var(--ht-muted); }
 
     /* ── Allocation breakdown sub-bar ───────────────────────── */
     .alloc-bar {
@@ -88,7 +89,7 @@
         gap: 1rem;
         margin-top: .55rem;
         font-size: .78rem;
-        color: #475569;
+        color: var(--ht-muted);
         flex-wrap: wrap;
     }
     .alloc-dot {
@@ -104,8 +105,8 @@
 
     /* ── Chart wrapper ─────────────────────────────────────────── */
     .chart-wrapper {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 12px;
         padding: 1.25rem;
         margin-bottom: 1.5rem;
@@ -113,31 +114,31 @@
     .chart-wrapper h2 {
         font-size: .95rem;
         font-weight: 600;
-        color: #0f172a;
+        color: var(--ht-ink);
         margin: 0 0 .25rem;
     }
     .chart-wrapper .chart-sub {
         font-size: .8rem;
-        color: #64748b;
+        color: var(--ht-muted);
         margin: 0 0 .9rem;
     }
 
     /* ── Income panel ─────────────────────────────────────────── */
     .income-card {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 10px;
         padding: 1rem 1.1rem;
     }
     .income-card .income-label {
         font-size: .8rem;
         font-weight: 500;
-        color: #475569;
+        color: var(--ht-muted);
     }
     .income-card .income-value {
         font-size: 1.2rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
         font-variant-numeric: tabular-nums;
         margin-top: .3rem;
     }
@@ -150,7 +151,19 @@
 {% endblock %}
 
 {% block content %}
-<div class="wealth-hero">
+<div class="review-hero wealth-hero">
+    <div class="ov-bar">
+        {% if (wealth_account_choices and wealth_account_choices|length > 0) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            <input type="hidden" name="view" value="value">
+            <input type="hidden" name="range" value="{{ selected_range }}">
+            {% if exclude_transfers %}<input type="hidden" name="exclude_transfers" value="1">{% endif %}
+            {% with scope_account_options = wealth_account_choices, account_filter_always = true %}
+            {% include "_account_scope_filters.html" %}
+            {% endwith %}
+        </form>
+        {% endif %}
+    </div>
     <h1>Account value &amp; composition</h1>
     <p class="lede">
         Daily account value over time, broken into cash, equity, and option positions.
@@ -175,25 +188,15 @@
 {% elif wealth_no_match %}
 <div class="alert alert-warning">
     <strong>Unknown account filter.</strong>
-    <p class="mb-0 mt-2 small"><code>{{ selected_account }}</code> is not one of your linked account names.
-        Use the account dropdown below (or pick an account on your
+    <p class="mb-0 mt-2 small"><code>{{ selected_account | account_label }}</code> is not one of your linked account names.
+        Use the account menu in the header (or pick an account on your
         <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page) so the label matches exactly.</p>
 </div>
-<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
-    {% if wealth_account_choices and wealth_account_choices|length > 0 %}
-    <form method="get" class="filter-bar mb-0">
-        <input type="hidden" name="view" value="value">
-        <input type="hidden" name="range" value="{{ selected_range }}">
-        {% with scope_account_options = wealth_account_choices, account_filter_always = true %}
-        {% include "_account_scope_filters.html" %}
-        {% endwith %}
-    </form>
-    {% endif %}
-
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3" id="value-controls">
     <div class="range-toggle ms-auto">
         {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('ytd', 'YTD'), ('all', 'All')] %}
         {% for value, label in ranges %}
-        <a href="{{ scoped_url('accounts', view='value', range=value) }}"
+        <a href="{{ scoped_url('accounts', view='value', range=value, _anchor='value-controls') }}"
            class="{{ 'active' if selected_range == value }}">{{ label }}</a>
         {% endfor %}
     </div>
@@ -218,23 +221,12 @@
 {% include "_history_window_note.html" %}
 
 {# ── Filters ──────────────────────────────────────────────────────── #}
-<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
-    {% if wealth_account_choices and wealth_account_choices|length > 0 %}
-    <form method="get" class="filter-bar mb-0">
-        <input type="hidden" name="view" value="value">
-        <input type="hidden" name="range" value="{{ selected_range }}">
-        {% if exclude_transfers %}<input type="hidden" name="exclude_transfers" value="1">{% endif %}
-        {% with scope_account_options = wealth_account_choices, account_filter_always = true %}
-        {% include "_account_scope_filters.html" %}
-        {% endwith %}
-    </form>
-    {% endif %}
-
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3" id="value-controls">
     {# Deposits/withdrawals toggle — strips the trader's own money in/out
        from the change numbers + headline line so the picture is trading +
        income only. Submits via a tiny GET form that preserves account and
        range. #}
-    <form method="get" class="d-inline-flex align-items-center mb-0 ms-auto">
+    <form method="get" class="d-inline-flex align-items-center mb-0 ms-auto" action="#value-controls">
         <input type="hidden" name="view" value="value">
         {% if selected_account %}<input type="hidden" name="account" value="{{ selected_account }}">{% endif %}
         <input type="hidden" name="range" value="{{ selected_range }}">
@@ -254,7 +246,7 @@
     <div class="range-toggle">
         {% set ranges = [('30', '30d'), ('90', '90d'), ('180', '6m'), ('365', '1y'), ('ytd', 'YTD'), ('all', 'All')] %}
         {% for value, label in ranges %}
-        <a href="{{ scoped_url('accounts', view='value', range=value, exclude_transfers='1' if exclude_transfers else none) }}"
+        <a href="{{ scoped_url('accounts', view='value', range=value, exclude_transfers='1' if exclude_transfers else none, _anchor='value-controls') }}"
            class="{{ 'active' if selected_range == value }}">{{ label }}</a>
         {% endfor %}
     </div>
@@ -265,7 +257,7 @@
     <div class="col-md-6">
         <div class="kpi-card">
             <div class="kpi-label">Total value · as of {{ summary.as_of }}</div>
-            <div class="kpi-value">${{ "{:,.0f}".format(summary.account_value) }}</div>
+            <div class="kpi-value">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.account_value) }}{% endif %}</div>
             {# Sub-bar visualizes the cash / equity / options split. We
                compute widths inline so the bar reflects today's state
                without sending another data payload. Falls back to a
@@ -280,9 +272,9 @@
                 <div class="alloc-bar-segment alloc-bar-options" style="width: {{ option_pct }}%;"></div>
             </div>
             <div class="alloc-legend">
-                <span><span class="alloc-dot alloc-dot-cash"></span>Cash ${{ "{:,.0f}".format(summary.cash_value) }}</span>
-                <span><span class="alloc-dot alloc-dot-equity"></span>Equity ${{ "{:,.0f}".format(summary.equity_value) }}</span>
-                <span><span class="alloc-dot alloc-dot-options"></span>Options ${{ "{:,.0f}".format(summary.option_value) }}</span>
+                <span><span class="alloc-dot alloc-dot-cash"></span>Cash {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.cash_value) }}{% endif %}</span>
+                <span><span class="alloc-dot alloc-dot-equity"></span>Equity {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.equity_value) }}{% endif %}</span>
+                <span><span class="alloc-dot alloc-dot-options"></span>Options {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.option_value) }}{% endif %}</span>
             </div>
         </div>
     </div>
@@ -297,7 +289,7 @@
                 {% if summary.change_in_range.abs > 0 %}kpi-delta-pos
                 {% elif summary.change_in_range.abs < 0 %}kpi-delta-neg
                 {% else %}kpi-delta-flat{% endif %}">
-                {{ '+' if summary.change_in_range.abs > 0 }}${{ "{:,.0f}".format(summary.change_in_range.abs) }}
+                {% if privacy_mode %}••••{% else %}{{ money(summary.change_in_range.abs, 0, true) }}{% endif %}
             </div>
             <div class="kpi-meta">
                 {% if summary.change_in_range.pct is not none %}
@@ -312,7 +304,7 @@
             {% if summary.has_transfers %}
             <div class="kpi-meta" style="margin-top:.25rem;">
                 Net {{ 'deposited' if summary.net_deposits_in_range >= 0 else 'withdrawn' }}
-                ${{ "{:,.0f}".format(summary.net_deposits_in_range|abs) }} this window
+                {% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(summary.net_deposits_in_range|abs) }}{% endif %} this window
             </div>
             {% endif %}
         </div>
@@ -329,7 +321,7 @@
                 {% if summary.change_90d.abs > 0 %}kpi-delta-pos
                 {% elif summary.change_90d.abs < 0 %}kpi-delta-neg
                 {% else %}kpi-delta-flat{% endif %}">
-                {{ '+' if summary.change_90d.abs > 0 }}${{ "{:,.0f}".format(summary.change_90d.abs) }}
+                {% if privacy_mode %}••••{% else %}{{ money(summary.change_90d.abs, 0, true) }}{% endif %}
             </div>
             <div class="kpi-meta">
                 {% if summary.change_90d.pct is not none %}
@@ -389,7 +381,7 @@
             <div class="income-value
                 {% if income_panel.net_deposits > 0 %}kpi-delta-pos
                 {% elif income_panel.net_deposits < 0 %}kpi-delta-neg{% endif %}">
-                {{ '+' if income_panel.net_deposits > 0 }}${{ "{:,.2f}".format(income_panel.net_deposits) }}
+                {% if privacy_mode %}••••{% else %}{{ money(income_panel.net_deposits, 2, true) }}{% endif %}
             </div>
             <div class="income-meta">Money you moved in (+) or out (−)</div>
         </div>
@@ -402,7 +394,7 @@
             <div class="income-value
                 {% if income_panel.dividends > 0 %}kpi-delta-pos
                 {% elif income_panel.dividends < 0 %}kpi-delta-neg{% endif %}">
-                {{ '+' if income_panel.dividends > 0 }}${{ "{:,.2f}".format(income_panel.dividends) }}
+                {{ money(income_panel.dividends, 2, true) }}
             </div>
             <div class="income-meta">From cash &amp; special dividends</div>
         </div>
@@ -414,7 +406,7 @@
             <div class="income-value
                 {% if income_panel.interest_net > 0 %}kpi-delta-pos
                 {% elif income_panel.interest_net < 0 %}kpi-delta-neg{% endif %}">
-                {{ '+' if income_panel.interest_net > 0 }}${{ "{:,.2f}".format(income_panel.interest_net) }}
+                {{ money(income_panel.interest_net, 2, true) }}
             </div>
             <div class="income-meta">Credit interest minus margin interest</div>
         </div>
@@ -559,7 +551,8 @@
                     callbacks: {
                         label: function (ctx) {
                             const v = ctx.parsed.y;
-                            return ctx.dataset.label + ': $' + (v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
+                            if (window.htPrivacy) return ctx.dataset.label + ': ••••';
+                            return ctx.dataset.label + ': ' + (v == null ? '—' : window.htMoney(v, 0));
                         }
                     }
                 }
@@ -587,9 +580,12 @@
                     stacked: false,
                     ticks: {
                         callback: function (v) {
-                            if (Math.abs(v) >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M';
-                            if (Math.abs(v) >= 1_000) return '$' + (v / 1_000).toFixed(0) + 'k';
-                            return '$' + v.toFixed(0);
+                            if (window.htPrivacy) return '••••';
+                            var sign = v < 0 ? '-' : '';
+                            var a = Math.abs(v);
+                            if (a >= 1_000_000) return sign + '$' + (a / 1_000_000).toFixed(1) + 'M';
+                            if (a >= 1_000) return sign + '$' + (a / 1_000).toFixed(0) + 'k';
+                            return window.htMoney(v, 0);
                         }
                     },
                     grid: { color: '#e9ecef' }

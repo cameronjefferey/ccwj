@@ -2,7 +2,7 @@
 
 {% block head %}
 <style>
-    .atlas { background: #f8fafc; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
+    .atlas { background: #1a2233; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
     .atlas-shell { max-width: 1160px; margin: 0 auto; }
     .atlas-hero {
         border-radius: 16px;
@@ -34,40 +34,40 @@
         .atlas-nav { display: flex; flex-wrap: wrap; gap: .35rem; }
     }
     .atlas-nav .nav-link {
-        border-radius: 8px; color: #475569; font-weight: 600; font-size: .88rem;
+        border-radius: 8px; color: var(--ht-muted); font-weight: 600; font-size: .88rem;
         padding: .55rem .95rem; border: 1px solid transparent;
     }
-    .atlas-nav .nav-link:hover { background: #fff; color: #1e3a8a; border-color: #e2e8f0; }
+    .atlas-nav .nav-link:hover { background: #121826; color: #5b8cff; border-color: #243049; }
     .atlas-nav .nav-link.active {
-        background: #fff; color: #0f172a; border-color: #e2e8f0;
+        background: #121826; color: #e8edf7; border-color: #243049;
         box-shadow: 0 2px 8px rgba(15,23,42,.05);
     }
     .atlas-card {
-        background: #fff;
+        background: #121826;
         border-radius: 12px;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #243049;
         box-shadow: 0 1px 3px rgba(15,23,42,.04);
         margin-bottom: 1rem;
         overflow: hidden;
     }
     .atlas-card-h {
         font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-        color: #64748b; padding: 1rem 1.5rem .4rem;
+        color: var(--ht-muted); padding: 1rem 1.5rem .4rem;
     }
     .atlas-card-b { padding: 0 1.5rem 1.3rem; }
-    .atlas-label { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-bottom: .35rem; }
+    .atlas-label { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ht-muted); margin-bottom: .35rem; }
     .atlas-field { margin-bottom: 1.1rem; }
-    .atlas-hint { font-size: .85rem; color: #64748b; line-height: 1.5; }
+    .atlas-hint { font-size: .85rem; color: var(--ht-muted); line-height: 1.5; }
     .account-badge {
-        display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px;
+        display: inline-block; background: #1a2233; border: 1px solid #243049; border-radius: 8px;
         padding: .35rem .75rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
-        color: #0f172a;
+        color: #e8edf7;
     }
 
     /* Sync card — prominent on Overview */
     .sync-card {
-        background: #fff;
-        border: 1px solid #e2e8f0;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 12px;
         padding: 1.5rem 1.75rem;
         margin-bottom: 1rem;
@@ -76,17 +76,17 @@
     .sync-card .sync-title {
         font-size: 1.15rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
         margin: 0 0 .25rem;
     }
-    .sync-card .sync-sub { font-size: .88rem; color: #64748b; margin: 0 0 1rem; }
+    .sync-card .sync-sub { font-size: .88rem; color: var(--ht-muted); margin: 0 0 1rem; }
     .sync-status {
         display: inline-flex; align-items: center; gap: .5rem;
         font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
         padding: .3rem .7rem; border-radius: 999px;
     }
     .sync-status.connected { background: #dcfce7; color: #14532d; }
-    .sync-status.disconnected { background: #fef3c7; color: #78350f; }
+    .sync-status.disconnected { background: #2a2118; color: #e8edf7; }
     .sync-status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
     .sync-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
     .btn-sync-primary {
@@ -97,11 +97,11 @@
     }
     .btn-sync-primary:hover { background: #1e40af; color: #fff !important; }
     .btn-sync-ghost {
-        border: 1px solid #cbd5e1; color: #334155 !important;
+        border: 1px solid #cbd5e1; color: #e8edf7 !important;
         padding: .5rem 1.15rem; border-radius: 6px; font-weight: 500;
-        text-decoration: none !important; background: #fff;
+        text-decoration: none !important; background: #121826;
     }
-    .btn-sync-ghost:hover { background: #f1f5f9; color: #0f172a !important; }
+    .btn-sync-ghost:hover { background: #1a2233; color: #e8edf7 !important; }
 
     /* Identity card */
     .id-card { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
@@ -111,10 +111,10 @@
         color: #fff; font-weight: 700; font-size: 1.5rem;
         display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
     }
-    .id-name { font-size: 1.25rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
-    .id-handle { font-size: .85rem; color: #64748b; }
+    .id-name { font-size: 1.25rem; font-weight: 700; color: var(--ht-ink); line-height: 1.2; }
+    .id-handle { font-size: .85rem; color: var(--ht-muted); }
     .id-email-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .15rem; }
-    .id-email { font-size: .9rem; color: #334155; }
+    .id-email { font-size: .9rem; color: var(--ht-ink); }
     .pill {
         display: inline-flex; align-items: center; gap: .35rem;
         font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
@@ -122,16 +122,16 @@
     }
     .pill .dot { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
     .pill-ok { background: #dcfce7; color: #14532d; }
-    .pill-warn { background: #fef3c7; color: #78350f; }
-    .pill-muted { background: #f1f5f9; color: #475569; }
-    .pill-danger { background: #fee2e2; color: #991b1b; }
+    .pill-warn { background: #2a2118; color: #e8edf7; }
+    .pill-muted { background: #1a2233; color: #8a97b1; }
+    .pill-danger { background: rgba(240,85,109,.14); color: #e8edf7; }
 
     .ht-pick { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 1rem; }
     .ht-pick-chip {
         display: inline-flex; align-items: center; margin: 0;
         padding: .4rem .85rem; border-radius: 8px; cursor: pointer;
-        background: #f1f5f9; border: 1px solid #e2e8f0;
-        font-size: .85rem; font-weight: 600; color: #0f172a; user-select: none;
+        background: #1a2233; border: 1px solid #243049;
+        font-size: .85rem; font-weight: 600; color: #e8edf7; user-select: none;
     }
     .ht-pick-chip input { position: absolute; opacity: 0; pointer-events: none; }
     .ht-pick-chip:hover { border-color: #94a3b8; }
@@ -140,24 +140,24 @@
         border: 1px solid #e2e8f0; border-radius: 10px; padding: .85rem 1rem;
         margin-bottom: .65rem;
     }
-    .ht-group-card h3 { font-size: .95rem; font-weight: 700; margin: 0 0 .35rem; color: #0f172a; }
-    .ht-group-card .members { font-size: .82rem; color: #475569; }
+    .ht-group-card h3 { font-size: .95rem; font-weight: 700; margin: 0 0 .35rem; color: var(--ht-ink); }
+    .ht-group-card .members { font-size: .82rem; color: var(--ht-muted); }
     .ht-group-card .actions { margin-top: .55rem; display: flex; gap: .75rem; align-items: center; }
 
     /* At-a-glance stat tiles */
     .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .75rem; }
     .stat-tile {
-        display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+        display: block; background: #121826; border: 1px solid #243049; border-radius: 10px;
         padding: .9rem 1rem; text-decoration: none; transition: border-color .12s, box-shadow .12s;
     }
     a.stat-tile:hover { border-color: var(--color-mirror-ink); box-shadow: 0 2px 8px rgba(15,23,42,.06); }
-    .stat-tile .n { font-size: 1.5rem; font-weight: 700; color: #0f172a; line-height: 1; }
-    .stat-tile .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; margin-top: .35rem; }
+    .stat-tile .n { font-size: 1.5rem; font-weight: 700; color: var(--ht-ink); line-height: 1; }
+    .stat-tile .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ht-muted); margin-top: .35rem; }
 
     /* Connection health rows */
     .conn-row {
         display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap;
-        padding: .7rem 0; border-top: 1px solid #f1f5f9;
+        padding: .7rem 0; border-top: 1px solid #243049;
     }
     .conn-row:first-child { border-top: none; }
     .conn-meta { font-size: .78rem; color: #94a3b8; }
@@ -253,7 +253,7 @@
         <div class="atlas-hero-in row g-3 align-items-center">
             <div class="col-lg-8">
                 <div class="atlas-kicker">Settings</div>
-                <h1>{{ profile_row.display_name or current_user.username }}</h1>
+                <h1>{{ profile_row.display_name or (current_user.username | privacy_hide) }}</h1>
                 <p class="lead">Manage how your data syncs, how the app opens, and your login.</p>
             </div>
             <div class="col-lg-4 d-flex justify-content-lg-end">
@@ -284,13 +284,13 @@
             <div class="atlas-card">
                 <div class="atlas-card-b pt-4">
                     <div class="id-card">
-                        <div class="id-avatar">{{ (profile_row.display_name or current_user.username)[:1]|upper }}</div>
+                        <div class="id-avatar">{% if privacy_mode and not profile_row.display_name %}•{% else %}{{ (profile_row.display_name or current_user.username)[:1]|upper }}{% endif %}</div>
                         <div class="flex-grow-1">
-                            <div class="id-name">{{ profile_row.display_name or current_user.username }}</div>
-                            <div class="id-handle">@{{ current_user.username }}</div>
+                            <div class="id-name">{{ profile_row.display_name or (current_user.username | privacy_hide) }}</div>
+                            <div class="id-handle">@{{ current_user.username | privacy_hide }}</div>
                             <div class="id-email-row">
                                 {% if current_user.email %}
-                                <span class="id-email">{{ current_user.email }}</span>
+                                <span class="id-email">{{ current_user.email | privacy_hide }}</span>
                                 {% if email_unverified %}
                                 <span class="pill pill-warn"><span class="dot"></span> Unverified</span>
                                 <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0 d-inline">
@@ -345,7 +345,7 @@
                     {% endfor %}
                     {% if _ns_st_o.any_broken %}
                     <div class="alert small mb-3" role="alert"
-                         style="background:#fef2f2; border:1px solid #fecaca; color:#7f1d1d;">
+                         style="background: rgba(240,85,109,.12); border: 1px solid #f0556d; color: #e8edf7;">
                         <strong>A broker connection needs reconnecting.</strong>
                         Syncing won't help until it's fixed — reconnect the broker (one
                         click fixes every account on that connection).
@@ -355,8 +355,8 @@
                     {% for a in _snaptrade_accounts %}
                     <div class="conn-row">
                         <div>
-                            <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
-                            <span class="small text-body-secondary ms-1">{{ a.broker_slug | title }}</span>
+                            <span class="account-badge mb-0">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
+                            <span class="small text-body-secondary ms-1">{{ a.broker_slug | title | privacy_hide }}</span>
                             {% if a.holdings_last_successful_sync %}
                             <div class="conn-meta">Broker data as of {{ a.holdings_last_successful_sync.strftime('%b %-d, %Y') }}</div>
                             {% elif a.last_sync_at %}
@@ -430,6 +430,20 @@
             {% endif %}
 
             {% if tab == 'preferences' %}
+            <form method="POST" action="{{ url_for('set_privacy_mode_route') }}" class="mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
+                <input type="hidden" name="next" value="{{ url_for('profile', tab='preferences') }}">
+                <div class="atlas-card">
+                    <div class="atlas-card-h">Privacy mode</div>
+                    <div class="atlas-card-b d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <p class="atlas-hint mb-0">Hide account names, broker names, balances, your username, and your email. Trade P&amp;L and prices stay visible.</p>
+                        <button type="submit" class="btn {% if privacy_mode %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                            {% if privacy_mode %}Turn off{% else %}Turn on{% endif %}
+                        </button>
+                    </div>
+                </div>
+            </form>
             <form method="POST" action="{{ url_for('profile', tab='preferences') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="save_profile">
@@ -442,7 +456,7 @@
                             <label class="atlas-label" for="display_name">Display name</label>
                             <input type="text" class="form-control form-control-lg" id="display_name" name="display_name" maxlength="80"
                                    value="{{ profile_row.display_name or '' }}" placeholder="How should we address you?" autocomplete="nickname">
-                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username }}</code>.</p>
+                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username | privacy_hide }}</code>.</p>
                         </div>
                     </div>
                 </div>
@@ -657,7 +671,7 @@
                         through the SnapTrade Connection Portal. Connect once per broker; we refresh
                         from then on. This is not a lifetime archive of the account.
                     </p>
-                    <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
+                    <div class="alert alert-warning small mb-3" role="alert" style="background: #2a2118; border-color:#e8c07a; color:#e8c07a;">
                         <strong>What broker sync actually includes:</strong>
                         <ul class="mb-0 ps-3 mt-1">
                             <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>
@@ -724,8 +738,8 @@
                     <ul class="list-unstyled mb-3">
                         {% for a in _snaptrade_accounts %}
                         <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                            <span class="account-badge mb-0">{{ a.display_nickname or a.account_name or a.snaptrade_account_id }}</span>
-                            <span class="small text-body-secondary">{{ a.broker_slug }}</span>
+                            <span class="account-badge mb-0">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
+                            <span class="small text-body-secondary">{{ a.broker_slug | privacy_hide }}</span>
                             {% if not a.first_sync_completed %}
                             <span class="badge text-bg-warning">First sync pending</span>
                             {% endif %}
@@ -776,7 +790,7 @@
                                 <input type="checkbox" name="tenant_id" value="{{ acct.tenant_id }}"
                                        {% if acct.tenant_id in _picked %}checked{% endif %}
                                        {% if is_demo_user %}disabled{% endif %}>
-                                {{ acct.label }}
+                                {{ acct.label | account_label(acct.tenant_id) }}
                             </label>
                             {% endfor %}
                         </div>
@@ -833,7 +847,7 @@
                     {% for g in account_groups %}
                     <div class="ht-group-card">
                         <h3>{{ g.name }}</h3>
-                        <div class="members">{% for acct in group_tenant_choices if acct.tenant_id in g.tenant_ids %}{{ acct.label }}{% if not loop.last %} · {% endif %}{% else %}No accounts yet{% endfor %}</div>
+                        <div class="members">{% for acct in group_tenant_choices if acct.tenant_id in g.tenant_ids %}{{ acct.label | account_label(acct.tenant_id) }}{% if not loop.last %} · {% endif %}{% else %}No accounts yet{% endfor %}</div>
                         <div class="actions">
                             <a href="{{ url_for('profile', tab='account', edit=g.id) }}#group-composer">Edit</a>
                             <form method="POST" action="{{ url_for('profile', tab='account') }}" class="m-0"
@@ -910,13 +924,16 @@
                     </p>
                     {% elif email_unverified %}
                     <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
-                        <span class="atlas-hint mb-0">We sent a confirmation link to <strong>{{ current_user.email }}</strong> — check your inbox (and spam).</span>
+                        <span class="atlas-hint mb-0">We sent a confirmation link to <strong>{{ current_user.email | privacy_hide }}</strong> — check your inbox (and spam).</span>
                         <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-outline-primary btn-sm">Resend verification email</button>
                         </form>
                     </div>
                     {% endif %}
+                    {% if privacy_mode %}
+                    <p class="atlas-hint mb-0">Turn off privacy mode to view or change your email.</p>
+                    {% else %}
                     <form method="POST" action="{{ url_for('profile', tab='security') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="action" value="set_email">
@@ -931,6 +948,7 @@
                             Save email
                         </button>
                     </form>
+                    {% endif %}
                 </div>
             </div>
 
@@ -944,7 +962,7 @@
                         <div class="mb-3">
                             <label class="form-label" for="pw_username">Username</label>
                             <input type="text" class="form-control" id="pw_username" name="username"
-                                   value="{{ current_user.username }}" autocomplete="username" readonly>
+                                   value="{{ current_user.username | privacy_hide }}" autocomplete="username" readonly>
                         </div>
                         <div class="mb-3"><label class="form-label" for="pw_current">Current</label>
                             <div class="input-group">
@@ -980,7 +998,7 @@
             </div>
 
             <div class="atlas-card" style="border-color:#fecaca;">
-                <div class="atlas-card-h" style="color:#b91c1c;">Danger zone</div>
+                <div class="atlas-card-h" style="color:#f0556d;">Danger zone</div>
                 <div class="atlas-card-b">
                     <p class="atlas-hint mb-3">
                         Deleting your account is permanent. It removes your login, disconnects

@@ -33,7 +33,12 @@ from app.models import (
     save_strategy_fit_insight,
     get_user_llm_model,
 )
-from app.routes import _tenants_for_scope, _tenant_sql_and, _filter_df_by_tenant_ids
+from app.routes import (
+    _filter_df_by_tenant_ids,
+    _scope_keep_kwargs,
+    _tenant_sql_and,
+    _tenants_for_scope,
+)
 from app.utils import demo_block_writes
 
 
@@ -104,6 +109,8 @@ def _build_strategy_fit_brief(client, tenant_ids):
     for c in ("sector", "subsector", "symbol", "strategy"):
         if c in df.columns:
             df[c] = df[c].fillna("Unknown").astype(str)
+    from app.sector_labels import apply_sector_labels, is_unclassified
+    df = apply_sector_labels(df)
 
     # Baselines — these are the user's overall numbers. Every claim in
     # the brief should reference these so "edge" is meaningful.
@@ -147,7 +154,7 @@ def _build_strategy_fit_brief(client, tenant_ids):
     # that yfinance can't classify rather than a coherent group.
     qualified = cell_agg[
         (cell_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
-        & (cell_agg["sector"].astype(str) != "Unknown")
+        & ~cell_agg["sector"].astype(str).map(is_unclassified)
     ].copy()
 
     sweet_df = qualified[
@@ -244,7 +251,7 @@ def _build_strategy_fit_brief(client, tenant_ids):
     # so a strategy with trades in 2 real sectors + 1 Unknown bucket
     # doesn't get falsely promoted to "works across 3 sectors" in the
     # narrative.
-    cell_agg_named = cell_agg[cell_agg["sector"].astype(str) != "Unknown"].copy()
+    cell_agg_named = cell_agg[~cell_agg["sector"].astype(str).map(is_unclassified)].copy()
     strat_agg = (
         cell_agg_named.groupby("strategy")
         .agg(
@@ -302,13 +309,13 @@ def _build_strategy_fit_brief(client, tenant_ids):
 
     # Surface sectors that are both *positive* AND punching above weight.
     overweight = sec_agg[
-        (sec_agg["total_pnl"] > 0) & (sec_agg["sector"] != "Unknown") & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
+        (sec_agg["total_pnl"] > 0) & ~sec_agg["sector"].map(is_unclassified) & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
     ].sort_values("punch_ratio", ascending=False).head(2).to_dict(orient="records")
     for r in overweight:
         r["top_symbols"] = _top_symbols_for_sector(r["sector"], n=3, sort="pos")
 
     underweight = sec_agg[
-        (sec_agg["total_pnl"] < 0) & (sec_agg["sector"] != "Unknown") & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
+        (sec_agg["total_pnl"] < 0) & ~sec_agg["sector"].map(is_unclassified) & (sec_agg["num_trades"] >= MIN_TRADES_FOR_CALLOUT)
     ].sort_values("total_pnl", ascending=True).head(2).to_dict(orient="records")
     for r in underweight:
         r["top_symbols"] = _top_symbols_for_sector(r["sector"], n=3, sort="neg")
@@ -329,9 +336,9 @@ def _build_strategy_fit_brief(client, tenant_ids):
         "overweight_sectors": overweight,
         "underweight_sectors": underweight,
         "num_strategies": int(strat_agg.shape[0]),
-        "num_sectors": int(sec_agg[sec_agg["sector"] != "Unknown"].shape[0]),
+        "num_sectors": int(sec_agg[~sec_agg["sector"].map(is_unclassified)].shape[0]),
         "unknown_share": float(
-            (sec_agg.loc[sec_agg["sector"] == "Unknown", "num_trades"].sum() / total_trades)
+            (sec_agg.loc[sec_agg["sector"].map(is_unclassified), "num_trades"].sum() / total_trades)
             if total_trades else 0
         ),
     }
@@ -535,11 +542,12 @@ def generate_strategy_fit_insights():
         return blocked
     selected_account = request.args.get("account", "")
     drill_sector     = request.args.get("sector", "")
-    redir_kwargs = {"view": "fit"}
-    if selected_account:
-        redir_kwargs["account"] = selected_account
+    selected_dim = request.args.get("dim", "")
+    redir_kwargs = {"view": "fit", **_scope_keep_kwargs(request.args)}
     if drill_sector:
         redir_kwargs["sector"] = drill_sector
+    if selected_dim:
+        redir_kwargs["dim"] = selected_dim
     redir = url_for("strategies", **redir_kwargs)
 
     if not app.config.get("INSIGHTS_ENABLED", True):
@@ -552,6 +560,10 @@ def generate_strategy_fit_insights():
     try:
         client = get_bigquery_client()
         accounts = _user_accounts(selected_account)
+        from app.account_scope import account_scope_cache_key
+        insight_scope_key = account_scope_cache_key(
+            request.args, selected_account, accounts,
+        )
         brief_text, _brief = _build_strategy_fit_brief(client, accounts)
         if not brief_text:
             flash("Not enough data yet to summarize. Add a few more trades and try again.", "warning")
@@ -568,7 +580,7 @@ def generate_strategy_fit_insights():
         summary, full = result
         save_strategy_fit_insight(
             current_user.id,
-            account_filter=selected_account or "",
+            account_filter=insight_scope_key,
             summary=summary,
             full_analysis=full,
             brief_text=brief_text,

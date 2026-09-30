@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
     .insights-hero {
         background: #1a1a2e;
@@ -12,7 +13,7 @@
     .insights-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
 
     .coaching-section {
-        background: #fff;
+        background: #121826;
         border-radius: 16px;
         box-shadow: 0 1px 8px rgba(0,0,0,.05);
         padding: 1.75rem;
@@ -30,7 +31,7 @@
     /* Discovery Lab */
     .discovery-lab {
         border: 1px solid rgba(184,115,51,.28);
-        background: #f8f1e7;
+        background: #1a2233;
     }
     .discovery-grid {
         display: grid;
@@ -40,14 +41,15 @@
     .discovery-card {
         border-radius: 14px;
         padding: 1.15rem 1.2rem;
-        background: rgba(255,255,255,.92);
-        border: 1px solid #e5e7eb;
-        box-shadow: 0 4px 18px rgba(15,23,42,.06);
+        background: var(--ht-surface, #121826);
+        color: var(--ht-ink, #e8edf7);
+        border: 1px solid var(--ht-line, #243049);
+        box-shadow: none;
         transition: transform .12s ease, box-shadow .12s ease;
     }
     .discovery-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(15,23,42,.09);
+        box-shadow: 0 8px 24px rgba(0,0,0,.28);
     }
     .discovery-tag {
         font-size: .62rem;
@@ -62,18 +64,18 @@
     .discovery-stat {
         font-size: .85rem;
         font-weight: 700;
-        color: #0f172a;
+        color: var(--ht-ink);
     }
     .discovery-title {
         font-size: 1.02rem;
         font-weight: 700;
         line-height: 1.35;
-        color: #111827;
+        color: var(--ht-ink);
         margin-bottom: .5rem;
     }
     .discovery-body {
         font-size: .86rem;
-        color: #374151;
+        color: var(--ht-ink);
         line-height: 1.55;
         white-space: normal;
     }
@@ -90,13 +92,13 @@
         margin-bottom: 1.25rem;
     }
     .signal-card {
-        background: #f8f9fa;
+        background: #1a2233;
         border-radius: 12px;
         padding: 1rem 1.15rem;
     }
     .signal-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-bottom: .3rem; }
     .signal-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
-    .signal-meta { font-size: .75rem; color: #6c757d; margin-top: .2rem; }
+    .signal-meta { font-size: .75rem; color: var(--ht-muted); margin-top: .2rem; }
 
     /* Strategy rows */
     .strat-row {
@@ -104,12 +106,12 @@
         justify-content: space-between;
         align-items: center;
         padding: .65rem 1rem;
-        background: #f8f9fa;
+        background: #1a2233;
         border-radius: 8px;
         margin-bottom: .5rem;
     }
     .strat-row .strat-name { font-weight: 600; font-size: .9rem; }
-    .strat-row .strat-stats { font-size: .82rem; color: #6c757d; }
+    .strat-row .strat-stats { font-size: .82rem; color: var(--ht-muted); }
     .strat-giveback { font-weight: 700; font-size: .9rem; }
 
     /* Exit table */
@@ -154,16 +156,16 @@
     #coachThread ul { margin-bottom: .45rem; padding-left: 1.15rem; }
     .insights-content ul { padding-left: 1.25rem; }
     .insights-content li { margin-bottom: .4rem; line-height: 1.6; }
-    .insights-content strong { color: #1a1a2e; }
-    .insights-meta { font-size: .78rem; color: #6c757d; }
+    .insights-content strong { color: var(--ht-ink); }
+    .insights-meta { font-size: .78rem; color: var(--ht-muted); }
     .insights-stale {
-        background: #fff7ed;
+        background: #2a2118;
         border: 1px solid #fdba74;
         border-radius: 10px;
         padding: .75rem .9rem;
         font-size: .85rem;
         line-height: 1.45;
-        color: #9a3412;
+        color: #e8c07a;
         margin-bottom: .9rem;
     }
     #coachThread .ask-md-heading {
@@ -192,32 +194,32 @@
         text-align: center;
     }
     .generate-card h5 { font-weight: 700; margin-bottom: .5rem; }
-    .generate-card p { color: #6c757d; margin-bottom: 1.5rem; }
+    .generate-card p { color: var(--ht-muted); margin-bottom: 1.5rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-9">
-        <div class="insights-hero">
+        <div class="review-hero insights-hero">
+            <div class="ov-bar">
+                        {% if (accounts and accounts|length > 1) or account_groups %}
+                <form method="get" class="filter-bar filter-bar-hero">
+                    {% include "_account_scope_filters.html" %}
+                    {% if scope_is_filtered %}
+                    <a class="filter-reset" href="{{ url_for('insights', scope='all') }}">Reset</a>
+                    {% endif %}
+                </form>
+                {% endif %}
+            </div>
             <h1>AI Insights</h1>
             <p class="mb-0 opacity-90">
-                A mirror backed by curves other platforms never ingest — Discovery Lab contrasts your closes by calendar,
-                ticker, DTE tenor, and post-loss sequencing. The AI narrates once you generate; cards below refresh every session.
+                How your closes line up: by weekday, by symbol, by how long you held, and by the trade after a loss.
+                Generate a write-up when you want the cards narrated. The cards refresh on each visit.
             </p>
         </div>
 
         {% include "_history_window_note.html" %}
-
-        {% if (accounts and accounts|length > 1) or account_groups %}
-        <form method="get" class="filter-bar">
-            {% include "_account_scope_filters.html" %}
-            {% if scope_is_filtered %}
-            <a class="filter-reset" href="{{ url_for('insights') }}">Reset</a>
-            {% endif %}
-        </form>
-        {% endif %}
-
 
         {# ════════════════════════════════════
            DETERMINISTIC COACHING DATA
@@ -231,8 +233,7 @@
                 <div>
                     <div class="section-label mb-1">Discovery Lab</div>
                     <p class="mb-0 small text-muted" style="max-width: 42rem;">
-                        Contrasts you cannot see in a broker blotter — computed from daily option marks + your sequencing.
-                        Evidence-backed, not adjectives.
+                        Patterns in your own closes. Each card is a contrast in your history, with the count behind it.
                     </p>
                 </div>
             </div>
@@ -258,7 +259,7 @@
         {% if coaching.signals %}
         <div class="coaching-section">
             <div class="section-label">Exit Timing Profile</div>
-            <p class="mb-3" style="font-size:.9rem; color:#475569; line-height:1.5">
+            <p class="mb-3" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
                 How much profit you leave on the table by holding past the optimal exit point.
                 Computed from daily option mark-to-market snapshots, captured since August 2026.
                 Contracts closed before that cannot be scored.
@@ -272,7 +273,7 @@
             <div class="signal-grid">
                 <div class="signal-card">
                     <div class="signal-label">Total Left on Table</div>
-                    <div class="signal-value text-warning">${{ "{:,.0f}".format(total_given_back) }}</div>
+                    <div class="signal-value text-warning">{{ money(total_given_back, 0) }}</div>
                     <div class="signal-meta">across all strategies</div>
                 </div>
                 <div class="signal-card">
@@ -287,7 +288,7 @@
                 </div>
                 <div class="signal-card">
                     <div class="signal-label">Data Coverage</div>
-                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#6c757d"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
+                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#8a97b1"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
                     <div class="signal-meta">{{ coaching.pct_reliable }}% of contracts since daily marks began</div>
                 </div>
             </div>
@@ -305,7 +306,7 @@
                     </div>
                 </div>
                 <div class="text-end">
-                    <div class="strat-giveback text-warning">${{ "{:,.0f}".format(s.pnl_given_back) }}</div>
+                    <div class="strat-giveback text-warning">{{ money(s.pnl_given_back, 0) }}</div>
                     <div class="strat-stats">{{ "{:.0f}".format(s.giveback_pct) }}% giveback</div>
                 </div>
             </div>
@@ -317,7 +318,7 @@
         {% if coaching.recent_exits %}
         <div class="coaching-section">
             <div class="section-label">Recent Exit Examples (Last 90 Days)</div>
-            <p class="mb-3" style="font-size:.9rem; color:#475569">
+            <p class="mb-3" style="font-size:.9rem; color:#8a97b1">
                 Specific trades where you held past the peak — the gap between what you made and what you could have made.
             </p>
             <div class="table-responsive">
@@ -343,10 +344,10 @@
                             <td class="text-muted" data-val="{{ e.strategy }}">{{ e.strategy }}</td>
                             <td class="small" data-val="{{ e.close_date }}">{{ e.close_date }}</td>
                             <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.actual_pnl }}">
-                                {{ "+" if e.actual_pnl >= 0 else "" }}${{ "{:,.0f}".format(e.actual_pnl) }}
+                                {{ money(e.actual_pnl, 0, true) }}
                             </td>
-                            <td class="text-end text-positive" data-val="{{ e.peak_pnl }}">${{ "{:,.0f}".format(e.peak_pnl) }}</td>
-                            <td class="text-end text-warning fw-semibold" data-val="{{ e.given_back }}">${{ "{:,.0f}".format(e.given_back) }}</td>
+                            <td class="text-end {% if e.peak_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.peak_pnl }}">{{ money(e.peak_pnl, 0, true) }}</td>
+                            <td class="text-end text-warning fw-semibold" data-val="{{ e.given_back }}">{{ money(e.given_back, 0) }}</td>
                             <td class="text-center" data-val="{{ e.days_past_peak }}">{{ e.days_past_peak }}d</td>
                         </tr>
                         {% endif %}
@@ -360,7 +361,7 @@
         {% elif scope_narrowed %}
         <div class="coaching-section">
             <div class="section-label">Nothing in this filter</div>
-            <p class="mb-0" style="font-size:.9rem; color:#475569; line-height:1.5">
+            <p class="mb-0" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
                 Discovery Lab and Exit Timing need closed option contracts with daily marks.
                 This group or account doesn't have any, so those cards are empty here.
             </p>
@@ -433,7 +434,7 @@
         {% if scope_narrowed %}
         <div class="coaching-section">
             <div class="section-label">AI Analysis</div>
-            <p class="mb-0" style="font-size:.9rem; color:#475569; line-height:1.5">
+            <p class="mb-0" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
                 The saved analysis covers your whole book, so it isn't shown under this filter.
                 {% if coaching and coaching.has_data %}
                 The cards above are this filter's record.
@@ -460,7 +461,7 @@
                 {{ insight.full_analysis_html }}
             </div>
             <div class="d-flex justify-content-between align-items-center mt-3">
-                <span class="insights-meta">Generated {{ insight.generated_at.strftime("%b %d, %Y at %-I:%M %p") if insight.generated_at and insight.generated_at.strftime else insight.generated_at }}</span>
+                <span class="insights-meta">Generated {% if insight.generated_at and insight.generated_at.strftime %}<time class="ht-local-time" datetime="{{ insight.generated_at.isoformat() }}{% if insight.generated_at.tzinfo is none %}Z{% endif %}">{{ insight.generated_at.strftime("%b %d, %Y at %-I:%M %p") }} UTC</time>{% else %}{{ insight.generated_at }}{% endif %}</span>
                 {% if gemini_available and not is_demo_user %}
                 <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -520,11 +521,10 @@
         </div>
         {% elif not scope_narrowed and gemini_available %}
         <div class="generate-card">
-            <h5>Get Your Behavioral Insights Report</h5>
+            <h5>Write up these cards</h5>
             <div class="mx-auto mb-4" style="max-width: 480px;">
                 <p>
-                    The AI will analyze your exit timing and DTE preferences —
-                    behavioral signals that no other retail tool can see.
+                    The write-up covers when you exit and how long you hold, using the cards on this page.
                 </p>
                 {% if coaching and coaching.has_data %}
                 <p class="small text-muted">

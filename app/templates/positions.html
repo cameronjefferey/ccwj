@@ -1,31 +1,8 @@
 {% extends "base.html" %}
 
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
-    /* Hero (matches /position/<symbol> styling for consistency) */
-    .pos-hero {
-        background: #1a1a2e;
-        border-radius: 16px;
-        padding: 2rem 2.25rem;
-        color: #fff;
-        margin-bottom: 1.5rem;
-    }
-    .pos-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .15rem; }
-    .pos-hero .hero-sub { color: rgba(255,255,255,.8); font-size: .9rem; overflow-wrap: anywhere; }
-    .pos-hero .hero-main {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 1.25rem 1.75rem;
-        align-items: start;
-    }
-    .pos-hero .hero-copy { min-width: 0; }
-    .pos-hero .hero-kpis {
-        display: flex;
-        gap: 1.5rem;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-        flex-shrink: 0;
-    }
     .pos-hero .hero-chip {
         display: inline-flex; align-items: center; gap: .35rem;
         padding: .25rem .6rem; border-radius: 999px;
@@ -36,14 +13,6 @@
     .pos-hero .hero-chip .dot.open   { background: #22c55e; }
     .pos-hero .hero-chip .dot.closed { background: #9ca3af; }
     .pos-hero .hero-chip .dot.mixed  { background: #fbbf24; }
-    .pos-hero .hero-kpi .label {
-        font-size: .65rem; text-transform: uppercase; letter-spacing: .6px;
-        color: rgba(255,255,255,.7);
-    }
-    .pos-hero .hero-kpi .value { font-size: 1.25rem; font-weight: 700; color: #fff; }
-    .pos-hero .hero-kpi .value.pos { color: #4ade80; }
-    .pos-hero .hero-kpi .value.neg { color: #f87171; }
-
     /* Strategy color badges */
     .badge-strategy {
         font-size: .75rem;
@@ -57,10 +26,124 @@
     .badge-closed { background: #6c757d; }
     .badge-mixed  { background: #ffc107; color: #000; }
 
-    /* Table */
-    #positionsTable th { white-space: nowrap; }
+    /* Table. The page shell caps at 72rem (~1152px), which squeezes
+       12–13 columns at 1280–1600px until the last columns clip. Widen
+       this page at laptop widths and keep headers on one line. */
+    @media (min-width: 1200px) {
+        body:has(#positionsTable) .ht-page { max-width: none; }
+    }
+    #positionsTable,
+    #symbolTable { font-size: .84rem; width: max-content; min-width: 100%; }
+    /* The symbol table's strategy badges used to push Premium / W/L
+       past the card. The wrapper could scroll, but its scrollbar sits
+       at the bottom of the 75vh sticky box — below an 800px window
+       when the header is on screen — so the right columns looked cut
+       off. At laptop widths, fit the table to the card instead. */
+    body:has(#positionsTable) .table-responsive,
+    body:has(#symbolTable) .table-responsive {
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: auto;
+        scrollbar-color: #8a97b1 #1a2233;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar {
+        height: 12px;
+        width: 12px;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar-thumb,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar-thumb {
+        background: #8a97b1;
+        border-radius: 8px;
+        border: 2px solid #1a2233;
+    }
+    body:has(#positionsTable) .table-responsive::-webkit-scrollbar-track,
+    body:has(#symbolTable) .table-responsive::-webkit-scrollbar-track {
+        background: #1a2233;
+    }
+    body:has(#positionsTable) .card,
+    body:has(#symbolTable) .card { max-width: 100%; min-width: 0; }
+    /* 768–1366: share the card width so no column runs past the edge.
+       Phones keep tables.js data-m="hide" (max-width 767) instead.
+       Glossary headers are the dotted word (no extra "i"). A few
+       columns are a fraction wider so the uppercase label plus the
+       sort glyph still fits at 1280 and 1366. */
+    @media (min-width: 768px) and (max-width: 1366px) {
+        #symbolTable {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 0;
+        }
+        #symbolTable th,
+        #symbolTable td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #symbolTable td:nth-child(4) {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+        }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 10%; }
+        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 11%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 13.6%; }
+        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 9.6%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 8%; }
+        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 8.2%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 7.4%; }
+        #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 6.6%; }
+        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 6%; }
+        #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 5%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 8.6%; }
+        /* Strategy detail is 13 columns. Same idea: stay inside the card.
+           Money columns keep enough width for "-$00,000.00". */
+        #positionsTable {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 0;
+        }
+        #positionsTable th,
+        #positionsTable td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #positionsTable td:nth-child(2) {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+        }
+        #positionsTable th:nth-child(1), #positionsTable td:nth-child(1) { width: 9%; }
+        #positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 12.4%; }
+        #positionsTable th:nth-child(3), #positionsTable td:nth-child(3) { width: 5.5%; }
+        #positionsTable th:nth-child(4), #positionsTable td:nth-child(4) { width: 9.6%; }
+        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 8%; }
+        #positionsTable th:nth-child(6), #positionsTable td:nth-child(6) { width: 8.3%; }
+        #positionsTable th:nth-child(7), #positionsTable td:nth-child(7) { width: 7.5%; }
+        #positionsTable th:nth-child(8), #positionsTable td:nth-child(8) { width: 6.5%; }
+        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9) { width: 5.9%; }
+        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 5.5%; }
+        #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 7.5%; }
+        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 6.8%; }
+        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 7.5%; }
+    }
+    #positionsTable th,
+    #positionsTable th a,
+    #positionsTable th .ht-term-btn,
+    #symbolTable th,
+    #symbolTable th a,
+    #symbolTable th .ht-term-btn {
+        white-space: nowrap;
+        letter-spacing: 0;
+    }
+    #positionsTable thead th,
+    #symbolTable thead th { font-size: .68rem; letter-spacing: 0; }
     #positionsTable th.sortable a { color: inherit; text-decoration: none; }
-    #positionsTable td { white-space: nowrap; }
+    #positionsTable td,
+    #symbolTable td { white-space: nowrap; }
     /* Sortable-header + row-click styles are global (see static/js/tables.js). */
 
     /* Mobile horizontal-scroll affordance */
@@ -81,22 +164,81 @@
         }
     }
 
-    .chart-wrapper {
-        background: #fff;
+    .pos-panel {
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
         border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
-        padding: 1.25rem;
+        padding: 1.1rem 1.25rem 1.15rem;
+        margin-bottom: 1rem;
     }
+    .pos-panel-head {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        gap: .75rem; margin-bottom: .85rem;
+    }
+    .pos-panel-head h2 {
+        margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--ht-ink);
+    }
+    .pos-panel-head p { margin: .15rem 0 0; font-size: .82rem; color: var(--ht-muted); }
+    .pos-filters .filter-bar { margin-bottom: 0; }
+    .pos-numbers.ht-statbar {
+        border: 0; box-shadow: none; padding: 0; background: transparent;
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: .5rem 1.25rem;
+    }
+    .pos-numbers .ht-stat-l {
+        text-transform: none; letter-spacing: 0; font-weight: 500;
+        font-size: .78rem; color: var(--ht-muted);
+    }
+    .pos-numbers .ht-stat-v { font-size: 1.35rem; font-weight: 600; }
+    .pos-wl-bar {
+        display: flex; height: 4px; border-radius: 999px; overflow: hidden;
+        margin-top: .35rem; background: rgba(240,85,109,.2); max-width: 9rem;
+    }
+    .pos-wl-bar span:first-child { background: var(--color-positive); }
+    .pos-wl-bar span:last-child { background: #e7b2ad; }
+    .pos-legend { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .pos-legend span {
+        display: inline-flex; align-items: center; gap: .35rem;
+        border: 1px solid var(--ht-line); border-radius: 999px;
+        padding: .15rem .6rem; font-size: .75rem; color: var(--ht-label);
+    }
+    .pos-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .pos-legend .real { background: #4f6ef7; }
+    .pos-legend .unreal { background: #e09a2b; }
+    .pos-strat-row {
+        display: grid; grid-template-columns: 11.5rem 1fr 4.6rem;
+        gap: .6rem; align-items: center; margin: .28rem 0;
+    }
+    .pos-strat-name { font-size: .82rem; color: var(--ht-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pos-strat-track { position: relative; height: 14px; }
+    .pos-strat-zero {
+        position: absolute; top: -3px; bottom: -3px; width: 1px;
+        background: #c5c9d1; border-left: 1px dashed #9aa1ad;
+    }
+    .pos-strat-seg { position: absolute; top: 2px; height: 10px; border-radius: 2px; min-width: 1px; }
+    .pos-strat-seg.real { background: #4f6ef7; }
+    .pos-strat-seg.unreal { background: #e09a2b; }
+    .pos-strat-total {
+        text-align: right; font-size: .82rem; font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    .pos-axis {
+        display: grid; margin-left: 12.1rem; margin-right: 5.2rem;
+        position: relative; height: 1.2rem; margin-top: .35rem;
+    }
+    .pos-axis span {
+        position: absolute; transform: translateX(-50%);
+        font-size: .7rem; color: var(--ht-muted); font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 860px) {
+        .pos-numbers.ht-statbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .pos-strat-row { grid-template-columns: 7.2rem 1fr 3.8rem; }
+        .pos-axis { margin-left: 7.8rem; margin-right: 4.4rem; }
+    }
+    [data-bs-theme="dark"] .pos-strat-zero { background: #4b5160; border-left-color: #6b7280; }
+    [data-bs-theme="dark"] .pos-wl-bar { background: #4a2a28; }
+    [data-bs-theme="dark"] .pos-wl-bar span:last-child { background: #7f3a36; }
 
-    @media (max-width: 640px) {
-        .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; }
-        .pos-hero h1 { font-size: 1.35rem; }
-        .pos-hero .hero-sub { font-size: .82rem; }
-        .pos-hero .hero-kpi .value { font-size: 1.05rem; }
-        .pos-hero .hero-kpi .label { font-size: .58rem; }
-        .pos-hero .hero-main { grid-template-columns: 1fr; }
-        .pos-hero .hero-kpis { justify-content: flex-start; }
-    }
 </style>
 {% endblock %}
 
@@ -116,89 +258,93 @@
 {% set _open_ct    = status_counts.Open    if status_counts else 0 %}
 {% set _closed_ct  = status_counts.Closed  if status_counts else 0 %}
 {% set _mixed_ct   = status_counts.Mixed   if status_counts else 0 %}
-<div class="pos-hero">
-    <div class="hero-main">
-        <div class="hero-copy">
-            <h1>Your Positions</h1>
-            <div class="hero-sub">
-                {% if _auth_acct_count == 0 %}
-                    No accounts linked yet &mdash;
-                    <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-white text-decoration-underline">connect your broker</a>
-                    or <a href="{{ url_for('upload') }}" class="text-white text-decoration-underline">upload trade history</a> to get started.
-                {% elif _view_acct_count == 1 %}
-                    {{ _view_accts[0] | account_label }}
-                    &middot; your current and historical options strategies.
-                {% elif _view_acct_count > 1 %}
-                    Across {{ _view_acct_count }} account{{ '' if _view_acct_count == 1 else 's' }}:
-                    {{ _view_accts | map('account_label') | join(', ') }}.
-                {% else %}
-                    No positions in this view.
-                {% endif %}
-            </div>
-            {% if _auth_acct_count > 0 %}
-            <div class="d-flex flex-wrap gap-2 mt-3">
-                <span class="hero-chip" title="Open rows in this list — one per account × symbol × strategy."><span class="dot open"></span>{{ _open_ct }} open</span>
-                {% if open_symbol_count is defined and open_symbol_count and open_symbol_count != _open_ct %}
-                <span class="hero-chip" title="Unique symbols currently held across those open rows.">{{ open_symbol_count }} symbols</span>
-                {% endif %}
-                <span class="hero-chip"><span class="dot closed"></span>{{ _closed_ct }} closed</span>
-                {% if _mixed_ct %}
-                <span class="hero-chip"><span class="dot mixed"></span>{{ _mixed_ct }} mixed</span>
-                {% endif %}
-                {% if date_filtered %}
-                    <span class="hero-chip">
-                        {% if selected_start_date and selected_end_date %}
-                            {{ selected_start_date }} &mdash; {{ selected_end_date }}
-                        {% elif selected_start_date %}
-                            since {{ selected_start_date }}
-                        {% else %}
-                            through {{ selected_end_date }}
-                        {% endif %}
-                    </span>
-                {% else %}
-                    <span class="hero-chip">All time</span>
-                {% endif %}
-            </div>
+<div class="review-hero pos-hero">
+    <div class="ov-bar">
+        {% if (_auth_acct_count > 1) or account_groups %}
+        <form method="get" class="filter-bar filter-bar-hero">
+            {% with scope_account_options = user_accounts if user_accounts else accounts %}
+            {% include "_account_scope_filters.html" %}
+            {% endwith %}
+            {% if selected_symbol %}<input type="hidden" name="symbol" value="{{ selected_symbol }}">{% endif %}
+            {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
+            {% if selected_subsector %}<input type="hidden" name="subsector" value="{{ selected_subsector }}">{% endif %}
+            {% if selected_sector %}<input type="hidden" name="sector" value="{{ selected_sector }}">{% endif %}
+            {% if selected_tag %}<input type="hidden" name="tag" value="{{ selected_tag }}">{% endif %}
+            {% if selected_statuses %}{% for st in selected_statuses %}<input type="hidden" name="status" value="{{ st }}">{% endfor %}{% endif %}
+            {% if selected_start_date %}<input type="hidden" name="start_date" value="{{ selected_start_date }}">{% endif %}
+            {% if selected_end_date %}<input type="hidden" name="end_date" value="{{ selected_end_date }}">{% endif %}
+            {% if scope_is_filtered %}
+            <a class="filter-reset" href="{{ url_for('positions', scope='all') }}">Reset</a>
             {% endif %}
-        </div>
-
-        {% if kpis and _auth_acct_count > 0 %}
-        <div class="hero-kpis">
-            <div class="hero-kpi">
-                <div class="label">Total Return</div>
-                <div class="value {{ 'pos' if kpis.total_return >= 0 else 'neg' }}">
-                    {{ money(kpis.total_return, 0) }}
-                </div>
-            </div>
-            <div class="hero-kpi">
-                <div class="label">Realized</div>
-                <div class="value {{ 'pos' if kpis.realized_pnl >= 0 else 'neg' }}">
-                    {{ money(kpis.realized_pnl, 0) }}
-                </div>
-            </div>
-            <div class="hero-kpi">
-                <div class="label">Unrealized</div>
-                <div class="value {{ 'pos' if kpis.unrealized_pnl >= 0 else 'neg' }}">
-                    {{ money(kpis.unrealized_pnl, 0) }}
-                </div>
-            </div>
-            {% if kpis.dividend_income and kpis.dividend_income|round(2) != 0 %}
-            <div class="hero-kpi">
-                <div class="label">Dividends</div>
-                <div class="value {{ 'pos' if kpis.dividend_income >= 0 else 'neg' }}"
-                     title="Cash dividends received. Total Return = Realized + Unrealized + Dividends.">
-                    {{ money(kpis.dividend_income, 0) }}
-                </div>
-            </div>
-            {% endif %}
-            <div class="hero-kpi">
-                <div class="label">Win Rate</div>
-                <div class="value">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</div>
-            </div>
-        </div>
+        </form>
         {% endif %}
     </div>
+    <p class="ov-date">
+        {% if date_filtered %}
+            {% if selected_start_date and selected_end_date %}{{ selected_start_date }} — {{ selected_end_date }}
+            {% elif selected_start_date %}since {{ selected_start_date }}
+            {% else %}through {{ selected_end_date }}{% endif %}
+        {% else %}All time{% endif %}
+    </p>
+    {% if kpis and _auth_acct_count > 0 %}
+    <div class="ov-top">
+        <div>
+            <div class="ov-k">Total return</div>
+            <div class="ov-big {% if kpis.total_return > 0 %}pos{% elif kpis.total_return < 0 %}neg{% endif %}">{% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">{{ term('Realized') }}</div>
+            <div class="ov-pct {% if kpis.realized_pnl > 0 %}pos{% elif kpis.realized_pnl < 0 %}neg{% endif %}">{% if kpis.realized_pnl > 0 %}+{% endif %}{{ money(kpis.realized_pnl, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">{{ term('Unrealized') }}</div>
+            <div class="ov-pct {% if kpis.unrealized_pnl > 0 %}pos{% elif kpis.unrealized_pnl < 0 %}neg{% endif %}">{% if kpis.unrealized_pnl > 0 %}+{% endif %}{{ money(kpis.unrealized_pnl, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">{{ term('Win rate') }}</div>
+            <div class="ov-big ov-invest">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</div>
+        </div>
+    </div>
+    {% endif %}
+    <p class="ov-line">
+        {% if _auth_acct_count == 0 %}
+            No accounts linked yet.
+            <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" style="color:#e6ebf5;">Connect your broker</a>
+            or <a href="{{ url_for('upload') }}" style="color:#e6ebf5;">upload trade history</a>.
+        {% elif _view_acct_count == 1 %}
+            {{ _view_accts[0] | account_label }}
+        {% elif _view_acct_count > 1 %}
+            Across {{ _view_acct_count }} accounts: {{ _view_accts | map('account_label') | join(', ') }}.
+        {% else %}
+            No positions in this view.
+        {% endif %}
+    </p>
+    {% if _auth_acct_count > 0 %}
+    <div class="ov-pills">
+        <span class="hero-chip" title="Open rows in this list — one per account × symbol × strategy."><span class="dot open"></span>{{ _open_ct }} open</span>
+        {% if open_symbol_count is defined and open_symbol_count and open_symbol_count != _open_ct %}
+        <span class="hero-chip" title="Unique symbols currently held across those open rows.">{{ open_symbol_count }} symbols</span>
+        {% endif %}
+        <span class="hero-chip"><span class="dot closed"></span>{{ _closed_ct }} closed</span>
+        {% if _mixed_ct %}
+        <span class="hero-chip"><span class="dot mixed"></span>{{ _mixed_ct }} mixed</span>
+        {% endif %}
+        {% if kpis and kpis.dividend_income and kpis.dividend_income|round(2) != 0 %}
+        <span class="hero-chip" title="Cash dividends. Total return is realized + unrealized + dividends.">Dividends {% if kpis.dividend_income > 0 %}+{% endif %}{{ money(kpis.dividend_income, 0) }}</span>
+        {% endif %}
+        {% if date_filtered %}
+        <span class="hero-chip">
+            {% if selected_start_date and selected_end_date %}{{ selected_start_date }} — {{ selected_end_date }}
+            {% elif selected_start_date %}since {{ selected_start_date }}
+            {% else %}through {{ selected_end_date }}{% endif %}
+        </span>
+        {% else %}
+        <span class="hero-chip">All time</span>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
+<!-- /pos-hero -->
 
 {# Empty-state copy splits two ways:
    * No data accounts AND no auth accounts → onboarding (connect your broker).
@@ -254,27 +400,14 @@
 {% include "_history_window_note.html" %}
 {% endif %}
 
-{# On phones the six stacked filter groups push the actual content a full
-   screen down — collapse them behind a toggle (always expanded on lg+). #}
-{% set _active_filters = [selected_account, selected_symbol, selected_strategy,
-                          selected_subsector, selected_tag,
-                          (selected_statuses if not _all_statuses else None),
-                          (selected_start_date or selected_end_date),
-                          selected_group_ids, selected_tenant_ids]
-                         | select | list | length %}
-<button class="btn btn-sm btn-outline-secondary d-lg-none mb-2" type="button"
-        data-bs-toggle="collapse" data-bs-target="#posFilters"
-        aria-expanded="false" aria-controls="posFilters">
-    Filters{% if _active_filters %} <span class="badge text-bg-dark ms-1">{{ _active_filters }}</span>{% endif %}
-</button>
-<form method="get" class="filter-bar collapse d-lg-flex" id="posFilters">
-    {# Picker lists the user's full (disambiguated) account set so several
-       physical accounts sharing a base label (e.g. multiple "Schwab
-       Account"s) are each independently selectable. ``user_accounts`` is
-       the auth list; admin (None) falls back to the data-derived list. #}
-    {% with scope_account_options = user_accounts if user_accounts else accounts %}
-    {% include "_account_scope_filters.html" %}
-    {% endwith %}
+<h3 class="ov-grp">Filters</h3>
+<div class="pos-panel pos-filters" id="pos-filters">
+<form method="get" class="filter-bar" id="posFilters" action="#pos-filters">
+    {# Account scope lives in the hero. These hidden fields keep it when
+       Symbol / Strategy / dates submit this form. #}
+    {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
+    {% if tenants_query %}<input type="hidden" name="tenants" value="{{ tenants_query }}">{% endif %}
+    {% if selected_account %}<input type="hidden" name="account" value="{{ selected_account }}">{% endif %}
     <div>
         <label class="lblh">Symbol</label>
         <select name="symbol" class="form-select form-select-sm"
@@ -329,11 +462,11 @@
         <label class="lblh">Status</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _all_statuses }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">All</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='pos-filters') }}">All</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Open']) }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Open'], start_date=selected_start_date, end_date=selected_end_date) }}">Open</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Open'], start_date=selected_start_date, end_date=selected_end_date, _anchor='pos-filters') }}">Open</a>
             <a class="{{ 'active' if (not _all_statuses and selected_statuses == ['Closed']) }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date) }}">Closed</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=['Closed'], start_date=selected_start_date, end_date=selected_end_date, _anchor='pos-filters') }}">Closed</a>
         </div>
         {# Mirror the chosen status into the form so a Symbol/Strategy
            change preserves it. Multi-status (rare path) still works
@@ -348,11 +481,11 @@
         <label class="lblh">Dates</label>
         <div class="seg-toggle">
             <a class="{{ 'active' if _is_alltime }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses) }}">All time</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, _anchor='pos-filters') }}">All time</a>
             <a class="{{ 'active' if _is_30d }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">Last 30d</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=(today - timedelta(days=30)).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d'), _anchor='pos-filters') }}">Last 30d</a>
             <a class="{{ 'active' if _is_ytd }}"
-               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d')) }}">YTD</a>
+               href="{{ scoped_url('positions', strategy=selected_strategy, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, status=selected_statuses, start_date=today.replace(month=1, day=1).strftime('%Y-%m-%d'), end_date=today.strftime('%Y-%m-%d'), _anchor='pos-filters') }}">YTD</a>
         </div>
         {# No hidden date inputs needed — the visible date inputs below
            are part of this form and carry the current values, so when
@@ -370,9 +503,10 @@
         </div>
     </div>
     {% if selected_account or selected_symbol or selected_strategy or selected_subsector or selected_tag or selected_statuses or selected_start_date or selected_end_date or selected_group_ids or selected_tenant_ids %}
-    <a class="filter-reset" href="{{ url_for('positions') }}">Reset</a>
+    <a class="filter-reset" href="{{ url_for('positions', scope='all') }}">Reset</a>
     {% endif %}
 </form>
+</div>
 
 {% if date_filtered %}
 <div class="alert alert-info py-2 px-3 mb-4 small">
@@ -389,73 +523,117 @@
 </div>
 {% endif %}
 
-{# ── Secondary stats (premium / positions count / trades) ────────── #}
+{% if (kpis and accounts and accounts|length > 0) or strategy_chart %}
+<h3 class="ov-grp">Summary</h3>
+{% endif %}
 {% if kpis and accounts and accounts|length > 0 %}
-<div class="ht-statbar mb-3">
-    <div class="ht-stat">
-        <span class="ht-stat-l">Premium Collected</span>
-        <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected, 0) }}</span>
+<div class="pos-panel">
+    <div class="pos-panel-head">
+        <h2>By the numbers</h2>
     </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">Positions</span>
-        <span class="ht-stat-v">{{ kpis.num_positions }}</span>
-    </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">Trades</span>
-        <span class="ht-stat-v">{{ "{:,}".format(kpis.total_trades) }}</span>
-    </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">Winners / Losers</span>
-        <span class="ht-stat-v"><span class="text-positive">{{ "{:,}".format(kpis.num_winners or 0) }}</span> / <span class="text-negative">{{ "{:,}".format(kpis.num_losers or 0) }}</span></span>
+    {% set _wins = kpis.num_winners or 0 %}
+    {% set _losses = kpis.num_losers or 0 %}
+    {% set _closed = _wins + _losses %}
+    <div class="ht-statbar pos-numbers">
+        <div class="ht-stat">
+            <span class="ht-stat-l">Premium collected</span>
+            <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected, 0) }}</span>
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Positions</span>
+            <span class="ht-stat-v">{{ kpis.num_positions }}</span>
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Trades</span>
+            <span class="ht-stat-v">{{ "{:,}".format(kpis.total_trades) }}</span>
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Winners / losers</span>
+            <span class="ht-stat-v pos-wl" title="Winning closed trade groups. Win rate above is winners ÷ closed groups.">
+                <span class="text-positive">{{ "{:,}".format(_wins) }}</span>
+                / <span class="text-negative">{{ "{:,}".format(_losses) }}</span>
+            </span>
+            {% if _closed %}
+            <div class="pos-wl-bar" aria-hidden="true">
+                <span style="width: {{ (_wins / _closed * 100)|round(1) }}%"></span>
+                <span style="width: {{ (_losses / _closed * 100)|round(1) }}%"></span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="ht-stat">
+            <span class="ht-stat-l">Strategies used</span>
+            <span class="ht-stat-v">{{ strategy_chart|length if strategy_chart else 0 }}</span>
+        </div>
     </div>
 </div>
 {% endif %}
 
-{# ── Strategy Chart ───────────────────────────────────────────────── #}
 {% if strategy_chart %}
-<div class="row mb-4">
-    <div class="col-lg-8">
-        <div class="chart-wrapper">
-            <h6 class="fw-bold mb-1">P&amp;L by Strategy</h6>
-            <p class="text-muted small mb-3">Realized vs unrealized (dividends count as realized).</p>
-            <div style="height: {{ [280, 36 * (strategy_chart | length) + 56] | max }}px;">
-                <canvas id="strategyChart"></canvas>
-            </div>
+{% set ns = namespace(lo=0.0, hi=0.0) %}
+{% for row in strategy_chart %}
+    {% set _neg = (row.realized if row.realized < 0 else 0) + (row.unrealized if row.unrealized < 0 else 0) %}
+    {% set _pos = (row.realized if row.realized > 0 else 0) + (row.unrealized if row.unrealized > 0 else 0) %}
+    {% if _neg < ns.lo %}{% set ns.lo = _neg %}{% endif %}
+    {% if _pos > ns.hi %}{% set ns.hi = _pos %}{% endif %}
+{% endfor %}
+{% set _span = (ns.hi - ns.lo) if (ns.hi - ns.lo) else 1 %}
+{% set _zero = ((0 - ns.lo) / _span * 100) %}
+<div class="pos-panel">
+    <div class="pos-panel-head">
+        <div>
+            <h2>P&amp;L by strategy</h2>
+            <p>Realized vs unrealized (dividends count as realized).</p>
+        </div>
+        <div class="pos-legend">
+            <span><i class="real"></i> Realized</span>
+            <span><i class="unreal"></i> Unrealized</span>
         </div>
     </div>
-    <div class="col-lg-4 d-flex align-items-center">
-        <div class="chart-wrapper w-100">
-            <h6 class="fw-bold mb-3">Quick Stats</h6>
-            <table class="table table-sm table-borderless mb-0">
-                <tr><td class="text-muted">Total Trades</td><td class="fw-bold text-end">{{ "{:,}".format(kpis.total_trades) }}</td></tr>
-                <tr title="Winning closed trade groups (one group per option contract or one per equity round-trip). Win Rate above is winners ÷ closed groups.">
-                    <td class="text-muted">Winners / Losers</td>
-                    <td class="fw-bold text-end">
-                        <span class="text-positive">{{ "{:,}".format(kpis.num_winners or 0) }}</span>
-                        /
-                        <span class="text-negative">{{ "{:,}".format(kpis.num_losers or 0) }}</span>
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-muted">Strategies Used</td>
-                    <td class="fw-bold text-end">{{ strategy_chart | length }}</td>
-                </tr>
-                <tr>
-                    <td class="text-muted">Accounts in view</td>
-                    <td class="fw-bold text-end">{{ _view_acct_count }}</td>
-                </tr>
-            </table>
+    {% for row in strategy_chart %}
+    {% set _net = row.realized + row.unrealized %}
+    <div class="pos-strat-row">
+        <div class="pos-strat-name">{{ row.strategy }}</div>
+        <div class="pos-strat-track">
+            <div class="pos-strat-zero" style="left: {{ _zero }}%"></div>
+            {% if row.realized %}
+            {% set _w = (row.realized|abs / _span * 100) %}
+            <div class="pos-strat-seg real" style="left: {{ (_zero - _w) if row.realized < 0 else _zero }}%; width: {{ _w }}%"></div>
+            {% endif %}
+            {% if row.unrealized %}
+            {% set _w = (row.unrealized|abs / _span * 100) %}
+            {% if row.unrealized < 0 and row.realized < 0 %}
+            <div class="pos-strat-seg unreal" style="left: {{ _zero - ((row.realized|abs + row.unrealized|abs) / _span * 100) }}%; width: {{ _w }}%"></div>
+            {% elif row.unrealized < 0 %}
+            <div class="pos-strat-seg unreal" style="left: {{ _zero - _w }}%; width: {{ _w }}%"></div>
+            {% else %}
+            <div class="pos-strat-seg unreal" style="left: {{ _zero + ((row.realized if row.realized > 0 else 0) / _span * 100) }}%; width: {{ _w }}%"></div>
+            {% endif %}
+            {% endif %}
         </div>
+        <div class="pos-strat-total {% if _net > 0 %}text-positive{% elif _net < 0 %}text-negative{% endif %}">
+            {% if _net|abs >= 1000 %}{{ '+' if _net > 0 else '-' }}${{ '%.1f'|format(_net|abs / 1000) }}k
+            {% elif _net %}{{ '+' if _net > 0 else '-' }}${{ '{:,.0f}'.format(_net|abs) }}
+            {% else %}$0{% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    <div class="pos-axis">
+        <span style="left: 0%">{{ '-' if ns.lo < 0 else '' }}${{ '%.0f'|format(ns.lo|abs / 1000) }}k</span>
+        <span style="left: {{ _zero }}%">$0</span>
+        <span style="left: 100%">{{ money(ns.hi / 1000, 0) }}k</span>
     </div>
 </div>
 {% endif %}
 
 {# ── Symbol Summary Table ──────────────────────────────────────────── #}
 {% if symbol_rows %}
+<h3 class="ov-grp">Positions</h3>
 <div class="card border-0 shadow-sm mb-4" style="border-radius:12px;">
     <div class="card-body p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0">Performance by Symbol</h6>
+        <div class="ov-head">
+            <div>
+                <h2>Performance by symbol</h2>
+            </div>
             <input type="text" id="symbolSearch" class="form-control form-control-sm"
                    style="max-width:240px" placeholder="Search symbols..."
                    data-ht-search="#symbolTable" data-ht-empty="#symbolSearchEmpty"
@@ -499,28 +677,28 @@
                             title="Realized + unrealized + dividends — the headline P&amp;L for this symbol.">
                             Total Return
                         </th>
-                        <th class="sortable" data-sort="num" data-m="hide">Realized</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Unrealized</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
-                        <th class="sortable" data-sort="num">Win Rate</th>
+                        <th class="sortable" data-sort="num">{{ term('Win Rate') }}</th>
                         <th class="sortable" data-sort="num" data-m="hide">Trades</th>
-                        <th class="sortable" data-sort="num" data-m="hide">W / L</th>
-                        <th class="sortable" data-sort="num" data-m="hide">Premium</th>
+                        <th class="sortable" data-sort="num" data-m="hide">W/L</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Premium') }}</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in symbol_rows %}
                     <tr data-href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}">
-                        <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
+                        <td data-val="{{ (row.account_display or row.account) | account_label(row.tenant_id) }}">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</td>
                         <td class="fw-semibold">
-                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none">
+                            <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none" data-symbol="{{ row.symbol }}">
                                 {{ row.symbol }}
                             </a>
                         </td>
                         <td class="small text-muted" style="max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
                             title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
-                            {% if row.subsector and row.subsector != 'Unknown' %}
-                            <a href="{{ scoped_url('positions', subsector=row.subsector) }}"
+                            {% if row.subsector and row.subsector not in ('Unknown', 'Unclassified', 'Other') %}
+                            <a href="{{ scoped_url('positions', subsector=row.subsector, _anchor='pos-filters') }}"
                                class="text-decoration-none text-muted">{{ row.subsector }}</a>
                             {% else %}
                             <span class="text-muted">—</span>
@@ -579,10 +757,12 @@
 {% endif %}
 
 {# ── Strategy Detail Table ────────────────────────────────────────── #}
-<div class="card border-0 shadow-sm mb-5" style="border-radius:12px;">
+<div class="card border-0 shadow-sm mb-5" id="strategy-detail" style="border-radius:12px;">
     <div class="card-body p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold mb-0">Strategy Detail</h6>
+        <div class="ov-head">
+            <div>
+                <h2>Strategy detail</h2>
+            </div>
             <input type="text" id="tableSearch" class="form-control form-control-sm"
                    style="max-width:240px" placeholder="Search..."
                    data-ht-search="#positionsTable" data-ht-empty="#strategySearchEmpty"
@@ -592,7 +772,7 @@
         {% if rows %}
         <div class="table-responsive">
             {% macro pos_sort(col) -%}
-            {{ scoped_url('positions', page=1, sort=col, dir=sort_next[col], strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}
+            {{ scoped_url('positions', page=1, sort=col, dir=sort_next[col], strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='strategy-detail') }}
             {%- endmacro %}
             <table class="table table-hover table-sm align-middle mb-0" id="positionsTable" data-server-sort="1">
                 <thead class="table-light">
@@ -604,18 +784,18 @@
                             title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">
                             <a href="{{ pos_sort('total_return') }}">Total Return</a>
                         </th>
-                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('realized') }}">Realized</a></th>
-                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('unrealized') }}">Unrealized</a></th>
+                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Realized', pos_sort('realized')) }}</th>
+                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Unrealized', pos_sort('unrealized')) }}</th>
                         <th class="sortable {% if sort_key == 'dividends' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"
                             title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">
                             <a href="{{ pos_sort('dividends') }}">Dividends</a>
                         </th>
-                        <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('win_rate') }}">Win Rate</a></th>
+                        <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Win Rate', pos_sort('win_rate')) }}</th>
                         <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('trades') }}">Trades</a></th>
-                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W / L</a></th>
+                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W/L</a></th>
                         <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
                         <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_days') }}">Avg Days</a></th>
-                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('premium') }}">Premium</a></th>
+                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Premium', pos_sort('premium')) }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -644,7 +824,7 @@
 
                     {% for row in rows %}
                     <tr data-href="{{ scoped_url('strategies', tenant=row.tenant_id, tenants=none, strategy=row.strategy, status=selected_statuses, start_date=selected_start_date, end_date=selected_end_date) }}">
-                        <td>{{ row.account_display or (row.account | account_label(row.tenant_id)) }}</td>
+                        <td data-val="{{ (row.account_display or row.account) | account_label(row.tenant_id) }}">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</td>
                         <td>
                             <a href="{{ scoped_url('strategies',
                                                 tenant=row.tenant_id,
@@ -719,17 +899,17 @@
             <span class="text-muted small" data-page-label data-unfiltered="Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}">Showing {{ (page - 1) * per_page + 1 }}-{{ [page * per_page, total_rows] | min }} of {{ total_rows }}</span>
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {{ 'disabled' if page <= 1 }}">
-                    <a class="page-link" href="{{ scoped_url('positions', page=page-1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page > 1 else '#' }}">&laquo; Prev</a>
+                    <a class="page-link" href="{{ scoped_url('positions', page=page-1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='strategy-detail') if page > 1 else '#' }}">&laquo; Prev</a>
                 </li>
                 <li class="page-item disabled"><span class="page-link">Page {{ page }} of {{ total_pages }}</span></li>
                 <li class="page-item {{ 'disabled' if page >= total_pages }}">
-                    <a class="page-link" href="{{ scoped_url('positions', page=page+1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) if page < total_pages else '#' }}">Next &raquo;</a>
+                    <a class="page-link" href="{{ scoped_url('positions', page=page+1, sort=sort_key, dir=sort_dir, strategy=selected_strategy, status=selected_statuses, symbol=selected_symbol, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date, _anchor='strategy-detail') if page < total_pages else '#' }}">Next &raquo;</a>
                 </li>
             </ul>
         </nav>
         {% endif %}
         {% else %}
-        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-decoration-underline">connecting your broker</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
+        <p class="text-muted text-center py-4 mb-0">No positions match the selected filters. Try <a href="{{ url_for('positions', scope='all') }}" class="text-decoration-underline">clearing filters</a>, <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="text-decoration-underline">connecting your broker</a>, or <a href="{{ url_for('upload') }}" class="text-decoration-underline">uploading trade history</a>.</p>
         {% endif %}
     </div>
 </div>
@@ -740,85 +920,6 @@
 {% block scripts %}
 <script>
 (function () {
-    /* ── Strategy P&L Chart ────────────────────────────────────── */
-    {% if strategy_chart %}
-    var chartData = {{ strategy_chart | tojson }};
-    var labels = chartData.map(function(d){ return d.strategy; });
-    var realized = chartData.map(function(d){ return d.realized; });
-    var unrealized = chartData.map(function(d){ return d.unrealized; });
-    var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
-    var realizedColor = dark ? '#60a5fa' : '#1d4ed8';
-    var unrealizedColor = dark ? '#fbbf24' : '#d97706';
-
-    new Chart(document.getElementById('strategyChart'), {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Realized',
-                    data: realized,
-                    backgroundColor: realizedColor,
-                    borderRadius: 4,
-                    maxBarThickness: 22,
-                    stack: 'pnl'
-                },
-                {
-                    label: 'Unrealized',
-                    data: unrealized,
-                    backgroundColor: unrealizedColor,
-                    borderRadius: 4,
-                    maxBarThickness: 22,
-                    stack: 'pnl'
-                }
-            ]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                    align: 'end',
-                    labels: { boxWidth: 12, boxHeight: 12, padding: 12 }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(ctx) {
-                            var n = ctx.parsed.x;
-                            return ctx.dataset.label + '  $' + n.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
-                        },
-                        footer: function(items) {
-                            var t = items.reduce(function(s, i) { return s + i.parsed.x; }, 0);
-                            return 'Net  $' + t.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    stacked: true,
-                    ticks: {
-                        callback: function(v) {
-                            return '$' + (v >= 1000 || v <= -1000
-                                ? (v/1000).toFixed(0) + 'k'
-                                : v.toFixed(0));
-                        }
-                    },
-                    grid: {
-                        color: function(ctx) {
-                            return ctx.tick.value === 0 ? '#000' : '#e9ecef';
-                        }
-                    }
-                },
-                y: { stacked: true, grid: { display: false } }
-            }
-        }
-    });
-    {% endif %}
-
     /* Table search + sorting live in static/js/tables.js
        (input[data-ht-search], th.sortable + td[data-val]). */
 

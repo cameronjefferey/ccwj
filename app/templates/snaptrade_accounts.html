@@ -13,8 +13,8 @@
     .broker-mgr-hero h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: .35rem; }
     .broker-mgr-hero p { margin: 0; opacity: .85; line-height: 1.55; max-width: 60ch; }
     .broker-card {
-        background: #fff;
-        border: 1px solid #e5e7eb;
+        background: #121826;
+        border: 1px solid #243049;
         border-radius: 14px;
         padding: 1.4rem 1.5rem;
         margin-bottom: 1.25rem;
@@ -24,7 +24,7 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: .05em;
-        color: #475569;
+        color: var(--ht-muted);
         margin-bottom: 1rem;
     }
     .broker-row {
@@ -33,15 +33,15 @@
         align-items: center;
         gap: 1rem;
         padding: .9rem 0;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid #243049;
         scroll-margin-top: 5rem;
     }
     .broker-row:last-child { border-bottom: none; padding-bottom: 0; }
     .broker-row:first-child { padding-top: 0; }
     .broker-row .who { flex: 1 1 220px; }
-    .broker-row .who .name { font-weight: 600; color: #0f172a; }
-    .broker-row .who .label { font-size: .8125rem; color: #475569; }
-    .broker-row .who .num { font-size: .8125rem; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .broker-row .who .name { font-weight: 600; color: var(--ht-ink); }
+    .broker-row .who .label { font-size: .8125rem; color: var(--ht-muted); }
+    .broker-row .who .num { font-size: .8125rem; color: var(--ht-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .broker-row .who .broker-tag {
         display: inline-block;
         font-size: .7rem;
@@ -54,7 +54,7 @@
         border-radius: 999px;
         margin-bottom: .35rem;
     }
-    .broker-row .meta { font-size: .8125rem; color: #475569; }
+    .broker-row .meta { font-size: .8125rem; color: var(--ht-muted); }
     .broker-row form { margin: 0; }
     .broker-row .nick {
         flex: 1 1 220px;
@@ -69,7 +69,7 @@
     }
     .broker-row .nick .btn { white-space: nowrap; }
     .empty-hint {
-        color: #6b7280;
+        color: var(--ht-muted);
         font-size: .9rem;
         line-height: 1.55;
         margin: 0;
@@ -78,12 +78,12 @@
 
     /* Per-broker connection grouping */
     .broker-group {
-        border: 1px solid #e5e7eb;
+        border: 1px solid #243049;
         border-radius: 12px;
         padding: 1rem 1.1rem;
         margin-bottom: 1.1rem;
     }
-    .broker-group.is-broken { border-color: #fecaca; background: #fffbfa; }
+    .broker-group.is-broken { border-color: #fecaca; background: #2a1216; }
     .broker-group-head {
         display: flex;
         align-items: center;
@@ -91,7 +91,7 @@
         margin-bottom: .35rem;
     }
     .broker-group-head .broker-tag { margin-bottom: 0; }
-    .broker-group-count { font-size: .8125rem; color: #64748b; }
+    .broker-group-count { font-size: .8125rem; color: var(--ht-muted); }
 
     /* Prominent connection-level reconnect call-to-action */
     .reconnect-banner {
@@ -100,21 +100,21 @@
         align-items: center;
         justify-content: space-between;
         gap: .9rem;
-        background: #fef2f2;
-        border: 1px solid #fecaca;
+        background: rgba(240,85,109,.12);
+        border: 1px solid #f0556d;
         border-radius: 10px;
         padding: .85rem 1rem;
         margin: .5rem 0 1rem;
     }
     .reconnect-banner .rb-title {
         font-weight: 700;
-        color: #991b1b;
+        color: #f0556d;
         font-size: .95rem;
         margin-bottom: .2rem;
     }
     .reconnect-banner .rb-sub {
         font-size: .82rem;
-        color: #7f1d1d;
+        color: #f0556d;
         line-height: 1.5;
         max-width: 60ch;
     }
@@ -127,7 +127,7 @@
         color: #fff;
     }
     .reconnect-banner .reconnect-btn:hover { background: #b91c1c; border-color: #b91c1c; }
-    .needs-reconnect-note { font-size: .8125rem; color: #b91c1c; font-weight: 600; }
+    .needs-reconnect-note { font-size: .8125rem; color: #f0556d; font-weight: 600; }
 
     /* "Complete this account" — nickname (form above) + older CSV history
        + opening-balance disclosure, assembled in one place per account. */
@@ -148,8 +148,8 @@
     .complete-account-body {
         margin-top: .6rem;
         padding: .8rem .9rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
+        background: #1a2233;
+        border: 1px solid #243049;
         border-radius: 8px;
     }
     [data-bs-theme="dark"] .broker-card,
@@ -211,7 +211,7 @@
     <div class="broker-card">
         <h2>Connected accounts</h2>
 
-        <div class="alert alert-warning small mb-3" role="alert" style="background:#fff7ed; border-color:#fed7aa; color:#7c2d12;">
+        <div class="alert alert-warning small mb-3" role="alert" style="background: #2a2118; border-color:#e8c07a; color:#e8c07a;">
             <strong>Trades can lag.</strong>
             {% include "_broker_sync_timing.html" %}
             If a trade you just placed isn't here, check back later.
@@ -219,7 +219,7 @@
 
         {% if any_reconnect_needed %}
         <div class="alert small mb-3" role="alert"
-             style="background:#fef2f2; border:1px solid #fecaca; color:#7f1d1d;">
+             style="background: rgba(240,85,109,.12); border: 1px solid #f0556d; color: #e8edf7;">
             <strong>Action needed:</strong> one or more broker connections need to be
             reconnected before they can sync again. Use the
             <strong>Reconnect</strong> button on the affected broker below &mdash;
@@ -242,7 +242,7 @@
             {% if not c.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
         {% endfor %}
         {% set _any_first_pending = _ns.any_first_pending %}
-        <div class="mb-4 pb-3" style="border-bottom: 1px solid #e5e7eb;">
+        <div class="mb-4 pb-3" style="border-bottom: 1px solid #243049;">
             <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="sync_all" value="1">
@@ -273,18 +273,18 @@
         {% for g in connection_groups %}
         <div class="broker-group{% if g.needs_reconnect %} is-broken{% endif %}">
             <div class="broker-group-head">
-                <span class="broker-tag">{{ g.broker_label }}</span>
+                <span class="broker-tag">{{ g.broker_label | privacy_hide }}</span>
                 <span class="broker-group-count">{{ g.accounts|length }} account{{ 's' if g.accounts|length != 1 else '' }}</span>
             </div>
 
             {% if g.needs_reconnect %}
             <div class="reconnect-banner">
                 <div class="reconnect-banner-text">
-                    <div class="rb-title">Reconnect your {{ g.broker_label }} connection</div>
+                    <div class="rb-title">Reconnect your {{ g.broker_label | privacy_hide }} connection</div>
                     <div class="rb-sub">
-                        Your link to {{ g.broker_label }} expired or was revoked, so it
+                        Your link to {{ g.broker_label | privacy_hide }} expired or was revoked, so it
                         can't pull fresh data. Reconnecting fixes
-                        {% if g.accounts|length > 1 %}all {{ g.accounts|length }} {{ g.broker_label }} accounts{% else %}this account{% endif %}
+                        {% if g.accounts|length > 1 %}all {{ g.accounts|length }} {{ g.broker_label | privacy_hide }} accounts{% else %}this account{% endif %}
                         at once — your already-synced data is safe.
                     </div>
                 </div>
@@ -294,19 +294,19 @@
                     {% if g.authorization_id %}
                     <input type="hidden" name="reconnect_authorization_id" value="{{ g.authorization_id }}">
                     {% endif %}
-                    <button type="submit" class="btn reconnect-btn">Reconnect {{ g.broker_label }}</button>
+                    <button type="submit" class="btn reconnect-btn">Reconnect {{ g.broker_label | privacy_hide }}</button>
                 </form>
             </div>
             {% endif %}
 
             {% for c in g.accounts %}
-            {% set heading = c.display_nickname or c.account_name %}
-            {% set show_label = c.display_nickname and c.display_nickname != c.account_name %}
+            {% set heading = (c.display_nickname or c.account_name) | account_label(c.tenant_id) %}
+            {% set show_label = (not privacy_mode) and c.display_nickname and c.display_nickname != c.account_name %}
             <div class="broker-row" id="acct-{{ c.snaptrade_account_id }}">
                 <div class="who">
                     <div class="name">{{ heading }}</div>
                     {% if show_label %}
-                    <div class="label">{{ c.account_name }}</div>
+                    <div class="label">{{ c.account_name | account_label(c.tenant_id) }}</div>
                     {% endif %}
                     {% set mask = c.account_number_masked | account_mask %}
                     {% if mask %}
@@ -318,10 +318,11 @@
                     <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
                     <input type="text" name="nickname" maxlength="80"
                            class="form-control form-control-sm nick-input"
-                           placeholder="Add a nickname"
-                           value="{{ c.display_nickname or '' }}"
-                           data-original="{{ c.display_nickname or '' }}"
-                           aria-label="Nickname for {{ c.account_name }}">
+                           placeholder="{% if privacy_mode %}••••{% else %}Add a nickname{% endif %}"
+                           value="{% if privacy_mode %}{% else %}{{ c.display_nickname or '' }}{% endif %}"
+                           data-original="{% if privacy_mode %}{% else %}{{ c.display_nickname or '' }}{% endif %}"
+                           {% if privacy_mode %}disabled{% endif %}
+                           aria-label="Nickname for {{ (c.account_name or '') | account_label(c.tenant_id) }}">
                     <button type="submit" class="btn btn-sm btn-outline-secondary nick-save" disabled>Save</button>
                 </form>
                 <div class="meta">
@@ -370,22 +371,23 @@
                    the only parser that exists today), and an honest note that
                    pre-window positions are estimated, not fabricated. ── #}
                 {% set _is_schwab = c.broker_slug and 'schwab' in c.broker_slug|lower %}
+                {% set _tenant_id = c.tenant_id or ('snaptrade:' ~ c.snaptrade_account_id) %}
                 <details class="complete-account">
                     <summary>Complete this account</summary>
                     <div class="complete-account-body">
                         {% if _is_schwab %}
                         <p class="small text-body-secondary mb-2">
-                            Schwab only hands SnapTrade a recent window of trade history.
-                            If you have an older Schwab CSV export, upload it here to fill in
+                            {% if privacy_mode %}Your broker{% else %}Schwab{% endif %} only hands SnapTrade a recent window of trade history.
+                            If you have an older {% if privacy_mode %}broker{% else %}Schwab{% endif %} CSV export, upload it here to fill in
                             the years before this account connected.
                         </p>
-                        <a href="{{ url_for('upload') }}?tenant=snaptrade:{{ c.snaptrade_account_id }}"
-                           class="btn btn-sm btn-outline-primary">Upload older Schwab CSV</a>
+                        <a href="{{ url_for('upload', tenant=_tenant_id) }}"
+                           class="btn btn-sm btn-outline-primary">Upload older {% if privacy_mode %}{% else %}Schwab {% endif %}CSV</a>
                         {% else %}
                         <p class="small text-body-secondary mb-2">
-                            We don't have a CSV parser for {{ c.broker_slug|title if c.broker_slug else 'this broker' }}
+                            We don't have a CSV parser for {{ (c.broker_slug|title if c.broker_slug else 'this broker') | privacy_hide }}
                             yet, so pre-window history can't be backfilled here.
-                            <a href="{{ url_for('upload', tenant='snaptrade:' ~ c.snaptrade_account_id) }}">Request it</a> and we'll use it to
+                            <a href="{{ url_for('upload', tenant=_tenant_id) }}">Request it</a> and we'll use it to
                             decide which broker to parse next.
                         </p>
                         {% endif %}

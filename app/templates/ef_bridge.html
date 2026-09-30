@@ -9,12 +9,12 @@
     .efb { max-width: 780px; margin: 0 auto; }
     .efb-kicker {
         font-size: .68rem; text-transform: uppercase; letter-spacing: .1em;
-        color: #64748b; font-weight: 700; margin-bottom: .9rem; text-align: center;
+        color: var(--ht-muted); font-weight: 700; margin-bottom: .9rem; text-align: center;
     }
     .efb-kicker .x { color: #cbd5e1; margin: 0 .2rem; }
 
     .efb-panel {
-        background: #fff; border: 1px solid #e7e5e4; border-radius: 14px;
+        background: #121826; border: 1px solid #243049; border-radius: 14px;
         padding: 1.1rem 1.3rem; margin-bottom: 1rem;
     }
     .efb-panel > h2 {
@@ -28,16 +28,16 @@
         display: flex; align-items: baseline; justify-content: center;
         gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem;
     }
-    .efb-lead .sym { font-size: 1.35rem; font-weight: 800; color: #0f172a; }
-    .efb-lead .company { font-size: .82rem; color: #64748b; }
+    .efb-lead .sym { font-size: 1.35rem; font-weight: 800; color: var(--ht-ink); }
+    .efb-lead .company { font-size: .82rem; color: var(--ht-muted); }
     .efb-big {
         font-size: 2.6rem; font-weight: 800; line-height: 1.1;
         font-variant-numeric: tabular-nums; letter-spacing: -.02em;
     }
-    .pos { color: #15803d; }
-    .neg { color: #b91c1c; }
+    .pos { color: #28c08a; }
+    .neg { color: #f0556d; }
     .efb-meta {
-        font-size: .8rem; color: #64748b; margin-top: .45rem;
+        font-size: .8rem; color: var(--ht-muted); margin-top: .45rem;
     }
     .efb-meta .dot { color: #cbd5e1; margin: 0 .35rem; }
 
@@ -46,7 +46,7 @@
         font-weight: 700; border-radius: 999px; padding: .18rem .5rem;
     }
     .efb-badge.open { background: #dbeafe; color: #1d4ed8; }
-    .efb-badge.closed { background: #f1f5f9; color: #475569; }
+    .efb-badge.closed { background: #1a2233; color: #8a97b1; }
 
     .efb-cta {
         display: inline-block; margin-top: 1.1rem;
@@ -67,7 +67,7 @@
         color: #94a3b8; font-weight: 700; margin-bottom: .15rem;
     }
     .efb-score .val {
-        font-size: 1.15rem; font-weight: 800; color: #0f172a;
+        font-size: 1.15rem; font-weight: 800; color: var(--ht-ink);
         font-variant-numeric: tabular-nums;
     }
 
@@ -77,13 +77,13 @@
         align-items: center; gap: .6rem; margin-bottom: .35rem;
     }
     .efb-bar-row .name {
-        font-size: .8rem; color: #334155; font-weight: 600;
+        font-size: .8rem; color: var(--ht-ink); font-weight: 600;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /* display:block on both — inline spans ignore width/height, which
        silently renders every bar as an empty track. */
     .efb-track {
-        display: block; background: #f1f5f9;
+        display: block; background: #1a2233;
         border-radius: 4px; height: .62rem; overflow: hidden;
     }
     .efb-fill { display: block; height: 100%; border-radius: 4px; }
@@ -95,7 +95,7 @@
     }
     .efb-bar-sep { height: .5rem; }
     .efb-caption {
-        font-size: .76rem; color: #64748b; margin: .8rem 0 0; line-height: 1.5;
+        font-size: .76rem; color: var(--ht-muted); margin: .8rem 0 0; line-height: 1.5;
     }
 
     /* ── Highlights ── */
@@ -104,21 +104,21 @@
         gap: .7rem; margin-bottom: 1rem;
     }
     .efb-door {
-        display: block; background: #fff; border: 1px solid #e7e5e4;
+        display: block; background: #121826; border: 1px solid #243049;
         border-radius: 12px; padding: .85rem 1rem; text-decoration: none;
     }
     .efb-door:hover { border-color: #1e3a8a; text-decoration: none; }
-    .efb-door .t { display: block; font-size: .88rem; font-weight: 700; color: #0f172a; }
+    .efb-door .t { display: block; font-size: .88rem; font-weight: 700; color: var(--ht-ink); }
     .efb-door .d {
-        display: block; font-size: .75rem; color: #64748b;
+        display: block; font-size: .75rem; color: var(--ht-muted);
         margin-top: .15rem; line-height: 1.4;
     }
 
     /* Persistent, non-dismissible — these are simulated results and must
        never read as a real-money track record. */
     .efb-disclaimer {
-        font-size: .73rem; color: #78350f; line-height: 1.5;
-        background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+        font-size: .73rem; color: #e8c07a; line-height: 1.5;
+        background: #2a2118; border: 1px solid #fde68a; border-radius: 10px;
         padding: .6rem .9rem; margin-bottom: .8rem; text-align: center;
     }
     .efb-foot { font-size: .76rem; color: #94a3b8; text-align: center; }
