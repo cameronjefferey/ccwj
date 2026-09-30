@@ -495,7 +495,9 @@ Known issues:
 
 Logged-out `/` is a banded marketing page (`app/templates/landing.html`,
 catalog in `app/marketing_videos.py`). Order: a click-to-play walkthrough
-of about 2:30 (`NpU79Lwkdn4`; poster is the YouTube `maxresdefault` still;
+of about 2:30 (`NpU79Lwkdn4`; poster is
+`app/static/marketing/walkthrough_poster.webp` at 1920 and 1280 via
+srcset, not the YouTube still, which shows account-wide totals;
 the youtube-nocookie iframe is created only on click; nothing autoplays
 on load), a qualitative proof strip, How it works (connect read-only,
 strategies detected, see what's working), then the live demo as its own

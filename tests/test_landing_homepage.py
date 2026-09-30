@@ -33,6 +33,15 @@ def _open_signup(monkeypatch):
 _YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 
+def _webp_width(blob):
+    """Canvas width of a lossy VP8 WebP (the encoding we ship)."""
+    assert blob[:4] == b"RIFF" and blob[8:12] == b"WEBP"
+    assert blob[12:16] == b"VP8 ", blob[12:16]
+    # 3-byte frame tag, then the 9d 01 2a start code, then a 14-bit width.
+    assert blob[23:26] == b"\x9d\x01\x2a"
+    return int.from_bytes(blob[26:28], "little") & 0x3FFF
+
+
 def test_video_catalog_uses_public_ids():
     rows = [HERO_VIDEO, *STORY_STEPS, *TRADE_STORIES]
     assert [row["step"] for row in [HERO_VIDEO, *STORY_STEPS]] == ["hero", 1, 2, 3, 4, 5, 6]
@@ -55,6 +64,13 @@ def test_video_catalog_uses_public_ids():
         assert row["title"]
         assert row["caption"]
     assert HERO_VIDEO["duration_label"] == "2:30"
+    assert HERO_VIDEO["poster"] == "marketing/walkthrough_poster_1280.webp"
+    assert HERO_VIDEO["poster_srcset"] == (
+        ("marketing/walkthrough_poster_1280.webp", "1280w"),
+        ("marketing/walkthrough_poster.webp", "1920w"),
+    )
+    for row in (*STORY_STEPS, *TRADE_STORIES):
+        assert row["poster"] == ""
     assert STORY_STEPS[-1]["links_learn"] is True
     assert "Options 101" in STORY_STEPS[-1]["caption"]
 
@@ -69,7 +85,24 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "Start your 30-day free trial, no credit card" in html
     assert html.count('class="ht-facade"') == 9
     assert 'data-youtube-id=""' not in html
-    assert "https://i.ytimg.com/vi/NpU79Lwkdn4/maxresdefault.jpg" in html
+    assert "https://i.ytimg.com/vi/NpU79Lwkdn4/maxresdefault.jpg" not in html
+    assert "/static/marketing/walkthrough_poster_1280.webp" in html
+    assert "/static/marketing/walkthrough_poster.webp 1920w" in html
+    assert 'srcset="/static/marketing/walkthrough_poster_1280.webp 1280w, /static/marketing/walkthrough_poster.webp 1920w"' in html
+    assert 'sizes="(min-width: 960px) 920px, 100vw"' in html
+    assert html.count("srcset=") == 1
+    root = Path(__file__).resolve().parents[1]
+    for name, width in (
+        ("marketing/walkthrough_poster.webp", 1920),
+        ("marketing/walkthrough_poster_1280.webp", 1280),
+    ):
+        path = root / "app" / "static" / name
+        assert path.is_file()
+        # WebP VP8X/VP8 canvas size lives in the RIFF header. Pillow is not
+        # a test dependency, so read the width from the file itself.
+        blob = path.read_bytes()
+        assert blob[8:12] == b"WEBP"
+        assert _webp_width(blob) == width
     assert "https://i.ytimg.com/vi/uAmHW-4RtaA/maxresdefault.jpg" in html
     assert "ht-band-trades" in html
     assert "Two closed trades, written out" in html
