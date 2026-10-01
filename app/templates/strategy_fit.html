@@ -497,7 +497,7 @@
 
 {% include "_history_window_note.html" %}
 
-<div class="review-hero fit-hero">
+<div class="review-hero strat-hero" id="fit-hero">
     <div class="ov-bar">
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
@@ -508,29 +508,30 @@
         </form>
         {% endif %}
     </div>
-    <h1>Strategy fit</h1>
-    <p class="lede">Which of your strategies actually have edge across {{ dim_label_plural or 'sectors' }}? Each cell shows how your real trades performed.</p>
+    <p class="ov-date">All time</p>
     {% if grand_total and grand_total.num_trades %}
-    <div class="fit-baselines">
-        <div class="fit-baseline">
-            <div class="lbl">Your baseline expectancy</div>
-            <div class="val">{{ money(baseline_expectancy, 2) }}/trade</div>
+    <div class="ov-top">
+        <div>
+            <div class="ov-k">Total return</div>
+            <div class="ov-big {% if grand_total.total_pnl > 0 %}pos{% elif grand_total.total_pnl < 0 %}neg{% endif %}">{% if grand_total.total_pnl > 0 %}+{% endif %}{{ money(grand_total.total_pnl, 0) }}</div>
         </div>
-        <div class="fit-baseline">
-            <div class="lbl">Your baseline win rate</div>
-            <div class="val">{{ "{:.0%}".format(baseline_win_rate) }}</div>
+        <div>
+            <div class="ov-k">Per trade</div>
+            <div class="ov-pct">{{ money(baseline_expectancy, 2) }}</div>
         </div>
-        <div class="fit-baseline">
-            <div class="lbl">Total trades</div>
-            <div class="val">{{ grand_total.num_trades | int }}</div>
+        <div>
+            <div class="ov-k">{{ term('Win rate') }}</div>
+            <div class="ov-big ov-invest">{{ "{:.0%}".format(baseline_win_rate) }}</div>
         </div>
-        <div class="fit-baseline">
-            <div class="lbl">Total Return</div>
-            <div class="val">{{ money(grand_total.total_pnl, 0) }}</div>
+        <div>
+            <div class="ov-k">Trades</div>
+            <div class="ov-pct">{{ grand_total.num_trades | int }}</div>
         </div>
     </div>
     {% endif %}
+    <p class="ov-line">Which strategies have an edge across {{ dim_label_plural or 'sectors' }}. Each cell is trades you actually placed.</p>
 </div>
+<!-- /fit-hero -->
 
 {% if error %}
 <div class="alert alert-danger">
@@ -553,95 +554,6 @@
     </div>
 </div>
 {% else %}
-
-{# ── AI-narrated insights ───────────────────────────────────────────
-   AI insight is currently keyed to sector/subsector data only. On
-   DTE / Moneyness / Market Cap dims we hide the card with a small
-   note rather than offering a Generate button that would mismatch
-   the matrix the user is looking at. (Per-dim insights = v2.)
-#}
-{% if ai_enabled and dim in ('sector', 'subsector') %}
-{% if ai_summary %}
-<div class="ai-card" id="aiCard">
-    <div class="ai-head">
-        <span class="badge-ai">AI Insight</span>
-        <h2>What we noticed</h2>
-        {% if ai_generated_at %}
-        <span class="when">Updated <time class="ht-local-time" datetime="{{ ai_generated_at.isoformat() }}{% if ai_generated_at.tzinfo is none %}Z{% endif %}">{{ ai_generated_at.strftime('%b %d, %I:%M %p') }} UTC</time></span>
-        {% endif %}
-    </div>
-    <div class="ai-summary">{{ ai_summary }}</div>
-    <button type="button" class="ai-toggle" id="aiToggleBtn">
-        <span class="label">Show full breakdown</span>
-        <span class="arrow">▾</span>
-    </button>
-    <div class="ai-full">
-        {{ ai_full_html|safe }}
-    </div>
-    <div class="ai-actions">
-        <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin: 0;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="ai-refresh" title="Regenerate insights from your latest data">↻ Refresh</button>
-        </form>
-        <span class="ai-disclaimer">Generated from your data. Observations only — not advice.</span>
-    </div>
-</div>
-{% else %}
-<div class="ai-card empty">
-    <div class="ai-head">
-        <span class="badge-ai">AI Insight</span>
-        <h2>Want a narrated read on this matrix?</h2>
-    </div>
-    <div class="ai-summary">
-        {% if ai_available %}
-            Click below to have your data summarized in plain English — what's working, where the edge is, and what's small-sample-size noise.
-        {% else %}
-            AI Insights is warming up. Once it's ready, you'll get a narrated read of where your strategies have edge.
-        {% endif %}
-    </div>
-    {% if ai_available %}
-    <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin-top: .35rem;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="ai-generate-btn">Generate insights</button>
-    </form>
-    {% endif %}
-</div>
-{% endif %}
-{% endif %}
-
-{# ── Smarter sweet/soft callouts (sample-size guarded, expectancy-based) ── #}
-{% if sweet_spots or soft_spots %}
-<div class="callouts-row">
-    {% if sweet_spots %}
-    <div class="callouts-card sweet">
-        <h3>Where you have edge</h3>
-        {% for c in sweet_spots %}
-        <div class="pair">
-            <span class="strat-tag">{{ c.strategy }}</span>
-            <span class="text-muted small">in</span>
-            <span class="ind-tag">{{ c[col_field] }}</span>
-            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
-            <span class="pnl-big pos">{{ money(c.total_pnl, 0, true) }}</span>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-    {% if soft_spots %}
-    <div class="callouts-card soft">
-        <h3>Where you lose money</h3>
-        {% for c in soft_spots %}
-        <div class="pair">
-            <span class="strat-tag">{{ c.strategy }}</span>
-            <span class="text-muted small">in</span>
-            <span class="ind-tag">{{ c[col_field] }}</span>
-            <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
-            <span class="pnl-big neg">{{ money(c.total_pnl, 0) }}</span>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-</div>
-{% endif %}
 
 {# ── Controls: dimension switcher + metric toggle + visibility ── #}
 <div class="fit-controls" id="fit-controls">
@@ -885,13 +797,106 @@
     </div>
 
     <div class="fit-legend">
-        <span><span class="swatch" style="background: rgba(16,185,129,.5);"></span>positive</span>
-        <span><span class="swatch" style="background: rgba(239,68,68,.5);"></span>negative</span>
+        <span><span class="swatch" style="background: var(--gain);"></span>positive</span>
+        <span><span class="swatch" style="background: var(--loss);"></span>negative</span>
         <span class="text-muted">Color intensity scales with magnitude.</span>
         <span class="text-muted">Faded cells have &lt; 3 trades — too few to call signal.</span>
         <span class="text-muted">Click a cell to filter Positions.</span>
     </div>
 </div>
+
+{# Edge notes and the narrated read sit behind the matrix. AI insight is
+   keyed to sector/subsector only — other slices keep the edge lists. #}
+{% if (ai_enabled and dim in ('sector', 'subsector')) or sweet_spots or soft_spots %}
+<details class="disclosure" id="fit-notes">
+    <summary>
+        <span class="section-header">Notes</span>
+        <span class="disclosure-note">Where the edge is, and the narrated read.</span>
+    </summary>
+    <div class="disclosure-body">
+        {% if sweet_spots or soft_spots %}
+        <div class="callouts-row">
+            {% if sweet_spots %}
+            <div class="callouts-card sweet">
+                <h3>Where you have edge</h3>
+                {% for c in sweet_spots %}
+                <div class="pair">
+                    <span class="strat-tag">{{ c.strategy }}</span>
+                    <span class="text-muted small">in</span>
+                    <span class="ind-tag">{{ c[col_field] }}</span>
+                    <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
+                    <span class="pnl-big pos">{{ money(c.total_pnl, 0, true) }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if soft_spots %}
+            <div class="callouts-card soft">
+                <h3>Where the result is negative</h3>
+                {% for c in soft_spots %}
+                <div class="pair">
+                    <span class="strat-tag">{{ c.strategy }}</span>
+                    <span class="text-muted small">in</span>
+                    <span class="ind-tag">{{ c[col_field] }}</span>
+                    <span class="meta">{{ c.num_trades | int }}t · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }}/trade</span>
+                    <span class="pnl-big neg">{{ money(c.total_pnl, 0) }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if ai_enabled and dim in ('sector', 'subsector') %}
+        {% if ai_summary %}
+        <div class="ai-card" id="aiCard">
+            <div class="ai-head">
+                <span class="badge">AI Insight</span>
+                <h2 class="section-header">What we noticed</h2>
+                {% if ai_generated_at %}
+                <span class="when">Updated <time class="ht-local-time" datetime="{{ ai_generated_at.isoformat() }}{% if ai_generated_at.tzinfo is none %}Z{% endif %}">{{ ai_generated_at.strftime('%b %d, %I:%M %p') }} UTC</time></span>
+                {% endif %}
+            </div>
+            <div class="ai-summary">{{ ai_summary }}</div>
+            <button type="button" class="ai-toggle" id="aiToggleBtn">
+                <span class="label">Show full breakdown</span>
+                <span class="arrow">▾</span>
+            </button>
+            <div class="ai-full">
+                {{ ai_full_html|safe }}
+            </div>
+            <div class="ai-actions">
+                <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin: 0;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="ai-refresh" title="Regenerate insights from your latest data">Refresh</button>
+                </form>
+                <span class="ai-disclaimer">Generated from your data. Observations only — not advice.</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="ai-card empty">
+            <div class="ai-head">
+                <span class="badge">AI Insight</span>
+                <h2 class="section-header">Want a narrated read on this matrix?</h2>
+            </div>
+            <div class="ai-summary">
+                {% if ai_available %}
+                    Generate a plain-English read of this matrix — what's working, where the edge is, and what's a small sample.
+                {% else %}
+                    AI Insights is warming up. Once it's ready, you'll get a narrated read of where your strategies have edge.
+                {% endif %}
+            </div>
+            {% if ai_available %}
+            <form method="post" action="{{ scoped_url('generate_strategy_fit_insights', sector=drill_sector or none, dim=dim or none) }}" style="margin-top: .35rem;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="ai-generate-btn">Generate insights</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+</details>
+{% endif %}
 
 {% endif %}
 

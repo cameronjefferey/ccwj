@@ -681,7 +681,7 @@ did, one symbol at a time, with the tab strip for flipping between symbols.
 the `/api/nav/symbols` Cmd+K endpoint.
 
 ### Strategies (`/strategies`) — two views
-**Status: Improved — drill-down now includes Breakdown by Type + tenant hardening.**
+**Status: Working. One story: headline, then the cards or the matrix, then the rest behind disclosures.**
 
 One "Strategies" surface with a view switch (Aug 2026 surface audit):
 **Performance** (default, `app/strategies.py`) and **Fit matrix**
@@ -689,7 +689,17 @@ One "Strategies" surface with a view switch (Aug 2026 surface audit):
 strategy × sector/DTE/moneyness, `app/strategy_fit.py` +
 `render_strategy_fit_view`). `/strategy-fit` 301s to `/strategies?view=fit`.
 
-Cards still roll up lifetime performance from `mart_strategy_performance`; monthly context comes from `mart_strategy_trend`. When you click a strategy, you now get a **Breakdown by Type** table (equity sessions vs option contracts vs attributed dividends): equity and options are summed from `int_strategy_classification`; dividends roll up from attributed `total_dividend_income` on `positions_summary`. That mirrors the Position Detail mental model for a single strategy label. Drill-in also shows last-12-month P&L, DTE buckets (options), and **what moves this strategy** — top contributors / drags by share of that strategy's P&L, lots collapsed to one row per symbol. The old per-lot symbol table duplicated Positions (`?strategy=`).
+Performance reads top to bottom as a compact headline (total return,
+realized, unrealized, win rate), then one card per strategy, then —
+only after a strategy is opened — three closed disclosures: breakdown
+by type, the monthly result with days-to-expiration, and what moves
+it (symbols plus by-account). The monthly chart is created when that
+disclosure opens, then resized, so the canvas is not measured at zero
+width. **Collected** is premium received (`premium_received`, tooltip
+"Premium received."). **Net** is collected minus what was paid. Do not
+label that figure "Net Premium".
+
+Cards still roll up lifetime performance from `mart_strategy_performance`; monthly context comes from `mart_strategy_trend`. The breakdown by type is equity sessions vs option contracts vs attributed dividends: equity and options are summed from `int_strategy_classification`; dividends roll up from attributed `total_dividend_income` on `positions_summary`. That mirrors the Position Detail mental model for a single strategy label. Drill-in also shows last-12-month P&L, DTE buckets (options), and **what moves this strategy** — top contributors / drags by share of that strategy's P&L, lots collapsed to one row per symbol. The old per-lot symbol table duplicated Positions (`?strategy=`). The fit view uses the same headline, keeps the matrix as the main content (in-card sideways scroll, sticky names and totals, slide-out cell panel), and puts edge notes plus the narrated read in a disclosure after the matrix.
 
 Tenant isolation: row-level query results go through `_filter_df_by_accounts(...)` before any pandas work, same as `/positions`. Pure `SUM(...) ...` aggregates without an account column rely on SQL `_account_sql_and` only. Failed `mart_strategy_trend` reads are logged instead of silently swallowed.
 
@@ -797,9 +807,17 @@ must be a `Cash Event`); unit coverage in `tests/test_snaptrade_normalize.py`
 and `tests/test_wealth_chart.py`.
 
 ### Sectors (`/sectors`)
-**Status: Working. Sector / industry rollups (`app/sectors_page.py`).**
+**Status: Working. Headline, then one sector table, then the rest behind a disclosure (`app/sectors_page.py`).**
 
-The header "Subsectors" count is `(sector, subsector)` pairs (`_sector_rollups`), the same rows the cards list. A name-level `nunique()` under-counts when one label (often Unknown) sits under two sectors.
+The page reads top to bottom as total return, realized, unrealized, and
+win rate, then one row per sector, then a closed "Inside each sector"
+disclosure (subsectors, collected premium, dividends, best and worst).
+**Collected** is premium received. A sector name links to that sector's
+block (`#{{ sector|replace(' ', '-')|lower }}`); the hash opens the
+disclosure so Position Detail sector pills still land. View links to
+Positions. Phone rows stack with `data-label`.
+
+The header "Subsectors" count is `(sector, subsector)` pairs (`_sector_rollups`), the same rows the disclosure lists. A name-level `nunique()` under-counts when one label (often Unknown) sits under two sectors.
 
 ### Earnings Watch (`/earnings`)
 **Status: Working. Upcoming earnings on held symbols (`app/earnings_page.py`);**

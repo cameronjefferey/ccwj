@@ -1,146 +1,160 @@
 {% extends "base.html" %}
 
+{# ════════════════════════════════════════════════════════════════════════
+   Strategies — one book, then the strategies, then the rest.
+
+   Story order, top to bottom:
+
+     1. Headline     — total return, realized, unrealized, win rate
+     2. Strategies   — one card per strategy
+     3. Secondary    — when one strategy is open: breakdown by type,
+                       the monthly chart with days-to-expiration, then
+                       what moves it. Collapsed until opened.
+   ════════════════════════════════════════════════════════════════════════ #}
+
 {% block head %}
 {% include '_review_styles.html' %}
 <style>
-    .strat-hero {
-        background: #121826;
-        border: 1px solid #243049;
-        border-radius: 16px;
-        padding: 2.25rem 2rem;
-        color: #fff;
-        margin-bottom: 1.5rem;
+    .strat-page { min-width: 0; }
+    .strat-page > .card { margin-bottom: 1rem; box-shadow: none; }
+    .strat-pad { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
+    .strat-head {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        gap: .75rem; margin-bottom: .85rem;
     }
-    .strat-hero-headline { font-size: 1.5rem; font-weight: 700; margin: 0 0 .35rem; line-height: 1.25; }
-    .strat-hero-sub { color: rgba(255,255,255,.6); font-size: .9rem; margin: 0; max-width: 560px; }
-    .hero-stat { text-align: center; }
-    .hero-stat-value { font-size: 1.25rem; font-weight: 700; }
-    .hero-stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .4px; color: rgba(255,255,255,.45); margin-top: .2rem; }
+    .strat-head .section-header { margin: 0; }
+    .strat-lead { margin: .2rem 0 0; font-size: .82rem; color: var(--ht-muted); }
+    body .strat-page .disclosure > summary .section-header { margin: 0; }
+    .strat-back { color: rgba(255,255,255,.62); font-size: .82rem; text-decoration: none; }
+    .strat-back:hover { color: #fff; }
 
-    /* Strategy cards */
-    .strat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .85rem; margin-bottom: 1.5rem; }
+    .strat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: .85rem; }
     .strat-card {
-        background: #121826;
-        border: 1px solid #243049;
-        border-radius: 0.75rem;
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
         box-shadow: none;
         padding: 1rem 1.1rem;
         text-decoration: none;
-        color: #e8edf7;
-        transition: border-color .2s, filter .2s, transform .2s;
+        color: var(--ht-ink);
         display: flex;
         flex-direction: column;
         gap: .85rem;
+        min-width: 0;
     }
-    .strat-card:hover { border-color: rgba(255,255,255,.22); filter: brightness(1.08); transform: translateY(-1px); color: #e8edf7; }
-    .strat-card.selected { border-color: #5b8cff; }
-    .strat-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
-    .strat-card-name { font-weight: 650; font-size: 1.05rem; color: #fff; letter-spacing: -0.02em; }
-    .strat-card-meta { font-size: .78rem; color: #8a97b1; margin-top: .15rem; }
-    .trend-badge {
-        font-size: .65rem; font-weight: 650; padding: .15rem .45rem; border-radius: 0.35rem;
-        text-transform: uppercase; letter-spacing: .08em; white-space: nowrap;
-        background: rgba(91,140,255,.15); color: #5b8cff;
-    }
-    .trend-badge.declining { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
-    .trend-badge.stable { background: rgba(255,255,255,.06); color: #8a97b1; }
-    .strat-card-stats { display: flex; gap: 1.25rem; }
+    .strat-card:hover { border-color: var(--ht-blue); color: var(--ht-ink); }
+    .strat-card.selected { border-color: var(--ht-blue); }
+    .strat-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; min-width: 0; }
+    .strat-card-name { font-weight: 650; font-size: 1.05rem; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+    .strat-card-meta { font-size: .78rem; color: var(--ht-muted); margin-top: .15rem; overflow-wrap: anywhere; }
+    .strat-card-stats { display: flex; flex-wrap: wrap; gap: .85rem 1.25rem; }
     .sc-stat-value {
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
-        font-size: 1.15rem; font-weight: 650; line-height: 1.2; color: #fff;
+        font-size: 1.15rem; font-weight: 650; line-height: 1.2;
     }
-    .sc-stat-label {
-        font-size: .65rem; text-transform: uppercase; letter-spacing: .1em;
-        color: #8a97b1; margin-bottom: .2rem;
-    }
+    .sc-stat-label { font-size: .72rem; color: var(--ht-muted); margin-bottom: .2rem; }
 
-    /* Last six months: equal marks, latest month written out. */
-    .month-strip { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
-    .month-marks { display: flex; align-items: center; gap: 4px; }
-    .month-mark { width: 18px; height: 8px; border-radius: 2px; background: #243049; }
+    .month-strip { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; min-width: 0; }
+    .month-marks { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .month-mark { width: 18px; height: 8px; border-radius: 2px; background: var(--ht-line); }
     .month-mark.up { background: var(--gain); }
     .month-mark.down { background: var(--loss); }
-    .month-latest { font-size: .82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .month-latest-name { color: #8a97b1; margin-right: .35rem; }
-    .month-latest-amt { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 600; color: #8a97b1; }
+    .month-latest { font-size: .82rem; font-variant-numeric: tabular-nums; }
+    .month-latest-name { color: var(--ht-muted); margin-right: .35rem; }
+    .month-latest-amt { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 600; color: var(--ht-muted); }
     .month-latest-amt.up { color: var(--gain); }
     .month-latest-amt.down { color: var(--loss); }
 
-    /* Focus sections */
-    .data-section { background: #121826; border: 1px solid #243049; border-radius: 0.75rem; box-shadow: none; padding: 1.15rem 1.25rem; margin-bottom: 1.25rem; color: #e8edf7; }
-    .section-label { font-size: .72rem; text-transform: uppercase; letter-spacing: 1.1px; color: #9ca3af; font-weight: 600; margin-bottom: 1rem; }
-    .trend-chart-wrap { position: relative; height: 140px; }
-    @media (max-width: 720px) { .trend-chart-wrap { height: 120px; } }
-
-    .focus-header {
-        background: #121826;
-        border: 1px solid #243049;
-        border-radius: 0.75rem;
-        box-shadow: none;
-        padding: 1.15rem 1.25rem;
-        margin-bottom: 1.25rem;
-        color: #e8edf7;
-    }
-    .focus-stat { text-align: center; }
-    .focus-stat-value { font-size: 1.25rem; font-weight: 650; line-height: 1.2; color: #fff; font-variant-numeric: tabular-nums; }
-    .focus-stat-label { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: #8a97b1; margin-bottom: .2rem; }
-    .focus-stat-meta { font-size: .75rem; color: var(--ht-muted); margin-top: .1rem; }
-
-    .obs-card {
-        border-radius: 12px;
-        padding: .85rem 1.1rem;
-        font-size: .88rem;
-        font-weight: 500;
-        line-height: 1.45;
-        margin-bottom: .75rem;
-        border-left: 4px solid;
-    }
-    .obs-card.positive { background: color-mix(in srgb, var(--gain) 6%, transparent); border-left-color: var(--gain); color: var(--gain); }
-    .obs-card.negative { background: color-mix(in srgb, var(--loss) 6%, transparent); border-left-color: var(--loss); color: var(--loss); }
-    .obs-card.neutral  { background: rgba(13,110,253,.06); border-left-color: #0d6efd; color: var(--ht-ink); }
-
-    .dte-bar-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #f3f4f6; }
+    .trend-chart-wrap { position: relative; height: 180px; width: 100%; min-width: 0; }
+    .dte-bar-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--ht-line); min-width: 0; }
     .dte-bar-row:last-child { border-bottom: none; }
-    .dte-label { width: 90px; font-size: .82rem; font-weight: 600; flex-shrink: 0; }
-    .dte-bar-track { flex: 1; height: 22px; background: #1a2233; border-radius: 4px; overflow: hidden; position: relative; }
-    .dte-bar-fill { height: 100%; border-radius: 4px; }
+    .dte-label { width: 7.5rem; font-size: .82rem; font-weight: 600; flex-shrink: 0; overflow-wrap: anywhere; }
+    .dte-bar-track { flex: 1; height: 10px; background: var(--ht-surface-2); border-radius: 999px; overflow: hidden; min-width: 2rem; }
+    .dte-bar-fill { height: 100%; border-radius: 999px; }
     .dte-bar-fill.good { background: var(--gain); }
     .dte-bar-fill.bad { background: var(--loss); }
-    .dte-bar-fill.mid { background: #94a3b8; }
-    .dte-stats { width: 160px; text-align: right; font-size: .8rem; color: var(--ht-muted); flex-shrink: 0; }
+    .dte-bar-fill.mid { background: var(--ht-muted); }
+    .dte-stats { width: 11rem; text-align: right; font-size: .8rem; color: var(--ht-muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
     .conc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-    @media (max-width: 700px) { .conc-grid { grid-template-columns: 1fr; } }
-    .conc-col-title {
-        font-size: .72rem; text-transform: uppercase; letter-spacing: .5px;
-        color: var(--ht-muted); font-weight: 700; margin-bottom: .35rem;
-    }
+    .conc-col-title { font-size: .82rem; color: var(--ht-muted); font-weight: 650; margin-bottom: .35rem; }
     .conc-row {
-        display: grid; grid-template-columns: 3.6rem 1fr auto;
+        display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) auto;
         gap: .65rem; align-items: center;
         padding: .5rem 0;
         border-bottom: 1px solid var(--ht-line);
         text-decoration: none; color: inherit;
+        min-width: 0;
     }
     .conc-row:last-child { border-bottom: none; }
     .conc-row:hover { color: inherit; }
-    .conc-share { font-weight: 700; font-variant-numeric: tabular-nums; font-size: .88rem; }
-    .conc-sym { font-weight: 700; font-size: .9rem; }
+    .conc-share, .conc-pnl { font-weight: 650; font-variant-numeric: tabular-nums; font-size: .88rem; }
+    .conc-pnl { text-align: right; white-space: nowrap; }
+    .conc-sym { font-weight: 650; font-size: .9rem; overflow-wrap: anywhere; }
     .conc-meta { font-size: .72rem; color: var(--ht-muted); }
-    .conc-pnl { font-weight: 700; font-variant-numeric: tabular-nums; font-size: .9rem; text-align: right; }
+    .strat-note { font-size: .82rem; color: var(--ht-muted); margin: 0 0 .85rem; }
+    .strat-insight { margin: 0 0 .45rem; font-size: .88rem; }
+    .strat-block + .strat-block { margin-top: 1.15rem; padding-top: 1rem; border-top: 1px solid var(--ht-line); }
 
-    .sym-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; font-weight: 600; }
-    .sym-table td { font-size: .88rem; }
-    .sym-table .sym-link { font-weight: 600; text-decoration: none; color: var(--ht-ink); }
-    .sym-table .sym-link:hover { text-decoration: underline; }
+    #stratAcct th, #stratType th { font-size: .72rem; font-weight: 650; color: var(--ht-muted); }
+    #stratAcct td, #stratType td { font-size: .88rem; }
+
+    @media (max-width: 767px) {
+        .strat-page { overflow-x: clip; }
+        .strat-head { flex-direction: column; }
+        .conc-grid { grid-template-columns: 1fr; }
+        .dte-bar-row { flex-wrap: wrap; }
+        .dte-label, .dte-stats { width: auto; text-align: left; }
+        .dte-bar-track { flex: 1 1 100%; }
+        .strat-page .table-responsive { overflow: visible; box-shadow: none; }
+        .strat-page table.ht-stack { display: block; width: 100%; max-width: 100%; }
+        .strat-page table.ht-stack > thead { display: none !important; }
+        .strat-page table.ht-stack > tbody,
+        .strat-page table.ht-stack > tfoot { display: block; }
+        .strat-page table.ht-stack > tbody > tr,
+        .strat-page table.ht-stack > tfoot > tr {
+            display: block;
+            border: 1px solid var(--ht-line);
+            border-radius: 10px;
+            margin: 0 0 .6rem;
+            padding: .45rem .7rem .5rem;
+        }
+        .strat-page table.ht-stack > tbody > tr > td,
+        .strat-page table.ht-stack > tfoot > tr > th {
+            display: flex !important;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: .75rem;
+            width: auto !important;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-align: right;
+            border: 0;
+            padding: .16rem 0;
+        }
+        .strat-page table.ht-stack > tbody > tr > td::before,
+        .strat-page table.ht-stack > tfoot > tr > th::before {
+            content: attr(data-label);
+            color: var(--ht-muted);
+            font-size: .66rem;
+            font-weight: 650;
+            text-align: left;
+            flex: 0 0 42%;
+        }
+    }
+    @media (min-width: 768px) {
+        #stratType, #stratAcct { table-layout: fixed; width: 100%; min-width: 0; }
+        #stratType th, #stratType td, #stratAcct th, #stratAcct td {
+            white-space: normal; overflow: visible; overflow-wrap: anywhere; vertical-align: top;
+        }
+        #stratType td.strat-money, #stratAcct td.strat-money { white-space: nowrap; overflow-wrap: normal; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 
-{# View switch — one Strategies surface, two lenses (former /strategy-fit
-   page is the "Fit matrix" view). #}
 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
     <a class="btn btn-primary" aria-current="page"
        href="{{ scoped_url('strategies') }}">Performance</a>
@@ -152,9 +166,10 @@
 
 {% if error %}<div class="alert alert-danger small">We're having trouble loading your strategies right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
+<div class="strat-page">
 {% if not strategies %}
-<div class="review-hero">
-    <div class="ov-bar" style="border-bottom:0; margin-bottom:0; padding-bottom:0;">
+<div class="review-hero strat-hero" id="strat-hero">
+    <div class="ov-bar">
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% include "_account_scope_filters.html" %}
@@ -164,28 +179,41 @@
         </form>
         {% endif %}
     </div>
+    <p class="ov-date">All time</p>
+    <p class="ov-line">How each strategy has done across the whole record.</p>
 </div>
-<div class="data-section text-center py-5">
+<!-- /strat-hero -->
+<div class="card">
+<div class="strat-pad text-center">
     {% if auth_accounts and auth_accounts|length > 0 %}
-    <h5 class="mb-3">No strategy data to show yet</h5>
-    <p class="text-muted mb-3">
-        Your linked accounts are connected — sync or refresh uploads so trades are classified into strategies here.
-    </p>
+    <h2 class="section-header">No strategy data to show yet</h2>
+    <p class="strat-lead mb-3">Your linked accounts are connected. Sync or refresh uploads so trades are classified into strategies here.</p>
     {% else %}
-    <h5 class="mb-3">No strategy data yet</h5>
-    <p class="text-muted mb-3">Upload your positions and trade history. Once your trades are classified by strategy, you'll see how each one performs over time.</p>
+    <h2 class="section-header">No strategy data yet</h2>
+    <p class="strat-lead mb-3">Upload your positions and trade history. Once your trades are classified by strategy, you'll see how each one performs over time.</p>
     {% endif %}
     <div class="d-flex flex-wrap justify-content-center gap-2">
         <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="btn btn-primary btn-sm">Sync broker data</a>
         <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload &amp; refresh</a>
     </div>
 </div>
+</div>
 {% else %}
 
-{# ══════════════════════════════
-   HERO
-   ══════════════════════════════ #}
-<div class="review-hero strat-hero">
+{% set book = namespace(ret=0, real=0, unreal=0) %}
+{% if selected_strategy and focus_strategy %}
+    {% set book.ret = focus_strategy.total_return %}
+    {% set book.real = focus_strategy.realized_pnl %}
+    {% set book.unreal = focus_strategy.unrealized_pnl %}
+    {% set book.wr = focus_strategy.win_rate %}
+{% elif summary %}
+    {% set book.ret = strategies | sum(attribute='total_return') %}
+    {% set book.real = strategies | sum(attribute='realized_pnl') %}
+    {% set book.unreal = strategies | sum(attribute='unrealized_pnl') %}
+    {% set book.wr = summary.overall_win_rate %}
+{% endif %}
+
+<div class="review-hero strat-hero" id="strat-hero">
     <div class="ov-bar">
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
@@ -198,362 +226,357 @@
         {% endif %}
     </div>
     {% if selected_strategy and focus_strategy %}
-    <div class="mb-2">
-        <a href="{{ scoped_url('strategies') }}"
-           style="color:rgba(255,255,255,.5); font-size:.82rem; text-decoration:none;">&larr; All strategies</a>
-    </div>
-    <p class="strat-hero-headline">{{ focus_strategy.strategy }}</p>
-    <p class="strat-hero-sub">
-        {{ focus_strategy.num_trades }} trade{{ 's' if focus_strategy.num_trades != 1 else '' }}
-        across <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ focus_strategy.population_label }}</span>.
-        {% if focus_strategy.first_trade_date and focus_strategy.last_trade_date %}
-        Active {{ focus_strategy.first_trade_date }} &mdash; {{ focus_strategy.last_trade_date }}.
-        {% endif %}
-        {% if focus_strategy.trend_signal == 'improving' %}
-        <strong>Trending up.</strong>
-        {% elif focus_strategy.trend_signal == 'declining' %}
-        <strong>Trending down.</strong>
-        {% endif %}
-    </p>
+    <p class="ov-date"><a class="strat-back" href="{{ scoped_url('strategies') }}">All strategies</a></p>
     {% else %}
-    <p class="strat-hero-headline">
-        {% if narrative %}{{ narrative }}{% else %}Your Strategy History{% endif %}
+    <p class="ov-date">All time</p>
+    {% endif %}
+    {% if summary or (selected_strategy and focus_strategy) %}
+    <div class="ov-top">
+        <div>
+            <div class="ov-k">Total return</div>
+            <div class="ov-big {% if book.ret > 0 %}pos{% elif book.ret < 0 %}neg{% endif %}">{% if book.ret > 0 %}+{% endif %}{{ money(book.ret, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">{{ term('Realized') }}</div>
+            <div class="ov-pct {% if book.real > 0 %}pos{% elif book.real < 0 %}neg{% endif %}">{% if book.real > 0 %}+{% endif %}{{ money(book.real, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">{{ term('Unrealized') }}</div>
+            <div class="ov-pct {% if book.unreal > 0 %}pos{% elif book.unreal < 0 %}neg{% endif %}">{% if book.unreal > 0 %}+{% endif %}{{ money(book.unreal, 0) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">{{ term('Win rate') }}</div>
+            <div class="ov-big ov-invest">{% if book.wr is not none %}{{ "%.0f"|format(book.wr) }}%{% else %}&mdash;{% endif %}</div>
+        </div>
+    </div>
+    {% endif %}
+    <p class="ov-line">
+        {% if selected_strategy and focus_strategy %}
+            {{ focus_strategy.strategy }}.
+            {{ focus_strategy.num_trades }} trade{{ 's' if focus_strategy.num_trades != 1 else '' }}
+            across <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ focus_strategy.population_label }}</span>.
+            {% if focus_strategy.first_trade_date and focus_strategy.last_trade_date %}
+            Active {{ focus_strategy.first_trade_date }} &mdash; {{ focus_strategy.last_trade_date }}.
+            {% endif %}
+            {% if focus_strategy.trend_signal == 'improving' %}Trending up.
+            {% elif focus_strategy.trend_signal == 'declining' %}Trending down.
+            {% endif %}
+        {% elif narrative %}
+            {{ narrative }}
+        {% else %}
+            How each strategy has done across the whole record.
+        {% endif %}
     </p>
     {% if summary %}
-    <div class="d-flex gap-4 mt-3 flex-wrap">
-        <div class="hero-stat">
-            <div class="hero-stat-value">{{ summary.strategies_count }}</div>
-            <div class="hero-stat-label">Strategies</div>
-        </div>
-        <div class="hero-stat">
-            <div class="hero-stat-value">{{ summary.total_trades }}</div>
-            <div class="hero-stat-label">Total Trades</div>
-        </div>
-        {% if summary.overall_win_rate is not none %}
-        <div class="hero-stat">
-            <div class="hero-stat-value">{{ "%.0f"|format(summary.overall_win_rate) }}%</div>
-            <div class="hero-stat-label">{{ term('Win Rate') }}</div>
-        </div>
+    <div class="ov-pills">
+        <span class="ov-pill">{{ summary.strategies_count }} strateg{{ 'y' if summary.strategies_count == 1 else 'ies' }}</span>
+        <span class="ov-pill">{{ summary.total_trades }} trades</span>
+        {% if selected_strategy and focus_strategy and focus_strategy.premium_received %}
+        <span class="ov-pill" title="Premium received.">{{ term('Collected') }} {{ money(focus_strategy.premium_received, 0) }}</span>
         {% endif %}
-        {# Net Premium hero stat removed — for options traders the sign of
-           premium-received minus premium-paid is contextual (positive when
-           selling more, negative when buying long calls/PMCCs) and the
-           bare KPI was repeatedly read as "this strategy lost money" by
-           non-options viewers. The same number is still surfaced on the
-           focused-strategy card below where the context makes it clear. #}
     </div>
     {% endif %}
-    {% endif %}
+</div>
+<!-- /strat-hero -->
+
+<div class="card" id="strat-list">
+<div class="strat-pad">
+    <div class="strat-head">
+        <div>
+            <h2 class="section-header">Strategies</h2>
+            <p class="strat-lead">One card per strategy. Open one for the breakdown.</p>
+        </div>
+    </div>
+    <div class="strat-cards">
+        {% for s in strategies %}
+        <a href="{{ scoped_url('strategies', strategy=s.strategy, _anchor='strategy-focus') }}"
+           class="strat-card {% if s.is_selected %}selected{% endif %}">
+            <div class="strat-card-header">
+                <div>
+                    <div class="strat-card-name">{{ s.strategy or 'Unclassified' }}</div>
+                    <div class="strat-card-meta">
+                        {{ s.num_trades }} trades &middot;
+                        <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ s.population_label }}</span>
+                    </div>
+                </div>
+                <span class="trend-badge {{ s.trend_signal }}">
+                    {% if s.trend_signal == 'improving' %}Improving
+                    {% elif s.trend_signal == 'declining' %}Declining
+                    {% elif s.trend_signal == 'new' %}New
+                    {% else %}Stable{% endif %}
+                </span>
+            </div>
+            <div class="strat-card-stats">
+                <div>
+                    <div class="sc-stat-label">{{ term('Win rate') }}</div>
+                    <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
+                </div>
+                <div>
+                    <div class="sc-stat-label">Total return</div>
+                    <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
+                        {{ money(s.total_return, 0, true) }}
+                    </div>
+                </div>
+                {% if s.avg_days > 0 %}
+                <div>
+                    <div class="sc-stat-label">Avg hold</div>
+                    <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>
+                </div>
+                {% endif %}
+                {% if s.premium_received %}
+                <div>
+                    <div class="sc-stat-label" title="Premium received.">{{ term('Collected') }}</div>
+                    <div class="sc-stat-value text-positive">{{ money(s.premium_received, 0) }}</div>
+                </div>
+                {% endif %}
+            </div>
+            {% if s.sparkline %}
+            {% set _mo = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+            {% set last = s.sparkline[-1] %}
+            <div class="month-strip">
+                <div class="month-marks">
+                    {% for m in s.sparkline %}
+                    <span class="month-mark {% if m.pnl > 0 %}up{% elif m.pnl < 0 %}down{% endif %}"
+                          title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {{ money(m.pnl, 0, true) }} ({{ m.trades }} trades{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
+                    {% endfor %}
+                </div>
+                <div class="month-latest">
+                    <span class="month-latest-name">{{ _mo[last.month[-2:]|int] }}</span>
+                    <span class="month-latest-amt {% if last.pnl > 0 %}up{% elif last.pnl < 0 %}down{% endif %}">{{ money(last.pnl, 0, true) }}</span>
+                </div>
+            </div>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    <p class="strat-lead" style="margin-top:.9rem;">
+        Based on your full history.
+        For this week&rsquo;s breakdown, see
+        <a href="{{ scoped_url('weekly_review') }}">Overview</a>.
+    </p>
+</div>
 </div>
 
-{# ══════════════════════════════
-   FOCUS DETAIL (strategy selected)
-   ══════════════════════════════ #}
 {% if selected_strategy and focus_strategy %}
+<div id="strategy-focus">
 
-{# Key stats #}
-<div class="focus-header" id="strategy-focus">
-    <div class="row g-0 text-center">
-        <div class="col focus-stat" style="border-right: 1px solid #243049">
-            <div class="focus-stat-value {{ 'text-positive' if focus_strategy.total_return >= 0 else 'text-negative' }}">
-                {{ money(focus_strategy.total_return, 0, true) }}
-            </div>
-            <div class="focus-stat-label">Total Return</div>
-        </div>
-        <div class="col focus-stat" style="border-right: 1px solid #243049">
-            {% if focus_strategy.win_rate is not none %}
-            <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.win_rate) }}%</div>
-            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
-            <div class="focus-stat-meta">{{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L</div>
-            {% else %}
-            <div class="focus-stat-value text-muted">&mdash;</div>
-            <div class="focus-stat-label">{{ term('Win Rate') }}</div>
+{% if focus_breakdown_rows or focus_insights %}
+<details class="disclosure" id="strat-breakdown">
+    <summary>
+        <span class="section-header">Breakdown by type</span>
+        <span class="disclosure-note">Equity, options, and dividends.</span>
+    </summary>
+    <div class="disclosure-body">
+        {% if focus_insights %}
+        {% for ins in focus_insights %}
+        <p class="strat-insight {{ 'text-positive' if ins.type == 'positive' else ('text-negative' if ins.type == 'negative' else '') }}">{{ ins.text }}</p>
+        {% endfor %}
+        {% endif %}
+        {% if focus_breakdown_rows %}
+        <p class="strat-note">
+            Realized and unrealized use the warehouse equity and option split. Dividends are cash dividends on those positions.
+            {% if focus_strategy.premium_received %}
+            {{ term('Collected') }} is {{ money(focus_strategy.premium_received, 0) }}.
+            Net is {{ money(focus_strategy.premium_received - focus_strategy.premium_paid, 0) }}
+            (collected minus what was paid).
             {% endif %}
+        </p>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0 ht-stack" id="stratType">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th class="text-end">Total return</th>
+                        <th class="text-end">{{ term('Realized') }}</th>
+                        <th class="text-end">{{ term('Unrealized') }}</th>
+                        <th>Detail</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in focus_breakdown_rows %}
+                    <tr>
+                        <td data-label="Type"><strong>{{ r.type }}</strong></td>
+                        <td data-label="Total return" class="text-end strat-money {{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-semibold">
+                            {{ money(r.total, 2, true) }}
+                            {% if r.suffix %}<span class="text-muted fw-normal ms-1 small">{{ r.suffix }}</span>{% endif %}
+                        </td>
+                        <td data-label="Realized" class="text-end strat-money {{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
+                            {{ money(r.realized, 2, true) }}
+                        </td>
+                        <td data-label="Unrealized" class="text-end strat-money {% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
+                            {% if r.unrealized is none %}&mdash;{% else %}{{ money(r.unrealized, 2, true) }}{% endif %}
+                        </td>
+                        <td data-label="Detail" class="small text-muted">
+                            {% if r.type == 'Dividends' %}
+                            Cash dividends linked to holdings for this strategy
+                            {% elif r.type == 'Other' %}
+                            Other classifications (rolls, assigns, misc.)
+                            {% else %}
+                            Equity rounds vs settled option lifecycle
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% set _bd_tot = focus_breakdown_rows | sum(attribute='total') %}
+                <tfoot>
+                    <tr>
+                        <th data-label="Type">Total</th>
+                        <th data-label="Total return" class="text-end strat-money {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ money(_bd_tot, 2, true) }}</th>
+                        <th data-label="Realized"></th>
+                        <th data-label="Unrealized"></th>
+                        <th data-label="Detail"></th>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
-        <div class="col focus-stat" style="border-right: 1px solid #243049">
-            <div class="focus-stat-value">{{ "%.0f"|format(focus_strategy.avg_days) }}d</div>
-            <div class="focus-stat-label">Avg Hold</div>
-        </div>
-        {% if focus_strategy.premium_received %}
-        <div class="col focus-stat">
-            <div class="focus-stat-value {{ 'text-positive' if (focus_strategy.premium_received - focus_strategy.premium_paid) >= 0 else 'text-negative' }}">
-                {{ money(focus_strategy.premium_received - focus_strategy.premium_paid, 0) }}
-            </div>
-            <div class="focus-stat-label">{{ term('Net Premium') }}</div>
-        </div>
+        {% if focus_breakdown_fees | default(0) %}
+        <p class="strat-note" style="margin-top:.85rem;">
+            This included <strong>${{ "{:,.2f}".format(focus_breakdown_fees) }}</strong>
+            in broker-reported fees (commissions, contract and regulatory fees) —
+            already reflected in Realized above, not an additional cost.
+        </p>
+        {% endif %}
         {% endif %}
     </div>
-</div>
-
-{# Breakdown by type (mirrors Position Detail card) ─────────────── #}
-{% if focus_breakdown_rows %}
-<div class="data-section">
-    <div class="section-label">Breakdown by Type</div>
-    <p class="text-muted small mb-3">
-        Realized and unrealized are split using the warehouse&rsquo;s equity-vs-option classifications; dividends are cash dividends attributed alongside those positions.
-    </p>
-    <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Type</th>
-                    <th class="text-end">Total Return</th>
-                    <th class="text-end">{{ term('Realized') }}</th>
-                    <th class="text-end">{{ term('Unrealized') }}</th>
-                    <th data-m="hide">Detail</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in focus_breakdown_rows %}
-                <tr>
-                    <td><strong>{{ r.type }}</strong></td>
-                    <td class="text-end {{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-semibold">
-                        {{ money(r.total, 2, true) }}
-                        {% if r.suffix %}<span class="text-muted fw-normal ms-1 small">{{ r.suffix }}</span>{% endif %}
-                    </td>
-                    <td class="text-end {{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
-                        {{ money(r.realized, 2, true) }}
-                    </td>
-                    <td class="text-end {% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                        {% if r.unrealized is none %}
-                        &mdash;
-                        {% else %}
-                        {{ money(r.unrealized, 2, true) }}
-                        {% endif %}
-                    </td>
-                    <td class="small text-muted">
-                        {% if r.type == 'Dividends' %}
-                        Cash dividends linked to holdings for this strategy
-                        {% elif r.type == 'Other' %}
-                        Other classifications (rolls, assigns, misc.)
-                        {% else %}
-                        Equity rounds vs settled option lifecycle
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            {% set _bd_tot = focus_breakdown_rows | sum(attribute='total') %}
-            <tfoot>
-                <tr class="border-top">
-                    <th>Total</th>
-                    <th class="text-end {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ money(_bd_tot, 2, true) }}</th>
-                    <th colspan="3"></th>
-                </tr>
-            </tfoot>
-        </table>
-    </div>
-    {# Fee drag — informational only, deliberately NOT a row above (it
-       would double-subtract; broker fees are already netted into each
-       group's realized_pnl). Hidden when there's nothing to show. #}
-    {% if focus_breakdown_fees | default(0) %}
-    <p class="text-muted small mt-3 mb-0">
-        This included <strong>${{ "{:,.2f}".format(focus_breakdown_fees) }}</strong>
-        in broker-reported fees (commissions, contract &amp; regulatory fees) —
-        already reflected in Realized above, not an additional cost.
-    </p>
-    {% endif %}
-</div>
+</details>
 {% endif %}
 
-{# Insights #}
-{% if focus_insights %}
-<div class="mb-3">
-    {% for ins in focus_insights %}
-    <div class="obs-card {{ ins.type }}">{{ ins.text }}</div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{# Monthly P&L — last 12 months, compact. Win rate lives in the tooltip. #}
-{% if focus_trend_months and focus_trend_months|length >= 2 %}
-<div class="data-section">
-    <div class="section-label">Monthly P&amp;L <span style="text-transform:none; letter-spacing:0; font-weight:500; color:var(--ht-muted);"> · last 12 months</span></div>
-    <div class="trend-chart-wrap">
-        <canvas id="trendChart"></canvas>
-    </div>
-</div>
-{% endif %}
-
-{# DTE breakdown #}
-{% if focus_dte_breakdown %}
-<div class="data-section">
-    <div class="section-label">Performance by {{ term('DTE') }}</div>
-    {% for d in focus_dte_breakdown %}
-    <div class="dte-bar-row">
-        <div class="dte-label">{{ d.dte_bucket }}</div>
-        <div class="dte-bar-track">
-            {% if d.win_rate_pct is not none %}
-            {% set wr_class = 'good' if d.win_rate_pct >= 60 else ('bad' if d.win_rate_pct < 40 else 'mid') %}
-            <div class="dte-bar-fill {{ wr_class }}" style="width:{{ d.win_rate_pct }}%"></div>
-            {% endif %}
-        </div>
-        <div class="dte-stats">
-            {% if d.win_rate_pct is not none %}{{ "%.0f"|format(d.win_rate_pct) }}% WR{% endif %}
-            &middot; {{ d.num_trades }} trades
-            &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ money(d.total_pnl, 0, true) }}</span>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{# Concentration — unique to this strategy. Positions already lists lots. #}
-{% if focus_concentration and (focus_concentration.contributors or focus_concentration.drags) %}
-<div class="data-section">
-    <div class="section-label">What moves this strategy</div>
-    <p class="text-muted small mb-3">
-        Share of {{ focus_strategy.strategy }} P&amp;L by symbol (one row per name).
-        The full list is on
-        <a href="{{ scoped_url('positions', strategy=focus_strategy.strategy) }}">Positions</a>.
-    </p>
-    <div class="conc-grid">
-        {% if focus_concentration.contributors %}
-        <div>
-            <div class="conc-col-title">Largest contributors</div>
-            {% for r in focus_concentration.contributors %}
-            <a class="conc-row" href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
-                <div class="conc-share {% if r.share_pct is not none %}text-positive{% endif %}">
-                    {% if r.share_pct is not none %}{{ "%.0f"|format(r.share_pct) }}%{% else %}—{% endif %}
-                </div>
-                <div>
-                    <div class="conc-sym">{{ r.symbol }}</div>
-                    <div class="conc-meta">{{ r.status }}{% if r.num_trades %} · {{ r.num_trades }} trade{{ 's' if r.num_trades != 1 }}{% endif %}</div>
-                </div>
-                <div class="conc-pnl text-positive">+${{ "{:,.0f}".format(r.total_return) }}</div>
-            </a>
-            {% endfor %}
+{% if (focus_trend_months and focus_trend_months|length >= 2) or focus_dte_breakdown %}
+<details class="disclosure" id="strat-over-time">
+    <summary>
+        <span class="section-header">Over time</span>
+        <span class="disclosure-note">Monthly result{% if focus_dte_breakdown %} and {{ term('DTE') }}{% endif %}.</span>
+    </summary>
+    <div class="disclosure-body">
+        {% if focus_trend_months and focus_trend_months|length >= 2 %}
+        <div class="strat-block">
+            <h3 class="section-header">Monthly result</h3>
+            <p class="strat-note">Last 12 months. Win rate is in the bar tooltip.</p>
+            <div class="trend-chart-wrap">
+                <canvas id="trendChart"></canvas>
+            </div>
         </div>
         {% endif %}
-        {% if focus_concentration.drags %}
-        <div>
-            <div class="conc-col-title">Largest drags</div>
-            {% for r in focus_concentration.drags %}
-            <a class="conc-row" href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
-                <div class="conc-share text-negative">
-                    {% if r.share_pct is not none %}{{ "%.0f"|format(r.share_pct) }}%{% else %}—{% endif %}
+        {% if focus_dte_breakdown %}
+        <div class="strat-block">
+            <h3 class="section-header">By {{ term('DTE') }}</h3>
+            {% for d in focus_dte_breakdown %}
+            <div class="dte-bar-row">
+                <div class="dte-label">{{ d.dte_bucket }}</div>
+                <div class="dte-bar-track">
+                    {% if d.win_rate_pct is not none %}
+                    {% set wr_class = 'good' if d.win_rate_pct >= 60 else ('bad' if d.win_rate_pct < 40 else 'mid') %}
+                    <div class="dte-bar-fill {{ wr_class }}" style="width:{{ d.win_rate_pct }}%"></div>
+                    {% endif %}
                 </div>
-                <div>
-                    <div class="conc-sym">{{ r.symbol }}</div>
-                    <div class="conc-meta">{{ r.status }}{% if r.num_trades %} · {{ r.num_trades }} trade{{ 's' if r.num_trades != 1 }}{% endif %}</div>
+                <div class="dte-stats">
+                    {% if d.win_rate_pct is not none %}{{ "%.0f"|format(d.win_rate_pct) }}% win{% endif %}
+                    &middot; {{ d.num_trades }} trades
+                    &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ money(d.total_pnl, 0, true) }}</span>
                 </div>
-                <div class="conc-pnl text-negative">-${{ "{:,.0f}".format(r.total_return|abs) }}</div>
-            </a>
+            </div>
             {% endfor %}
         </div>
         {% endif %}
     </div>
-    <p class="small text-muted mb-0 mt-3">
-        {{ focus_strategy.population_label }} in this strategy ·
-        <a href="{{ scoped_url('positions', strategy=focus_strategy.strategy) }}">see all on Positions</a>
-    </p>
-</div>
+</details>
 {% endif %}
 
-{# Per-account breakdown #}
-{% if focus_accounts %}
-<div class="data-section">
-    <div class="section-label">By Account</div>
-    <table class="table table-sm align-middle mb-0 sym-table">
-        <thead>
-            <tr>
-                <th class="sortable" data-sort="str">Account</th>
-                <th class="sortable text-end" data-sort="num">Trades</th>
-                <th class="sortable text-end" data-sort="num">{{ term('Win Rate') }}</th>
-                <th class="sortable text-end" data-sort="num">Total Return</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for a in focus_accounts %}
-            <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none, _anchor='strategy-focus') }}">
-                {% set _acct = a.account | account_label(a.tenant_id) %}
-                <td class="fw-semibold" data-val="{{ _acct }}">{{ _acct }}</td>
-                <td class="text-end text-muted" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
-                <td class="text-end" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
-                <td class="text-end fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}" data-val="{{ a.total_return }}">
-                    {{ money(a.total_return, 2, true) }}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% endif %}
-
-<div class="mb-3">
-    <a href="{{ scoped_url('strategies') }}"
-       class="small text-muted">&larr; All strategies</a>
-</div>
-
-{% endif %}{# end focus detail #}
-
-{# ══════════════════════════════
-   STRATEGY CARDS
-   ══════════════════════════════ #}
-<div class="strat-cards">
-    {% for s in strategies %}
-    <a href="{{ scoped_url('strategies', strategy=s.strategy, _anchor='strategy-focus') }}"
-       class="strat-card {% if s.is_selected %}selected{% endif %}">
-        <div class="strat-card-header">
+{% if (focus_concentration and (focus_concentration.contributors or focus_concentration.drags)) or focus_accounts %}
+<details class="disclosure" id="strat-moves">
+    <summary>
+        <span class="section-header">What moves this strategy</span>
+        <span class="disclosure-note">Symbols and accounts.</span>
+    </summary>
+    <div class="disclosure-body">
+        {% if focus_concentration and (focus_concentration.contributors or focus_concentration.drags) %}
+        <p class="strat-note">
+            Share of {{ focus_strategy.strategy }} total return by symbol, one row per name.
+            The full list is on
+            <a href="{{ scoped_url('positions', strategy=focus_strategy.strategy) }}">Positions</a>.
+        </p>
+        <div class="conc-grid">
+            {% if focus_concentration.contributors %}
             <div>
-                <div class="strat-card-name">{{ s.strategy or 'Unclassified' }}</div>
-                <div class="strat-card-meta">
-                    {{ s.num_trades }} trades &middot;
-                    <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ s.population_label }}</span>
-                </div>
-            </div>
-            <span class="trend-badge {{ s.trend_signal }}">
-                {% if s.trend_signal == 'improving' %}&uarr; Improving
-                {% elif s.trend_signal == 'declining' %}&darr; Declining
-                {% elif s.trend_signal == 'new' %}New
-                {% else %}&harr; Stable{% endif %}
-            </span>
-        </div>
-        <div class="strat-card-stats">
-            <div>
-                <div class="sc-stat-label">{{ term('Win Rate') }}</div>
-                <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
-            </div>
-            <div>
-                <div class="sc-stat-label">Total Return</div>
-                <div class="sc-stat-value {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
-                    {{ money(s.total_return, 0, true) }}
-                </div>
-            </div>
-            {% if s.avg_days > 0 %}
-            <div>
-                <div class="sc-stat-label">Avg Hold</div>
-                <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>
-            </div>
-            {% endif %}
-        </div>
-        {% if s.sparkline %}
-        {% set _mo = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
-        {% set last = s.sparkline[-1] %}
-        <div class="month-strip">
-            <div class="month-marks">
-                {% for m in s.sparkline %}
-                <span class="month-mark {% if m.pnl > 0 %}up{% elif m.pnl < 0 %}down{% endif %}"
-                      title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {{ money(m.pnl, 0, true) }} ({{ m.trades }} trades{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
+                <div class="conc-col-title">Largest contributors</div>
+                {% for r in focus_concentration.contributors %}
+                <a class="conc-row" href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
+                    <div class="conc-share {% if r.share_pct is not none %}text-positive{% endif %}">
+                        {% if r.share_pct is not none %}{{ "%.0f"|format(r.share_pct) }}%{% else %}—{% endif %}
+                    </div>
+                    <div>
+                        <div class="conc-sym">{{ r.symbol }}</div>
+                        <div class="conc-meta">{{ r.status }}{% if r.num_trades %} · {{ r.num_trades }} trade{{ 's' if r.num_trades != 1 }}{% endif %}</div>
+                    </div>
+                    <div class="conc-pnl text-positive">+${{ "{:,.0f}".format(r.total_return) }}</div>
+                </a>
                 {% endfor %}
             </div>
-            <div class="month-latest">
-                <span class="month-latest-name">{{ _mo[last.month[-2:]|int] }}</span>
-                <span class="month-latest-amt {% if last.pnl > 0 %}up{% elif last.pnl < 0 %}down{% endif %}">{{ money(last.pnl, 0, true) }}</span>
+            {% endif %}
+            {% if focus_concentration.drags %}
+            <div>
+                <div class="conc-col-title">Largest drags</div>
+                {% for r in focus_concentration.drags %}
+                <a class="conc-row" href="{{ scoped_url('position_detail', symbol=r.symbol) }}">
+                    <div class="conc-share text-negative">
+                        {% if r.share_pct is not none %}{{ "%.0f"|format(r.share_pct) }}%{% else %}—{% endif %}
+                    </div>
+                    <div>
+                        <div class="conc-sym">{{ r.symbol }}</div>
+                        <div class="conc-meta">{{ r.status }}{% if r.num_trades %} · {{ r.num_trades }} trade{{ 's' if r.num_trades != 1 }}{% endif %}</div>
+                    </div>
+                    <div class="conc-pnl text-negative">-${{ "{:,.0f}".format(r.total_return|abs) }}</div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <p class="strat-lead" style="margin-top:.75rem;">
+            {{ focus_strategy.population_label }} in this strategy ·
+            <a href="{{ scoped_url('positions', strategy=focus_strategy.strategy) }}">see all on Positions</a>
+        </p>
+        {% endif %}
+
+        {% if focus_accounts %}
+        <div class="strat-block">
+            <h3 class="section-header">By account</h3>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 ht-stack" id="stratAcct">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="str">Account</th>
+                            <th class="sortable text-end" data-sort="num">Trades</th>
+                            <th class="sortable text-end" data-sort="num">{{ term('Win rate') }}</th>
+                            <th class="sortable text-end" data-sort="num">Total return</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in focus_accounts %}
+                        <tr data-href="{{ scoped_url('strategies', strategy=focus_strategy.strategy, tenant=a.tenant_id, tenants=none, _anchor='strategy-focus') }}">
+                            {% set _acct = a.account | account_label(a.tenant_id) %}
+                            <td class="fw-semibold" data-label="Account" data-val="{{ _acct }}">{{ _acct }}</td>
+                            <td class="text-end" data-label="Trades" data-val="{{ a.num_trades }}">{{ a.num_trades }}</td>
+                            <td class="text-end" data-label="Win rate" data-val="{{ a.win_rate if a.win_rate is not none else '' }}">{{ "%.0f%%"|format(a.win_rate) if a.win_rate is not none else "&mdash;"|safe }}</td>
+                            <td class="text-end strat-money fw-semibold {{ 'text-positive' if a.total_return >= 0 else 'text-negative' }}" data-label="Total return" data-val="{{ a.total_return }}">
+                                {{ money(a.total_return, 2, true) }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
         {% endif %}
-    </a>
-    {% endfor %}
+    </div>
+</details>
+{% endif %}
+
 </div>
+{% endif %}
 
-<p class="small text-muted">
-    Based on your full history.
-    For this week&rsquo;s breakdown, see
-    <a href="{{ scoped_url('weekly_review') }}">Overview</a>.
-</p>
-
-{% endif %}{# end strategies block #}
+{% endif %}
+</div>
 
 {% endblock %}
 
@@ -564,17 +587,31 @@
     const data = {{ focus_trend_months | tojson }}.slice(-12);
     const labels = data.map(d => d.month_label);
     const pnlData = data.map(d => d.pnl);
-
     const ctx = document.getElementById('trendChart');
-    if (!ctx) return;
+    const host = document.getElementById('strat-over-time');
+    if (!ctx || !host || !window.Chart) return;
+    var built = false;
 
-    new Chart(ctx, {
+    function resizeCharts(root) {
+        if (!window.Chart || !Chart.getChart) return;
+        (root || document).querySelectorAll('canvas').forEach(function (canvas) {
+            var chart = Chart.getChart(canvas);
+            if (chart) chart.resize();
+        });
+    }
+    function build() {
+        if (built) {
+            resizeCharts(host);
+            return;
+        }
+        built = true;
+        new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
             datasets: [{
                 data: pnlData,
-                backgroundColor: pnlData.map(v => v >= 0 ? htColor('--gain') : htColor('--loss')),
+                backgroundColor: pnlData.map(function (v) { return v >= 0 ? htColor('--gain') : htColor('--loss'); }),
                 borderRadius: 3,
                 categoryPercentage: 0.75,
                 barPercentage: 0.85,
@@ -588,11 +625,9 @@
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        label: function(ctx) {
-                            const row = data[ctx.dataIndex] || {};
-                            const v = ctx.parsed.y;
-                            const pnl = window.htMoney(v, 0, true);
-                            const bits = ['P&L ' + pnl];
+                        label: function(c) {
+                            const row = data[c.dataIndex] || {};
+                            const bits = ['P&L ' + window.htMoney(c.parsed.y, 0, true)];
                             if (row.win_rate != null) bits.push(row.win_rate + '% win');
                             if (row.trades != null) bits.push(row.trades + ' trade' + (row.trades === 1 ? '' : 's'));
                             return bits.join(' · ');
@@ -620,6 +655,12 @@
             }
         }
     });
+    }
+    host.addEventListener('toggle', function () {
+        if (!host.open) return;
+        requestAnimationFrame(function () { build(); });
+    });
+    if (host.open) build();
 })();
 </script>
 {% endif %}
