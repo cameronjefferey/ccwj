@@ -588,13 +588,17 @@ or uploaded a CSV, and which button was clicked.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)
-**Status: Working. The mirror across every symbol.**
+**Status: Working. One story: headline, then right now, then the rest behind disclosures.**
 
 Runs the position-review engine over the user's whole history and folds the
-per-symbol fingerprints into one profile. The page opens with a recurring
-**On the clock / Last week** loop (`app/story_loop.py`) so the profile is
-worth opening again: on the clock lists open options inside 14d (spreads
-grouped) with the live mark (`+$450 · 3d`). Hero "currently held" is unique
+per-symbol fingerprints into one profile. The headline is the identity
+sentence plus symbols, trade days, currently held, and since. The main
+card is the recurring **On the clock / Last week** loop (`app/story_loop.py`)
+in one card, so the profile is worth opening again: on the clock lists
+open options inside 14d (spreads grouped) with the live mark (`+$450 · 3d`).
+Profile summary, execution review (with the early-exit swings), notable
+positions, performance by style, and year by year are closed disclosures.
+**Collected** on the income book is premium received. Hero "currently held" is unique
 Open symbols from `positions_summary` (same grain as Overview's strip), not
 the review-engine `open_stories` count. Each watch runs the same
 insight picker (`_collect_watch_insights` / `_pick_watch_insight`):
@@ -606,8 +610,9 @@ compose when both independently clear. Numbers are never invented;
 "naked call" only when `positions_summary` has an open Naked Call and
 no covered-call label. Last week
 reports fills/rolls/premium vs the median completed week and whether that
-looked like them. Lifetime Profile Summary, Execution Review, notable
-positions, style scoreboard, and year-by-year rows follow. Details in
+looked like them. Those two sit in the one Right now card. The lifetime
+books, execution review, notable positions, style scoreboard, and
+year-by-year rows are the disclosures under it. Details in
 "App-shell UX layer" under Code Organization.
 
 ### Positions List (`/positions`)
@@ -827,11 +832,17 @@ gated on `EARNINGS_FOLLOWER_ENABLED`, cross-links to the EarningsFollower
 tandem product.
 
 ### AI Insights (`/insights`)
-**Status: Working. Multi-model narrative (Gemini + Claude).**
+**Status: Working. One story: headline, then the patterns, then the rest behind disclosures.**
 
 Reads `positions_summary` mart plus coaching signals, builds a deterministic
 brief, then a model narrates it. Follows ARCHITECTURE.md: AI interprets,
-doesn't compute.
+doesn't compute. The headline is the exit-timing takeaway (left on the
+table, giveback, days past peak, coverage). Patterns are the main card.
+Exit timing by strategy and recent closes share one disclosure. The
+write-up (generate, regenerate, model) and Ask AI stay on the page; a
+saved narration starts closed. Links into a position stay on the recent
+closes. "Realized" is the close result. "Given back" is the gap to the
+peak, not a second P&amp;L.
 
 Users pick a model from the dropdown: **Included** (Flash, Haiku) vs
 **HappyTrader AI** (Gemini Pro, Sonnet, Opus — `tier="paid"` in
@@ -1590,7 +1601,8 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   `stg_split_events`, all through `_bq_parallel`; trades/divs/summary
   tenant-scoped in SQL AND DataFrame-filtered, pinned in
   `tests/test_tenant_filtered_queries_carry_tenant_id.py`), then folds
-  the per-symbol fingerprints into one profile. Recurring loop first
+  the per-symbol fingerprints into one profile. The page is a headline,
+  then one Right now card for the recurring loop
   (`app/story_loop.py`, `compose_story_loop`): ON THE CLOCK is open options
   expiring within 14d (same-tenant complementary legs grouped like
   Execution Review). Hero currently-held is unique Open symbols from
