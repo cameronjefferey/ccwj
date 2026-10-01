@@ -152,7 +152,27 @@ def advisory_lock(key: int):
             pass
 
 
+def _params_include_ephemeral_demo(params: Iterable[Any]) -> bool:
+    """True when a query is keyed by a public demo session id.
+
+    Those ids are not ``users.id`` values. Refusing them here means a demo
+    session cannot read or write another user's Postgres rows even if a
+    caller forgets to special-case the id.
+    """
+    try:
+        from app.demo_guard import is_ephemeral_demo_id
+    except Exception:
+        return False
+    for value in params or ():
+        if is_ephemeral_demo_id(value):
+            return True
+    return False
+
+
 def fetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict]:
+    if _params_include_ephemeral_demo(params):
+        return []
+
     def _go():
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -163,6 +183,9 @@ def fetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict]:
 
 
 def fetch_one(sql: str, params: Iterable[Any] = ()) -> Optional[dict]:
+    if _params_include_ephemeral_demo(params):
+        return None
+
     def _go():
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -173,6 +196,9 @@ def fetch_one(sql: str, params: Iterable[Any] = ()) -> Optional[dict]:
 
 
 def execute(sql: str, params: Iterable[Any] = ()) -> None:
+    if _params_include_ephemeral_demo(params):
+        return None
+
     def _go():
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -183,6 +209,8 @@ def execute(sql: str, params: Iterable[Any] = ()) -> None:
 
 def execute_returning(sql: str, params: Iterable[Any] = ()) -> Optional[dict]:
     """Run an INSERT/UPDATE/DELETE ... RETURNING and return the first row."""
+    if _params_include_ephemeral_demo(params):
+        return None
 
     def _go():
         with get_conn() as conn:

@@ -1497,9 +1497,13 @@ def _create_manual_csv_tenant(user_id, account_name):
     # the old ``manual:<label>`` value produced one globally shared tenant_id,
     # so a second user's same-named upload could be written into the first
     # user's warehouse partition.
-    manual_uuid = f"manual:{int(user_id)}:{account_name}"
+    from app.demo_guard import numeric_user_id
+    uid = numeric_user_id(user_id)
+    if uid is None:
+        raise ValueError("user_id is required")
+    manual_uuid = f"manual:{uid}:{account_name}"
     return get_or_create_broker_tenant(
-        user_id=int(user_id),
+        user_id=uid,
         broker_slug=MANUAL_BROKER_SLUG,
         broker_uuid=manual_uuid,
         account_name=account_name,
@@ -1590,7 +1594,9 @@ def _restamp_seed_identity(df, account_name, user_id, tenant_id, account_col="Ac
     if account_col in out.columns:
         out[account_col] = account_name
     if "user_id" in out.columns:
-        out["user_id"] = "" if user_id is None else int(user_id)
+        from app.demo_guard import numeric_user_id
+        uid = numeric_user_id(user_id)
+        out["user_id"] = "" if uid is None else uid
     if "tenant_id" in out.columns:
         out["tenant_id"] = "" if tenant_id is None else str(tenant_id).strip()
     return out
@@ -1635,7 +1641,9 @@ def _prepare_seed_df(
         for c in [col for col in out.columns if str(col).lower() == sentinel]:
             out.drop(columns=[c], inplace=True)
     out.insert(0, account_col, account_name)
-    out.insert(1, "user_id", "" if user_id is None else int(user_id))
+    from app.demo_guard import numeric_user_id
+    uid = numeric_user_id(user_id)
+    out.insert(1, "user_id", "" if uid is None else uid)
     out.insert(
         2,
         "tenant_id",
@@ -1790,7 +1798,10 @@ def merge_and_push_seeds(
     if tenant_id is None or not str(tenant_id).strip():
         return False, "tenant_id is required.", 0, 0, None, False
 
-    user_id_int = int(user_id)
+    from app.demo_guard import numeric_user_id
+    user_id_int = numeric_user_id(user_id)
+    if user_id_int is None:
+        return False, "user_id is required.", 0, 0, None, False
     tenant_id_str = str(tenant_id).strip()
     snapshot_superseded = False
     if current_df is not None and snapshot_generation is not None:
@@ -1890,8 +1901,12 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
             account_id = e.get("snapshot_account_id")
             if not account_id:
                 continue
+            from app.demo_guard import numeric_user_id
+            snap_uid = numeric_user_id(e.get("user_id"))
+            if snap_uid is None:
+                continue
             if not snaptrade_snapshot_generation_is_current(
-                int(e["user_id"]), account_id, e["snapshot_generation"],
+                snap_uid, account_id, e["snapshot_generation"],
             ):
                 app.logger.info(
                     "Discarding superseded deferred SnapTrade snapshot "
@@ -1919,7 +1934,10 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     per_path = OrderedDict()  # path -> list of (account_name, tenant_id_str, df, cols)
     prepared_counts = []      # (entry, history_rows, current_rows)
     for e in valid:
-        user_id_int = int(e["user_id"])
+        from app.demo_guard import numeric_user_id
+        user_id_int = numeric_user_id(e["user_id"])
+        if user_id_int is None:
+            return False, "user_id is required.", None, False, 0
         tenant_id_str = str(e["tenant_id"]).strip()
         specs, hr, cr = _normalize_account_seed_frames(
             e["account_name"], e.get("history_df"), e["current_df"],
@@ -1956,10 +1974,14 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
         return False, str(exc), None, False, 0
 
     # Per-account bookkeeping (idempotent), matching the single-push path.
+    from app.demo_guard import numeric_user_id
     for e, hr, cr in prepared_counts:
-        add_account_for_user(int(e["user_id"]), e["account_name"])
+        uid = numeric_user_id(e["user_id"])
+        if uid is None:
+            return False, "user_id is required.", None, False, 0
+        add_account_for_user(uid, e["account_name"])
         record_upload(
-            int(e["user_id"]), e["account_name"], hr, cr,
+            uid, e["account_name"], hr, cr,
             tenant_id=e.get("tenant_id"),
         )
 
@@ -1998,10 +2020,11 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
     if not ok:
         return False, err, {}, None
 
-    try:
-        target = str(int(user_id))
-    except (TypeError, ValueError):
+    from app.demo_guard import numeric_user_id
+    uid = numeric_user_id(user_id)
+    if uid is None:
         return False, f"Invalid user_id: {user_id!r}", {}, None
+    target = str(uid)
 
     try:
         # Include disabled/disconnected tenants: deleting an account must
@@ -2012,7 +2035,7 @@ def purge_user_id_from_seeds(user_id, *, commit_message):
         tenant_ids = {
             str(row.get("tenant_id") or "").strip()
             for row in (
-                get_broker_tenants_for_user(int(user_id), include_inactive=True)
+                get_broker_tenants_for_user(uid, include_inactive=True)
                 or []
             )
             if str(row.get("tenant_id") or "").strip()
@@ -2724,6 +2747,7 @@ def sync_processing():
 
 @app.route("/api/sync/overview-ready")
 @login_required
+@limiter.limit("30 per minute")
 def api_sync_overview_ready():
     """Poll for whether this user's Overview can actually render.
 
@@ -2754,7 +2778,10 @@ def unclaim_account():
     tenant_id = (request.form.get("unclaim_tenant_id") or "").strip()
     if tenant_id:
         row = get_broker_tenant(tenant_id)
-        if not row or int(row.get("user_id") or -1) != int(current_user.id):
+        from app.demo_guard import numeric_user_id
+        viewer_id = numeric_user_id(getattr(current_user, "id", None))
+        owner_id = numeric_user_id(row.get("user_id")) if row else None
+        if not row or viewer_id is None or owner_id is None or owner_id != viewer_id:
             flash("That account is not on your profile.", "danger")
             return redirect(url_for("upload"))
         slug = (row.get("broker_slug") or "").strip().lower()

@@ -138,12 +138,12 @@ def earnings_follower_url(symbol=None, theme=None, tab=None, sector=None, subsec
 # Demo user write-protection
 # ---------------------------------------------------------------------------
 #
-# The ``demo`` account is shared: anyone hitting ``/demo/start`` without
-# signing up is logged in as the same Postgres user. That's fine for read
-# pages (every visitor sees the same canned weekly review, mirror score,
-# strategies, insights) but every write would let one stranger overwrite
-# what the next stranger sees: rename the demo profile, regenerate insights,
-# replace the seed data by uploading a different broker's export, etc.
+# Public ``/demo/start`` now signs the visitor in as ``demo-session:<token>``,
+# not the Postgres ``demo`` row. ``is_demo_user`` is still true for that
+# session (username ``demo``) so every existing write check keeps blocking
+# it. The warehouse mirror is shared and read-only; the Postgres identity
+# is not. A leftover cookie for the shared ``demo`` user is logged out on
+# app pages.
 #
 # To keep the demo a faithful, predictable showcase we block writes server-
 # side. Each route that mutates per-user state calls ``demo_block_writes``

@@ -391,10 +391,20 @@ def test_bridge_404_when_flag_off():
     "/\\evil.com",
     "http://evil.com/path",
 ])
-def test_demo_start_rejects_offsite_next(hostile):
+def test_demo_start_rejects_offsite_next(hostile, monkeypatch):
     """?next= must never become an open redirect out of the product."""
     from app import app
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
     with app.test_client() as c:
-        r = c.get(f"/demo/start?next={hostile}", follow_redirects=False)
+        page = c.get(f"/demo/start?next={hostile}", follow_redirects=False)
+        assert page.status_code == 200
+        body = page.get_data(as_text=True)
+        assert 'name="next"' not in body
+        r = c.post(
+            "/demo/start",
+            data={"next": hostile},
+            follow_redirects=False,
+        )
         loc = r.headers.get("Location", "")
         assert "evil.com" not in loc
+        assert r.status_code == 302

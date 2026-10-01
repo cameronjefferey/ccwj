@@ -1245,6 +1245,10 @@ class User(UserMixin):
         self.email = email
 
     def check_password(self, password):
+        # The public demo username cannot authenticate with a password.
+        # The login route rejects it too; this covers every other check.
+        if (self.username or "").lower() == "demo":
+            return False
         return check_password_hash(self.password_hash, password)
 
     @staticmethod
@@ -1352,7 +1356,21 @@ def delete_user(user_id):
 # User <-> Account association
 # ------------------------------------------------------------------
 
+def _is_ephemeral_demo_user(user_id) -> bool:
+    from app.demo_guard import is_ephemeral_demo_id
+    return is_ephemeral_demo_id(user_id)
+
+
+def _postgres_user_id(user_id):
+    """Numeric ``users.id``, or None for a demo session / non-numeric id."""
+    from app.demo_guard import numeric_user_id
+    return numeric_user_id(user_id)
+
+
 def get_accounts_for_user(user_id):
+    if _is_ephemeral_demo_user(user_id):
+        from app.demo_guard import DEMO_ACCOUNT_NAME
+        return [DEMO_ACCOUNT_NAME]
     rows = fetch_all(
         "SELECT account_name FROM user_accounts WHERE user_id = %s ORDER BY account_name",
         (user_id,),
@@ -1453,7 +1471,8 @@ def get_or_create_broker_account(
     let an empty label overwrite a previously-captured one (broker
     APIs occasionally ship empty nicknames mid-session).
     """
-    if user_id is None:
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         raise ValueError("user_id is required")
     slug = (broker_slug or "").strip().lower()
     if not slug:
@@ -1468,7 +1487,7 @@ def get_or_create_broker_account(
     row = fetch_one(
         "SELECT id, account_name FROM broker_accounts "
         "WHERE user_id = %s AND broker_slug = %s AND broker_external_id = %s",
-        (int(user_id), slug, ext),
+        (uid, slug, ext),
     )
     if row:
         if label and label != (row.get("account_name") or ""):
@@ -1486,7 +1505,7 @@ def get_or_create_broker_account(
         "ON CONFLICT (user_id, broker_slug, broker_external_id) "
         "DO UPDATE SET updated_at = NOW() "
         "RETURNING id",
-        (int(user_id), slug, ext, label),
+        (uid, slug, ext, label),
     )
     return int(new_row["id"])
 
@@ -1509,24 +1528,26 @@ def get_broker_account_ids_for_user(user_id):
     BigQuery query to the user's broker_account_ids. Until then it's
     only used in tests / diagnostics.
     """
-    if user_id is None:
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         return []
     rows = fetch_all(
         "SELECT id FROM broker_accounts WHERE user_id = %s ORDER BY id",
-        (int(user_id),),
+        (uid,),
     )
     return [int(r["id"]) for r in rows]
 
 
 def get_broker_accounts_for_user(user_id):
     """Return full broker_accounts rows for this user (display use)."""
-    if user_id is None:
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         return []
     return fetch_all(
         "SELECT id, user_id, broker_slug, broker_external_id, account_name, "
         "created_at, updated_at FROM broker_accounts "
         "WHERE user_id = %s ORDER BY id",
-        (int(user_id),),
+        (uid,),
     )
 
 
@@ -1586,7 +1607,8 @@ def get_or_create_broker_tenant(
     nicknames mid-session and we don't want them to overwrite the
     real label.
     """
-    if user_id is None:
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         raise ValueError("user_id is required")
     tenant_id = build_tenant_id(broker_slug, broker_uuid)
     slug = (broker_slug or "").strip().lower()
@@ -1606,7 +1628,7 @@ def get_or_create_broker_tenant(
         (tenant_id,),
     )
     if row:
-        if int(row["user_id"]) != int(user_id):
+        if int(row["user_id"]) != uid:
             raise ValueError(
                 "tenant_id is already owned by another user; refusing to "
                 "reuse a cross-user warehouse boundary"
@@ -1651,7 +1673,7 @@ def get_or_create_broker_tenant(
         "ON CONFLICT (tenant_id) DO UPDATE SET updated_at = NOW() "
         "WHERE broker_tenants.user_id = EXCLUDED.user_id",
         (
-            tenant_id, int(user_id), slug, uuid_part, label,
+            tenant_id, uid, slug, uuid_part, label,
             mask, broker_lbl, institution_id, snap_conn,
         ),
     )
@@ -1663,7 +1685,7 @@ def get_or_create_broker_tenant(
         "SELECT user_id FROM broker_tenants WHERE tenant_id = %s",
         (tenant_id,),
     )
-    if not owner or int(owner["user_id"]) != int(user_id):
+    if not owner or int(owner["user_id"]) != uid:
         raise ValueError(
             "tenant_id ownership could not be established; refusing to "
             "write user data"
@@ -1687,7 +1709,8 @@ def update_broker_tenant_display_nickname(user_id, tenant_id, nickname):
     Scoped by ``user_id`` so one tenant cannot have their nickname
     overwritten by an admin or another user calling this directly.
     """
-    if user_id is None or not tenant_id:
+    uid = _postgres_user_id(user_id)
+    if uid is None or not tenant_id:
         return False
     label = (nickname or "").strip()
     if len(label) > _MAX_SNAPTRADE_NICKNAME_LEN:
@@ -1697,7 +1720,7 @@ def update_broker_tenant_display_nickname(user_id, tenant_id, nickname):
         execute(
             "UPDATE broker_tenants SET display_nickname = %s, updated_at = NOW() "
             "WHERE tenant_id = %s AND user_id = %s",
-            (value, str(tenant_id), int(user_id)),
+            (value, str(tenant_id), uid),
         )
         return True
     except Exception as exc:
@@ -1757,15 +1780,24 @@ def get_tenant_ids_for_user(user_id):
     connection is still excluded until the user re-authenticates.
 
     Returns ``[]`` for None / unknown user / no connections.
+
+    A public demo session is not a ``users.id``. It can read only the
+    shared mirror tenant.
     """
     if user_id is None:
+        return []
+    if _is_ephemeral_demo_user(user_id):
+        from app.demo_guard import DEMO_TENANT_ID
+        return [DEMO_TENANT_ID]
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         return []
     rows = fetch_all(
         "SELECT tenant_id FROM broker_tenants "
         "WHERE user_id = %s "
         "AND connection_status IN ('active', 'disconnected') "
         "ORDER BY created_at",
-        (int(user_id),),
+        (uid,),
     )
     return [r["tenant_id"] for r in rows]
 
@@ -1780,6 +1812,12 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
     """
     if user_id is None:
         return []
+    if _is_ephemeral_demo_user(user_id):
+        from app.demo_guard import demo_tenant_row
+        return [demo_tenant_row()]
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        return []
     sql = (
         "SELECT tenant_id, user_id, broker_slug, broker_uuid, "
         "account_name, account_mask, broker_label, institution_account_id, "
@@ -1791,7 +1829,7 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
     if not include_inactive:
         sql += " AND connection_status IN ('active', 'disconnected')"
     sql += " ORDER BY created_at"
-    return fetch_all(sql, (int(user_id),))
+    return fetch_all(sql, (uid,))
 
 
 ACCOUNT_GROUP_NAME_MAX = 40
@@ -1813,6 +1851,11 @@ def list_account_groups(user_id):
     """Groups for one user, each with member ``tenant_id``s. Ordered by name."""
     if user_id is None:
         return []
+    if _is_ephemeral_demo_user(user_id):
+        return []
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        return []
     rows = fetch_all(
         "SELECT g.id, g.name, "
         "COALESCE(ARRAY_AGG(m.tenant_id) FILTER (WHERE m.tenant_id IS NOT NULL), "
@@ -1822,7 +1865,7 @@ def list_account_groups(user_id):
         "WHERE g.user_id = %s "
         "GROUP BY g.id, g.name "
         "ORDER BY LOWER(g.name), g.id",
-        (int(user_id),),
+        (uid,),
     ) or []
     out = []
     for row in rows:
@@ -1841,18 +1884,21 @@ def list_account_groups(user_id):
 
 def create_account_group(user_id, name):
     """Insert a group. Returns the new row. Raises ValueError on bad/dup name."""
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        raise ValueError("user_id is required")
     cleaned = _norm_account_group_name(name)
     existing = fetch_one(
         "SELECT id FROM account_groups "
         "WHERE user_id = %s AND LOWER(name) = LOWER(%s)",
-        (int(user_id), cleaned),
+        (uid, cleaned),
     )
     if existing:
         raise ValueError("You already have a group with that name.")
     row = execute_returning(
         "INSERT INTO account_groups (user_id, name) VALUES (%s, %s) "
         "RETURNING id, name",
-        (int(user_id), cleaned),
+        (uid, cleaned),
     )
     if not row:
         raise ValueError("Could not create the group.")
@@ -1861,47 +1907,56 @@ def create_account_group(user_id, name):
 
 def rename_account_group(user_id, group_id, name):
     """Rename a group the user owns. Raises ValueError on bad/dup name."""
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        raise ValueError("user_id is required")
     cleaned = _norm_account_group_name(name)
     owned = fetch_one(
         "SELECT id FROM account_groups WHERE id = %s AND user_id = %s",
-        (int(group_id), int(user_id)),
+        (int(group_id), uid),
     )
     if not owned:
         raise ValueError("That group isn't on your account.")
     clash = fetch_one(
         "SELECT id FROM account_groups "
         "WHERE user_id = %s AND LOWER(name) = LOWER(%s) AND id <> %s",
-        (int(user_id), cleaned, int(group_id)),
+        (uid, cleaned, int(group_id)),
     )
     if clash:
         raise ValueError("You already have a group with that name.")
     execute(
         "UPDATE account_groups SET name = %s WHERE id = %s AND user_id = %s",
-        (cleaned, int(group_id), int(user_id)),
+        (cleaned, int(group_id), uid),
     )
     return cleaned
 
 
 def delete_account_group(user_id, group_id):
     """Drop a group the user owns (members cascade). Returns True if a row died."""
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        return False
     owned = fetch_one(
         "SELECT id FROM account_groups WHERE id = %s AND user_id = %s",
-        (int(group_id), int(user_id)),
+        (int(group_id), uid),
     )
     if not owned:
         return False
     execute(
         "DELETE FROM account_groups WHERE id = %s AND user_id = %s",
-        (int(group_id), int(user_id)),
+        (int(group_id), uid),
     )
     return True
 
 
 def set_account_group_members(user_id, group_id, tenant_ids):
     """Replace membership. Unknown / unowned tenant_ids are dropped."""
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        raise ValueError("user_id is required")
     owned = fetch_one(
         "SELECT id FROM account_groups WHERE id = %s AND user_id = %s",
-        (int(group_id), int(user_id)),
+        (int(group_id), uid),
     )
     if not owned:
         raise ValueError("That group isn't on your account.")
@@ -1949,12 +2004,17 @@ def tenant_ids_for_groups(user_id, group_ids):
         ids.append(gid)
     if not ids or user_id is None:
         return [], []
+    if _is_ephemeral_demo_user(user_id):
+        return [], []
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        return [], []
     placeholders = ",".join(["%s"] * len(ids))
     rows = fetch_all(
         f"SELECT g.id, m.tenant_id FROM account_groups g "
         f"LEFT JOIN account_group_members m ON m.group_id = g.id "
         f"WHERE g.user_id = %s AND g.id IN ({placeholders})",
-        (int(user_id), *ids),
+        (uid, *ids),
     ) or []
     matched = []
     matched_seen = set()
@@ -2025,6 +2085,9 @@ def reactivate_snaptrade_tenant(
     The tenant key itself never changes, preserving warehouse and account-group
     continuity while transport account/authorization UUIDs rotate.
     """
+    uid = _postgres_user_id(user_id)
+    if uid is None:
+        raise ValueError("SnapTrade tenant ownership could not be established")
     row = execute_returning(
         "UPDATE broker_tenants SET "
         "account_mask = COALESCE(account_mask, NULLIF(%s, '')), "
@@ -2043,7 +2106,7 @@ def reactivate_snaptrade_tenant(
             (institution_account_id or "").strip(),
             (snaptrade_connection_id or "").strip(),
             str(tenant_id),
-            int(user_id),
+            uid,
             (institution_account_id or "").strip(),
             (institution_account_id or "").strip(),
         ),
@@ -2071,7 +2134,8 @@ def get_broken_broker_tenants(user_id):
     template can render the same ``display_nickname or account_name``
     label.
     """
-    if user_id is None:
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         return []
     try:
         return fetch_all(
@@ -2079,7 +2143,7 @@ def get_broken_broker_tenants(user_id):
             "connection_broken_at FROM broker_tenants "
             "WHERE user_id = %s AND connection_status != 'active' "
             "ORDER BY created_at",
-            (int(user_id),),
+            (uid,),
         )
     except Exception as exc:
         _log.warning("get_broken_broker_tenants failed: %s", exc)
@@ -3051,6 +3115,8 @@ def get_user_profile(user_id):
     Return profile row dict. Never raises: if user_profiles is missing on a
     stale database, returns defaults so login and Weekly Review still work.
     """
+    if _is_ephemeral_demo_user(user_id):
+        return _default_profile_row(user_id)
     try:
         ensure_user_profile(user_id)
         row = fetch_one(
@@ -3347,6 +3413,8 @@ REVIEW_VISIT_PROMOTE_GAP = _timedelta(minutes=30)
 
 def get_review_visit(user_id):
     """Return {'last_visit_at': dt, 'prev_visit_at': dt} or None if never visited."""
+    if _is_ephemeral_demo_user(user_id):
+        return None
     try:
         row = fetch_one(
             "SELECT last_visit_at, prev_visit_at FROM user_review_visits WHERE user_id = %s",
@@ -3370,6 +3438,8 @@ def bump_review_visit(user_id, now):
     Returns the row state BEFORE the bump, so the route can use
     prior['last_visit_at'] as the anchor to diff against.
     """
+    if _is_ephemeral_demo_user(user_id):
+        return None
     prior = get_review_visit(user_id)
     try:
         if prior is None:
@@ -3419,7 +3489,8 @@ def add_position_leg_tag(user_id, tenant_id, symbol, leg_open_date, tag):
     """Attach a tag to a leg. Idempotent (ON CONFLICT DO NOTHING). Returns the
     normalized tag on success, or None if the input was empty/invalid."""
     norm = _normalize_leg_tag(tag)
-    if user_id is None or not tenant_id or not symbol or not leg_open_date or not norm:
+    uid = _postgres_user_id(user_id)
+    if uid is None or not tenant_id or not symbol or not leg_open_date or not norm:
         return None
     try:
         execute(
@@ -3428,7 +3499,7 @@ def add_position_leg_tag(user_id, tenant_id, symbol, leg_open_date, tag):
                VALUES (%s, %s, %s, %s, %s)
                ON CONFLICT (user_id, tenant_id, symbol, leg_open_date, tag)
                DO NOTHING""",
-            (int(user_id), str(tenant_id), str(symbol).strip().upper(),
+            (uid, str(tenant_id), str(symbol).strip().upper(),
              str(leg_open_date)[:10], norm),
         )
         return norm
@@ -3441,14 +3512,15 @@ def remove_position_leg_tag(user_id, tenant_id, symbol, leg_open_date, tag):
     """Remove one tag from one leg. Scoped by user_id so a user can only touch
     their own tags."""
     norm = _normalize_leg_tag(tag)
-    if user_id is None or not norm:
+    uid = _postgres_user_id(user_id)
+    if uid is None or not norm:
         return False
     try:
         execute(
             """DELETE FROM position_leg_tags
                WHERE user_id = %s AND tenant_id = %s AND symbol = %s
                  AND leg_open_date = %s AND tag = %s""",
-            (int(user_id), str(tenant_id), str(symbol).strip().upper(),
+            (uid, str(tenant_id), str(symbol).strip().upper(),
              str(leg_open_date)[:10], norm),
         )
         return True
@@ -3461,9 +3533,10 @@ def get_leg_tags_for_symbol(user_id, symbol, tenant_ids=None):
     """Tag rows for one symbol (Position Detail page). Optionally restrict to a
     set of tenant_ids (the in-scope accounts). Returns list of dict rows with
     tenant_id, leg_open_date, tag."""
-    if user_id is None or not symbol:
+    uid = _postgres_user_id(user_id)
+    if uid is None or not symbol:
         return []
-    params = [int(user_id), str(symbol).strip().upper()]
+    params = [uid, str(symbol).strip().upper()]
     sql = (
         "SELECT tenant_id, leg_open_date, tag "
         "FROM position_leg_tags WHERE user_id = %s AND symbol = %s"
@@ -3485,9 +3558,10 @@ def get_leg_tags_for_symbol(user_id, symbol, tenant_ids=None):
 def get_all_leg_tags_for_user(user_id, tenant_ids=None):
     """All of a user's leg tag rows (for reporting joins). Optionally restrict
     to a set of tenant_ids."""
-    if user_id is None:
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         return []
-    params = [int(user_id)]
+    params = [uid]
     sql = (
         "SELECT tenant_id, symbol, leg_open_date, tag "
         "FROM position_leg_tags WHERE user_id = %s"
@@ -3508,13 +3582,14 @@ def get_all_leg_tags_for_user(user_id, tenant_ids=None):
 
 def get_distinct_tags_for_user(user_id):
     """Sorted distinct tag labels for a user (autocomplete + filter dropdown)."""
-    if user_id is None:
+    uid = _postgres_user_id(user_id)
+    if uid is None:
         return []
     try:
         rows = fetch_all(
             "SELECT DISTINCT tag FROM position_leg_tags WHERE user_id = %s "
             "ORDER BY tag",
-            (int(user_id),),
+            (uid,),
         )
         return [r["tag"] for r in rows]
     except Exception as exc:
@@ -3527,7 +3602,14 @@ def get_distinct_tags_for_user(user_id):
 # ------------------------------------------------------------------
 
 def is_admin(username):
-    """Check if a username is in the ADMIN_USERS environment variable."""
+    """Check if a username is in the ADMIN_USERS environment variable.
+
+    ``demo`` is never an admin. The public demo used to sign every visitor
+    in as that username, and admin is decided by username alone — listing
+    ``demo`` in ``ADMIN_USERS`` would have made those sessions operators.
+    """
+    if not username or username.lower() == "demo":
+        return False
     admin_env = os.environ.get("ADMIN_USERS", "")
     if not admin_env:
         return False
@@ -3565,14 +3647,46 @@ def seed_users_from_env():
 DEMO_ACCOUNT = "Demo Account"
 
 
+def _unusable_demo_password() -> str:
+    """A secret that is hashed and then discarded. Nobody can type it."""
+    return secrets.token_urlsafe(48)
+
+
+def _is_dedicated_demo_row(user) -> bool:
+    """The public demo account, not a person who registered as ``demo``.
+
+    Dedicated when the username is ``demo`` and the row has no email
+    (this function creates it that way; signup always stores one), or
+    when this user owns tenant ``demo:demo-account``.
+    """
+    if user is None or (getattr(user, "username", "") or "").lower() != "demo":
+        return False
+    if not (getattr(user, "email", None) or "").strip():
+        return True
+    tenant = get_broker_tenant(build_tenant_id(DEMO_BROKER_SLUG, "demo-account"))
+    if not tenant or tenant.get("user_id") is None:
+        return False
+    try:
+        return int(tenant["user_id"]) == int(user.id)
+    except (TypeError, ValueError):
+        return False
+
+
 def ensure_demo_user():
     """
     Create the demo user and link to the Demo Account if not already set up.
-    Demo credentials: demo / demo123
+
+    There is no demo password. On create, and on every startup when the
+    existing row is the dedicated demo account, the stored hash is a
+    fresh random secret that is never shown. Password login for this
+    username is refused in the login route either way.
     """
     demo = User.get_by_username("demo")
     if demo is None:
-        User.create("demo", "demo123")
+        User.create("demo", _unusable_demo_password())
+        demo = User.get_by_username("demo")
+    elif _is_dedicated_demo_row(demo):
+        User.update_password(demo.id, _unusable_demo_password())
         demo = User.get_by_username("demo")
     if demo:
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
@@ -3666,7 +3780,17 @@ def _hash_reset_token(raw_token: str) -> str:
 def mint_password_reset_token(user_id: int, requester_ip: str | None = None) -> str:
     """Create a single-use reset token and return the raw value to email
     to the user. Existing unused tokens for the same user are invalidated
-    so an old email link can't override the most recent request."""
+    so an old email link can't override the most recent request.
+
+    The shared ``demo`` account cannot request a reset. Callers should
+    catch this and show the same response they show for an unknown email.
+    """
+    owner = fetch_one(
+        "SELECT username FROM users WHERE id = %s",
+        (user_id,),
+    )
+    if owner and (owner.get("username") or "").lower() == "demo":
+        raise ValueError("password reset is not available for the demo account")
     raw = _secrets.token_urlsafe(32)
     token_hash = _hash_reset_token(raw)
     expires_at = _dt.now(_tz.utc) + PASSWORD_RESET_TOKEN_TTL

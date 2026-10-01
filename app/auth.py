@@ -1,8 +1,9 @@
 import hmac
 import os
 import re
+import secrets
 import click
-from flask import render_template, redirect, url_for, request, flash, abort, jsonify
+from flask import render_template, redirect, url_for, request, flash, abort, jsonify, session
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
 from app.email import send_password_reset_email, send_welcome_verify_email
@@ -21,6 +22,16 @@ from app.models import (
     peek_password_reset_token,
     record_login_attempt,
     unsubscribe_user_by_token,
+)
+from app.client_ip import real_client_ip
+from app.demo_guard import (
+    DemoSessionUser,
+    IP_SESSION_CAP,
+    is_ephemeral_demo_user,
+    limited_page,
+    reserve_demo_ip,
+    turnstile_keys,
+    verify_turnstile,
 )
 from app.utils import demo_block_writes, is_demo_user, safe_internal_next
 
@@ -50,6 +61,14 @@ _LANDING = {
     "accounts": "accounts",
     "symbols": "positions",
 }
+
+
+def _user_id_is_demo(user_id) -> bool:
+    """True when this id is the shared Postgres ``demo`` row."""
+    if user_id is None:
+        return False
+    row = User.get_by_id(user_id)
+    return row is not None and (row.username or "").lower() == "demo"
 
 
 def _lookup_login_user(identifier):
@@ -106,7 +125,7 @@ def _landing_endpoint(prof) -> str:
 def _release_shared_demo_session() -> bool:
     """Log out the shared demo account so an auth page can render.
 
-    ``/demo/start`` signs the visitor in as the shared ``demo`` user.
+    ``/demo/start`` used to sign the visitor in as the shared ``demo`` user.
     ``/login`` and ``/signup`` treat every authenticated session as
     already inside the app and redirect to Overview. That trapped the
     demo banner's "Create your own account" button — and a typed
@@ -153,7 +172,13 @@ def login():
             )
             return redirect(url_for("login"))
 
-        if user is None or not user.check_password(password):
+        # The shared ``demo`` username is not a personal login. Reject it
+        # before the password is checked so a known password (demo123)
+        # gets the same generic error as a wrong one.
+        demo_username = (username or "").strip().lower() == "demo" or (
+            user is not None and (getattr(user, "username", "") or "").lower() == "demo"
+        )
+        if demo_username or user is None or not user.check_password(password):
             _record_login_attempt_for_keys(
                 attempt_keys,
                 success=False,
@@ -293,6 +318,8 @@ def signup():
 
         if len(username) < 3:
             return _retry("Username must be at least 3 characters.")
+        if username.lower() == "demo":
+            return _retry("That username is already taken.")
 
         valid, err = _validate_password(password)
         if not valid:
@@ -347,28 +374,74 @@ def logout():
     return redirect(url_for("index"))
 
 
-@app.route("/demo/start")
+def _demo_gate_context(next_page):
+    site_key, _secret = turnstile_keys()
+    return {
+        "title": "Try the demo",
+        "next_for_form": next_page or "",
+        "turnstile_site_key": site_key,
+    }
+
+
+@app.route("/demo/start", methods=["GET", "POST"])
+@limiter.limit(
+    "3 per day;1 per minute",
+    methods=["POST"],
+    key_func=real_client_ip,
+)
 def demo_start():
-    """Log in as the demo user and redirect. No sign-up required.
+    """Public demo gate.
 
-    Accepts an optional ``?next=`` so inbound deep-links (notably the
+    GET renders a landing page (homepage and other CTAs still link here).
+    POST creates a short-lived ``demo-session:`` identity after Turnstile
+    (when configured) and the per-IP session cap. The shared Postgres
+    ``demo`` user is not signed in.
+
+    Accepts an optional ``next`` so inbound deep-links (notably the
     EarningsFollower bridge at /earningsfollower/<symbol>) can drop a
-    visitor straight onto a specific page instead of the dashboard. The
-    target is validated by ``safe_internal_next`` — same-origin path and
-    query only, so this can never become an open redirect.
+    visitor straight onto a specific page. The target is validated by
+    ``safe_internal_next`` — same-origin path and query only.
     """
-    next_page = safe_internal_next(request.args.get("next"))
+    import time
 
-    if current_user.is_authenticated:
+    next_page = safe_internal_next(request.values.get("next"))
+    ephemeral = is_ephemeral_demo_user(current_user)
+    username = (getattr(current_user, "username", "") or "").lower()
+    shared_demo = (
+        current_user.is_authenticated and not ephemeral and username == "demo"
+    )
+    real_user = current_user.is_authenticated and not ephemeral and not shared_demo
+
+    if real_user or (ephemeral and request.method == "GET"):
         return redirect(next_page or url_for("weekly_review"))
 
-    demo = User.get_by_username("demo")
-    if demo is None:
-        flash("Demo is not available. Please create an account to get started.", "warning")
-        target = "login" if not app.config.get("SIGNUP_ENABLED", True) else "signup"
-        return redirect(url_for(target))
+    if request.method == "GET":
+        if shared_demo:
+            logout_user()
+        return render_template("demo_start.html", **_demo_gate_context(next_page))
 
-    login_user(demo, remember=False)
+    if ephemeral:
+        return redirect(next_page or url_for("weekly_review"))
+    if shared_demo:
+        logout_user()
+
+    ip = real_client_ip()
+    token = (request.form.get("cf-turnstile-response") or "").strip()
+    if not verify_turnstile(token, ip):
+        flash("Confirm you're a person and try the demo again.", "warning")
+        return render_template("demo_start.html", **_demo_gate_context(next_page)), 400
+
+    if not reserve_demo_ip(ip):
+        return limited_page(
+            f"This network has started {IP_SESSION_CAP} demos today. "
+            "Create an account to keep going on your own data."
+        )
+
+    session_token = secrets.token_urlsafe(24)
+    login_user(DemoSessionUser(session_token), remember=False)
+    session["_demo_token"] = session_token
+    session["_demo_started_at"] = time.time()
+    session.permanent = False
     return redirect(next_page or url_for("weekly_review"))
 
 
@@ -746,7 +819,7 @@ def reset_password(token):
         return redirect(url_for("profile", tab="account"))
 
     target_user_id = peek_password_reset_token(token)
-    if target_user_id is None:
+    if target_user_id is None or _user_id_is_demo(target_user_id):
         flash(
             "That reset link is invalid or expired. Request a new one.",
             "danger",
@@ -765,8 +838,9 @@ def reset_password(token):
             return redirect(url_for("reset_password", token=token))
 
         consumed_user_id = consume_password_reset_token(token)
-        if consumed_user_id is None:
+        if consumed_user_id is None or _user_id_is_demo(consumed_user_id):
             # Race: another tab consumed it between peek and consume.
+            # The shared demo account cannot be given a password this way.
             flash("That reset link just expired. Request a new one.", "danger")
             return redirect(url_for("forgot_password"))
         User.update_password(consumed_user_id, new_pw)
@@ -826,6 +900,9 @@ def _validate_password(password):
               help="Password for the new account (min 8 chars, letter + number)")
 def create_user(username, password):
     """Create a new user account."""
+    if (username or "").strip().lower() == "demo":
+        click.echo("Error: User 'demo' is reserved for the public demo.")
+        return
     existing = User.get_by_username(username)
     if existing:
         click.echo(f"Error: User '{username}' already exists.")
@@ -846,6 +923,9 @@ def create_user(username, password):
               help="New password (min 8 chars, letter + number)")
 def reset_password(username, password):
     """Set a new password for an existing user (e.g. lockout recovery)."""
+    if (username or "").strip().lower() == "demo":
+        click.echo("Error: The public demo account has no password to reset.")
+        return
     user = User.get_by_username(username)
     if user is None:
         click.echo(f"Error: No user named '{username}'.")

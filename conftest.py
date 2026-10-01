@@ -28,6 +28,24 @@ def _have_test_db() -> bool:
     return bool(os.environ.get("TEST_DATABASE_URL"))
 
 
+@pytest.fixture(autouse=True)
+def _quiet_rate_limits_and_demo_caps():
+    """The suite shares 127.0.0.1. A process-wide 300/hour limit would fail
+    unrelated tests. Tests that opt in set ``RATELIMIT_ENABLED`` themselves.
+    """
+    from app import app as flask_app
+    from app.demo_guard import reset_demo_caps
+
+    previous = flask_app.config.get("RATELIMIT_ENABLED")
+    flask_app.config["RATELIMIT_ENABLED"] = False
+    os.environ["DEMO_CAPS_MEMORY"] = "1"
+    reset_demo_caps()
+    yield
+    flask_app.config["RATELIMIT_ENABLED"] = False if previous is None else previous
+    os.environ.pop("DEMO_CAPS_MEMORY", None)
+    reset_demo_caps()
+
+
 @pytest.fixture(scope="session")
 def app():
     """Application fixture. Import here so env vars are set first."""

@@ -183,9 +183,13 @@ def _ensure_snaptrade_tenant_id(
     label = (account_name or "SnapTrade Account").strip() or "SnapTrade Account"
     preferred = (preferred_tenant_id or "").strip()
     direct_tenant_id = build_tenant_id(SNAPTRADE_BROKER_SLUG, ext_id)
+    from app.demo_guard import numeric_user_id
+    uid = numeric_user_id(user_id)
+    if uid is None:
+        raise ValueError("user_id is required")
     if preferred:
         row = get_broker_tenant(preferred)
-        if not row or int(row["user_id"]) != int(user_id):
+        if not row or int(row["user_id"]) != uid:
             raise ValueError("stored SnapTrade tenant mapping is missing or not owned")
         return reactivate_snaptrade_tenant(
             user_id, preferred,
@@ -198,7 +202,7 @@ def _ensure_snaptrade_tenant_id(
 
     direct = get_broker_tenant(direct_tenant_id)
     if direct:
-        if int(direct["user_id"]) != int(user_id):
+        if int(direct["user_id"]) != uid:
             raise ValueError("SnapTrade account tenant is owned by another user")
         return reactivate_snaptrade_tenant(
             user_id, direct_tenant_id,
