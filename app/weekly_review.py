@@ -4546,6 +4546,9 @@ def weekly_review():
         "open_option_record": None,
         "overview_below_deferred": False,
         "overview_below_url": None,
+        # The full page includes Daily change after Accounts. Only the
+        # lazy /overview/below response also embeds that partial.
+        "overview_daily_in_fragment": False,
     }
 
     daily_changes_map = {}
@@ -5080,6 +5083,7 @@ def overview_below():
         "today_strip": [],
         "building_history": None,
         "overview_below_deferred": False,
+        "overview_daily_in_fragment": True,
     }
 
     try:

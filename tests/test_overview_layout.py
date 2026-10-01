@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path("app/templates")
 PAGE = (ROOT / "weekly_review.html").read_text()
 BELOW = (ROOT / "_overview_below.html").read_text()
+DAILY = (ROOT / "_overview_daily.html").read_text()
 TODAY = (ROOT / "today.html").read_text()
 STYLES = (ROOT / "_review_styles.html").read_text()
 SINCE = (ROOT / "_since_last_looked.html").read_text()
@@ -26,11 +27,27 @@ def test_overview_story_order_is_headline_then_what_happened_then_accounts():
 
 def test_secondary_overview_sections_are_collapsed_in_order():
     assert BELOW.index('id="ov-radar"') < BELOW.index('id="ov-execution"')
-    assert BELOW.index('id="ov-execution"') < BELOW.index('id="ov-daily"')
-    assert BELOW.index('id="ov-daily"') < BELOW.index('id="ov-performance"')
+    assert BELOW.index('id="ov-execution"') < BELOW.index('{% include "_overview_daily.html" %}')
+    assert BELOW.index('{% include "_overview_daily.html" %}') < BELOW.index('id="ov-performance"')
     assert BELOW.index('id="ov-performance"') < BELOW.index('id="ov-week"')
     assert 'class="review-section"' not in BELOW
+    assert '<details class="disclosure" id="ov-daily">' not in BELOW
     assert '<details class="disclosure" id="ov-week">' in BELOW
+    assert "overview_daily_in_fragment" in BELOW
+
+
+def test_daily_change_is_open_after_accounts():
+    accounts = PAGE.index('id="ov-accounts"')
+    slot = PAGE.index('id="ht-overview-daily"')
+    inline = PAGE.index('{% include "_overview_daily.html" %}')
+    building = PAGE.index('id="ov-building"')
+    assert accounts < slot < building
+    assert accounts < inline < building
+    assert '<div class="review-section" id="ov-daily">' in DAILY
+    assert '<h2 class="section-header">Daily change</h2>' in DAILY
+    assert "<details" not in DAILY
+    assert "placeOverviewDaily" in PAGE
+    assert "Chart.getChart" in PAGE
 
 
 def test_realized_pill_and_collected_premium_stay_literal():
@@ -49,6 +66,23 @@ def test_snapshot_columns_stack_on_a_phone_instead_of_hiding():
     assert "box-shadow: none" in STYLES
     section = STYLES.split(".review-section {", 1)[1].split("}", 1)[0]
     assert "box-shadow: none" in section
+
+
+def test_benchmark_rows_match_account_stack_on_a_phone():
+    phone = STYLES.split("@media (max-width: 720px)", 1)[1].split("@media", 1)[0]
+    assert '[data-bs-theme="dark"] .snapshot-table .snapshot-table-row.benchmark > div' in phone
+    assert "background: transparent" in phone
+    assert "text-align: left" in phone
+    # (0,3,1) so it beats the desktop (0,2,1) right-align on every row.
+    rule = phone.split(
+        ".snapshot-table .snapshot-table-row > div:not(:first-child)", 1
+    )[1].split("}", 1)[0]
+    assert "text-align: left" in rule
+    desktop = STYLES.split("@media (max-width: 720px)", 1)[0]
+    assert ".snapshot-table-row > div:not(:first-child)" in desktop
+    assert "text-align: right" in desktop
+    assert ".snapshot-table-row.benchmark > div" in desktop
+    assert ".snapshot-table .snapshot-table-row > div:not(:first-child)" not in desktop
 
 
 def test_today_story_order_keeps_since_last_looked_off_overview():

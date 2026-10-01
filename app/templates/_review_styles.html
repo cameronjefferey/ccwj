@@ -355,6 +355,13 @@
             text-align: left;
             min-width: 0;
         }
+        /* Desktop `.snapshot-table-row > div:not(:first-child)` is
+           (0,2,1) and beats the rule above. Prefixing .snapshot-table
+           makes this (0,3,1), so every row — account, Total, benchmark —
+           left-aligns on a phone. */
+        .snapshot-table .snapshot-table-row > div:not(:first-child) {
+            text-align: left;
+        }
         .snapshot-table-row > div:first-child { grid-column: 1 / -1; }
         .snapshot-table-row > div:empty { display: none; }
         .snapshot-table-row > div[data-label]::before {
@@ -369,6 +376,17 @@
         .snapshot-table .share-cell { justify-content: flex-start; }
         .snapshot-table .acct-name { font-size: .9rem; }
         .snapshot-table .snap-cell-val { font-size: .95rem; }
+        /* Benchmark rows use the same stack as account rows.
+           Desktop right-align is (0,2,1) via :not(:first-child), and
+           base.html paints these cells #0a0e17 at (0,3,1). The
+           attribute + .snapshot-table prefix is (0,4,1), so it wins
+           only inside this query. */
+        [data-bs-theme="dark"] .snapshot-table .snapshot-table-row.benchmark > div,
+        .snapshot-table .snapshot-table-row.benchmark > div {
+            background: transparent;
+            text-align: left;
+            padding: 0;
+        }
     }
 
     /* ── Today's movers ── */
