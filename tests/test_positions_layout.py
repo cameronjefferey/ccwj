@@ -58,9 +58,24 @@ def test_symbol_header_sticks_under_the_nav_without_an_inner_scroller():
 
 def test_money_can_wrap_and_win_loss_stays_one_value():
     assert "td.pos-money" in PAGE
-    assert "white-space: nowrap" not in PAGE.split("td.pos-money", 1)[1].split("}", 1)[0]
+    money = PAGE.split("td.pos-money", 1)[1].split("}", 1)[0]
+    assert "white-space: nowrap" not in money
+    assert "overflow-wrap: anywhere" not in PAGE
+    assert "word-break: anywhere" not in PAGE
+    assert "overflow-wrap: normal" in PAGE
+    assert "overflow-wrap: break-word" in money
     assert PAGE.count('class="pos-wl-pair"') >= 2
     assert 'data-label="W/L"' in PAGE
+
+
+def test_headers_and_names_are_not_squeezed_into_midword_breaks():
+    assert "#symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 8%; }" not in PAGE
+    assert "#symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 4%; }" not in PAGE
+    assert "#symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 14%; }" in PAGE
+    assert "#symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 7%; }" in PAGE
+    phone = PAGE.split("@media (max-width: 767px)", 1)[1]
+    assert "--bs-table-bg: transparent" in phone
+    assert "background: var(--ht-surface)" in phone
 
 
 def test_phone_rows_stack_with_labels_and_desktop_columns_are_not_clipped():

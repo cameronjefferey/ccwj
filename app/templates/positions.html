@@ -61,7 +61,7 @@
     body:has(#positionsTable) .card,
     body:has(#symbolTable) .card { max-width: 100%; min-width: 0; }
     /* 768–1366: share the card width so no column runs past the edge.
-       Text wraps inside the cell, including money. */
+       Text wraps on spaces. Money stays one figure. */
     @media (min-width: 768px) and (max-width: 1366px) {
         #symbolTable {
             table-layout: fixed;
@@ -85,42 +85,45 @@
         #positionsTable th, #positionsTable td {
             white-space: normal;
             overflow: visible;
-            overflow-wrap: anywhere;
+            overflow-wrap: normal;
+            word-break: normal;
+            hyphens: none;
             vertical-align: top;
         }
-        /* Money may wrap inside its cell. nowrap plus a narrow fixed
-           column painted $287,353.26 out of Collected. */
+        /* Money stays one figure. break-word is only a last resort if a
+           number is wider than the column; the widths below keep
+           $287,353.26 intact at 1280. Names and headers wrap on spaces. */
         #symbolTable td.pos-money,
         #positionsTable td.pos-money {
             white-space: normal;
-            overflow-wrap: anywhere;
+            overflow-wrap: break-word;
         }
         .pos-wl-pair { white-space: nowrap; }
-        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 10%; }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 8%; }
         #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
-        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 8%; }
-        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 12%; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 14%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 9%; }
         #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 10%; }
-        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 10%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 9%; }
         #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 10%; }
-        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 10%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 8%; }
         #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 5%; }
-        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 4%; }
+        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 7%; }
         #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 5%; }
-        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 10%; }
-        #positionsTable th:nth-child(1), #positionsTable td:nth-child(1) { width: 10%; }
-        #positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 12%; }
-        #positionsTable th:nth-child(3), #positionsTable td:nth-child(3) { width: 7%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 9%; }
+        #positionsTable th:nth-child(1), #positionsTable td:nth-child(1) { width: 9%; }
+        #positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 11%; }
+        #positionsTable th:nth-child(3), #positionsTable td:nth-child(3) { width: 6%; }
         #positionsTable th:nth-child(4), #positionsTable td:nth-child(4) { width: 9%; }
-        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 9%; }
+        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 8%; }
         #positionsTable th:nth-child(6), #positionsTable td:nth-child(6) { width: 9%; }
         #positionsTable th:nth-child(7), #positionsTable td:nth-child(7) { width: 8%; }
         #positionsTable th:nth-child(8), #positionsTable td:nth-child(8) { width: 5%; }
-        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9) { width: 4%; }
-        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 4%; }
+        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9) { width: 7%; }
+        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 5%; }
         #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 8%; }
-        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 5%; }
-        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 10%; }
+        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 6%; }
+        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 9%; }
     }
     /* Symbol-table header sticks to the page, under the nav. Not an
        inner 75vh scroller: overflow stays visible so columns are not
@@ -171,7 +174,7 @@
             border-radius: 10px;
             margin: 0 0 .6rem;
             padding: .45rem .7rem .5rem;
-            background: transparent;
+            background: var(--ht-surface);
         }
         .pos-page table.pos-stack > tbody > tr > td {
             display: flex !important;
@@ -186,6 +189,11 @@
             text-align: right;
             border: 0;
             padding: .16rem 0;
+            /* Bootstrap paints cells with the page fill, darker than the card. */
+            background-color: transparent;
+            --bs-table-bg: transparent;
+            --bs-table-accent-bg: transparent;
+            box-shadow: none;
         }
         .pos-page table.pos-stack > tbody > tr > td::before {
             content: attr(data-label);
