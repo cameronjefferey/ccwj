@@ -84,8 +84,24 @@ def test_video_catalog_uses_public_ids():
     assert "Options 101" in STORY_STEPS[-1]["caption"]
 
 
+def _catch_band(html: str) -> str:
+    start = html.index('id="ht-catch"')
+    end = html.index("Two closed trades, written out")
+    return html[start:end]
+
+
+_CATCH_VIDEO_IDS = (
+    "abjZ4_UFhP4",
+    "JB-Zvno6hYQ",
+    "L1Wmhww0Xrk",
+    "B7KZ9ZMelMc",
+    "Sf-SOuSnw30",
+)
+
+
 def test_homepage_renders_click_to_play_story(monkeypatch):
     _open_signup(monkeypatch)
+    monkeypatch.delenv("CATCH_STORY_VIDEOS_LIVE", raising=False)
     resp = app.test_client().get("/")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
@@ -134,15 +150,10 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "ht-band-trades" in html
     assert ">30-day free trial, no credit card</a>" in html
     assert "For learning only, not investment advice" in html
-    assert html.count("Watch the story") == 5
-    for vid in (
-        "abjZ4_UFhP4",
-        "JB-Zvno6hYQ",
-        "L1Wmhww0Xrk",
-        "B7KZ9ZMelMc",
-        "Sf-SOuSnw30",
-    ):
-        assert f"https://www.youtube.com/watch?v={vid}" in html
+    band = _catch_band(html)
+    assert "Watch the story" not in band
+    assert "youtu.be" not in band
+    assert "youtube.com" not in band
     assert html.count('class="ht-catch-panel"') == 5
     assert html.count('loading="lazy"') >= 5
     for story in CATCH_STORIES:
@@ -176,14 +187,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "100 shares" not in html
     presented = catch_stories()
     assert [row["id"] for row in presented] == [row["id"] for row in CATCH_STORIES]
-    assert [row["youtube_id"] for row in presented] == [
-        "abjZ4_UFhP4",
-        "JB-Zvno6hYQ",
-        "L1Wmhww0Xrk",
-        "B7KZ9ZMelMc",
-        "Sf-SOuSnw30",
-    ]
-    assert list(CATCH_STORY_VIDEOS.values()) == [row["youtube_id"] for row in presented]
+    assert [row["youtube_id"] for row in presented] == [""] * len(CATCH_STORIES)
+    assert list(CATCH_STORY_VIDEOS.values()) == list(_CATCH_VIDEO_IDS)
     root = Path(__file__).resolve().parents[1]
     for story in CATCH_STORIES:
         blob = (root / "app" / "static" / story["image"]).read_bytes()
@@ -262,9 +267,37 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert "Options 101" in html
 
 
+def test_catch_watch_links_follow_live_flag(monkeypatch):
+    """Private cuts stay unlinked until CATCH_STORY_VIDEOS_LIVE=1."""
+    _open_signup(monkeypatch)
+    monkeypatch.delenv("CATCH_STORY_VIDEOS_LIVE", raising=False)
+    html = app.test_client().get("/").get_data(as_text=True)
+    band = _catch_band(html)
+    assert "Watch the story" not in band
+    assert "youtu.be" not in band
+    assert "youtube.com" not in band
+    assert band.count('class="ht-catch-panel"') == 5
+    assert ">30-day free trial, no credit card</a>" in html
+
+    monkeypatch.setenv("CATCH_STORY_VIDEOS_LIVE", "1")
+    html = app.test_client().get("/").get_data(as_text=True)
+    band = _catch_band(html)
+    assert band.count("Watch the story") == 5
+    for vid in _CATCH_VIDEO_IDS:
+        assert f"https://www.youtube.com/watch?v={vid}" in band
+    assert "youtu.be" not in band
+
+    monkeypatch.setenv("CATCH_STORY_VIDEOS_LIVE", "0")
+    html = app.test_client().get("/").get_data(as_text=True)
+    band = _catch_band(html)
+    assert "Watch the story" not in band
+    assert "youtube.com" not in band
+
+
 def test_catch_watch_link_appears_only_when_a_youtube_id_is_set(monkeypatch):
     from app import marketing_videos
 
+    monkeypatch.setenv("CATCH_STORY_VIDEOS_LIVE", "1")
     blank = {key: "" for key in marketing_videos.CATCH_STORY_VIDEOS}
     monkeypatch.setattr(marketing_videos, "CATCH_STORY_VIDEOS", dict(blank))
     html = app.test_client().get("/").get_data(as_text=True)

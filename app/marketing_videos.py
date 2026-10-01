@@ -16,6 +16,7 @@ youtube-nocookie embed only after a click.
 
 from __future__ import annotations
 
+import os
 import re
 
 # step, title, caption, youtube_id or mp4_url, poster.
@@ -228,11 +229,17 @@ def trade_stories():
     return [present_video(story) for story in TRADE_STORIES]
 
 
-# Homepage "Here's what you'd catch" stills. The template hides
-# "Watch the story" when the id is blank or not 11 characters.
-# These five are the owner's Real Trade Stories edits. They are private
-# until he publishes them; the links are wired now.
+# Homepage "Here's what you'd catch" stills. These five are the owner's
+# Real Trade Stories edits. The ids stay here, but the template only
+# renders "Watch the story" when CATCH_STORY_VIDEOS_LIVE=1 (set that on
+# Render after the cuts are public). Unset, or any other value, hides
+# the links. A blank or non-11-character id stays hidden either way.
 _YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def catch_story_videos_live() -> bool:
+    """True only when the Real Trade Stories watch links should be public."""
+    return (os.environ.get("CATCH_STORY_VIDEOS_LIVE") or "").strip() == "1"
 
 CATCH_STORY_VIDEOS = {
     "onon": "abjZ4_UFhP4",
@@ -339,11 +346,12 @@ CATCH_STORIES = [
 
 
 def catch_stories():
-    """Stills plus a watch link only when a real YouTube id is configured."""
+    """Stills, plus a watch link only when the cuts are live and the id is real."""
+    live = catch_story_videos_live()
     out = []
     for row in CATCH_STORIES:
         item = dict(row)
         vid = (CATCH_STORY_VIDEOS.get(row["id"]) or "").strip()
-        item["youtube_id"] = vid if _YOUTUBE_ID.fullmatch(vid) else ""
+        item["youtube_id"] = vid if live and _YOUTUBE_ID.fullmatch(vid) else ""
         out.append(item)
     return out
