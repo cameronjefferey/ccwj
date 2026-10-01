@@ -88,7 +88,14 @@ def test_benchmark_rows_match_account_stack_on_a_phone():
 def test_headline_figures_stay_one_line_and_shrink_on_a_narrow_screen():
     big = STYLES.split(".ov-big {", 1)[1].split("}", 1)[0]
     assert "clamp(" in big
-    assert "white-space: nowrap" in STYLES.split(".ov-big, .ov-pct, .ov-sub {", 1)[1].split("}", 1)[0]
+    figures = STYLES.split(".ov-big, .ov-pct {", 1)[1].split("}", 1)[0]
+    assert "white-space: nowrap" in figures
+    assert ".ov-sub" not in figures
+    sub = STYLES.split(".ov-sub {", 1)[1].split("}", 1)[0]
+    assert "white-space: normal" in sub
+    assert "overflow-wrap: break-word" in sub
+    assert "word-break: normal" in sub
+    assert "white-space: nowrap" not in sub
     assert "overflow-wrap: normal" in STYLES
     assert "word-break: normal" in STYLES
     assert ".ov-big { font-size: 1.45rem; overflow-wrap: anywhere" not in STYLES

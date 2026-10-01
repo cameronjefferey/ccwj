@@ -38,10 +38,11 @@
     }
     .ov-top > div { min-width: 0; }
     .ov-k { font-size: .8rem; color: rgba(255,255,255,.55); margin-bottom: .2rem; }
-    /* Headline figures never break mid-number. The hero can wrap prose
-       anywhere; these override that. clamp shrinks them on a narrow
-       screen so a value like +$171,578 stays one line. */
-    .ov-big, .ov-pct, .ov-sub {
+    /* Big headline figures never break mid-number. clamp shrinks them
+       on a narrow screen so a value like +$171,578 stays one line.
+       .ov-sub is the smaller line under a figure: it wraps on word
+       boundaries so a long caption stays inside the column. */
+    .ov-big, .ov-pct {
         white-space: nowrap;
         overflow-wrap: normal;
         word-break: normal;
@@ -57,7 +58,12 @@
         font-weight: 750; letter-spacing: -.02em; line-height: 1.1;
         font-variant-numeric: tabular-nums;
     }
-    .ov-sub { font-size: .85rem; margin-top: .12rem; font-variant-numeric: tabular-nums; }
+    .ov-sub {
+        font-size: .85rem; margin-top: .12rem; font-variant-numeric: tabular-nums;
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: normal;
+    }
     .ov-bench { font-size: .78rem; color: rgba(255,255,255,.5); margin-top: .15rem; }
     .ov-pct.pos, .ov-sub.pos, .ov-bench .pos, .ov-big.pos { color: var(--gain); }
     .ov-pct.neg, .ov-sub.neg, .ov-bench .neg, .ov-big.neg { color: var(--loss); }

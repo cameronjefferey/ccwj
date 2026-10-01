@@ -3,18 +3,21 @@
 {% block head %}
 <style>
     .settings-hero {
-        background: #1a1a2e;
-        border-radius: 16px;
-        padding: 2.5rem;
-        color: #fff;
-        margin-bottom: 2rem;
-    }
-    .settings-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
-    .settings-card {
-        border: none;
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
         border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
-        margin-bottom: 1.5rem;
+        box-shadow: none;
+        padding: 1.35rem 1.5rem;
+        color: var(--ht-ink);
+        margin-bottom: 1rem;
+    }
+    .settings-hero h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: .35rem; letter-spacing: -0.01em; }
+    .settings-card {
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        box-shadow: none;
+        margin-bottom: 1rem;
+        background: var(--ht-surface);
     }
     .settings-card .card-header {
         background: transparent;
