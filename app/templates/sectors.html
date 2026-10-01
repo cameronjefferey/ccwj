@@ -1,125 +1,131 @@
 {% extends "base.html" %}
 
+{# ════════════════════════════════════════════════════════════════════════
+   Sectors — the book, then the sector table, then the rest.
+
+   Story order, top to bottom:
+
+     1. Headline     — total return, realized, unrealized, win rate
+     2. Sectors      — one row per sector
+     3. Secondary    — subsectors, collected premium, best and worst.
+                       Collapsed until opened.
+   ════════════════════════════════════════════════════════════════════════ #}
+
 {% block head %}
 {% include '_review_styles.html' %}
 <style>
-    /* CSS class names are legacy internal selectors; page copy uses
-       sector / subsector terminology. */
-    .ind-hero {
-        background: #1a1a2e;
-        color: #fff;
-        padding: 1.5rem 1.6rem;
-        border-radius: 14px;
-        margin-bottom: 1.25rem;
+    .sec-page { min-width: 0; }
+    .sec-page > .card { margin-bottom: 1rem; box-shadow: none; }
+    .sec-pad { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
+    .sec-head { margin-bottom: .85rem; }
+    .sec-head .section-header { margin: 0; }
+    .sec-lead { margin: .2rem 0 0; font-size: .82rem; color: var(--ht-muted); }
+    body .sec-page .disclosure > summary .section-header { margin: 0; }
+    .sec-note { font-size: .82rem; color: var(--ht-muted); margin: .85rem 0 0; }
+    #secTable { font-size: .88rem; width: 100%; min-width: 0; }
+    #secTable th { font-size: .72rem; font-weight: 650; color: var(--ht-muted); }
+    .sec-block { padding: .85rem 0 1rem; border-top: 1px solid var(--ht-line); min-width: 0; }
+    .sec-block:first-child { border-top: 0; padding-top: 0; }
+    .sec-facts { display: flex; flex-wrap: wrap; gap: .45rem .9rem; margin: .35rem 0 .75rem; font-size: .82rem; }
+    .sec-facts span { font-variant-numeric: tabular-nums; }
+    .sec-sub {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(4.5rem, auto));
+        gap: .35rem .75rem;
+        align-items: baseline;
+        padding: .45rem 0;
+        border-bottom: 1px solid var(--ht-line);
+        min-width: 0;
+        font-size: .84rem;
     }
-    .ind-hero h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
-    .ind-hero .lede { color: rgba(255,255,255,.78); font-size: .9rem; margin: .35rem 0 0; max-width: 60ch; }
-    .ind-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .85rem; margin-top: 1.1rem; }
-    .ind-kpi  { background: rgba(255,255,255,.08); padding: .7rem .85rem; border-radius: 10px; }
-    .ind-kpi .lbl { font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; color: rgba(255,255,255,.55); }
-    .ind-kpi .val { font-size: 1.15rem; font-weight: 700; margin-top: .1rem; font-variant-numeric: tabular-nums; }
-    .ind-pos { color: var(--gain); }
-    .ind-neg { color: var(--loss); }
-
-    .sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
-
-    .sec-card {
-        background: #121826;
-        border: 1px solid #243049;
-        border-radius: 14px;
-        padding: 1.1rem 1.2rem;
-        display: flex; flex-direction: column; gap: .75rem;
-        transition: box-shadow .15s ease, transform .15s ease;
+    .sec-sub:last-child { border-bottom: 0; }
+    .sec-sub a { color: inherit; font-weight: 650; text-decoration: none; overflow-wrap: anywhere; }
+    .sec-sub a:hover { text-decoration: underline; }
+    .sec-sub .n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .sec-empty {
+        color: var(--ht-muted); font-size: .85rem; padding: 2rem; text-align: center;
+        background: var(--ht-surface); border: 1px solid var(--ht-line); border-radius: 12px;
+        box-shadow: none;
     }
-    .sec-card:hover { box-shadow: 0 10px 24px rgba(0,0,0,.06); }
-    .sec-card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; }
-    .sec-card .name { font-size: 1.1rem; font-weight: 700; color: var(--ht-ink); line-height: 1.2; }
-    .sec-card .meta { font-size: .72rem; color: var(--ht-muted); margin-top: .15rem; text-transform: uppercase; letter-spacing: .04em; }
-    .sec-card .pnl { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
-    .sec-card .pnl.pos { color: var(--gain); }
-    .sec-card .pnl.neg { color: var(--loss); }
-    .sec-card .pnl-sub { font-size: .7rem; color: var(--ht-muted); text-align: right; margin-top: .15rem; }
 
-    .sec-card .stats {
-        display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem;
-        background: #1a2233; border-radius: 10px; padding: .55rem .65rem;
+    @media (min-width: 768px) {
+        #secTable { table-layout: fixed; width: 100%; min-width: 0; }
+        #secTable th, #secTable td {
+            white-space: normal; overflow: visible; overflow-wrap: anywhere; vertical-align: top;
+        }
+        #secTable td.sec-money { white-space: nowrap; overflow-wrap: normal; }
+        #secTable th:nth-child(1), #secTable td:nth-child(1) { width: 22%; }
+        #secTable th:nth-child(2), #secTable td:nth-child(2) { width: 9%; }
+        #secTable th:nth-child(3), #secTable td:nth-child(3) { width: 9%; }
+        #secTable th:nth-child(4), #secTable td:nth-child(4) { width: 12%; }
+        #secTable th:nth-child(5), #secTable td:nth-child(5) { width: 14%; }
+        #secTable th:nth-child(6), #secTable td:nth-child(6) { width: 14%; }
+        #secTable th:nth-child(7), #secTable td:nth-child(7) { width: 14%; }
+        #secTable th:nth-child(8), #secTable td:nth-child(8) { width: 6%; }
     }
-    .sec-card .stat .lbl { font-size: .65rem; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; }
-    .sec-card .stat .val { font-size: .9rem; font-weight: 700; color: var(--ht-ink); font-variant-numeric: tabular-nums; }
-
-    .sec-card .splits {
-        display: grid; grid-template-columns: 1fr 1fr; gap: .35rem .9rem;
-        font-size: .78rem;
-    }
-    .sec-card .splits .k { color: var(--ht-muted); }
-    .sec-card .splits .v { font-weight: 600; color: var(--ht-ink); font-variant-numeric: tabular-nums; text-align: right; }
-    .sec-card .splits .v.neg { color: var(--loss); }
-
-    .sec-card .extremes { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; font-size: .76rem; }
-    .sec-card .extremes .ex { background: #1a2233; border-radius: 8px; padding: .45rem .6rem; }
-    .sec-card .extremes .ex .lbl { font-size: .62rem; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; }
-    .sec-card .extremes .ex .sym { font-weight: 700; color: var(--ht-ink); }
-    .sec-card .extremes .ex .ret { font-variant-numeric: tabular-nums; }
-    .sec-card .extremes .ex .ret.pos { color: var(--gain); }
-    .sec-card .extremes .ex .ret.neg { color: var(--loss); }
-
-    .sec-card .actions { display: flex; gap: .5rem; }
-    .sec-card .btn-toggle {
-        flex: 1; border: none; background: #0f172a; color: #fafaf9;
-        padding: .5rem .75rem; border-radius: 999px;
-        font-size: .78rem; font-weight: 600; cursor: pointer;
-        transition: background .12s ease;
-    }
-    .sec-card .btn-toggle:hover { background: #1e293b; }
-    .sec-card .btn-toggle .chev { transition: transform .15s ease; display: inline-block; margin-left: .3rem; }
-    .sec-card.expanded .btn-toggle .chev { transform: rotate(180deg); }
-    .sec-card .btn-positions {
-        background: #1a2233; color: #e8edf7; border: 1px solid #243049;
-        padding: .5rem .85rem; border-radius: 999px;
-        font-size: .78rem; font-weight: 600; text-decoration: none;
-        white-space: nowrap;
-    }
-    .sec-card .btn-positions:hover { background: #1a2233; }
-
-    /* Subsector breakdown — only visible when sector is expanded */
-    .sec-card .ind-list { display: none; flex-direction: column; gap: .4rem; padding-top: .25rem; }
-    .sec-card.expanded .ind-list { display: flex; }
-    .ind-row {
-        display: grid; grid-template-columns: 1fr auto auto; align-items: center;
-        gap: .55rem;
-        padding: .5rem .65rem;
-        background: #121826;
-        border: 1px solid #243049;
-        border-radius: 8px;
-        font-size: .82rem;
-    }
-    .ind-row .ind-name { font-weight: 600; color: var(--ht-ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ind-row .ind-name a { color: inherit; text-decoration: none; }
-    .ind-row .ind-name a:hover { text-decoration: underline; }
-    .ind-row .ind-meta { font-size: .68rem; color: var(--ht-muted); font-weight: 500; margin-top: .1rem; }
-    .ind-row .ind-pnl { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .ind-row .ind-pnl.pos { color: var(--gain); }
-    .ind-row .ind-pnl.neg { color: var(--loss); }
-    .ind-row .ind-link {
-        background: #121826; border: 1px solid #243049; border-radius: 999px;
-        padding: .15rem .55rem; font-size: .68rem; font-weight: 600;
-        color: #e8edf7; text-decoration: none; white-space: nowrap;
-    }
-    .ind-row .ind-link:hover { background: #1a2233; }
-
-    .ind-empty { color: #8a97b1; font-size: .85rem; padding: 2rem; text-align: center; background: #121826; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
-
-    .ind-section-note {
-        background: #121826; border-radius: 10px; padding: .75rem 1rem;
-        font-size: .8rem; color: #8a97b1;
-        border: 1px dashed #e7e5e4; margin-top: 1rem;
+    @media (max-width: 767px) {
+        .sec-page { overflow-x: clip; }
+        .sec-page .table-responsive { overflow: visible; box-shadow: none; }
+        .sec-page table.ht-stack { display: block; width: 100%; max-width: 100%; }
+        .sec-page table.ht-stack > thead { display: none !important; }
+        .sec-page table.ht-stack > tbody { display: block; }
+        .sec-page table.ht-stack > tbody > tr {
+            display: block;
+            border: 1px solid var(--ht-line);
+            border-radius: 10px;
+            margin: 0 0 .6rem;
+            padding: .45rem .7rem .5rem;
+        }
+        .sec-page table.ht-stack > tbody > tr > td {
+            display: flex !important;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: .75rem;
+            width: auto !important;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-align: right;
+            border: 0;
+            padding: .16rem 0;
+        }
+        .sec-page table.ht-stack > tbody > tr > td::before {
+            content: attr(data-label);
+            color: var(--ht-muted);
+            font-size: .66rem;
+            font-weight: 650;
+            text-align: left;
+            flex: 0 0 42%;
+        }
+        .sec-sub {
+            display: block;
+            border: 1px solid var(--ht-line);
+            border-radius: 10px;
+            padding: .45rem .7rem .5rem;
+            margin: 0 0 .55rem;
+        }
+        .sec-sub .n {
+            display: flex;
+            justify-content: space-between;
+            gap: .75rem;
+            text-align: right;
+            white-space: normal;
+            padding: .12rem 0;
+        }
+        .sec-sub .n::before {
+            content: attr(data-label);
+            color: var(--ht-muted);
+            font-size: .66rem;
+            font-weight: 650;
+            text-align: left;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
 
-<div class="review-hero ind-hero">
+<div class="sec-page">
+<div class="review-hero ind-hero" id="sec-hero">
     <div class="ov-bar">
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
@@ -130,38 +136,38 @@
         </form>
         {% endif %}
     </div>
-    <div>
-        <h1>Sectors</h1>
-        <p class="lede">How your trading breaks down by sector. Click a sector to see the specific subsectors you've traded inside it.</p>
-    </div>
-
-    {% if kpis and kpis.num_subsectors > 0 %}
-    <div class="ind-kpis">
-        <div class="ind-kpi">
-            <div class="lbl">Total Return</div>
-            <div class="val {% if kpis.total_pnl < 0 %}ind-neg{% elif kpis.total_pnl > 0 %}ind-pos{% endif %}">
-                {{ money(kpis.total_pnl, 2) }}
-            </div>
+    <p class="ov-date">All time</p>
+    {% if kpis and (kpis.num_subsectors|default(0)) > 0 %}
+    <div class="ov-top">
+        <div>
+            <div class="ov-k">Total return</div>
+            <div class="ov-big {% if kpis.total_pnl > 0 %}pos{% elif kpis.total_pnl < 0 %}neg{% endif %}">{% if kpis.total_pnl > 0 %}+{% endif %}{{ money(kpis.total_pnl, 0) }}</div>
         </div>
-        <div class="ind-kpi">
-            <div class="lbl">Sectors</div>
-            <div class="val">{{ sectors|length }}</div>
+        <div>
+            <div class="ov-k">{{ term('Realized') }}</div>
+            <div class="ov-pct {% if kpis.realized_pnl > 0 %}pos{% elif kpis.realized_pnl < 0 %}neg{% endif %}">{% if kpis.realized_pnl > 0 %}+{% endif %}{{ money(kpis.realized_pnl, 0) }}</div>
         </div>
-        <div class="ind-kpi">
-            <div class="lbl">Subsectors</div>
-            <div class="val">{{ kpis.num_subsectors }}</div>
+        <div>
+            <div class="ov-k">{{ term('Unrealized') }}</div>
+            <div class="ov-pct {% if kpis.unrealized_pnl > 0 %}pos{% elif kpis.unrealized_pnl < 0 %}neg{% endif %}">{% if kpis.unrealized_pnl > 0 %}+{% endif %}{{ money(kpis.unrealized_pnl, 0) }}</div>
         </div>
-        <div class="ind-kpi">
-            <div class="lbl">Symbols</div>
-            <div class="val">{{ kpis.num_symbols }}</div>
-        </div>
-        <div class="ind-kpi">
-            <div class="lbl">{{ term('Win Rate') }}</div>
-            <div class="val">{{ "{:.0%}".format(kpis.win_rate) }}</div>
+        <div>
+            <div class="ov-k">{{ term('Win rate') }}</div>
+            <div class="ov-big ov-invest">{{ "{:.0%}".format(kpis.win_rate) }}</div>
         </div>
     </div>
+    <p class="ov-line">How the book breaks down by sector.</p>
+    <div class="ov-pills">
+        <span class="ov-pill">{{ sectors|length }} sector{{ 's' if sectors|length != 1 }}</span>
+        <span class="ov-pill">{{ kpis.num_subsectors }} subsector{{ 's' if kpis.num_subsectors != 1 }}</span>
+        <span class="ov-pill">{{ kpis.num_symbols }} symbol{{ 's' if kpis.num_symbols != 1 }}</span>
+        {% if kpis.num_trades %}<span class="ov-pill">{{ kpis.num_trades }} trades</span>{% endif %}
+    </div>
+    {% else %}
+    <p class="ov-line">How the book breaks down by sector.</p>
     {% endif %}
 </div>
+<!-- /sec-hero -->
 
 {% include "_history_window_note.html" %}
 
@@ -171,7 +177,7 @@
     <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.
 </div>
 {% elif not sector_rows %}
-<div class="ind-empty">
+<div class="sec-empty">
     <strong>No sector breakdown yet.</strong>
     <p class="mb-0 mt-2">Once your trades come in and we tag the symbols, you'll see your performance broken out by sector and subsector.</p>
     <div class="mt-3 d-flex flex-wrap gap-2 justify-content-center">
@@ -181,158 +187,134 @@
 </div>
 {% else %}
 
-<div class="sec-grid">
-    {% for s in sector_rows %}
-    {% set sec_id = s.sector|replace(' ', '-')|lower %}
-    {% set subs = subsectors_by_sector.get(s.sector, []) %}
-    <article class="sec-card" id="{{ sec_id }}" data-sector="{{ s.sector }}">
-        <div class="head">
-            <div>
-                <div class="name">{{ s.sector }}</div>
-                <div class="meta">
-                    {{ s.num_symbols }} symbol{% if s.num_symbols != 1 %}s{% endif %}
-                    &middot; {{ s.num_subsectors }} subsector{% if s.num_subsectors != 1 %}s{% endif %}
-                    &middot; {{ s.num_trades | int }} trade{% if s.num_trades != 1 %}s{% endif %}
-                </div>
-            </div>
-            <div>
-                <div class="pnl {% if s.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                    {{ money(s.total_pnl, 0) }}
-                </div>
-                <div class="pnl-sub">total P&amp;L</div>
-            </div>
-        </div>
+<div class="card" id="sec-list">
+<div class="sec-pad">
+    <div class="sec-head">
+        <h2 class="section-header">Sectors</h2>
+        <p class="sec-lead">One row per sector. A name opens the subsectors below.</p>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 ht-stack" id="secTable">
+            <thead>
+                <tr>
+                    <th>Sector</th>
+                    <th class="text-end">Symbols</th>
+                    <th class="text-end">Trades</th>
+                    <th class="text-end">{{ term('Win rate') }}</th>
+                    <th class="text-end">{{ term('Realized') }}</th>
+                    <th class="text-end">{{ term('Unrealized') }}</th>
+                    <th class="text-end">Total return</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sector_rows %}
+                {% set sec_id = s.sector|replace(' ', '-')|lower %}
+                <tr>
+                    <td data-label="Sector">
+                        <a href="#{{ sec_id }}" class="fw-semibold text-decoration-none">{{ s.sector }}</a>
+                        <div class="sec-lead">{{ s.num_subsectors }} subsector{% if s.num_subsectors != 1 %}s{% endif %}</div>
+                    </td>
+                    <td data-label="Symbols" class="text-end">{{ s.num_symbols }}</td>
+                    <td data-label="Trades" class="text-end">{{ s.num_trades | int }}</td>
+                    <td data-label="Win rate" class="text-end">
+                        {% if (s.num_winners + s.num_losers) > 0 %}
+                            {{ "{:.0%}".format(s.win_rate) }}
+                            <div class="sec-lead">{{ s.num_winners | int }} / {{ s.num_losers | int }}</div>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td data-label="Realized" class="text-end sec-money {{ 'text-positive' if s.realized_pnl > 0 else ('text-negative' if s.realized_pnl < 0 else '') }}">
+                        {{ money(s.realized_pnl, 0) }}
+                    </td>
+                    <td data-label="Unrealized" class="text-end sec-money {{ 'text-positive' if s.unrealized_pnl > 0 else ('text-negative' if s.unrealized_pnl < 0 else '') }}">
+                        {{ money(s.unrealized_pnl, 0) }}
+                    </td>
+                    <td data-label="Total return" class="text-end sec-money fw-semibold {{ 'text-positive' if s.total_pnl >= 0 else 'text-negative' }}">
+                        {{ money(s.total_pnl, 0, true) }}
+                    </td>
+                    <td data-label="Positions" class="text-end">
+                        <a href="{{ scoped_url('positions', sector=s.sector) }}">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if unknown_count and unknown_count > 0 %}
+    <p class="sec-note">
+        {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} still {{ 'has' if unknown_count == 1 else 'have' }} no sector.
+        {{ 'It shows' if unknown_count == 1 else 'They show' }} under <em>Unclassified</em>, after the named sectors.
+    </p>
+    {% endif %}
+</div>
+</div>
 
-        <div class="stats">
-            <div class="stat">
-                <div class="lbl">{{ term('Win Rate') }}</div>
-                <div class="val">
-                    {% if (s.num_winners + s.num_losers) > 0 %}
-                        {{ "{:.0%}".format(s.win_rate) }}
-                    {% else %}—{% endif %}
-                </div>
+<details class="disclosure" id="sec-detail">
+    <summary>
+        <span class="section-header">Inside each sector</span>
+        <span class="disclosure-note">Subsectors, collected premium, best and worst.</span>
+    </summary>
+    <div class="disclosure-body">
+        {% for s in sector_rows %}
+        {% set sec_id = s.sector|replace(' ', '-')|lower %}
+        {% set subs = subsectors_by_sector.get(s.sector, []) %}
+        <section class="sec-block" id="{{ sec_id }}">
+            <h3 class="section-header">{{ s.sector }}</h3>
+            <div class="sec-facts">
+                {% if s.premium_received %}
+                <span title="Premium received.">{{ term('Collected') }} {{ money(s.premium_received, 0) }}</span>
+                {% endif %}
+                {% if s.dividend_income and s.dividend_income > 0 %}
+                <span>Dividends {{ money(s.dividend_income, 0) }}</span>
+                {% endif %}
+                {% if s.top_symbol %}
+                <span>Best
+                    <a href="{{ scoped_url('position_detail', symbol=s.top_symbol) }}">{{ s.top_symbol }}</a>
+                    <span class="text-positive">{{ money(s.top_symbol_return or 0, 0, true) }}</span>
+                </span>
+                {% endif %}
+                {% if s.worst_symbol and s.worst_symbol != s.top_symbol and (s.worst_symbol_return or 0) < 0 %}
+                <span>Worst
+                    <a href="{{ scoped_url('position_detail', symbol=s.worst_symbol) }}">{{ s.worst_symbol }}</a>
+                    <span class="text-negative">{{ money(s.worst_symbol_return or 0, 0, true) }}</span>
+                </span>
+                {% endif %}
+                <a href="{{ scoped_url('positions', sector=s.sector) }}">View positions</a>
             </div>
-            <div class="stat">
-                <div class="lbl">W / L</div>
-                <div class="val">{{ s.num_winners | int }} / {{ s.num_losers | int }}</div>
-            </div>
-            <div class="stat">
-                <div class="lbl">{{ term('Premium') }}</div>
-                <div class="val">{{ money(s.premium_received or 0, 0) }}</div>
-            </div>
-        </div>
-
-        <div class="splits">
-            <span class="k">{{ term('Realized') }}</span>
-            <span class="v {% if s.realized_pnl < 0 %}neg{% endif %}">{{ money(s.realized_pnl, 0) }}</span>
-            <span class="k">{{ term('Unrealized') }}</span>
-            <span class="v {% if s.unrealized_pnl < 0 %}neg{% endif %}">{{ money(s.unrealized_pnl, 0) }}</span>
-            {% if s.dividend_income and s.dividend_income > 0 %}
-            <span class="k">Dividends</span>
-            <span class="v">{{ money(s.dividend_income, 0) }}</span>
-            {% endif %}
-        </div>
-
-        {% if s.top_symbol or s.worst_symbol %}
-        <div class="extremes">
-            {% if s.top_symbol %}
-            <div class="ex">
-                <div class="lbl">Best</div>
-                <a href="{{ scoped_url('position_detail', symbol=s.top_symbol) }}"
-                   class="text-decoration-none d-block">
-                    <span class="sym">{{ s.top_symbol }}</span>
-                    <span class="ret pos">{{ money(s.top_symbol_return or 0, 0) }}</span>
-                </a>
-            </div>
-            {% endif %}
-            {# Only show "Worst" if it's actually a loser AND different from top #}
-            {% if s.worst_symbol and s.worst_symbol != s.top_symbol and (s.worst_symbol_return or 0) < 0 %}
-            <div class="ex">
-                <div class="lbl">Worst</div>
-                <a href="{{ scoped_url('position_detail', symbol=s.worst_symbol) }}"
-                   class="text-decoration-none d-block">
-                    <span class="sym">{{ s.worst_symbol }}</span>
-                    <span class="ret neg">{{ money(s.worst_symbol_return or 0, 0) }}</span>
-                </a>
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        <div class="actions">
-            {% if subs and subs|length > 0 %}
-            <button type="button" class="btn-toggle" data-target="{{ sec_id }}-inds">
-                <span class="lbl-show">Show {{ subs|length }} subsector{% if subs|length != 1 %}s{% endif %}</span>
-                <span class="chev">▾</span>
-            </button>
-            {% endif %}
-            <a class="btn-positions" href="{{ scoped_url('positions', sector=s.sector) }}">
-                View positions
-            </a>
-        </div>
-
-        {% if subs and subs|length > 0 %}
-        <div class="ind-list" id="{{ sec_id }}-inds">
             {% for r in subs %}
-            <div class="ind-row">
-                <div class="ind-name" title="{{ r.subsector }}">
-                    <a href="{{ scoped_url('positions', subsector=r.subsector) }}">{{ r.subsector }}</a>
-                    <div class="ind-meta">
-                        {{ r.num_symbols }} symbol{% if r.num_symbols != 1 %}s{% endif %}
-                        &middot; {{ r.num_trades | int }} trade{% if r.num_trades != 1 %}s{% endif %}
-                        {% if (r.num_winners + r.num_losers) > 0 %}
-                        &middot; {{ "{:.0%}".format(r.win_rate) }} win
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="ind-pnl {% if r.total_pnl >= 0 %}pos{% else %}neg{% endif %}">
-                    {{ money(r.total_pnl, 0) }}
-                </div>
-                <a class="ind-link" href="{{ scoped_url('positions', subsector=r.subsector) }}">View</a>
+            <div class="sec-sub">
+                <a href="{{ scoped_url('positions', subsector=r.subsector) }}">{{ r.subsector }}</a>
+                <span class="n" data-label="Symbols">{{ r.num_symbols }}</span>
+                <span class="n" data-label="Trades">{{ r.num_trades | int }}</span>
+                <span class="n" data-label="Win rate">{% if (r.num_winners + r.num_losers) > 0 %}{{ "{:.0%}".format(r.win_rate) }}{% else %}—{% endif %}</span>
+                <span class="n {{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }}" data-label="Total return">{{ money(r.total_pnl, 0, true) }}</span>
             </div>
             {% endfor %}
-        </div>
-        {% endif %}
-    </article>
-    {% endfor %}
-</div>
-
-{% if unknown_count and unknown_count > 0 %}
-<div class="ind-section-note">
-    {{ unknown_count }} symbol{% if unknown_count != 1 %}s{% endif %} still {{ 'has' if unknown_count == 1 else 'have' }} no sector.
-    {{ 'It shows' if unknown_count == 1 else 'They show' }} under <em>Unclassified</em>, after the named sectors.
-</div>
-{% endif %}
+        </section>
+        {% endfor %}
+    </div>
+</details>
 
 {% endif %}
+</div>
 
 <script>
 (function () {
-    document.querySelectorAll('.sec-card .btn-toggle').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var card = btn.closest('.sec-card');
-            var open = card.classList.toggle('expanded');
-            var label = btn.querySelector('.lbl-show');
-            if (label) {
-                if (open) {
-                    label.textContent = label.textContent.replace(/^Show /, 'Hide ');
-                } else {
-                    label.textContent = label.textContent.replace(/^Hide /, 'Show ');
-                }
-            }
+    function openHash() {
+        var id = (window.location.hash || "").replace("#", "");
+        if (!id) return;
+        var target = document.getElementById(id);
+        var details = document.getElementById("sec-detail");
+        if (!target || !details || !details.contains(target)) return;
+        details.open = true;
+        target.scrollIntoView({ block: "start" });
+    }
+    document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+        a.addEventListener("click", function () {
+            window.setTimeout(openHash, 0);
         });
     });
-
-    // If the URL has a #sector hash (e.g. from position_detail pill), expand
-    // that sector card on load so the user lands directly on the breakdown.
-    if (window.location.hash) {
-        var target = document.querySelector(window.location.hash);
-        if (target && target.classList.contains('sec-card')) {
-            target.classList.add('expanded');
-            var label = target.querySelector('.btn-toggle .lbl-show');
-            if (label) label.textContent = label.textContent.replace(/^Show /, 'Hide ');
-        }
-    }
+    openHash();
 })();
 </script>
 
