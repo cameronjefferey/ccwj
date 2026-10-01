@@ -1,321 +1,272 @@
 {% extends "base.html" %}
-{# Your Story (/story) — the trader novel. Every position's story engine
-   fingerprint folded into one book: identity, eras, standout stories,
-   style scoreboard. See app/trader_story.py. #}
+{# Trader Profile (/story). Headline, then Right now, then the rest
+   behind disclosures. See app/trader_story.py. #}
 
-{% block content %}
+{% block head %}
 {% include '_review_styles.html' %}
 <style>
-    .ts-hero {
-        background: #1a1a2e;
-        border-radius: 14px; color: #fff; padding: 2rem 1.75rem;
-        text-align: center;
+    .ts-page { min-width: 0; overflow-x: clip; }
+    .ts-page .review-hero,
+    .ts-page .ov-big,
+    .ts-page .ov-pct,
+    .ts-page .ts-takeaway,
+    .ts-page .ts-loop-headline,
+    .ts-page .ts-watch-prompt,
+    .ts-page .ts-standout-hook,
+    .ts-page .ts-style-desc,
+    .ts-page .section-header {
+        overflow-wrap: break-word;
+        word-break: normal;
     }
-    .ts-hero .ts-kicker { font-size: .78rem; letter-spacing: 2px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
-    .ts-hero h1 { font-size: 2rem; font-weight: 700; margin: .35rem 0 .4rem; letter-spacing: -.01em; }
-    .ts-hero .ts-sub { color: #cbd5e1; font-size: 1rem; }
-    .ts-hero .ts-sub strong { color: #fff; }
-    .ts-hero .ts-hero-note {
-        color: #94a3b8; font-size: .82rem; line-height: 1.45;
-        margin: .55rem auto 0; max-width: 36rem;
+    .ts-takeaway {
+        margin: 0 0 .9rem;
+        font-size: 1.28rem;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        line-height: 1.35;
+        max-width: 40rem;
+        color: #fff;
     }
+    .ts-page > .card,
+    .ts-page > .disclosure { margin-bottom: 1rem; }
+    .ts-pad { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
+    .ts-lead { margin: .2rem 0 0; font-size: .82rem; color: var(--ht-muted); }
+    body .ts-page .disclosure > summary .section-header { margin: 0; }
 
-    .ts-card { border: 0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
-    .ts-card h2 { font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; color: var(--ht-muted); font-weight: 700; margin-bottom: .85rem; }
+    .ts-now-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-top: .9rem; }
+    .ts-now-grid > div { min-width: 0; }
+    .ts-loop-kicker { font-size: .78rem; font-weight: 650; color: var(--ht-muted); margin-bottom: .25rem; }
+    .ts-loop-headline { font-size: 1.05rem; font-weight: 650; line-height: 1.4; color: var(--ht-ink); margin: 0 0 .2rem; }
+    .ts-loop-sub { color: var(--ht-muted); font-size: .86rem; }
 
-    /* Profile summary: takeaway-first — one identity statement, then the
-       same scannable label/value/detail rows the Execution review uses. */
-    .ts-card h2.ts-section-title {
-        font-size: .95rem; font-weight: 650; letter-spacing: 0;
-        text-transform: none; color: var(--ht-label, #64748b);
-        margin-bottom: .9rem;
+    a.ts-watch {
+        display: block;
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        padding: .7rem .85rem;
+        text-decoration: none;
+        color: inherit;
+        margin-top: .55rem;
+        min-width: 0;
     }
-    .ts-profile-headline {
-        font-size: clamp(1.28rem, 2.1vw, 1.62rem); font-weight: 750;
-        line-height: 1.28; letter-spacing: -.02em;
-        color: var(--ht-ink, #0f172a); max-width: 40rem; margin: 0;
+    a.ts-watch:hover { border-color: var(--ht-blue); color: inherit; }
+    .ts-watch-top { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+    .ts-watch-sym { font-weight: 650; }
+    .ts-watch-meta { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ts-watch-pnl.pos { color: var(--gain); }
+    .ts-watch-pnl.neg { color: var(--loss); }
+    .ts-watch-sep { color: var(--ht-muted); font-weight: 600; padding: 0 .15rem; }
+    .ts-watch-days.soon { color: var(--loss); }
+    .ts-watch-prompt { color: var(--ht-muted); font-size: .86rem; margin-top: .3rem; line-height: 1.45; }
+
+    .ts-finding {
+        display: grid;
+        grid-template-columns: minmax(6rem, 9rem) auto minmax(0, 1fr);
+        gap: .35rem .75rem;
+        align-items: baseline;
+        padding: .55rem 0;
+        border-bottom: 1px solid var(--ht-line);
     }
-    .ts-books { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-top: 1rem; }
-    .ts-book {
-        border-radius: 14px; padding: 1rem 1.1rem 1.05rem; min-width: 0;
-        border: 1px solid transparent;
-    }
-    .ts-book.income { background: color-mix(in srgb, var(--gain) 12%, transparent); border-color: #243049; border-top: 3px solid #0f766e; }
-    .ts-book.directional { background: rgba(176,107,255,.14); border-color: #243049; border-top: 3px solid #6d5bd0; }
-    .ts-book-kicker { font-size: .78rem; font-weight: 700; margin-bottom: .35rem; }
-    .ts-book.income .ts-book-kicker { color: #5eead4; }
-    .ts-book.directional .ts-book-kicker { color: #c4b5fd; }
+    .ts-finding:last-child { border-bottom: 0; }
+    .ts-finding-label { font-size: .78rem; color: var(--ht-muted); font-weight: 650; }
+    .ts-finding-value { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ts-finding-value.pos { color: var(--gain); }
+    .ts-finding-value.neg { color: var(--loss); }
+    .ts-finding-detail { color: var(--ht-muted); font-size: .86rem; line-height: 1.45; min-width: 0; }
+
+    .ts-books { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    .ts-book { padding: 1rem 1.05rem; min-width: 0; }
+    .ts-book.income { border-top: 2px solid var(--gain); }
+    .ts-book.directional { border-top: 2px solid var(--ht-line); }
+    .ts-book-kicker { font-size: .78rem; font-weight: 650; color: var(--ht-muted); margin-bottom: .3rem; }
     .ts-book-value {
-        font-size: 1.85rem; font-weight: 800; letter-spacing: -.03em;
-        line-height: 1.05; color: var(--ht-ink, #0f172a);
-        font-variant-numeric: tabular-nums;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 1.55rem; font-weight: 650; letter-spacing: -0.02em;
+        line-height: 1.1; font-variant-numeric: tabular-nums;
     }
-    .ts-book-lead { color: var(--ht-muted, #64748b); font-size: .88rem; margin-top: .2rem; }
-    .ts-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem; }
-    .ts-chip {
-        background: #1a2233; border: 1px solid rgba(15,23,42,.06);
-        border-radius: 999px; padding: .18rem .65rem;
-        font-size: .8rem; font-weight: 650; color: var(--ht-ink, #0f172a);
-    }
-    .ts-kept { margin-top: .85rem; padding-top: .75rem; border-top: 1px dashed rgba(15,118,110,.28); }
-    .ts-kept-value { font-weight: 800; color: var(--color-positive); font-variant-numeric: tabular-nums; }
-    .ts-kept-detail { color: var(--ht-muted, #64748b); font-size: .84rem; line-height: 1.4; margin-top: .15rem; }
+    .ts-book-lead { color: var(--ht-muted); font-size: .86rem; margin-top: .2rem; }
+    .ts-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
+    .ts-kept { margin-top: .8rem; padding-top: .7rem; border-top: 1px solid var(--ht-line); }
+    .ts-kept-value { font-weight: 650; color: var(--gain); font-variant-numeric: tabular-nums; }
+    .ts-kept-detail { color: var(--ht-muted); font-size: .84rem; line-height: 1.4; margin-top: .15rem; }
     .ts-record {
-        margin-top: .8rem; background: var(--ht-surface-2, #121826);
-        border: 1px solid var(--ht-line, #243049); border-radius: 12px;
-        padding: .8rem 1rem .85rem;
+        margin-top: .8rem;
+        background: var(--ht-surface-2);
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        padding: .8rem 1rem;
     }
-    .ts-record-top { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; }
-    .ts-record-label { font-size: .84rem; color: var(--ht-muted, #64748b); font-weight: 600; }
-    .ts-record-value { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ht-ink, #0f172a); }
-    .ts-meter { height: 8px; border-radius: 999px; background: #243049; margin-top: .55rem; overflow: hidden; }
+    .ts-record-top { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
+    .ts-record-label { font-size: .84rem; color: var(--ht-muted); font-weight: 650; }
+    .ts-record-value { font-size: 1.05rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .ts-meter { height: 8px; border-radius: 999px; background: var(--ht-line); margin-top: .5rem; overflow: hidden; }
     .ts-meter > span { display: block; height: 100%; border-radius: 999px; background: var(--gain); }
-    .ts-meter.long { background: #e4dff6; }
-    .ts-meter.long > span { background: #6d5bd0; }
-    .ts-record-detail { color: var(--ht-muted, #64748b); font-size: .84rem; margin-top: .4rem; }
+    .ts-record-detail { color: var(--ht-muted); font-size: .84rem; margin-top: .4rem; }
     .ts-profile-foot {
-        display: flex; flex-wrap: wrap; gap: .25rem 1.6rem;
-        margin-top: .9rem; font-size: .9rem; color: var(--ht-muted, #64748b);
+        display: flex; flex-wrap: wrap; gap: .35rem 1.4rem;
+        margin-top: .9rem; font-size: .9rem; color: var(--ht-muted);
     }
-    .ts-profile-foot strong { color: var(--ht-ink, #0f172a); font-weight: 750; }
-    [data-bs-theme="dark"] .ts-book.income { background: #102824; border-color: #1c4a42; }
-    [data-bs-theme="dark"] .ts-book.directional { background: #1c1830; border-color: #3a3260; }
-    [data-bs-theme="dark"] .ts-book-value,
-    [data-bs-theme="dark"] .ts-record-value,
-    [data-bs-theme="dark"] .ts-profile-foot strong { color: var(--ht-ink); }
-    [data-bs-theme="dark"] .ts-chip { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.08); color: var(--ht-ink); }
+    .ts-profile-foot strong { color: var(--ht-ink); font-weight: 650; font-variant-numeric: tabular-nums; }
 
-    .ts-era { display: grid; grid-template-columns: 84px 1fr; gap: 1rem; padding: .7rem 0; border-bottom: 1px solid #243049; }
-    .ts-era:last-child { border-bottom: 0; }
-    .ts-era-year { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
-    .ts-era-title { font-weight: 700; }
-    .ts-era-line { color: var(--ht-muted); font-size: .88rem; margin-top: .1rem; }
-    .ts-era-note { color: var(--ht-muted); font-size: .85rem; margin: -.25rem 0 .75rem; line-height: 1.45; }
-    [data-bs-theme="dark"] .ts-era { border-bottom-color: #2e313a; }
-    [data-bs-theme="dark"] .ts-era-line,
-    [data-bs-theme="dark"] .ts-era-note { color: #94a3b8; }
+    .ts-exec-head {
+        border-left: 3px solid var(--gain);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--gain) 12%, transparent);
+        padding: .9rem 1rem;
+        margin-bottom: .85rem;
+    }
+    .ts-exec-headline { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+    .ts-exec-v { font-size: 1.45rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .ts-exec-v.pos { color: var(--gain); }
+    .ts-exec-v.neg { color: var(--loss); }
+    .ts-exec-t { font-size: 1rem; font-weight: 650; }
+    .ts-exec-headsub { color: var(--ht-muted); font-size: .84rem; margin-top: .25rem; }
+    .ts-exec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    .ts-exec-pane { border-radius: 12px; padding: .9rem 1rem; border: 1px solid var(--ht-line); background: var(--ht-surface-2); min-width: 0; }
+    .ts-exec-pane.short { border-top: 2px solid var(--gain); }
+    .ts-exec-pane-kicker { font-size: .78rem; font-weight: 650; color: var(--ht-muted); margin-bottom: .55rem; }
+    .ts-exec-block + .ts-exec-block { margin-top: .75rem; padding-top: .7rem; border-top: 1px solid var(--ht-line); }
+    .ts-exec-label { font-size: .78rem; color: var(--ht-muted); font-weight: 650; }
+    .ts-exec-num { font-size: 1.25rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: .1rem; }
+    .ts-exec-num.pos { color: var(--gain); }
+    .ts-exec-num.neg { color: var(--loss); }
+    .ts-exec-num.neutral { color: var(--ht-ink); }
+    .ts-exec-detail { color: var(--ht-muted); font-size: .84rem; line-height: 1.4; margin-top: .2rem; }
+    .ts-dots { display: flex; gap: .28rem; margin: .4rem 0 .1rem; flex-wrap: wrap; }
+    .ts-dot { width: 9px; height: 9px; border-radius: 50%; background: transparent; border: 1.5px solid var(--ht-muted); }
+    .ts-dot.on { background: var(--gain); border-color: var(--gain); }
+    .ts-exec-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-top: .8rem; }
+    .ts-exec-tile { background: var(--ht-surface-2); border: 1px solid var(--ht-line); border-radius: 12px; padding: .85rem .95rem; min-width: 0; }
+
+    a.ts-swing {
+        display: grid;
+        grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+        gap: .65rem;
+        align-items: center;
+        padding: .7rem .85rem;
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        margin-top: .5rem;
+        text-decoration: none;
+        color: inherit;
+        min-width: 0;
+    }
+    a.ts-swing:hover { border-color: var(--ht-blue); color: inherit; }
+    .ts-swing-sym { font-weight: 650; }
+    .ts-swing-desc { font-size: .9rem; line-height: 1.35; min-width: 0; }
+    .ts-swing-num { text-align: right; }
+    .ts-swing-delta { display: block; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .ts-swing-delta.pos { color: var(--gain); }
+    .ts-swing-delta.neg { color: var(--loss); }
+    .ts-swing-cap { display: block; color: var(--ht-muted); font-size: .75rem; margin-top: .05rem; }
+    .ts-scale-note { color: var(--ht-muted); font-size: .8rem; margin: .75rem 0 0; }
 
     .ts-standouts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .7rem; }
     a.ts-standout {
-        display: flex; flex-direction: column; min-height: 100%;
-        border-radius: 14px; padding: .85rem .9rem .8rem;
-        text-decoration: none; color: inherit; border: 1px solid transparent;
-        border-top-width: 3px; transition: transform .15s ease;
+        display: flex; flex-direction: column; min-width: 0; min-height: 100%;
+        border-radius: 12px; padding: .85rem .9rem;
+        text-decoration: none; color: inherit;
+        border: 1px solid var(--ht-line); border-top-width: 3px;
+        background: var(--ht-surface-2);
     }
-    a.ts-standout:hover { transform: translateY(-2px); }
-    a.ts-standout.pos { background: color-mix(in srgb, var(--gain) 12%, transparent); border-color: #243049; border-top-color: var(--gain); }
-    a.ts-standout.neg { background: color-mix(in srgb, var(--loss) 12%, transparent); border-color: #243049; border-top-color: var(--loss); }
-    .ts-standout-label { font-size: .78rem; font-weight: 700; }
+    a.ts-standout:hover { border-color: var(--ht-blue); color: inherit; }
+    a.ts-standout.pos { border-top-color: var(--gain); }
+    a.ts-standout.neg { border-top-color: var(--loss); }
+    .ts-standout-label { font-size: .75rem; font-weight: 650; color: var(--ht-muted); }
     a.ts-standout.pos .ts-standout-label { color: var(--gain); }
     a.ts-standout.neg .ts-standout-label { color: var(--loss); }
-    .ts-standout-sym { font-size: 1.2rem; font-weight: 800; margin-top: .15rem; color: var(--ht-ink, #0f172a); }
-    .ts-standout-pnl { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: .1rem; }
-    .ts-standout-pnl.pos { color: var(--color-positive); }
-    .ts-standout-pnl.neg { color: var(--color-negative); }
-    .ts-standout-hook { color: var(--ht-muted, #64748b); font-size: .82rem; margin-top: .4rem; line-height: 1.4; flex: 1; }
+    .ts-standout-sym { font-size: 1.05rem; font-weight: 650; margin-top: .15rem; }
     .ts-standout-open {
-        font-size: .68rem; font-weight: 700; padding: .1rem .45rem; border-radius: 999px;
-        background: color-mix(in srgb, var(--ht-blue) 14%, transparent);
-        color: var(--ht-blue);
-        border: 1px solid color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
-        vertical-align: middle;
-        margin-left: .3rem;
+        font-size: .68rem; font-weight: 650; padding: .1rem .45rem; border-radius: 999px;
+        margin-left: .3rem; vertical-align: middle;
     }
-    .ts-standout-track { height: 6px; border-radius: 999px; background: rgba(15,23,42,.08); margin-top: .75rem; overflow: hidden; }
+    .ts-standout-pnl { font-size: 1rem; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: .1rem; }
+    .ts-standout-pnl.pos { color: var(--gain); }
+    .ts-standout-pnl.neg { color: var(--loss); }
+    .ts-standout-hook { color: var(--ht-muted); font-size: .8rem; margin-top: .35rem; line-height: 1.4; flex: 1; }
+    .ts-standout-track { height: 6px; border-radius: 999px; background: var(--ht-line); margin-top: .7rem; overflow: hidden; }
     .ts-standout-track > span { display: block; height: 100%; border-radius: 999px; }
     a.ts-standout.pos .ts-standout-track > span { background: var(--gain); }
     a.ts-standout.neg .ts-standout-track > span { background: var(--loss); }
-    .ts-scale-note { color: var(--ht-muted, #64748b); font-size: .8rem; margin: .7rem 0 0; }
-    [data-bs-theme="dark"] a.ts-standout.pos {
-        background: color-mix(in srgb, var(--gain) 16%, transparent);
-        border-color: color-mix(in srgb, var(--gain) 35%, var(--ht-line));
-    }
-    [data-bs-theme="dark"] a.ts-standout.neg {
-        background: color-mix(in srgb, var(--loss) 16%, transparent);
-        border-color: color-mix(in srgb, var(--loss) 35%, var(--ht-line));
-    }
-    [data-bs-theme="dark"] .ts-standout-track { background: rgba(255,255,255,.08); }
 
     .ts-style-head, .ts-style-row {
         display: grid;
-        grid-template-columns: minmax(160px, 1.35fr) 72px minmax(150px, 1.15fr) 110px minmax(130px, 1fr);
-        gap: .6rem 1rem; align-items: center;
+        grid-template-columns: minmax(0, 1.4fr) 4.5rem minmax(0, 1.1fr) 7rem minmax(0, 1fr);
+        gap: .5rem .75rem;
+        align-items: center;
     }
     .ts-style-head {
-        padding: 0 .15rem .4rem 1.05rem;
-        font-size: .78rem; color: var(--ht-muted, #64748b); font-weight: 600;
+        padding: 0 .15rem .35rem;
+        font-size: .72rem; color: var(--ht-muted); font-weight: 650;
     }
     .ts-style-row {
-        border-radius: 14px; padding: .8rem 1rem .8rem .95rem;
-        margin-bottom: .55rem; border: 1px solid transparent; text-decoration: none; color: inherit;
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        padding: .75rem .9rem;
+        margin-bottom: .5rem;
+        background: var(--ht-surface-2);
+        min-width: 0;
     }
     .ts-style-row:last-child { margin-bottom: 0; }
-    .ts-style-row.income { background: color-mix(in srgb, var(--gain) 12%, transparent); border-color: #243049; border-left: 3px solid #0f766e; }
-    .ts-style-row.directional { background: rgba(176,107,255,.14); border-color: #243049; border-left: 3px solid #6d5bd0; }
-    .ts-style-row.stock { background: #1a2233; border-color: #243049; border-left: 3px solid #64748b; }
-    .ts-style-name { font-weight: 800; color: var(--ht-ink, #0f172a); }
-    .ts-style-row.income .ts-style-name { color: #5eead4; }
-    .ts-style-row.directional .ts-style-name { color: #c4b5fd; }
-    .ts-style-desc { color: var(--ht-muted, #64748b); font-size: .8rem; line-height: 1.3; margin-top: .1rem; }
-    .ts-style-n { font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ht-ink, #0f172a); }
-    .ts-style-win { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ht-ink, #0f172a); }
-    .ts-style-pct { color: var(--ht-muted, #64748b); font-weight: 650; font-size: .85rem; margin-left: .35rem; }
-    .ts-style-bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,.85); margin-top: .35rem; overflow: hidden; max-width: 148px; }
-    .ts-style-bar > span { display: block; height: 100%; border-radius: 999px; }
-    .ts-style-row.income .ts-style-bar > span { background: #0f766e; }
-    .ts-style-row.directional .ts-style-bar > span { background: #6d5bd0; }
-    .ts-style-row.stock .ts-style-bar > span { background: #475569; }
-    .ts-style-pnl { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .ts-style-pnl.pos { color: var(--color-positive); }
-    .ts-style-pnl.neg { color: var(--color-negative); }
-    .ts-style-best { white-space: nowrap; }
-    .ts-style-best a { font-weight: 750; color: var(--ht-ink, #0f172a); text-underline-offset: 2px; }
+    .ts-style-row.income { border-left: 3px solid var(--gain); }
+    .ts-style-name { font-weight: 650; }
+    .ts-style-desc { color: var(--ht-muted); font-size: .78rem; line-height: 1.35; margin-top: .1rem; }
+    .ts-style-n, .ts-style-win { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .ts-style-pct { color: var(--ht-muted); font-weight: 650; font-size: .82rem; margin-left: .3rem; }
+    .ts-style-bar { height: 6px; border-radius: 999px; background: var(--ht-line); margin-top: .3rem; overflow: hidden; max-width: 9rem; }
+    .ts-style-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--gain); }
+    .ts-style-row.directional .ts-style-bar > span,
+    .ts-style-row.stock .ts-style-bar > span { background: var(--ht-muted); }
+    .ts-style-pnl { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ts-style-pnl.pos { color: var(--gain); }
+    .ts-style-pnl.neg { color: var(--loss); }
+    .ts-style-best a { font-weight: 650; color: var(--ht-ink); }
     .ts-style-pnl, .ts-style-best, .ts-style-head .ts-align-end { text-align: right; }
-    [data-bs-theme="dark"] .ts-style-row.income { background: #102824; border-color: #1c4a42; }
-    [data-bs-theme="dark"] .ts-style-row.directional { background: #1c1830; border-color: #3a3260; }
-    [data-bs-theme="dark"] .ts-style-row.stock { background: #1a2230; border-color: #2c384c; }
-    [data-bs-theme="dark"] .ts-style-n,
-    [data-bs-theme="dark"] .ts-style-win,
-    [data-bs-theme="dark"] .ts-style-best a,
-    [data-bs-theme="dark"] .ts-style-name { color: var(--ht-ink); }
-    [data-bs-theme="dark"] .ts-style-row.income .ts-style-name { color: #5eead4; }
-    [data-bs-theme="dark"] .ts-style-row.directional .ts-style-name { color: #c4b5fd; }
-    [data-bs-theme="dark"] .ts-style-bar { background: rgba(255,255,255,.12); }
-    @media (max-width: 760px) {
-        .ts-style-head { display: none; }
-        .ts-style-row { grid-template-columns: 1fr 1fr; }
-        .ts-style-name-cell { grid-column: 1 / -1; }
-        .ts-style-pnl, .ts-style-best, .ts-style-head .ts-align-end { text-align: left; }
-    }
 
-    .ts-exec-head {
-        border-left: 3px solid var(--gain); border-radius: 12px;
-        background: color-mix(in srgb, var(--gain) 12%, transparent); padding: 1rem 1.15rem; margin-bottom: .8rem;
-    }
-    [data-bs-theme="dark"] .ts-exec-head { background: #10241c; }
-    .ts-exec-headline { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
-    .ts-exec-headline .ts-exec-v { font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; letter-spacing: -.02em; }
-    .ts-exec-headline .ts-exec-v.pos { color: var(--color-positive); }
-    .ts-exec-headline .ts-exec-v.neg { color: var(--color-negative); }
-    .ts-exec-headline .ts-exec-t { font-size: 1.02rem; font-weight: 650; color: var(--ht-ink, #0f172a); }
-    .ts-exec-headsub { color: var(--ht-muted, #64748b); font-size: .85rem; margin-top: .3rem; line-height: 1.4; }
-    .ts-exec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; align-items: stretch; }
-    .ts-exec-pane { border-radius: 14px; padding: 1rem 1.05rem 1.05rem; border: 1px solid transparent; min-width: 0; }
-    .ts-exec-pane.long { background: rgba(176,107,255,.14); border-color: #243049; border-top: 3px solid #6d5bd0; }
-    .ts-exec-pane.short { background: color-mix(in srgb, var(--gain) 12%, transparent); border-color: #243049; border-top: 3px solid #0f766e; }
-    .ts-exec-pane-kicker { font-size: .8rem; font-weight: 700; margin-bottom: .65rem; }
-    .ts-exec-pane.long .ts-exec-pane-kicker { color: #c4b5fd; }
-    .ts-exec-pane.short .ts-exec-pane-kicker { color: #5eead4; }
-    .ts-exec-block + .ts-exec-block { margin-top: .85rem; padding-top: .8rem; border-top: 1px solid rgba(15,23,42,.06); }
-    .ts-exec-label { font-size: .78rem; color: var(--ht-muted, #64748b); font-weight: 600; }
-    .ts-exec-num { font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: .1rem; }
-    .ts-exec-num.pos { color: var(--color-positive); }
-    .ts-exec-num.neg { color: var(--color-negative); }
-    .ts-exec-num.neutral { color: var(--ht-ink, #0f172a); }
-    .ts-exec-detail { color: var(--ht-muted, #64748b); font-size: .84rem; line-height: 1.4; margin-top: .25rem; }
-    .ts-dots { display: flex; gap: .28rem; margin: .4rem 0 .15rem; flex-wrap: wrap; }
-    .ts-dot { width: 9px; height: 9px; border-radius: 50%; background: transparent; border: 1.5px solid #7d9a94; }
-    .ts-dot.on { background: #0f766e; border-color: #0f766e; }
-    .ts-exec-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin-top: .8rem; }
-    .ts-exec-tile {
-        background: var(--ht-surface-2, #121826); border: 1px solid var(--ht-line, #243049);
-        border-radius: 14px; padding: .9rem 1rem;
-    }
-    [data-bs-theme="dark"] .ts-exec-pane.long { background: #1c1830; border-color: #3a3260; }
-    [data-bs-theme="dark"] .ts-exec-pane.short { background: #102824; border-color: #1c4a42; }
-    [data-bs-theme="dark"] .ts-exec-num.neutral,
-    [data-bs-theme="dark"] .ts-exec-headline .ts-exec-t { color: var(--ht-ink); }
-    [data-bs-theme="dark"] .ts-exec-block + .ts-exec-block { border-top-color: rgba(255,255,255,.08); }
-    a.ts-swing {
-        display: grid; grid-template-columns: 72px 1fr auto;
-        gap: .75rem; align-items: center;
-        padding: .75rem .9rem; border: 1px solid var(--ht-line, #243049);
-        border-radius: 12px; margin-bottom: .5rem; text-decoration: none; color: inherit;
-    }
-    a.ts-swing:last-child { margin-bottom: 0; }
-    a.ts-swing:hover { border-color: #94a3b8; }
-    .ts-swing-sym { font-weight: 800; font-size: 1rem; }
-    .ts-swing-desc { font-size: .92rem; line-height: 1.35; }
-    .ts-swing-num { text-align: right; }
-    .ts-swing-delta { display: block; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 1.02rem; }
-    .ts-swing-delta.pos { color: var(--color-positive); }
-    .ts-swing-delta.neg { color: #c47a12; }
-    .ts-swing-cap { display: block; color: var(--ht-muted, #64748b); font-size: .75rem; margin-top: .05rem; }
-    [data-bs-theme="dark"] a.ts-swing { border-color: #24304a; }
-    [data-bs-theme="dark"] .ts-swing-delta.neg { color: #e0a45a; }
+    .ts-era { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: .75rem; padding: .7rem 0; border-bottom: 1px solid var(--ht-line); }
+    .ts-era:last-child { border-bottom: 0; }
+    .ts-era-year { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .ts-era-title { font-weight: 650; }
+    .ts-era-line { color: var(--ht-muted); font-size: .86rem; margin-top: .1rem; overflow-wrap: break-word; word-break: normal; }
+    .ts-era-note { color: var(--ht-muted); font-size: .84rem; margin: 0 0 .5rem; line-height: 1.45; }
+    .ts-epilogue { color: var(--ht-muted); font-size: .92rem; }
 
-    .ts-finding {
-        display: grid; grid-template-columns: 150px 130px 1fr;
-        gap: .35rem 1rem; align-items: baseline;
-        padding: .6rem 0; border-bottom: 1px solid #243049;
-    }
-    .ts-finding:last-child { border-bottom: 0; }
-    .ts-finding-label { font-size: .74rem; text-transform: uppercase; letter-spacing: .6px; color: var(--ht-muted); font-weight: 700; }
-    .ts-finding-value { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .ts-finding-value.pos { color: var(--color-positive); }
-    .ts-finding-value.neg { color: var(--color-negative); }
-    .ts-finding-detail { color: var(--ht-muted); font-size: .88rem; line-height: 1.45; }
-    [data-bs-theme="dark"] .ts-finding { border-bottom-color: #2e313a; }
-    [data-bs-theme="dark"] .ts-finding-detail { color: #94a3b8; }
-    @media (max-width: 560px) {
-        .ts-finding { grid-template-columns: 1fr auto; }
-        .ts-finding-detail { grid-column: 1 / -1; }
-    }
-    a.ts-exec-example {
-        display: flex; gap: .6rem; align-items: baseline;
-        padding: .5rem .75rem; border: 1px solid #e2e8f0; border-radius: 10px;
-        margin-bottom: .5rem; text-decoration: none; color: inherit;
-        font-size: .9rem; line-height: 1.45;
-        transition: border-color .15s ease;
-    }
-    a.ts-exec-example:hover { border-color: #0d9488; }
-    a.ts-exec-example:last-child { margin-bottom: 0; }
-    [data-bs-theme="dark"] a.ts-exec-example { border-color: #24304a; }
-
-    .ts-epilogue { text-align: center; color: var(--ht-muted); font-size: .95rem; }
-    [data-bs-theme="dark"] .ts-card { background: #111a2c; }
-    [data-bs-theme="dark"] .ts-epilogue { color: #94a3b8; }
-
-    .ts-loop-kicker { font-size: .72rem; letter-spacing: .8px; text-transform: uppercase; color: var(--ht-label, #6b7280); font-weight: 700; }
-    .ts-loop-headline { font-size: 1.1rem; font-weight: 700; line-height: 1.4; color: var(--ht-ink, #0f172a); margin: .2rem 0 .25rem; }
-    [data-bs-theme="dark"] .ts-loop-headline { color: var(--ht-ink, #e2e8f0); }
-    .ts-loop-sub { color: var(--ht-muted, #64748b); font-size: .88rem; }
-    a.ts-watch {
-        display: block; border: 1px solid #e2e8f0; border-radius: 10px;
-        padding: .7rem .85rem; text-decoration: none; color: inherit;
-        margin-bottom: .5rem; transition: border-color .15s ease;
-    }
-    a.ts-watch:last-child { margin-bottom: 0; }
-    a.ts-watch:hover { border-color: var(--color-mirror-ink); }
-    [data-bs-theme="dark"] a.ts-watch { border-color: #24304a; }
-    .ts-watch-top { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
-    .ts-watch-sym { font-weight: 800; }
-    .ts-watch-meta { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .ts-watch-pnl.pos { color: var(--color-positive); }
-    .ts-watch-pnl.neg { color: var(--color-negative); }
-    .ts-watch-sep { color: var(--ht-muted, #94a3b8); font-weight: 600; padding: 0 .15rem; }
-    .ts-watch-days.soon { color: var(--color-negative); }
-    .ts-watch-prompt { color: var(--ht-muted, #64748b); font-size: .88rem; margin-top: .3rem; line-height: 1.45; }
-    [data-bs-theme="dark"] .ts-watch-prompt { color: var(--ht-muted, #94a3b8); }
-
-    @media (max-width: 900px) {
+    @media (max-width: 1100px) {
         .ts-standouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 760px) {
-        .ts-books, .ts-exec-grid, .ts-exec-tiles { grid-template-columns: 1fr; }
+        .ts-now-grid, .ts-books, .ts-exec-grid, .ts-exec-tiles { grid-template-columns: 1fr; }
+        .ts-finding { grid-template-columns: 1fr auto; }
+        .ts-finding-detail { grid-column: 1 / -1; }
+        .ts-style-head { display: none; }
+        .ts-style-row { display: flex; flex-direction: column; align-items: stretch; gap: .35rem; }
+        .ts-style-row [data-label] {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: .75rem;
+            text-align: right;
+        }
+        .ts-style-row [data-label]::before {
+            content: attr(data-label);
+            color: var(--ht-muted);
+            font-size: .66rem;
+            font-weight: 650;
+            text-align: left;
+            flex: 0 0 42%;
+        }
+        .ts-style-pnl, .ts-style-best { text-align: right; }
         a.ts-swing { grid-template-columns: 1fr auto; }
-        .ts-swing-desc { grid-column: 1 / -1; grid-row: 2; }
-    }
-    @media (max-width: 480px) {
-        .ts-hero { padding: 1.3rem 1rem; }
-        .ts-hero h1 { font-size: 1.5rem; }
-        .ts-era { grid-template-columns: 60px 1fr; gap: .6rem; }
+        .ts-swing-desc { grid-column: 1 / -1; }
         .ts-standouts { grid-template-columns: 1fr; }
     }
 </style>
+{% endblock %}
 
-<div class="review-hero ts-hero mb-4">
-    <div class="ov-bar" style="text-align:left;">
+{% block content %}
+<div class="ts-page">
+<div class="review-hero ts-hero" id="ts-hero">
+    <div class="ov-bar">
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% include "_account_scope_filters.html" %}
@@ -325,19 +276,34 @@
         </form>
         {% endif %}
     </div>
+    <p class="ov-date">Trader Profile</p>
     {% if novel %}
-    <h1>Trader Profile</h1>
-    <div class="ts-sub">
-        <strong>{{ novel.hero_counts.stories }}</strong> symbols across <strong>{{ "{:,}".format(novel.hero_counts.chapters) }}</strong> trade days{% if novel.hero_counts.since %} since <strong>{{ novel.hero_counts.since }}</strong>{% endif %}
-        {% set _held = novel.hero_counts.open_held if novel.hero_counts.open_held is defined else novel.hero_counts.open_stories %}
-        {% if _held %} &middot; <strong>{{ _held }}</strong> currently held{% endif %}
+    <p class="ts-takeaway">{{ novel.profile.headline }}</p>
+    {% set _held = novel.hero_counts.open_held if novel.hero_counts.open_held is defined else novel.hero_counts.open_stories %}
+    <div class="ov-top">
+        <div>
+            <div class="ov-k">Symbols</div>
+            <div class="ov-big">{{ novel.hero_counts.stories }}</div>
+        </div>
+        <div>
+            <div class="ov-k">Trade days</div>
+            <div class="ov-pct">{{ "{:,}".format(novel.hero_counts.chapters) }}</div>
+        </div>
+        <div>
+            <div class="ov-k">Currently held</div>
+            <div class="ov-pct">{% if _held %}{{ _held }}{% else %}0{% endif %}</div>
+        </div>
+        <div>
+            <div class="ov-k">Since</div>
+            <div class="ov-pct ov-invest">{% if novel.hero_counts.since %}{{ novel.hero_counts.since }}{% else %}&mdash;{% endif %}</div>
+        </div>
     </div>
-    <p class="ts-hero-note">Trade days add each symbol's active days. Three names on one session are three trade days.</p>
+    <p class="ov-line">Trade days add each symbol's active days. Three names on one session are three trade days.</p>
     {% else %}
-    <h1>Trader Profile</h1>
-    <div class="ts-sub">Once your trade history syncs, this page builds a complete profile of how you trade.</div>
+    <p class="ov-line">Once your trade history syncs, this page builds a complete profile of how you trade.</p>
     {% endif %}
 </div>
+<!-- /ts-hero -->
 
 {% include "_history_window_note.html" %}
 
@@ -348,18 +314,19 @@
 {% if novel %}
 
 {% if novel.loop %}
-<div class="row g-3 mb-4">
-    <div class="col-lg-6">
-        <div class="card ts-card p-4 h-100">
-            <div class="ts-loop-kicker">On the clock</div>
-            <div class="ts-loop-headline">{{ novel.loop.this_week.headline }}</div>
-            <div class="ts-loop-sub">{{ novel.loop.this_week.sub }}</div>
-            {% if novel.loop.this_week.watches %}
-            <div class="mt-3">
+<div class="card" id="ts-now">
+    <div class="ts-pad">
+        <h2 class="section-header">Right now</h2>
+        <div class="ts-now-grid">
+            <div>
+                <div class="ts-loop-kicker">On the clock</div>
+                <div class="ts-loop-headline">{{ novel.loop.this_week.headline }}</div>
+                <div class="ts-loop-sub">{{ novel.loop.this_week.sub }}</div>
+                {% if novel.loop.this_week.watches %}
                 {% for w in novel.loop.this_week.watches %}
                 <a class="ts-watch" href="{{ scoped_url('position_detail', symbol=w.symbol) }}">
                     <div class="ts-watch-top">
-                        <span class="ts-watch-sym">{{ w.symbol }}{% if w.structure %}<span class="ts-standout-open" style="margin-left:.4rem;">{{ w.structure }}</span>{% endif %}</span>
+                        <span class="ts-watch-sym">{{ w.symbol }}{% if w.structure %}<span class="badge ts-standout-open">{{ w.structure }}</span>{% endif %}</span>
                         <span class="ts-watch-meta">
                             {% if w.pnl_text %}
                             <span class="ts-watch-pnl {{ 'pos' if w.pnl >= 0 else 'neg' }}">{{ w.pnl_text }}</span>
@@ -371,33 +338,34 @@
                     <div class="ts-watch-prompt">{{ w.prompt }}</div>
                 </a>
                 {% endfor %}
+                {% endif %}
             </div>
-            {% endif %}
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card ts-card p-4 h-100">
-            <div class="ts-loop-kicker">Last week · {{ novel.loop.last_week.label }}</div>
-            <div class="ts-loop-headline">{{ novel.loop.last_week.headline }}</div>
-            {% if novel.loop.last_week.facts %}
-            <div class="mt-2">
-                {% for f in novel.loop.last_week.facts %}
-                <div class="ts-finding">
-                    <div class="ts-finding-label">{{ f.label }}</div>
-                    <div class="ts-finding-value {{ f.tone }}">{{ f.value }}</div>
-                    <div class="ts-finding-detail">{{ f.detail }}</div>
+            <div>
+                <div class="ts-loop-kicker">Last week{% if novel.loop.last_week.label %} · {{ novel.loop.last_week.label }}{% endif %}</div>
+                <div class="ts-loop-headline">{{ novel.loop.last_week.headline }}</div>
+                {% if novel.loop.last_week.facts %}
+                <div style="margin-top:.35rem;">
+                    {% for f in novel.loop.last_week.facts %}
+                    <div class="ts-finding">
+                        <div class="ts-finding-label">{{ f.label }}</div>
+                        <div class="ts-finding-value {{ f.tone }}">{{ f.value }}</div>
+                        <div class="ts-finding-detail">{{ f.detail }}</div>
+                    </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
+                {% endif %}
             </div>
-            {% endif %}
         </div>
     </div>
 </div>
 {% endif %}
 
-<div class="card ts-card p-4 mb-4">
-    <h2 class="ts-section-title">Profile summary</h2>
-    <div class="ts-profile-headline">{{ novel.profile.headline }}</div>
+<details class="disclosure" id="ts-profile">
+    <summary>
+        <span class="section-header">Profile summary</span>
+        <span class="disclosure-note">Income, directional, and the contract record.</span>
+    </summary>
+    <div class="disclosure-body">
     {% set income = novel.profile.facts | selectattr('label', 'equalto', 'Income book') | list %}
     {% set directional = novel.profile.facts | selectattr('label', 'equalto', 'Directional book') | list %}
     {% set kept = novel.profile.facts | selectattr('label', 'equalto', 'Kept at expiry') | list %}
@@ -409,13 +377,13 @@
     <div class="ts-books">
         {% if income %}
         {% set f = income[0] %}
-        <div class="ts-book income">
+        <div class="tile ts-book income">
             <div class="ts-book-kicker">Income book</div>
             <div class="ts-book-value">{{ f.value }}</div>
-            <div class="ts-book-lead">{{ f.lead or 'premium collected' }}</div>
+            <div class="ts-book-lead" title="Premium received.">{{ term('Collected') }}</div>
             {% if f.chips %}
             <div class="ts-chips">
-                {% for chip in f.chips %}<span class="ts-chip">{{ chip }}</span>{% endfor %}
+                {% for chip in f.chips %}<span class="badge">{{ chip }}</span>{% endfor %}
             </div>
             {% endif %}
             {% if kept %}
@@ -426,7 +394,7 @@
             {% endif %}
         </div>
         {% elif kept %}
-        <div class="ts-book income">
+        <div class="tile ts-book income">
             <div class="ts-book-kicker">Kept at expiry</div>
             <div class="ts-book-value">{{ kept[0].value }}</div>
             <div class="ts-book-lead">{{ kept[0].detail }}</div>
@@ -434,13 +402,13 @@
         {% endif %}
         {% if directional %}
         {% set f = directional[0] %}
-        <div class="ts-book directional">
+        <div class="tile ts-book directional">
             <div class="ts-book-kicker">Directional book</div>
             <div class="ts-book-value">{{ f.value }}</div>
             <div class="ts-book-lead">{{ f.lead or 'placed at risk buying options' }}</div>
             {% if f.chips %}
             <div class="ts-chips">
-                {% for chip in f.chips %}<span class="ts-chip">{{ chip }}</span>{% endfor %}
+                {% for chip in f.chips %}<span class="badge">{{ chip }}</span>{% endfor %}
             </div>
             {% endif %}
         </div>
@@ -448,7 +416,7 @@
     </div>
     {% elif kept %}
     <div class="ts-books">
-        <div class="ts-book income">
+        <div class="tile ts-book income">
             <div class="ts-book-kicker">Kept at expiry</div>
             <div class="ts-book-value">{{ kept[0].value }}</div>
             <div class="ts-book-lead">{{ kept[0].detail }}</div>
@@ -475,15 +443,16 @@
         {% if busiest %}<span>Busiest day <strong>{{ busiest[0].value }}</strong> {{ busiest[0].detail }}</span>{% endif %}
     </div>
     {% endif %}
-</div>
+    </div>
+</details>
 
 {% if novel.execution %}
-{# Execution review: every resolved contract graded against the market's
-   subsequent record (underlying close at expiry + accumulating daily
-   option marks). The differentiator card — no trade log can say this.
-   Gated in app/execution_quality.py on >= 5 graded contracts. #}
-<div class="card ts-card p-4 mb-4">
-    <h2 class="ts-section-title">Execution review</h2>
+<details class="disclosure" id="ts-execution">
+    <summary>
+        <span class="section-header">Execution review</span>
+        <span class="disclosure-note">Early closes versus holding to expiration.</span>
+    </summary>
+    <div class="disclosure-body">
     <div class="ts-exec-head">
         <div class="ts-exec-headline">
             <span class="ts-exec-v {{ novel.execution.headline.tone }}">{{ novel.execution.headline.value }}</span>
@@ -495,7 +464,6 @@
     {% set buybacks = novel.execution.findings | selectattr('label', 'equalto', 'Short buybacks') | list %}
     {% set rolls = novel.execution.findings | selectattr('label', 'equalto', 'Rolls never tested') | list %}
     {% set held = novel.execution.findings | selectattr('label', 'equalto', 'Held to expiry') | list %}
-    {% set peak = novel.execution.findings | selectattr('label', 'equalto', 'Peak capture') | list %}
     {% if longs or buybacks or rolls or held %}
     <div class="ts-exec-grid">
         {% if longs %}
@@ -506,7 +474,7 @@
             <div class="ts-exec-num {{ f.tone }}">{{ f.value }}</div>
             <div class="ts-exec-detail">{{ f.detail }}</div>
             {% if f.meter is defined %}
-            <div class="ts-meter long"><span style="width: {{ (f.meter * 100)|round(1) }}%"></span></div>
+            <div class="ts-meter"><span style="width: {{ (f.meter * 100)|round(1) }}%"></span></div>
             {% endif %}
         </div>
         {% endif %}
@@ -571,47 +539,55 @@
         {% endif %}
     </div>
     {% endif %}
-</div>
-{% endif %}
 
-{% if novel.execution and novel.execution.examples %}
-<div class="card ts-card p-4 mb-4">
-    <h2 class="ts-section-title">Biggest swings from exiting early</h2>
+    {% if novel.execution.examples %}
+    <h3 class="section-header" style="margin-top:1.1rem;">Biggest swings from exiting early</h3>
     {% for ex in novel.execution.examples %}
     <a class="ts-swing" href="{{ scoped_url('position_detail', symbol=ex.symbol, story='open') }}">
         <span class="ts-swing-sym">{{ ex.symbol }}</span>
         <span class="ts-swing-desc">{{ ex.desc }}</span>
-        <span class="ts-swing-num">
+        <span class="ts-swing-num" data-label="Difference">
             <span class="ts-swing-delta {{ ex.tone or '' }}">{{ ex.delta_text or ex.desc }}</span>
             {% if ex.caption %}<span class="ts-swing-cap">{{ ex.caption }}</span>{% endif %}
         </span>
     </a>
     {% endfor %}
-    <p class="ts-scale-note mb-0">Evidence, not advice. Every early close also removed risk.</p>
-</div>
+    <p class="ts-scale-note">Evidence, not advice. Every early close also removed risk.</p>
+    {% endif %}
+    </div>
+</details>
 {% endif %}
 
 {% if novel.standouts %}
-<div class="card ts-card p-4 mb-4">
-    <h2 class="ts-section-title">Notable positions</h2>
+<details class="disclosure" id="ts-notable">
+    <summary>
+        <span class="section-header">Notable positions</span>
+        <span class="disclosure-note">One scale, so a small result stays small.</span>
+    </summary>
+    <div class="disclosure-body">
     <div class="ts-standouts">
         {% for s in novel.standouts %}
         <a class="ts-standout {{ 'pos' if s.pnl >= 0 else 'neg' }}" href="{{ scoped_url('position_detail', symbol=s.symbol, story='open') }}">
             <div class="ts-standout-label">{{ s.label }}</div>
-            <div class="ts-standout-sym">{{ s.symbol }}{% if s.open %}<span class="ts-standout-open">still open</span>{% endif %}</div>
+            <div class="ts-standout-sym">{{ s.symbol }}{% if s.open %}<span class="badge ts-standout-open">still open</span>{% endif %}</div>
             <div class="ts-standout-pnl {{ 'pos' if s.pnl >= 0 else 'neg' }}">{{ s.pnl_text }}</div>
             <div class="ts-standout-hook">{{ s.hook }}</div>
             <div class="ts-standout-track"><span style="width: {{ s.bar or 0 }}%"></span></div>
         </a>
         {% endfor %}
     </div>
-    <p class="ts-scale-note">All bars share one scale, so small results look small. Each card opens that position's trade-by-trade history.</p>
-</div>
+    <p class="ts-scale-note">Each card opens that position's trade-by-trade history.</p>
+    </div>
+</details>
 {% endif %}
 
 {% if novel.scoreboard %}
-<div class="card ts-card p-4 mb-4">
-    <h2 class="ts-section-title">Performance by style</h2>
+<details class="disclosure" id="ts-style">
+    <summary>
+        <span class="section-header">Performance by style</span>
+        <span class="disclosure-note">Income, directional, and stock.</span>
+    </summary>
+    <div class="disclosure-body">
     <div class="ts-style-head">
         <span>Style</span>
         <span>Positions</span>
@@ -626,13 +602,13 @@
             <div class="ts-style-name">{{ r.label }}</div>
             <div class="ts-style-desc">{{ r.desc }}</div>
         </div>
-        <div class="ts-style-n">{{ r.symbols }}</div>
-        <div>
+        <div class="ts-style-n" data-label="Positions">{{ r.symbols }}</div>
+        <div data-label="Profitable">
             <div><span class="ts-style-win">{{ r.green }} of {{ r.symbols }}</span><span class="ts-style-pct">{{ win_pct }}%</span></div>
             <div class="ts-style-bar"><span style="width: {{ win_pct }}%"></span></div>
         </div>
-        <div class="ts-style-pnl ts-style-num {{ 'pos' if r.pnl >= 0 else 'neg' }}">{{ r.pnl_text }}</div>
-        <div class="ts-style-best">
+        <div class="ts-style-pnl {{ 'pos' if r.pnl >= 0 else 'neg' }}" data-label="Total return">{{ r.pnl_text }}</div>
+        <div class="ts-style-best" data-label="Best position">
             {% if r.best_symbol %}
             <a href="{{ scoped_url('position_detail', symbol=r.best_symbol) }}">{{ r.best_symbol }}</a>
             <span class="ts-style-pnl {{ 'pos' if r.best_pnl >= 0 else 'neg' }}">{{ r.best_text }}</span>
@@ -640,12 +616,17 @@
         </div>
     </div>
     {% endfor %}
-</div>
+    </div>
+</details>
 {% endif %}
 
 {% if novel.eras %}
-<div class="card ts-card p-4 mb-4">
-    <h2>Year by year</h2>
+<details class="disclosure" id="ts-years">
+    <summary>
+        <span class="section-header">Year by year</span>
+        <span class="disclosure-note">Calendar days, and new symbols.</span>
+    </summary>
+    <div class="disclosure-body">
     <p class="ts-era-note">New symbols are names that first appear in the profile that year. They add up to the header count. Calendar days count each date once, so a year runs lower than the header's trade days.</p>
     {% for e in novel.eras %}
     <div class="ts-era">
@@ -656,13 +637,14 @@
         </div>
     </div>
     {% endfor %}
-</div>
+    </div>
+</details>
 {% endif %}
 
-<div class="ts-epilogue mb-4">
+<div class="ts-epilogue">
     {% set _held = novel.open_held if novel.open_held is defined else novel.open_stories %}
     {% if _held %}
-    {{ _held }} symbol{{ 's are' if _held != 1 else ' is' }} currently held — this profile updates as they close.
+    {{ _held }} symbol{{ 's are' if _held != 1 else ' is' }} currently held. This profile updates as they close.
     {% else %}
     All positions are closed. The profile updates with your next trade.
     {% endif %}
@@ -673,10 +655,12 @@
 
 {% else %}
 {% if not error %}
-<div class="card ts-card p-4 mb-4 text-center text-muted">
-    No trade history yet — connect a broker or upload a CSV, and your trading profile will build automatically.
+<div class="card ts-card">
+    <div class="ts-pad">
+        <p class="ts-lead mb-0">No trade history yet. Connect a broker or upload a CSV, and your trading profile will build automatically.</p>
+    </div>
 </div>
 {% endif %}
 {% endif %}
-
+</div>
 {% endblock %}

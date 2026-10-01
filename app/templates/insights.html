@@ -1,299 +1,265 @@
 {% extends "base.html" %}
 
+{# ════════════════════════════════════════════════════════════════════════
+   AI Insights — one book, then the patterns, then the rest.
+
+   Story order, top to bottom:
+
+     1. Headline     — left on the table, giveback, days past peak, coverage
+     2. Patterns     — the discovery cards
+     3. Secondary    — exit timing (by strategy + recent closes), the
+                       write-up, and Ask AI. A saved narration starts closed.
+   ════════════════════════════════════════════════════════════════════════ #}
+
 {% block head %}
 {% include '_review_styles.html' %}
 <style>
-    .insights-hero {
-        background: #1a1a2e;
-        border-radius: 16px;
-        padding: 2.5rem;
-        color: #fff;
-        margin-bottom: 2rem;
+    .ins-page { min-width: 0; overflow-x: clip; }
+    .ins-page .review-hero,
+    .ins-page .ov-big,
+    .ins-page .ov-pct,
+    .ins-page .ts-takeaway,
+    .ins-page .discovery-title,
+    .ins-page .discovery-body,
+    .ins-page .strat-name,
+    .ins-page .section-header {
+        overflow-wrap: break-word;
+        word-break: normal;
     }
-    .insights-hero h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: .5rem; }
+    .ins-pad { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
+    .ins-lead { margin: .2rem 0 0; font-size: .82rem; color: var(--ht-muted); max-width: 46rem; }
+    body .ins-page .disclosure > summary .section-header { margin: 0; }
+    .ins-page > .card,
+    .ins-page > .disclosure { margin-bottom: 1rem; }
 
-    .coaching-section {
-        background: #121826;
-        border-radius: 16px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.75rem;
-        margin-bottom: 1.25rem;
-    }
-    .section-label {
-        font-size: .72rem;
-        text-transform: uppercase;
-        letter-spacing: 1.1px;
-        color: #9ca3af;
-        font-weight: 600;
-        margin-bottom: 1.1rem;
-    }
-
-    /* Discovery Lab */
-    .discovery-lab {
-        border: 1px solid rgba(184,115,51,.28);
-        background: #1a2233;
-    }
     .discovery-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+        gap: .85rem;
     }
-    .discovery-card {
-        border-radius: 14px;
-        padding: 1.15rem 1.2rem;
-        background: var(--ht-surface, #121826);
-        color: var(--ht-ink, #e8edf7);
-        border: 1px solid var(--ht-line, #243049);
-        box-shadow: none;
-        transition: transform .12s ease, box-shadow .12s ease;
-    }
-    .discovery-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(0,0,0,.28);
-    }
-    .discovery-tag {
-        font-size: .62rem;
-        font-weight: 700;
-        letter-spacing: .12em;
-        text-transform: uppercase;
-        color: var(--color-mirror-ink);
-        background: rgba(184,115,51,.12);
-        border-radius: 6px;
-        padding: .22rem .5rem;
-    }
+    .discovery-card { padding: 1rem 1.05rem; min-width: 0; }
+    .discovery-top { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; margin-bottom: .45rem; }
     .discovery-stat {
-        font-size: .85rem;
-        font-weight: 700;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .82rem;
+        font-weight: 650;
         color: var(--ht-ink);
+        text-align: right;
     }
-    .discovery-title {
-        font-size: 1.02rem;
-        font-weight: 700;
-        line-height: 1.35;
-        color: var(--ht-ink);
-        margin-bottom: .5rem;
-    }
-    .discovery-body {
-        font-size: .86rem;
-        color: var(--ht-ink);
-        line-height: 1.55;
-        white-space: normal;
-    }
-    .discovery-muted {
-        font-size: .71rem;
-        color: #9ca3af;
-    }
+    .discovery-title { font-size: 1rem; font-weight: 650; line-height: 1.35; margin-bottom: .35rem; }
+    .discovery-body { font-size: .86rem; line-height: 1.5; margin: 0; }
+    .discovery-muted { font-size: .75rem; color: var(--ht-muted); margin: .45rem 0 0; }
 
-    /* Signal cards */
-    .signal-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.25rem;
-    }
-    .signal-card {
-        background: #1a2233;
-        border-radius: 12px;
-        padding: 1rem 1.15rem;
-    }
-    .signal-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; margin-bottom: .3rem; }
-    .signal-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
-    .signal-meta { font-size: .75rem; color: var(--ht-muted); margin-top: .2rem; }
-
-    /* Strategy rows */
     .strat-row {
         display: flex;
+        flex-wrap: wrap;
         justify-content: space-between;
-        align-items: center;
-        padding: .65rem 1rem;
-        background: #1a2233;
-        border-radius: 8px;
-        margin-bottom: .5rem;
+        align-items: baseline;
+        gap: .35rem .75rem;
+        padding: .7rem 0;
+        border-bottom: 1px solid var(--ht-line);
+        min-width: 0;
     }
-    .strat-row .strat-name { font-weight: 600; font-size: .9rem; }
-    .strat-row .strat-stats { font-size: .82rem; color: var(--ht-muted); }
-    .strat-giveback { font-weight: 700; font-size: .9rem; }
-
-    /* Exit table */
-    .exit-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; font-weight: 600; }
-    .exit-table td { font-size: .85rem; }
-
-    /* AI content */
-    .insights-content {
-        border: none;
-        border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06);
-        padding: 2rem;
+    .strat-row:last-child { border-bottom: 0; }
+    .strat-name { font-weight: 650; font-size: .95rem; }
+    .strat-stats { font-size: .8rem; color: var(--ht-muted); margin-top: .15rem; }
+    .strat-giveback {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-weight: 650;
+        text-align: right;
+        margin-left: auto;
     }
+    .strat-giveback .lbl { display: block; font-family: inherit; font-size: .66rem; font-weight: 650; color: var(--ht-muted); }
+
+    .ins-note { font-size: .82rem; color: var(--ht-muted); margin: 0 0 .85rem; max-width: 46rem; }
+    .insights-content { padding: 0; background: transparent; border: 0; box-shadow: none; }
     .insights-content h2 {
-        font-size: 1.25rem;
-        font-weight: 700;
-        margin-top: 1.5rem;
-        margin-bottom: .75rem;
-        padding-bottom: .5rem;
-        border-bottom: 2px solid #e9ecef;
+        font-size: .95rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        margin: 1.15rem 0 .45rem;
+        padding-bottom: .35rem;
+        border-bottom: 1px solid var(--ht-line);
     }
     .insights-content h2:first-child { margin-top: 0; }
-    .insights-content h3 {
-        font-size: 1.05rem;
-        font-weight: 700;
-        margin-top: 1.25rem;
-        margin-bottom: .5rem;
-    }
-    /* Ask replies sit in a 320px scroller. Page-sized h2s overflow it. */
-    #coachThread h2,
-    #coachThread h3 {
-        font-size: 1.05rem;
-        font-weight: 700;
-        line-height: 1.35;
-        margin: .85rem 0 .35rem;
-        padding-bottom: 0;
-        border-bottom: 0;
-    }
-    #coachThread h2:first-child,
-    #coachThread h3:first-child { margin-top: 0; }
-    #coachThread p { margin-bottom: .45rem; }
-    #coachThread ul { margin-bottom: .45rem; padding-left: 1.15rem; }
-    .insights-content ul { padding-left: 1.25rem; }
-    .insights-content li { margin-bottom: .4rem; line-height: 1.6; }
-    .insights-content strong { color: var(--ht-ink); }
+    .insights-content h3 { font-size: .95rem; font-weight: 650; margin: 1rem 0 .4rem; }
+    .insights-content ul { padding-left: 1.2rem; }
+    .insights-content li { margin-bottom: .35rem; line-height: 1.55; }
     .insights-meta { font-size: .78rem; color: var(--ht-muted); }
     .insights-stale {
-        background: #2a2118;
-        border: 1px solid #fdba74;
-        border-radius: 10px;
+        background: var(--ht-surface-2);
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
         padding: .75rem .9rem;
         font-size: .85rem;
         line-height: 1.45;
-        color: #e8c07a;
+        color: var(--ht-ink);
         margin-bottom: .9rem;
     }
+    #coachThread { max-height: 320px; overflow-y: auto; font-size: .9rem; min-width: 0; }
+    #coachThread h1, #coachThread h2, #coachThread h3,
     #coachThread .ask-md-heading {
         font-size: .95rem;
         font-weight: 650;
         line-height: 1.35;
         margin: .85rem 0 .3rem;
-        letter-spacing: 0;
-    }
-    #coachThread h1, #coachThread h2, #coachThread h3 {
-        font-size: .95rem;
-        font-weight: 650;
-        line-height: 1.35;
-        margin: .85rem 0 .3rem;
         padding: 0;
-        border: none;
+        border: 0;
         letter-spacing: 0;
     }
-    #coachThread p { margin-bottom: .45rem; }
-    #coachThread ul { margin-bottom: .45rem; padding-left: 1.1rem; }
+    #coachThread p, #coachThread ul { margin-bottom: .45rem; }
+    #coachThread ul { padding-left: 1.1rem; }
+    .ins-ask-form { display: flex; gap: .5rem; min-width: 0; }
+    .ins-ask-form .form-control { min-width: 0; flex: 1; }
+    .ins-model { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: .9rem; }
+    .ins-model .form-select { width: auto; min-width: 0; max-width: 100%; }
+    .ins-money { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-    .generate-card {
-        border: 2px dashed #ced4da;
-        border-radius: 12px;
-        padding: 2.5rem 2rem;
-        text-align: center;
+    #insExits th { font-size: .72rem; font-weight: 650; color: var(--ht-muted); }
+    #insExits td { font-size: .88rem; }
+
+    @media (max-width: 767px) {
+        .ins-page .table-responsive { overflow: visible; }
+        .ins-page table.ht-stack { display: block; width: 100%; max-width: 100%; }
+        .ins-page table.ht-stack > thead { display: none !important; }
+        .ins-page table.ht-stack > tbody { display: block; }
+        .ins-page table.ht-stack > tbody > tr {
+            display: block;
+            border: 1px solid var(--ht-line);
+            border-radius: 10px;
+            margin: 0 0 .6rem;
+            padding: .45rem .7rem .5rem;
+            background: var(--ht-surface);
+        }
+        .ins-page table.ht-stack > tbody > tr > td {
+            display: flex !important;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: .75rem;
+            width: auto !important;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-align: right;
+            border: 0;
+            padding: .16rem 0;
+        }
+        .ins-page table.ht-stack > tbody > tr > td::before {
+            content: attr(data-label);
+            color: var(--ht-muted);
+            font-size: .66rem;
+            font-weight: 650;
+            text-align: left;
+            flex: 0 0 42%;
+            white-space: normal;
+        }
+        .ins-ask-form { flex-direction: column; }
+        .ins-ask-form .btn { align-self: flex-start; }
     }
-    .generate-card h5 { font-weight: 700; margin-bottom: .5rem; }
-    .generate-card p { color: var(--ht-muted); margin-bottom: 1.5rem; }
+    @media (min-width: 768px) {
+        #insExits { table-layout: fixed; width: 100%; }
+        #insExits th, #insExits td {
+            white-space: normal;
+            overflow: visible;
+            overflow-wrap: break-word;
+            word-break: normal;
+            vertical-align: top;
+        }
+        #insExits td.ins-money { white-space: nowrap; overflow-wrap: normal; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-9">
-        <div class="review-hero insights-hero">
-            <div class="ov-bar">
-                        {% if scope_account_choices|length > 1 or account_groups %}
-                <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
-                    {% include "_account_scope_filters.html" %}
-                    {% if scope_is_filtered %}
-                    <a class="filter-reset" href="{{ url_for('insights', scope='all') }}">Reset</a>
-                    {% endif %}
-                </form>
+<div class="ins-page">
+    {% set et = coaching.exit_timing if coaching else none %}
+    {% set total_given_back = et.total_given_back if et else none %}
+    {% set avg_giveback = et.avg_giveback if et else none %}
+    {% set avg_days = et.avg_days if et else none %}
+
+    <div class="review-hero insights-hero" id="ins-hero">
+        <div class="ov-bar">
+            {% if scope_account_choices|length > 1 or account_groups %}
+            <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
+                {% include "_account_scope_filters.html" %}
+                {% if scope_is_filtered %}
+                <a class="filter-reset" href="{{ url_for('insights', scope='all') }}">Reset</a>
                 {% endif %}
-            </div>
-            <h1>AI Insights</h1>
-            <p class="mb-0 opacity-90">
-                How your closes line up: by weekday, by symbol, by how long you held, and by the trade after a loss.
-                Generate a write-up when you want the cards narrated. The cards refresh on each visit.
-            </p>
+            </form>
+            {% endif %}
         </div>
-
-        {% include "_history_window_note.html" %}
-
-        {# ════════════════════════════════════
-           DETERMINISTIC COACHING DATA
-           ════════════════════════════════════ #}
-
-        {% if coaching and coaching.has_data %}
-
-        {% if coaching.discoveries and coaching.discoveries|length > 0 %}
-        <div class="coaching-section discovery-lab">
-            <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2 mb-2">
-                <div>
-                    <div class="section-label mb-1">Discovery Lab</div>
-                    <p class="mb-0 small text-muted" style="max-width: 42rem;">
-                        Patterns in your own closes. Each card is a contrast in your history, with the count behind it.
-                    </p>
-                </div>
+        <p class="ov-date">AI Insights</p>
+        {% if coaching and coaching.has_data and total_given_back is not none %}
+        <div class="ov-top">
+            <div>
+                <div class="ov-k">Left on the table</div>
+                <div class="ov-big neg">{{ money(total_given_back, 0) }}</div>
             </div>
-            <div class="discovery-grid mt-3">
+            <div>
+                <div class="ov-k">Avg giveback</div>
+                <div class="ov-pct">{{ "{:.0f}".format(avg_giveback) }}%</div>
+            </div>
+            <div>
+                <div class="ov-k">Days past peak</div>
+                <div class="ov-pct">{{ "{:.0f}".format(avg_days) }}</div>
+            </div>
+            <div>
+                <div class="ov-k">Coverage</div>
+                <div class="ov-pct ov-invest">{{ coaching.reliable_contracts }}<span class="ov-quiet"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
+            </div>
+        </div>
+        <p class="ov-line">How your closes line up. The cards recompute on each visit. A write-up narrates them when you ask for one.</p>
+        {% else %}
+        <p class="ov-line">How your closes line up: by weekday, by symbol, by how long you held, and by the trade after a loss.</p>
+        {% endif %}
+    </div>
+    <!-- /ins-hero -->
+
+    {% include "_history_window_note.html" %}
+
+    {% if coaching and coaching.has_data %}
+
+    {% if coaching.discoveries and coaching.discoveries|length > 0 %}
+    <div class="card" id="ins-patterns">
+        <div class="ins-pad">
+            <h2 class="section-header">Patterns</h2>
+            <p class="ins-lead">Contrasts in your own closes, with the count behind each one.</p>
+            <div class="discovery-grid" style="margin-top:.9rem;">
                 {% for d in coaching.discoveries %}
-                <div class="discovery-card">
-                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                        <span class="discovery-tag">{{ d.tag }}</span>
-                        <span class="discovery-stat text-nowrap">{{ d.stat }}</span>
+                <div class="tile discovery-card">
+                    <div class="discovery-top">
+                        <span class="badge">{{ d.tag }}</span>
+                        <span class="discovery-stat">{{ d.stat }}</span>
                     </div>
                     <div class="discovery-title">{{ d.title }}</div>
-                    <p class="discovery-body mb-0">{{ d.body | replace('**','') }}</p>
+                    <p class="discovery-body">{{ d.body | replace('**','') }}</p>
                     {% if d.muted %}
-                    <p class="discovery-muted mb-0 mt-2">{{ d.muted }}</p>
+                    <p class="discovery-muted">{{ d.muted }}</p>
                     {% endif %}
                 </div>
                 {% endfor %}
             </div>
         </div>
-        {% endif %}
+    </div>
+    {% endif %}
 
-        {# ── Exit Timing Profile ── #}
-        {% if coaching.signals %}
-        <div class="coaching-section">
-            <div class="section-label">Exit Timing Profile</div>
-            <p class="mb-3" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
-                How much profit you leave on the table by holding past the optimal exit point.
-                Computed from daily option mark-to-market snapshots, captured since August 2026.
-                Contracts closed before that cannot be scored.
-            </p>
-
-            {% set et = coaching.exit_timing %}
-            {% set total_given_back = et.total_given_back if et else (coaching.signals|map(attribute='pnl_given_back')|sum) %}
-            {% set avg_giveback = et.avg_giveback if et else (coaching.signals|map(attribute='giveback_pct')|sum / coaching.signals|length) %}
-            {% set avg_days = et.avg_days if et else (coaching.signals|map(attribute='days_past_peak')|sum / coaching.signals|length) %}
-
-            <div class="signal-grid">
-                <div class="signal-card">
-                    <div class="signal-label">Total Left on Table</div>
-                    <div class="signal-value text-warning">{{ money(total_given_back, 0) }}</div>
-                    <div class="signal-meta">across all strategies</div>
-                </div>
-                <div class="signal-card">
-                    <div class="signal-label">Avg Giveback</div>
-                    <div class="signal-value">{{ "{:.0f}".format(avg_giveback) }}%</div>
-                    <div class="signal-meta">of peak profit surrendered</div>
-                </div>
-                <div class="signal-card">
-                    <div class="signal-label">Avg Days Past Peak</div>
-                    <div class="signal-value">{{ "{:.0f}".format(avg_days) }}</div>
-                    <div class="signal-meta">held after optimal exit</div>
-                </div>
-                <div class="signal-card">
-                    <div class="signal-label">Data Coverage</div>
-                    <div class="signal-value">{{ coaching.reliable_contracts }}<span style="font-size:.7em; font-weight:400; color:#8a97b1"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
-                    <div class="signal-meta">{{ coaching.pct_reliable }}% of contracts since daily marks began</div>
-                </div>
-            </div>
-
-            <div class="section-label mt-3" style="margin-bottom:.75rem">By Strategy</div>
+    {% if coaching.signals or coaching.recent_exits %}
+    {% if coaching.discoveries and coaching.discoveries|length > 0 %}
+    <details class="disclosure" id="ins-timing">
+        <summary>
+            <span class="section-header">Exit timing</span>
+            <span class="disclosure-note">By strategy, and recent closes.</span>
+        </summary>
+        <div class="disclosure-body">
+    {% else %}
+    <div class="card" id="ins-timing">
+        <div class="ins-pad">
+            <h2 class="section-header">Exit timing</h2>
+            <p class="ins-lead">By strategy, and recent closes.</p>
+    {% endif %}
+            <p class="ins-note">Given back is the gap between the peak mark and the realized close. It is not a second result.</p>
+            {% if coaching.signals %}
             {% for s in coaching.signals %}
             <div class="strat-row">
                 <div>
@@ -305,149 +271,149 @@
                         {% if s.pct_premium_captured > 0 %}&middot; {{ "{:.0f}".format(s.pct_premium_captured) }}% premium captured{% endif %}
                     </div>
                 </div>
-                <div class="text-end">
-                    <div class="strat-giveback text-warning">{{ money(s.pnl_given_back, 0) }}</div>
-                    <div class="strat-stats">{{ "{:.0f}".format(s.giveback_pct) }}% giveback</div>
+                <div class="strat-giveback text-negative">
+                    <span class="lbl">Given back</span>
+                    {{ money(s.pnl_given_back, 0) }}
+                    <span class="strat-stats">{{ "{:.0f}".format(s.giveback_pct) }}%</span>
                 </div>
             </div>
             {% endfor %}
-        </div>
-        {% endif %}
+            {% endif %}
 
-        {# ── Recent Exits ── #}
-        {% if coaching.recent_exits %}
-        <div class="coaching-section">
-            <div class="section-label">Recent Exit Examples (Last 90 Days)</div>
-            <p class="mb-3" style="font-size:.9rem; color:#8a97b1">
-                Specific trades where you held past the peak — the gap between what you made and what you could have made.
-            </p>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0 exit-table">
-                    <thead class="table-light">
+            {% if coaching.recent_exits %}
+            <div class="table-responsive" style="margin-top:1rem;">
+                <table class="table table-sm align-middle mb-0 ht-stack" id="insExits">
+                    <thead>
                         <tr>
                             <th class="sortable" data-sort="str">Symbol</th>
                             <th class="sortable" data-sort="str">Strategy</th>
                             <th class="sortable" data-sort="str">Closed</th>
-                            <th class="sortable text-end" data-sort="num">Actual</th>
+                            <th class="sortable text-end" data-sort="num">{{ term('Realized') }}</th>
                             <th class="sortable text-end" data-sort="num">Peak</th>
-                            <th class="sortable text-end" data-sort="num">Given Back</th>
-                            <th class="sortable text-center" data-sort="num">Days Late</th>
+                            <th class="sortable text-end" data-sort="num">Given back</th>
+                            <th class="sortable text-end" data-sort="num">Days late</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for e in coaching.recent_exits %}
                         {% if e.given_back > 10 %}
                         <tr data-href="{{ scoped_url('position_detail', symbol=e.symbol) }}">
-                            <td data-val="{{ e.symbol }}">
+                            <td data-label="Symbol" data-val="{{ e.symbol }}">
                                 <a href="{{ scoped_url('position_detail', symbol=e.symbol) }}" class="fw-semibold text-decoration-none">{{ e.symbol }}</a>
                             </td>
-                            <td class="text-muted" data-val="{{ e.strategy }}">{{ e.strategy }}</td>
-                            <td class="small" data-val="{{ e.close_date }}">{{ e.close_date }}</td>
-                            <td class="text-end {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.actual_pnl }}">
+                            <td data-label="Strategy" class="text-muted" data-val="{{ e.strategy }}">{{ e.strategy }}</td>
+                            <td data-label="Closed" data-val="{{ e.close_date }}">{{ e.close_date }}</td>
+                            <td data-label="Realized" class="text-end ins-money {% if e.actual_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.actual_pnl }}">
                                 {{ money(e.actual_pnl, 0, true) }}
                             </td>
-                            <td class="text-end {% if e.peak_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.peak_pnl }}">{{ money(e.peak_pnl, 0, true) }}</td>
-                            <td class="text-end text-warning fw-semibold" data-val="{{ e.given_back }}">{{ money(e.given_back, 0) }}</td>
-                            <td class="text-center" data-val="{{ e.days_past_peak }}">{{ e.days_past_peak }}d</td>
+                            <td data-label="Peak" class="text-end ins-money {% if e.peak_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}" data-val="{{ e.peak_pnl }}">{{ money(e.peak_pnl, 0, true) }}</td>
+                            <td data-label="Given back" class="text-end ins-money text-negative fw-semibold" data-val="{{ e.given_back }}">{{ money(e.given_back, 0) }}</td>
+                            <td data-label="Days late" class="text-end" data-val="{{ e.days_past_peak }}">{{ e.days_past_peak }}d</td>
                         </tr>
                         {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
+            {% endif %}
+    {% if coaching.discoveries and coaching.discoveries|length > 0 %}
         </div>
-        {% endif %}
-
-        {% elif scope_narrowed %}
-        <div class="coaching-section">
-            <div class="section-label">Nothing in this filter</div>
-            <p class="mb-0" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
-                Discovery Lab and Exit Timing need closed option contracts with daily marks.
-                This group or account doesn't have any, so those cards are empty here.
-            </p>
+    </details>
+    {% else %}
         </div>
-        {% endif %}{# end coaching.has_data #}
+    </div>
+    {% endif %}
+    {% endif %}
 
+    {% elif scope_narrowed %}
+    <div class="card" id="ins-patterns">
+        <div class="ins-pad">
+            <h2 class="section-header">Nothing in this filter</h2>
+            <p class="ins-lead mb-0">Patterns and exit timing need closed option contracts with daily marks. This group or account does not have any.</p>
+        </div>
+    </div>
+    {% endif %}
 
-        {# ════════════════════════════════════
-           AI ANALYSIS
-           ════════════════════════════════════ #}
+    {% if insight and not scope_narrowed %}
+    <details class="disclosure" id="ins-writeup">
+        <summary>
+            <span class="section-header">Write-up</span>
+            <span class="disclosure-note">Narration of the cards.</span>
+        </summary>
+        <div class="disclosure-body">
+    {% else %}
+    <div class="card" id="ins-writeup">
+        <div class="ins-pad">
+    {% endif %}
 
-        {% if gemini_available and llm_models and not is_demo_user %}
-        {% set included_models = llm_models | rejectattr('tier', 'equalto', 'paid') | list %}
-        {% set addon_models = llm_models | selectattr('tier', 'equalto', 'paid') | list %}
-        <div class="coaching-section d-flex flex-wrap align-items-center gap-2"
-             style="padding:1rem 1.25rem;">
-            <label for="llmModelSelect" class="section-label mb-0" style="margin-bottom:0;">AI Model</label>
-            <select id="llmModelSelect" class="form-select form-select-sm" style="width:auto; min-width:240px;">
-                {% if included_models %}
-                <optgroup label="Included">
-                    {% for m in included_models %}
-                    <option value="{{ m.key }}"
-                            data-tier="{{ m.tier }}"
-                            data-locked="0"
-                            {% if m.key == selected_model %}selected{% endif %}>
-                        {{ m.label }}
-                    </option>
-                    {% endfor %}
-                </optgroup>
-                {% endif %}
-                {% if addon_models %}
-                <optgroup label="HappyTrader AI">
-                    {% for m in addon_models %}
-                    {% set locked = not can_use_paid_llm %}
-                    <option value="{{ m.key }}"
-                            data-tier="{{ m.tier }}"
-                            data-locked="{{ '1' if locked else '0' }}"
-                            {% if m.key == selected_model %}selected{% endif %}>
-                        {{ m.label }}{% if locked %} (add-on){% endif %}
-                    </option>
-                    {% endfor %}
-                </optgroup>
-                {% endif %}
-            </select>
-            <span id="llmModelSaved" class="small text-success" style="display:none;">Saved</span>
-            <span class="small text-muted ms-auto">Used for generated insights &amp; Ask AI.</span>
-            <div id="llmUpgrade" class="w-100 small mt-1"
-                 data-always="{{ '1' if not can_use_paid_llm and addon_models else '0' }}"
-                 {% if can_use_paid_llm or not addon_models %}style="display:none;"{% endif %}>
-                <span class="text-muted">
-                    {% if addon_models %}
-                    {{ addon_models | map(attribute='label') | join(', ') }}
-                    {% else %}
-                    Higher-tier models
+            {% if gemini_available and llm_models and not is_demo_user %}
+            {% set included_models = llm_models | rejectattr('tier', 'equalto', 'paid') | list %}
+            {% set addon_models = llm_models | selectattr('tier', 'equalto', 'paid') | list %}
+            <div class="ins-model">
+                <label for="llmModelSelect" class="section-header" style="margin:0;">Model</label>
+                <select id="llmModelSelect" class="form-select form-select-sm">
+                    {% if included_models %}
+                    <optgroup label="Included">
+                        {% for m in included_models %}
+                        <option value="{{ m.key }}"
+                                data-tier="{{ m.tier }}"
+                                data-locked="0"
+                                {% if m.key == selected_model %}selected{% endif %}>
+                            {{ m.label }}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
                     {% endif %}
-                    are part of HappyTrader AI · ${{ ai_price_display or '9.99' }}/mo.
-                </span>
-                {% if ai_addon_enabled %}
-                <form method="POST" action="{{ url_for('billing_checkout_ai') }}" class="d-inline">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-sm btn-outline-primary ms-1">Unlock</button>
-                </form>
-                {% else %}
-                <a href="{{ url_for('pricing') }}#happytrader-ai" class="btn btn-sm btn-outline-primary ms-1">See pricing</a>
-                {% endif %}
+                    {% if addon_models %}
+                    <optgroup label="HappyTrader AI">
+                        {% for m in addon_models %}
+                        {% set locked = not can_use_paid_llm %}
+                        <option value="{{ m.key }}"
+                                data-tier="{{ m.tier }}"
+                                data-locked="{{ '1' if locked else '0' }}"
+                                {% if m.key == selected_model %}selected{% endif %}>
+                            {{ m.label }}{% if locked %} (add-on){% endif %}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+                <span id="llmModelSaved" class="small text-positive" style="display:none;">Saved</span>
+                <span class="small text-muted">Used for the write-up and Ask AI.</span>
+                <div id="llmUpgrade" class="w-100 small"
+                     data-always="{{ '1' if not can_use_paid_llm and addon_models else '0' }}"
+                     {% if can_use_paid_llm or not addon_models %}style="display:none;"{% endif %}>
+                    <span class="text-muted">
+                        {% if addon_models %}
+                        {{ addon_models | map(attribute='label') | join(', ') }}
+                        {% else %}
+                        Higher-tier models
+                        {% endif %}
+                        are part of HappyTrader AI · ${{ ai_price_display or '9.99' }}/mo.
+                    </span>
+                    {% if ai_addon_enabled %}
+                    <form method="POST" action="{{ url_for('billing_checkout_ai') }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-primary ms-1">Unlock</button>
+                    </form>
+                    {% else %}
+                    <a href="{{ url_for('pricing') }}#happytrader-ai" class="btn btn-sm btn-outline-primary ms-1">See pricing</a>
+                    {% endif %}
+                </div>
             </div>
-        </div>
-        {% endif %}
+            {% endif %}
 
-        {% if scope_narrowed %}
-        <div class="coaching-section">
-            <div class="section-label">AI Analysis</div>
-            <p class="mb-0" style="font-size:.9rem; color:#8a97b1; line-height:1.5">
-                The saved analysis covers your whole book, so it isn't shown under this filter.
+            {% if scope_narrowed %}
+            <h2 class="section-header">Write-up</h2>
+            <p class="ins-lead mb-0">
+                The saved analysis covers your whole book, so it is not shown under this filter.
                 {% if coaching and coaching.has_data %}
                 The cards above are this filter's record.
                 {% else %}
                 Clear the filter to read the whole-book write-up.
                 {% endif %}
             </p>
-        </div>
-        {% endif %}
-
-        {% if insight and not scope_narrowed %}
-        <div class="coaching-section" style="background: var(--ht-surface-2); border: 1px solid var(--ht-line);">
-            <div class="section-label">AI Analysis</div>
+            {% elif insight %}
             {% if insight_conflict %}
             <div class="insights-stale">
                 This write-up cites {{ insight_conflict.cited_reliable }} of {{ insight_conflict.cited_total }} contracts.
@@ -457,10 +423,10 @@
             {% else %}
             <p class="insights-meta mb-2">The cards above are recomputed on each visit. This narration can lag them until you regenerate.</p>
             {% endif %}
-            <div class="insights-content" style="box-shadow:none; padding:0; background:transparent;">
+            <div class="insights-content">
                 {{ insight.full_analysis_html }}
             </div>
-            <div class="d-flex justify-content-between align-items-center mt-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
                 <span class="insights-meta">Generated {% if insight.generated_at and insight.generated_at.strftime %}<time class="ht-local-time" datetime="{{ insight.generated_at.isoformat() }}{% if insight.generated_at.tzinfo is none %}Z{% endif %}">{{ insight.generated_at.strftime("%b %d, %Y at %-I:%M %p") }} UTC</time>{% else %}{{ insight.generated_at }}{% endif %}</span>
                 {% if gemini_available and not is_demo_user %}
                 <form method="POST" action="{{ url_for('generate_insights') }}" class="d-inline">
@@ -471,21 +437,54 @@
                     </button>
                 </form>
                 {% elif is_demo_user %}
-                <span class="text-muted small fst-italic">Regenerate disabled in demo mode</span>
+                <span class="text-muted small">Regenerate disabled in demo mode</span>
                 {% endif %}
             </div>
-        </div>
-        {% endif %}
+            {% elif gemini_available %}
+            <h2 class="section-header">Write up these cards</h2>
+            <p class="ins-lead">The write-up covers when you exit and how long you hold, using the cards on this page.</p>
+            {% if coaching and coaching.has_data %}
+            <p class="ins-note">The record above is already computed. Generating adds a narration.</p>
+            {% endif %}
+            {% if is_demo_user %}
+            <p class="text-muted mb-0">Generating new insights is disabled in demo mode. The cached report is what every demo viewer sees.</p>
+            {% else %}
+            <form method="POST" action="{{ url_for('generate_insights') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="model" class="js-llm-model-field" value="{{ selected_model or '' }}">
+                <button type="submit" class="btn btn-primary" id="genBtn">
+                    Generate Insights Report
+                </button>
+            </form>
+            {% endif %}
+            {% else %}
+            <h2 class="section-header">AI Insights is warming up</h2>
+            <p class="ins-lead mb-0">The model is still being trained on the patterns we see across the platform. It will be available here as soon as it is ready.</p>
+            {% if coaching and coaching.has_data %}
+            <p class="ins-note" style="margin-top:.75rem;">In the meantime, the cards above are from your own trades.</p>
+            {% endif %}
+            {% endif %}
 
-        {# ── Ask AI — scoped to the active filter; hidden until a whole-book analysis exists when unfiltered ── #}
-        {% if (insight or scope_narrowed) and gemini_available and not is_demo_user %}
-        <div class="coaching-section">
-            <div class="section-label">Ask AI</div>
-            <p class="small text-muted mb-3">
-                Ask about your exit timing, givebacks versus peaks, DTE preferences, or other behavioral patterns.
-                Grounded in your actual trading data. Responses are observations, not financial advice.
+    {% if insight and not scope_narrowed %}
+        </div>
+    </details>
+    {% else %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if (insight or scope_narrowed) and gemini_available and not is_demo_user %}
+    <details class="disclosure" id="ins-ask">
+        <summary>
+            <span class="section-header">Ask AI</span>
+            <span class="disclosure-note">Questions about your own record.</span>
+        </summary>
+        <div class="disclosure-body">
+            <p class="ins-note">
+                Ask about exit timing, giveback versus peaks, hold time, or other patterns in your closes.
+                Grounded in your trading record. Responses are observations, not financial advice.
             </p>
-            <div id="coachThread" class="mb-3" style="max-height:320px; overflow-y:auto; font-size:.9rem;">
+            <div id="coachThread" class="mb-3">
                 {% for msg in ask_thread or [] %}
                 {% if msg.role == 'user' %}
                 <div class="mb-2">
@@ -500,69 +499,26 @@
                 {% endif %}
                 {% endfor %}
             </div>
-            <form id="coachForm" class="d-flex gap-2">
+            <form id="coachForm" class="ins-ask-form">
                 <input type="text" id="coachInput" class="form-control form-control-sm"
-                       placeholder="e.g. 'Which DTE buckets seem strongest in my data?'" required>
+                       placeholder="Which hold times show up in the giveback?" required>
                 <button type="submit" class="btn btn-sm btn-primary">Ask</button>
             </form>
             <form id="coachClearForm" method="POST" action="{{ url_for('insights_ask_clear') }}{% if scope_query_string %}?{{ scope_query_string }}{% endif %}" class="mt-2">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-link btn-sm text-muted px-0">Clear conversation</button>
             </form>
-            <div id="coachError" class="text-danger small mt-2" style="display:none;"></div>
+            <div id="coachError" class="text-negative small mt-2" style="display:none;"></div>
         </div>
-        {% elif (insight or scope_narrowed) and is_demo_user %}
-        <div class="coaching-section">
-            <div class="section-label">Ask AI</div>
-            <p class="text-muted small mb-0 fst-italic">
-                Live Q&amp;A is disabled in demo mode. Sign up to ask questions
-                about your own trading.
-            </p>
+    </details>
+    {% elif (insight or scope_narrowed) and is_demo_user %}
+    <div class="card" id="ins-ask">
+        <div class="ins-pad">
+            <h2 class="section-header">Ask AI</h2>
+            <p class="ins-lead mb-0">Live Q&amp;A is disabled in demo mode. Sign up to ask questions about your own trading.</p>
         </div>
-        {% elif not scope_narrowed and gemini_available %}
-        <div class="generate-card">
-            <h5>Write up these cards</h5>
-            <div class="mx-auto mb-4" style="max-width: 480px;">
-                <p>
-                    The write-up covers when you exit and how long you hold, using the cards on this page.
-                </p>
-                {% if coaching and coaching.has_data %}
-                <p class="small text-muted">
-                    The data above is already computed. Generating will add AI narration on top.
-                </p>
-                {% endif %}
-            </div>
-            {% if is_demo_user %}
-            <p class="text-muted fst-italic mb-0">
-                Generating new insights is disabled in demo mode. The cached
-                report below is what every demo viewer sees.
-            </p>
-            {% else %}
-            <form method="POST" action="{{ url_for('generate_insights') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="model" class="js-llm-model-field" value="{{ selected_model or '' }}">
-                <button type="submit" class="btn btn-primary btn-lg px-4" id="genBtn">
-                    Generate Insights Report
-                </button>
-            </form>
-            {% endif %}
-        </div>
-
-        {% elif not scope_narrowed %}
-        <div class="generate-card">
-            <h5>AI Insights is warming up</h5>
-            <p>
-                The model is still being trained on the patterns we see across the platform.
-                It'll be available here as soon as it's ready — no setup on your end.
-            </p>
-            {% if coaching and coaching.has_data %}
-            <p class="small text-muted">
-                In the meantime, the data-driven insights above are based on your own trades.
-            </p>
-            {% endif %}
-        </div>
-        {% endif %}
     </div>
+    {% endif %}
 </div>
 {% endblock %}
 
