@@ -1390,11 +1390,11 @@
             <p class="chart-read-lead">{{ chart_read.lead }}</p>
         </div>
         {% endif %}
-        {% include "_held_to_expiry.html" %}
+{% endif %}
+{% include "_held_to_expiry.html" %}
+{% if simple_view %}
     </div>
 </details>
-{% else %}
-{% include "_held_to_expiry.html" %}
 {% endif %}
 <p class="pd-kicker">Details</p>
 {% if current_positions or trade_outcomes %}
