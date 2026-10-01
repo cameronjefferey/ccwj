@@ -4,8 +4,9 @@ See ``docs/V2_TENANT_KEY_DESIGN.md``.
 
 Goals:
 - SQL helpers (``_tenant_sql_and``, ``_tenant_sql_filter``) emit
-  well-formed predicates, fail-closed on empty list, bypass cleanly
-  on admin (``tenant_ids is None``).
+  well-formed predicates, fail-closed on empty list, and leave an
+  admin read (``tenant_ids is None``) unscoped when no paper tenants
+  are known. Known Alpaca Paper tenants are excluded from that read.
 - DataFrame helper (``_filter_df_by_tenant_ids``) drops rows whose
   ``tenant_id`` isn't in the user's allowlist, drops NULL rows
   (the structural orphan-tenancy guarantee), and fails CLOSED when
@@ -68,7 +69,7 @@ def test_sanitize_tenant_id_rejects_empty_and_none():
 
 
 def test_tenant_sql_and_admin_returns_empty():
-    """Admin (``tenant_ids is None``) must NOT narrow the query."""
+    """Admin with no known paper tenants stays unscoped."""
     assert _tenant_sql_and(None) == ""
 
 
@@ -158,7 +159,7 @@ def test_tenant_sql_filter_single_tenant():
 
 
 def test_filter_df_admin_returns_unchanged():
-    """Admin (``tenant_ids is None``) returns the df unchanged."""
+    """Admin with no known paper tenants returns the df unchanged."""
     df = pd.DataFrame({"tenant_id": ["snaptrade:a", "snaptrade:b"]})
     out = _filter_df_by_tenant_ids(df, None)
     assert len(out) == 2

@@ -325,6 +325,45 @@ def _owned_tenant_ids(user_id):
     return [str(r.get("tenant_id")) for r in rows if r.get("tenant_id")]
 
 
+def _share_scope_ids(user_id):
+    """Default share cards use the real book. A paper-only request stays paper."""
+    owned = _owned_tenant_ids(user_id)
+    try:
+        from app.paper_accounts import drop_paper_from_mixed_book
+        from app.models import get_broker_tenants_for_user
+
+        rows = get_broker_tenants_for_user(user_id) or []
+        by_id = {row.get("tenant_id"): row for row in rows if row.get("tenant_id")}
+        explicit = (request.args.get("tenant") or request.args.get("tenants") or "").strip()
+        if explicit:
+            requested = [part.strip() for part in explicit.split(",") if part.strip()]
+            allowed = [tid for tid in requested if tid in set(owned)]
+            if allowed:
+                return drop_paper_from_mixed_book(allowed, by_id)
+        return drop_paper_from_mixed_book(owned, by_id)
+    except Exception as exc:
+        app.logger.warning("share paper scope failed: %s", exc)
+        return owned
+
+
+def _mark_paper_card(card, owned_ids):
+    if not card or not owned_ids:
+        return card
+    try:
+        from app.models import get_broker_tenants_for_user
+        from app.paper_accounts import is_paper_row
+
+        rows = get_broker_tenants_for_user(current_user.id) or []
+        paper = {row.get("tenant_id") for row in rows if is_paper_row(row)}
+        if paper and set(owned_ids) <= paper:
+            strategy = card.get("strategy") or ""
+            if strategy and not str(strategy).lower().startswith("paper"):
+                card["strategy"] = f"Paper · {strategy}"
+    except Exception as exc:
+        app.logger.warning("share paper label failed: %s", exc)
+    return card
+
+
 def _query_df(sql, params):
     from app.query_cache import cached_query_df
 
@@ -643,7 +682,9 @@ def share_card_png():
     layout = (request.args.get("layout") or "square").strip().lower()
     if layout not in LAYOUTS:
         abort(400)
-    card = card_for_viewer(request.args, _owned_tenant_ids(current_user.id))
+    owned = _share_scope_ids(current_user.id)
+    card = card_for_viewer(request.args, owned)
+    card = _mark_paper_card(card, owned)
     if card is None:
         abort(404)
     png = render_share_png(card, layout)

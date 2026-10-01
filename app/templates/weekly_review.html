@@ -60,7 +60,7 @@
 {% endmacro %}
 <div class="review-hero">
     <div class="ov-bar">
-        {% if scope_account_choices|length > 1 or account_groups %}
+        {% if not simple_view and (scope_account_choices|length > 1 or account_groups) %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% include "_account_scope_filters.html" %}
             {% if scope_is_filtered %}
@@ -73,11 +73,17 @@
     {% if _book_value is not none or _book or equity_snapshot %}
     <div class="ov-top">
         <div>
-            <div class="ov-k">Total value{% if _book_n %} across {{ _book_n }} account{{ 's' if _book_n != 1 }}{% endif %}</div>
+            <div class="ov-k">{% if paper_only %}Paper · {% endif %}Total value{% if _book_n %} across {{ _book_n }} account{{ 's' if _book_n != 1 }}{% endif %}</div>
             {% if _book_value is not none %}
             <div class="ov-big">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(_book_value) }}{% endif %}</div>
             {% else %}
             <div class="ov-big ov-dash">—</div>
+            {% endif %}
+            {% if paper_aside %}
+            <div class="ov-bench">Paper{% if paper_aside.value is not none %} ${{ "{:,.0f}".format(paper_aside.value) }}{% endif %}
+                · not in this total ·
+                <a href="{{ url_for('weekly_review', tenants=paper_aside.tenants) }}">Open paper</a>
+            </div>
             {% endif %}
         </div>
         <div>
@@ -463,6 +469,7 @@
             <div class="snap-col-month" data-label="1 month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
         </div>
         {% endif %}
+        {% if not simple_view %}
         {% for b in benchmark_snapshot or [] %}
         <div class="snapshot-table-row benchmark">
             <div data-label="Account">
@@ -475,6 +482,7 @@
             <div class="snap-col-month" data-label="1 month">{{ bench_pct_cell(b.month_pct) }}</div>
         </div>
         {% endfor %}
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -482,10 +490,19 @@
 {# Daily change is the last open section. The lazy fragment still owns
    the markup; this slot is where that fetch places it. A full render
    includes the section here so it is in the document on first paint. #}
+{% if simple_view %}
+<details class="disclosure" id="ov-show-more">
+    <summary><span class="section-header">Show more</span></summary>
+    <div class="disclosure-body">
+{% endif %}
 {% if overview_below_deferred %}
 <div id="ht-overview-daily" class="ov-below-slot"></div>
 {% else %}
 {% include "_overview_daily.html" %}
+{% endif %}
+{% if simple_view %}
+    </div>
+</details>
 {% endif %}
 
 {% if building_history %}

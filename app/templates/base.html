@@ -1142,7 +1142,7 @@
     </script>
     {% endif %}
 </head>
-<body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}">
+<body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}" data-simple="{{ '1' if simple_view else '0' }}" data-paper="{{ '1' if has_paper_account else '0' }}">
     <script>
     window.htColor = function (name) {
         try {
@@ -1225,6 +1225,26 @@
             {% set in_portfolio = ep in ('positions', 'accounts', 'strategies', 'sectors') %}
             {% set in_review = ep in ('weekly_review', 'today_view', 'day_detail') %}
             <ul class="navbar-nav me-auto">
+                {% if simple_view or has_paper_account %}
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'paper_practice' %}active{% endif %}"
+                       href="{{ url_for('paper_practice') }}">Practice</a>
+                </li>
+                {% endif %}
+                {% if simple_view %}
+                <li class="nav-item">
+                    <a class="nav-link {% if ep in ('learn_index', 'learn_episode') %}active{% endif %}"
+                       href="{{ url_for('learn_index') }}">Learn</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'weekly_review' %}active{% endif %}"
+                       href="{{ url_for('weekly_review', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Overview</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if ep == 'positions' %}active{% endif %}"
+                       href="{{ url_for('positions', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">Positions</a>
+                </li>
+                {% else %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_review %}active{% endif %}" href="#"
                        id="navReview" data-bs-toggle="dropdown" aria-expanded="false">
@@ -1278,6 +1298,7 @@
                     <a class="nav-link {% if ep == 'insights' %}active{% endif %}"
                        href="{{ url_for('insights', account=selected_account, tenant=selected_tenant, tenants=tenants_query, groups=groups_query) }}">AI Insights</a>
                 </li>
+                {% endif %}
                 {% endif %}
                 {% if is_admin_user %}
                 {% set in_admin = ep in ('admin_overview', 'admin_users', 'admin_audit', 'admin_feedback') %}

@@ -275,6 +275,20 @@
     {% endif %}
 
     {% if tab == 'preferences' %}
+    <form method="POST" action="{{ url_for('profile', tab='preferences') }}" class="mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="set_app_view">
+        <div class="card" id="settings-view">
+            <div class="settings-pad">
+                <h2 class="section-header">App view</h2>
+                <p class="settings-lead">Simple keeps Practice, Learn, Overview, and Positions. Full is the rest of the mirror.</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="submit" name="app_view" value="simple" class="btn {% if simple_view %}btn-primary{% else %}btn-outline-secondary{% endif %}">Simple</button>
+                    <button type="submit" name="app_view" value="full" class="btn {% if not simple_view %}btn-primary{% else %}btn-outline-secondary{% endif %}">Full</button>
+                </div>
+            </div>
+        </div>
+    </form>
     <form method="POST" action="{{ url_for('set_privacy_mode_route') }}" class="mb-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">

@@ -78,10 +78,33 @@
         color: #5b8cff;
     }
     .pp-chain .pp-chain-strike { font-weight: 650; }
+    .pp-wrap { max-width: 100%; overflow-x: clip; }
+    .pp-wrap > .row { --bs-gutter-x: 0; margin-left: 0; margin-right: 0; }
+    .pp-wrap > .row > [class*="col-"] { padding-left: 0; padding-right: 0; max-width: 100%; }
+    .pp-card { max-width: 100%; }
+    .pp-chain-wrap { overflow-x: auto; max-width: 100%; }
+    .pp-orders { margin-top: 1rem; }
+    .pp-order {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem 1rem;
+        align-items: center;
+        justify-content: space-between;
+        padding: .75rem 0;
+        border-top: 1px solid var(--ht-line);
+    }
+    .pp-order .pp-status { font-variant-numeric: tabular-nums; font-weight: 650; }
+    .pp-order .is-open { color: var(--ht-ink); }
+    .pp-order .is-filled { color: var(--gain); }
+    .pp-order .is-cancel_requested { color: var(--ht-muted); }
+    .pp-order .is-cancelled,
+    .pp-order .is-rejected,
+    .pp-order .is-expired { color: var(--loss); }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="pp-wrap">
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <h1 class="mb-1">Practice a trade</h1>
@@ -105,9 +128,12 @@
                 {% include "_paper_trade_receipt.html" %}
                 <div class="d-flex flex-wrap gap-2 mt-3">
                     <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Practice another</a>
-                    <a class="btn btn-primary" href="{{ url_for('position_detail', symbol=sent.symbol) }}">See {{ sent.symbol }}</a>
+                    <a class="btn btn-primary" href="{{ url_for('position_detail', symbol=sent.link_symbol or sent.symbol) }}">See {{ sent.link_symbol or sent.symbol }}</a>
                 </div>
             {% elif ticket %}
+                {% if ticket.session_note %}
+                <p class="pp-note">{{ ticket.session_note }}</p>
+                {% endif %}
                 {% if ticket.views %}
                 {% with voice=ticket.voice, views=ticket.views, chain=ticket.chain, picked_strike=ticket.strike, picked_side=ticket.side %}
                 {% include "_paper_trade_views.html" %}
@@ -123,9 +149,10 @@
                 </form>
             {% elif not account and not look %}
                 <p>
-                    Your paper account starts with $100,000. Use it to learn option trading:
-                    buy one call or one put, see what it costs, and confirm before it is sent.
-                    The same mirror that tracks a real account will show this trade afterward.
+                    Connect a paper account to practice. The buying power is whatever that
+                    account holds. Buy one call or one put, see what it costs, and confirm
+                    before it is sent. The same mirror that tracks a real account will show
+                    this trade afterward.
                 </p>
                 <p class="pp-note">
                     New to the words on the ticket?
@@ -142,6 +169,12 @@
                 <p class="pp-note mt-3">Paper practice is not configured on this server yet.</p>
                 {% endif %}
             {% else %}
+                {% if buying_power_label %}
+                <p class="pp-note">Buying power on this paper account: {{ buying_power_label }}.</p>
+                {% endif %}
+                {% if session_note %}
+                <p class="pp-note">{{ session_note }}</p>
+                {% endif %}
                 <form method="POST" action="{{ url_for('paper_practice_review') }}" data-voice="{{ voice }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="strike" id="pp-strike" value="">
@@ -193,8 +226,8 @@
                         <label class="pp-choice"><input type="radio" name="distance" value="above"> <span data-strike="above">Above</span></label>
                     </div>
                     </div>
-                    <div id="pp-chain" aria-live="polite"></div>
-                    <p class="pp-note"><span id="pp-contract">{{ ns.blurb }}</span> <span id="pp-next">The next step shows the premium, then places the trade when you confirm.</span></p>
+                    <div id="pp-chain" class="pp-chain-wrap" aria-live="polite"></div>
+                    <p class="pp-note"><span id="pp-contract">{{ ns.blurb }}</span> <span id="pp-next">The next step shows the price per share, then places the trade when you confirm.</span></p>
                     <button class="btn btn-primary mt-2" type="submit" id="pp-review" {% if not ns.picked %}disabled{% endif %}>Review this paper trade</button>
                 </form>
                 <script>
@@ -211,7 +244,7 @@
                                 at: "At the price",
                                 above: "Above",
                                 button: "Review this paper trade",
-                                next: "The next step shows the premium, then places the trade when you confirm."
+                                next: "The next step shows the price per share, then places the trade when you confirm."
                             },
                             intermediate: {
                                 side: "Side",
@@ -387,7 +420,35 @@
                     })();
                 </script>
             {% endif %}
+            {% if orders %}
+            <div class="pp-orders">
+                <div class="pp-kicker">Orders</div>
+                {% for order in orders %}
+                <div class="pp-order">
+                    <div>
+                        <div class="pp-status is-{{ order.status }}">{{ order.status_label }}</div>
+                        <div>{{ order.sentence or order.symbol or "Paper order" }}</div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% if order.link_symbol or order.symbol %}
+                        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('position_detail', symbol=order.link_symbol or order.symbol) }}">See {{ order.link_symbol or order.symbol }}</a>
+                        {% endif %}
+                        {% if order.cancelable and order.brokerage_order_id %}
+                        <form method="POST" action="{{ url_for('paper_practice_cancel') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="brokerage_order_id" value="{{ order.brokerage_order_id }}">
+                            <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel</button>
+                        </form>
+                        {% elif order.status == 'cancel_requested' %}
+                        <a class="btn btn-outline-secondary btn-sm" href="{{ scoped_url('paper_practice') }}">Refresh</a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
     </div>
+</div>
 </div>
 {% endblock %}

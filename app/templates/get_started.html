@@ -133,13 +133,22 @@
         <div class="gs-path-row dual mb-3">
             <div class="gs-path">
                 <div class="gs-label">Paper</div>
-                <h6>Create a paper account</h6>
+                <h6>Connect an Alpaca paper account</h6>
                 <p class="pitch">
                     Practice one call or one put inside HappyTrader. Paper money.
                     The trade you pick is not a recommendation and it is not advice.
+                    This signs you in to Alpaca. It does not open the account for you.
+                </p>
+                <p class="pitch">
+                    No Alpaca login yet?
+                    <a href="https://app.alpaca.markets/signup" target="_blank" rel="noopener">Create one at Alpaca</a>,
+                    then come back and connect the paper account.
                 </p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="{{ url_for('paper_practice') }}">Create a paper account</a>
+                    <form method="post" action="{{ url_for('get_started_paper') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-primary" type="submit">Connect an Alpaca paper account</button>
+                    </form>
                 </div>
             </div>
             <div class="gs-path">
@@ -155,6 +164,9 @@
             </div>
         </div>
 
+        <p class="mb-3">
+            <a href="{{ url_for('weekly_review') }}" class="text-muted">I'll do this later</a>
+        </p>
         <p class="text-muted small mb-0">
             Need older history?
             <a href="{{ url_for('upload') }}">Upload a CSV</a>

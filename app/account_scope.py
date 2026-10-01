@@ -68,6 +68,11 @@ def picker_base_label(row) -> str:
     accounts). Generic broker labels and masked names become
     "Unnamed account" so the menu can still be told apart by index.
     """
+    from app.paper_accounts import paper_display_label
+
+    paper = paper_display_label(row)
+    if paper:
+        return paper
     nick = " ".join(str((row or {}).get("display_nickname") or "").split())
     name = " ".join(str((row or {}).get("account_name") or "").split())
     chosen = nick if nick and nick != name else ""

@@ -27,9 +27,13 @@ from app import app
 from app.bigquery_client import get_bigquery_client
 from app.plan import plan_block_writes
 from app.query_cache import cached_query_df
+from app.paper_accounts import position_link_symbol
 from app.snaptrade import (
     _portal_custom_redirect,
+    account_buying_power,
     alpaca_paper_trade_account,
+    cancel_account_order,
+    list_account_recent_orders,
     open_connection_portal,
     place_single_leg_option_order,
     practice_portal_login_kwargs,
@@ -46,6 +50,7 @@ _log = logging.getLogger(__name__)
 _NY = ZoneInfo("America/New_York")
 TICKET_KEY = "paper_practice_ticket"
 SENT_KEY = "paper_practice_sent"
+ORDERS_KEY = "paper_practice_orders"
 LOOK_KEY = "paper_practice_look"
 VOICE_KEY = "paper_practice_voice"
 VOICES = ("beginner", "intermediate", "brokerage")
@@ -68,11 +73,12 @@ CONTRACT_SHARES = 100
 # (stg_daily_prices is stamped per account, so the row number collapses
 # it). No tenant column — do not run this frame through the tenant filter.
 _SPOTS_SQL = """
-SELECT symbol, close_price
+SELECT symbol, close_price, price_date
 FROM (
     SELECT
         UPPER(TRIM(symbol)) AS symbol,
         close_price,
+        date AS price_date,
         ROW_NUMBER() OVER (
             PARTITION BY UPPER(TRIM(symbol))
             ORDER BY date DESC
@@ -84,6 +90,14 @@ FROM (
 )
 WHERE rn = 1
 """
+
+# Penny-pilot names quote in $0.01. Other equity options use the
+# $0.05 / $0.10 schedule. SPX / SPXW use that same schedule.
+_PENNY_PILOT = {"SPY", "QQQ"}
+_OPEN_ORDER_STATUSES = {
+    "PENDING", "OPEN", "ACCEPTED", "QUEUED", "SUBMITTED", "NEW",
+    "PARTIAL", "PARTIALLY_FILLED",
+}
 
 _order_lock = threading.Lock()
 _last_order_at: dict[str, float] = {}
@@ -138,16 +152,49 @@ def _pill_text(choice) -> str:
     return f"{choice['label']} · {choice['date'].strftime('%b %-d')}"
 
 
-def _session_open(now=None) -> bool:
-    """A same-day option is still the daily trade until the 4:00pm ET close."""
+def _ny_now(now=None) -> datetime:
     moment = now or datetime.now(_NY)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=_NY)
-    local = moment.astimezone(_NY)
+    return moment.astimezone(_NY)
+
+
+def _session_open(now=None) -> bool:
+    """A same-day option is still the daily trade until the 4:00pm ET close."""
+    local = _ny_now(now)
     if local.weekday() >= 5:
         return False
     close = local.replace(hour=16, minute=0, second=0, microsecond=0)
     return local < close
+
+
+def regular_session_open(now=None) -> bool:
+    """Regular US cash session, 9:30–16:00 ET. Premarket and after hours are closed."""
+    local = _ny_now(now)
+    if local.weekday() >= 5:
+        return False
+    opened = local.replace(hour=9, minute=30, second=0, microsecond=0)
+    closed = local.replace(hour=16, minute=0, second=0, microsecond=0)
+    return opened <= local < closed
+
+
+def next_session_date(now=None) -> date:
+    """The session an order placed now would wait for, or today while the session is open."""
+    local = _ny_now(now)
+    day = local.date()
+    if local.weekday() < 5 and local < local.replace(hour=16, minute=0, second=0, microsecond=0):
+        return day
+    return _next_weekday(day)
+
+
+def session_wait_note(expiry=None, now=None) -> str | None:
+    """Closed-market copy. None while the regular session is open."""
+    if regular_session_open(now):
+        return None
+    text = "The market is closed. This order waits for the next session."
+    if isinstance(expiry, date) and expiry == next_session_date(now):
+        text += " This option expires next session."
+    return text
 
 
 def expiry_choices(day: date, symbol: str, *, session_open: bool = True) -> dict:
@@ -217,9 +264,12 @@ def money_strike(amount: int) -> str:
 def practice_receipt(ticket) -> dict:
     """What the learner can look at while the mirror catches up to the order."""
     expiry = date.fromisoformat(ticket["expiry"])
+    views = _views_as_placed(ticket.get("views") or {}, ticket)
+    symbol = ticket["symbol"]
     return {
         "sentence": ticket["sentence"],
-        "symbol": ticket["symbol"],
+        "symbol": symbol,
+        "link_symbol": position_link_symbol(symbol),
         "side": ticket["side"],
         "strike_label": money_strike(ticket["strike"]),
         "expiry_label": f"{ticket['expiry_label']} · {expiry.strftime('%b %-d')}",
@@ -227,9 +277,13 @@ def practice_receipt(ticket) -> dict:
         "cost_label": ticket["cost_label"],
         "cash_settled": bool(ticket.get("cash_settled")),
         "voice": ticket.get("voice") or "beginner",
-        "views": ticket.get("views") or {},
+        "views": views,
         "chain": ticket.get("chain") or [],
         "strike": ticket.get("strike"),
+        "status": "open",
+        "status_label": "Open",
+        "brokerage_order_id": ticket.get("brokerage_order_id") or "",
+        "occ": ticket.get("occ") or "",
     }
 
 
@@ -278,16 +332,19 @@ def _when_label(expiry: date) -> str:
 def _paper_tenant_ids(user_id) -> list[str]:
     """Alpaca Paper tenants this user owns. The demo mirror is not one of them."""
     from app.models import get_broker_tenants_for_user
+    from app.paper_accounts import is_paper_row
 
     out = []
     for row in get_broker_tenants_for_user(user_id) or []:
         tid = str(row.get("tenant_id") or "")
-        name = (row.get("account_name") or "").casefold()
-        if not tid or tid.startswith("demo:"):
-            continue
-        if "alpaca paper" in name:
+        if tid and is_paper_row(row):
             out.append(tid)
     return out
+
+
+def _readout_symbol(symbol) -> str:
+    """Ticker characters only. Digits and a class dot stay (BRK.B)."""
+    return re.sub(r"[^A-Z0-9.]", "", str(symbol or "").upper())[:12]
 
 
 def beginner_trade_sentence(row) -> str | None:
@@ -350,7 +407,18 @@ def beginner_trade_sentence(row) -> str | None:
 
 
 def beginner_readouts(tenant_ids, symbol=None) -> list[dict]:
-    """First two bought contracts, and only when this scope is entirely paper."""
+    """First two bought contracts, and only when this scope is entirely paper.
+
+    A Postgres or warehouse miss returns no readout. It must not 500 the page.
+    """
+    try:
+        return _beginner_readouts(tenant_ids, symbol)
+    except Exception as exc:
+        _log.warning("beginner readout failed: %s", exc)
+        return []
+
+
+def _beginner_readouts(tenant_ids, symbol=None) -> list[dict]:
     if _remember_voice() != "beginner":
         return []
     if not tenant_ids or not getattr(current_user, "is_authenticated", False):
@@ -363,7 +431,7 @@ def beginner_readouts(tenant_ids, symbol=None) -> list[dict]:
     from app.query_cache import cached_query_df
     from app.routes import _filter_df_by_tenant_ids, _tenant_sql_and
 
-    safe_symbol = re.sub(r"[^A-Z]", "", str(symbol or "").upper())
+    safe_symbol = _readout_symbol(symbol)
     symbol_filter = f"AND c.underlying_symbol = '{safe_symbol}'" if safe_symbol else ""
     sql = PAPER_READOUT_SQL.format(
         tenant_filter=_tenant_sql_and(list(scope), col="c.tenant_id"),
@@ -400,19 +468,90 @@ def _remember_voice() -> str:
     return voice
 
 
+def _share_math(limit_label, cost_label, cash_settled) -> str:
+    unit = "point" if cash_settled else "share"
+    return (
+        f"The limit is the price per {unit}. "
+        f"One contract is 100 {unit}s, so {limit_label} x 100 = {cost_label}."
+    )
+
+
+def _order_notes(limit_label, cost_label, cash_settled, placed: bool) -> dict:
+    math = _share_math(limit_label, cost_label, cash_settled)
+    cash_note = " SPX is cash-settled." if cash_settled else ""
+    if placed:
+        return {
+            "beginner": (
+                f"This order was sent to the paper account. You pay about {cost_label}. {math}"
+            ),
+            "intermediate": (
+                f"{math} This order was sent on the paper account.{cash_note}"
+            ),
+            "brokerage": (
+                "Paper. Bid is the highest price a buyer is paying "
+                "(what you would get selling now). Ask is the lowest price a seller "
+                "will take (what you would pay buying now). Mid is halfway between them. "
+                f"The limit is per share, rounded to the option's tick. Status: sent. "
+                f"Total cost {cost_label}.{cash_note}"
+            ),
+        }
+    return {
+        "beginner": (
+            f"This reviews the trade on the paper account. You would pay about {cost_label}. {math}"
+        ),
+        "intermediate": (
+            f"{math} Placing it sends this order on the paper account.{cash_note}"
+        ),
+        "brokerage": (
+            "Paper. Bid is the highest price a buyer is paying "
+            "(what you would get selling now). Ask is the lowest price a seller "
+            "will take (what you would pay buying now). Mid is halfway between them. "
+            f"The limit is per share, rounded to the option's tick. "
+            f"Total cost {cost_label}.{cash_note}"
+        ),
+    }
+
+
+def _views_as_placed(views, ticket) -> dict:
+    """Receipt copy is past tense. The review ticket stays in the present."""
+    if not views:
+        return {}
+    notes = _order_notes(
+        ticket.get("limit_label") or "",
+        ticket.get("cost_label") or "",
+        bool(ticket.get("cash_settled")),
+        True,
+    )
+    out = {}
+    for name, view in views.items():
+        view = dict(view or {})
+        if name in notes:
+            view["note"] = notes[name]
+        rows = []
+        for row in view.get("rows") or []:
+            row = dict(row)
+            if row.get("label") in {"Premium per share", "Premium per point"}:
+                row["label"] = (
+                    "Price per point" if ticket.get("cash_settled") else "Price per share"
+                )
+            rows.append(row)
+        view["rows"] = rows
+        out[name] = view
+    return out
+
+
 def trade_views(
     symbol, side, strike, distance, expiry: date, limit_label, cost_label, occ, cash_settled,
-    bid_label=None, mid_label=None, ask_label=None,
+    bid_label=None, mid_label=None, ask_label=None, as_of_label=None, placed=False,
 ) -> dict:
     """Three readings of one paper order. Beginner is the lesson. Brokerage is the ticket."""
     side_name = "Call" if side == "call" else "Put"
     when = expiry.strftime("%b %-d, %Y")
+    price_label = "Price per point" if cash_settled else "Price per share"
+    notes = _order_notes(limit_label, cost_label, cash_settled, placed)
     beginner_rows = [
-        {
-            "label": "Premium per point" if cash_settled else "Premium per share",
-            "value": limit_label,
-        },
-        {"label": "Paper cost for 1 contract", "value": cost_label},
+        {"label": price_label, "value": limit_label},
+        {"label": "Cost for 1 contract", "value": cost_label},
         {
             "label": "Dollars per point" if cash_settled else "Shares this contract covers",
             "value": "$100" if cash_settled else "100",
@@ -420,12 +559,11 @@ def trade_views(
     ]
     return {
         "beginner": {
-            "headline": practice_sentence(symbol, side, strike, distance, expiry),
-            "rows": beginner_rows,
-            "note": (
-                f"This places the trade on the paper account. You pay about {cost_label}. "
-                "The premium above is the limit on the order."
+            "headline": practice_sentence(
+                symbol, side, strike, distance, expiry, as_of_label=as_of_label,
             ),
+            "rows": beginner_rows,
+            "note": notes["beginner"],
         },
         "intermediate": {
             "headline": (
@@ -434,14 +572,11 @@ def trade_views(
             ),
             "rows": [
                 {"label": "Contracts", "value": "1"},
-                {"label": "Limit", "value": limit_label},
-                {"label": "Estimated debit", "value": cost_label},
+                {"label": price_label, "value": limit_label},
+                {"label": "Total cost", "value": cost_label},
                 {"label": "Expiration", "value": when},
             ],
-            "note": (
-                "The limit is the premium for one contract. "
-                "Placing it sends this order on the paper account."
-            ),
+            "note": notes["intermediate"],
         },
         "brokerage": {
             "headline": f"{symbol}  {expiry.strftime('%-d %b %y').upper()}",
@@ -452,25 +587,24 @@ def trade_views(
                 {"label": "Mid", "value": mid_label or "—"},
                 {"label": "Ask", "value": ask_label or "—"},
                 {"label": "Limit", "value": limit_label},
+                {"label": "Total cost", "value": cost_label},
                 {"label": "Quantity", "value": "1"},
                 {"label": "Time in force", "value": "Day"},
             ],
-            "note": (
-                "Paper. Bid is what a seller will take. Ask is what you pay to buy it. "
-                "Mid is halfway between them. The limit is the mid, rounded to a cent."
-            ),
+            "note": notes["brokerage"],
         },
     }
 
 
-def practice_sentence(symbol, side, strike, distance, expiry: date) -> str:
+def practice_sentence(symbol, side, strike, distance, expiry: date, as_of_label=None) -> str:
     side_word = "call" if side == "call" else "put"
+    quoted = as_of_label or "the latest close"
     if distance == "at":
-        where = "about today's price"
+        where = f"about {quoted}"
     elif distance == "below":
-        where = "a bit below today's price"
+        where = f"a bit below {quoted}"
     else:
-        where = "a bit above today's price"
+        where = f"a bit above {quoted}"
     if symbol == "SPX":
         right = "the cash value above the strike" if side == "call" else "the cash value below the strike"
         cover = "This one pays cash. One contract is $100 per point, not 100 shares."
@@ -484,8 +618,26 @@ def practice_sentence(symbol, side, strike, distance, expiry: date) -> str:
     )
 
 
-def limit_from_quote(raw_premium) -> str | None:
-    """Cents string the confirm step and the order both use."""
+def option_tick(symbol: str, price: Decimal) -> Decimal:
+    """Minimum price increment for one option limit."""
+    root = str(symbol or "").strip().upper()
+    listed = option_root(root)
+    if root in {"SPX", "SPXW"} or listed in {"SPX", "SPXW"}:
+        return Decimal("0.05") if price < 3 else Decimal("0.10")
+    if root in _PENNY_PILOT:
+        return Decimal("0.01")
+    return Decimal("0.05") if price < 3 else Decimal("0.10")
+
+
+def round_to_tick(price: Decimal, symbol: str) -> Decimal:
+    tick = option_tick(symbol, price)
+    units = (price / tick).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    snapped = units * tick
+    return snapped.quantize(tick)
+
+
+def limit_from_quote(raw_premium, symbol: str = "SPY") -> str | None:
+    """Limit string the confirm step and the order both use, on a valid tick."""
     if raw_premium is None:
         return None
     try:
@@ -494,10 +646,10 @@ def limit_from_quote(raw_premium) -> str | None:
         return None
     if price <= 0:
         return None
-    cents = price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    if cents <= 0:
+    snapped = round_to_tick(price, symbol)
+    if snapped <= 0:
         return None
-    return f"{cents:.2f}"
+    return f"{snapped:.2f}"
 
 
 def contract_cost(limit_price: str) -> Decimal:
@@ -543,10 +695,60 @@ def latest_spots() -> dict[str, float]:
             continue
         if price > 0:
             spots[symbol] = price
+            label = _close_label(row.get("price_date"))
+            if label:
+                _remember_spot_label(symbol, label)
     spy = spots.get("SPY")
     if spy:
         spots["SPX"] = spx_level_from_spy(spy)
+        spy_label = spot_as_of_label("SPY")
+        if spy_label != "the latest close":
+            _remember_spot_label("SPX", spy_label)
     return spots
+
+
+def _close_label(raw) -> str | None:
+    """Name the close we actually used. A date with no clock stays a close."""
+    day = None
+    if hasattr(raw, "date") and not isinstance(raw, date):
+        try:
+            day = raw.date()
+        except Exception:
+            day = None
+    elif isinstance(raw, date):
+        day = raw
+    else:
+        text = str(raw or "")[:10]
+        try:
+            day = date.fromisoformat(text)
+        except ValueError:
+            day = None
+    if day is None:
+        return None
+    return f"the {day.strftime('%b')} {day.day} close"
+
+
+def _remember_spot_label(symbol: str, label: str) -> None:
+    try:
+        from flask import g
+        labels = dict(getattr(g, "paper_spot_labels", {}) or {})
+        labels[symbol] = label
+        g.paper_spot_labels = labels
+    except Exception:
+        return
+
+
+def spot_as_of_label(symbol: str | None = None) -> str:
+    try:
+        from flask import g
+        labels = getattr(g, "paper_spot_labels", {}) or {}
+    except Exception:
+        labels = {}
+    if symbol and labels.get(symbol):
+        return labels[symbol]
+    if labels.get("SPY"):
+        return labels["SPY"]
+    return "the latest close"
 
 
 _CHAIN_CACHE: dict = {}
@@ -697,15 +899,17 @@ def _build_ticket(selection, spots, account, today=None):
     except Exception as exc:
         _log.warning("practice option quote failed: %s", exc)
         raw = None
-    if not limit_from_quote(raw):
+    if not limit_from_quote(raw, symbol):
         return None, (
-            "We couldn't get a premium for that contract. Pick it again in a moment."
+            "We couldn't get a price for that contract. Pick it again in a moment."
         )
-    limit_price = limit_from_quote(shown)
+    limit_price = limit_from_quote(shown, symbol)
     if not limit_price:
         return None, "No bid and ask for that contract. Pick another strike."
+    as_of = spot_as_of_label(symbol)
     sentence = practice_sentence(
-        selection["symbol"], selection["side"], strike, distance, expiry
+        selection["symbol"], selection["side"], strike, distance, expiry,
+        as_of_label=as_of,
     )
     return {
         "nonce": secrets.token_urlsafe(16),
@@ -741,7 +945,9 @@ def _build_ticket(selection, spots, account, today=None):
             bid_label=f"${quote['bid']}" if quote.get("bid") else None,
             mid_label=f"${quote['mid']}" if quote.get("mid") else None,
             ask_label=f"${quote['ask']}" if quote.get("ask") else None,
+            as_of_label=as_of,
         ),
+        "session_note": session_wait_note(expiry),
     }, None
 
 
@@ -760,7 +966,8 @@ def _build_look_ticket(selection, spots, today=None):
     expiry = expiries[selection["tenor"]]["date"]
     strike = strike_choices(spot, STRIKE_STEP[selection["symbol"]])[selection["distance"]]
     sentence = practice_sentence(
-        selection["symbol"], selection["side"], strike, selection["distance"], expiry
+        selection["symbol"], selection["side"], strike, selection["distance"], expiry,
+        as_of_label=spot_as_of_label(selection["symbol"]),
     )
     return {
         "nonce": secrets.token_urlsafe(16),
@@ -803,6 +1010,174 @@ def _order_accepted(body) -> bool:
                     return False
                 return True
     return False
+
+
+def order_status_bucket(raw) -> str:
+    status = str(raw or "").strip().upper().replace(" ", "_").replace("-", "_")
+    if status in {"EXECUTED", "FILLED", "COMPLETE", "COMPLETED"}:
+        return "filled"
+    if status in {"CANCELED", "CANCELLED"}:
+        return "cancelled"
+    if status in {"REJECTED", "FAILED"}:
+        return "rejected"
+    if status == "EXPIRED":
+        return "expired"
+    if status in _OPEN_ORDER_STATUSES:
+        return "open"
+    return "unknown"
+
+
+def _status_label(bucket: str, raw: str) -> str:
+    labels = {
+        "open": "Open",
+        "filled": "Filled",
+        "cancelled": "Cancelled",
+        "cancel_requested": "Cancel requested",
+        "rejected": "Rejected",
+        "expired": "Expired",
+    }
+    return labels.get(bucket) or (str(raw or "Unknown").replace("_", " ").title() or "Unknown")
+
+
+def _brokerage_order_id(body) -> str:
+    if not isinstance(body, dict):
+        return ""
+    if body.get("brokerage_order_id"):
+        return str(body["brokerage_order_id"])
+    for order in body.get("orders") or []:
+        if isinstance(order, dict) and order.get("brokerage_order_id"):
+            return str(order["brokerage_order_id"])
+    return ""
+
+
+def _underlying_from_order(order) -> str:
+    opt = order.get("option_symbol") if isinstance(order, dict) else None
+    text = ""
+    if isinstance(opt, dict):
+        underlying = opt.get("underlying_symbol")
+        if isinstance(underlying, dict):
+            text = str(
+                underlying.get("symbol")
+                or underlying.get("raw_symbol")
+                or underlying.get("description")
+                or ""
+            )
+        elif underlying:
+            text = str(underlying)
+        if not text:
+            text = str(opt.get("ticker") or opt.get("id") or "")
+    elif isinstance(opt, str):
+        text = opt
+    if not text and isinstance(order, dict):
+        universal = order.get("universal_symbol") or {}
+        if isinstance(universal, dict):
+            text = str(universal.get("symbol") or universal.get("raw_symbol") or "")
+        elif universal:
+            text = str(universal)
+    token = re.sub(r"[^A-Z0-9.]", "", text.upper())
+    if token.startswith("SPXW") or token == "SPX":
+        return "SPXW"
+    match = re.match(r"[A-Z0-9.]{1,12}", token)
+    return match.group(0) if match else ""
+
+
+def normalize_broker_order(order) -> dict | None:
+    if not isinstance(order, dict):
+        return None
+    raw = str(order.get("status") or "")
+    bucket = order_status_bucket(raw)
+    symbol = _underlying_from_order(order)
+    return {
+        "brokerage_order_id": str(order.get("brokerage_order_id") or ""),
+        "status": bucket,
+        "status_label": _status_label(bucket, raw),
+        "raw_status": raw,
+        "symbol": symbol,
+        "link_symbol": position_link_symbol(symbol),
+        "cancelable": bucket == "open" and bool(order.get("brokerage_order_id")),
+        "sentence": "",
+        "source": "broker",
+    }
+
+
+def _session_orders() -> list:
+    raw = session.get(ORDERS_KEY) or []
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _remember_order(receipt) -> None:
+    """Every placed ticket stays visible. A repeated brokerage id replaces itself."""
+    kept = []
+    new_id = receipt.get("brokerage_order_id") or ""
+    for item in _session_orders():
+        if new_id and item.get("brokerage_order_id") == new_id:
+            continue
+        kept.append(item)
+    kept.insert(0, receipt)
+    session[ORDERS_KEY] = kept[:20]
+
+
+def merged_paper_orders(user_id) -> list[dict]:
+    """Broker orders plus anything just placed that SnapTrade has not listed yet."""
+    live = []
+    account = None
+    try:
+        account = alpaca_paper_trade_account(user_id)
+    except Exception as exc:
+        _log.warning("paper order account lookup failed: %s", exc)
+        account = None
+    if account:
+        try:
+            raw_orders = list_account_recent_orders(
+                user_id, account["snaptrade_account_id"],
+            )
+        except Exception as exc:
+            _log.warning("paper order list failed: %s", exc)
+            raw_orders = []
+        for raw in raw_orders or []:
+            item = normalize_broker_order(raw)
+            if item:
+                live.append(item)
+    by_id = {item["brokerage_order_id"]: item for item in live if item.get("brokerage_order_id")}
+    merged = list(live)
+    for local in _session_orders():
+        local_id = str(local.get("brokerage_order_id") or "")
+        if local_id and local_id in by_id:
+            broker = by_id[local_id]
+            if not broker.get("sentence"):
+                broker["sentence"] = local.get("sentence") or ""
+            if not broker.get("symbol"):
+                broker["symbol"] = local.get("symbol") or ""
+                broker["link_symbol"] = position_link_symbol(broker["symbol"])
+            # A still-open broker row must not hide a cancel we already sent.
+            if (
+                str(local.get("status") or "") == "cancel_requested"
+                and broker.get("status") == "open"
+            ):
+                broker["status"] = "cancel_requested"
+                broker["status_label"] = local.get("status_label") or "Cancel requested"
+                broker["cancelable"] = False
+            continue
+        row = dict(local)
+        row["status"] = row.get("status") or "open"
+        row["status_label"] = row.get("status_label") or "Open"
+        row["cancelable"] = bool(row.get("brokerage_order_id")) and row["status"] == "open"
+        row["link_symbol"] = position_link_symbol(row.get("link_symbol") or row.get("symbol"))
+        row["source"] = "session"
+        merged.insert(0, row)
+    return merged
+
+
+def paper_orders_for_page(user_id, symbol=None) -> list[dict]:
+    """Orders for one position page. SPX and SPXW are the same contract root."""
+    wanted = position_link_symbol(symbol) if symbol else ""
+    out = []
+    for order in merged_paper_orders(user_id):
+        link = position_link_symbol(order.get("link_symbol") or order.get("symbol"))
+        if wanted and link != wanted:
+            continue
+        out.append(order)
+    return out
 
 
 def _write_blocked(action: str):
@@ -866,12 +1241,34 @@ def paper_practice():
     spots = {} if sent else latest_spots()
     symbols, expiries = _choice_view(spots, session_open=_session_open())
     account = None
-    if snaptrade_enabled() and not sent:
+    buying_power_label = None
+    if snaptrade_enabled():
         try:
             account = alpaca_paper_trade_account(current_user.id)
         except Exception as exc:
             _log.warning("practice account lookup failed: %s", exc)
             account = None
+        if account:
+            try:
+                power = account_buying_power(
+                    current_user.id, account["snaptrade_account_id"],
+                )
+            except Exception as exc:
+                _log.warning("practice buying power failed: %s", exc)
+                power = None
+            if power is not None:
+                buying_power_label = money(power)
+    orders = []
+    try:
+        orders = merged_paper_orders(current_user.id)
+    except Exception as exc:
+        _log.warning("practice orders failed: %s", exc)
+        orders = _session_orders()
+    session_note = None
+    if ticket and ticket.get("session_note"):
+        session_note = ticket["session_note"]
+    elif not regular_session_open():
+        session_note = session_wait_note()
     return render_template(
         "paper_practice.html",
         title="Practice a trade",
@@ -880,9 +1277,12 @@ def paper_practice():
         account=account,
         ticket=ticket,
         sent=sent,
+        orders=orders,
         voice=voice,
         snaptrade_ready=snaptrade_enabled(),
         look=look and not account,
+        buying_power_label=buying_power_label,
+        session_note=session_note,
     )
 
 
@@ -1032,6 +1432,119 @@ def paper_practice_place():
         )
         return redirect(url_for("paper_practice", confirm=1))
     session.pop(TICKET_KEY, None)
-    session[SENT_KEY] = practice_receipt(ticket)
+    ticket = dict(ticket)
+    ticket["brokerage_order_id"] = _brokerage_order_id(body if isinstance(body, dict) else {})
+    receipt = practice_receipt(ticket)
+    session[SENT_KEY] = receipt
+    _remember_order(receipt)
     queue_account_read_sync(current_user.id, account["row"])
     return redirect(url_for("paper_practice", placed=1))
+
+
+@app.route("/practice/orders/cancel", methods=["POST"])
+@login_required
+def paper_practice_cancel():
+    """Cancel one open order. The account id comes from the server, not the form."""
+    blocked = _write_blocked("cancelling a paper order")
+    if blocked:
+        return blocked
+    order_id = (request.form.get("brokerage_order_id") or "").strip()
+    if not order_id or len(order_id) > 128:
+        flash("That order can't be cancelled.", "warning")
+        return redirect(url_for("paper_practice"))
+    try:
+        account = alpaca_paper_trade_account(current_user.id)
+    except Exception as exc:
+        _log.warning("paper cancel account lookup failed: %s", exc)
+        account = None
+    if not account:
+        flash("Only an open order on your paper account can be cancelled.", "warning")
+        return redirect(url_for("paper_practice"))
+    known_open = set()
+    try:
+        live = list_account_recent_orders(
+            current_user.id, account["snaptrade_account_id"],
+        )
+    except Exception as exc:
+        _log.warning("paper cancel list failed: %s", exc)
+        live = []
+    live_bucket = None
+    for raw in live or []:
+        item = normalize_broker_order(raw)
+        if not item or item.get("brokerage_order_id") != order_id:
+            continue
+        live_bucket = item["status"]
+        if item["cancelable"]:
+            known_open.add(order_id)
+    session_open_ids = {
+        str(item.get("brokerage_order_id") or "")
+        for item in _session_orders()
+        if item.get("status", "open") == "open"
+    }
+    if live_bucket and live_bucket != "open":
+        flash(f"That order is already {live_bucket}.", "warning")
+        return redirect(url_for("paper_practice"))
+    if order_id not in known_open and order_id not in session_open_ids:
+        flash("That order is not an open order on your paper account.", "warning")
+        return redirect(url_for("paper_practice"))
+    try:
+        cancel_account_order(
+            current_user.id,
+            account["snaptrade_account_id"],
+            order_id,
+        )
+    except Exception as exc:
+        _log.exception("Paper cancel failed for user_id=%s: %s", current_user.id, exc)
+        flash("The paper account did not cancel that order.", "danger")
+        return redirect(url_for("paper_practice"))
+    reported = _refetch_order_status(
+        current_user.id, account["snaptrade_account_id"], order_id,
+    )
+    if reported and reported.get("status") != "open":
+        bucket = reported["status"]
+        label = reported.get("status_label") or _status_label(bucket, "")
+    else:
+        bucket = "cancel_requested"
+        label = "Cancel requested"
+    updated = []
+    found = False
+    for item in _session_orders():
+        if str(item.get("brokerage_order_id") or "") == order_id:
+            item = dict(item)
+            item["status"] = bucket
+            item["status_label"] = label
+            item["cancelable"] = False
+            found = True
+        updated.append(item)
+    if not found:
+        updated.insert(0, {
+            "brokerage_order_id": order_id,
+            "status": bucket,
+            "status_label": label,
+            "cancelable": False,
+            "symbol": (reported or {}).get("symbol") or "",
+            "link_symbol": (reported or {}).get("link_symbol") or "",
+        })
+    session[ORDERS_KEY] = updated[:20]
+    if bucket == "cancel_requested":
+        flash(
+            "Cancel requested. Refresh to see when the paper account reports it.",
+            "success",
+        )
+    else:
+        flash("Cancel sent to the paper account.", "success")
+    return redirect(url_for("paper_practice"))
+
+
+def _refetch_order_status(user_id, account_id, order_id) -> dict | None:
+    """One read after cancel. None when the order is missing or the read failed."""
+    try:
+        live = list_account_recent_orders(user_id, account_id) or []
+    except Exception as exc:
+        _log.warning("paper cancel refetch failed: %s", exc)
+        return None
+    for raw in live:
+        item = normalize_broker_order(raw)
+        if item and item.get("brokerage_order_id") == order_id:
+            return item
+    return None

@@ -427,6 +427,35 @@ def _build_benchmark_snapshot(bench_df):
 # behind a just-connected account's first balance row). Per-tenant grain
 # so Flask can both SUM for the aggregate equity_snapshot and map each
 # account's live total onto its placeholder snapshot row.
+def _paper_book_aside(user_id, tenant_ids):
+    """Paper value kept off the real total, plus whether this scope is paper-only."""
+    from app.paper_accounts import paper_scope_note
+    from app.routes import _filter_df_by_tenant_ids, _tenant_sql_and
+
+    note = paper_scope_note(user_id, tenant_ids)
+    aside_ids = note.get("aside_ids") or []
+    if not aside_ids:
+        return bool(note.get("paper_only")), None
+    aside = {
+        "value": None,
+        "n": len(aside_ids),
+        "tenants": ",".join(aside_ids),
+        "label": "Paper",
+    }
+    try:
+        sql = ACCOUNT_VALUE_QUERY.format(
+            tenant_filter=_tenant_sql_and(aside_ids),
+        )
+        frame = cached_query_df(get_bigquery_client(), sql, label="paper_aside")
+        frame = _filter_df_by_tenant_ids(frame, aside_ids)
+        if frame is not None and not getattr(frame, "empty", True):
+            if "account_value" in frame.columns:
+                aside["value"] = float(frame["account_value"].fillna(0).sum())
+    except Exception as exc:
+        app.logger.warning("paper aside value failed: %s", exc)
+    return bool(note.get("paper_only")), aside
+
+
 ACCOUNT_VALUE_QUERY = """
 SELECT
   tenant_id,
@@ -5003,6 +5032,14 @@ def weekly_review():
     if _hero_av is None:
         _hero_av = (context.get("equity_snapshot") or {}).get("account_value")
     context["hero_account_value"] = _hero_av
+    context["paper_only"] = False
+    context["paper_aside"] = None
+    try:
+        context["paper_only"], context["paper_aside"] = _paper_book_aside(
+            current_user.id, tenant_ids,
+        )
+    except Exception as exc:
+        app.logger.warning("paper aside failed: %s", exc)
     _book_row = _total_row or (_snaps[0] if len(_snaps) == 1 else None)
     _day = ((_book_row or {}).get("comparisons") or {}).get("day") or {}
     _week = ((_book_row or {}).get("comparisons") or {}).get("week") or {}

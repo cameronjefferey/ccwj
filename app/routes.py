@@ -174,6 +174,11 @@ def _tenant_display_label(row) -> str:
     distinct mask), use ``_disambiguated_tenant_labels`` to get
     per-tenant unique labels for the picker / scoping.
     """
+    from app.paper_accounts import paper_display_label
+
+    paper = paper_display_label(row)
+    if paper:
+        return paper
     return (row.get("display_nickname") or row.get("account_name") or "").strip()
 
 
@@ -901,16 +906,38 @@ def _apply_group_scope(base_ids, user_id):
     """
     group_ids = _requested_group_ids()
     if not group_ids:
-        return base_ids
+        return _real_book_scope(base_ids, user_id)
     from app.models import tenant_ids_for_groups
 
     matched, group_tids = tenant_ids_for_groups(user_id, group_ids)
     if not matched:
-        return base_ids
+        return _real_book_scope(base_ids, user_id)
     allowed = set(group_tids)
     if base_ids is None:
-        return list(dict.fromkeys(group_tids))
-    return [t for t in base_ids if t in allowed]
+        resolved = list(dict.fromkeys(group_tids))
+    else:
+        resolved = [t for t in base_ids if t in allowed]
+    return _real_book_scope(resolved, user_id)
+
+
+def _real_book_scope(ids, user_id):
+    """Keep paper out of a mixed or all-accounts book. Paper-only stays.
+
+    Admin unscoped (``None``) stays ``None`` here. ``tenant_sql_and(None)``
+    and ``filter_df_by_tenant_ids(..., None)`` drop known paper tenants
+    on that path. A DB miss leaves the ids alone so a Postgres hiccup
+    cannot blank every page.
+    """
+    if ids is None or not user_id:
+        return ids
+    try:
+        rows = get_broker_tenants_for_user(user_id) or []
+    except Exception:
+        return ids
+    from app.paper_accounts import drop_paper_from_mixed_book
+
+    by_id = {row.get("tenant_id"): row for row in rows if row.get("tenant_id")}
+    return drop_paper_from_mixed_book(ids, by_id)
 
 
 def _user_account_list():

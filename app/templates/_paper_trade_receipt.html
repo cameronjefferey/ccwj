@@ -28,4 +28,4 @@
     {% endif %}
 </div>
 {% endif %}
-<p class="text-muted mt-3 mb-0">This order is on the paper account. We're bringing in the value. Until that shows up, this is the trade.</p>
+<p class="text-muted mt-3 mb-0">This order was sent to the paper account.{% if sent.status_label %} Status: {{ sent.status_label }}.{% endif %} The position page shows it before the fill syncs.</p>

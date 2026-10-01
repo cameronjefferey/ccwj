@@ -671,6 +671,19 @@ def healthz_db():
                 {"Content-Type": "text/plain", "Cache-Control": "no-store"})
 
 
+@app.route("/get-started/paper", methods=["POST"])
+@login_required
+def get_started_paper():
+    """Choosing the paper route stores Simple view, then opens Practice."""
+    from app.paper_accounts import set_app_view
+
+    try:
+        set_app_view(current_user.id, "simple")
+    except Exception as exc:
+        app.logger.warning("paper route did not store simple view: %s", exc)
+    return redirect(url_for("paper_practice"))
+
+
 @app.route("/get-started")
 @login_required
 def get_started():

@@ -89,6 +89,16 @@
     { s: "AI Insights", href: "/insights", kind: "page" },
     { s: "Profile", href: "/profile", kind: "page" }
   ];
+  var simpleNav = document.body.getAttribute("data-simple") === "1";
+  var paperNav = document.body.getAttribute("data-paper") === "1";
+  if (simpleNav || paperNav) {
+    PAGES.unshift({ s: "Learn", href: "/learn", kind: "page" });
+    PAGES.unshift({ s: "Practice", href: "/practice", kind: "page" });
+  }
+  if (simpleNav) {
+    var simpleKeep = { Practice: 1, Learn: 1, Overview: 1, Positions: 1, Profile: 1 };
+    PAGES = PAGES.filter(function (page) { return simpleKeep[page.s]; });
+  }
 
   var trigger = document.getElementById("ht-palette-trigger");
   var cacheScope = trigger && trigger.getAttribute("data-cache-scope");

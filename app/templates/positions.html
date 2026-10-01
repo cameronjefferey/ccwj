@@ -461,11 +461,19 @@
         <a href="{{ url_for('get_started') }}" class="btn btn-link btn-sm text-decoration-none">Walk me through it</a>
     </div>
 </div>
+{% elif paper_only %}
+<div class="alert alert-info">
+    <strong>Paper.</strong>
+    This paper account is connected. Orders stay on
+    <a href="{{ url_for('paper_practice') }}" class="alert-link">Practice</a>
+    until the fills sync. Nothing here is part of the real-account total.
+</div>
 {% else %}
 <div class="alert alert-info">
     <strong>No positions to show yet.</strong>
-    Your account{{ '' if _auth_acct_count == 1 else 's' }} {{ user_accounts | map('account_label') | join(', ') }}
-    {{ 'is' if _auth_acct_count == 1 else 'are' }} connected, but we don&rsquo;t have any trade data yet.
+    {% set _named = _view_accts if _view_accts else user_accounts %}
+    Your account{{ '' if (_named|length) == 1 else 's' }} {{ _named | map('account_label') | join(', ') }}
+    {{ 'is' if (_named|length) == 1 else 'are' }} connected, but we don&rsquo;t have any trade data yet.
     <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="alert-link">Sync your broker</a>
     or <a href="{{ url_for('upload') }}" class="alert-link">upload trade history</a> to populate this page.
 </div>
@@ -554,6 +562,7 @@
             {% endfor %}
         </select>
     </div>
+    {% if not simple_view %}
     <div>
         <label class="lblh">Strategy</label>
         <select name="strategy" class="form-select form-select-sm"
@@ -587,6 +596,7 @@
             {% endfor %}
         </select>
     </div>
+    {% endif %}
     {% endif %}
     {# Status as a pill toggle. The previous dropdown supported any
        arbitrary subset (e.g. Open + Mixed) but in practice users only
@@ -883,7 +893,7 @@
 </details>
 {% endif %}
 
-{% if (kpis and accounts and accounts|length > 0) or strategy_chart %}
+{% if not simple_view and ((kpis and accounts and accounts|length > 0) or strategy_chart) %}
 <details class="disclosure" id="pos-breakdown">
     <summary>
         <span class="section-header">Breakdown</span>

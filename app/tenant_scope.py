@@ -78,14 +78,47 @@ def resolve_filter_tenant_ids(requested=None):
         return []
 
 
+def _known_paper_ids():
+    """Paper tenant ids to keep out of an unscoped real-book read.
+
+    Empty when none are known, including a database miss. Callers then
+    keep the historical admin bypass instead of failing the page.
+    """
+    try:
+        from app.paper_accounts import all_paper_tenant_ids
+
+        raw = all_paper_tenant_ids() or []
+    except Exception:
+        _log.exception("paper tenant exclusion lookup failed")
+        return []
+    safe = []
+    for tenant_id in raw:
+        cleaned = sanitize_tenant_id(tenant_id)
+        if cleaned and cleaned not in safe:
+            safe.append(cleaned)
+    return safe
+
+
+def _paper_exclusion_sql(col, prefix):
+    """``AND``/``WHERE`` clause dropping known paper tenants. Empty when none."""
+    paper = _known_paper_ids()
+    if not paper:
+        return ""
+    safe_col = re.sub(r"[^A-Za-z0-9_.]", "", str(col))
+    quoted = ", ".join(f"'{t}'" for t in paper)
+    return f"{prefix} {safe_col} NOT IN ({quoted})"
+
+
 def tenant_sql_and(tenant_ids, col="tenant_id"):
     """``AND``-shaped predicate scoping a BigQuery read to ``tenant_id`` values.
 
-    Returns ``""`` for admin (``tenant_ids is None``).
+    Admin (``tenant_ids is None``) stays unscoped except for known Alpaca
+    Paper tenants, which are excluded from real totals. When that list
+    cannot be loaded the predicate is ``""`` (historical admin bypass).
     Empty list returns ``AND 1 = 0`` (fail-closed).
     """
     if tenant_ids is None:
-        return ""
+        return _paper_exclusion_sql(col, "AND")
     if not tenant_ids:
         return "AND 1 = 0"
     safe = [sanitize_tenant_id(t) for t in tenant_ids]
@@ -98,9 +131,13 @@ def tenant_sql_and(tenant_ids, col="tenant_id"):
 
 
 def tenant_sql_filter(tenant_ids, col="tenant_id"):
-    """``WHERE``-prefixed sibling for queries without an existing ``WHERE``."""
+    """``WHERE``-prefixed sibling for queries without an existing ``WHERE``.
+
+    Admin (``tenant_ids is None``) excludes known paper tenants, same as
+    ``tenant_sql_and``. A lookup miss returns ``""``.
+    """
     if tenant_ids is None:
-        return ""
+        return _paper_exclusion_sql(col, "WHERE")
     if not tenant_ids:
         return "WHERE 1 = 0"
     safe = [sanitize_tenant_id(t) for t in tenant_ids]
@@ -112,10 +149,23 @@ def tenant_sql_filter(tenant_ids, col="tenant_id"):
     return f"WHERE {safe_col} IN ({quoted})"
 
 
+def _drop_known_paper_rows(df, col):
+    """Drop known paper rows from an unscoped frame. Misses leave it alone."""
+    if col not in df.columns:
+        return df
+    paper = set(_known_paper_ids())
+    if not paper:
+        return df
+    series = df[col].astype(str)
+    return df.loc[~series.isin(paper)].reset_index(drop=True)
+
+
 def filter_df_by_tenant_ids(df, tenant_ids, col="tenant_id"):
     """DataFrame-side belt-and-suspenders filter.
 
-    Admin (``tenant_ids is None``) bypasses the filter.
+    Admin (``tenant_ids is None``) keeps every row except known Alpaca
+    Paper tenants. A lookup miss, or a frame with no ``tenant_id``
+    column, returns the frame unchanged.
     Empty list returns an empty same-shape frame.
     Rows with NULL/missing ``tenant_id`` are DROPPED for non-admin
     callers — under v2 every legitimate row carries a tenant_id.
@@ -127,7 +177,7 @@ def filter_df_by_tenant_ids(df, tenant_ids, col="tenant_id"):
     if df is None or df.empty:
         return df
     if tenant_ids is None:
-        return df
+        return _drop_known_paper_rows(df, col)
     if col not in df.columns:
         _log.error(
             "filter_df_by_tenant_ids: column %r missing — failing closed "
