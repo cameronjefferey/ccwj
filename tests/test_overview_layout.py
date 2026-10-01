@@ -113,6 +113,17 @@ def test_headline_figures_stay_one_line_and_shrink_on_a_narrow_screen():
     assert "max-content" in STYLES
 
 
+def test_radar_chip_subtitles_wrap_so_money_is_not_cut_off():
+    small = STYLES.split(".ov-ev small {", 1)[1].split("}", 1)[0]
+    assert "white-space: normal" in small
+    assert "overflow-wrap: normal" in small
+    assert "word-break: normal" in small
+    assert "white-space: nowrap" not in small
+    assert "text-overflow: ellipsis" not in small
+    assert "minmax(3.15rem, auto)" in BELOW
+    assert "50px)" not in BELOW
+
+
 def test_today_story_order_keeps_since_last_looked_off_overview():
     happened = TODAY.index('id="ov-happened"')
     since = TODAY.index("{% include '_since_last_looked.html' %}")

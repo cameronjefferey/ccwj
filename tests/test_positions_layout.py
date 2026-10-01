@@ -56,14 +56,16 @@ def test_symbol_header_sticks_under_the_nav_without_an_inner_scroller():
     assert "overflow: visible" in PAGE
 
 
-def test_money_can_wrap_and_win_loss_stays_one_value():
+def test_money_never_breaks_inside_a_number():
     assert "td.pos-money" in PAGE
     money = PAGE.split("td.pos-money", 1)[1].split("}", 1)[0]
-    assert "white-space: nowrap" not in money
+    assert "white-space: nowrap" in money
+    assert "overflow-wrap: normal" in money
+    assert "word-break: keep-all" in money
+    assert "overflow-wrap: break-word" not in money
     assert "overflow-wrap: anywhere" not in PAGE
     assert "word-break: anywhere" not in PAGE
-    assert "overflow-wrap: normal" in PAGE
-    assert "overflow-wrap: break-word" in money
+    assert "max-width: 1279.98px" in PAGE
     assert PAGE.count('class="pos-wl-pair"') >= 2
     assert 'data-label="W/L"' in PAGE
 

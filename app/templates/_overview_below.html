@@ -20,7 +20,7 @@
             {% if overview_radar.earnings %}
             <div class="ov-lane">
                 <div class="ov-ln" style="color:#e8c07a">Earnings</div>
-                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.earnings_tracks }}, 50px)">
+                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.earnings_tracks }}, minmax(3.15rem, auto))">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.earnings %}
                     <a class="ov-ev er" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small><span class="ov-ev-when">{{ overview_radar.days[ev.col - 1].num }}</span>{{ ev.sub }}</small></a>
@@ -31,7 +31,7 @@
             {% if overview_radar.options %}
             <div class="ov-lane">
                 <div class="ov-ln" style="color:#a8b8ff">Options</div>
-                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.options_tracks }}, 50px)">
+                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.options_tracks }}, minmax(3.15rem, auto))">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.options %}
                     <a class="ov-ev {{ ev.cls }}" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small><span class="ov-ev-when">{{ overview_radar.days[ev.col - 1].num }}</span>{{ ev.sub }}</small></a>
@@ -42,7 +42,7 @@
             {% if overview_radar.dividends %}
             <div class="ov-lane">
                 <div class="ov-ln" style="color:#5eead4">Ex-dividends</div>
-                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.dividends_tracks }}, 50px)">
+                <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.dividends_tracks }}, minmax(3.15rem, auto))">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.dividends %}
                     <a class="ov-ev dv" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small><span class="ov-ev-when">{{ overview_radar.days[ev.col - 1].num }}</span>{{ ev.sub }}</small></a>

@@ -509,6 +509,95 @@
         color: #7d8aa3;
         font-size: 0.92rem;
     }
+
+    .ht-band-catch { background: #121826; }
+    .ht-catch-card {
+        background: #0c111c;
+        border: 1px solid #243049;
+        border-radius: 12px;
+        padding: 0.85rem 0.85rem 1rem;
+        margin-top: 1.15rem;
+        min-width: 0;
+    }
+    .ht-catch-tabs {
+        display: flex;
+        gap: 0.4rem;
+        overflow-x: auto;
+        margin: 0 0 0.75rem;
+        padding-bottom: 0.15rem;
+        scrollbar-width: none;
+    }
+    .ht-catch-tabs::-webkit-scrollbar { display: none; }
+    .ht-catch-tab {
+        flex: 0 0 auto;
+        border: 1px solid #243049;
+        background: transparent;
+        color: #c5d0e4;
+        border-radius: 999px;
+        padding: 0.32rem 0.75rem;
+        font: inherit;
+        font-size: 0.82rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        cursor: pointer;
+    }
+    .ht-catch-tab[aria-selected="true"] {
+        background: rgba(91,140,255,.15);
+        color: #5b8cff;
+        border-color: rgba(91,140,255,.5);
+    }
+    .ht-catch-tab:focus-visible {
+        outline: 2px solid #5b8cff;
+        outline-offset: 2px;
+    }
+    .ht-catch-panel[hidden] { display: none !important; }
+    .ht-catch-panel img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 0.6rem;
+        background: #05070c;
+    }
+    .ht-catch-caption {
+        margin: 0.85rem 0.15rem 0;
+        color: #c5d0e4;
+        font-size: 1.02rem;
+        line-height: 1.55;
+        max-width: 46rem;
+    }
+    .ht-catch-watch {
+        display: inline-flex;
+        margin: 0.65rem 0.15rem 0;
+        color: #5b8cff;
+        font-weight: 650;
+        text-decoration: none;
+    }
+    .ht-catch-watch:hover { color: #fff; }
+    .ht-catch-cta {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-width: 28rem;
+        margin: 1.35rem auto 0;
+        background: #5b8cff;
+        color: #0a0e17;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        text-align: center;
+        text-decoration: none;
+        border-radius: 0.5rem;
+        padding: 0.9rem 1.15rem;
+        line-height: 1.25;
+    }
+    .ht-catch-cta:hover,
+    .ht-catch-cta:focus-visible { color: #0a0e17; filter: brightness(1.08); }
+    .ht-catch-note {
+        margin: 0.7rem 0 0;
+        text-align: center;
+        color: #7d8aa3;
+        font-size: 0.78rem;
+    }
     @media (max-width: 640px) {
         .landing-hero { padding-top: 1.75rem; }
         .landing-hero h1 { font-size: 1.85rem; }
@@ -727,6 +816,47 @@
         </div>
     </section>
 
+    <section class="ht-band ht-band-catch ht-section" id="ht-catch" aria-label="Here's what you'd catch with HappyTrader">
+        <div class="ht-wrap">
+            <div class="ht-kicker">Real trades</div>
+            <h2 class="ht-section-title">Here's what you'd catch with HappyTrader</h2>
+            <div class="ht-catch-card" data-catch>
+                <div class="ht-catch-tabs" role="tablist" aria-label="Trade stories">
+                    {% for story in catch_stories %}
+                    <button type="button" class="ht-catch-tab" role="tab"
+                            id="catch-tab-{{ story.id }}"
+                            aria-controls="catch-panel-{{ story.id }}"
+                            aria-selected="{{ 'true' if loop.first else 'false' }}"
+                            tabindex="{{ '0' if loop.first else '-1' }}">{{ story.tab }}</button>
+                    {% endfor %}
+                </div>
+                {% for story in catch_stories %}
+                <div class="ht-catch-panel" role="tabpanel"
+                     id="catch-panel-{{ story.id }}"
+                     aria-labelledby="catch-tab-{{ story.id }}"
+                     {% if not loop.first %}hidden{% endif %}>
+                    <img src="{{ url_for('static', filename=story.image) }}"
+                         srcset="{{ url_for('static', filename=story.image_sm) }} 800w, {{ url_for('static', filename=story.image) }} 1280w"
+                         sizes="(min-width: 960px) 920px, 100vw"
+                         width="{{ story.width }}" height="{{ story.height }}"
+                         alt="{{ story.alt }}"
+                         loading="lazy" decoding="async">
+                    <p class="ht-catch-caption">{{ story.caption }}</p>
+                    {% if story.youtube_id %}
+                    <a class="ht-catch-watch" href="https://www.youtube.com/watch?v={{ story.youtube_id }}">Watch the story</a>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% if signup_enabled and not signup_invite_required %}
+            <a class="ht-catch-cta" href="{{ url_for('signup') }}">30-day free trial, no credit card</a>
+            {% elif signup_enabled %}
+            <a class="ht-catch-cta" href="{{ url_for('signup') }}">Sign Up (invite)</a>
+            {% endif %}
+            <p class="ht-catch-note">For learning only, not investment advice</p>
+        </div>
+    </section>
+
     <section class="ht-band ht-band-trades ht-section" aria-label="Real trades">
         <div class="ht-wrap">
             <div class="ht-kicker">Real trades</div>
@@ -900,6 +1030,35 @@
 
     document.querySelectorAll(".ht-facade").forEach(function (btn) {
         btn.addEventListener("click", function () { mount(btn); });
+    });
+
+    document.querySelectorAll("[data-catch]").forEach(function (root) {
+        var tabs = root.querySelectorAll("[role=tab]");
+        function select(id) {
+            tabs.forEach(function (tab) {
+                var on = tab.getAttribute("aria-controls") === id;
+                tab.setAttribute("aria-selected", on ? "true" : "false");
+                tab.tabIndex = on ? 0 : -1;
+            });
+            root.querySelectorAll("[role=tabpanel]").forEach(function (panel) {
+                if (panel.id === id) panel.removeAttribute("hidden");
+                else panel.setAttribute("hidden", "");
+            });
+        }
+        tabs.forEach(function (tab, index) {
+            tab.addEventListener("click", function () {
+                select(tab.getAttribute("aria-controls"));
+            });
+            tab.addEventListener("keydown", function (event) {
+                var next = index;
+                if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+                else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+                else return;
+                event.preventDefault();
+                tabs[next].focus();
+                select(tabs[next].getAttribute("aria-controls"));
+            });
+        });
     });
 })();
 </script>

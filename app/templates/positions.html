@@ -90,13 +90,14 @@
             hyphens: none;
             vertical-align: top;
         }
-        /* Money stays one figure. break-word is only a last resort if a
-           number is wider than the column; the widths below keep
-           $287,353.26 intact at 1280. Names and headers wrap on spaces. */
+        /* Money is one token. It never breaks inside a digit. Names and
+           headers wrap on spaces. Below 1280, low-value columns drop and
+           the figure shrinks so the nowrap number still fits. */
         #symbolTable td.pos-money,
         #positionsTable td.pos-money {
-            white-space: normal;
-            overflow-wrap: break-word;
+            white-space: nowrap;
+            overflow-wrap: normal;
+            word-break: keep-all;
         }
         .pos-wl-pair { white-space: nowrap; }
         #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 8%; }
@@ -124,6 +125,63 @@
         #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 8%; }
         #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 6%; }
         #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 9%; }
+    }
+    /* 768–1279: twelve columns cannot hold $126,140.26 without splitting
+       the number. Drop subsector / trades (and, on the strategy table,
+       status / trades / avg days), tighten padding, and shrink the
+       numeric face. Widths below replace the defaults and sum to 100%
+       of the columns that remain. */
+    @media (min-width: 768px) and (max-width: 1279.98px) {
+        #symbolTable,
+        #positionsTable { font-size: .75rem; }
+        body .pos-page #symbolTable thead th,
+        body .pos-page #positionsTable thead th {
+            font-size: .55rem;
+            letter-spacing: 0;
+            line-height: 1.15;
+            padding-top: .28rem;
+            padding-bottom: .28rem;
+        }
+        #symbolTable th, #symbolTable td,
+        #positionsTable th, #positionsTable td {
+            padding-left: .22rem;
+            padding-right: .22rem;
+        }
+        #symbolTable td.pos-money,
+        #positionsTable td.pos-money { font-size: .68rem; }
+        #symbolTable td:nth-child(1),
+        #positionsTable td:nth-child(1) { overflow-wrap: break-word; }
+        .pos-page,
+        .pos-page .card,
+        .pos-page .pos-pad,
+        .pos-page .table-responsive { max-width: 100%; min-width: 0; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3),
+        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10),
+        #positionsTable th:nth-child(3), #positionsTable td:nth-child(3),
+        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9),
+        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) {
+            display: none;
+        }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 14%; }
+        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 8%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 13%; }
+        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 12%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 11%; }
+        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 12%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 9%; }
+        #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 6%; }
+        #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 6%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 9%; }
+        #positionsTable th:nth-child(1), #positionsTable td:nth-child(1) { width: 12%; }
+        #positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 13%; }
+        #positionsTable th:nth-child(4), #positionsTable td:nth-child(4) { width: 11%; }
+        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 10%; }
+        #positionsTable th:nth-child(6), #positionsTable td:nth-child(6) { width: 11%; }
+        #positionsTable th:nth-child(7), #positionsTable td:nth-child(7) { width: 9%; }
+        #positionsTable th:nth-child(8), #positionsTable td:nth-child(8) { width: 6%; }
+        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 7%; }
+        #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 10%; }
+        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 11%; }
     }
     /* Symbol-table header sticks to the page, under the nav. Not an
        inner 75vh scroller: overflow stays visible so columns are not
@@ -194,6 +252,12 @@
             --bs-table-bg: transparent;
             --bs-table-accent-bg: transparent;
             box-shadow: none;
+        }
+        .pos-page table.pos-stack > tbody > tr > td.pos-money {
+            white-space: nowrap !important;
+            overflow-wrap: normal !important;
+            word-break: keep-all !important;
+            flex: 0 0 auto;
         }
         .pos-page table.pos-stack > tbody > tr > td::before {
             content: attr(data-label);
