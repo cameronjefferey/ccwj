@@ -45,7 +45,7 @@ _ENTRIES = (
         "slug": "premium",
         "title": "Premium",
         "labels": (
-            "premium", "net premium", "premium collected",
+            "premium", "net premium", "premium collected", "collected",
         ),
         "definition": (
             "Premium is the price of an option contract. "

@@ -113,5 +113,5 @@ def test_positions_headers_use_the_word_not_an_icon():
     assert "term_link('Realized'" in text
     assert "term_link('Unrealized'" in text
     assert "term_link('Win Rate'" in text
-    assert "term_link('Premium'" in text
+    assert "term_link('Collected'" in text
     assert "{{ term('Unrealized') }}" in text
