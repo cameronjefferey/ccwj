@@ -107,7 +107,7 @@ def test_expiries_match_what_each_symbol_lists():
 
 def test_sentence_is_the_trade_they_picked():
     text = practice_sentence("SPY", "call", 760, "at", date(2026, 10, 2))
-    assert text.startswith("Buy 1 SPY call at $760, about today's price.")
+    assert text.startswith("Buy 1 SPY call at $760, about the latest close.")
     assert "One contract is 100 shares." in text
     assert "right to buy the shares" in text
     assert "recommendation" not in text.lower()
@@ -304,7 +304,7 @@ def test_placed_trade_is_the_thing_to_look_at_until_the_value_arrives(monkeypatc
     assert "Here's your trade" in html
     assert "You are buying a call on SPY." in html
     assert "$60.00" in html
-    assert "bringing in the value" in html
+    assert "was sent to the paper account" in html
     assert "No data found" not in html
 
     with app.test_request_context("/position/SPY"):
@@ -363,7 +363,8 @@ def test_intro_is_for_learning_and_links_to_options_101(monkeypatch):
         sess["_fresh"] = True
     html = client.get("/practice").get_data(as_text=True)
     assert "here to learn" in html
-    assert "$100,000" in html
+    assert "buying power" in html
+    assert "$100,000" not in html
     assert 'href="/learn"' in html
     assert "Learn Options 101" in html
     assert "Alpaca" not in html

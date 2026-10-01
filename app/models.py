@@ -585,6 +585,7 @@ def init_db():
     _migrate_users_plan_columns()
     _migrate_users_stripe_columns()
     _migrate_users_ai_addon_columns()
+    _migrate_users_app_view_column()
     _migrate_campaign_attribution()
     _migrate_insight_messages_table()
     _migrate_account_group_crytpo_typo()
@@ -760,6 +761,17 @@ def _migrate_users_ai_addon_columns():
         execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_subscription_price_id TEXT")
     except Exception as exc:
         _log.warning("users AI-addon columns migration skipped: %s", exc)
+
+
+def _migrate_users_app_view_column():
+    """Idempotent: Simple vs Full. Existing users stay on the full app."""
+    try:
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "app_view TEXT NOT NULL DEFAULT 'full'"
+        )
+    except Exception as exc:
+        _log.warning("users app_view migration skipped: %s", exc)
 
 
 def _migrate_campaign_attribution():

@@ -365,6 +365,8 @@ def _inject_feature_flags():
             "price_ai": None,
             "compact_tables": False,
             "privacy_mode": False,
+            "simple_view": False,
+            "has_paper_account": False,
         }
 
     is_admin_user = False
@@ -505,15 +507,21 @@ def _inject_feature_flags():
 
     compact_tables = False
     privacy_mode = False
+    simple_view = False
+    has_paper_account = False
     try:
         if current_user.is_authenticated:
             _prof = _viewer_profile() or {}
             compact_tables = bool(_prof.get("compact_tables"))
             from app.privacy import privacy_mode_on
             privacy_mode = privacy_mode_on()
+            from app.paper_accounts import viewer_flags
+            simple_view, has_paper_account = viewer_flags(current_user.id)
     except Exception:
         compact_tables = False
         privacy_mode = False
+        simple_view = False
+        has_paper_account = False
 
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
@@ -544,6 +552,8 @@ def _inject_feature_flags():
         "price_ai": price_ai,
         "compact_tables": compact_tables,
         "privacy_mode": privacy_mode,
+        "simple_view": simple_view,
+        "has_paper_account": has_paper_account,
     }
 
 

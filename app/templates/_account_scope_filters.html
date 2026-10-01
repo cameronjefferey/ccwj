@@ -16,7 +16,7 @@
     {% endif %}
 {% endfor %}
 
-{% if account_groups %}
+{% if account_groups and not simple_view %}
 <div class="ht-ms-dd" data-ht-ms-dd data-ht-ms-param="groups">
     <label class="lblh">Groups</label>
     <div class="dropdown">
@@ -54,7 +54,7 @@
     </div>
     {% if groups_query %}<input type="hidden" name="groups" value="{{ groups_query }}">{% endif %}
 </div>
-{% elif scope_account_choices|length > 1 %}
+{% elif scope_account_choices|length > 1 and not simple_view %}
 {# Same Groups slot, no fake dropdown. Only if they have accounts to group. #}
 <div class="ht-ms-dd">
     <span class="lblh">Groups</span>

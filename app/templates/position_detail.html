@@ -870,6 +870,35 @@
 {% endif %}
 
 
+{% set practice = session.get('paper_practice_sent') %}
+{% set _pending = paper_orders if paper_orders is defined else [] %}
+{% if _pending or (practice and (practice.link_symbol or practice.symbol) == symbol) %}
+<div class="card p-4 mb-3">
+    <p class="section-header">Paper</p>
+    {% if practice and (practice.link_symbol or practice.symbol) == symbol %}
+    {% with sent=practice %}
+    {% include "_paper_trade_receipt.html" %}
+    {% endwith %}
+    {% endif %}
+    {% for order in _pending %}
+    <div class="d-flex flex-wrap justify-content-between gap-2 py-2">
+        <div>
+            <strong>{{ order.status_label }}</strong>
+            <div class="text-muted">{{ order.sentence or order.symbol }}</div>
+        </div>
+        {% if order.cancelable and order.brokerage_order_id %}
+        <form method="POST" action="{{ url_for('paper_practice_cancel') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="brokerage_order_id" value="{{ order.brokerage_order_id }}">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endfor %}
+    <a class="btn btn-outline-secondary mt-3" href="{{ url_for('paper_practice') }}">Back to practice</a>
+</div>
+{% endif %}
+
 {% if error is defined and error %}
 <div class="alert alert-danger">
     We're having trouble loading this position right now. Refresh in a minute, or
@@ -1132,7 +1161,7 @@
         Dots mark your trade days &mdash; click one to jump to that day in the review below. Click a day in the review to highlight its dot here.
     </p>
     {% endif %}
-    {% if chart_read %}
+    {% if chart_read and not simple_view %}
     <div class="chart-read mt-3" id="chartRead"
          data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
          data-digest="{{ chart_read.digest }}"
@@ -1349,7 +1378,22 @@
 
 {# ── All Legs (Open + Closed). The summary is the only "Position Legs"
    heading, and it stays next to If held. #}
+{% if simple_view %}
+<details class="disclosure" id="pd-show-more">
+    <summary><span class="section-header">Show more</span></summary>
+    <div class="disclosure-body">
+        {% if chart_read %}
+        <div class="chart-read mt-3">
+            <div class="chart-read-kicker">On this chart</div>
+            <p class="chart-read-lead">{{ chart_read.lead }}</p>
+        </div>
+        {% endif %}
+        {% include "_held_to_expiry.html" %}
+    </div>
+</details>
+{% else %}
 {% include "_held_to_expiry.html" %}
+{% endif %}
 <p class="pd-kicker">Details</p>
 {% if current_positions or trade_outcomes %}
 <details class="pd-fold" id="pd-legs">
@@ -1833,16 +1877,7 @@
     .ht-share-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
 </style>
 
-{% else %}
-{% set practice = session.get('paper_practice_sent') %}
-{% if practice and practice.symbol == symbol %}
-<div class="card p-4 mb-3">
-    {% with sent=practice %}
-    {% include "_paper_trade_receipt.html" %}
-    {% endwith %}
-    <a class="btn btn-outline-secondary mt-3" href="{{ url_for('paper_practice', placed=1) }}">Back to practice</a>
-</div>
-{% else %}
+{% elif not (_pending or (practice and (practice.link_symbol or practice.symbol) == symbol)) %}
 <div class="card p-4">
     <h2 class="section-header">No data for {{ symbol }}</h2>
     <p class="text-muted mb-3">Nothing for this symbol in your linked accounts. If you just synced, the warehouse can take a few minutes. Otherwise check the symbol, or that this is the account on Accounts &amp; data.</p>
@@ -1851,7 +1886,6 @@
         <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_accounts_page') }}">Check sync status</a>
     </div>
 </div>
-{% endif %}
 {% endif %}
 </div>
 {% endblock %}

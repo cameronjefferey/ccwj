@@ -186,6 +186,11 @@ the nav says so in language that matches pre-market vs the open vs after the bel
 The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', ...)`
 callers don't break.
 
+Alpaca Paper accounts stay out of the real total, allocation, and
+account count. A mixed book drops them; a paper-only `?tenants=` scope
+keeps them. Overview shows that paper value beside the real total,
+labeled Paper, with a link that opens just the paper book.
+
 The page reads in one order: the headline (session date, account value, the
 close labeled Today, this week), then one **What happened** section (that
 session's fills and the notable moves), then the account breakdown, then
@@ -872,7 +877,11 @@ demo excluded;
 logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
 ### Get Started (`/get-started`) — one onboarding surface
-**Status: Working. Broker-first (Sep 2026).** No SnapTrade brokerage yet:
+**Status: Working. Broker-first (Sep 2026).** Choosing the paper path
+(`POST /get-started/paper`) stores `users.app_view='simple'` (default
+`full` for everyone else) and opens Practice. Settings can switch Simple
+and Full. Simple nav is Practice, Learn, Overview, and Positions.
+No SnapTrade brokerage yet:
 Connect brokerage is the primary CTA (pre-portal interstitial, then
 SnapTrade), "I'll do this later" / skip to Overview is secondary, and
 CSV is a quiet link for older history. A CSV-only user still sees that

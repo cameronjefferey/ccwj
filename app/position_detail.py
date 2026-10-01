@@ -2008,6 +2008,13 @@ def position_detail(symbol):
     # maps to tenant_ids via `_tenants_for_scope`.
     selected_account = request.args.get("account", "").strip()
     tenant_scope = _tenants_for_scope(selected_account)
+    paper_orders = []
+    try:
+        from app.paper_practice import paper_orders_for_page
+        paper_orders = paper_orders_for_page(getattr(current_user, "id", None), symbol)
+    except Exception as exc:
+        app.logger.warning("paper orders on %s failed: %s", symbol, exc)
+        paper_orders = []
 
     # Full owned-tenant scope (ignores the ?tenants= on/off subset) so the
     # account-toggle bar can list every account that traded this symbol —
@@ -2055,6 +2062,7 @@ def position_detail(symbol):
             "position_detail.html",
             title=symbol,
             symbol=symbol,
+            paper_orders=paper_orders,
             error=str(exc),
             first_visit=False,
             kpis={},
@@ -3541,11 +3549,17 @@ def position_detail(symbol):
     except Exception as exc:
         app.logger.warning("chart read prep failed for %s: %s", symbol, exc)
         chart_read = None
-    from app.paper_practice import beginner_readouts
-    beginner_trades = beginner_readouts(tenant_scope, symbol)
+    beginner_trades = []
+    try:
+        from app.paper_practice import beginner_readouts
+        beginner_trades = beginner_readouts(tenant_scope, symbol)
+    except Exception as exc:
+        app.logger.warning("beginner readout on %s failed: %s", symbol, exc)
+        beginner_trades = []
     resp = make_response(render_template(
         "position_detail.html",
         title=symbol,
+        paper_orders=paper_orders,
         beginner_trades=beginner_trades,
         symbol=symbol,
         open_strategy_names=open_strategy_names,

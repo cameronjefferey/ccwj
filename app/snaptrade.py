@@ -1435,6 +1435,84 @@ def place_single_leg_option_order(user_id, account_id, occ_symbol, limit_price):
     return _mapping(body) if not isinstance(body, dict) else body
 
 
+def list_account_recent_orders(user_id, account_id):
+    """Open and recent orders for one SnapTrade account. Empty on failure."""
+    snap = get_snaptrade_user(user_id)
+    client = _get_snaptrade_client()
+    if not snap or not client or not account_id:
+        return []
+    return _fetch_recent_orders(
+        client,
+        snap["snaptrade_user_id"],
+        snap["snaptrade_secret"],
+        account_id,
+    )
+
+
+def cancel_account_order(user_id, account_id, brokerage_order_id):
+    """Cancel one order on the account the server already resolved.
+
+    ``account_id`` must be the paper SnapTrade account id from
+    ``alpaca_paper_trade_account``, never a value from the form.
+    """
+    snap = get_snaptrade_user(user_id)
+    client = _get_snaptrade_client()
+    if not snap or not client:
+        raise RuntimeError("SnapTrade is not configured")
+    if not account_id or not brokerage_order_id:
+        raise RuntimeError("Missing paper order")
+    resp = client.trading.cancel_user_account_order(
+        user_id=snap["snaptrade_user_id"],
+        user_secret=snap["snaptrade_secret"],
+        account_id=account_id,
+        brokerage_order_id=str(brokerage_order_id),
+    )
+    body = _unwrap_body(resp)
+    return _mapping(body) if not isinstance(body, dict) else body
+
+
+def account_buying_power(user_id, account_id):
+    """Buying power, else cash, from the paper account. None when unknown."""
+    snap = get_snaptrade_user(user_id)
+    client = _get_snaptrade_client()
+    if not snap or not client or not account_id:
+        return None
+    try:
+        balances = _fetch_balances(
+            client,
+            snap["snaptrade_user_id"],
+            snap["snaptrade_secret"],
+            account_id,
+        )
+    except Exception as exc:
+        _log.warning("paper buying power failed for user_id=%s: %s", user_id, exc)
+        return None
+    power = None
+    cash = 0.0
+    saw_cash = False
+    for bal in balances or []:
+        if not isinstance(bal, dict):
+            continue
+        for key in ("buying_power", "buyingPower"):
+            raw = bal.get(key)
+            if raw is not None:
+                try:
+                    power = float(raw)
+                except (TypeError, ValueError):
+                    power = None
+                if power is not None:
+                    return power
+        if bal.get("cash") is not None:
+            try:
+                cash += float(bal.get("cash") or 0)
+                saw_cash = True
+            except (TypeError, ValueError):
+                continue
+    if saw_cash:
+        return cash
+    return None
+
+
 def queue_account_read_sync(user_id, acc_row):
     """Read the new order back through the existing sync.
 

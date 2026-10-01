@@ -435,7 +435,9 @@ ERROR_DEFAULTS = dict(
 )
 
 
-def _accounts_in_view(filtered, *, selected_account, user_accounts, tenant_labels):
+def _accounts_in_view(
+    filtered, *, selected_account, user_accounts, tenant_labels, scoped_labels=None,
+):
     """Display labels for accounts represented in the current positions view.
 
     Headline KPIs / chips read ``filtered``. The hero subtitle must list
@@ -449,6 +451,11 @@ def _accounts_in_view(filtered, *, selected_account, user_accounts, tenant_label
         return [selected_account]
     user_accounts = list(user_accounts or [])
     if filtered is None or getattr(filtered, "empty", True):
+        # An explicit tenant scope (including paper-only) must not fall
+        # back to every linked account. That fallback said "Across 8
+        # accounts" on a paper book that had not synced yet.
+        if scoped_labels:
+            return list(scoped_labels)
         return user_accounts
     tenant_labels = tenant_labels or {}
     cols = [c for c in ("tenant_id", "account") if c in filtered.columns]
@@ -848,12 +855,24 @@ def positions():
     # onboarding) and from `accounts` (dropdown options from the
     # tenant-scoped but pre-strategy frame).
     _tenant_labels = _tenant_label_map_for_user(getattr(current_user, "id", None))
+    scoped_labels = []
+    if tenant_ids:
+        scoped_labels = [
+            _tenant_labels.get(tid) for tid in tenant_ids if _tenant_labels.get(tid)
+        ]
     view_accounts = _accounts_in_view(
         filtered,
         selected_account=selected_account,
         user_accounts=user_accounts,
         tenant_labels=_tenant_labels,
+        scoped_labels=scoped_labels,
     )
+    paper_only = False
+    try:
+        from app.paper_accounts import paper_scope_note
+        paper_only = bool(paper_scope_note(getattr(current_user, "id", None), tenant_ids)["paper_only"])
+    except Exception:
+        paper_only = False
 
     # Status counts for hero chips. Must read from `filtered`, NOT `df`,
     # so the chips agree with the body. Reading from `df` was a long-
@@ -1021,8 +1040,13 @@ def positions():
     start_idx = (page - 1) * per_page
     rows = all_rows[start_idx : start_idx + per_page]
 
-    from app.paper_practice import beginner_readouts
-    beginner_trades = beginner_readouts(tenant_ids)
+    beginner_trades = []
+    try:
+        from app.paper_practice import beginner_readouts
+        beginner_trades = beginner_readouts(tenant_ids)
+    except Exception as exc:
+        app.logger.warning("beginner readout on positions failed: %s", exc)
+        beginner_trades = []
 
     return render_template(
         "positions.html",
@@ -1045,6 +1069,7 @@ def positions():
         # from the tenant-scoped (pre-strategy) frame.
         user_accounts=user_accounts,
         view_accounts=view_accounts,
+        paper_only=paper_only,
         status_counts=status_counts,
         open_symbol_count=open_symbol_count,
         selected_account=selected_account,

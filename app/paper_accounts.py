@@ -1,0 +1,153 @@
+"""Alpaca Paper is practice money. It is not part of the real book.
+
+Warehouse ``broker_slug`` is the first word of the account label, so
+"Alpaca Paper Account" becomes ``alpaca`` — the same slug as a live Alpaca
+account. Paper is identified from the broker row (label / account name),
+never from that slug and never by merging tenants across users.
+"""
+from __future__ import annotations
+
+import logging
+
+_log = logging.getLogger(__name__)
+
+PAPER_LABEL = "Paper"
+_PAPER_MARKERS = ("alpaca paper", "alpaca-paper")
+
+
+def _blob(row) -> str:
+    if not row:
+        return ""
+    parts = (
+        row.get("broker_label"),
+        row.get("account_name"),
+        row.get("display_nickname"),
+        row.get("institution_name"),
+    )
+    return " ".join(str(part or "") for part in parts).casefold()
+
+
+def is_paper_row(row) -> bool:
+    """True for an Alpaca Paper broker row. Demo and live Alpaca are not."""
+    text = _blob(row)
+    if not text:
+        return False
+    tid = str((row or {}).get("tenant_id") or "")
+    if tid.startswith("demo:"):
+        return False
+    return any(marker in text for marker in _PAPER_MARKERS)
+
+
+def _generic_paper_name(text) -> bool:
+    cleaned = " ".join(str(text or "").split()).casefold()
+    if not cleaned:
+        return False
+    if cleaned in {PAPER_LABEL.casefold(), "unnamed account"}:
+        return True
+    return any(marker in cleaned for marker in _PAPER_MARKERS)
+
+
+def paper_display_label(row) -> str | None:
+    """``Paper``, or a nickname the user actually typed. None when not paper."""
+    if not is_paper_row(row):
+        return None
+    nick = " ".join(str((row or {}).get("display_nickname") or "").split())
+    name = " ".join(str((row or {}).get("account_name") or "").split())
+    if nick and nick != name and not _generic_paper_name(nick):
+        return nick
+    return PAPER_LABEL
+
+
+def drop_paper_from_mixed_book(ids, rows_by_id):
+    """Drop paper from a mixed book. A paper-only set stays paper.
+
+    ``None`` is the admin unscoped bypass and is left alone. Ids we cannot
+    classify stay in the result so a lookup miss does not blank the page.
+    """
+    if ids is None:
+        return None
+    paper = {
+        tid for tid, row in (rows_by_id or {}).items() if is_paper_row(row)
+    }
+    real = [tid for tid in ids if tid not in paper]
+    if real:
+        return real
+    return list(ids)
+
+
+def paper_scope_note(user_id, scoped_ids) -> dict:
+    """Whether this scope is the paper book, and which paper ids were left out."""
+    empty = {"paper_only": False, "aside_ids": []}
+    if not user_id or scoped_ids is None:
+        return empty
+    try:
+        from app.models import get_broker_tenants_for_user
+
+        rows = get_broker_tenants_for_user(user_id) or []
+    except Exception as exc:
+        _log.warning("paper scope note failed: %s", exc)
+        return empty
+    paper = [row.get("tenant_id") for row in rows if is_paper_row(row) and row.get("tenant_id")]
+    scoped = set(scoped_ids or [])
+    paper_set = set(paper)
+    paper_only = bool(scoped) and scoped <= paper_set
+    aside = [tid for tid in paper if tid not in scoped]
+    return {"paper_only": paper_only, "aside_ids": aside}
+
+
+def position_link_symbol(symbol: str) -> str:
+    """Index options are stored as SPXW. The position page uses that root."""
+    text = str(symbol or "").strip().upper()
+    if text in {"SPX", "SPXW"}:
+        return "SPXW"
+    return text
+
+
+def get_app_view(user_id) -> str:
+    """``simple`` or ``full``. Missing column, missing user, or a DB error is full."""
+    if not user_id:
+        return "full"
+    try:
+        from app.models import _postgres_user_id
+        from app.db import fetch_one
+
+        uid = _postgres_user_id(user_id)
+        if uid is None:
+            return "full"
+        row = fetch_one("SELECT app_view FROM users WHERE id = %s", (uid,))
+    except Exception as exc:
+        _log.warning("app_view read failed: %s", exc)
+        return "full"
+    view = str((row or {}).get("app_view") or "full").strip().lower()
+    return view if view in {"simple", "full"} else "full"
+
+
+def set_app_view(user_id, view: str) -> bool:
+    if view not in {"simple", "full"} or not user_id:
+        return False
+    try:
+        from app.models import _postgres_user_id
+        from app.db import execute
+
+        uid = _postgres_user_id(user_id)
+        if uid is None:
+            return False
+        execute("UPDATE users SET app_view = %s WHERE id = %s", (view, uid))
+        return True
+    except Exception as exc:
+        _log.warning("app_view write failed: %s", exc)
+        return False
+
+
+def viewer_flags(user_id) -> tuple[bool, bool]:
+    """``(simple_view, has_paper_account)``. Both fail closed to the full app."""
+    simple = get_app_view(user_id) == "simple"
+    paper = False
+    try:
+        from app.models import get_broker_tenants_for_user
+
+        paper = any(is_paper_row(row) for row in (get_broker_tenants_for_user(user_id) or []))
+    except Exception as exc:
+        _log.warning("paper flag failed: %s", exc)
+        paper = False
+    return simple, paper
