@@ -39,6 +39,17 @@ def test_gain_and_loss_are_one_pair_and_cards_share_one_style():
     assert '<details class="pd-fold" id="pd-matrix">' in PAGE
 
 
+def test_headline_total_uses_cqi_and_does_not_truncate():
+    assert 'class="pos-total"' in PAGE
+    assert 'class="ov-big' in PAGE
+    rule = PAGE.split(".pos-hero .pos-total .ov-big {", 1)[1].split("}", 1)[0]
+    assert "clamp(1.05rem, 13.5cqi, 2.75rem)" in rule
+    assert "white-space: nowrap" in rule
+    assert "ellipsis" not in rule
+    assert "text-overflow: clip" in rule
+    assert 'class="h2 mb-0' not in PAGE
+
+
 def test_strategy_premium_column_says_collected():
     assert "term('Premium')" not in PAGE
     assert ">Collected</dt>" in PAGE
