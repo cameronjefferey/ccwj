@@ -189,8 +189,10 @@ callers don't break.
 The page reads in one order: the headline (session date, account value, the
 close labeled Today, this week), then one **What happened** section (that
 session's fills and the notable moves), then the account breakdown, then
+**Daily change** as an open section (the heatmap, still loaded with the
+lazy `/overview/below` fragment and placed in `#ht-overview-daily`), then
 secondary items collapsed in disclosures — building your history, the radar,
-execution review, daily change, performance by account, and trades this week.
+execution review, performance by account, and trades this week.
 `#ht-overview-below` is not a card; an empty or failed load removes the slot.
 
 What's working:

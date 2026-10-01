@@ -262,99 +262,11 @@
 </details>
 {% endif %}
 
-{# ════════════════════════════════════
-   DAILY ACCOUNT Δ — calendar heatmap (12 weeks, 4 visible by default)
-   ════════════════════════════════════ #}
-{% if calendar_grid %}
-{% set _cal_max = namespace(val=1) %}
-{% for r in calendar_grid %}{% for c in r.cells %}
-    {% if c.has_data and c.daily_change|abs > _cal_max.val %}
-        {% set _cal_max.val = c.daily_change|abs %}
-    {% endif %}
-{% endfor %}{% endfor %}
-<details class="disclosure" id="ov-daily">
-    <summary>
-        <span class="section-header">Daily change</span>
-    </summary>
-    <div class="disclosure-body">
-    <div class="cal-section-head">
-        {% if calendar_extra_weeks and calendar_extra_weeks > 0 %}
-        <button type="button" id="cal-toggle-btn" class="cal-toggle-btn"
-                data-extra="{{ calendar_extra_weeks }}"
-                aria-controls="cal-grid-rolling" aria-expanded="false">
-            Show {{ calendar_extra_weeks }} earlier week{{ 's' if calendar_extra_weeks != 1 else '' }} &uarr;
-        </button>
-        {% endif %}
-    </div>
-    <div class="cal-grid-rolling" id="cal-grid-rolling">
-        <div class="cal-rolling-header">Week</div>
-        <div class="cal-rolling-header">Mon</div>
-        <div class="cal-rolling-header">Tue</div>
-        <div class="cal-rolling-header">Wed</div>
-        <div class="cal-rolling-header">Thu</div>
-        <div class="cal-rolling-header">Fri</div>
-        {% for r in calendar_grid %}
-            {% set extra_cls = ' cal-extra' if r.is_extra else '' %}
-            <div class="cal-rolling-week-label{{ extra_cls }}">{{ r.week_label }}</div>
-            {% for c in r.cells %}
-                {% if c.is_future %}
-                    {% set bg = "var(--cal-blank-bg)" %}{% set fg = "var(--cal-blank-fg)" %}
-                {% elif c.has_data %}
-                    {% set _int = namespace(v=40) %}
-                    {% if not privacy_mode %}
-                    {% set _int.v = (c.daily_change|abs / _cal_max.val * 100)|int if _cal_max.val > 0 else 0 %}
-                    {% endif %}
-                    {% set intensity = _int.v %}
-                    {% if c.daily_change > 0 %}
-                        {% set bg = "color-mix(in srgb, var(--gain) " ~ (8 + intensity * 0.7)|round(1) ~ "%, transparent)" %}
-                        {% set fg = "var(--cal-pos-fg)" %}
-                    {% elif c.daily_change < 0 %}
-                        {% set bg = "color-mix(in srgb, var(--loss) " ~ (8 + intensity * 0.7)|round(1) ~ "%, transparent)" %}
-                        {% set fg = "var(--cal-neg-fg)" %}
-                    {% else %}
-                        {% set bg = "var(--cal-zero-bg)" %}{% set fg = "var(--cal-zero-fg)" %}
-                    {% endif %}
-                {% else %}
-                    {% set bg = "var(--cal-nodata-bg)" %}{% set fg = "var(--cal-nodata-fg)" %}
-                {% endif %}
-                {# Past days are time-machine links: click any cell to open
-                   the day-detail review for that date (day_detail route). #}
-                {% if not c.is_future and not c.is_today %}
-                <a class="cal-day cal-day-link{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};"
-                   href="{{ scoped_url('day_detail', day_str=c.date.isoformat(),
-                                    account=selected_account or None,
-                                    tenant=selected_tenant,
-                                    tenants=selected_tenants, _anchor='day-review') }}"
-                   title="What happened {{ c.month_short }} {{ c.day }}?">
-                    <div class="cal-day-num">{{ c.day }}</div>
-                    {% if c.has_data %}
-                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
-                    {% endif %}
-                </a>
-                {% else %}
-                <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
-                    <div class="cal-day-num">{{ c.day }}</div>
-                    {% if c.has_data and not c.is_future %}
-                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
-                    {% endif %}
-                </div>
-                {% endif %}
-            {% endfor %}
-        {% endfor %}
-    </div>
-    {# Calendar expand is delegated on weekly_review.html so it still works after this fragment is injected. #}
-    {% if daily_calendar_no_query_rows %}
-    <p class="small text-muted mt-2 mb-0" style="max-width:48rem;line-height:1.55">
-        {% if building_history %}
-        Your calendar starts with this close &mdash; one square fills in per trading day as your
-        account snapshots accumulate. Check back after the next session for your first daily G/L.
-        {% else %}
-        Daily account snapshots haven&rsquo;t arrived yet. New syncs and uploads take a few minutes to show up.
-        {% endif %}
-    </p>
-    {% endif %}
-    </div>
-</details>
+{# Daily change is an open section. The full page renders it after
+   Accounts. This fragment includes it only for the lazy fetch, which
+   moves #ov-daily up into #ht-overview-daily. #}
+{% if overview_daily_in_fragment %}
+{% include "_overview_daily.html" %}
 {% endif %}
 
 {# ════════════════════════════════════
