@@ -228,17 +228,18 @@ def trade_stories():
     return [present_video(story) for story in TRADE_STORIES]
 
 
-# Homepage "Here's what you'd catch" stills. ``youtube_id`` stays empty
-# until a public Real Trade Stories video exists; the template hides
+# Homepage "Here's what you'd catch" stills. The template hides
 # "Watch the story" when the id is blank or not 11 characters.
+# These five are the owner's Real Trade Stories edits. They are private
+# until he publishes them; the links are wired now.
 _YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 CATCH_STORY_VIDEOS = {
-    "onon": "",
-    "rklb": "",
-    "be-close": "",
-    "be-swing": "",
-    "win-rate": "",
+    "onon": "abjZ4_UFhP4",
+    "rklb": "JB-Zvno6hYQ",
+    "be-close": "L1Wmhww0Xrk",
+    "be-swing": "B7KZ9ZMelMc",
+    "win-rate": "Sf-SOuSnw30",
 }
 
 CATCH_STORIES = [
@@ -272,8 +273,9 @@ CATCH_STORIES = [
         "alt": (
             "RKLB daily close from February 20 to April 17, ending at "
             "$84.80. The $69 cost and the $63 strike are marked. Five "
-            "covered calls expired for +$931. Assignment at $63 locked in "
-            "−$600 on the shares. Net of the run +$406."
+            "covered calls expired for +$931. Call six, after fees, was "
+            "+$75.34. Assignment at $63 locked in −$600 on the shares. "
+            "Net of the run +$406."
         ),
         "image": "marketing/catch/rklb.webp",
         "image_sm": "marketing/catch/rklb-800.webp",
@@ -308,9 +310,8 @@ CATCH_STORIES = [
         ),
         "alt": (
             "Cumulative P&L on one BE position from April to September "
-            "2026. A mid-June peak of about +$24k, a late-July low of "
-            "about −$15k, and about +$11k in late September. Covered calls "
-            "kept collecting premium through the swing."
+            "2026, shares and options by day. The line peaks in mid-June, "
+            "falls through late July, and recovers into late September."
         ),
         "image": "marketing/catch/be-swing.webp",
         "image_sm": "marketing/catch/be-swing-800.webp",
@@ -322,12 +323,12 @@ CATCH_STORIES = [
         "tab": "Win rate",
         "caption": (
             "Covered calls win 74% of the time, but long calls, at a 44% "
-            "win rate, made about three times as much."
+            "win rate, made about nine times as much per trade."
         ),
         "alt": (
-            "Strategy results: covered calls with a 74% win rate and "
-            "+$14,677 total return, and long calls with a 44% win rate "
-            "and +$45,487 total return."
+            "Strategy cards for covered calls, a 74% win rate across 662 "
+            "trades, and long calls, a 44% win rate across 218 trades. "
+            "Dollar totals on the screen are masked."
         ),
         "image": "marketing/catch/win-rate.webp",
         "image_sm": "marketing/catch/win-rate-800.webp",

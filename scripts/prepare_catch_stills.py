@@ -146,6 +146,9 @@ body {
 }
 .stats span { color: #9aa6bd; font-size: 11px; letter-spacing: .06em; }
 .sep { margin-top: 12px; color: #9aa6bd; font-size: 14px; }
+.mask { display: inline-block; height: 14px; width: 72px; border-radius: 4px; vertical-align: middle; filter: blur(0.4px); }
+.mask.gain { background: #1e6b4e; }
+.mask.loss { background: #7a3040; width: 48px; height: 12px; }
 .bars { display: flex; gap: 3px; margin-top: 10px; }
 .bars i { width: 14px; height: 6px; border-radius: 2px; }
 .foot { margin-top: auto; color: #7d8aa3; font-size: 12px; }
@@ -270,7 +273,7 @@ def rklb():
         prices, 54, 90,
         [(80, "$80"), (70, "$70"), (60, "$60")],
         [(69, "#9aa6bd"), (63, "#f0556d")],
-        [(1, "gain"), (18, "loss"), (21, "loss"), (27, "flat")],
+        [(1, "gain"), (18, "flat"), (21, "loss"), (27, "flat")],
         [(0, "Feb 20"), (1, "Apr 17")],
     )
     return page(f"""
@@ -285,7 +288,7 @@ def rklb():
       </div>
       <div class="calls">
         <div class="call"><div class="n gain">1</div><p>Feb 27 – Mar 27 · five calls expired</p><div class="amt gain">+$931</div></div>
-        <div class="call"><div class="n gain">2</div><p>Mar 31 · call six, $63 strike: collected</p><div class="amt gain">+$0.76</div></div>
+        <div class="call"><div class="n gain">2</div><p>Mar 31 · call six ($63 strike), after fees</p><div class="amt gain">+$75.34</div></div>
         <div class="call"><div class="n loss">3</div><p>Apr 2 · closed $67.73: called away at</p><div class="amt loss">$63</div></div>
         <div class="call"><div class="n flat">4</div><p>Apr 17 · close</p><div class="amt flat">$84.80</div></div>
         <div class="result gain">
@@ -321,6 +324,20 @@ def be_close():
       </div>
     </div>
     """)
+
+
+def _trade_dots(series, ymin, ymax, left, top, width, height):
+    coords = _xy(series, ymin, ymax, left, top, width, height)
+    # A few trade days, alternating the two marker colors on the frame.
+    picks = (2, 6, 9, 14, 16, 20, 24, 28, 32, 35)
+    dots = []
+    for n, i in enumerate(picks):
+        if i >= len(coords):
+            continue
+        x, y = coords[i]
+        fill = "#f0556d" if n % 2 else "#7aa2ff"
+        dots.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.5" fill="{fill}" stroke="#0e1628" stroke-width="1"/>')
+    return dots
 
 
 def _pnl_svg():
@@ -376,14 +393,14 @@ def _pnl_svg():
       {path(options, "#7aa2ff", 1.6)}
       {path(equity, "#5b8cff", 1.8)}
       {path(total, "#f4f7fb", 2.2)}
-      {box(14, 16)}{box(23, 25)}{box(33, 35)}
+      {''.join(_trade_dots(total, ymin, ymax, left, top, width, height))}
       {''.join(labels)}
     </svg>'''
 
 
 def be_swing():
     return page(f"""
-    <div class="board">
+    <div class="board" style="grid-template-columns: minmax(0, 1.7fr) 300px;">
       <div class="window">
         <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -391,17 +408,19 @@ def be_swing():
           <span style="color:#9aa6bd;font-size:12px">Show BE price</span>
         </div>
         <div class="legend" style="justify-content:flex-start;margin:0 0 4px">
+          <span>Trade days</span>
           <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f4f7fb;margin-right:6px"></span>Total</span>
           <span style="color:#5b8cff">Equity</span>
           <span style="color:#7aa2ff">Options</span>
         </div>
         {_pnl_svg()}
-        <p class="foot">Dots mark trade days. Click a day in the review to highlight it.</p>
+        <p class="foot">Dots mark trade days.</p>
       </div>
       <div class="calls">
-        <div class="result gain"><p class="k">Mid-June peak</p><p class="big gain-t">about +$24k</p></div>
-        <div class="result loss"><p class="k">Late-July low</p><p class="big loss-t">about −$15k</p></div>
-        <div class="result gain"><p class="k">Late September</p><p class="big gain-t">about +$11k</p></div>
+        <div class="result" style="border-color:#5b8cff">
+          <p class="k">Cumulative P&amp;L</p>
+          <p class="sub" style="font-size:18px;color:#e8edf7;margin-top:8px">shares + options, by day</p>
+        </div>
       </div>
     </div>
     """)
@@ -425,34 +444,34 @@ def win_rate():
             <h3>Long Call <span class="pill">↑ Improving</span></h3>
             <p class="meta">218 trades · 54 symbols · 66 positions</p>
             <div class="stats">
-              <div><span>WIN RATE</span><b>44%</b></div>
-              <div><span>TOTAL RETURN</span><b class="gain-t">+$45,487</b></div>
+              <div style="outline:1.5px solid #5b8cff;border-radius:8px;padding:4px 6px"><span>WIN RATE</span><b>44%</b></div>
+              <div><span>TOTAL RETURN</span><b class="mask gain" aria-hidden="true"></b></div>
               <div><span>AVG HOLD</span><b>20d</b></div>
             </div>
             <div class="bars">{_bars("rrgrrg")}</div>
-            <p class="sep">Sep <span class="loss-t">−$4,222</span></p>
+            <p class="sep">Sep <span class="mask loss" aria-hidden="true"></span></p>
           </div>
           <div class="strat">
             <h3>Covered Call <span class="pill">↑ Improving</span></h3>
             <p class="meta">662 trades · 39 symbols · 52 positions</p>
             <div class="stats">
-              <div><span>WIN RATE</span><b>74%</b></div>
-              <div><span>TOTAL RETURN</span><b class="gain-t">+$14,677</b></div>
+              <div style="outline:1.5px solid #5b8cff;border-radius:8px;padding:4px 6px"><span>WIN RATE</span><b>74%</b></div>
+              <div><span>TOTAL RETURN</span><b class="mask gain" aria-hidden="true"></b></div>
               <div><span>AVG HOLD</span><b>11d</b></div>
             </div>
             <div class="bars">{_bars("gggrgg")}</div>
-            <p class="sep">Sep <span class="loss-t">−$355</span></p>
+            <p class="sep">Sep <span class="mask loss" aria-hidden="true"></span></p>
           </div>
         </div>
       </div>
       <div class="calls">
         <div class="result gain">
           <p class="k">Covered Call</p>
-          <p class="sub" style="font-size:18px;color:#e8edf7">74% win rate · <span class="gain-t">+$14,677</span></p>
+          <p class="sub" style="font-size:18px;color:#e8edf7">74% win rate · 662 trades</p>
         </div>
-        <div class="result gain">
+        <div class="result" style="border-color:#5b8cff">
           <p class="k">Long Call</p>
-          <p class="sub" style="font-size:18px;color:#e8edf7">44% win rate · <span class="gain-t">+$45,487</span></p>
+          <p class="sub" style="font-size:18px;color:#e8edf7">44% win rate · 218 trades</p>
         </div>
       </div>
     </div>

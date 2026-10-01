@@ -134,7 +134,15 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "ht-band-trades" in html
     assert ">30-day free trial, no credit card</a>" in html
     assert "For learning only, not investment advice" in html
-    assert "Watch the story" not in html
+    assert html.count("Watch the story") == 5
+    for vid in (
+        "abjZ4_UFhP4",
+        "JB-Zvno6hYQ",
+        "L1Wmhww0Xrk",
+        "B7KZ9ZMelMc",
+        "Sf-SOuSnw30",
+    ):
+        assert f"https://www.youtube.com/watch?v={vid}" in html
     assert html.count('class="ht-catch-panel"') == 5
     assert html.count('loading="lazy"') >= 5
     for story in CATCH_STORIES:
@@ -157,14 +165,25 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         "74%",
         "44%",
         "collecting premium",
+        "nine times as much per trade",
+        "+$75.34",
     ):
         assert needle in html
+    assert "three times as much" not in html
+    assert "+$45,487" not in html
+    assert "+$14,677" not in html
     assert "net premium" not in html.lower()
     assert "100 shares" not in html
     presented = catch_stories()
     assert [row["id"] for row in presented] == [row["id"] for row in CATCH_STORIES]
-    assert all(row["youtube_id"] == "" for row in presented)
-    assert all(CATCH_STORY_VIDEOS[row["id"]] == "" for row in CATCH_STORIES)
+    assert [row["youtube_id"] for row in presented] == [
+        "abjZ4_UFhP4",
+        "JB-Zvno6hYQ",
+        "L1Wmhww0Xrk",
+        "B7KZ9ZMelMc",
+        "Sf-SOuSnw30",
+    ]
+    assert list(CATCH_STORY_VIDEOS.values()) == [row["youtube_id"] for row in presented]
     root = Path(__file__).resolve().parents[1]
     for story in CATCH_STORIES:
         blob = (root / "app" / "static" / story["image"]).read_bytes()
@@ -246,11 +265,23 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
 def test_catch_watch_link_appears_only_when_a_youtube_id_is_set(monkeypatch):
     from app import marketing_videos
 
-    monkeypatch.setitem(marketing_videos.CATCH_STORY_VIDEOS, "onon", "aaaaaaaaaaa")
+    blank = {key: "" for key in marketing_videos.CATCH_STORY_VIDEOS}
+    monkeypatch.setattr(marketing_videos, "CATCH_STORY_VIDEOS", dict(blank))
+    html = app.test_client().get("/").get_data(as_text=True)
+    assert "Watch the story" not in html
+    monkeypatch.setattr(
+        marketing_videos,
+        "CATCH_STORY_VIDEOS",
+        {**blank, "onon": "aaaaaaaaaaa"},
+    )
     html = app.test_client().get("/").get_data(as_text=True)
     assert html.count("Watch the story") == 1
     assert "https://www.youtube.com/watch?v=aaaaaaaaaaa" in html
-    monkeypatch.setitem(marketing_videos.CATCH_STORY_VIDEOS, "onon", "not-an-id")
+    monkeypatch.setattr(
+        marketing_videos,
+        "CATCH_STORY_VIDEOS",
+        {**blank, "onon": "not-an-id"},
+    )
     html = app.test_client().get("/").get_data(as_text=True)
     assert "Watch the story" not in html
 
