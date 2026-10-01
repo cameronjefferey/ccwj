@@ -1833,8 +1833,13 @@
 </style>
 
 {% else %}
-<div class="alert alert-warning">
-    No data found for <strong>{{ symbol }}</strong> in your linked accounts. If you just synced, give it a couple of minutes for the dashboard to refresh; otherwise double-check the symbol and that the account label matches what you see on your <a href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a> page.
+<div class="card p-4">
+    <h2 class="section-header">No data for {{ symbol }}</h2>
+    <p class="text-muted mb-3">Nothing for this symbol in your linked accounts. If you just synced, the warehouse can take a few minutes. Otherwise check the symbol, or that this is the account on Accounts &amp; data.</p>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-primary" href="{{ scoped_url('positions') }}">Back to positions</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_accounts_page') }}">Check sync status</a>
+    </div>
 </div>
 {% endif %}
 </div>

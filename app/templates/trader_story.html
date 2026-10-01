@@ -657,7 +657,11 @@
 {% if not error %}
 <div class="card ts-card">
     <div class="ts-pad">
-        <p class="ts-lead mb-0">No trade history yet. Connect a broker or upload a CSV, and your trading profile will build automatically.</p>
+        <p class="ts-lead mb-3">No trade history yet. Connect a broker or upload a CSV, and your trading profile will build automatically.</p>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary" href="{{ url_for('snaptrade_accounts_page') }}">Check sync status</a>
+            <a class="btn btn-outline-primary" href="{{ url_for('upload') }}">Upload a CSV</a>
+        </div>
     </div>
 </div>
 {% endif %}

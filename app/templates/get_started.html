@@ -3,111 +3,58 @@
 {% block head %}
 <style>
     .gs-hero {
-        background: #1a1a2e;
-        border-radius: 16px;
-        padding: 2.25rem 2.5rem;
-        color: #fff;
-        margin-bottom: 1.75rem;
-    }
-    .gs-hero h1 { font-size: 1.85rem; font-weight: 700; margin-bottom: .35rem; }
-    .gs-hero p { font-size: 1rem; margin-bottom: 0; opacity: .92; }
-
-    .gs-step {
-        background: #121826;
-        border: 1px solid #e9ecef;
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
         border-radius: 12px;
-        padding: 1.5rem 1.65rem;
+        padding: 1.5rem 1.35rem;
+        color: var(--ht-ink);
         margin-bottom: 1rem;
-        display: flex;
-        align-items: flex-start;
-        gap: 1.1rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,.03);
+        box-shadow: none;
     }
-    .gs-step-num {
-        width: 36px; height: 36px; border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        font-weight: 700; font-size: 1rem; flex-shrink: 0;
+    .gs-hero h1 {
+        font-size: 1.45rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        margin-bottom: .35rem;
     }
-    .gs-step-pending { background: #0d6efd; color: #fff; }
-    .gs-step-done    { background: var(--ht-blue); color: #0a0e17; }
-    .gs-step-waiting { background: #1a2233; color: #8a97b1; }
-    .gs-step-body { flex: 1; min-width: 0; }
-    .gs-step-body h6 { font-weight: 700; margin-bottom: .35rem; font-size: 1.05rem; }
-    .gs-step-body .lead-sub { color: var(--ht-muted); font-size: .92rem; margin-bottom: 1rem; }
-
-    .gs-path-row { display: grid; gap: 1rem; margin-top: .75rem; }
-    .gs-path-row.dual   { grid-template-columns: 1fr 1fr; }
-    @media (max-width: 720px) {
-        .gs-path-row.dual { grid-template-columns: 1fr; }
-    }
+    .gs-hero p { font-size: 1rem; margin-bottom: 0; color: var(--ht-muted); }
+    .gs-hero .auth-trial { color: var(--ht-ink); font-weight: 650; margin-top: .65rem; }
 
     .gs-path {
-        border: 1px solid #e2e6ea;
+        border: 1px solid var(--ht-line);
         border-radius: 12px;
         padding: 1.25rem;
-        background: #121826;
-        display: flex; flex-direction: column;
+        background: var(--ht-surface);
+        display: flex;
+        flex-direction: column;
+        box-shadow: none;
+        min-width: 0;
     }
     .gs-path.featured {
-        border-color: #0d6efd;
-        box-shadow: 0 0 0 3px rgba(13,110,253,.06);
+        border-color: color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
     }
     .gs-path .gs-label {
-        font-size: .68rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .04em; color: var(--ht-muted); margin-bottom: .35rem;
+        font-size: .68rem; font-weight: 650; text-transform: none;
+        letter-spacing: 0; color: var(--ht-muted); margin-bottom: .35rem;
     }
-    .gs-path .gs-label.featured { color: #5b8cff; }
+    .gs-path .gs-label.featured { color: var(--ht-blue); }
     .gs-path h6 { font-weight: 700; font-size: 1.05rem; margin-bottom: .4rem; }
     .gs-path .pitch { font-size: .9rem; color: var(--ht-muted); margin-bottom: .85rem; }
-    .gs-path ul.checklist {
-        list-style: none; padding: 0; margin: 0 0 1.1rem;
-        font-size: .85rem; color: var(--ht-muted);
-    }
-    .gs-path ul.checklist li {
-        padding-left: 1.35rem; position: relative; margin-bottom: .3rem;
-    }
-    .gs-path ul.checklist li::before {
-        content: "✓"; position: absolute; left: 0; color: var(--gain); font-weight: 700;
-    }
     .gs-path .cta-row { margin-top: auto; padding-top: .25rem; }
     .gs-path .fine-print {
         font-size: .78rem; color: var(--ht-muted); margin: .85rem 0 0;
-        padding-top: .85rem; border-top: 1px solid #f1f3f5;
+        padding-top: .85rem; border-top: 1px solid var(--ht-line);
     }
-
-    details.gs-export {
-        margin-top: .85rem; padding: .65rem .85rem;
-        background: #1a2233; border-radius: 8px;
-        font-size: .85rem;
-    }
-    details.gs-export[open] { padding-bottom: 1rem; }
-    details.gs-export summary {
-        cursor: pointer; font-weight: 600; color: var(--ht-muted);
-        list-style: none;
-    }
-    details.gs-export summary::-webkit-details-marker { display: none; }
-    details.gs-export summary::after {
-        content: "▾"; float: right; transition: transform .15s; color: var(--ht-muted);
-    }
-    details.gs-export[open] summary::after { transform: rotate(180deg); }
-    details.gs-export ol { margin: .5rem 0 .35rem 1.35rem; padding: 0; }
-    details.gs-export ol li { margin-bottom: .2rem; }
-    details.gs-export .step-block { margin-top: .65rem; }
-    details.gs-export strong { color: var(--ht-ink); }
-
-    .gs-done {
-        background: var(--ht-surface);
-        border-radius: 14px; padding: 2rem; color: #fff;
-        text-align: center; margin-bottom: 1.5rem;
-    }
-    .gs-done h4 { font-weight: 700; margin-bottom: .5rem; }
-    .gs-done p { opacity: .9; margin-bottom: 1.1rem; }
-
     .gs-server-note {
         margin-top: .85rem; font-size: .85rem; color: var(--ht-muted);
-        background: #1a2233; padding: .65rem .85rem; border-radius: 8px;
+        background: var(--ht-surface-2, #1a2233);
+        border: 1px solid var(--ht-line);
+        padding: .65rem .85rem; border-radius: 8px;
     }
-    .gs-server-note strong { color: var(--ht-muted); }
+    @media (max-width: 640px) {
+        .gs-hero, .gs-path { padding: 1.15rem 1rem; }
+        .gs-hero h1 { font-size: 1.3rem; }
+    }
 </style>
 {% endblock %}
 
@@ -159,13 +106,20 @@
         </p>
         {% endif %}
 
-        <p class="text-muted small mt-4 mb-2">
-            Need older history? Broker sync is not a lifetime archive.
-            <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
-        </p>
-        <p class="mb-0">
+        <details class="disclosure mt-4">
+            <summary>
+                <span class="section-header">Need older history?</span>
+            </summary>
+            <div class="px-3 pb-3">
+                <p class="text-muted small mb-2">Broker sync is not a lifetime archive. A CSV fills in years the broker never sent.</p>
+                <a href="{{ url_for('upload') }}" class="btn btn-outline-secondary btn-sm">Upload a CSV</a>
+            </div>
+        </details>
+        {% if not has_data %}
+        <p class="mb-0 mt-3">
             <a href="{{ url_for('weekly_review') }}" class="text-muted small">Skip to overview</a>
         </p>
+        {% endif %}
 
         {% elif snaptrade_enabled %}
         <div class="gs-hero">
@@ -175,6 +129,7 @@
                 connection through SnapTrade. You sign in on your broker's page.
                 HappyTrader never stores your broker password.
             </p>
+            <p class="auth-trial">30-day free trial, no credit card.</p>
         </div>
 
         <div class="gs-path featured mb-3">
@@ -196,18 +151,24 @@
 
         <div class="d-flex flex-wrap gap-2 align-items-center mb-4">
             <a class="btn btn-outline-secondary" href="{{ url_for('weekly_review') }}">I'll do this later</a>
-            <a href="{{ url_for('weekly_review') }}" class="text-muted small ms-1">Skip to overview</a>
         </div>
 
         {% if has_data %}
         <p class="text-muted small">A CSV is already in your mirror. Overview can show it while you connect.</p>
         {% endif %}
 
-        <p class="text-muted small mb-0">
-            Need older history?
-            <a href="{{ url_for('upload') }}">Upload a CSV</a>
-            after connecting. That's the fallback for years the broker never sent, or a brokerage that doesn't sync yet.
-        </p>
+        <details class="disclosure">
+            <summary>
+                <span class="section-header">Need older history?</span>
+                <span class="text-muted small">CSV is the fallback, after you connect.</span>
+            </summary>
+            <div class="px-3 pb-3">
+                <p class="text-muted small mb-2">
+                    Broker sync is not a lifetime archive. A CSV fills in years the broker never sent, or a brokerage that doesn't sync yet.
+                </p>
+                <a href="{{ url_for('upload') }}" class="btn btn-outline-secondary btn-sm">Upload a CSV</a>
+            </div>
+        </details>
 
         {% else %}
         <div class="gs-hero">

@@ -88,11 +88,9 @@
             color-scheme: dark;
             --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
             --font-mono: "JetBrains Mono", ui-monospace, monospace;
-            /* One gain, one loss. Every P&L color on the site reads these.
-               --color-positive / --color-negative and the position-page
+            /* --color-positive / --color-negative and the position-page
                --pd-gain / --pd-loss names are aliases of the same pair. */
-            --gain: #28c08a;
-            --loss: #f0556d;
+            {% include "_gain_loss_tokens.html" %}
             --color-positive: var(--gain);
             --color-negative: var(--loss);
             --pd-gain: var(--gain);
@@ -1441,20 +1439,19 @@
     {% endif %}
 
     {% if current_user.is_authenticated and current_user.username == 'demo' %}
-    <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
-         style="background: #1a1a2e; color: #fff;">
+    <div class="alert alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
+         style="background:#121826;color:#e8edf7;border-bottom:1px solid #243049;">
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <span>
-                <strong>Demo mode &mdash; read-only.</strong>
-                A live mirror of the
-                {% if earnings_follower_enabled %}<a href="{{ earnings_follower_url() }}" target="_blank" rel="noopener" class="text-white">EarningsFollower</a>{% else %}EarningsFollower{% endif %}
-                bot's <strong>paper</strong> trading account &mdash; simulated money,
-                real market data and real execution, including the losing trades.
-                Writes (uploads, AI regeneration, profile changes) are disabled so it
-                stays consistent for everyone.
+            <span style="min-width:0;flex:1 1 16rem;">
+                <strong>Demo mode.</strong>
+                Read-only paper account from the
+                {% if earnings_follower_enabled %}<a href="{{ earnings_follower_url() }}" target="_blank" rel="noopener">EarningsFollower</a>{% else %}EarningsFollower{% endif %}
+                bot &mdash; simulated money, real fills, including the losses.
+                Uploads and profile changes stay off so everyone sees the same mirror.
+                {% if signup_enabled %}<span class="d-block d-md-inline">30-day free trial, no credit card.</span>{% endif %}
             </span>
             {% if signup_enabled %}
-            <a href="{{ url_for('signup') }}" class="btn btn-light btn-sm">
+            <a href="{{ url_for('signup') }}" class="btn btn-primary btn-sm flex-shrink-0">
                 {% if signup_invite_required %}Have an invite? Create your account{% else %}Create your own account{% endif %}
             </a>
             {% endif %}
@@ -1489,12 +1486,12 @@
         {# Confirm-your-email nudge. Set by `_inject_email_verification_needed`
            in app/auth.py from users.email_verified_at. #}
         {% if email_unverified %}
-        <div class="alert alert-info d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
-            <div>
+        <div class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
+            <div style="min-width:0;flex:1 1 16rem;">
                 <strong>Confirm your email.</strong>
                 <span class="small">Check your inbox for the link before connecting a broker or uploading trades. We also use it for password resets and recaps.</span>
             </div>
-            <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
+            <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0 flex-shrink-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm btn-outline-primary">Resend email</button>
             </form>

@@ -33,16 +33,19 @@
     }
     .ov-top {
         display: grid;
-        grid-template-columns: minmax(160px, 1.15fr) repeat(3, minmax(0, 1fr));
-        gap: .85rem 1.5rem; align-items: start;
+        /* The value column is wider so a 2.75rem figure such as
+           -$1,234,567 still fits once the cqi clamp hits its cap. */
+        grid-template-columns: minmax(0, 1.85fr) repeat(3, minmax(0, 1fr));
+        gap: .85rem 1.25rem; align-items: start;
     }
     .ov-top > div { min-width: 0; container-type: inline-size; }
     .ov-k { font-size: .8rem; color: rgba(255,255,255,.55); margin-bottom: .2rem; }
     /* Big headline figures never break mid-number. Inside a hero column
-       the size tracks that column (cqi), so a value like $1,062,900 stays
-       inside it from a phone width through a tablet. The 2.75rem cap is
-       what 1280+ already uses once the column is wide enough. The vw
-       clamp is only the fallback for a figure that is not in the grid.
+       the size tracks that column (cqi) up to 2.75rem (44px), which is
+       the desktop size at 1280 and 1440. 13.5cqi is the largest factor
+       that still keeps a 12-character figure such as -$1,234,567 inside
+       the column when the cap has not bound. The vw clamp is only the
+       fallback for a figure that is not in the grid.
        .ov-sub is the smaller line under a figure: it wraps on word
        boundaries so a long caption stays inside the column. */
     .ov-big, .ov-pct {
@@ -56,7 +59,7 @@
         font-variant-numeric: tabular-nums;
     }
     .ov-top .ov-big:not(.ov-invest) {
-        font-size: clamp(1.05rem, 18cqi, 2.75rem);
+        font-size: clamp(1.05rem, 13.5cqi, 2.75rem);
     }
     .ov-invest { font-size: clamp(1rem, 4.2vw, 1.65rem); }
     .ov-pct {
@@ -292,7 +295,9 @@
        amounts of different widths share a common edge. */
     .snapshot-table {
         display: grid;
-        grid-template-columns: minmax(140px, 1.35fr) minmax(120px, 1.15fr) minmax(88px, .85fr) repeat(3, minmax(72px, 1fr));
+        /* Value is max-content so a dollar amount is never clipped.
+           Labels in the other columns wrap; the number stays whole. */
+        grid-template-columns: minmax(0, 1.15fr) minmax(6.5rem, .9fr) max-content repeat(3, minmax(4.25rem, .8fr));
         gap: 0;
         align-items: stretch;
     }
@@ -306,6 +311,10 @@
     .snapshot-table-row > div {
         padding: .65rem .6rem .65rem 0;
         border-bottom: 1px solid var(--ht-line);
+    }
+    .snapshot-table-head > div:first-child,
+    .snapshot-table-row > div:first-child {
+        min-width: 0;
     }
     .snapshot-table-head > div:not(:first-child),
     .snapshot-table-row > div:not(:first-child) {
@@ -334,6 +343,7 @@
     .snapshot-table .snap-cell-val {
         font-weight: 700; font-size: .98rem; line-height: 1.15;
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
     }
     /* Same size as other rows so the Total dollars share the column edge. */
     .snapshot-table .snap-cell-pct {
@@ -853,7 +863,7 @@
 
     .ov-rad { overflow-x: auto; }
     .ov-tl { min-width: 900px; }
-    .ov-days, .ov-lane-grid, .ov-bg { display: grid; grid-template-columns: repeat(15, 1fr); }
+    .ov-days, .ov-lane-grid, .ov-bg { display: grid; grid-template-columns: repeat(15, minmax(0, 1fr)); }
     .ov-days { margin-left: 96px; }
     .ov-lane { display: grid; grid-template-columns: 96px 1fr; align-items: stretch; }
     .ov-bg { grid-column: 1 / -1; grid-row: 1 / -1; }
@@ -864,12 +874,22 @@
     .ov-dh b { display: block; font-size: .85rem; color: var(--ht-ink); }
     .ov-ln { display: flex; align-items: center; font-size: .8rem; font-weight: 600; }
     .ov-ev {
-        margin: 4px 3px; padding: 3px 9px; border-radius: 8px; border-left: 3px solid;
-        font-size: .78rem; line-height: 1.25; overflow: hidden; white-space: nowrap;
-        text-overflow: ellipsis; z-index: 1; align-self: center; text-decoration: none;
+        margin: 4px 2px; padding: 3px 5px; border-radius: 8px; border-left: 3px solid;
+        font-size: .74rem; line-height: 1.2; overflow: hidden;
+        z-index: 1; align-self: center; text-decoration: none;
+        min-width: 0; max-width: 100%; box-sizing: border-box;
     }
-    .ov-ev b { display: block; font-size: .84rem; }
-    .ov-ev small { font-size: .75rem; opacity: .85; }
+    .ov-ev b, .ov-ev small {
+        display: block; max-width: 100%; overflow: hidden;
+        overflow-wrap: break-word; word-break: normal;
+    }
+    .ov-ev b {
+        font-size: .76rem; white-space: normal;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
+    .ov-ev small {
+        font-size: .68rem; opacity: .85; white-space: nowrap; text-overflow: ellipsis;
+    }
     .ov-ev.er { background: #2a2118; border-color: #e8c07a; color: #e8edf7; }
     .ov-ev.ex { background: rgba(91,140,255,.18); border-color: #a8b8ff; color: #e8edf7; }
     .ov-ev.vd { background: rgba(91,140,255,.14); border: 1px dashed #a8b8ff; border-left: 3px solid #a8b8ff; color: #e8edf7; }
@@ -905,9 +925,16 @@
         }
         .ov-ev {
             white-space: normal;
+            overflow-wrap: break-word;
+            word-break: normal;
             grid-column: auto !important;
             grid-row: auto !important;
             margin: 0;
+        }
+        .ov-ev b, .ov-ev small {
+            white-space: normal;
+            overflow-wrap: break-word;
+            word-break: normal;
         }
         .ov-ev-when { display: inline; }
         .ov-ev-when::after { content: " · "; }

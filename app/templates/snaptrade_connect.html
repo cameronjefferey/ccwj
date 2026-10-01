@@ -6,18 +6,17 @@
 {% block head %}
 <style>
     .portal-card {
-        background: #121826;
-        border: 1px solid #e9ecef;
-        border-radius: 16px;
-        padding: 2rem 2.1rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,.04);
+        background: var(--ht-surface, #121826);
+        border: 1px solid var(--ht-line, #243049);
+        border-radius: 12px;
+        padding: 2rem 1.5rem;
+        box-shadow: none;
+        color: var(--ht-ink, #e8edf7);
     }
     .portal-card h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: .75rem; }
     .portal-card li { margin-bottom: .55rem; }
-    [data-bs-theme="dark"] .portal-card {
-        background: var(--ht-surface);
-        border-color: var(--ht-line);
-        color: var(--ht-ink);
+    @media (max-width: 576px) {
+        .portal-card { padding: 1.25rem 1rem; }
     }
 </style>
 {% endblock %}

@@ -217,14 +217,20 @@ def _render_signup_form(
     *,
     username="",
     email="",
+    invite="",
 ):
-    """Re-render signup without reflecting submitted credentials."""
+    """Re-render signup without reflecting submitted credentials.
+
+    Username, email, and an invite code the visitor just typed come back
+    so a mismatched password does not wipe the form. Passwords never do.
+    """
     return render_template(
         "signup.html",
         title="Sign Up",
         invite_required=invite_required,
         form_username=username,
         form_email=email,
+        form_invite=invite,
     )
 
 
@@ -252,6 +258,7 @@ def signup():
                 invite_required,
                 username=username,
                 email=(email_raw or "").strip(),
+                invite=invite,
             )
 
         # Closed-beta gate: when SIGNUP_INVITE_CODE is set in the env, the
@@ -325,8 +332,17 @@ def signup():
     return _render_signup_form(invite_required)
 
 
-@app.route("/logout", methods=["POST"])
+@app.route("/logout", methods=["GET", "POST"])
 def logout():
+    """POST is the only path that ends the session.
+
+    A bookmarked or typed GET used to 405. Showing a confirm button keeps
+    logout a POST (CSRF-protected) without a dead Method Not Allowed page.
+    """
+    if request.method != "POST":
+        if not current_user.is_authenticated:
+            return redirect(url_for("login"))
+        return render_template("logout.html", title="Log out")
     logout_user()
     return redirect(url_for("index"))
 
@@ -650,6 +666,10 @@ def forgot_password():
     Per-IP rate limit (anonymous endpoint) keeps this from being a probe
     for which addresses are signed up.
     """
+    # Same trap as /login: a demo session used to bounce this page back
+    # to Overview, so the visitor could not request a reset for their own
+    # account. A real signed-in account still skips the form.
+    _release_shared_demo_session()
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
 
@@ -717,10 +737,12 @@ def reset_password(token):
     without burning the token. POST consumes the token in a single
     transaction so two parallel clicks can't both succeed.
     """
+    # A demo session is not the account the email was sent to. Release it
+    # so the link can render. A real signed-in session still bounces:
+    # rotating the password from an already-hijacked session is not the
+    # point of this page.
+    _release_shared_demo_session()
     if current_user.is_authenticated:
-        # Re-using a reset link while signed in is almost never what you
-        # want; bounce them to settings instead of letting an attacker
-        # who already hijacked a session also rotate the password.
         return redirect(url_for("profile", tab="account"))
 
     target_user_id = peek_password_reset_token(token)

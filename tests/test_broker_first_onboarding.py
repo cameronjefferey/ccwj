@@ -108,12 +108,15 @@ def test_get_started_without_broker_is_connect_first(monkeypatch):
     html = resp.get_data(as_text=True)
     assert "Connect brokerage" in html
     assert "I'll do this later" in html
-    assert "Skip to overview" in html
+    assert "30-day free trial, no credit card" in html
     assert "Upload a CSV" in html
     assert "Two ways to bring your trades" not in html
-    # CSV is present, but not as a peer primary button.
+    # One secondary exit. CSV stays in a collapsed disclosure, after the connect button.
+    assert html.count("I'll do this later") == 1
+    assert "Skip to overview" not in html
     assert 'btn btn-primary btn-lg' in html
     assert html.index("Connect brokerage") < html.index("Upload a CSV")
+    assert 'class="disclosure"' in html
 
 
 def test_get_started_with_broker_offers_connect_another(monkeypatch):

@@ -332,6 +332,17 @@
             <p class="ins-lead mb-0">Patterns and exit timing need closed option contracts with daily marks. This group or account does not have any.</p>
         </div>
     </div>
+    {% else %}
+    <div class="card" id="ins-empty">
+        <div class="ins-pad">
+            <h2 class="section-header">Nothing to narrate yet</h2>
+            <p class="ins-lead mb-3">Insights need closed option contracts with daily marks. If you just connected, the first sync is still landing.</p>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-primary">Check sync status</a>
+                <a href="{{ url_for('upload') }}" class="btn btn-outline-primary">Upload a CSV</a>
+            </div>
+        </div>
+    </div>
     {% endif %}
 
     {% if insight and not scope_narrowed %}

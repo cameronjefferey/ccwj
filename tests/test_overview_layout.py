@@ -90,7 +90,9 @@ def test_headline_figures_stay_one_line_and_shrink_on_a_narrow_screen():
     assert "clamp(" in big
     assert "container-type: inline-size" in STYLES
     sized = STYLES.split(".ov-top .ov-big:not(.ov-invest) {", 1)[1].split("}", 1)[0]
-    assert "clamp(1.05rem, 18cqi, 2.75rem)" in sized
+    assert "clamp(1.05rem, 13.5cqi, 2.75rem)" in sized
+    assert "2.75rem" in sized
+    assert "18cqi" not in sized
     assert "5.2vw" not in sized
     figures = STYLES.split(".ov-big, .ov-pct {", 1)[1].split("}", 1)[0]
     assert "white-space: nowrap" in figures
@@ -104,6 +106,11 @@ def test_headline_figures_stay_one_line_and_shrink_on_a_narrow_screen():
     assert "word-break: normal" in STYLES
     assert ".ov-big { font-size: 1.45rem; overflow-wrap: anywhere" not in STYLES
     assert ".ov-big { font-size: 2.15rem; }" not in STYLES
+    val = STYLES.split(".snapshot-table .snap-cell-val {", 1)[1].split("}", 1)[0]
+    assert "ellipsis" not in val
+    assert "text-overflow" not in val
+    assert "white-space: nowrap" in val
+    assert "max-content" in STYLES
 
 
 def test_today_story_order_keeps_since_last_looked_off_overview():
