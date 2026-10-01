@@ -29,6 +29,7 @@ def test_strategies_story_order_is_headline_then_cards_then_collapsed_rest():
     assert "population_label" in PAGE
     assert "focus_strategy.num_symbols }} symbol" not in PAGE
     assert "focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L" in PAGE
+    assert 'class="ov-date">{{ focus_strategy.strategy }}' in PAGE
     assert "strat-suffix" in PAGE
     assert "scoped_url('positions'" in PAGE
 
