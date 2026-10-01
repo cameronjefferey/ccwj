@@ -47,6 +47,22 @@ def test_collected_means_premium_received_and_net_is_labeled_net():
     assert ">W/L<" in PAGE
 
 
+def test_symbol_header_sticks_under_the_nav_without_an_inner_scroller():
+    assert "body .pos-page #symbolTable thead th" in PAGE
+    assert "position: sticky" in PAGE
+    assert "top: var(--ht-nav-h, 3.5rem)" in PAGE
+    assert "ht-sticky" not in PAGE
+    assert "max-height: 75vh" not in PAGE
+    assert "overflow: visible" in PAGE
+
+
+def test_money_can_wrap_and_win_loss_stays_one_value():
+    assert "td.pos-money" in PAGE
+    assert "white-space: nowrap" not in PAGE.split("td.pos-money", 1)[1].split("}", 1)[0]
+    assert PAGE.count('class="pos-wl-pair"') >= 2
+    assert 'data-label="W/L"' in PAGE
+
+
 def test_phone_rows_stack_with_labels_and_desktop_columns_are_not_clipped():
     assert 'data-label="Collected"' in PAGE
     assert 'data-label="Total return"' in PAGE

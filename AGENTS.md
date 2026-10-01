@@ -620,7 +620,10 @@ Story order, top to bottom: the headline (total return, realized, unrealized,
 win rate), then the positions table (one row per account and symbol, filters
 in that card), then two collapsed disclosures — by strategy (the pager) and
 the breakdown (counts and P&amp;L by strategy). Premium received is labeled
-Collected. Phone rows stack with a label on each value.
+Collected. The symbol-table header sticks under the nav while the page
+scrolls; it is not an inner 75vh scroller. Money columns wrap inside the
+cell so a figure like $287,353.26 stays in Collected. Phone rows stack
+with a label on each value, and W/L stays one value (`1 / 1`).
 
 What's working:
 - Hero uses the same dark bar as Overview (brand and account filters).
