@@ -51,6 +51,17 @@ def test_snapshot_columns_stack_on_a_phone_instead_of_hiding():
     assert "box-shadow: none" in section
 
 
+def test_benchmark_rows_match_account_stack_on_a_phone():
+    phone = STYLES.split("@media (max-width: 720px)", 1)[1].split("@media", 1)[0]
+    assert '[data-bs-theme="dark"] .snapshot-table .snapshot-table-row.benchmark > div' in phone
+    assert "background: transparent" in phone
+    assert "text-align: left" in phone
+    desktop = STYLES.split("@media (max-width: 720px)", 1)[0]
+    assert ".snapshot-table-row > div:not(:first-child)" in desktop
+    assert "text-align: right" in desktop
+    assert ".snapshot-table-row.benchmark > div" in desktop
+
+
 def test_today_story_order_keeps_since_last_looked_off_overview():
     happened = TODAY.index('id="ov-happened"')
     since = TODAY.index("{% include '_since_last_looked.html' %}")
