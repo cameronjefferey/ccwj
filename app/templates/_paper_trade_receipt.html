@@ -1,0 +1,31 @@
+<h2 class="h4 mb-2">Here's your trade</h2>
+{% if sent.views %}
+{% with voice=sent.voice, views=sent.views, chain=sent.chain, picked_strike=sent.strike, picked_side=sent.side %}
+{% include "_paper_trade_views.html" %}
+{% endwith %}
+{% else %}
+<p class="fw-semibold mb-3">{{ sent.sentence }}</p>
+<div class="ht-statbar mb-3">
+    <div class="ht-stat">
+        <span class="ht-stat-l">{% if sent.cash_settled %}Premium per point{% else %}Premium per share{% endif %}</span>
+        <span class="ht-stat-v">{{ sent.limit_label }}</span>
+    </div>
+    <div class="ht-stat">
+        <span class="ht-stat-l">Paper cost for 1 contract</span>
+        <span class="ht-stat-v">{{ sent.cost_label }}</span>
+    </div>
+    {% if sent.strike_label %}
+    <div class="ht-stat">
+        <span class="ht-stat-l">Strike</span>
+        <span class="ht-stat-v">{{ sent.strike_label }}</span>
+    </div>
+    {% endif %}
+    {% if sent.expiry_label %}
+    <div class="ht-stat">
+        <span class="ht-stat-l">Expires</span>
+        <span class="ht-stat-v">{{ sent.expiry_label }}</span>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+<p class="text-muted mt-3 mb-0">This order is on the paper account. We're bringing in the value. Until that shows up, this is the trade.</p>

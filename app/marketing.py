@@ -739,6 +739,9 @@ def get_started():
             return rendered
 
     from app.early_broker import early_broker_notice_for_user
+    # No brokerage yet: the first screen is a choice. path=broker is the
+    # existing read-only connect step, after they pick "see how I trade."
+    show_start_choice = (request.args.get("path") or "") != "broker"
     return render_template(
         "get_started.html",
         title="Get Started",
@@ -746,6 +749,7 @@ def get_started():
         has_data=has_data,
         snaptrade_enabled=snaptrade_enabled,
         snaptrade_connected=snaptrade_connected,
+        show_start_choice=show_start_choice,
         snaptrade_full_history_days=snaptrade_full_history_days,
         snaptrade_routine_days=snaptrade_routine_days,
         early_broker=early_broker_notice_for_user(current_user.id),

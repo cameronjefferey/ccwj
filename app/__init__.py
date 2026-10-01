@@ -902,6 +902,7 @@ from app import weekly_review
 from app import wealth  # noqa: F401  registers /wealth route
 from app import admin  # noqa: F401  registers /admin/* routes
 from app import snaptrade  # noqa: F401  registers /snaptrade/* routes
+from app import paper_practice  # noqa: F401  registers /practice (Alpaca Paper ticket)
 from app import first_look
 from app import strategies
 from app import profile_page  # noqa: F401  registers /profile (settings hub)

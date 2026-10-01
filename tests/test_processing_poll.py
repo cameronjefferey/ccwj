@@ -57,6 +57,9 @@ def test_poll_failure_stops_spinner_and_redirects():
 def test_connect_processing_copy_and_overview_ready_poll():
     html = Path("app/templates/sync_processing.html").read_text()
     assert "We connected your brokerage" in html
+    assert "Your paper account is connected" in html
+    assert "Practice a trade" in html
+    assert "no trades yet" in html
     assert "We're pulling your trade history now" in html
     assert "api_sync_overview_ready" in html
     assert "you don't need to hit Sync again" in html

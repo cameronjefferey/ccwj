@@ -76,7 +76,8 @@ def test_signup_explains_snaptrade_next_without_reflecting_passwords(monkeypatch
     page = client.get("/signup")
     assert page.status_code == 200
     body = page.get_data(as_text=True)
-    assert "securely connecting a brokerage through SnapTrade" in body
+    assert "practice on a paper account" in body
+    assert "connect a brokerage through SnapTrade" in body
     assert "never stores your broker password" in body
 
     resp = client.post("/signup", data={
@@ -94,7 +95,7 @@ def test_signup_explains_snaptrade_next_without_reflecting_passwords(monkeypatch
     assert "Secret2pass" not in html
 
 
-def test_get_started_without_broker_is_connect_first(monkeypatch):
+def test_get_started_without_broker_asks_where_to_start(monkeypatch):
     monkeypatch.setattr(
         "app.marketing.get_tenant_ids_for_user", lambda uid: [],
     )
@@ -106,14 +107,37 @@ def test_get_started_without_broker_is_connect_first(monkeypatch):
     resp = client.get("/get-started")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "Connect brokerage" in html
-    assert "I'll do this later" in html
-    assert "30-day free trial, no credit card" in html
+    assert "Where do you want to start?" in html
+    assert "Create a paper account" in html
+    assert "See how I trade" in html
+    assert 'href="/practice"' in html
+    assert "path=broker" in html
+    assert "I'll do this later" not in html
+    assert "Skip to overview" not in html
     assert "Upload a CSV" in html
     assert "Two ways to bring your trades" not in html
-    # One secondary exit. CSV stays in a collapsed disclosure, after the connect button.
-    assert html.count("I'll do this later") == 1
+    assert "Connect brokerage" not in html
+
+
+def test_get_started_broker_path_is_connect_first(monkeypatch):
+    monkeypatch.setattr(
+        "app.marketing.get_tenant_ids_for_user", lambda uid: [],
+    )
+    monkeypatch.setattr("app.snaptrade.snaptrade_enabled", lambda: True)
+    monkeypatch.setattr("app.models.get_snaptrade_accounts", lambda uid: [])
+
+    client = _client()
+    _login(client, monkeypatch)
+    resp = client.get("/get-started?path=broker")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Connect brokerage" in html
+    assert "30-day free trial, no credit card" in html
+    assert "Start with a paper account instead." in html
+    assert "I'll do this later" not in html
     assert "Skip to overview" not in html
+    assert "Upload a CSV" in html
+    assert "Two ways to bring your trades" not in html
     assert 'btn btn-primary btn-lg' in html
     assert html.index("Connect brokerage") < html.index("Upload a CSV")
     assert 'class="disclosure"' in html

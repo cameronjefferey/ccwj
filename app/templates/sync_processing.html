@@ -368,9 +368,12 @@
               role="status" aria-hidden="true"></span>
     </div>
     <div>
-        <h2 class="fw-bold mb-2" id="pipelineHeading">{% if connecting %}We connected your brokerage{% elif show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
+        <h2 class="fw-bold mb-2" id="pipelineHeading">{% if paper %}Your paper account is connected{% elif connecting %}We connected your brokerage{% elif show_onboarding %}We're crunching your data{% else %}Updating your data{% endif %}</h2>
         <p class="processing-sub mb-2">
-            {% if connecting %}
+            {% if paper %}
+                It starts with $100,000 of paper money and no trades yet, so there is no history to pull.
+                Practice a call or a put here. It shows up in the mirror after it fills.
+            {% elif connecting %}
                 We're pulling your trade history now. We'll email you when it's ready —
                 you don't need to hit Sync again.
             {% elif show_onboarding %}
@@ -381,7 +384,12 @@
             {% endif %}
         </p>
         <p class="small text-muted mb-{% if show_onboarding %}0{% else %}3{% endif %}" id="pipelineStateLabel" aria-live="polite">Just a sec…</p>
-        {% if not show_onboarding %}
+        {% if paper %}
+        <a href="{{ url_for('paper_practice') }}" class="btn btn-primary">Practice a trade</a>
+        <p class="processing-sub small mt-3 mb-0">
+            New to the words on the ticket? <a href="/learn">Learn Options 101</a> first. You can come back and place the trade after.
+        </p>
+        {% elif not show_onboarding %}
         <a href="{{ url_for('weekly_review', from_sync=1) }}" class="btn btn-outline-primary">
             Open Overview
         </a>
@@ -682,6 +690,7 @@
 <script>
 (function () {
     var doneUrl = {{ done_url|tojson }};
+    var paper = {{ paper|default(false)|tojson }};
     var statusEndpoint = {{ url_for("api_sync_overview_ready")|tojson }};
     var label = document.getElementById("pipelineStateLabel");
     var n = 0;
@@ -692,13 +701,17 @@
             .then(function (d) {
                 if (d && d.ready) {
                     if (label && !window.__onboardingHoldRedirect) {
-                        label.textContent = "All set — bringing you to Overview…";
+                        label.textContent = paper
+                            ? "All set — bringing you to practice…"
+                            : "All set — bringing you to Overview…";
                     }
                     __ghaSafeRedirect(doneUrl, label);
                     return;
                 }
                 if (label) {
-                    if (n < 8) {
+                    if (paper) {
+                        label.textContent = "Nothing to import yet. Practice whenever you're ready.";
+                    } else if (n < 8) {
                         label.textContent = "Pulling your accounts from the broker…";
                     } else if (n < 40) {
                         label.textContent = "Building Overview — usually 15–40 minutes.";

@@ -1,0 +1,9 @@
+{% if beginner_trades %}
+<div class="card p-4 mb-3">
+    <div class="text-uppercase small mb-1" style="letter-spacing:.04em;color:var(--ht-muted);">Paper account</div>
+    <h2 class="h5 mb-3">What {{ 'this trade' if beginner_trades|length == 1 else 'these trades' }} did</h2>
+    {% for trade in beginner_trades %}
+    <p class="mb-2" style="font-size:1.05rem;">{{ trade.text }}</p>
+    {% endfor %}
+</div>
+{% endif %}

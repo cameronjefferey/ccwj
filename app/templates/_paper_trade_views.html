@@ -1,0 +1,152 @@
+<style>
+    .pp-kicker {
+        color: var(--ht-muted);
+        font-size: .78rem;
+        font-weight: 650;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        margin-bottom: .45rem;
+    }
+    .pp-choices { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+    .pp-choice {
+        border: 1px solid var(--ht-line);
+        background: transparent;
+        color: var(--ht-ink);
+        border-radius: 999px;
+        padding: .35rem .75rem;
+        font-size: .92rem;
+        cursor: pointer;
+    }
+    .pp-voice .pp-panel { display: none; }
+    .pp-voice[data-voice="beginner"] .pp-panel[data-panel="beginner"],
+    .pp-voice[data-voice="intermediate"] .pp-panel[data-panel="intermediate"],
+    .pp-voice[data-voice="brokerage"] .pp-panel[data-panel="brokerage"] { display: block; }
+    .pp-voice[data-voice="beginner"] [data-set-voice="beginner"],
+    .pp-voice[data-voice="intermediate"] [data-set-voice="intermediate"],
+    .pp-voice[data-voice="brokerage"] [data-set-voice="brokerage"] {
+        background: rgba(91, 140, 255, .15);
+        border-color: #5b8cff;
+        color: #5b8cff;
+    }
+    .pp-ticket { width: 100%; border-collapse: collapse; margin: 0 0 1rem; }
+    .pp-ticket th {
+        text-align: left;
+        color: var(--ht-muted);
+        font-weight: 500;
+        font-size: .82rem;
+        padding: .4rem .75rem .4rem 0;
+        width: 42%;
+        vertical-align: baseline;
+    }
+    .pp-ticket td {
+        padding: .4rem 0;
+        font-variant-numeric: tabular-nums;
+        vertical-align: baseline;
+    }
+    .pp-ticket tr + tr th,
+    .pp-ticket tr + tr td { border-top: 1px solid var(--ht-line); }
+    .pp-occ {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: .85rem;
+    }
+    .pp-chain { width: 100%; border-collapse: collapse; margin: 0 0 1rem; font-variant-numeric: tabular-nums; }
+    .pp-chain th {
+        color: var(--ht-muted);
+        font-size: .72rem;
+        font-weight: 650;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        padding: .35rem .4rem;
+    }
+    .pp-chain td {
+        text-align: center;
+        padding: .35rem .2rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: .8rem;
+        border-top: 1px solid var(--ht-line);
+    }
+    .pp-chain .pp-chain-strike { color: var(--ht-ink); font-weight: 650; }
+    .pp-chain td.is-on {
+        background: rgba(91, 140, 255, .18);
+        color: #5b8cff;
+        font-weight: 650;
+    }
+</style>
+<div class="pp-voice" data-voice="{{ voice or 'beginner' }}">
+    <div class="pp-kicker">Show this as</div>
+    <div class="pp-choices" role="group" aria-label="Show this as">
+        <button type="button" class="pp-choice" data-set-voice="beginner">Beginner</button>
+        <button type="button" class="pp-choice" data-set-voice="intermediate">Intermediate</button>
+        <button type="button" class="pp-choice" data-set-voice="brokerage">Brokerage</button>
+    </div>
+    {% for name, view in views.items() %}
+    <div class="pp-panel" data-panel="{{ name }}">
+        <p class="fw-semibold mb-3">{{ view.headline }}</p>
+        {% if name == "brokerage" %}
+        <table class="pp-chain">
+            <thead>
+                <tr>
+                    <th colspan="3">Calls</th>
+                    <th rowspan="2">Strike</th>
+                    <th colspan="3">Puts</th>
+                </tr>
+                <tr>
+                    <th>Bid</th><th>Mid</th><th>Ask</th>
+                    <th>Bid</th><th>Mid</th><th>Ask</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in chain or [] %}
+                {% set call_on = picked_side == 'call' and row.strike == picked_strike %}
+                {% set put_on = picked_side == 'put' and row.strike == picked_strike %}
+                <tr>
+                    <td class="{% if call_on %}is-on{% endif %}">{{ row.call.bid if row.call and row.call.bid else "—" }}</td>
+                    <td class="{% if call_on %}is-on{% endif %}">{{ row.call.mid if row.call and row.call.mid else "—" }}</td>
+                    <td class="{% if call_on %}is-on{% endif %}">{{ row.call.ask if row.call and row.call.ask else "—" }}</td>
+                    <td class="pp-chain-strike">{{ "{:,}".format(row.strike) }}</td>
+                    <td class="{% if put_on %}is-on{% endif %}">{{ row.put.bid if row.put and row.put.bid else "—" }}</td>
+                    <td class="{% if put_on %}is-on{% endif %}">{{ row.put.mid if row.put and row.put.mid else "—" }}</td>
+                    <td class="{% if put_on %}is-on{% endif %}">{{ row.put.ask if row.put and row.put.ask else "—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="ht-statbar mb-3">
+            {% for row in view.rows %}
+            <div class="ht-stat">
+                <span class="ht-stat-l">{{ row.label }}</span>
+                <span class="ht-stat-v">{{ row.value }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="ht-statbar mb-3">
+            {% for row in view.rows %}
+            <div class="ht-stat">
+                <span class="ht-stat-l">{{ row.label }}</span>
+                <span class="ht-stat-v">{{ row.value }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <p class="text-muted mb-0">{{ view.note }}</p>
+    </div>
+    {% endfor %}
+</div>
+<script>
+    (function () {
+        document.querySelectorAll(".pp-voice").forEach(function (box) {
+            if (box.dataset.bound) return;
+            box.dataset.bound = "1";
+            function apply(voice) {
+                box.setAttribute("data-voice", voice);
+                document.cookie = "pp_voice=" + voice + ";path=/;max-age=2592000;samesite=lax";
+            }
+            box.querySelectorAll("[data-set-voice]").forEach(function (btn) {
+                btn.addEventListener("click", function () {
+                    apply(btn.getAttribute("data-set-voice"));
+                });
+            });
+        });
+    })();
+</script>

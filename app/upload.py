@@ -2717,7 +2717,11 @@ def sync_processing():
     head_sha = (request.args.get("sha") or "").strip() or None
     is_first = (request.args.get("first") or "").strip() == "1"
 
-    if is_first:
+    connecting = (request.args.get("connecting") or "").strip() == "1"
+    paper = (request.args.get("paper") or "").strip() == "1"
+    if paper:
+        done_url = url_for("paper_practice")
+    elif is_first:
         done_url = url_for("get_started", from_sync=1)
     else:
         done_url = url_for("weekly_review", from_sync=1)
@@ -2728,19 +2732,23 @@ def sync_processing():
     # auto-redirect while the form is being interacted with so a slow
     # typer doesn't lose their answer to the dbt build finishing.
     show_onboarding = bool(
-        is_first and get_onboarding_response(current_user.id) is None
+        is_first
+        and not paper
+        and get_onboarding_response(current_user.id) is None
     )
 
     from app.early_broker import early_broker_notice_for_user
-    connecting = (request.args.get("connecting") or "").strip() == "1"
     return render_template(
         "sync_processing.html",
-        title="Pulling your brokerage data" if connecting else "Processing sync",
+        title="Your paper account is connected" if paper else (
+            "Pulling your brokerage data" if connecting else "Processing sync"
+        ),
         expected_minutes=expected_minutes,
         head_sha=head_sha,
         done_url=done_url,
         show_onboarding=show_onboarding,
         connecting=connecting,
+        paper=paper,
         early_broker=early_broker_notice_for_user(current_user.id),
     )
 

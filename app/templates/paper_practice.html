@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .pp-card {
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
+        border-radius: 16px;
+        padding: 1.4rem 1.5rem 1.5rem;
+        color: var(--ht-ink);
+    }
+    .pp-kicker {
+        color: var(--ht-muted);
+        font-size: .78rem;
+        font-weight: 650;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        margin-bottom: .45rem;
+    }
+    .pp-choices { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+    .pp-choice {
+        border: 1px solid var(--ht-line);
+        background: transparent;
+        color: var(--ht-ink);
+        border-radius: 999px;
+        padding: .35rem .75rem;
+        font-size: .92rem;
+        cursor: pointer;
+    }
+    .pp-choice input { position: absolute; opacity: 0; pointer-events: none; }
+    .pp-choice:has(input:checked) {
+        background: rgba(91, 140, 255, .15);
+        border-color: #5b8cff;
+        color: #5b8cff;
+    }
+    .pp-sentence { font-weight: 650; margin: .25rem 0 1rem; }
+    .pp-note { color: var(--ht-muted); font-size: .92rem; }
+    .pp-paper {
+        color: var(--ht-muted);
+        font-size: .85rem;
+    }
+    .pp-card .ht-statbar {
+        background: var(--ht-surface-2);
+        border-color: var(--ht-line);
+    }
+    form[data-voice="brokerage"] .pp-lesson { display: none; }
+    #pp-chain { display: none; margin-bottom: 1rem; }
+    form[data-voice="brokerage"] #pp-chain { display: block; }
+    .pp-chain { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    .pp-chain th {
+        color: var(--ht-muted);
+        font-size: .72rem;
+        font-weight: 650;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        padding: .35rem .4rem;
+    }
+    .pp-chain td {
+        text-align: center;
+        padding: .35rem .2rem;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: .8rem;
+        border-top: 1px solid var(--ht-line);
+    }
+    .pp-chain button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        width: 100%;
+        cursor: pointer;
+        border-radius: 6px;
+        padding: .15rem .2rem;
+    }
+    .pp-chain button.is-on,
+    .pp-chain td.is-on {
+        background: rgba(91, 140, 255, .18);
+        color: #5b8cff;
+    }
+    .pp-chain .pp-chain-strike { font-weight: 650; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h1 class="mb-1">Practice a trade</h1>
+        {% if not account and not look and not sent and not ticket %}
+        <p class="pp-note mb-3">
+            You are here to learn how a call or a put works, with paper money.
+            The trade you pick is not a recommendation and it is not advice.
+        </p>
+        {% else %}
+        <p class="pp-note mb-3">
+            Paper money. This is the trade you pick. It is not a recommendation and it is not advice.
+        </p>
+        {% endif %}
+
+        <div class="pp-card">
+            <div class="d-flex justify-content-end mb-2">
+                <span class="pp-paper">Paper</span>
+            </div>
+
+            {% if sent %}
+                {% include "_paper_trade_receipt.html" %}
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Practice another</a>
+                    <a class="btn btn-primary" href="{{ url_for('position_detail', symbol=sent.symbol) }}">See {{ sent.symbol }}</a>
+                </div>
+            {% elif ticket %}
+                {% if ticket.views %}
+                {% with voice=ticket.voice, views=ticket.views, chain=ticket.chain, picked_strike=ticket.strike, picked_side=ticket.side %}
+                {% include "_paper_trade_views.html" %}
+                {% endwith %}
+                {% else %}
+                <p class="pp-sentence">{{ ticket.sentence }}</p>
+                {% endif %}
+                <form method="POST" action="{{ url_for('paper_practice_place') }}" class="d-flex flex-wrap gap-2 mt-3">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="nonce" value="{{ ticket.nonce }}">
+                    <button class="btn btn-primary" type="submit">Place this trade</button>
+                    <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Change it</a>
+                </form>
+            {% elif not account and not look %}
+                <p>
+                    Your paper account starts with $100,000. Use it to learn option trading:
+                    buy one call or one put, see what it costs, and confirm before it is sent.
+                    The same mirror that tracks a real account will show this trade afterward.
+                </p>
+                <p class="pp-note">
+                    New to the words on the ticket?
+                    <a href="/learn">Learn Options 101</a>
+                    walks through a call, a put, a strike, and the premium. You can come back here after.
+                </p>
+                <p class="pp-note">Opening the account is one sign-in. After that, you place the trade on this page.</p>
+                {% if snaptrade_ready %}
+                <form method="POST" action="{{ url_for('paper_practice_connect') }}" class="mt-3">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-primary" type="submit">Sign in to the paper account</button>
+                </form>
+                {% else %}
+                <p class="pp-note mt-3">Paper practice is not configured on this server yet.</p>
+                {% endif %}
+            {% else %}
+                <form method="POST" action="{{ url_for('paper_practice_review') }}" data-voice="{{ voice }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="strike" id="pp-strike" value="">
+
+                    <div class="pp-kicker">Show this as</div>
+                    <div class="pp-choices" id="pp-voice">
+                        <label class="pp-choice"><input type="radio" name="voice" value="beginner" {% if voice == 'beginner' %}checked{% endif %}> Beginner</label>
+                        <label class="pp-choice"><input type="radio" name="voice" value="intermediate" {% if voice == 'intermediate' %}checked{% endif %}> Intermediate</label>
+                        <label class="pp-choice"><input type="radio" name="voice" value="brokerage" {% if voice == 'brokerage' %}checked{% endif %}> Brokerage</label>
+                    </div>
+
+                    <div class="pp-kicker" id="pp-which-kicker">Which one</div>
+                    <div class="pp-choices">
+                        {% set ns = namespace(picked=false, blurb="One contract is 100 shares.") %}
+                        {% for row in symbols %}
+                        <label class="pp-choice"
+                            {% if row.strikes %}
+                            data-below="{{ row.strikes.below }}"
+                            data-at="{{ row.strikes.at }}"
+                            data-above="{{ row.strikes.above }}"
+                            {% endif %}
+                            data-soon="{{ row.expiries.soon.pill }}"
+                            data-weekly="{{ row.expiries.weekly.pill }}"
+                            data-multi="{{ row.expiries.multi.pill }}"
+                            data-contract="{{ row.contract_blurb }}">
+                            <input type="radio" name="symbol" value="{{ row.symbol }}" {% if row.spot and not ns.picked %}checked{% set ns.picked = true %}{% set ns.blurb = row.contract_blurb %}{% endif %} {% if not row.spot %}disabled{% endif %}>
+                            {{ row.symbol }}{% if row.spot_label %} · {{ row.spot_label }}{% else %} · price unavailable{% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+
+                    <div class="pp-kicker" id="pp-when-kicker">When it expires</div>
+                    <div class="pp-choices">
+                        <label class="pp-choice"><input type="radio" name="tenor" value="soon" checked> <span data-tenor="soon">{{ expiries.soon.pill }}</span></label>
+                        <label class="pp-choice"><input type="radio" name="tenor" value="weekly"> <span data-tenor="weekly">{{ expiries.weekly.pill }}</span></label>
+                        <label class="pp-choice"><input type="radio" name="tenor" value="multi"> <span data-tenor="multi">{{ expiries.multi.pill }}</span></label>
+                    </div>
+
+                    <div class="pp-lesson">
+                    <div class="pp-kicker" id="pp-side-kicker">Buy a call or a put</div>
+                    <div class="pp-choices">
+                        <label class="pp-choice"><input type="radio" name="side" value="call" checked> <span id="pp-call">Call · right to buy</span></label>
+                        <label class="pp-choice"><input type="radio" name="side" value="put"> <span id="pp-put">Put · right to sell</span></label>
+                    </div>
+                    <div class="pp-kicker" id="pp-strike-kicker">Strike</div>
+                    <div class="pp-choices" id="pp-strikes">
+                        <label class="pp-choice"><input type="radio" name="distance" value="below"> <span data-strike="below">Below</span></label>
+                        <label class="pp-choice"><input type="radio" name="distance" value="at" checked> <span data-strike="at">At the price</span></label>
+                        <label class="pp-choice"><input type="radio" name="distance" value="above"> <span data-strike="above">Above</span></label>
+                    </div>
+                    </div>
+                    <div id="pp-chain" aria-live="polite"></div>
+                    <p class="pp-note"><span id="pp-contract">{{ ns.blurb }}</span> <span id="pp-next">The next step shows the premium, then places the trade when you confirm.</span></p>
+                    <button class="btn btn-primary mt-2" type="submit" id="pp-review" {% if not ns.picked %}disabled{% endif %}>Review this paper trade</button>
+                </form>
+                <script>
+                    (function () {
+                        var voices = {
+                            beginner: {
+                                side: "Buy a call or a put",
+                                call: "Call · right to buy",
+                                put: "Put · right to sell",
+                                which: "Which one",
+                                when: "When it expires",
+                                strike: "Strike",
+                                below: "Below",
+                                at: "At the price",
+                                above: "Above",
+                                button: "Review this paper trade",
+                                next: "The next step shows the premium, then places the trade when you confirm."
+                            },
+                            intermediate: {
+                                side: "Side",
+                                call: "Call",
+                                put: "Put",
+                                which: "Underlying",
+                                when: "Expiration",
+                                strike: "Strike",
+                                below: "Lower",
+                                at: "Nearest",
+                                above: "Higher",
+                                button: "Review this trade",
+                                next: "The next step shows the limit premium for one contract."
+                            },
+                            brokerage: {
+                                side: "Action",
+                                call: "Buy to open · Call",
+                                put: "Buy to open · Put",
+                                which: "Symbol",
+                                when: "Expiration",
+                                strike: "Strike",
+                                below: "",
+                                at: "",
+                                above: "",
+                                button: "Review order",
+                                next: "Bid, mid, and ask. The limit is the mid. 1 contract, day."
+                            }
+                        };
+                        var chainReq = 0;
+                        function loadChain() {
+                            var box = document.getElementById("pp-chain");
+                            var symbol = document.querySelector('input[name="symbol"]:checked');
+                            var tenor = document.querySelector('input[name="tenor"]:checked');
+                            if (!box || !symbol || !tenor) return;
+                            var n = ++chainReq;
+                            box.textContent = "Pulling bid, mid, and ask…";
+                            fetch("/practice/chain?symbol=" + encodeURIComponent(symbol.value) + "&tenor=" + encodeURIComponent(tenor.value))
+                                .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+                                .then(function (result) {
+                                    if (n !== chainReq || voiceNow() !== "brokerage") return;
+                                    if (!result.ok || !result.data.strikes) {
+                                        box.textContent = (result.data && result.data.error) || "Couldn't load the chain.";
+                                        return;
+                                    }
+                                    renderChain(box, result.data);
+                                })
+                                .catch(function () {
+                                    if (n === chainReq) box.textContent = "Couldn't load the chain.";
+                                });
+                        }
+                        function renderChain(box, data) {
+                            box.textContent = "";
+                            var table = document.createElement("table");
+                            table.className = "pp-chain";
+                            var head = document.createElement("thead");
+                            var titles = document.createElement("tr");
+                            [["Calls", 3], ["Strike", 1], ["Puts", 3]].forEach(function (pair) {
+                                var th = document.createElement("th");
+                                th.textContent = pair[0];
+                                th.colSpan = pair[1];
+                                if (pair[0] === "Strike") th.rowSpan = 2;
+                                titles.appendChild(th);
+                            });
+                            var fields = document.createElement("tr");
+                            ["Bid", "Mid", "Ask", "Bid", "Mid", "Ask"].forEach(function (label) {
+                                var th = document.createElement("th");
+                                th.textContent = label;
+                                fields.appendChild(th);
+                            });
+                            head.appendChild(titles);
+                            head.appendChild(fields);
+                            table.appendChild(head);
+                            var body = document.createElement("tbody");
+                            data.strikes.forEach(function (row) {
+                                var tr = document.createElement("tr");
+                                ["bid", "mid", "ask"].forEach(function (field) {
+                                    tr.appendChild(quoteCell("call", row.strike, row.call, field));
+                                });
+                                var strike = document.createElement("td");
+                                strike.className = "pp-chain-strike";
+                                strike.textContent = Number(row.strike).toLocaleString("en-US");
+                                tr.appendChild(strike);
+                                ["bid", "mid", "ask"].forEach(function (field) {
+                                    tr.appendChild(quoteCell("put", row.strike, row.put, field));
+                                });
+                                body.appendChild(tr);
+                            });
+                            table.appendChild(body);
+                            box.appendChild(table);
+                        }
+                        function quoteCell(side, strike, quote, field) {
+                            var td = document.createElement("td");
+                            var btn = document.createElement("button");
+                            btn.type = "button";
+                            btn.dataset.side = side;
+                            btn.dataset.strike = String(strike);
+                            btn.textContent = (quote && quote[field]) || "—";
+                            btn.addEventListener("click", function () {
+                                document.getElementById("pp-strike").value = String(strike);
+                                var radio = document.querySelector('input[name="side"][value="' + side + '"]');
+                                if (radio) radio.checked = true;
+                                document.querySelectorAll("#pp-chain button").forEach(function (other) {
+                                    other.classList.remove("is-on");
+                                });
+                                document.querySelectorAll(
+                                    '#pp-chain button[data-side="' + side + '"][data-strike="' + strike + '"]'
+                                ).forEach(function (other) { other.classList.add("is-on"); });
+                            });
+                            td.appendChild(btn);
+                            return td;
+                        }
+                        function voiceNow() {
+                            var picked = document.querySelector('input[name="voice"]:checked');
+                            return (picked && voices[picked.value]) ? picked.value : "beginner";
+                        }
+                        function dollars(n) {
+                            var v = Number(n);
+                            if (!isFinite(v)) return "";
+                            return "$" + v.toLocaleString("en-US");
+                        }
+                        function sync() {
+                            var name = voiceNow();
+                            var voice = voices[name];
+                            var form = document.querySelector("form[data-voice]");
+                            if (form) form.dataset.voice = name;
+                            if (name !== "brokerage") {
+                                var strikeInput = document.getElementById("pp-strike");
+                                if (strikeInput) strikeInput.value = "";
+                            }
+                            document.getElementById("pp-side-kicker").textContent = voice.side;
+                            document.getElementById("pp-call").textContent = voice.call;
+                            document.getElementById("pp-put").textContent = voice.put;
+                            document.getElementById("pp-which-kicker").textContent = voice.which;
+                            document.getElementById("pp-when-kicker").textContent = voice.when;
+                            document.getElementById("pp-strike-kicker").textContent = voice.strike;
+                            document.getElementById("pp-review").textContent = voice.button;
+                            document.getElementById("pp-next").textContent = voice.next;
+                            document.cookie = "pp_voice=" + voiceNow() + ";path=/;max-age=2592000;samesite=lax";
+                            var selected = document.querySelector('input[name="symbol"]:checked');
+                            var label = selected && selected.closest("label");
+                            if (!label) return;
+                            ["below", "at", "above"].forEach(function (key) {
+                                var el = document.querySelector('[data-strike="' + key + '"]');
+                                var strike = label.getAttribute("data-" + key);
+                                if (!el || !strike) return;
+                                var word = voice[key];
+                                el.textContent = word ? (word + " · " + dollars(strike)) : dollars(strike);
+                            });
+                            ["soon", "weekly", "multi"].forEach(function (key) {
+                                var el = document.querySelector('[data-tenor="' + key + '"]');
+                                var text = label.getAttribute("data-" + key);
+                                if (el && text) el.textContent = text;
+                            });
+                            var contract = document.getElementById("pp-contract");
+                            var contractText = label.getAttribute("data-contract") || "";
+                            if (contract) {
+                                var cash = contractText.indexOf("cash") >= 0;
+                                var name = voiceNow();
+                                if (name === "brokerage") {
+                                    contract.textContent = cash ? "Cash settled. $100 per point." : "Multiplier 100.";
+                                } else if (name === "intermediate") {
+                                    contract.textContent = cash ? "Cash-settled. $100 a point." : "1 contract controls 100 shares.";
+                                } else {
+                                    contract.textContent = contractText;
+                                }
+                            }
+                            if (name === "brokerage") loadChain();
+                        }
+                        document.querySelectorAll('input[name="symbol"], input[name="voice"], input[name="tenor"]').forEach(function (input) {
+                            input.addEventListener("change", sync);
+                        });
+                        sync();
+                    })();
+                </script>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
