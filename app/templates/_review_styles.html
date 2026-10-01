@@ -36,10 +36,13 @@
         grid-template-columns: minmax(160px, 1.15fr) repeat(3, minmax(0, 1fr));
         gap: .85rem 1.5rem; align-items: start;
     }
-    .ov-top > div { min-width: 0; }
+    .ov-top > div { min-width: 0; container-type: inline-size; }
     .ov-k { font-size: .8rem; color: rgba(255,255,255,.55); margin-bottom: .2rem; }
-    /* Big headline figures never break mid-number. clamp shrinks them
-       on a narrow screen so a value like +$171,578 stays one line.
+    /* Big headline figures never break mid-number. Inside a hero column
+       the size tracks that column (cqi), so a value like $1,062,900 stays
+       inside it from a phone width through a tablet. The 2.75rem cap is
+       what 1280+ already uses once the column is wide enough. The vw
+       clamp is only the fallback for a figure that is not in the grid.
        .ov-sub is the smaller line under a figure: it wraps on word
        boundaries so a long caption stays inside the column. */
     .ov-big, .ov-pct {
@@ -51,6 +54,9 @@
         font-size: clamp(1.05rem, 5.2vw, 2.75rem);
         font-weight: 750; letter-spacing: -.02em; line-height: 1.05;
         font-variant-numeric: tabular-nums;
+    }
+    .ov-top .ov-big:not(.ov-invest) {
+        font-size: clamp(1.05rem, 18cqi, 2.75rem);
     }
     .ov-invest { font-size: clamp(1rem, 4.2vw, 1.65rem); }
     .ov-pct {
