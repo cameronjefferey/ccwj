@@ -1021,9 +1021,13 @@ def positions():
     start_idx = (page - 1) * per_page
     rows = all_rows[start_idx : start_idx + per_page]
 
+    from app.paper_practice import beginner_readouts
+    beginner_trades = beginner_readouts(tenant_ids)
+
     return render_template(
         "positions.html",
         title="Positions",
+        beginner_trades=beginner_trades,
         rows=rows,
         symbol_rows=symbol_rows,
         kpis=kpis,

@@ -3541,9 +3541,12 @@ def position_detail(symbol):
     except Exception as exc:
         app.logger.warning("chart read prep failed for %s: %s", symbol, exc)
         chart_read = None
+    from app.paper_practice import beginner_readouts
+    beginner_trades = beginner_readouts(tenant_scope, symbol)
     resp = make_response(render_template(
         "position_detail.html",
         title=symbol,
+        beginner_trades=beginner_trades,
         symbol=symbol,
         open_strategy_names=open_strategy_names,
         kpis=kpis,

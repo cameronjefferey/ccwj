@@ -30,8 +30,10 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from datetime import date, datetime, timedelta
 from typing import Optional
+from urllib.parse import quote
 
 from flask import flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
@@ -432,6 +434,160 @@ def _stable_account_name(broker_slug: str, account_number_masked: Optional[str])
     return f"{broker} Account"
 
 
+# Alpaca Paper practice orders use their own Connection Portal session.
+# The read-only portal (Schwab and every other broker) must not pick up
+# connectionType=trade. Slug is SnapTrade's, not a display label.
+ALPACA_PAPER_BROKER = "ALPACA-PAPER"
+PRACTICE_PORTAL_SESSION_KEY = "snaptrade_practice_return"
+DEMO_MIRROR_TENANT_ID = "demo:demo-account"
+
+
+def portal_login_kwargs(
+    snap,
+    custom_redirect,
+    *,
+    reconnect=None,
+    broker=None,
+    connection_type=None,
+    immediate_redirect=False,
+):
+    """Body for ``login_snap_trade_user``.
+
+    Defaults are the read-only portal: user id, secret, and redirect only.
+    ``broker`` and ``connection_type`` are opt-in so a practice session
+    cannot leak into Schwab connects.
+    """
+    kwargs = {
+        "user_id": snap["snaptrade_user_id"],
+        "user_secret": snap["snaptrade_secret"],
+        "custom_redirect": custom_redirect,
+    }
+    if reconnect:
+        kwargs["reconnect"] = reconnect
+    if broker:
+        kwargs["broker"] = broker
+    if connection_type:
+        kwargs["connection_type"] = connection_type
+    if immediate_redirect:
+        kwargs["immediate_redirect"] = True
+    return kwargs
+
+
+def read_only_portal_login_kwargs(snap, custom_redirect, reconnect=None):
+    """Schwab and every other connect. No broker, no trading permission."""
+    return portal_login_kwargs(
+        snap, custom_redirect, reconnect=reconnect,
+    )
+
+
+def practice_portal_login_kwargs(snap, custom_redirect):
+    """Alpaca Paper, trading access, skip SnapTrade's finished screen."""
+    return portal_login_kwargs(
+        snap,
+        custom_redirect,
+        broker=ALPACA_PAPER_BROKER,
+        connection_type="trade",
+        immediate_redirect=True,
+    )
+
+
+def _portal_custom_redirect() -> str:
+    cfg = _snaptrade_config()
+    return (cfg[2] if cfg and cfg[2] else "") or url_for(
+        "snaptrade_callback", _external=True
+    )
+
+
+def _ensure_snaptrade_user(client, user_id) -> dict:
+    """Return ``{snaptrade_user_id, snaptrade_secret}``, registering once."""
+    snap = get_snaptrade_user(user_id)
+    if snap:
+        return snap
+    # SnapTrade userIds are GLOBAL to the clientId. Dev and prod share
+    # one clientId, so a bare happytrader-{user_id} collides. The
+    # namespace (empty in prod) keeps those users disjoint.
+    _snap_ns = os.environ.get("SNAPTRADE_USER_NAMESPACE", "").strip()
+    snap_user_label = (
+        f"happytrader-{_snap_ns}-{user_id}" if _snap_ns
+        else f"happytrader-{user_id}"
+    )
+    try:
+        resp = client.authentication.register_snap_trade_user(
+            user_id=snap_user_label
+        )
+    except Exception as exc:
+        # Orphan from a previous attempt that lost the secret: SnapTrade
+        # returns 1010 / "User already exists". Delete and register once.
+        if "1010" in str(exc) or "already exists" in str(exc).lower():
+            _log.warning(
+                "SnapTrade register said user '%s' already exists — "
+                "deleting orphan and retrying once.",
+                snap_user_label,
+            )
+            try:
+                client.authentication.delete_snap_trade_user(
+                    user_id=snap_user_label
+                )
+            except Exception as del_exc:
+                _log.warning("orphan delete failed (continuing): %s", del_exc)
+            import time as _time
+            _time.sleep(2.0)
+            resp = client.authentication.register_snap_trade_user(
+                user_id=snap_user_label
+            )
+        else:
+            raise
+    payload = _unwrap_body(resp)
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"SnapTrade register returned unexpected payload type "
+            f"{type(payload).__name__}"
+        )
+    snap_user_id = payload.get("userId") or snap_user_label
+    snap_secret = payload.get("userSecret") or ""
+    if not snap_secret:
+        raise RuntimeError("SnapTrade did not return a userSecret on register")
+    save_snaptrade_user(user_id, snap_user_id, snap_secret)
+    return {"snaptrade_user_id": snap_user_id, "snaptrade_secret": snap_secret}
+
+
+def open_connection_portal(client, user_id, login_kwargs) -> str:
+    """Register if needed and return the Connection Portal URL."""
+    snap = _ensure_snaptrade_user(client, user_id)
+    login_kwargs = dict(login_kwargs)
+    login_kwargs["user_id"] = snap["snaptrade_user_id"]
+    login_kwargs["user_secret"] = snap["snaptrade_secret"]
+    login_resp = client.authentication.login_snap_trade_user(**login_kwargs)
+    login_payload = _unwrap_body(login_resp)
+    portal_url = (
+        login_payload.get("redirectURI")
+        if isinstance(login_payload, dict)
+        else None
+    )
+    if not portal_url:
+        raise RuntimeError("SnapTrade did not return a Connection Portal URL")
+    return portal_url
+
+
+def remember_portal_session(user_id, *, reconnect_label=None, practice=False):
+    """One-shot callback binding. A practice session never leaves the
+    read-only marker set, and a read-only session clears a stale one."""
+    session["snaptrade_callback_user_id"] = user_id
+    if practice:
+        session[PRACTICE_PORTAL_SESSION_KEY] = "1"
+    else:
+        session.pop(PRACTICE_PORTAL_SESSION_KEY, None)
+    if reconnect_label:
+        session["snaptrade_reconnect_label"] = reconnect_label
+    else:
+        session.pop("snaptrade_reconnect_label", None)
+
+
+def portal_return_target(practice: bool, default: str) -> str:
+    """Where the callback sends the browser. Practice returns to the ticket."""
+    return "paper_practice" if practice else default
+
+
 # ---------------------------------------------------------------------------
 # Routes — connect / callback
 # ---------------------------------------------------------------------------
@@ -529,102 +685,22 @@ def snaptrade_connect():
         return redirect(url_for("profile", tab="account"))
 
     user_id = current_user.id
-    snap = get_snaptrade_user(user_id)
     try:
-        if not snap:
-            # Use a stable internal id so SnapTrade can correlate retries
-            # to the same user record. SnapTrade userId is opaque to the
-            # broker; PII would only land in our own DB.
-            #
-            # SnapTrade userIds are GLOBAL to the clientId (the SnapTrade
-            # app), and dev/staging often share one clientId with prod. A
-            # bare ``happytrader-{user_id}`` therefore collides across
-            # environments (local user 7 and prod user 7 resolve to the
-            # same SnapTrade user) — re-registering one would rotate the
-            # secret out from under the other. ``SNAPTRADE_USER_NAMESPACE``
-            # (empty in prod, e.g. "local" in dev) keeps each environment's
-            # SnapTrade users disjoint so connecting/disconnecting locally
-            # can never disturb a real prod connection.
-            _snap_ns = os.environ.get("SNAPTRADE_USER_NAMESPACE", "").strip()
-            snap_user_label = (
-                f"happytrader-{_snap_ns}-{user_id}" if _snap_ns
-                else f"happytrader-{user_id}"
-            )
-            try:
-                resp = client.authentication.register_snap_trade_user(
-                    user_id=snap_user_label
-                )
-            except Exception as exc:
-                # If a previous attempt left an orphan SnapTrade user
-                # (we lost the secret on first try), SnapTrade returns
-                # 1010 / "User already exists" on retry. Recover by
-                # deleting the orphan and re-registering once. The
-                # delete is async (webhook-confirmed) — we sleep
-                # briefly then retry.
-                if "1010" in str(exc) or "already exists" in str(exc).lower():
-                    _log.warning(
-                        "SnapTrade register said user '%s' already exists — "
-                        "deleting orphan and retrying once.",
-                        snap_user_label,
-                    )
-                    try:
-                        client.authentication.delete_snap_trade_user(
-                            user_id=snap_user_label
-                        )
-                    except Exception as del_exc:
-                        _log.warning("orphan delete failed (continuing): %s", del_exc)
-                    import time as _time
-                    _time.sleep(2.0)
-                    resp = client.authentication.register_snap_trade_user(
-                        user_id=snap_user_label
-                    )
-                else:
-                    raise
-            payload = _unwrap_body(resp)
-            if not isinstance(payload, dict):
-                raise RuntimeError(
-                    f"SnapTrade register returned unexpected payload type "
-                    f"{type(payload).__name__}"
-                )
-            snap_user_id = payload.get("userId") or snap_user_label
-            snap_secret = payload.get("userSecret") or ""
-            if not snap_secret:
-                raise RuntimeError("SnapTrade did not return a userSecret on register")
-            save_snaptrade_user(user_id, snap_user_id, snap_secret)
-            snap = {"snaptrade_user_id": snap_user_id, "snaptrade_secret": snap_secret}
-
-        # SnapTrade doesn't have a per-app "allowed redirect URIs" list
-        # like Schwab does — the post-portal redirect is set PER session
-        # via custom_redirect. We pass our /snaptrade/callback URL so
-        # SnapTrade sends the user back into our app after they finish
-        # picking + authenticating their broker. Without this, the user
-        # lands on SnapTrade's generic success page and never re-enters
-        # our app to trigger the account-list fetch.
-        cfg = _snaptrade_config()
-        custom_redirect = (cfg[2] if cfg and cfg[2] else "") or url_for(
-            "snaptrade_callback", _external=True
+        # Read-only portal. No broker slug and no connectionType, so
+        # Schwab and every other connect stay data-only. Practice orders
+        # open a separate session in app/paper_practice.py.
+        snap = _ensure_snaptrade_user(client, user_id)
+        login_kwargs = read_only_portal_login_kwargs(
+            snap,
+            _portal_custom_redirect(),
+            reconnect=reconnect_auth_id or None,
         )
-        login_kwargs = {
-            "user_id": snap["snaptrade_user_id"],
-            "user_secret": snap["snaptrade_secret"],
-            "custom_redirect": custom_redirect,
-        }
-        # Reconnect a specific broken grant rather than adding a new one.
         if reconnect_auth_id:
-            login_kwargs["reconnect"] = reconnect_auth_id
             _log.info(
                 "SnapTrade reconnect requested for user_id=%s auth_id=%s",
                 user_id, reconnect_auth_id,
             )
-        login_resp = client.authentication.login_snap_trade_user(**login_kwargs)
-        login_payload = _unwrap_body(login_resp)
-        portal_url = (
-            login_payload.get("redirectURI")
-            if isinstance(login_payload, dict)
-            else None
-        )
-        if not portal_url:
-            raise RuntimeError("SnapTrade did not return a Connection Portal URL")
+        portal_url = open_connection_portal(client, user_id, login_kwargs)
     except Exception as exc:
         _log.exception("SnapTrade connect failed for user_id=%s: %s", user_id, exc)
         flash(
@@ -637,14 +713,11 @@ def snaptrade_connect():
     # One-shot callback state: /snaptrade/callback requires and consumes this
     # marker. Besides binding the return to the same login, that prevents a
     # bare callback replay from launching another background broker sync.
-    session["snaptrade_callback_user_id"] = user_id
-    # Remember this was a reconnect so the callback can confirm it
-    # specifically ("Schwab reconnected") instead of the generic
-    # "Connected N accounts" copy. Cleared (popped) in the callback.
-    if is_reconnect:
-        session["snaptrade_reconnect_label"] = reconnect_broker_label or "broker"
-    else:
-        session.pop("snaptrade_reconnect_label", None)
+    remember_portal_session(
+        user_id,
+        reconnect_label=(reconnect_broker_label or "broker") if is_reconnect else None,
+        practice=False,
+    )
     return redirect(portal_url)
 
 
@@ -660,24 +733,30 @@ def snaptrade_callback():
     # Pop the reconnect marker unconditionally so it can never leak into a
     # later unrelated connect; only the success path below uses it.
     reconnect_label = session.pop("snaptrade_reconnect_label", None)
+    # Practice portal returns to the ticket. Pop immediately so a later
+    # read-only connect cannot inherit it.
+    practice_return = bool(session.pop(PRACTICE_PORTAL_SESSION_KEY, None))
+
+    def _after_portal(default, **kwargs):
+        return redirect(url_for(portal_return_target(practice_return, default), **kwargs))
     # This marker is the callback's one-shot state token.  Missing must fail
     # closed as well as mismatched: since post-connect now launches a daemon
     # full-history sync, accepting a bare replay of this GET would let any
     # signed-in user repeatedly spawn unbounded broker-sync threads.
     if expected_user_id is None or expected_user_id != current_user.id:
         flash("Connection session expired or changed. Please try again.", "danger")
-        return redirect(url_for("profile", tab="account"))
+        return _after_portal("profile", tab="account")
 
     user_id = current_user.id
     snap = get_snaptrade_user(user_id)
     if not snap:
         flash("Your SnapTrade session expired. Try Connect again.", "warning")
-        return redirect(url_for("snaptrade_connect"))
+        return _after_portal("snaptrade_connect")
 
     client = _get_snaptrade_client()
     if not client:
         flash("Multi-broker connect is not configured.", "danger")
-        return redirect(url_for("profile", tab="account"))
+        return _after_portal("profile", tab="account")
 
     try:
         accounts, accounts_complete = _list_snaptrade_accounts(client, snap)
@@ -688,7 +767,7 @@ def snaptrade_callback():
             "from the manage page in a moment.",
             "warning",
         )
-        return redirect(url_for("snaptrade_accounts_page"))
+        return _after_portal("snaptrade_accounts_page")
 
     existing_accounts = get_snaptrade_accounts(user_id) or []
     prior_ids = {
@@ -718,16 +797,25 @@ def snaptrade_callback():
         # Empty list: the portal was closed, or a brand-new connection has
         # not surfaced yet. Do not claim a successful connect.
         _portal_cancel_flash(had_existing=bool(prior_ids))
-        return redirect(url_for("snaptrade_accounts_page"))
+        return _after_portal("snaptrade_accounts_page")
 
     if not reconnect_label and not new_ids and not recovery_existing:
         # Only accounts we already had. A cancel (or a no-op re-auth)
         # must not flash "Connected N" or open the name-now step.
+        # A practice return that already has the paper account is the
+        # learner coming back, not a cancelled Schwab connect.
+        if practice_return:
+            if any(_account_is_alpaca_paper(acc) for acc in accounts if isinstance(acc, dict)):
+                flash("Paper account connected. Pick a call or a put.", "success")
+            else:
+                _portal_cancel_flash(had_existing=True)
+            return redirect(url_for("paper_practice"))
         _portal_cancel_flash(had_existing=True)
-        return redirect(url_for("snaptrade_accounts_page"))
+        return _after_portal("snaptrade_accounts_page")
 
     saved = 0
     newly_saved = 0
+    paper_saved = 0
     identity_conflicts = 0
     remote_account_ids = {
         str(acc.get("id") or "").strip()
@@ -859,6 +947,8 @@ def snaptrade_callback():
         saved += 1
         if not existed:
             newly_saved += 1
+            if _account_is_alpaca_paper(acc):
+                paper_saved += 1
 
     if identity_conflicts:
         flash(
@@ -869,6 +959,9 @@ def snaptrade_callback():
         )
     if saved and (reconnect_label or newly_saved or recovery_existing):
         _kick_post_connect_sync(user_id)
+        if practice_return:
+            flash("Paper account connected. Pick a call or a put.", "success")
+            return redirect(url_for("paper_practice"))
         all_accounts = get_snaptrade_accounts(user_id) or []
         pending_first = any(
             not bool(r.get("first_sync_completed")) for r in all_accounts
@@ -876,6 +969,10 @@ def snaptrade_callback():
         qp = {"connecting": 1}
         if pending_first:
             qp["first"] = 1
+        # A new paper account has no trades. Don't send it through the
+        # history-and-Overview waiting room.
+        if newly_saved and paper_saved == newly_saved:
+            qp["paper"] = 1
         if reconnect_label:
             flash(
                 f"{reconnect_label} reconnected. We're pulling the latest "
@@ -904,7 +1001,7 @@ def snaptrade_callback():
             if _snaptrade_accounts_needing_nickname(all_accounts):
                 return redirect(url_for("snaptrade_name_accounts", **qp))
         return redirect(url_for("sync_processing", **qp))
-    return redirect(url_for("snaptrade_accounts_page"))
+    return _after_portal("snaptrade_accounts_page")
 
 
 @app.route("/snaptrade/accounts/name-now", methods=["GET", "POST"])
@@ -1103,6 +1200,17 @@ def _list_snaptrade_accounts(client, snap):
     return out, complete
 
 
+def _account_is_alpaca_paper(acc) -> bool:
+    """True when this SnapTrade account record is Alpaca Paper."""
+    if not isinstance(acc, dict):
+        return False
+    name = (acc.get("institution_name") or "").strip().casefold()
+    if name in ("alpaca paper", "alpaca-paper"):
+        return True
+    slug = _institution_slug_from(acc).casefold().replace("_", " ")
+    return slug in ("alpaca paper", "alpaca-paper")
+
+
 def _institution_slug_from(acc) -> str:
     """SnapTrade puts the brokerage either under ``institution_name``
     or under a nested ``brokerage_authorization``. Normalize."""
@@ -1112,6 +1220,243 @@ def _institution_slug_from(acc) -> str:
         if isinstance(b, dict):
             return (b.get("name") or b.get("slug") or "").strip()
     return ""
+
+
+def _mapping(obj):
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "to_dict"):
+        try:
+            return obj.to_dict()
+        except Exception:
+            return {}
+    return {}
+
+
+def alpaca_paper_trade_account(user_id):
+    """The learner's trade-enabled Alpaca Paper account, or None.
+
+    Read-only grants are ignored. The public demo mirror is never a
+    practice account. Does not call ``refresh_brokerage_authorization``.
+    """
+    snap = get_snaptrade_user(user_id)
+    client = _get_snaptrade_client()
+    if not snap or not client:
+        return None
+    try:
+        auth_resp = client.connections.list_brokerage_authorizations(
+            user_id=snap["snaptrade_user_id"],
+            user_secret=snap["snaptrade_secret"],
+        )
+    except Exception as exc:
+        _log.warning("Alpaca Paper auth list failed for user_id=%s: %s", user_id, exc)
+        return None
+    auth_body = _unwrap_body(auth_resp)
+    if isinstance(auth_body, dict):
+        auths = auth_body.get("authorizations") or []
+    elif isinstance(auth_body, list):
+        auths = auth_body
+    else:
+        auths = []
+    local_rows = {
+        str(row.get("snaptrade_account_id") or ""): row
+        for row in (get_snaptrade_accounts(user_id) or [])
+    }
+    for auth in auths:
+        auth = _mapping(auth)
+        if (auth.get("type") or "").strip().lower() != "trade":
+            continue
+        if auth.get("disabled"):
+            continue
+        brokerage = _mapping(auth.get("brokerage"))
+        slug = (brokerage.get("slug") or "").strip().upper()
+        name = (brokerage.get("name") or "").strip().casefold()
+        if slug != ALPACA_PAPER_BROKER and name != "alpaca paper":
+            continue
+        auth_id = (auth.get("id") or "").strip()
+        if not auth_id:
+            continue
+        try:
+            acc_resp = client.connections.list_brokerage_authorization_accounts(
+                user_id=snap["snaptrade_user_id"],
+                user_secret=snap["snaptrade_secret"],
+                authorization_id=auth_id,
+            )
+        except Exception as exc:
+            _log.warning(
+                "Alpaca Paper account list failed for user_id=%s: %s",
+                user_id, exc,
+            )
+            continue
+        body = _unwrap_body(acc_resp)
+        if isinstance(body, dict):
+            items = body.get("accounts") or []
+        elif isinstance(body, list):
+            items = body
+        else:
+            items = []
+        for item in items:
+            item = _mapping(item)
+            account_id = str(item.get("id") or "").strip()
+            local = local_rows.get(account_id)
+            if not local:
+                continue
+            if (local.get("tenant_id") or "") == DEMO_MIRROR_TENANT_ID:
+                continue
+            return {
+                "snaptrade_account_id": account_id,
+                "tenant_id": local.get("tenant_id"),
+                "account_name": local.get("display_nickname") or local.get("account_name"),
+                "authorization_id": auth_id,
+                "row": local,
+            }
+    return None
+
+
+def _form_query_value(value) -> str:
+    """Encode one SnapTrade query value the way their verifier signs it.
+
+    The Python SDK uses ``quote``, which turns a space into ``%20``.
+    SnapTrade form-decodes the query and checks the signature against
+    ``+`` for those spaces. An OCC symbol is space-padded, so the SDK
+    quote call is rejected with 401 code 1076. ``+`` and ``%20`` are
+    the only difference that matters here.
+    """
+    return quote(str(value), safe="").replace("%20", "+")
+
+
+def option_quote_request_path(user_id, user_secret, account_id, occ, client_id, timestamp) -> str:
+    """Path plus query for one option quote, already in signature form."""
+    pairs = (
+        ("userId", user_id),
+        ("userSecret", user_secret),
+        ("symbol", occ),
+        ("clientId", client_id),
+        ("timestamp", timestamp),
+    )
+    query = "&".join(f"{key}={_form_query_value(val)}" for key, val in pairs)
+    return f"/accounts/{account_id}/quotes/options?{query}"
+
+
+def quote_option_premium(user_id, account_id, occ_symbol):
+    """SnapTrade's derived per-share premium for one OCC contract.
+
+    Alpaca Paper does not support an option-order preview. This quote is
+    the number the confirm step shows and the limit the order sends.
+    Returns None when the quote is missing. Does not place an order.
+
+    Sent outside the SDK. The SDK signs spaces as ``%20``; SnapTrade
+    rejects that signature on this endpoint.
+    """
+    snap = get_snaptrade_user(user_id)
+    cfg = _snaptrade_config()
+    if not snap or not cfg:
+        return None
+    client_id, consumer_key, _redirect = cfg
+    resource = option_quote_request_path(
+        snap["snaptrade_user_id"],
+        snap["snaptrade_secret"],
+        account_id,
+        occ_symbol,
+        client_id,
+        int(time.time()),
+    )
+    try:
+        from snaptrade_client.request_after_hook import compute_request_signature
+    except ImportError:
+        _log.warning("snaptrade_client not installed; pip install snaptrade-python-sdk")
+        return None
+    signature = compute_request_signature(resource, consumer_key, None)
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(
+        "https://api.snaptrade.com" + resource,
+        headers={"Signature": signature, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = resp.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        raise RuntimeError(f"option quote {exc.code}: {detail}") from None
+    import json
+    body = json.loads(payload)
+    if isinstance(body, list):
+        body = body[0] if body else {}
+    body = _mapping(body)
+    raw = body.get("synthetic_price")
+    if raw is None:
+        return None
+    try:
+        price = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if price <= 0:
+        return None
+    return price
+
+
+def single_leg_buy_to_open(occ_symbol, limit_price):
+    """One SnapTrade option leg: buy to open, limit, one contract."""
+    return {
+        "order_type": "LIMIT",
+        "time_in_force": "Day",
+        "limit_price": str(limit_price),
+        "price_effect": "DEBIT",
+        "legs": [{
+            "instrument": {
+                "symbol": occ_symbol,
+                "instrument_type": "OPTION",
+            },
+            "action": "BUY_TO_OPEN",
+            "units": 1,
+        }],
+    }
+
+
+def place_single_leg_option_order(user_id, account_id, occ_symbol, limit_price):
+    """BUY_TO_OPEN one contract, limit at the premium the learner confirmed.
+
+    ``limit_price`` is a string of dollars per share, already shown on
+    the confirm step. One request. No refresh call.
+    """
+    snap = get_snaptrade_user(user_id)
+    client = _get_snaptrade_client()
+    if not snap or not client:
+        raise RuntimeError("SnapTrade is not configured")
+    order = single_leg_buy_to_open(occ_symbol, limit_price)
+    resp = client.trading.place_mleg_order(
+        user_id=snap["snaptrade_user_id"],
+        user_secret=snap["snaptrade_secret"],
+        account_id=account_id,
+        **order,
+    )
+    body = _unwrap_body(resp)
+    return _mapping(body) if not isinstance(body, dict) else body
+
+
+def queue_account_read_sync(user_id, acc_row):
+    """Read the new order back through the existing sync.
+
+    ``force_refresh`` stays false. The real-time plan 403s on
+    ``refresh_brokerage_authorization``, and activities are T+1 anyway.
+    Same-day fills come from the orders feed inside ``_sync_one_connection``.
+    """
+    def _worker():
+        with app.app_context():
+            try:
+                _sync_one_connection(
+                    user_id,
+                    acc_row,
+                    lookback_days=_routine_lookback_days(),
+                    force_refresh=False,
+                )
+            except Exception as exc:
+                _log.warning(
+                    "Practice order sync failed for user_id=%s: %s",
+                    user_id, exc,
+                )
+    threading.Thread(target=_worker, daemon=True, name="paper-practice-sync").start()
 
 
 # ---------------------------------------------------------------------------

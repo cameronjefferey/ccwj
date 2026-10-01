@@ -46,6 +46,7 @@ FILTERED_QUERIES = [
     ("app.accounts_page", "ACCOUNT_LEGS_QUERY"),
     ("app.accounts_page", "NET_DEPOSITS_QUERY"),
     ("app.positions_page", "DEFAULT_QUERY"),
+    ("app.paper_practice", "PAPER_READOUT_SQL"),
     ("app.positions_page", "POSITIONS_TAG_STRAT_QUERY"),
     ("app.sectors_page", "SECTORS_QUERY"),
     ("app.strategies", "STRATEGY_PERFORMANCE_QUERY"),

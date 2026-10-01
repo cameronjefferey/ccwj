@@ -121,6 +121,46 @@
         </p>
         {% endif %}
 
+        {% elif snaptrade_enabled and show_start_choice %}
+        <div class="gs-hero">
+            <h1>Where do you want to start?</h1>
+            <p>
+                Welcome, {{ current_user.username | privacy_hide }}. Practice on a paper account,
+                or connect the brokerage you already trade.
+            </p>
+        </div>
+
+        <div class="gs-path-row dual mb-3">
+            <div class="gs-path">
+                <div class="gs-label">Paper</div>
+                <h6>Create a paper account</h6>
+                <p class="pitch">
+                    Practice one call or one put inside HappyTrader. Paper money.
+                    The trade you pick is not a recommendation and it is not advice.
+                </p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="{{ url_for('paper_practice') }}">Create a paper account</a>
+                </div>
+            </div>
+            <div class="gs-path">
+                <div class="gs-label">Your brokerage</div>
+                <h6>See how you trade</h6>
+                <p class="pitch">
+                    Connect the brokerage you already use. Read-only.
+                    HappyTrader shows the trades you already made, and never stores your broker password.
+                </p>
+                <div class="cta-row">
+                    <a class="btn btn-primary" href="{{ url_for('get_started', path='broker') }}">See how I trade</a>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-muted small mb-0">
+            Need older history?
+            <a href="{{ url_for('upload') }}">Upload a CSV</a>
+            after connecting. That's the fallback for years the broker never sent, or a brokerage that doesn't sync yet.
+        </p>
+
         {% elif snaptrade_enabled %}
         <div class="gs-hero">
             <h1>Connect your brokerage</h1>
@@ -146,11 +186,8 @@
             <p class="fine-print mb-0">
                 You'll see a short explanation here first, then SnapTrade's connection window.
                 Cancel there and you come straight back. Nothing is connected until you finish.
+                <a href="{{ url_for('get_started') }}">Start with a paper account instead.</a>
             </p>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2 align-items-center mb-4">
-            <a class="btn btn-outline-secondary" href="{{ url_for('weekly_review') }}">I'll do this later</a>
         </div>
 
         {% if has_data %}

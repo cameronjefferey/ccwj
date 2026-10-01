@@ -648,6 +648,7 @@
 <div class="mb-2">
     <a href="/positions" class="text-muted small text-decoration-none">&larr; Back to Positions</a>
 </div>
+{% include "_paper_beginner_readout.html" %}
 
 {# ── Symbol tab strip (spreadsheet-style switcher) ── #}
 {% if tabs and tabs|length > 1 %}
@@ -1833,6 +1834,15 @@
 </style>
 
 {% else %}
+{% set practice = session.get('paper_practice_sent') %}
+{% if practice and practice.symbol == symbol %}
+<div class="card p-4 mb-3">
+    {% with sent=practice %}
+    {% include "_paper_trade_receipt.html" %}
+    {% endwith %}
+    <a class="btn btn-outline-secondary mt-3" href="{{ url_for('paper_practice', placed=1) }}">Back to practice</a>
+</div>
+{% else %}
 <div class="card p-4">
     <h2 class="section-header">No data for {{ symbol }}</h2>
     <p class="text-muted mb-3">Nothing for this symbol in your linked accounts. If you just synced, the warehouse can take a few minutes. Otherwise check the symbol, or that this is the account on Accounts &amp; data.</p>
@@ -1841,6 +1851,7 @@
         <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_accounts_page') }}">Check sync status</a>
     </div>
 </div>
+{% endif %}
 {% endif %}
 </div>
 {% endblock %}
