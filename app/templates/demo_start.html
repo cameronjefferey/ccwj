@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="py-4">
+    <div class="mx-auto" style="max-width: 32rem;">
+        <div class="card p-4 p-md-5">
+            <p class="section-header mb-2">Demo</p>
+            <h1 class="h3 mb-2">Try the live demo</h1>
+            <p class="text-muted mb-4">A read-only mirror of a paper account. Your session is separate from every other visitor and expires when you leave.</p>
+            <form method="POST" action="{{ url_for('demo_start') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if next_for_form %}
+                <input type="hidden" name="next" value="{{ next_for_form }}">
+                {% endif %}
+                {% if turnstile_site_key %}
+                <div class="cf-turnstile mb-3" data-sitekey="{{ turnstile_site_key }}"></div>
+                <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                {% endif %}
+                <button type="submit" class="btn btn-primary">Start the demo</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

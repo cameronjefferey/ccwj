@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="py-4">
+    <div class="mx-auto" style="max-width: 32rem;">
+        <div class="card p-4 p-md-5 text-center">
+            <p class="section-header mb-2" style="color:var(--ht-muted)">Demo limit</p>
+            <h1 class="h3 mb-2">That's the end of this demo</h1>
+            <p class="text-muted mb-4">{{ reason }}</p>
+            <a href="{{ url_for('signup') if signup_enabled else url_for('index') }}" class="btn btn-primary">
+                {{ 'Create an account' if signup_enabled else 'Back to Home' }}
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

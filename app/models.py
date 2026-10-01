@@ -1245,6 +1245,10 @@ class User(UserMixin):
         self.email = email
 
     def check_password(self, password):
+        # The public demo username cannot authenticate with a password.
+        # The login route rejects it too; this covers every other check.
+        if (self.username or "").lower() == "demo":
+            return False
         return check_password_hash(self.password_hash, password)
 
     @staticmethod
@@ -1352,7 +1356,15 @@ def delete_user(user_id):
 # User <-> Account association
 # ------------------------------------------------------------------
 
+def _is_ephemeral_demo_user(user_id) -> bool:
+    from app.demo_guard import is_ephemeral_demo_id
+    return is_ephemeral_demo_id(user_id)
+
+
 def get_accounts_for_user(user_id):
+    if _is_ephemeral_demo_user(user_id):
+        from app.demo_guard import DEMO_ACCOUNT_NAME
+        return [DEMO_ACCOUNT_NAME]
     rows = fetch_all(
         "SELECT account_name FROM user_accounts WHERE user_id = %s ORDER BY account_name",
         (user_id,),
@@ -1757,9 +1769,15 @@ def get_tenant_ids_for_user(user_id):
     connection is still excluded until the user re-authenticates.
 
     Returns ``[]`` for None / unknown user / no connections.
+
+    A public demo session is not a ``users.id``. It can read only the
+    shared mirror tenant.
     """
     if user_id is None:
         return []
+    if _is_ephemeral_demo_user(user_id):
+        from app.demo_guard import DEMO_TENANT_ID
+        return [DEMO_TENANT_ID]
     rows = fetch_all(
         "SELECT tenant_id FROM broker_tenants "
         "WHERE user_id = %s "
@@ -1780,6 +1798,9 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
     """
     if user_id is None:
         return []
+    if _is_ephemeral_demo_user(user_id):
+        from app.demo_guard import demo_tenant_row
+        return [demo_tenant_row()]
     sql = (
         "SELECT tenant_id, user_id, broker_slug, broker_uuid, "
         "account_name, account_mask, broker_label, institution_account_id, "
@@ -1812,6 +1833,8 @@ def _norm_account_group_name(name):
 def list_account_groups(user_id):
     """Groups for one user, each with member ``tenant_id``s. Ordered by name."""
     if user_id is None:
+        return []
+    if _is_ephemeral_demo_user(user_id):
         return []
     rows = fetch_all(
         "SELECT g.id, g.name, "
@@ -1948,6 +1971,8 @@ def tenant_ids_for_groups(user_id, group_ids):
         seen.add(gid)
         ids.append(gid)
     if not ids or user_id is None:
+        return [], []
+    if _is_ephemeral_demo_user(user_id):
         return [], []
     placeholders = ",".join(["%s"] * len(ids))
     rows = fetch_all(
@@ -3051,6 +3076,8 @@ def get_user_profile(user_id):
     Return profile row dict. Never raises: if user_profiles is missing on a
     stale database, returns defaults so login and Weekly Review still work.
     """
+    if _is_ephemeral_demo_user(user_id):
+        return _default_profile_row(user_id)
     try:
         ensure_user_profile(user_id)
         row = fetch_one(
@@ -3347,6 +3374,8 @@ REVIEW_VISIT_PROMOTE_GAP = _timedelta(minutes=30)
 
 def get_review_visit(user_id):
     """Return {'last_visit_at': dt, 'prev_visit_at': dt} or None if never visited."""
+    if _is_ephemeral_demo_user(user_id):
+        return None
     try:
         row = fetch_one(
             "SELECT last_visit_at, prev_visit_at FROM user_review_visits WHERE user_id = %s",
@@ -3370,6 +3399,8 @@ def bump_review_visit(user_id, now):
     Returns the row state BEFORE the bump, so the route can use
     prior['last_visit_at'] as the anchor to diff against.
     """
+    if _is_ephemeral_demo_user(user_id):
+        return None
     prior = get_review_visit(user_id)
     try:
         if prior is None:
@@ -3527,7 +3558,14 @@ def get_distinct_tags_for_user(user_id):
 # ------------------------------------------------------------------
 
 def is_admin(username):
-    """Check if a username is in the ADMIN_USERS environment variable."""
+    """Check if a username is in the ADMIN_USERS environment variable.
+
+    ``demo`` is never an admin. The public demo used to sign every visitor
+    in as that username, and admin is decided by username alone — listing
+    ``demo`` in ``ADMIN_USERS`` would have made those sessions operators.
+    """
+    if not username or username.lower() == "demo":
+        return False
     admin_env = os.environ.get("ADMIN_USERS", "")
     if not admin_env:
         return False
@@ -3565,14 +3603,46 @@ def seed_users_from_env():
 DEMO_ACCOUNT = "Demo Account"
 
 
+def _unusable_demo_password() -> str:
+    """A secret that is hashed and then discarded. Nobody can type it."""
+    return secrets.token_urlsafe(48)
+
+
+def _is_dedicated_demo_row(user) -> bool:
+    """The public demo account, not a person who registered as ``demo``.
+
+    Dedicated when the username is ``demo`` and the row has no email
+    (this function creates it that way; signup always stores one), or
+    when this user owns tenant ``demo:demo-account``.
+    """
+    if user is None or (getattr(user, "username", "") or "").lower() != "demo":
+        return False
+    if not (getattr(user, "email", None) or "").strip():
+        return True
+    tenant = get_broker_tenant(build_tenant_id(DEMO_BROKER_SLUG, "demo-account"))
+    if not tenant or tenant.get("user_id") is None:
+        return False
+    try:
+        return int(tenant["user_id"]) == int(user.id)
+    except (TypeError, ValueError):
+        return False
+
+
 def ensure_demo_user():
     """
     Create the demo user and link to the Demo Account if not already set up.
-    Demo credentials: demo / demo123
+
+    There is no demo password. On create, and on every startup when the
+    existing row is the dedicated demo account, the stored hash is a
+    fresh random secret that is never shown. Password login for this
+    username is refused in the login route either way.
     """
     demo = User.get_by_username("demo")
     if demo is None:
-        User.create("demo", "demo123")
+        User.create("demo", _unusable_demo_password())
+        demo = User.get_by_username("demo")
+    elif _is_dedicated_demo_row(demo):
+        User.update_password(demo.id, _unusable_demo_password())
         demo = User.get_by_username("demo")
     if demo:
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
@@ -3666,7 +3736,17 @@ def _hash_reset_token(raw_token: str) -> str:
 def mint_password_reset_token(user_id: int, requester_ip: str | None = None) -> str:
     """Create a single-use reset token and return the raw value to email
     to the user. Existing unused tokens for the same user are invalidated
-    so an old email link can't override the most recent request."""
+    so an old email link can't override the most recent request.
+
+    The shared ``demo`` account cannot request a reset. Callers should
+    catch this and show the same response they show for an unknown email.
+    """
+    owner = fetch_one(
+        "SELECT username FROM users WHERE id = %s",
+        (user_id,),
+    )
+    if owner and (owner.get("username") or "").lower() == "demo":
+        raise ValueError("password reset is not available for the demo account")
     raw = _secrets.token_urlsafe(32)
     token_hash = _hash_reset_token(raw)
     expires_at = _dt.now(_tz.utc) + PASSWORD_RESET_TOKEN_TTL
