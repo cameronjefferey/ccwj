@@ -609,10 +609,16 @@ positions, style scoreboard, and year-by-year rows follow. Details in
 "App-shell UX layer" under Code Organization.
 
 ### Positions List (`/positions`)
-**Status: Working with recent filter-discipline pass.** Entry point to position detail.
+**Status: Working. Same story order as Position Detail and Overview.** Entry point to position detail.
 
 Lists all positions with strategy tags, P&L, status. Links to position detail.
 Pagination in Python (`per_page = 25`).
+
+Story order, top to bottom: the headline (total return, realized, unrealized,
+win rate), then the positions table (one row per account and symbol, filters
+in that card), then two collapsed disclosures — by strategy (the pager) and
+the breakdown (counts and P&amp;L by strategy). Premium received is labeled
+Collected. Phone rows stack with a label on each value.
 
 What's working:
 - Hero uses the same dark bar as Overview (brand and account filters).
