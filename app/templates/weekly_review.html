@@ -500,10 +500,6 @@
 {% else %}
 {% include "_overview_daily.html" %}
 {% endif %}
-{% if simple_view %}
-    </div>
-</details>
-{% endif %}
 
 {% if building_history %}
 <details class="disclosure" id="ov-building">
@@ -529,9 +525,11 @@
             </div>
             {% endfor %}
         </div>
+        {% if not simple_view %}
         <p class="ov-note">
             <a href="{{ scoped_url('trader_story') }}">See your full trader profile &rarr;</a>
         </p>
+        {% endif %}
         {% endif %}
     </div>
 </details>
@@ -544,10 +542,14 @@
    currently-held symbols, same grain as Positions' symbol chip). Zero extra
    queries on the hottest page.
    ════════════════════════════════════ #}
-{% if today_strip %}
+{% if today_strip and not simple_view %}
 <p class="ov-held">
     {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
     <a href="{{ scoped_url('trader_story', account=selected_account, tenant=selected_tenant, tenants=selected_tenants) }}">See your trader profile &rarr;</a>
+</p>
+{% elif today_strip %}
+<p class="ov-held">
+    {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
 </p>
 {% endif %}
 
@@ -598,8 +600,24 @@ function placeOverviewDaily() {
 {% else %}
 {% include "_overview_below.html" %}
 {% endif %}
+{% if simple_view %}
+    </div>
+</details>
+{% endif %}
 
 <script>
+var more = document.getElementById("ov-show-more");
+if (more) {
+    more.addEventListener("toggle", function () {
+        if (!more.open || !window.Chart || !Chart.getChart) return;
+        requestAnimationFrame(function () {
+            more.querySelectorAll("canvas").forEach(function (canvas) {
+                var chart = Chart.getChart(canvas);
+                if (chart) chart.resize();
+            });
+        });
+    });
+}
 document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest("#cal-toggle-btn");
     if (!btn) return;

@@ -1334,6 +1334,19 @@
 </p>
 {% endif %}
 
+{# Simple view keeps the chart up front. Strategy rows, if-held, legs,
+   and the matrix stay behind one disclosure. #}
+{% if simple_view %}
+<details class="disclosure" id="pd-show-more">
+    <summary><span class="section-header">Show more</span></summary>
+    <div class="disclosure-body">
+        {% if chart_read %}
+        <div class="chart-read mt-3">
+            <div class="chart-read-kicker">On this chart</div>
+            <p class="chart-read-lead">{{ chart_read.lead }}</p>
+        </div>
+        {% endif %}
+{% endif %}
 {# ── What worked: strategy rows. The headline number is total return.
    Realized, unrealized, dividends, and premium received open on the row.
    Collected is premium received — not a net result. #}
@@ -1410,22 +1423,7 @@
 
 {# ── All Legs (Open + Closed). The summary is the only "Position Legs"
    heading, and it stays next to If held. #}
-{% if simple_view %}
-<details class="disclosure" id="pd-show-more">
-    <summary><span class="section-header">Show more</span></summary>
-    <div class="disclosure-body">
-        {% if chart_read %}
-        <div class="chart-read mt-3">
-            <div class="chart-read-kicker">On this chart</div>
-            <p class="chart-read-lead">{{ chart_read.lead }}</p>
-        </div>
-        {% endif %}
-{% endif %}
 {% include "_held_to_expiry.html" %}
-{% if simple_view %}
-    </div>
-</details>
-{% endif %}
 <p class="pd-kicker">Details</p>
 {% if current_positions or trade_outcomes %}
 <details class="pd-fold" id="pd-legs">
@@ -1866,6 +1864,10 @@
 </details>
 {% endif %}
 
+{% if simple_view %}
+    </div>
+</details>
+{% endif %}
 
 <div class="ht-share-modal" id="htShareModal" hidden>
     <div class="ht-share-panel" role="dialog" aria-labelledby="htShareTitle">

@@ -20,6 +20,8 @@ def test_story_order_is_headline_chart_what_worked_then_details():
     assert legs < by_type < raw < matrix
     assert PAGE.count('{% include "_story_summary.html" %}') == 1
     assert PAGE.count('{% include "_held_to_expiry.html" %}') == 1
+    show_more = PAGE.find('id="pd-show-more"')
+    assert 0 < show_more < worked
     assert PAGE.count('id="pd-matrix"') == 1
 
 
