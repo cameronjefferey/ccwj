@@ -892,6 +892,8 @@
             <input type="hidden" name="brokerage_order_id" value="{{ order.brokerage_order_id }}">
             <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel</button>
         </form>
+        {% elif order.status == 'cancel_requested' %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ scoped_url('position_detail', symbol=symbol) }}">Refresh</a>
         {% endif %}
     </div>
     {% endfor %}

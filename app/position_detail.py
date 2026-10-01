@@ -1547,9 +1547,11 @@ def _compute_breakdown_by_type(
 
     div_total = 0.0
     div_count = 0
-    # Admin (`tenant_scope is None`) must run the query unscoped so
-    # `_tenant_sql_and(None)` returns an empty filter and the admin sees
-    # every tenant's data — same precedent as the rest of the position page.
+    # Admin (`tenant_scope is None`) must run the query. The unscoped
+    # predicate drops known Alpaca Paper tenants and otherwise returns
+    # every real tenant — same precedent as the rest of the position page.
+    # A paper-id lookup miss leaves the filter empty so the admin still
+    # sees the book.
     # Pre-fix the `is not None` guard short-circuited admin browsers and
     # `breakdown_rows.Dividends.total = 0` then OVERRODE the correctly-
     # computed Hero `dividend_income` (line ~3216 sync block) with $0,

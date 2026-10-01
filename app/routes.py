@@ -923,8 +923,10 @@ def _apply_group_scope(base_ids, user_id):
 def _real_book_scope(ids, user_id):
     """Keep paper out of a mixed or all-accounts book. Paper-only stays.
 
-    Admin unscoped (``None``) is unchanged. A DB miss leaves the ids alone
-    so a Postgres hiccup cannot blank every page.
+    Admin unscoped (``None``) stays ``None`` here. ``tenant_sql_and(None)``
+    and ``filter_df_by_tenant_ids(..., None)`` drop known paper tenants
+    on that path. A DB miss leaves the ids alone so a Postgres hiccup
+    cannot blank every page.
     """
     if ids is None or not user_id:
         return ids

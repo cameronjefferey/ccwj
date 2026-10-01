@@ -13,6 +13,7 @@ from app.paper_accounts import (
     drop_paper_from_mixed_book,
     is_paper_row,
     paper_display_label,
+    paper_scope_note,
     position_link_symbol,
 )
 from app.paper_practice import (
@@ -76,6 +77,40 @@ def test_mixed_book_drops_paper_and_paper_only_stays():
     ) == ["snaptrade:real"]
     assert drop_paper_from_mixed_book(["snaptrade:paper"], rows) == ["snaptrade:paper"]
     assert drop_paper_from_mixed_book(None, rows) is None
+
+
+def test_unscoped_read_excludes_paper_tenants():
+    import pandas as pd
+
+    from app.tenant_scope import filter_df_by_tenant_ids, tenant_sql_and, tenant_sql_filter
+
+    paper = ["snaptrade:paper"]
+    frame = pd.DataFrame({
+        "tenant_id": ["snaptrade:real", "snaptrade:paper"],
+        "x": [1, 2],
+    })
+    with patch("app.paper_accounts.all_paper_tenant_ids", return_value=paper):
+        sql = tenant_sql_and(None)
+        assert "NOT IN" in sql
+        assert "snaptrade:paper" in sql
+        where = tenant_sql_filter(None)
+        assert where.startswith("WHERE ")
+        assert "snaptrade:paper" in where
+        kept = filter_df_by_tenant_ids(frame, None)
+        assert list(kept["tenant_id"]) == ["snaptrade:real"]
+        scoped = tenant_sql_and(["snaptrade:paper"])
+        assert "NOT IN" not in scoped
+        assert "snaptrade:paper" in scoped
+        note = paper_scope_note(9, None)
+    assert note["paper_only"] is False
+    assert note["aside_ids"] == ["snaptrade:paper"]
+    with patch("app.paper_accounts.all_paper_tenant_ids", return_value=[]):
+        assert tenant_sql_and(None) == ""
+        assert tenant_sql_filter(None) == ""
+        assert len(filter_df_by_tenant_ids(frame, None)) == 2
+    missing = pd.DataFrame({"x": [1, 2, 3]})
+    with patch("app.paper_accounts.all_paper_tenant_ids", return_value=paper):
+        assert len(filter_df_by_tenant_ids(missing, None)) == 3
 
 
 def test_scope_excludes_paper_unless_the_scope_is_paper():
@@ -223,6 +258,74 @@ def test_cancel_is_paper_only_and_demo_is_blocked():
             cancel.assert_called_once()
             assert cancel.call_args.args[1] == "paper-acct"
             assert cancel.call_args.args[2] == "ord-2"
+            stored = session["paper_practice_orders"]
+            assert stored[0]["status"] == "cancel_requested"
+            assert stored[0]["status_label"] == "Cancel requested"
+            assert stored[0]["cancelable"] is False
+
+
+def test_cancel_refetch_uses_the_status_snaptrade_reports():
+    from app import app
+    from flask import session
+    from flask_login import login_user
+
+    class _Viewer:
+        is_authenticated = True
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "ada"
+
+        def get_id(self):
+            return "7"
+
+    account = {"snaptrade_account_id": "paper-acct", "row": {}}
+    pending = {
+        "brokerage_order_id": "ord-3",
+        "status": "PENDING",
+        "option_symbol": {"underlying_symbol": "SPY"},
+    }
+    cancelled_row = dict(pending, status="CANCELLED")
+    with app.test_request_context(
+        "/practice/orders/cancel",
+        method="POST",
+        data={"brokerage_order_id": "ord-3"},
+    ):
+        login_user(_Viewer())
+        session["paper_practice_orders"] = []
+        with patch("app.paper_practice.alpaca_paper_trade_account", return_value=account), \
+             patch("app.paper_practice.list_account_recent_orders", side_effect=[[pending], [cancelled_row]]), \
+             patch("app.paper_practice.cancel_account_order"):
+            from app.paper_practice import merged_paper_orders, paper_practice_cancel
+            paper_practice_cancel.__wrapped__()
+            assert session["paper_practice_orders"][0]["status"] == "cancelled"
+            with patch("app.paper_practice.list_account_recent_orders", return_value=[cancelled_row]):
+                shown = merged_paper_orders(7)
+            assert shown[0]["status"] == "cancelled"
+            assert shown[0]["cancelable"] is False
+
+    with app.test_request_context("/practice"):
+        login_user(_Viewer())
+        session["paper_practice_orders"] = [{
+            "brokerage_order_id": "ord-4",
+            "status": "cancel_requested",
+            "status_label": "Cancel requested",
+            "cancelable": False,
+            "symbol": "SPY",
+            "sentence": "Sold the SPY call.",
+        }]
+        with patch("app.paper_practice.alpaca_paper_trade_account", return_value=account), \
+             patch("app.paper_practice.list_account_recent_orders", return_value=[{
+                 "brokerage_order_id": "ord-4",
+                 "status": "PENDING",
+                 "option_symbol": {"underlying_symbol": "SPY"},
+             }]):
+            from app.paper_practice import merged_paper_orders
+            shown = merged_paper_orders(7)
+    assert shown[0]["status"] == "cancel_requested"
+    assert shown[0]["status_label"] == "Cancel requested"
+    assert shown[0]["cancelable"] is False
+    assert shown[0]["sentence"] == "Sold the SPY call."
 
 
 def test_order_status_buckets():

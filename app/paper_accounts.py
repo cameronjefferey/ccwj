@@ -8,6 +8,7 @@ never from that slug and never by merging tenants across users.
 from __future__ import annotations
 
 import logging
+import os
 
 _log = logging.getLogger(__name__)
 
@@ -58,11 +59,62 @@ def paper_display_label(row) -> str | None:
     return PAPER_LABEL
 
 
+def all_paper_tenant_ids() -> list[str]:
+    """Every Alpaca Paper ``tenant_id``. Empty when the lookup cannot run.
+
+    Admin unscoped reads (``tenant_ids is None``) use this list to keep
+    paper out of real totals. A database miss returns ``[]`` so that
+    read stays unscoped instead of blanking the page.
+    """
+    g = None
+    in_request = False
+    try:
+        from flask import g as flask_g
+        from flask import has_request_context
+
+        in_request = bool(has_request_context())
+        if in_request:
+            g = flask_g
+    except Exception:
+        g = None
+        in_request = False
+    if in_request and g is not None and hasattr(g, "_all_paper_tenant_ids"):
+        return list(g._all_paper_tenant_ids)
+    ids = _load_paper_tenant_ids()
+    if in_request and g is not None:
+        g._all_paper_tenant_ids = list(ids)
+    return list(ids)
+
+
+def _load_paper_tenant_ids() -> list[str]:
+    if os.environ.get("HAPPYTRADER_SKIP_DB_INIT") == "1":
+        return []
+    try:
+        from app.db import fetch_all
+
+        rows = fetch_all(
+            "SELECT tenant_id, account_name, broker_label, display_nickname "
+            "FROM broker_tenants "
+            "WHERE connection_status IN ('active', 'disconnected')"
+        ) or []
+    except Exception as exc:
+        _log.warning("paper tenant lookup failed: %s", exc)
+        return []
+    out = []
+    for row in rows:
+        tid = row.get("tenant_id")
+        if tid and is_paper_row(row):
+            out.append(tid)
+    return out
+
+
 def drop_paper_from_mixed_book(ids, rows_by_id):
     """Drop paper from a mixed book. A paper-only set stays paper.
 
-    ``None`` is the admin unscoped bypass and is left alone. Ids we cannot
-    classify stay in the result so a lookup miss does not blank the page.
+    ``None`` is the admin unscoped bypass and is left alone here. The SQL
+    and DataFrame filters drop known paper tenants on that path. Ids we
+    cannot classify stay in the result so a lookup miss does not blank
+    the page.
     """
     if ids is None:
         return None
@@ -76,9 +128,17 @@ def drop_paper_from_mixed_book(ids, rows_by_id):
 
 
 def paper_scope_note(user_id, scoped_ids) -> dict:
-    """Whether this scope is the paper book, and which paper ids were left out."""
+    """Whether this scope is the paper book, and which paper ids were left out.
+
+    ``scoped_ids is None`` is the unscoped real book (admin). Paper ids
+    sit beside that total instead of inside it.
+    """
     empty = {"paper_only": False, "aside_ids": []}
-    if not user_id or scoped_ids is None:
+    if scoped_ids is None:
+        if not user_id:
+            return empty
+        return {"paper_only": False, "aside_ids": list(all_paper_tenant_ids())}
+    if not user_id:
         return empty
     try:
         from app.models import get_broker_tenants_for_user

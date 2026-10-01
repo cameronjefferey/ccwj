@@ -188,7 +188,9 @@ callers don't break.
 
 Alpaca Paper accounts stay out of the real total, allocation, and
 account count. A mixed book drops them; a paper-only `?tenants=` scope
-keeps them. Overview shows that paper value beside the real total,
+keeps them. An unscoped admin read (`tenant_ids` None) also drops known
+paper tenants from real totals; a lookup miss leaves that read unscoped.
+Overview shows that paper value beside the real total,
 labeled Paper, with a link that opens just the paper book.
 
 The page reads in one order: the headline (session date, account value, the

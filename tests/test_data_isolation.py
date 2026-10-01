@@ -530,7 +530,7 @@ class TestBigQueryFrameTenantFilter:
         assert len(out) == 0
 
     def test_filter_none_means_admin_no_filter(self):
-        """None means admin → no filter (rule documents this explicitly)."""
+        """None means admin. With no known paper tenants the frame stays."""
         import pandas as pd
 
         from app.routes import _filter_df_by_tenant_ids
@@ -563,6 +563,7 @@ class TestTenantSqlFilter:
         assert _tenant_sql_and([]) == "AND 1 = 0"
 
     def test_none_tenant_list_emits_no_filter(self):
+        """No known paper tenants → the unscoped admin predicate stays empty."""
         from app.routes import _tenant_sql_filter, _tenant_sql_and
 
         assert _tenant_sql_filter(None) == ""

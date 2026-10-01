@@ -1032,6 +1032,7 @@ def _status_label(bucket: str, raw: str) -> str:
         "open": "Open",
         "filled": "Filled",
         "cancelled": "Cancelled",
+        "cancel_requested": "Cancel requested",
         "rejected": "Rejected",
         "expired": "Expired",
     }
@@ -1148,6 +1149,14 @@ def merged_paper_orders(user_id) -> list[dict]:
             if not broker.get("symbol"):
                 broker["symbol"] = local.get("symbol") or ""
                 broker["link_symbol"] = position_link_symbol(broker["symbol"])
+            # A still-open broker row must not hide a cancel we already sent.
+            if (
+                str(local.get("status") or "") == "cancel_requested"
+                and broker.get("status") == "open"
+            ):
+                broker["status"] = "cancel_requested"
+                broker["status_label"] = local.get("status_label") or "Cancel requested"
+                broker["cancelable"] = False
             continue
         row = dict(local)
         row["status"] = row.get("status") or "open"
@@ -1488,14 +1497,54 @@ def paper_practice_cancel():
         _log.exception("Paper cancel failed for user_id=%s: %s", current_user.id, exc)
         flash("The paper account did not cancel that order.", "danger")
         return redirect(url_for("paper_practice"))
+    reported = _refetch_order_status(
+        current_user.id, account["snaptrade_account_id"], order_id,
+    )
+    if reported and reported.get("status") != "open":
+        bucket = reported["status"]
+        label = reported.get("status_label") or _status_label(bucket, "")
+    else:
+        bucket = "cancel_requested"
+        label = "Cancel requested"
     updated = []
+    found = False
     for item in _session_orders():
         if str(item.get("brokerage_order_id") or "") == order_id:
             item = dict(item)
-            item["status"] = "cancelled"
-            item["status_label"] = "Cancelled"
+            item["status"] = bucket
+            item["status_label"] = label
             item["cancelable"] = False
+            found = True
         updated.append(item)
-    session[ORDERS_KEY] = updated
-    flash("Cancel sent to the paper account.", "success")
+    if not found:
+        updated.insert(0, {
+            "brokerage_order_id": order_id,
+            "status": bucket,
+            "status_label": label,
+            "cancelable": False,
+            "symbol": (reported or {}).get("symbol") or "",
+            "link_symbol": (reported or {}).get("link_symbol") or "",
+        })
+    session[ORDERS_KEY] = updated[:20]
+    if bucket == "cancel_requested":
+        flash(
+            "Cancel requested. Refresh to see when the paper account reports it.",
+            "success",
+        )
+    else:
+        flash("Cancel sent to the paper account.", "success")
     return redirect(url_for("paper_practice"))
+
+
+def _refetch_order_status(user_id, account_id, order_id) -> dict | None:
+    """One read after cancel. None when the order is missing or the read failed."""
+    try:
+        live = list_account_recent_orders(user_id, account_id) or []
+    except Exception as exc:
+        _log.warning("paper cancel refetch failed: %s", exc)
+        return None
+    for raw in live:
+        item = normalize_broker_order(raw)
+        if item and item.get("brokerage_order_id") == order_id:
+            return item
+    return None

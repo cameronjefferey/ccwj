@@ -96,6 +96,7 @@
     .pp-order .pp-status { font-variant-numeric: tabular-nums; font-weight: 650; }
     .pp-order .is-open { color: var(--ht-ink); }
     .pp-order .is-filled { color: var(--gain, #28c08a); }
+    .pp-order .is-cancel_requested { color: var(--ht-muted); }
     .pp-order .is-cancelled,
     .pp-order .is-rejected,
     .pp-order .is-expired { color: var(--loss, #f0556d); }
@@ -438,6 +439,8 @@
                             <input type="hidden" name="brokerage_order_id" value="{{ order.brokerage_order_id }}">
                             <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel</button>
                         </form>
+                        {% elif order.status == 'cancel_requested' %}
+                        <a class="btn btn-outline-secondary btn-sm" href="{{ scoped_url('paper_practice') }}">Refresh</a>
                         {% endif %}
                     </div>
                 </div>
