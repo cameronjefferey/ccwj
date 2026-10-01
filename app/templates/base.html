@@ -88,11 +88,9 @@
             color-scheme: dark;
             --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
             --font-mono: "JetBrains Mono", ui-monospace, monospace;
-            /* One gain, one loss. Every P&L color on the site reads these.
-               --color-positive / --color-negative and the position-page
+            /* --color-positive / --color-negative and the position-page
                --pd-gain / --pd-loss names are aliases of the same pair. */
-            --gain: #28c08a;
-            --loss: #f0556d;
+            {% include "_gain_loss_tokens.html" %}
             --color-positive: var(--gain);
             --color-negative: var(--loss);
             --pd-gain: var(--gain);

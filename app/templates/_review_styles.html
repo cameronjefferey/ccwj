@@ -33,17 +33,19 @@
     }
     .ov-top {
         display: grid;
-        grid-template-columns: minmax(160px, 1.15fr) repeat(3, minmax(0, 1fr));
-        gap: .85rem 1.5rem; align-items: start;
+        /* The value column is wider so a 2.75rem figure such as
+           -$1,234,567 still fits once the cqi clamp hits its cap. */
+        grid-template-columns: minmax(0, 1.85fr) repeat(3, minmax(0, 1fr));
+        gap: .85rem 1.25rem; align-items: start;
     }
     .ov-top > div { min-width: 0; container-type: inline-size; }
     .ov-k { font-size: .8rem; color: rgba(255,255,255,.55); margin-bottom: .2rem; }
     /* Big headline figures never break mid-number. Inside a hero column
-       the size tracks that column (cqi), so a value like $1,062,900 stays
-       inside it from a phone width through a tablet, with room for a
-       slightly longer figure such as -$1,234,567. The 2.15rem cap is
-       what a wide column uses once cqi would grow past it. The vw
-       clamp is only the fallback for a figure that is not in the grid.
+       the size tracks that column (cqi) up to 2.75rem (44px), which is
+       the desktop size at 1280 and 1440. 13.5cqi is the largest factor
+       that still keeps a 12-character figure such as -$1,234,567 inside
+       the column when the cap has not bound. The vw clamp is only the
+       fallback for a figure that is not in the grid.
        .ov-sub is the smaller line under a figure: it wraps on word
        boundaries so a long caption stays inside the column. */
     .ov-big, .ov-pct {
@@ -52,15 +54,12 @@
         word-break: normal;
     }
     .ov-big {
-        font-size: clamp(1.05rem, 4.4vw, 2.15rem);
+        font-size: clamp(1.05rem, 5.2vw, 2.75rem);
         font-weight: 750; letter-spacing: -.02em; line-height: 1.05;
         font-variant-numeric: tabular-nums;
     }
-    /* 13.5cqi / 2.15rem leaves room for a 12-character figure such as
-       -$1,234,567. 18cqi / 2.75rem filled 89–94% of the column with
-       $1,062,900 and spilled the longer one. */
     .ov-top .ov-big:not(.ov-invest) {
-        font-size: clamp(1.05rem, 13.5cqi, 2.15rem);
+        font-size: clamp(1.05rem, 13.5cqi, 2.75rem);
     }
     .ov-invest { font-size: clamp(1rem, 4.2vw, 1.65rem); }
     .ov-pct {
@@ -296,7 +295,9 @@
        amounts of different widths share a common edge. */
     .snapshot-table {
         display: grid;
-        grid-template-columns: minmax(128px, 1.25fr) minmax(112px, 1fr) minmax(7.5rem, 1.1fr) repeat(3, minmax(68px, .9fr));
+        /* Value is max-content so a dollar amount is never clipped.
+           Labels in the other columns wrap; the number stays whole. */
+        grid-template-columns: minmax(0, 1.15fr) minmax(6.5rem, .9fr) max-content repeat(3, minmax(4.25rem, .8fr));
         gap: 0;
         align-items: stretch;
     }
@@ -310,6 +311,9 @@
     .snapshot-table-row > div {
         padding: .65rem .6rem .65rem 0;
         border-bottom: 1px solid var(--ht-line);
+    }
+    .snapshot-table-head > div:first-child,
+    .snapshot-table-row > div:first-child {
         min-width: 0;
     }
     .snapshot-table-head > div:not(:first-child),
@@ -337,12 +341,9 @@
     .snapshot-table .acct-meta { font-size: .68rem; color: var(--ht-muted); margin-top: .1rem; }
     .snapshot-table-row.total .acct-name { color: var(--ht-ink); }
     .snapshot-table .snap-cell-val {
-        font-weight: 700; font-size: .92rem; line-height: 1.15;
+        font-weight: 700; font-size: .98rem; line-height: 1.15;
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 100%;
     }
     /* Same size as other rows so the Total dollars share the column edge. */
     .snapshot-table .snap-cell-pct {

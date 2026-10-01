@@ -17,7 +17,8 @@ EXEMPT = {
     "admin_feedback.html",
 }
 
-# Canonical pair, defined only on the :root lines in base.html.
+# Canonical pair. The hexes live only in this partial.
+TOKEN_PARTIAL = ROOT / "templates" / "_gain_loss_tokens.html"
 TOKEN_HEXES = ("#28c08a", "#f0556d")
 
 # Other greens and reds that used to mean P&L, status, or a second gain/loss.
@@ -70,9 +71,25 @@ def _sources():
 
 
 def test_gain_and_loss_tokens_are_defined_once():
+    partial = TOKEN_PARTIAL.read_text()
+    assert partial.count("--gain: #28c08a") == 1
+    assert partial.count("--loss: #f0556d") == 1
     base = (ROOT / "templates" / "base.html").read_text()
-    assert base.count("--gain: #28c08a") == 1
-    assert base.count("--loss: #f0556d") == 1
+    auth = (ROOT / "templates" / "_auth_styles.html").read_text()
+    assert '{% include "_gain_loss_tokens.html" %}' in base
+    assert '{% include "_gain_loss_tokens.html" %}' in auth
+    assert "--gain: #28c08a" not in base
+    assert "--loss: #f0556d" not in base
+    assert "--gain: #28c08a" not in auth
+    for name in (
+        "login.html",
+        "signup.html",
+        "forgot_password.html",
+        "reset_password.html",
+        "unsubscribed.html",
+    ):
+        page = (ROOT / "templates" / name).read_text()
+        assert '{% include "_auth_styles.html" %}' in page
     assert "--color-positive: var(--gain)" in base
     assert "--color-negative: var(--loss)" in base
     assert "--pd-gain: var(--gain)" in base
@@ -85,22 +102,13 @@ def test_gain_and_loss_tokens_are_defined_once():
 
 
 def test_no_hardcoded_gain_loss_hexes_outside_the_token():
-    base = ROOT / "templates" / "base.html"
     offenders = []
     for path in _sources():
         text = path.read_text(errors="replace").lower()
         for banned in BANNED:
             if banned.lower() in text:
                 offenders.append(f"{path}: {banned}")
-        if path == base:
-            # The two token lines are the only allowed copies of the pair.
-            stripped = "\n".join(
-                line for line in text.splitlines()
-                if "--gain:" not in line and "--loss:" not in line
-            )
-            for hex_code in TOKEN_HEXES:
-                if hex_code in stripped:
-                    offenders.append(f"{path}: {hex_code} outside token line")
+        if path == TOKEN_PARTIAL:
             continue
         for hex_code in TOKEN_HEXES:
             if hex_code in text:
