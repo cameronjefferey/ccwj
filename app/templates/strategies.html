@@ -142,13 +142,31 @@
             text-align: left;
             flex: 0 0 42%;
         }
+        .strat-page table.ht-stack > tbody > tr > td > .strat-figure {
+            min-width: 0;
+            flex: 1 1 0;
+            text-align: right;
+        }
     }
     @media (min-width: 768px) {
         #stratType, #stratAcct { table-layout: fixed; width: 100%; min-width: 0; }
         #stratType th, #stratType td, #stratAcct th, #stratAcct td {
             white-space: normal; overflow: visible; overflow-wrap: anywhere; vertical-align: top;
         }
-        #stratType td.strat-money, #stratAcct td.strat-money { white-space: nowrap; overflow-wrap: normal; }
+        #stratAcct td.strat-money { white-space: nowrap; overflow-wrap: normal; }
+        #stratType td.strat-money { white-space: normal; overflow-wrap: normal; }
+    }
+    /* Dollars stay one figure. The group-count suffix sits on the next
+       line and wraps on spaces, so a long "(100 groups; 23 open)" does
+       not run past the cell. */
+    #stratType td.strat-money .strat-amt { white-space: nowrap; }
+    #stratType td.strat-money .strat-suffix {
+        display: block;
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: normal;
+        font-weight: 400;
+        margin-top: .12rem;
     }
 </style>
 {% endblock %}
@@ -247,6 +265,9 @@
         <div>
             <div class="ov-k">{{ term('Win rate') }}</div>
             <div class="ov-big ov-invest">{% if book.wr is not none %}{{ "%.0f"|format(book.wr) }}%{% else %}&mdash;{% endif %}</div>
+            {% if selected_strategy and focus_strategy and focus_strategy.win_rate is not none %}
+            <div class="ov-sub">{{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L</div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -397,8 +418,10 @@
                     <tr>
                         <td data-label="Type"><strong>{{ r.type }}</strong></td>
                         <td data-label="Total return" class="text-end strat-money {{ 'text-positive' if r.total >= 0 else 'text-negative' }} fw-semibold">
-                            {{ money(r.total, 2, true) }}
-                            {% if r.suffix %}<span class="text-muted fw-normal ms-1 small">{{ r.suffix }}</span>{% endif %}
+                            <span class="strat-figure">
+                                <span class="strat-amt">{{ money(r.total, 2, true) }}</span>
+                                {% if r.suffix %}<span class="strat-suffix text-muted fw-normal small">{{ r.suffix }}</span>{% endif %}
+                            </span>
                         </td>
                         <td data-label="Realized" class="text-end strat-money {{ 'text-positive' if r.realized >= 0 else 'text-negative' }}">
                             {{ money(r.realized, 2, true) }}

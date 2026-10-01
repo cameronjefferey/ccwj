@@ -44,6 +44,9 @@ def test_phone_rows_stack_with_labels_and_desktop_columns_are_not_clipped():
     assert "text-overflow: ellipsis" not in PAGE
     assert "display: flex !important" in PAGE
     assert "table-layout: fixed" in PAGE
+    assert 'class="sec-name"' in PAGE
+    assert "overflow-wrap: break-word" in PAGE
+    assert "word-break: normal" in PAGE
 
 
 def test_account_picker_stays_in_the_page_header():
