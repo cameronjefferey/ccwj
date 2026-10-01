@@ -56,10 +56,16 @@ def test_benchmark_rows_match_account_stack_on_a_phone():
     assert '[data-bs-theme="dark"] .snapshot-table .snapshot-table-row.benchmark > div' in phone
     assert "background: transparent" in phone
     assert "text-align: left" in phone
+    # (0,3,1) so it beats the desktop (0,2,1) right-align on every row.
+    rule = phone.split(
+        ".snapshot-table .snapshot-table-row > div:not(:first-child)", 1
+    )[1].split("}", 1)[0]
+    assert "text-align: left" in rule
     desktop = STYLES.split("@media (max-width: 720px)", 1)[0]
     assert ".snapshot-table-row > div:not(:first-child)" in desktop
     assert "text-align: right" in desktop
     assert ".snapshot-table-row.benchmark > div" in desktop
+    assert ".snapshot-table .snapshot-table-row > div:not(:first-child)" not in desktop
 
 
 def test_today_story_order_keeps_since_last_looked_off_overview():

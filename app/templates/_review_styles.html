@@ -355,6 +355,13 @@
             text-align: left;
             min-width: 0;
         }
+        /* Desktop `.snapshot-table-row > div:not(:first-child)` is
+           (0,2,1) and beats the rule above. Prefixing .snapshot-table
+           makes this (0,3,1), so every row — account, Total, benchmark —
+           left-aligns on a phone. */
+        .snapshot-table .snapshot-table-row > div:not(:first-child) {
+            text-align: left;
+        }
         .snapshot-table-row > div:first-child { grid-column: 1 / -1; }
         .snapshot-table-row > div:empty { display: none; }
         .snapshot-table-row > div[data-label]::before {
