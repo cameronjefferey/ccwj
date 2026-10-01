@@ -11,9 +11,9 @@
      1. Headline           — session date, account value, today / week
      2. What happened      — fills and notable moves, one section
      3. Accounts           — per-account close / vs prior / week / month
-     4. Secondary          — building history, radar, execution review,
-                             daily change, performance, trades this week.
-                             Collapsed until opened.
+     4. Daily change       — open heatmap, still filled by /overview/below
+     5. Secondary          — building history, radar, execution review,
+                             performance, trades this week. Collapsed.
    ════════════════════════════════════════════════════════════════════════ #}
 
 {% block head %}
@@ -471,6 +471,14 @@
 </div>
 {% endif %}
 
+{# Daily change is the last open section. The lazy fragment still owns
+   the markup; this slot is where that fetch places it. A full render
+   includes the section here so it is in the document on first paint. #}
+{% if overview_below_deferred %}
+<div id="ht-overview-daily" class="ov-below-slot"></div>
+{% else %}
+{% include "_overview_daily.html" %}
+{% endif %}
 
 {% if building_history %}
 <details class="disclosure" id="ov-building">
@@ -530,13 +538,37 @@
         .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
         .then(function (html) {
             var visible = (html || "").replace(/<!--[\s\S]*?-->/g, "").trim();
-            if (!visible) { el.remove(); return; }
+            if (!visible) {
+                el.remove();
+                var empty = document.getElementById("ht-overview-daily");
+                if (empty) empty.remove();
+                return;
+            }
             el.outerHTML = html;
+            placeOverviewDaily();
         })
         .catch(function () {
             if (el) el.remove();
+            var empty = document.getElementById("ht-overview-daily");
+            if (empty) empty.remove();
         });
 })();
+function placeOverviewDaily() {
+    var daily = document.getElementById("ov-daily");
+    var slot = document.getElementById("ht-overview-daily");
+    if (slot && daily) slot.replaceWith(daily);
+    else if (slot) slot.remove();
+    if (!daily) return;
+    // A canvas measured while its parent was a closed disclosure stays at
+    // width 0. This section is open; resize any chart that landed with it.
+    requestAnimationFrame(function () {
+        if (!window.Chart || !Chart.getChart) return;
+        daily.querySelectorAll("canvas").forEach(function (canvas) {
+            var chart = Chart.getChart(canvas);
+            if (chart) chart.resize();
+        });
+    });
+}
 </script>
 {% else %}
 {% include "_overview_below.html" %}
