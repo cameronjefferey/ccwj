@@ -189,9 +189,9 @@
 {% elif not sector_rows %}
 <div class="sec-empty">
     <strong>No sector breakdown yet.</strong>
-    <p class="mb-0 mt-2">Once your trades come in and we tag the symbols, you'll see your performance broken out by sector and subsector.</p>
+    <p class="mb-0 mt-2">Sector tags appear after trades land and symbols are classified. If you just connected, the first sync is still landing.</p>
     <div class="mt-3 d-flex flex-wrap gap-2 justify-content-center">
-        <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" class="btn btn-primary btn-sm">Connect your broker</a>
+        <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-primary btn-sm">Check sync status</a>
         <a href="{{ url_for('upload') }}" class="btn btn-outline-primary btn-sm">Upload trade history</a>
     </div>
 </div>

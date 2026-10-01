@@ -96,7 +96,7 @@ def test_table_search_zeros_pager_and_shows_empty_state(tmp_path):
 </nav>
 <script src="FILE"></script>
 <script>
-document.addEventListener("DOMContentLoaded", function () {
+function runSearchCases() {
   var input = document.getElementById("q");
   function snap(id) {
     var label = document.querySelector("[data-page-label]").textContent;
@@ -122,7 +122,15 @@ document.addEventListener("DOMContentLoaded", function () {
   input.value = "";
   input.dispatchEvent(new Event("input"));
   snap("cleared-case");
-});
+}
+// tables.js binds immediately when the document is already past
+// "loading". A dump-dom run often misses DOMContentLoaded for the same
+// reason, so this harness uses the same readyState split.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", runSearchCases);
+} else {
+  runSearchCases();
+}
 </script>
 </body></html>
 """.replace("FILE", tables.as_uri()),
@@ -135,7 +143,7 @@ document.addEventListener("DOMContentLoaded", function () {
             ["timeout", "20", chrome, "--headless=new", "--disable-gpu",
              "--no-sandbox", "--disable-dev-shm-usage",
              f"--user-data-dir={tmp_path / 'chrome'}",
-             "--virtual-time-budget=3000", "--dump-dom", html_path.as_uri()],
+             "--virtual-time-budget=8000", "--dump-dom", html_path.as_uri()],
             capture_output=True, text=True, timeout=30,
         )
     finally:

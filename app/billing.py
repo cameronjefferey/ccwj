@@ -252,6 +252,46 @@ def ai_addon_dev_unlock() -> bool:
     return _env("AI_ADDON_DEV_UNLOCK") == "1"
 
 
+# Stripe's default HTTP client waits 80s. That outlives a useful web
+# request and can pin a worker. 20s is enough for Checkout / Portal /
+# webhook signature reads; a slower call fails and the route already
+# handles Stripe errors.
+_STRIPE_HTTP_TIMEOUT = 20
+
+
+def _bound_stripe_http(stripe_sdk):
+    """Install a timeout-bounded HTTP client once per process.
+
+    Does not change which Stripe methods we call. If this SDK build has
+    no Requests/HTTPX client we recognize, leave its default in place
+    and log — checkout must not 500 because a timeout helper moved.
+    """
+    if getattr(stripe_sdk, "_ht_http_timeout", None) == _STRIPE_HTTP_TIMEOUT:
+        return
+    import importlib
+
+    client_cls = None
+    for mod_name in ("stripe.http_client", "stripe._http_client"):
+        try:
+            mod = importlib.import_module(mod_name)
+        except ImportError:
+            continue
+        client_cls = getattr(mod, "RequestsClient", None) or getattr(mod, "HTTPXClient", None)
+        if client_cls is not None:
+            break
+    if client_cls is None:
+        _log.warning("Stripe HTTP client has no timeout hook; leaving the SDK default")
+        return
+    try:
+        stripe_sdk.default_http_client = client_cls(timeout=_STRIPE_HTTP_TIMEOUT)
+    except TypeError:
+        stripe_sdk.default_http_client = client_cls()
+        http = stripe_sdk.default_http_client
+        if hasattr(http, "_timeout"):
+            http._timeout = _STRIPE_HTTP_TIMEOUT
+    stripe_sdk._ht_http_timeout = _STRIPE_HTTP_TIMEOUT
+
+
 def _stripe():
     """Configured Stripe client, or None when the secret is missing / the
     SDK is not installed. Pro checkout still gates on ``stripe_enabled()``
@@ -265,6 +305,10 @@ def _stripe():
         _log.error("Stripe is configured but the stripe package is not installed")
         return None
     stripe_sdk.api_key = _env("STRIPE_SECRET_KEY")
+    try:
+        _bound_stripe_http(stripe_sdk)
+    except Exception as exc:
+        _log.warning("Stripe timeout setup skipped: %s", exc)
     return stripe_sdk
 
 

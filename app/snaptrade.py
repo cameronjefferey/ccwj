@@ -300,6 +300,53 @@ def snaptrade_enabled() -> bool:
         return False
 
 
+# Per HTTP call, not per sync. urllib3 treats timeout=None as "wait
+# forever", and the SDK's request() default is None — a stalled broker
+# call then holds a gunicorn worker until the 120s worker kill. Connect
+# is short; read covers a slow activities page without capping a
+# multi-account sync (each page is its own call).
+_SNAPTRADE_HTTP_TIMEOUT = (10, 45)
+
+
+def _apply_snaptrade_timeout(client):
+    """Give every SDK call a connect/read timeout when the caller omitted one.
+
+    The generated client passes ``timeout`` through to urllib3. Wrapping
+    ``api_client.request`` leaves endpoint choice, signatures, and retries
+    alone. Failures here are logged and ignored so a future SDK shape
+    cannot take broker connect down.
+    """
+    seen = set()
+    apis = (
+        "account_information",
+        "api_status",
+        "authentication",
+        "connections",
+        "experimental_endpoints",
+        "options",
+        "reference_data",
+        "trading",
+        "transactions_and_reporting",
+    )
+    for name in apis:
+        api = getattr(client, name, None)
+        api_client = getattr(api, "api_client", None)
+        if api_client is None or id(api_client) in seen:
+            continue
+        seen.add(id(api_client))
+        original = getattr(api_client, "request", None)
+        if not callable(original):
+            continue
+
+        def _request(*args, _orig=original, **kwargs):
+            if kwargs.get("timeout") is None:
+                kwargs["timeout"] = _SNAPTRADE_HTTP_TIMEOUT
+            return _orig(*args, **kwargs)
+
+        api_client.request = _request
+    return len(seen)
+
+
 def _get_snaptrade_client():
     """Lazily build a configured SnapTrade SDK client.
 
@@ -318,10 +365,15 @@ def _get_snaptrade_client():
         _log.warning("snaptrade_client not installed; pip install snaptrade-python-sdk")
         return None
     try:
-        return SnapTrade(consumer_key=consumer_key, client_id=client_id)
+        client = SnapTrade(consumer_key=consumer_key, client_id=client_id)
     except Exception as exc:
         _log.warning("SnapTrade client init failed: %s", exc)
         return None
+    try:
+        _apply_snaptrade_timeout(client)
+    except Exception as exc:
+        _log.warning("SnapTrade timeout wrapper skipped: %s", exc)
+    return client
 
 
 def _unwrap_body(resp):

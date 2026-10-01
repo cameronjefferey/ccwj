@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center py-4">
+    <div class="col-md-6 col-lg-5">
+        <div class="card p-4">
+            <h1 class="section-header">Log out</h1>
+            <p class="text-muted mb-4">This signs you out of HappyTrader on this browser. Your broker connection and history stay where they are.</p>
+            <form method="post" action="{{ url_for('logout') }}" class="d-flex flex-wrap gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary">Log out</button>
+                <a href="{{ url_for('weekly_review') }}" class="btn btn-outline-secondary">Stay signed in</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
