@@ -71,7 +71,8 @@
     .ov-quiet { font-size: .78rem; color: rgba(255,255,255,.4); margin-left: .2rem; }
     @media (max-width: 760px) {
         .ov-top { grid-template-columns: 1fr 1fr; }
-        .ov-big { font-size: 1.55rem; }
+        .ov-big { font-size: 1.45rem; overflow-wrap: anywhere; max-width: 100%; }
+        .review-hero { overflow-wrap: anywhere; }
     }
     .review-hero .hero-book-label {
         font-size: .68rem; text-transform: uppercase; letter-spacing: 1.1px;
@@ -112,11 +113,44 @@
        work in only one theme. */
     .review-section {
         background: var(--ht-surface);
-        border-radius: 16px;
-        box-shadow: 0 1px 8px rgba(0,0,0,.05);
-        padding: 1.5rem 1.75rem;
-        margin-bottom: 1.25rem;
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        box-shadow: none;
+        padding: 1.25rem 1.35rem;
+        margin-bottom: 1rem;
+        min-width: 0;
+        max-width: 100%;
     }
+    .ov-page { min-width: 0; max-width: 100%; }
+    .ov-block { min-width: 0; }
+    .ov-block + .ov-block {
+        margin-top: 1.15rem; padding-top: 1rem;
+        border-top: 1px solid var(--ht-line);
+    }
+    .ov-head h3 {
+        margin: 0; font-size: 1rem; font-weight: 650;
+        letter-spacing: -.01em; color: var(--ht-ink);
+    }
+    .disclosure-body { padding: 0 1.1rem 1rem; min-width: 0; }
+    body .ov-page .disclosure > summary .section-header { margin: 0; }
+    .disclosure-note { font-size: .82rem; color: var(--ht-muted); font-weight: 500; }
+    .ov-note { font-size: .85rem; color: var(--ht-muted); margin: 0 0 .75rem; max-width: 62ch; }
+    .ov-subk { font-size: .78rem; font-weight: 650; color: var(--ht-label); margin: 0 0 .4rem; }
+    .ov-facts {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: .75rem 1rem; margin: .75rem 0;
+    }
+    .ov-fact-v { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ht-ink); }
+    .ov-fact-l { font-size: .78rem; color: var(--ht-ink); }
+    .ov-fact-d { font-size: .75rem; color: var(--ht-muted); }
+    .ov-below-slot { min-height: 0; }
+    details.disclosure.since-card { padding: 0; }
+    body .ov-page .badge.ov-div-chip {
+        color: var(--gain) !important;
+        background: color-mix(in srgb, var(--gain) 14%, transparent) !important;
+        border-color: color-mix(in srgb, var(--gain) 45%, var(--ht-line)) !important;
+    }
+    .ov-ev-when { display: none; }
     .section-label {
         font-size: .72rem;
         text-transform: uppercase;
@@ -303,19 +337,38 @@
     .snap-bench { font-size: .68rem; color: var(--ht-faint); margin-top: .25rem; font-style: italic; }
     .snap-bench span { font-style: normal; }
     @media (max-width: 720px) {
-        .snapshot-table { grid-template-columns: minmax(110px, 1.2fr) repeat(3, minmax(0, 1fr)); }
-        .snapshot-table .snap-col-month,
-        .snapshot-table .snap-col-share { display: none; }
-    }
-    @media (max-width: 480px) {
-        /* Phone: every horizontal pixel counts — tighter gutters so the
-           value + vs-yesterday + vs-1w columns fit unclipped at 390px. */
+        /* Stack every snapshot column. Share of book and 1 month stay
+           on screen; they are labeled from data-label instead of hidden. */
         .snapshot-section { padding: .9rem .75rem; }
-        .snapshot-table { grid-template-columns: minmax(88px, 1.1fr) repeat(3, minmax(0, 1fr)); }
-        .snapshot-table-head > div { padding-right: .35rem; font-size: .62rem; }
-        .snapshot-table-row > div { padding-right: .35rem; }
-        .snapshot-table .acct-name { font-size: .82rem; }
-        .snapshot-table .snap-cell-val { font-size: .88rem; }
+        .snapshot-table { display: flex; flex-direction: column; gap: .85rem; }
+        .snapshot-table-head { display: none; }
+        .snapshot-table-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: .35rem .75rem;
+            padding-bottom: .75rem;
+            border-bottom: 1px solid var(--ht-line);
+        }
+        .snapshot-table-row > div {
+            border-bottom: none;
+            padding: 0;
+            text-align: left;
+            min-width: 0;
+        }
+        .snapshot-table-row > div:first-child { grid-column: 1 / -1; }
+        .snapshot-table-row > div:empty { display: none; }
+        .snapshot-table-row > div[data-label]::before {
+            content: attr(data-label);
+            display: block;
+            font-size: .68rem;
+            font-weight: 600;
+            color: var(--ht-muted);
+            margin-bottom: .1rem;
+        }
+        .snapshot-table-row > div:first-child::before { display: none; }
+        .snapshot-table .share-cell { justify-content: flex-start; }
+        .snapshot-table .acct-name { font-size: .9rem; }
+        .snapshot-table .snap-cell-val { font-size: .95rem; }
     }
 
     /* ── Today's movers ── */
@@ -408,15 +461,13 @@
         background: #1e3a8a; color: #fff !important; text-decoration: none;
     }
     .watch-ef:hover { background: #1d4ed8; color: #fff; text-decoration: none; }
-    @media (max-width: 480px) {
-        /* Phone: the subsector chips ("Communication Equipment") were
-           pushing the date + EF pill off the card edge. Moneyness badges
-           (ITM/ATM/OTM) are a signal, not decoration — they stay. */
+    @media (max-width: 640px) {
         .watch-block { padding: .8rem .7rem; }
-        .watch-item { grid-template-columns: 2.6rem 1fr auto; gap: .5rem; }
-        .watch-sym .watch-badge:not(.itm):not(.atm):not(.otm) { display: none; }
+        .watch-item,
+        .watch-item.exec { grid-template-columns: 4.2rem minmax(0, 1fr); gap: .45rem .6rem; }
+        .watch-aux { grid-column: 1 / -1; text-align: left; font-size: .8rem; }
+        .watch-meta { overflow-wrap: anywhere; }
         .watch-ef { font-size: .66rem; padding: .18rem .45rem; }
-        .watch-aux { font-size: .76rem; }
     }
 
     /* ── Today strip (open positions cards) ── */
@@ -434,7 +485,7 @@
         border: 1px solid var(--ht-line);
         transition: all .15s;
     }
-    .strip-card:hover { background: var(--ht-hover); color: inherit; text-decoration: none; border-color: var(--ht-muted); box-shadow: 0 1px 6px rgba(0,0,0,.05); }
+    .strip-card:hover { background: var(--ht-hover); color: inherit; text-decoration: none; border-color: var(--ht-muted); box-shadow: none; }
     .strip-sym { font-weight: 700; font-size: 1rem; color: var(--ht-ink); }
     .strip-price { font-size: .75rem; color: var(--ht-muted); margin-top: .1rem; }
     .strip-pnl { font-size: .95rem; font-weight: 700; margin-top: .35rem; font-variant-numeric: tabular-nums; }
@@ -632,17 +683,26 @@
     .tw-tag-cell.tw-tag-err { background:rgba(220,38,38,.14); }
     [data-bs-theme="dark"] .tw-tag-chip { background:rgba(224,181,106,.16); color:var(--color-mirror-ink); }
     [data-bs-theme="dark"] .tw-tag-x { color:var(--color-mirror-ink); }
-    @media (max-width: 480px) {
-        .tt-table { font-size: .84rem; table-layout: fixed; }
-        .tt-table td { padding: .4rem .3rem; }
-        .tt-table td:first-child { width: 30%; }
-        .tt-table td:last-child { width: 32%; }
-        .tt-muted { word-break: break-all; }
+    @media (max-width: 640px) {
+        .ov-page .tt-table,
+        .ov-page .tt-table tbody { display: block; width: 100%; }
+        .ov-page .tt-table tr {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: .15rem .55rem;
+            padding: .55rem 0;
+            border-bottom: 1px solid var(--ht-line);
+        }
+        .ov-page .tt-table td {
+            display: block; width: auto; border: 0; padding: 0; min-width: 0;
+        }
+        .ov-page .tt-table td:nth-child(3) { grid-column: 1 / -1; }
+        .ov-page .tt-table td:nth-child(5) { grid-column: 1 / -1; }
+        .tt-muted { overflow-wrap: anywhere; }
         .tt-verb { white-space: normal; }
     }
     [data-bs-theme="dark"] .tt-table td { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }
-    [data-bs-theme="dark"] .tt-verb.sell { background: #450a0a; color: var(--loss); }
     [data-bs-theme="dark"] .tt-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
     [data-bs-theme="dark"] .tt-sym { color: var(--ht-ink); }
     [data-bs-theme="dark"] .pill-status.today { background: rgba(96,165,250,.18); color: #93c5fd; }
@@ -705,14 +765,10 @@
         padding: .15rem .65rem; background: var(--ht-surface-2); color: var(--ht-label);
         white-space: nowrap;
     }
-    .ov-pl.gn { background: #e3f3ea; color: var(--gain); }
-    .ov-pl.rd { background: #fbebe9; color: var(--loss); }
+    .ov-pl.gn { background: color-mix(in srgb, var(--gain) 16%, transparent); color: var(--gain); }
+    .ov-pl.rd { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
     .ov-pl.am { background: #2a2118; color: #e8edf7; }
     .ov-pl.in { background: rgba(91,140,255,.14); color: #e8edf7; }
-    [data-bs-theme="dark"] .ov-pl.gn { background: #052e16; color: var(--gain); }
-    [data-bs-theme="dark"] .ov-pl.rd { background: #450a0a; color: var(--loss); }
-    [data-bs-theme="dark"] .ov-pl.am { background: #422006; color: #fcd34d; }
-    [data-bs-theme="dark"] .ov-pl.in { background: #1e1b4b; color: #c4b5fd; }
 
     .snapshot-table .acct-rename { opacity: 0; }
     .snapshot-table-row > div:hover .acct-rename,
@@ -742,12 +798,14 @@
     .ov-mbar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.85); overflow: hidden; }
     .ov-mbar i { display: block; height: 100%; }
     .ov-mover-col.up .ov-mbar i { background: var(--gain); }
-    .ov-mover-col.down .ov-mbar i { background: #c4463a; }
-    [data-bs-theme="dark"] .ov-mover-col.up { background: #052e16; }
-    [data-bs-theme="dark"] .ov-mover-col.down { background: #450a0a; }
-    [data-bs-theme="dark"] .ov-mover-col .mover-row { border-top-color: rgba(255,255,255,.08); }
+    .ov-mover-col.down .ov-mbar i { background: var(--loss); }
+    .ov-mover-col .mover-row { border-top-color: var(--ht-line); }
+    .mover-meta { overflow-wrap: anywhere; }
 
-    .ov-held { text-align: center; font-size: .95rem; }
+    .ov-held {
+        text-align: left; font-size: .9rem; color: var(--ht-muted);
+        margin: 0 0 1rem; padding: 0 .15rem;
+    }
     .ov-held a { color: var(--color-mirror-ink); font-weight: 600; margin-left: .35rem; }
 
     .ov-rad { overflow-x: auto; }
@@ -792,5 +850,25 @@
     @media (max-width: 860px) {
         .ov-big { font-size: 2.15rem; }
         .ov-verdict { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+        .ov-rad { max-width: 100%; overflow-x: hidden; }
+        .ov-tl { min-width: 0; }
+        .ov-days, .ov-bg { display: none; }
+        .ov-lane { display: block; margin-bottom: .85rem; }
+        .ov-lane-grid {
+            display: flex !important;
+            flex-direction: column;
+            gap: .35rem;
+        }
+        .ov-ev {
+            white-space: normal;
+            grid-column: auto !important;
+            grid-row: auto !important;
+            margin: 0;
+        }
+        .ov-ev-when { display: inline; }
+        .ov-ev-when::after { content: " · "; }
+        .since-chip { white-space: normal; }
     }
 </style>

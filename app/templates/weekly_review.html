@@ -6,18 +6,14 @@
    Live / in-session numbers (last-trade, after-hours, calendar-today
    fills) live on /today. The hero labels the last close's move "Today".
 
-   Sections, top to bottom:
+   Story order, top to bottom:
 
-     1. Session hero       — date kicker, Overview, Your book strip
-                             (value / vs prior close / vs 1w / invested)
-     2. Account snapshot   — per-account close / vs prior / week / month
-                             (unfinished session named in the nav strip)
-     3. Session trades     — every fill dated the review session
-     4. Session movers     — $ impact on holdings that session
-     5. Watch list         — earnings, expiring options, projected ex-div
-     6. Daily account Δ    — rolling 12-week heatmap
-     7. Performance by account — summarized scorecard
-     8. Trades this week   — one row per group opened or closed this week
+     1. Headline           — session date, account value, today / week
+     2. What happened      — fills and notable moves, one section
+     3. Accounts           — per-account close / vs prior / week / month
+     4. Secondary          — building history, radar, execution review,
+                             daily change, performance, trades this week.
+                             Collapsed until opened.
    ════════════════════════════════════════════════════════════════════════ #}
 
 {% block head %}
@@ -35,6 +31,7 @@
 </div>
 {% endif %}
 
+<div class="ov-page">
 {# ════════════════════════════════════
    HERO — last completed session
    Date kicker (no page name) · Overview · Your book (four numbers).
@@ -130,153 +127,6 @@
 </div>
 
 {# ════════════════════════════════════
-   FIRST-WEEK FRAMING — new accounts see dashes structurally, not because
-   anything is broken. Say so before they conclude the product is empty.
-   ════════════════════════════════════ #}
-{% if building_history %}
-<div class="review-section" style="background:rgba(91,140,255,.10); border:1px solid #5b8cff; border-radius:12px; padding:1rem 1.25rem;">
-    <div style="display:flex; gap:.75rem; align-items:flex-start;">
-        <div style="font-size:1.4rem; line-height:1;">&#128200;</div>
-        <div style="flex:1; min-width:0;">
-            <div style="font-weight:700; color:#e8edf7; font-size:.95rem;">
-                Building your history &mdash; day {{ building_history.day_number }}
-            </div>
-            <div style="color:#8a97b1; font-size:.85rem; margin-top:.25rem;">
-                Your full trade history is already in &mdash; positions, P&amp;L and the breakdowns below
-                are complete from day one. What takes time are the <em>comparisons</em>: HappyTrader
-                snapshots your account value once a day, so vs prior close unlocks tomorrow,
-                the weekly comparison after a week, and the daily G/L calendar fills in one square per
-                trading day. Cells showing &ldquo;&mdash;&rdquo; aren&rsquo;t broken, they&rsquo;re waiting on history.
-            </div>
-            {% if building_history.facts %}
-            <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-top:.75rem; padding-top:.75rem; border-top:1px solid #243049;">
-                {% for f in building_history.facts %}
-                <div>
-                    <div style="font-size:1.05rem; font-weight:700; color:#e8edf7;">{{ f.value }}</div>
-                    <div style="font-size:.68rem; color:#8a97b1; text-transform:uppercase; letter-spacing:.05em; font-weight:600;">{{ f.label }}</div>
-                    <div style="font-size:.75rem; color:#8a97b1;">{{ f.detail }}</div>
-                </div>
-                {% endfor %}
-            </div>
-            <div style="margin-top:.6rem;">
-                <a href="{{ scoped_url('trader_story') }}" style="font-size:.8rem; color:#a8b8ff; font-weight:600; text-decoration:none;">
-                    See your full trader profile &rarr;
-                </a>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
-   ACCOUNT SNAPSHOT
-   ════════════════════════════════════ #}
-{% if today_snapshots_by_account %}
-{% macro money_cell(comp, dash="—") %}
-    {% if comp and comp.has_data and comp.delta_pct is not none %}
-    {% set pos = comp.delta_pct >= 0 %}
-    <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
-        {{ "+" if pos else "" }}{{ "%.2f"|format(comp.delta_pct) }}%
-    </div>
-    {% if comp.delta is not none %}
-    <div class="snap-cell-pct {% if comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-        {% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
-    </div>
-    {% endif %}
-    {% elif comp and comp.has_data and comp.delta is not none %}
-    {% set pos = comp.delta >= 0 %}
-    <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
-        {% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
-    </div>
-    {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
-{% endmacro %}
-{% macro bench_pct_cell(pct) %}
-    {% if pct is not none %}
-    <div class="snap-cell-val {% if pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-        {{ "+" if pct >= 0 else "" }}{{ "%.2f"|format(pct) }}%
-    </div>
-    {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
-{% endmacro %}
-{% macro share_cell(value, total) %}
-    {% if value is not none and total %}
-    {% set share = (value / total * 100) %}
-    <div class="share-cell">
-        <span class="share-track"><span style="width: {{ [share, 100]|min }}%"></span></span>
-        <span class="share-pct">{{ "%.1f"|format(share) }}%</span>
-    </div>
-    {% endif %}
-{% endmacro %}
-{% set _share_total = (today_snapshots_total.today_value if today_snapshots_total and today_snapshots_total.today_value else none) %}
-<div class="review-section snapshot-section">
-    <div class="snapshot-table">
-        <div class="snapshot-table-head">
-            <div>Account</div>
-            <div class="snap-col-share">Share of book</div>
-            <div>Value</div>
-            <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date.strftime('%A, %b %-d') }}{% endif %}">Today</div>
-            <div class="snap-col-week">1 week</div>
-            <div class="snap-col-month">1 month</div>
-        </div>
-        {% for snap in today_snapshots_by_account %}
-        <div class="snapshot-table-row">
-            <div>
-                <div class="acct-name-row">
-                {% if snap.tenant_id %}
-                <a href="{{ scoped_url('accounts', tenant=snap.tenant_id, tenants=none) }}" class="acct-name acct-link">{{ snap.account | account_label(snap.tenant_id) }}</a>
-                {% else %}
-                <div class="acct-name">{{ snap.account | account_label(snap.tenant_id) }}</div>
-                {% endif %}
-                {% if account_rename_urls is defined and snap.tenant_id and snap.tenant_id in account_rename_urls %}
-                <a class="acct-rename" href="{{ account_rename_urls[snap.tenant_id] }}">rename</a>
-                {% endif %}
-                </div>
-            </div>
-            <div class="snap-col-share">{{ share_cell(snap.today_value, _share_total or snap.today_value) }}</div>
-            <div>
-                {% if snap.today_value is not none %}
-                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(snap.today_value) }}{% endif %}</div>
-                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
-            </div>
-            <div>{{ money_cell(snap.comparisons.day) }}</div>
-            <div class="snap-col-week">{{ money_cell(snap.comparisons.week) }}</div>
-            <div class="snap-col-month">{{ money_cell(snap.comparisons.month) }}</div>
-        </div>
-        {% endfor %}
-        {% if today_snapshots_total and today_snapshots_total.accounts_count > 1 %}
-        <div class="snapshot-table-row total">
-            <div>
-                <div class="acct-name">Total</div>
-                <div class="acct-meta">{{ today_snapshots_total.accounts_count }} account{{ "s" if today_snapshots_total.accounts_count != 1 }}</div>
-            </div>
-            <div class="snap-col-share"></div>
-            <div>
-                {% if today_snapshots_total.today_value is not none %}
-                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(today_snapshots_total.today_value) }}{% endif %}</div>
-                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
-            </div>
-            <div>{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
-            <div class="snap-col-week">{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
-            <div class="snap-col-month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
-        </div>
-        {% endif %}
-        {% for b in benchmark_snapshot or [] %}
-        <div class="snapshot-table-row benchmark">
-            <div>
-                <div class="acct-name">{{ b.label }} index</div>
-            </div>
-            <div class="snap-col-share"></div>
-            <div></div>
-            <div>{{ bench_pct_cell(b.day_pct) }}</div>
-            <div class="snap-col-week">{{ bench_pct_cell(b.week_pct) }}</div>
-            <div class="snap-col-month">{{ bench_pct_cell(b.month_pct) }}</div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-{# ════════════════════════════════════
    TRADES TODAY — every fill dated today (adds/trims, not just new groups).
    "Trades this week" below only lists groups that opened or closed this
    ISO week, so a trim on a long-held position never appeared there.
@@ -284,21 +134,27 @@
 {% set _tt = trades_today or {} %}
 {% set _tt_day = review_date or today %}
 {% set _tt_weekday = _tt_day and _tt_day.weekday() < 5 %}
-{% if (_tt.has_any or _tt_weekday) or (today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends)) or today_strip %}
-<h3 class="ov-grp">Now</h3>
-{% endif %}
-{% if _tt.has_any or _tt_weekday %}
-<div class="review-section">
+{% set _mv_on = today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
+{% if (_tt.has_any or _tt_weekday) or _mv_on %}
+<div class="review-section" id="ov-happened">
     <div class="ov-head">
         <div>
-            <h2>Trades, {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'last close' }}</h2>
+            <h2 class="section-header">What happened</h2>
+            <p>Fills dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }}, and the largest moves on shares you held.</p>
+        </div>
+    </div>
+{% if _tt.has_any or _tt_weekday %}
+<div class="ov-block">
+    <div class="ov-head">
+        <div>
+            <h3>Trades, {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'last close' }}</h3>
             <p>Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }}, including adds and trims.</p>
         </div>
         {% if _tt.count %}
         <div class="ov-pills-lite">
             <span class="ov-pl">{{ _tt.count }} fill{{ 's' if _tt.count != 1 }}</span>
             {% if _tt.symbols %}<span class="ov-pl">{{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}</span>{% endif %}
-            {% if _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' }}">{{ "+" if _tt.net_gl > 0 else "−" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} G/L</span>{% endif %}
+            {% if _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' }}">{{ "+" if _tt.net_gl > 0 else "−" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} realized</span>{% endif %}
         </div>
         {% endif %}
     </div>
@@ -321,7 +177,7 @@
                     <div class="tt-muted">{{ t.account | account_label(t.tenant_id) }}</div>
                     {% endif %}
                 </td>
-                <td class="tt-muted d-none d-sm-table-cell">
+                <td class="tt-muted">
                     {% if t.is_roll %}
                     {% if t.successful %}
                     <span class="tt-roll-ok">Met the roll{% if t.success_bits %} · {{ t.success_bits|join(' + ') }}{% endif %}</span>
@@ -349,7 +205,7 @@
     <div class="tt-empty">No fills recorded for {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }}.</div>
     {% endif %}
     {% if _tt.cash %}
-    <div class="tt-muted" style="margin-top:.85rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; font-size:.7rem;">Cash &amp; fees</div>
+    <div class="ov-subk">Cash and fees</div>
     <table class="tt-table">
         {% for c in _tt.cash %}
         <tr>
@@ -384,15 +240,16 @@
 </div>
 {% endif %}
 
+
 {# ════════════════════════════════════
    SESSION MOVERS — biggest stock $ impact on holdings (last close)
    ════════════════════════════════════ #}
 {% if today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
 {% set tm_day = today_movers.as_of_label or (review_date.strftime('%a %b %-d') if review_date else 'last close') %}
-<div class="review-section">
+<div class="ov-block">
     <div class="ov-head">
         <div>
-            <h2>Biggest movers, {{ tm_day }}</h2>
+            <h3>Biggest movers, {{ tm_day }}</h3>
             <p>Your holdings. Top 5 up and top 5 down by dollar impact.</p>
         </div>
         {% if today_movers.combined_impact %}
@@ -480,15 +337,14 @@
     </details>
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">
-        <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
+        <div class="ov-subk">
             Dividends paid {{ tm_day }}
-            <span style="color:var(--gain);">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+            <span class="pos">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
-            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
-               data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
-               style="font-size:.75rem; padding:.45em .8em; background:color-mix(in srgb, var(--gain) 16%, transparent); color:#e8edf7; border:1px solid var(--gain);">
+            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge ov-div-chip text-decoration-none"
+               data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
             </a>
             {% endfor %}
@@ -497,7 +353,156 @@
     {% endif %}
 </div>
 {% endif %}
+</div>
+{% endif %}
 
+
+
+{# ════════════════════════════════════
+   ACCOUNT SNAPSHOT
+   ════════════════════════════════════ #}
+{% if today_snapshots_by_account %}
+{% macro money_cell(comp, dash="—") %}
+    {% if comp and comp.has_data and comp.delta_pct is not none %}
+    {% set pos = comp.delta_pct >= 0 %}
+    <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
+        {{ "+" if pos else "" }}{{ "%.2f"|format(comp.delta_pct) }}%
+    </div>
+    {% if comp.delta is not none %}
+    <div class="snap-cell-pct {% if comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
+        {% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+    </div>
+    {% endif %}
+    {% elif comp and comp.has_data and comp.delta is not none %}
+    {% set pos = comp.delta >= 0 %}
+    <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
+        {% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+    </div>
+    {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
+{% endmacro %}
+{% macro bench_pct_cell(pct) %}
+    {% if pct is not none %}
+    <div class="snap-cell-val {% if pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
+        {{ "+" if pct >= 0 else "" }}{{ "%.2f"|format(pct) }}%
+    </div>
+    {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
+{% endmacro %}
+{% macro share_cell(value, total) %}
+    {% if value is not none and total %}
+    {% set share = (value / total * 100) %}
+    <div class="share-cell">
+        <span class="share-track"><span style="width: {{ [share, 100]|min }}%"></span></span>
+        <span class="share-pct">{{ "%.1f"|format(share) }}%</span>
+    </div>
+    {% endif %}
+{% endmacro %}
+{% set _share_total = (today_snapshots_total.today_value if today_snapshots_total and today_snapshots_total.today_value else none) %}
+<div class="review-section snapshot-section" id="ov-accounts">
+    <div class="ov-head">
+        <div>
+            <h2 class="section-header">Accounts</h2>
+            <p>Value at the close, and the change versus the prior session, one week, and one month.</p>
+        </div>
+    </div>
+    <div class="snapshot-table">
+        <div class="snapshot-table-head">
+            <div>Account</div>
+            <div class="snap-col-share">Share of book</div>
+            <div>Value</div>
+            <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date.strftime('%A, %b %-d') }}{% endif %}">Today</div>
+            <div class="snap-col-week">1 week</div>
+            <div class="snap-col-month">1 month</div>
+        </div>
+        {% for snap in today_snapshots_by_account %}
+        <div class="snapshot-table-row">
+            <div data-label="Account">
+                <div class="acct-name-row">
+                {% if snap.tenant_id %}
+                <a href="{{ scoped_url('accounts', tenant=snap.tenant_id, tenants=none) }}" class="acct-name acct-link">{{ snap.account | account_label(snap.tenant_id) }}</a>
+                {% else %}
+                <div class="acct-name">{{ snap.account | account_label(snap.tenant_id) }}</div>
+                {% endif %}
+                {% if account_rename_urls is defined and snap.tenant_id and snap.tenant_id in account_rename_urls %}
+                <a class="acct-rename" href="{{ account_rename_urls[snap.tenant_id] }}">rename</a>
+                {% endif %}
+                </div>
+            </div>
+            <div class="snap-col-share" data-label="Share of book">{{ share_cell(snap.today_value, _share_total or snap.today_value) }}</div>
+            <div data-label="Value">
+                {% if snap.today_value is not none %}
+                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(snap.today_value) }}{% endif %}</div>
+                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
+            </div>
+            <div data-label="Today">{{ money_cell(snap.comparisons.day) }}</div>
+            <div class="snap-col-week" data-label="1 week">{{ money_cell(snap.comparisons.week) }}</div>
+            <div class="snap-col-month" data-label="1 month">{{ money_cell(snap.comparisons.month) }}</div>
+        </div>
+        {% endfor %}
+        {% if today_snapshots_total and today_snapshots_total.accounts_count > 1 %}
+        <div class="snapshot-table-row total">
+            <div data-label="Account">
+                <div class="acct-name">Total</div>
+                <div class="acct-meta">{{ today_snapshots_total.accounts_count }} account{{ "s" if today_snapshots_total.accounts_count != 1 }}</div>
+            </div>
+            <div class="snap-col-share" data-label="Share of book"></div>
+            <div data-label="Value">
+                {% if today_snapshots_total.today_value is not none %}
+                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(today_snapshots_total.today_value) }}{% endif %}</div>
+                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
+            </div>
+            <div data-label="Today">{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
+            <div class="snap-col-week" data-label="1 week">{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
+            <div class="snap-col-month" data-label="1 month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
+        </div>
+        {% endif %}
+        {% for b in benchmark_snapshot or [] %}
+        <div class="snapshot-table-row benchmark">
+            <div data-label="Account">
+                <div class="acct-name">{{ b.label }} index</div>
+            </div>
+            <div class="snap-col-share" data-label="Share of book"></div>
+            <div data-label="Value"></div>
+            <div data-label="Today">{{ bench_pct_cell(b.day_pct) }}</div>
+            <div class="snap-col-week" data-label="1 week">{{ bench_pct_cell(b.week_pct) }}</div>
+            <div class="snap-col-month" data-label="1 month">{{ bench_pct_cell(b.month_pct) }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+
+{% if building_history %}
+<details class="disclosure" id="ov-building">
+    <summary>
+        <span class="section-header">Building your history</span>
+        <span class="disclosure-note">Day {{ building_history.day_number }}</span>
+    </summary>
+    <div class="disclosure-body">
+        <p class="ov-note">
+            Your full trade history is already in &mdash; positions, P&amp;L and the breakdowns
+            are complete from day one. What takes time are the <em>comparisons</em>: HappyTrader
+            snapshots your account value once a day, so vs prior close unlocks tomorrow,
+            the weekly comparison after a week, and the daily change calendar fills in one square per
+            trading day. Cells showing &ldquo;&mdash;&rdquo; aren&rsquo;t broken, they&rsquo;re waiting on history.
+        </p>
+        {% if building_history.facts %}
+        <div class="ov-facts">
+            {% for f in building_history.facts %}
+            <div>
+                <div class="ov-fact-v">{{ f.value }}</div>
+                <div class="ov-fact-l">{{ f.label }}</div>
+                <div class="ov-fact-d">{{ f.detail }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="ov-note">
+            <a href="{{ scoped_url('trader_story') }}">See your full trader profile &rarr;</a>
+        </p>
+        {% endif %}
+    </div>
+</details>
+{% endif %}
 
 {# Mirror teaser uses today_strip (core batch) — keep it above the deferred fold. #}
 {# ════════════════════════════════════
@@ -507,15 +512,15 @@
    queries on the hottest page.
    ════════════════════════════════════ #}
 {% if today_strip %}
-<div class="review-section ov-held">
+<p class="ov-held">
     {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
     <a href="{{ scoped_url('trader_story', account=selected_account, tenant=selected_tenant, tenants=selected_tenants) }}">See your trader profile &rarr;</a>
-</div>
+</p>
 {% endif %}
 
 {% if overview_below_deferred %}
-<div id="ht-overview-below" class="review-section" aria-busy="true">
-    <div class="sk-shimmer" style="height:120px;border-radius:12px;background:#e9edf2;position:relative;overflow:hidden;"></div>
+<div id="ht-overview-below" class="ov-below-slot" aria-busy="true">
+    <p class="ov-held">Loading the rest of this close…</p>
 </div>
 <script>
 (function () {
@@ -524,10 +529,12 @@
     fetch({{ overview_below_url|tojson }}, { credentials: "same-origin" })
         .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
         .then(function (html) {
+            var visible = (html || "").replace(/<!--[\s\S]*?-->/g, "").trim();
+            if (!visible) { el.remove(); return; }
             el.outerHTML = html;
         })
         .catch(function () {
-            if (el) el.innerHTML = "";
+            if (el) el.remove();
         });
 })();
 </script>
@@ -554,4 +561,5 @@ document.addEventListener("click", function (e) {
 {% include "_leg_tag_js.html" %}
 {% include "_position_peek.html" %}
 
+</div>
 {% endblock %}

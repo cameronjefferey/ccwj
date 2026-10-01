@@ -1,17 +1,17 @@
 {% if since_last_looked %}
 {% set sll = since_last_looked %}
-<div class="since-card">
-    <div class="since-kicker">
-        <span class="since-dot"></span>
-        Since you last looked
-    </div>
-    <p class="since-headline">
-        {% if sll.is_first_visit %}
-        What changed yesterday
-        {% else %}
-        What changed since {{ sll.time_ago }}
-        {% endif %}
-    </p>
+<details class="disclosure since-card">
+    <summary>
+        <span class="section-header">Since you last looked</span>
+        <span class="disclosure-note">
+            {% if sll.is_first_visit %}
+            What changed yesterday
+            {% else %}
+            What changed since {{ sll.time_ago }}
+            {% endif %}
+        </span>
+    </summary>
+    <div class="disclosure-body">
 
     {% if sll.moves %}
     <div class="since-row">
@@ -83,5 +83,6 @@
         {% endfor %}
     </div>
     {% endif %}
-</div>
+    </div>
+</details>
 {% endif %}
