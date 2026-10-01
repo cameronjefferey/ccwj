@@ -566,6 +566,11 @@ def test_confirmed_place_sends_the_shown_limit_and_does_not_refresh(monkeypatch)
         "sentence": "Buy 1 AAPL call at $230, about today's price.",
         "side": "call",
         "symbol": "AAPL",
+        "strike": 230,
+        "expiry": "2026-10-16",
+        "expiry_label": "Weekly",
+        "limit_label": "$1.16",
+        "cost_label": "$116.00",
         "account_id": "learner-acct",
     }
     with app.test_request_context(
