@@ -990,12 +990,20 @@ def _user_scoped_filter(user_id, accounts, *, col="account", user_col="user_id")
     Returns ``""`` when both filters are skipped (admin), else a string
     starting with ``WHERE``.
     """
+    from app.demo_guard import numeric_user_id
+
     user_col = _qualified_user_col(col, user_col)
     parts = []
     if user_id is not None:
         # OR (user_id IS NULL) is the Stage 0/1 leniency leg — drops in
         # Stage 4 once all legacy rows are backfilled.
-        parts.append(f"({user_col} = {int(user_id)} OR {user_col} IS NULL)")
+        # A demo session id is not a users.id. Fail closed rather than
+        # interpolating it or dropping the predicate.
+        uid = numeric_user_id(user_id)
+        if uid is None:
+            parts.append("1 = 0")
+        else:
+            parts.append(f"({user_col} = {uid} OR {user_col} IS NULL)")
     if accounts is None:
         pass
     elif not accounts:
@@ -1016,10 +1024,16 @@ def _user_scoped_and(user_id, accounts, *, col="account", user_col="user_id"):
     joining onto an existing ``WHERE``. Returns ``""`` when both filters
     are skipped.
     """
+    from app.demo_guard import numeric_user_id
+
     user_col = _qualified_user_col(col, user_col)
     parts = []
     if user_id is not None:
-        parts.append(f"({user_col} = {int(user_id)} OR {user_col} IS NULL)")
+        uid = numeric_user_id(user_id)
+        if uid is None:
+            parts.append("1 = 0")
+        else:
+            parts.append(f"({user_col} = {uid} OR {user_col} IS NULL)")
     if accounts is None:
         pass
     elif not accounts:
@@ -1053,8 +1067,12 @@ def _filter_df_by_user(df, user_id, accounts, *, col="account", user_col="user_i
 
     out = df
 
+    if user_id is not None:
+        from app.demo_guard import numeric_user_id
+        target = numeric_user_id(user_id)
+        if target is None:
+            return out.iloc[0:0]
     if user_id is not None and user_col in out.columns:
-        target = int(user_id)
 
         def _norm_uid(v):
             if v is None:

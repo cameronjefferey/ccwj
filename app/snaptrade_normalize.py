@@ -49,6 +49,17 @@ from app.upload import (
 _log = logging.getLogger(__name__)
 
 
+def _seed_user_id(user_id):
+    """Informational seed ``user_id``. Blank for a demo session or non-numeric id.
+
+    ``int("demo-session:…")`` raises. A blank stamp does not invent a
+    Postgres id on the raw row.
+    """
+    from app.demo_guard import numeric_user_id
+    uid = numeric_user_id(user_id)
+    return "" if uid is None else uid
+
+
 # ---------------------------------------------------------------------------
 # Crypto detection
 # ---------------------------------------------------------------------------
@@ -505,7 +516,7 @@ def activities_to_history_df(
     from quantity.
     """
     rows: list[dict] = []
-    user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
 
     for act in activities or ():
@@ -672,7 +683,7 @@ def orders_to_history_df(
     Amount).
     """
     rows: list[dict] = []
-    user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
 
     for order in orders or ():
@@ -834,7 +845,7 @@ def positions_to_current_df(
     seed's ``Price`` column for option rows.
     """
     rows: list[dict] = []
-    user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
 
     for pos in positions or ():
@@ -1012,7 +1023,7 @@ def balances_to_balance_df(
     ``positions_to_current_df`` — used to compute total cost basis when
     SnapTrade doesn't report it on the summary.
     """
-    user_id_int = int(user_id) if user_id is not None and user_id != "" else ""
+    user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
 
     cash = 0.0

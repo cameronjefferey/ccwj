@@ -144,7 +144,11 @@ def profile():
                 )
                 return redirect(url_for("profile", tab="security"))
             existing = User.get_by_email(email)
-            if existing is not None and int(existing.id) != int(current_user.id):
+            from app.demo_guard import numeric_user_id
+            viewer_id = numeric_user_id(getattr(current_user, "id", None))
+            if viewer_id is None or (
+                existing is not None and int(existing.id) != viewer_id
+            ):
                 flash(
                     "That email is already in use on another account.",
                     "danger",

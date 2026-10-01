@@ -637,16 +637,20 @@ login_manager.init_app(app)
 
 @login_manager.user_loader
 def load_user(user_id):
-    from app.demo_guard import DemoSessionUser, is_ephemeral_demo_id, token_from_id
+    from app.demo_guard import (
+        DemoSessionUser,
+        is_ephemeral_demo_id,
+        numeric_user_id,
+        token_from_id,
+    )
     if is_ephemeral_demo_id(user_id):
         token = token_from_id(user_id)
         if not token:
             return None
         return DemoSessionUser(token)
     from app.models import User
-    try:
-        uid = int(user_id)
-    except (TypeError, ValueError):
+    uid = numeric_user_id(user_id)
+    if uid is None:
         return None
     try:
         return User.get_by_id(uid)
