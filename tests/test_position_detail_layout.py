@@ -24,8 +24,11 @@ def test_story_order_is_headline_chart_what_worked_then_details():
 
 
 def test_gain_and_loss_are_one_pair_and_cards_share_one_style():
-    assert "--pd-gain: var(--color-positive, #28c08a)" in PAGE
-    assert "--pd-loss: var(--color-negative, #f0556d)" in PAGE
+    assert "--pd-gain: var(--gain)" in PAGE
+    assert "--pd-loss: var(--loss)" in PAGE
+    base = Path("app/templates/base.html").read_text()
+    assert "--gain: #28c08a" in base
+    assert "--loss: #f0556d" in base
     assert "box-shadow: none" in PAGE
     for old in ("#1b7a3d", "#5cb85c", "#e8a838", "#c9302c", "#198754", "rgba(25,135,84"):
         assert old not in PAGE

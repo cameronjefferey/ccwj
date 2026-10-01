@@ -771,7 +771,7 @@
         if (hasData(summaryData.dividends)) {
             datasets.push({
                 label: 'Dividends', _key: 'dividends', data: summaryData.dividends.slice(),
-                borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.08)',
+                borderColor: htColor('--gain'), backgroundColor: 'color-mix(in srgb, ' + htColor('--gain') + ' 8%, transparent)',
                 fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2
             });
         }

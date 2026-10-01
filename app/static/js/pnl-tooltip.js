@@ -6,12 +6,21 @@
  * for numbers, a 240px dark card that flips so it stays inside the chart.
  */
 (function (global) {
-  var COLORS = {
-    buy: "#1d4ed8",
-    sell: "#f0556d",
-    lifecycle: "#6d28d9",
-    income: "#28c08a"
-  };
+  function token(name) {
+    try {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    } catch (e) {
+      return "";
+    }
+  }
+  function markerColors() {
+    return {
+      buy: "#1d4ed8",
+      sell: token("--loss"),
+      lifecycle: "#6d28d9",
+      income: token("--gain")
+    };
+  }
   var MONTHS = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
@@ -191,7 +200,7 @@
   }
 
   global.htPnlTooltip = {
-    colors: COLORS,
+    get colors() { return markerColors(); },
     formatDate: formatDate,
     formatRunningNumber: formatRunningNumber,
     wholeDollars: wholeDollars,

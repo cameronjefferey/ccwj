@@ -35,8 +35,13 @@ The product is a dark desk. There is no light theme.
 | `--ht-muted` | `#8a97b1` | Labels (public muted is `#7d8aa3`) |
 | `--ht-mint` | `#5b8cff` | Wordmark tail and primary button. Purply-blue, not the P&L green. Text on it is `#0a0e17` |
 | `--color-mirror` / `--ht-blue` | `#5b8cff` | Selected nav, links, focus |
-| `--color-positive` | `#28c08a` | Gains only |
-| `--color-negative` | `#f0556d` | Losses only |
+| `--gain` / `--color-positive` / `--pd-gain` | `#28c08a` | Gains only. One definition (`--gain`); the other names are aliases |
+| `--loss` / `--color-negative` / `--pd-loss` | `#f0556d` | Losses only. One definition (`--loss`); the other names are aliases |
+
+Shared building blocks (same ones the position page uses): flat `.card`
+(12px, hairline, no shadow), outline `.badge` (Open uses the accent),
+`.section-header`, `.tile`, `.disclosure`. Pages should use the tokens
+instead of another green or red for P&L.
 
 Wordmark is lowercase `happy` in `#ffffff` plus `trader` in mint, weight 650, tracking `-0.03em`.
 

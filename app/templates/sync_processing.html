@@ -83,7 +83,7 @@
     .ob-section { display: none; }
     .ob-section.is-active { display: block; }
     .ob-section-error {
-        color: #f0556d; font-size: .85rem; margin-top: .5rem;
+        color: var(--loss); font-size: .85rem; margin-top: .5rem;
         min-height: 1.2em;
     }
     .ob-thanks {
@@ -662,7 +662,7 @@
 </script>
 <style>
     .ob-question.is-missing {
-        border-left: 3px solid #dc3545;
+        border-left: 3px solid var(--loss);
         background: #2a1216;
         padding: .6rem .75rem;
         margin-left: -.75rem;
@@ -671,7 +671,7 @@
         transition: background .3s ease;
     }
     .ob-q-error {
-        color: #f0556d;
+        color: var(--loss);
         font-size: .85rem;
         margin: .45rem 0 0;
     }

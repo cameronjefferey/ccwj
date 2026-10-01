@@ -42,7 +42,7 @@
         text-transform: uppercase; letter-spacing: .08em; white-space: nowrap;
         background: rgba(91,140,255,.15); color: #5b8cff;
     }
-    .trend-badge.declining { background: rgba(240,85,109,.14); color: #f0556d; }
+    .trend-badge.declining { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
     .trend-badge.stable { background: rgba(255,255,255,.06); color: #8a97b1; }
     .strat-card-stats { display: flex; gap: 1.25rem; }
     .sc-stat-value {
@@ -59,13 +59,13 @@
     .month-strip { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
     .month-marks { display: flex; align-items: center; gap: 4px; }
     .month-mark { width: 18px; height: 8px; border-radius: 2px; background: #243049; }
-    .month-mark.up { background: #28c08a; }
-    .month-mark.down { background: #f0556d; }
+    .month-mark.up { background: var(--gain); }
+    .month-mark.down { background: var(--loss); }
     .month-latest { font-size: .82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .month-latest-name { color: #8a97b1; margin-right: .35rem; }
     .month-latest-amt { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 600; color: #8a97b1; }
-    .month-latest-amt.up { color: #28c08a; }
-    .month-latest-amt.down { color: #f0556d; }
+    .month-latest-amt.up { color: var(--gain); }
+    .month-latest-amt.down { color: var(--loss); }
 
     /* Focus sections */
     .data-section { background: #121826; border: 1px solid #243049; border-radius: 0.75rem; box-shadow: none; padding: 1.15rem 1.25rem; margin-bottom: 1.25rem; color: #e8edf7; }
@@ -96,8 +96,8 @@
         margin-bottom: .75rem;
         border-left: 4px solid;
     }
-    .obs-card.positive { background: rgba(25,135,84,.06); border-left-color: #198754; color: #28c08a; }
-    .obs-card.negative { background: rgba(220,53,69,.06); border-left-color: #dc3545; color: #f0556d; }
+    .obs-card.positive { background: color-mix(in srgb, var(--gain) 6%, transparent); border-left-color: var(--gain); color: var(--gain); }
+    .obs-card.negative { background: color-mix(in srgb, var(--loss) 6%, transparent); border-left-color: var(--loss); color: var(--loss); }
     .obs-card.neutral  { background: rgba(13,110,253,.06); border-left-color: #0d6efd; color: var(--ht-ink); }
 
     .dte-bar-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid #f3f4f6; }
@@ -105,8 +105,8 @@
     .dte-label { width: 90px; font-size: .82rem; font-weight: 600; flex-shrink: 0; }
     .dte-bar-track { flex: 1; height: 22px; background: #1a2233; border-radius: 4px; overflow: hidden; position: relative; }
     .dte-bar-fill { height: 100%; border-radius: 4px; }
-    .dte-bar-fill.good { background: #198754; }
-    .dte-bar-fill.bad { background: #dc3545; }
+    .dte-bar-fill.good { background: var(--gain); }
+    .dte-bar-fill.bad { background: var(--loss); }
     .dte-bar-fill.mid { background: #94a3b8; }
     .dte-stats { width: 160px; text-align: right; font-size: .8rem; color: var(--ht-muted); flex-shrink: 0; }
 
@@ -574,7 +574,7 @@
             labels: labels,
             datasets: [{
                 data: pnlData,
-                backgroundColor: pnlData.map(v => v >= 0 ? 'rgba(25,135,84,.7)' : 'rgba(220,53,69,.7)'),
+                backgroundColor: pnlData.map(v => v >= 0 ? htColor('--gain') : htColor('--loss')),
                 borderRadius: 3,
                 categoryPercentage: 0.75,
                 barPercentage: 0.85,

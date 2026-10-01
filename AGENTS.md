@@ -1621,6 +1621,11 @@ token list: `docs/VISUAL_BRAND.md`. Short version agents must follow:
 - **Blue `#5b8cff`** is selected nav, links, and focus. Selected nav is
   blue at 15% fill with blue text.
 - **Up `#28c08a` is only a gain. Down `#f0556d` is only a loss.**
+  Those hexes live once, as `--gain` and `--loss` in `base.html`.
+  `--color-positive`, `--color-negative`, `--pd-gain`, and `--pd-loss`
+  are aliases. Shared classes `.section-header`, `.tile`, `.disclosure`,
+  and the flat `.card` / outline `.badge` rules are the same system the
+  position page uses. Strategy swatches stay data colors.
 - **Wordmark:** lowercase `happy` in white plus `trader` in mint, weight
   650, tracking `-0.03em`. No icon, no all-caps.
 - **Strategy swatches are not the brand.** Covered Call / CSP / Wheel

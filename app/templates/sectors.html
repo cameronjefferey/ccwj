@@ -18,8 +18,8 @@
     .ind-kpi  { background: rgba(255,255,255,.08); padding: .7rem .85rem; border-radius: 10px; }
     .ind-kpi .lbl { font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; color: rgba(255,255,255,.55); }
     .ind-kpi .val { font-size: 1.15rem; font-weight: 700; margin-top: .1rem; font-variant-numeric: tabular-nums; }
-    .ind-pos { color: #6ee7b7; }
-    .ind-neg { color: #fca5a5; }
+    .ind-pos { color: var(--gain); }
+    .ind-neg { color: var(--loss); }
 
     .sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
 
@@ -36,8 +36,8 @@
     .sec-card .name { font-size: 1.1rem; font-weight: 700; color: var(--ht-ink); line-height: 1.2; }
     .sec-card .meta { font-size: .72rem; color: var(--ht-muted); margin-top: .15rem; text-transform: uppercase; letter-spacing: .04em; }
     .sec-card .pnl { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
-    .sec-card .pnl.pos { color: #059669; }
-    .sec-card .pnl.neg { color: #f0556d; }
+    .sec-card .pnl.pos { color: var(--gain); }
+    .sec-card .pnl.neg { color: var(--loss); }
     .sec-card .pnl-sub { font-size: .7rem; color: var(--ht-muted); text-align: right; margin-top: .15rem; }
 
     .sec-card .stats {
@@ -53,15 +53,15 @@
     }
     .sec-card .splits .k { color: var(--ht-muted); }
     .sec-card .splits .v { font-weight: 600; color: var(--ht-ink); font-variant-numeric: tabular-nums; text-align: right; }
-    .sec-card .splits .v.neg { color: #f0556d; }
+    .sec-card .splits .v.neg { color: var(--loss); }
 
     .sec-card .extremes { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; font-size: .76rem; }
     .sec-card .extremes .ex { background: #1a2233; border-radius: 8px; padding: .45rem .6rem; }
     .sec-card .extremes .ex .lbl { font-size: .62rem; color: var(--ht-muted); text-transform: uppercase; letter-spacing: .04em; }
     .sec-card .extremes .ex .sym { font-weight: 700; color: var(--ht-ink); }
     .sec-card .extremes .ex .ret { font-variant-numeric: tabular-nums; }
-    .sec-card .extremes .ex .ret.pos { color: #059669; }
-    .sec-card .extremes .ex .ret.neg { color: #f0556d; }
+    .sec-card .extremes .ex .ret.pos { color: var(--gain); }
+    .sec-card .extremes .ex .ret.neg { color: var(--loss); }
 
     .sec-card .actions { display: flex; gap: .5rem; }
     .sec-card .btn-toggle {
@@ -98,8 +98,8 @@
     .ind-row .ind-name a:hover { text-decoration: underline; }
     .ind-row .ind-meta { font-size: .68rem; color: var(--ht-muted); font-weight: 500; margin-top: .1rem; }
     .ind-row .ind-pnl { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .ind-row .ind-pnl.pos { color: #059669; }
-    .ind-row .ind-pnl.neg { color: #f0556d; }
+    .ind-row .ind-pnl.pos { color: var(--gain); }
+    .ind-row .ind-pnl.neg { color: var(--loss); }
     .ind-row .ind-link {
         background: #121826; border: 1px solid #243049; border-radius: 999px;
         padding: .15rem .55rem; font-size: .68rem; font-weight: 600;

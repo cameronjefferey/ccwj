@@ -88,9 +88,15 @@
             color-scheme: dark;
             --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
             --font-mono: "JetBrains Mono", ui-monospace, monospace;
-            /* Up is a gain. Down is a loss. Not success/danger chrome. */
-            --color-positive: #28c08a;
-            --color-negative: #f0556d;
+            /* One gain, one loss. Every P&L color on the site reads these.
+               --color-positive / --color-negative and the position-page
+               --pd-gain / --pd-loss names are aliases of the same pair. */
+            --gain: #28c08a;
+            --loss: #f0556d;
+            --color-positive: var(--gain);
+            --color-negative: var(--loss);
+            --pd-gain: var(--gain);
+            --pd-loss: var(--loss);
             /* App selection and links are blue. Mint is the wordmark
                tail and the primary button only. */
             --color-mirror: #5b8cff;
@@ -879,7 +885,11 @@
         [data-bs-theme="dark"] .session-pill { background: #121826; border-color: #3a3e48; color: #e8edf7; }
         [data-bs-theme="dark"] .session-pill:hover { border-color: #8a97b1; }
         [data-bs-theme="dark"] .session-pill.active { background: #2c2822; color: #ffffff; }
-        [data-bs-theme="dark"] .session-pill.active.session-open { background: rgba(25,135,84,.18); color: #6ee7b7; border-color: #198754; }
+        [data-bs-theme="dark"] .session-pill.active.session-open {
+            background: color-mix(in srgb, var(--ht-blue) 16%, transparent);
+            color: var(--ht-ink);
+            border-color: var(--ht-blue);
+        }
         [data-bs-theme="dark"] .session-pill.active.session-closed { background: #1a2233; color: #e8edf7; border-color: #3a3e48; }
         [data-bs-theme="dark"] .text-muted { color: #8a97b1 !important; }
         [data-bs-theme="dark"] .ht-sticky table thead th { background: #121826; box-shadow: 0 1px 0 #343842; }
@@ -1000,9 +1010,9 @@
         }
         /* Story badges: pastel chips -> translucent on dark. */
         [data-bs-theme="dark"] .story-buy { background: rgba(37,99,235,.2); color: #93c5fd; }
-        [data-bs-theme="dark"] .story-sell { background: rgba(220,38,38,.2); color: #fca5a5; }
+        [data-bs-theme="dark"] .story-sell { background: color-mix(in srgb, var(--loss) 20%, transparent); color: var(--loss); }
         [data-bs-theme="dark"] .story-lifecycle { background: rgba(109,40,217,.22); color: #ddd6fe; }
-        [data-bs-theme="dark"] .story-income { background: rgba(5,150,105,.2); color: #6ee7b7; }
+        [data-bs-theme="dark"] .story-income { background: color-mix(in srgb, var(--gain) 16%, transparent); color: var(--gain); }
         [data-bs-theme="dark"] .story-detail { color: var(--ht-muted); }
         [data-bs-theme="dark"] .story-day { border-bottom-color: #243049; }
         .ht-theme-btn {
@@ -1025,8 +1035,8 @@
             box-shadow: 0 24px 50px -32px rgba(0,0,0,.85);
         }
         body .card:not(.feature-card) { border-radius: 0.75rem; }
-        body .text-success { color: #28c08a !important; }
-        body .text-danger { color: #f0556d !important; }
+        body .text-success { color: var(--gain) !important; }
+        body .text-danger { color: var(--loss) !important; }
         @media (max-width: 767px) {
             .table-sm > :not(caption) > * > * { padding: .35rem .4rem; }
             .table { font-size: .85rem; }
@@ -1106,9 +1116,9 @@
             color: #8a97b1;
         }
         body .sec-card .pnl.pos,
-        body .ew-card .move.pos { color: #28c08a; }
+        body .ew-card .move.pos { color: var(--gain); }
         body .sec-card .pnl.neg,
-        body .ew-card .move.neg { color: #f0556d; }
+        body .ew-card .move.neg { color: var(--loss); }
         body table.fit thead th,
         body table.fit tbody th.strategy,
         body .sym-tab,
@@ -1125,6 +1135,7 @@
         }
         body .sym-tab.active { background: rgba(91,140,255,.15); color: #5b8cff; border-color: #5b8cff; }
     </style>
+    {% include "_design_system.html" %}
     {% if reddit_pixel_id and reddit_pixel_event %}
     <script>
     !function(w,d){if(!w.rdt){var p=w.rdt=function(){p.sendEvent?p.sendEvent.apply(p,arguments):p.callQueue.push(arguments)};p.callQueue=[];var t=d.createElement("script");t.src="https://www.redditstatic.com/ads/pixel.js";t.async=!0;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(t,s)}}(window,document);
@@ -1133,8 +1144,15 @@
     </script>
     {% endif %}
 </head>
-<body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}">
+<body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}">
     <script>
+    window.htColor = function (name) {
+        try {
+            return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        } catch (e) {
+            return '';
+        }
+    };
     window.htMoney = function(n, digits, signed) {
         var v = Number(n);
         if (!isFinite(v)) return '\u2014';

@@ -10,7 +10,7 @@
         font-size: .72rem; font-weight: 600; letter-spacing: .2px;
     }
     .pos-hero .hero-chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .pos-hero .hero-chip .dot.open   { background: #22c55e; }
+    .pos-hero .hero-chip .dot.open   { background: var(--ht-blue); }
     .pos-hero .hero-chip .dot.closed { background: #9ca3af; }
     .pos-hero .hero-chip .dot.mixed  { background: #fbbf24; }
     /* Strategy color badges */
@@ -22,7 +22,7 @@
         color: #fff;
     }
     /* Status badges */
-    .badge-open   { background: #198754; }
+    .badge-open   { background: color-mix(in srgb, var(--ht-blue) 14%, transparent); color: var(--ht-blue); }
     .badge-closed { background: #6c757d; }
     .badge-mixed  { background: #ffc107; color: #000; }
 
@@ -192,10 +192,10 @@
     .pos-numbers .ht-stat-v { font-size: 1.35rem; font-weight: 600; }
     .pos-wl-bar {
         display: flex; height: 4px; border-radius: 999px; overflow: hidden;
-        margin-top: .35rem; background: rgba(240,85,109,.2); max-width: 9rem;
+        margin-top: .35rem; background: color-mix(in srgb, var(--loss) 20%, transparent); max-width: 9rem;
     }
-    .pos-wl-bar span:first-child { background: var(--color-positive); }
-    .pos-wl-bar span:last-child { background: #e7b2ad; }
+    .pos-wl-bar span:first-child { background: var(--gain); }
+    .pos-wl-bar span:last-child { background: var(--loss); }
     .pos-legend { display: flex; gap: .4rem; flex-wrap: wrap; }
     .pos-legend span {
         display: inline-flex; align-items: center; gap: .35rem;
