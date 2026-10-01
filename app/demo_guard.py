@@ -129,6 +129,44 @@ def is_ephemeral_demo_id(value) -> bool:
     )
 
 
+def is_demo_session_id(value) -> bool:
+    """Alias for ``is_ephemeral_demo_id``. Demo Flask-Login ids are not ``users.id``."""
+    return is_ephemeral_demo_id(value)
+
+
+def numeric_user_id(user_id):
+    """Postgres ``users.id``, or None when the value is not a numeric id.
+
+    Public demo sessions use Flask-Login ids ``demo-session:<token>``.
+    ``int()`` on that string raises ``ValueError`` and 500s any page that
+    casts the session id. Reads return an empty result when this is None.
+    Writes must not insert.
+    """
+    if user_id is None or isinstance(user_id, bool):
+        return None
+    if is_ephemeral_demo_id(user_id):
+        return None
+    if isinstance(user_id, int):
+        return user_id
+    if isinstance(user_id, float):
+        if user_id != user_id:
+            return None
+        try:
+            as_int = int(user_id)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if as_int != user_id:
+            return None
+        return as_int
+    text = str(user_id).strip()
+    if not text or is_ephemeral_demo_id(text):
+        return None
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
+
 def token_from_id(value) -> str | None:
     if not is_ephemeral_demo_id(value):
         return None

@@ -1474,31 +1474,25 @@ def _log_foreign_event(event_type, obj):
 
 
 def _user_id_from_session(sess):
+    from app.demo_guard import numeric_user_id
     ref = _get(sess, "client_reference_id")
-    if ref:
-        try:
-            return int(ref)
-        except (TypeError, ValueError):
-            pass
+    uid = numeric_user_id(ref)
+    if uid is not None:
+        return uid
     meta = _get(sess, "metadata") or {}
-    uid = _get(meta, "user_id")
-    if uid:
-        try:
-            return int(uid)
-        except (TypeError, ValueError):
-            pass
+    meta_uid = numeric_user_id(_get(meta, "user_id"))
+    if meta_uid is not None:
+        return meta_uid
     customer_id = _get(sess, "customer")
     return user_id_for_customer(customer_id) if customer_id else None
 
 
 def _user_id_from_subscription(sub):
+    from app.demo_guard import numeric_user_id
     meta = _get(sub, "metadata") or {}
-    uid = _get(meta, "user_id")
-    if uid:
-        try:
-            return int(uid)
-        except (TypeError, ValueError):
-            pass
+    uid = numeric_user_id(_get(meta, "user_id"))
+    if uid is not None:
+        return uid
     customer_id = _get(sub, "customer")
     return user_id_for_customer(customer_id) if customer_id else None
 

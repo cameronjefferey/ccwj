@@ -50,7 +50,12 @@ def resolve_filter_tenant_ids(requested=None):
 
         if not getattr(current_user, "is_authenticated", False):
             return []
-        from app.demo_guard import DEMO_TENANT_ID, is_ephemeral_demo_id, is_ephemeral_demo_user
+        from app.demo_guard import (
+            DEMO_TENANT_ID,
+            is_ephemeral_demo_id,
+            is_ephemeral_demo_user,
+            numeric_user_id,
+        )
         ephemeral = (
             is_ephemeral_demo_user(current_user)
             or is_ephemeral_demo_id(getattr(current_user, "id", None))
@@ -60,7 +65,10 @@ def resolve_filter_tenant_ids(requested=None):
         else:
             if is_admin(getattr(current_user, "username", None)):
                 return None
-            owned = set(get_tenant_ids_for_user(int(current_user.id)) or [])
+            uid = numeric_user_id(getattr(current_user, "id", None))
+            if uid is None:
+                return []
+            owned = set(get_tenant_ids_for_user(uid) or [])
         if requested is None:
             return sorted(owned)
         requested_set = {str(t).strip() for t in requested if t}
