@@ -5,7 +5,9 @@ cash that changed hands, and a running total. Net results are not called
 premium, and the label does not say "collecting".
 """
 
+import subprocess
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 
@@ -17,6 +19,8 @@ from app.chart_tooltip import (
     format_tip_date,
 )
 from app.position_story import build_position_story
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _trades(rows):
@@ -217,3 +221,57 @@ def test_multi_account_tip_carries_the_nickname():
     accts = {t["acct"] for t in marker["tips"]}
     assert accts == {"Cameron 401k", "Sara IRA"}
     assert all(t["label"] == "Bought 10 sh" for t in marker["tips"])
+
+
+def test_browser_tooltip_fill_resolves_marker_colors():
+    """A populated marker must not throw when the browser builds its card."""
+    script = ROOT / "app/static/js/pnl-tooltip.js"
+    subprocess.run(
+        [
+            "node",
+            "-e",
+            r"""
+const fs = require("fs");
+const vm = require("vm");
+
+function element() {
+  return {
+    children: [],
+    style: {},
+    appendChild(child) { this.children.push(child); },
+    replaceChildren() { this.children = []; },
+    setAttribute() {},
+    removeAttribute() {}
+  };
+}
+
+global.window = {};
+global.document = {
+  documentElement: {},
+  createElement: element,
+  createTextNode(text) { return { textContent: text }; }
+};
+global.getComputedStyle = function () {
+  return {
+    getPropertyValue(name) {
+      return name === "--loss" ? "#f0556d" : "#28c08a";
+    }
+  };
+};
+
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const root = element();
+window.htPnlTooltip.fill(root, {
+  when: "May 12",
+  kind: "buy",
+  tips: [{ kind: "sell", label: "Sold call", amt: "\u2212$730", sign: -1 }],
+  total: -730
+});
+if (root.children[1].children[0].style.background !== "#f0556d") {
+  throw new Error("sell marker did not use the loss token");
+}
+""",
+            str(script),
+        ],
+        check=True,
+    )

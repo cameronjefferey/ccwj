@@ -84,6 +84,7 @@
 
   function fill(el, model) {
     el.replaceChildren();
+    var colors = markerColors();
     var date = document.createElement("div");
     date.className = "ht-pnl-tip-date";
     date.textContent = model.when || "";
@@ -95,7 +96,7 @@
       row.className = "ht-pnl-tip-row";
       var dot = document.createElement("span");
       dot.className = "ht-pnl-tip-dot";
-      dot.style.background = COLORS[tip.kind] || COLORS[model.kind] || "#64748b";
+      dot.style.background = colors[tip.kind] || colors[model.kind] || "#64748b";
       var label = document.createElement("span");
       label.className = "ht-pnl-tip-label";
       var text = tip.label || "";
