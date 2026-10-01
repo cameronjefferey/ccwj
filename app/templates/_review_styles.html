@@ -875,20 +875,23 @@
     .ov-ln { display: flex; align-items: center; font-size: .8rem; font-weight: 600; }
     .ov-ev {
         margin: 4px 2px; padding: 3px 5px; border-radius: 8px; border-left: 3px solid;
-        font-size: .74rem; line-height: 1.2; overflow: hidden;
-        z-index: 1; align-self: center; text-decoration: none;
+        font-size: .74rem; line-height: 1.25; overflow: visible;
+        z-index: 1; align-self: start; text-decoration: none;
         min-width: 0; max-width: 100%; box-sizing: border-box;
+        height: auto;
     }
     .ov-ev b, .ov-ev small {
-        display: block; max-width: 100%; overflow: hidden;
-        overflow-wrap: break-word; word-break: normal;
+        display: block; max-width: 100%;
+        white-space: normal;
+        overflow-wrap: normal; word-break: normal; hyphens: none;
     }
     .ov-ev b {
-        font-size: .76rem; white-space: normal;
+        font-size: .76rem; white-space: normal; overflow: hidden;
         display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     }
     .ov-ev small {
-        font-size: .68rem; opacity: .85; white-space: nowrap; text-overflow: ellipsis;
+        font-size: .68rem; opacity: .85; white-space: normal;
+        overflow: visible; text-overflow: clip;
     }
     .ov-ev.er { background: #2a2118; border-color: #e8c07a; color: #e8edf7; }
     .ov-ev.ex { background: rgba(91,140,255,.18); border-color: #a8b8ff; color: #e8edf7; }
@@ -933,7 +936,7 @@
         }
         .ov-ev b, .ov-ev small {
             white-space: normal;
-            overflow-wrap: break-word;
+            overflow-wrap: normal;
             word-break: normal;
         }
         .ov-ev-when { display: inline; }

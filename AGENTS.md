@@ -532,7 +532,11 @@ then the live demo as its own band — a mirror of a trading bot's paper
 account. Shorts are themed bands
 with one or two phones beside the copy (which strategies work, every
 position's story, if held, covered-call income, the fit matrix), not one
-sideways row. A Real trades band plays the ONON and RKLB stories wide.
+sideways row. Just before that, "Here's what you'd catch with HappyTrader"
+is one still at a time (ONON, RKLB, the BE buyback, the BE swing, win
+rate versus return) from `CATCH_STORIES` in `app/marketing_videos.py`.
+Watch links stay hidden until `CATCH_STORY_VIDEOS` has an id. A Real
+trades band plays the ONON and RKLB stories wide.
 Privacy mode and share cards stay a sentence on the proof strip (there is
 no matching upload). Still frames from the demo account sit in their own
 bands: the cumulative P&amp;L on BE trades (`app/static/marketing/pnl_real.webp`,

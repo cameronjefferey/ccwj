@@ -1,11 +1,20 @@
 """Logged-out homepage: video facade, trial CTA, and auth links."""
 
 import re
+from html import escape as html_escape
 from pathlib import Path
 from urllib.parse import urlparse
 
 from app import app
-from app.marketing_videos import HERO_VIDEO, STORY_STEPS, TRADE_STORIES, resolve_learn_url
+from app.marketing_videos import (
+    CATCH_STORIES,
+    CATCH_STORY_VIDEOS,
+    HERO_VIDEO,
+    STORY_STEPS,
+    TRADE_STORIES,
+    catch_stories,
+    resolve_learn_url,
+)
 from app.models import User
 
 
@@ -103,7 +112,7 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "/static/marketing/walkthrough_poster.webp 1920w" in html
     assert 'srcset="/static/marketing/walkthrough_poster_1280.webp 1280w, /static/marketing/walkthrough_poster.webp 1920w"' in html
     assert 'sizes="(min-width: 960px) 920px, 100vw"' in html
-    assert html.count("srcset=") == 1
+    assert html.count("srcset=") == 6
     root = Path(__file__).resolve().parents[1]
     for name, width in (
         ("marketing/walkthrough_poster.webp", 1920),
@@ -117,8 +126,51 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert blob[8:12] == b"WEBP"
         assert _webp_width(blob) == width
     assert "https://i.ytimg.com/vi/uAmHW-4RtaA/maxresdefault.jpg" in html
+    assert "ht-band-catch" in html
+    assert "Here's what you'd catch with HappyTrader" in html
+    catch_at = html.index('id="ht-catch"')
+    trades_at = html.index("Two closed trades, written out")
+    assert catch_at < trades_at
     assert "ht-band-trades" in html
-    assert "Two closed trades, written out" in html
+    assert ">30-day free trial, no credit card</a>" in html
+    assert "For learning only, not investment advice" in html
+    assert "Watch the story" not in html
+    assert html.count('class="ht-catch-panel"') == 5
+    assert html.count('loading="lazy"') >= 5
+    for story in CATCH_STORIES:
+        assert story["caption"] in html
+        assert html_escape(story["alt"], quote=True) in html
+        assert f"/static/{story['image']}" in html
+        assert f"/static/{story['image_sm']} 800w" in html
+    for needle in (
+        "−$3,333",
+        "+$11,933",
+        "+$931",
+        "$69",
+        "−$600",
+        "$84.80",
+        "−$2,357",
+        "$6,265",
+        "+$24k",
+        "−$15k",
+        "+$11k",
+        "74%",
+        "44%",
+        "collecting premium",
+    ):
+        assert needle in html
+    assert "net premium" not in html.lower()
+    assert "100 shares" not in html
+    presented = catch_stories()
+    assert [row["id"] for row in presented] == [row["id"] for row in CATCH_STORIES]
+    assert all(row["youtube_id"] == "" for row in presented)
+    assert all(CATCH_STORY_VIDEOS[row["id"]] == "" for row in CATCH_STORIES)
+    root = Path(__file__).resolve().parents[1]
+    for story in CATCH_STORIES:
+        blob = (root / "app" / "static" / story["image"]).read_bytes()
+        assert _webp_width(blob) == story["width"]
+        small = (root / "app" / "static" / story["image_sm"]).read_bytes()
+        assert _webp_width(small) == 800
     assert "Privacy mode masks account names" in html
     assert "ht-band-proof" in html
     assert "ht-band-how" in html
@@ -189,6 +241,18 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     else:
         assert 'href="/learn"' not in html
         assert "Options 101" in html
+
+
+def test_catch_watch_link_appears_only_when_a_youtube_id_is_set(monkeypatch):
+    from app import marketing_videos
+
+    monkeypatch.setitem(marketing_videos.CATCH_STORY_VIDEOS, "onon", "aaaaaaaaaaa")
+    html = app.test_client().get("/").get_data(as_text=True)
+    assert html.count("Watch the story") == 1
+    assert "https://www.youtube.com/watch?v=aaaaaaaaaaa" in html
+    monkeypatch.setitem(marketing_videos.CATCH_STORY_VIDEOS, "onon", "not-an-id")
+    html = app.test_client().get("/").get_data(as_text=True)
+    assert "Watch the story" not in html
 
 
 def test_homepage_redirects_authenticated_visitors(monkeypatch):

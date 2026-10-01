@@ -16,6 +16,8 @@ youtube-nocookie embed only after a click.
 
 from __future__ import annotations
 
+import re
+
 # step, title, caption, youtube_id or mp4_url, poster.
 # ``step`` is "hero" or 1..n. ``duration_label`` is display-only.
 HERO_VIDEO = {
@@ -224,3 +226,123 @@ def story_steps():
 
 def trade_stories():
     return [present_video(story) for story in TRADE_STORIES]
+
+
+# Homepage "Here's what you'd catch" stills. ``youtube_id`` stays empty
+# until a public Real Trade Stories video exists; the template hides
+# "Watch the story" when the id is blank or not 11 characters.
+_YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+CATCH_STORY_VIDEOS = {
+    "onon": "",
+    "rklb": "",
+    "be-close": "",
+    "be-swing": "",
+    "win-rate": "",
+}
+
+CATCH_STORIES = [
+    {
+        "id": "onon",
+        "tab": "ONON",
+        "caption": (
+            "Selling these ONON calls the morning after results locked in "
+            "−$3,333 realized, while holding to expiration would have "
+            "finished about +$11,933."
+        ),
+        "alt": (
+            "ONON daily close from August 5 to September 13, ending at "
+            "$48.63, with the $41 strike drawn across the chart. The $41 "
+            "call was bought for $2.85 and sold the next morning. Realized "
+            "result −$3,333; about +$11,933 if held to expiration."
+        ),
+        "image": "marketing/catch/onon.webp",
+        "image_sm": "marketing/catch/onon-800.webp",
+        "width": 1280,
+        "height": 720,
+    },
+    {
+        "id": "rklb",
+        "tab": "RKLB",
+        "caption": (
+            "Five RKLB covered calls expired for +$931, but call six had a "
+            "strike below my $69 cost, so assignment locked in −$600 on the "
+            "shares. Two weeks later the stock was at $84.80."
+        ),
+        "alt": (
+            "RKLB daily close from February 20 to April 17, ending at "
+            "$84.80. The $69 cost and the $63 strike are marked. Five "
+            "covered calls expired for +$931. Assignment at $63 locked in "
+            "−$600 on the shares. Net of the run +$406."
+        ),
+        "image": "marketing/catch/rklb.webp",
+        "image_sm": "marketing/catch/rklb-800.webp",
+        "width": 1280,
+        "height": 720,
+    },
+    {
+        "id": "be-close",
+        "tab": "BE close",
+        "caption": (
+            "I bought back this BE covered call for a −$2,357 loss. It "
+            "expired worthless two days later, and the early close gave up "
+            "$6,265 versus holding."
+        ),
+        "alt": (
+            "A BE covered call bought back on June 26. The loss on the "
+            "contract was −$2,357. The contract expired worthless, and the "
+            "early close gave up $6,265 versus holding."
+        ),
+        "image": "marketing/catch/be-close.webp",
+        "image_sm": "marketing/catch/be-close-800.webp",
+        "width": 1280,
+        "height": 720,
+    },
+    {
+        "id": "be-swing",
+        "tab": "BE swing",
+        "caption": (
+            "One BE position swung from about +$24k to about −$15k and "
+            "back to +$11k, while its covered calls kept collecting premium "
+            "all the way through."
+        ),
+        "alt": (
+            "Cumulative P&L on one BE position from April to September "
+            "2026. A mid-June peak of about +$24k, a late-July low of "
+            "about −$15k, and about +$11k in late September. Covered calls "
+            "kept collecting premium through the swing."
+        ),
+        "image": "marketing/catch/be-swing.webp",
+        "image_sm": "marketing/catch/be-swing-800.webp",
+        "width": 1280,
+        "height": 720,
+    },
+    {
+        "id": "win-rate",
+        "tab": "Win rate",
+        "caption": (
+            "Covered calls win 74% of the time, but long calls, at a 44% "
+            "win rate, made about three times as much."
+        ),
+        "alt": (
+            "Strategy results: covered calls with a 74% win rate and "
+            "+$14,677 total return, and long calls with a 44% win rate "
+            "and +$45,487 total return."
+        ),
+        "image": "marketing/catch/win-rate.webp",
+        "image_sm": "marketing/catch/win-rate-800.webp",
+        "width": 1280,
+        "height": 720,
+    },
+]
+
+
+def catch_stories():
+    """Stills plus a watch link only when a real YouTube id is configured."""
+    out = []
+    for row in CATCH_STORIES:
+        item = dict(row)
+        vid = (CATCH_STORY_VIDEOS.get(row["id"]) or "").strip()
+        item["youtube_id"] = vid if _YOUTUBE_ID.fullmatch(vid) else ""
+        out.append(item)
+    return out

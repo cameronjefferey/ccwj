@@ -571,7 +571,13 @@ def index():
     """Public landing page, or redirect to weekly review (home) if logged in."""
     if current_user.is_authenticated:
         return redirect(url_for("weekly_review"))
-    from app.marketing_videos import hero_video, resolve_learn_url, story_steps, trade_stories
+    from app.marketing_videos import (
+        catch_stories,
+        hero_video,
+        resolve_learn_url,
+        story_steps,
+        trade_stories,
+    )
 
     return render_template(
         "landing.html",
@@ -579,6 +585,7 @@ def index():
         hero_video=hero_video(),
         story_steps=story_steps(),
         trade_stories=trade_stories(),
+        catch_stories=catch_stories(),
         learn_url=resolve_learn_url(),
     )
 
