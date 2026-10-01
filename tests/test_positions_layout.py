@@ -73,6 +73,8 @@ def test_headers_and_names_are_not_squeezed_into_midword_breaks():
     assert "#symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 4%; }" not in PAGE
     assert "#symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 14%; }" in PAGE
     assert "#symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 7%; }" in PAGE
+    assert "#positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 7%; }" in PAGE
+    assert "#positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 9%; }" in PAGE
     phone = PAGE.split("@media (max-width: 767px)", 1)[1]
     assert "--bs-table-bg: transparent" in phone
     assert "background: var(--ht-surface)" in phone
