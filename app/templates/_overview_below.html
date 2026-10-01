@@ -3,17 +3,13 @@
    WATCH LIST — earnings, expiring opts, projected ex-div
    ════════════════════════════════════ #}
 {% set _all_earnings = (upcoming_earnings_this_week or []) + (upcoming_earnings_next_week or []) %}
-{% if overview_radar or _all_earnings or expiring_options or upcoming_ex_dividends %}
-<h3 class="ov-grp">Coming up</h3>
-{% endif %}
 {% if overview_radar %}
-<div class="review-section">
-    <div class="ov-head">
-        <div>
-            <h2>On your radar</h2>
-            <p>{{ overview_radar.summary }}</p>
-        </div>
-    </div>
+<details class="disclosure" id="ov-radar">
+    <summary>
+        <span class="section-header">On your radar</span>
+        <span class="disclosure-note">{{ overview_radar.summary }}</span>
+    </summary>
+    <div class="disclosure-body">
     <div class="ov-rad">
         <div class="ov-tl">
             <div class="ov-days">
@@ -27,7 +23,7 @@
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.earnings_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.earnings %}
-                    <a class="ov-ev er" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small>{{ ev.sub }}</small></a>
+                    <a class="ov-ev er" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small><span class="ov-ev-when">{{ overview_radar.days[ev.col - 1].num }}</span>{{ ev.sub }}</small></a>
                     {% endfor %}
                 </div>
             </div>
@@ -38,7 +34,7 @@
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.options_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.options %}
-                    <a class="ov-ev {{ ev.cls }}" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small>{{ ev.sub }}</small></a>
+                    <a class="ov-ev {{ ev.cls }}" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small><span class="ov-ev-when">{{ overview_radar.days[ev.col - 1].num }}</span>{{ ev.sub }}</small></a>
                     {% endfor %}
                 </div>
             </div>
@@ -49,17 +45,22 @@
                 <div class="ov-lane-grid" style="grid-template-rows: repeat({{ overview_radar.dividends_tracks }}, 50px)">
                     <div class="ov-bg">{% for d in overview_radar.days %}<i class="{{ 'w' if d.weekend }}"></i>{% endfor %}</div>
                     {% for ev in overview_radar.dividends %}
-                    <a class="ov-ev dv" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small>{{ ev.sub }}</small></a>
+                    <a class="ov-ev dv" style="grid-row:{{ ev.track + 1 }};grid-column:{{ ev.col }} / span {{ ev.span }}" href="{{ scoped_url('position_detail', symbol=ev.href_symbol) }}"><b>{{ ev.title }}</b><small><span class="ov-ev-when">{{ overview_radar.days[ev.col - 1].num }}</span>{{ ev.sub }}</small></a>
                     {% endfor %}
                 </div>
             </div>
             {% endif %}
         </div>
     </div>
-</div>
+    </div>
+</details>
 {% elif _all_earnings or expiring_options or upcoming_ex_dividends %}
-<div class="review-section">
-    <div class="section-label">On Your Radar (next ~14 days)</div>
+<details class="disclosure" id="ov-radar">
+    <summary>
+        <span class="section-header">On your radar</span>
+        <span class="disclosure-note">Next 14 days</span>
+    </summary>
+    <div class="disclosure-body">
     <div class="watch-grid">
         <div class="watch-block">
             <div class="wb-title">
@@ -180,7 +181,8 @@
             {% endif %}
         </div>
     </div>
-</div>
+    </div>
+</details>
 {% endif %}
 
 {# ════════════════════════════════════
@@ -190,21 +192,19 @@
    items are verdicts already in the mail. The open-contract record is
    strictly observational (premium captured / mark vs cost, days left).
    ════════════════════════════════════ #}
-{% if (exit_verdicts_landed or exit_verdicts_pending or (open_option_record and (open_option_record.shorts or open_option_record.longs))) or calendar_grid or (account_breakdown and account_breakdown.rows) or (trades_this_week and trades_this_week.has_any) %}
-<h3 class="ov-grp">Review</h3>
-{% endif %}
 {% if exit_verdicts_landed or exit_verdicts_pending or (open_option_record and (open_option_record.shorts or open_option_record.longs)) %}
-<div class="review-section">
-    <div class="ov-head">
-        <div>
-            <h2>Execution review</h2>
-            <p>Your closes, graded against what happened at expiry. Spread legs are one verdict.</p>
-        </div>
-        <div class="ov-pills-lite">
-            {% if exit_verdicts_landed %}<span class="ov-pl gn">{{ exit_verdicts_landed|length }} landed</span>{% endif %}
-            {% if exit_verdicts_pending %}<span class="ov-pl am">{{ exit_verdicts_pending.n }} waiting</span>
-            <span class="ov-pl in">Next: {{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_short_label }}, {{ exit_verdicts_pending.next_date_label }}</span>{% endif %}
-        </div>
+<details class="disclosure" id="ov-execution">
+    <summary>
+        <span class="section-header">Execution review</span>
+        {% if exit_verdicts_landed %}<span class="disclosure-note">{{ exit_verdicts_landed|length }} landed</span>{% endif %}
+        {% if exit_verdicts_pending %}<span class="disclosure-note">{{ exit_verdicts_pending.n }} waiting</span>{% endif %}
+    </summary>
+    <div class="disclosure-body">
+    <p class="ov-note">Your closes, graded against what happened at expiry. Spread legs are one verdict.</p>
+    <div class="ov-pills-lite">
+        {% if exit_verdicts_landed %}<span class="ov-pl gn">{{ exit_verdicts_landed|length }} landed</span>{% endif %}
+        {% if exit_verdicts_pending %}<span class="ov-pl am">{{ exit_verdicts_pending.n }} waiting</span>
+        <span class="ov-pl in">Next: {{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_short_label }}, {{ exit_verdicts_pending.next_date_label }}</span>{% endif %}
     </div>
     {% if exit_verdicts_landed %}
     {% set v = exit_verdicts_landed[0] %}
@@ -216,8 +216,8 @@
     {% if exit_verdicts_pending %}
     <p class="ov-wait">{{ exit_verdicts_pending.n }} awaiting a verdict: contracts you closed early, graded once the expiry arrives and the outcome is knowable.</p>
     {% endif %}
-    <div class="watch-grid" style="margin-top:1rem;">
-        {% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
+    {% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
+    <div class="watch-grid">
         <div class="watch-block">
             <div class="wb-title">
                 <span>Open Contracts</span>
@@ -256,9 +256,10 @@
             {% endfor %}
             </div>
         </div>
-        {% endif %}
     </div>
-</div>
+    {% endif %}
+    </div>
+</details>
 {% endif %}
 
 {# ════════════════════════════════════
@@ -271,11 +272,12 @@
         {% set _cal_max.val = c.daily_change|abs %}
     {% endif %}
 {% endfor %}{% endfor %}
-<div class="review-section">
+<details class="disclosure" id="ov-daily">
+    <summary>
+        <span class="section-header">Daily change</span>
+    </summary>
+    <div class="disclosure-body">
     <div class="cal-section-head">
-        <div>
-            <h2 style="margin:0;font-size:1.15rem;font-weight:700;letter-spacing:-.01em;">Daily change</h2>
-        </div>
         {% if calendar_extra_weeks and calendar_extra_weeks > 0 %}
         <button type="button" id="cal-toggle-btn" class="cal-toggle-btn"
                 data-extra="{{ calendar_extra_weeks }}"
@@ -351,7 +353,8 @@
         {% endif %}
     </p>
     {% endif %}
-</div>
+    </div>
+</details>
 {% endif %}
 
 {# ════════════════════════════════════
@@ -373,13 +376,12 @@
 </td>
 {% endmacro %}
 {% if account_breakdown and account_breakdown.rows %}
-<div class="review-section">
-    <div class="ov-head">
-        <div>
-            <h2>Performance by account</h2>
-            <p>Open positions plus anything closed since {{ week_start.strftime('%a %-d') if week_start else 'Monday' }} — stock, options, and lifetime dividends.</p>
-        </div>
-    </div>
+<details class="disclosure" id="ov-performance">
+    <summary>
+        <span class="section-header">Performance by account</span>
+        <span class="disclosure-note">Open positions plus anything closed since {{ week_start.strftime('%a %-d') if week_start else 'Monday' }} — stock, options, and lifetime dividends.</span>
+    </summary>
+    <div class="disclosure-body">
     <div class="breakdown-wrap">
         <table class="breakdown-table">
             <thead>
@@ -454,7 +456,8 @@
             {% endif %}
         </p>
     </details>
-</div>
+    </div>
+</details>
 {% endif %}
 
 {# ════════════════════════════════════
@@ -470,10 +473,10 @@
 {% endmacro %}
 {% if trades_this_week and trades_this_week.has_any %}
 {% set tw = trades_this_week %}
-<div class="review-section">
-    <div class="section-label" style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span>{% if trades_week_is_prior %}Trades Last Week{% else %}Trades This Week{% endif %}</span>
-        <span style="display:flex; gap:14px; text-transform:none; letter-spacing:0;">
+<details class="disclosure" id="ov-week">
+    <summary>
+        <span class="section-header">{% if trades_week_is_prior %}Trades last week{% else %}Trades this week{% endif %}</span>
+        <span class="disclosure-note">
         {% if tw.realized_pnl or tw.closed_count %}
         <span class="trades-pnl {% if tw.realized_pnl > 0 %}text-positive{% elif tw.realized_pnl < 0 %}text-negative{% endif %}">
             {% if tw.realized_pnl == 0 %}$0{% else %}{{ "+" if tw.realized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.realized_pnl|abs) }}{% endif %} realized
@@ -485,7 +488,8 @@
         </span>
         {% endif %}
         </span>
-    </div>
+    </summary>
+    <div class="disclosure-body">
     <p class="section-sub">
         Groups that opened or closed since
         {{ (trades_week_start or week_start).strftime('%a %b %-d') if (trades_week_start or week_start) else 'Monday' }}
@@ -542,5 +546,6 @@
             </tbody>
         </table>
     </div>
-</div>
+    </div>
+</details>
 {% endif %}

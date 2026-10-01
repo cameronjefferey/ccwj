@@ -1,9 +1,9 @@
 {# After-hours drift vs the official close. Lives on /today only. #}
 {% if after_hours_movers and (after_hours_movers.winners or after_hours_movers.losers) %}
-<div class="review-section">
+<div class="ov-block">
     <div class="ov-head">
         <div>
-            <h2>After hours</h2>
+            <h3>After hours</h3>
             <p>Extended-hours movement since the official close{% if after_hours_movers.as_of %}, as of your last broker sync ({{ after_hours_movers.as_of }}){% endif %}. Not the close you traded against.</p>
         </div>
         {% if after_hours_movers.total_impact %}

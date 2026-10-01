@@ -2,13 +2,16 @@
 
 {# Live session. Last-trade / last-sync numbers. Official close is Overview.
    Catch-up ("Since you last looked") lives here, not on Overview.
-   Visual treatment matches Overview: dark hero bar, then Now / Open. #}
+   Order: headline, one What happened section (fills, movers, after hours),
+   then Since you last looked and open contracts as disclosures. #}
 
 {% block head %}
 {% include '_review_styles.html' %}
 {% endblock %}
 
 {% block content %}
+
+<div class="ov-page">
 
 {% if error %}<div class="alert alert-danger small">We're having trouble loading the live session right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
@@ -87,26 +90,30 @@
     </div>
 </div>
 
-{% include '_since_last_looked.html' %}
-
-<h3 class="ov-grp">Now</h3>
-<div class="review-section">
+<div class="review-section" id="ov-happened">
     <div class="ov-head">
         <div>
-            <h2>Trades, {{ today.strftime('%a %b %-d') }}</h2>
+            <h2 class="section-header">What happened</h2>
             <p>
                 {% if not session_is_live %}
-                No U.S. cash session today.
+                No U.S. cash session today. Official close is on Overview.
                 {% else %}
-                Fills dated today. Same-day trades usually land after the next sync.
+                Fills dated today, and the largest moves on shares you hold. Same-day trades usually land after the next sync.
                 {% endif %}
             </p>
+        </div>
+    </div>
+<div class="ov-block">
+    <div class="ov-head">
+        <div>
+            <h3>Trades, {{ today.strftime('%a %b %-d') }}</h3>
+            <p>Every fill dated today, including adds and trims.</p>
         </div>
         {% if _tt.count %}
         <div class="ov-pills-lite">
             <span class="ov-pl">{{ _tt.count }} fill{{ 's' if _tt.count != 1 }}</span>
             {% if _tt.symbols %}<span class="ov-pl">{{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}</span>{% endif %}
-            {% if _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' }}">{{ "+" if _tt.net_gl > 0 else "−" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} G/L</span>{% endif %}
+            {% if _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' }}">{{ "+" if _tt.net_gl > 0 else "−" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} realized</span>{% endif %}
         </div>
         {% endif %}
     </div>
@@ -129,7 +136,7 @@
                     <div class="tt-muted">{{ t.account | account_label(t.tenant_id) }}</div>
                     {% endif %}
                 </td>
-                <td class="tt-muted d-none d-sm-table-cell">
+                <td class="tt-muted">
                     {% if t.is_roll %}
                     {% if t.successful %}
                     <span class="tt-roll-ok">Met the roll{% if t.success_bits %} · {{ t.success_bits|join(' + ') }}{% endif %}</span>
@@ -185,10 +192,10 @@
 </div>
 
 {% if today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
-<div class="review-section">
+<div class="ov-block">
     <div class="ov-head">
         <div>
-            <h2>Biggest movers</h2>
+            <h3>Biggest movers</h3>
             <p>Last-trade vs the prior close on positions you hold. Price impact on holdings, not full account value.</p>
         </div>
         {% if _ti is not none %}
@@ -274,15 +281,14 @@
     {% endif %}
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">
-        <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
+        <div class="ov-subk">
             Dividends paid today
-            <span style="color:var(--gain);">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+            <span class="pos">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
-            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
-               data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
-               style="font-size:.75rem; padding:.45em .8em; background:color-mix(in srgb, var(--gain) 16%, transparent); color:#e8edf7; border:1px solid var(--gain);">
+            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge ov-div-chip text-decoration-none"
+               data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
             </a>
             {% endfor %}
@@ -293,19 +299,18 @@
 {% endif %}
 
 {% include '_after_hours_movers.html' %}
+</div>
+
+{% include '_since_last_looked.html' %}
 
 {% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
-<h3 class="ov-grp">Open</h3>
-<div class="review-section">
-    <div class="ov-head">
-        <div>
-            <h2>Open contracts</h2>
-            <p>Live marks on open options. Last broker sync, not the official close.</p>
-        </div>
-        <div class="ov-pills-lite">
-            <span class="ov-pl">{{ (open_option_record.shorts|length) + (open_option_record.longs|length) }} open</span>
-        </div>
-    </div>
+<details class="disclosure" id="ov-open">
+    <summary>
+        <span class="section-header">Open contracts</span>
+        <span class="disclosure-note">{{ (open_option_record.shorts|length) + (open_option_record.longs|length) }} open</span>
+    </summary>
+    <div class="disclosure-body">
+    <p class="ov-note">Live marks on open options. Last broker sync, not the official close.</p>
     <div class="watch-list">
         {% for s in open_option_record.shorts[:12] %}
         <a href="{{ scoped_url('position_detail', symbol=s.symbol) }}" class="watch-item exec" data-peek-symbol="{{ s.symbol }}" data-peek-impact="{{ s.unrealized }}">
@@ -338,10 +343,12 @@
         </a>
         {% endfor %}
     </div>
-</div>
+    </div>
+</details>
 {% endif %}
 
 {% include "_leg_tag_js.html" %}
 {% include "_position_peek.html" %}
 
+</div>
 {% endblock %}

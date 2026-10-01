@@ -186,6 +186,13 @@ the nav says so in language that matches pre-market vs the open vs after the bel
 The endpoint name is still `weekly_review` so the 30+ `url_for('weekly_review', ...)`
 callers don't break.
 
+The page reads in one order: the headline (session date, account value, the
+close labeled Today, this week), then one **What happened** section (that
+session's fills and the notable moves), then the account breakdown, then
+secondary items collapsed in disclosures — building your history, the radar,
+execution review, daily change, performance by account, and trades this week.
+`#ht-overview-below` is not a card; an empty or failed load removes the slot.
+
 What's working:
 - Session hero: brand and the Group filter sit in the dark
  bar (same bar on Today, Positions, Accounts, Strategies, Sectors,
@@ -257,6 +264,10 @@ pre-market are **not** a live session:
 do not replay Friday's close (or 24/7 crypto bars) as "today" — Overview
 already has the last completed session. `/today` then shows an empty
 "no live session" state.
+
+Order matches Overview: the headline, then one **What happened** section
+(fills, movers, and after-hours drift), then **Since you last looked** and
+open contracts as disclosures.
 
 - Calendar-today fills (`DAY_TRADES_QUERY` with `@day` = user today). Same-day
   trades often land after the next sync (activities are T+1). Friday-expiry
