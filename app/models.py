@@ -1245,6 +1245,10 @@ class User(UserMixin):
         self.email = email
 
     def check_password(self, password):
+        # The public demo username cannot authenticate with a password.
+        # The login route rejects it too; this covers every other check.
+        if (self.username or "").lower() == "demo":
+            return False
         return check_password_hash(self.password_hash, password)
 
     @staticmethod
@@ -3599,14 +3603,46 @@ def seed_users_from_env():
 DEMO_ACCOUNT = "Demo Account"
 
 
+def _unusable_demo_password() -> str:
+    """A secret that is hashed and then discarded. Nobody can type it."""
+    return secrets.token_urlsafe(48)
+
+
+def _is_dedicated_demo_row(user) -> bool:
+    """The public demo account, not a person who registered as ``demo``.
+
+    Dedicated when the username is ``demo`` and the row has no email
+    (this function creates it that way; signup always stores one), or
+    when this user owns tenant ``demo:demo-account``.
+    """
+    if user is None or (getattr(user, "username", "") or "").lower() != "demo":
+        return False
+    if not (getattr(user, "email", None) or "").strip():
+        return True
+    tenant = get_broker_tenant(build_tenant_id(DEMO_BROKER_SLUG, "demo-account"))
+    if not tenant or tenant.get("user_id") is None:
+        return False
+    try:
+        return int(tenant["user_id"]) == int(user.id)
+    except (TypeError, ValueError):
+        return False
+
+
 def ensure_demo_user():
     """
     Create the demo user and link to the Demo Account if not already set up.
-    Demo credentials: demo / demo123
+
+    There is no demo password. On create, and on every startup when the
+    existing row is the dedicated demo account, the stored hash is a
+    fresh random secret that is never shown. Password login for this
+    username is refused in the login route either way.
     """
     demo = User.get_by_username("demo")
     if demo is None:
-        User.create("demo", "demo123")
+        User.create("demo", _unusable_demo_password())
+        demo = User.get_by_username("demo")
+    elif _is_dedicated_demo_row(demo):
+        User.update_password(demo.id, _unusable_demo_password())
         demo = User.get_by_username("demo")
     if demo:
         remove_account_for_user(demo.id, "Testing Account")  # migrate from old demo setup
@@ -3700,7 +3736,17 @@ def _hash_reset_token(raw_token: str) -> str:
 def mint_password_reset_token(user_id: int, requester_ip: str | None = None) -> str:
     """Create a single-use reset token and return the raw value to email
     to the user. Existing unused tokens for the same user are invalidated
-    so an old email link can't override the most recent request."""
+    so an old email link can't override the most recent request.
+
+    The shared ``demo`` account cannot request a reset. Callers should
+    catch this and show the same response they show for an unknown email.
+    """
+    owner = fetch_one(
+        "SELECT username FROM users WHERE id = %s",
+        (user_id,),
+    )
+    if owner and (owner.get("username") or "").lower() == "demo":
+        raise ValueError("password reset is not available for the demo account")
     raw = _secrets.token_urlsafe(32)
     token_hash = _hash_reset_token(raw)
     expires_at = _dt.now(_tz.utc) + PASSWORD_RESET_TOKEN_TTL

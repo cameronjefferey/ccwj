@@ -63,6 +63,14 @@ _LANDING = {
 }
 
 
+def _user_id_is_demo(user_id) -> bool:
+    """True when this id is the shared Postgres ``demo`` row."""
+    if user_id is None:
+        return False
+    row = User.get_by_id(user_id)
+    return row is not None and (row.username or "").lower() == "demo"
+
+
 def _lookup_login_user(identifier):
     """Return a user for either username or email, preferring exact username."""
     ident = (identifier or "").strip()
@@ -164,7 +172,13 @@ def login():
             )
             return redirect(url_for("login"))
 
-        if user is None or not user.check_password(password):
+        # The shared ``demo`` username is not a personal login. Reject it
+        # before the password is checked so a known password (demo123)
+        # gets the same generic error as a wrong one.
+        demo_username = (username or "").strip().lower() == "demo" or (
+            user is not None and (getattr(user, "username", "") or "").lower() == "demo"
+        )
+        if demo_username or user is None or not user.check_password(password):
             _record_login_attempt_for_keys(
                 attempt_keys,
                 success=False,
@@ -198,11 +212,6 @@ def login():
             ip_address=request.remote_addr,
             user_agent=request.headers.get("User-Agent"),
         )
-        # The shared demo row is not a personal login. Password auth for
-        # that username would recreate the crawler session this gate replaced.
-        if (getattr(user, "username", "") or "").lower() == "demo":
-            flash("The public demo starts from the demo page.", "info")
-            return redirect(url_for("demo_start"))
         login_user(user, remember=remember)
 
         # Prefer hidden form field (reliable on POST); fall back to query string.
@@ -309,6 +318,8 @@ def signup():
 
         if len(username) < 3:
             return _retry("Username must be at least 3 characters.")
+        if username.lower() == "demo":
+            return _retry("That username is already taken.")
 
         valid, err = _validate_password(password)
         if not valid:
@@ -808,7 +819,7 @@ def reset_password(token):
         return redirect(url_for("profile", tab="account"))
 
     target_user_id = peek_password_reset_token(token)
-    if target_user_id is None:
+    if target_user_id is None or _user_id_is_demo(target_user_id):
         flash(
             "That reset link is invalid or expired. Request a new one.",
             "danger",
@@ -827,8 +838,9 @@ def reset_password(token):
             return redirect(url_for("reset_password", token=token))
 
         consumed_user_id = consume_password_reset_token(token)
-        if consumed_user_id is None:
+        if consumed_user_id is None or _user_id_is_demo(consumed_user_id):
             # Race: another tab consumed it between peek and consume.
+            # The shared demo account cannot be given a password this way.
             flash("That reset link just expired. Request a new one.", "danger")
             return redirect(url_for("forgot_password"))
         User.update_password(consumed_user_id, new_pw)
@@ -888,6 +900,9 @@ def _validate_password(password):
               help="Password for the new account (min 8 chars, letter + number)")
 def create_user(username, password):
     """Create a new user account."""
+    if (username or "").strip().lower() == "demo":
+        click.echo("Error: User 'demo' is reserved for the public demo.")
+        return
     existing = User.get_by_username(username)
     if existing:
         click.echo(f"Error: User '{username}' already exists.")
@@ -908,6 +923,9 @@ def create_user(username, password):
               help="New password (min 8 chars, letter + number)")
 def reset_password(username, password):
     """Set a new password for an existing user (e.g. lockout recovery)."""
+    if (username or "").strip().lower() == "demo":
+        click.echo("Error: The public demo account has no password to reset.")
+        return
     user = User.get_by_username(username)
     if user is None:
         click.echo(f"Error: No user named '{username}'.")
