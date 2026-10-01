@@ -348,6 +348,30 @@ def _annotate_open_legs(current_positions, sessions_list, symbol, today=None):
     return current_positions
 
 
+def _filter_execution_review_to_leg(
+    execution_df,
+    *,
+    leg_filter_active,
+    leg_ranges,
+    leg_predicate,
+):
+    """Keep execution-review claims inside the selected position leg."""
+    if (
+        execution_df is None
+        or execution_df.empty
+        or not leg_filter_active
+        or not leg_ranges
+        or not callable(leg_predicate)
+        or "open_date" not in execution_df.columns
+    ):
+        return execution_df
+    out = execution_df.copy()
+    opened = pd.to_datetime(out["open_date"], errors="coerce").dt.date
+    return out[
+        opened.apply(lambda d: pd.notna(d) and leg_predicate(d))
+    ].copy()
+
+
 def _dedupe_trade_display_rows(trades_df):
     """Collapse DRIP clones and drop zero-qty echoes of a dividend.
 
@@ -3368,20 +3392,12 @@ def position_detail(symbol):
     held_charts = []
     try:
         _held_exec = _filter_df_by_tenant_ids(execution_df, tenant_scope)
-        if (
-            leg_param and _leg_ranges
-            and _held_exec is not None and not _held_exec.empty
-            and "open_date" in _held_exec.columns
-        ):
-            _held_exec = _held_exec.copy()
-            _held_exec["_od"] = pd.to_datetime(
-                _held_exec["open_date"], errors="coerce"
-            ).dt.date
-            _held_exec = _held_exec[
-                _held_exec["_od"].apply(
-                    lambda d: pd.notna(d) and _in_leg_range(d)
-                )
-            ]
+        _held_exec = _filter_execution_review_to_leg(
+            _held_exec,
+            leg_filter_active=bool(leg_param),
+            leg_ranges=_leg_ranges,
+            leg_predicate=_in_leg_range,
+        )
         held_charts = build_held_charts(
             _held_exec,
             underlying_closes_df,
@@ -3409,8 +3425,15 @@ def position_detail(symbol):
             _story_div_df = _story_div_df[_story_div_df["_d"].apply(_in_leg_range)]
         # Execution review: after-the-fact verdicts graded in dbt
         # (int_option_exit_quality). Tenant-filtered like every other
-        # frame; the notes hook onto completing closes inside the engine.
+        # frame and leg-filtered like the story itself; otherwise the
+        # summary can claim dollars from a different position chapter.
         _exec_df = _filter_df_by_tenant_ids(execution_df, tenant_scope)
+        _exec_df = _filter_execution_review_to_leg(
+            _exec_df,
+            leg_filter_active=bool(leg_param),
+            leg_ranges=_leg_ranges,
+            leg_predicate=_in_leg_range,
+        )
         _exit_notes = _execution_exit_notes(_exec_df)
         with timed("story"):
             story_days, story_markers, story_stats = build_position_story(

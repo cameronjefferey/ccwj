@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from app.execution_quality import symbol_execution_callout
 from app.routes import (
     _compute_breakdown_by_type,
     _equity_raw_trades_for_partial_close_outcome,
@@ -14,6 +15,7 @@ from app.routes import (
     _rollup_int_strategy_to_summary_shape,
     _supplement_summary_with_rolled,
 )
+from app.position_detail import _filter_execution_review_to_leg
 
 
 def _legs_row(
@@ -615,6 +617,48 @@ def test_legs_to_sessions_list_empty_df_returns_empty_list():
     or invent legs. Position detail must keep rendering with sessions=[]."""
     assert _legs_df_to_sessions_list(pd.DataFrame()) == []
     assert _legs_df_to_sessions_list(None) == []
+
+
+def test_execution_review_claims_follow_the_selected_leg():
+    """The summary card must not add early-exit dollars from other legs."""
+    execution = pd.DataFrame([
+        {
+            "trade_symbol": "OLD", "open_date": "2025-01-02",
+            "gradeable_early_close": True,
+            "early_close_vs_expiry_delta": -9000,
+            "expired_worthless": False, "was_rolled": False,
+        },
+        {
+            "trade_symbol": "NEW-A", "open_date": "2026-04-02",
+            "gradeable_early_close": True,
+            "early_close_vs_expiry_delta": -100,
+            "expired_worthless": False, "was_rolled": False,
+        },
+        {
+            "trade_symbol": "NEW-B", "open_date": "2026-04-10",
+            "gradeable_early_close": True,
+            "early_close_vs_expiry_delta": -100,
+            "expired_worthless": False, "was_rolled": False,
+        },
+        {
+            "trade_symbol": "BAD-DATE", "open_date": None,
+            "gradeable_early_close": True,
+            "early_close_vs_expiry_delta": -500,
+            "expired_worthless": False, "was_rolled": False,
+        },
+    ])
+
+    selected = _filter_execution_review_to_leg(
+        execution,
+        leg_filter_active=True,
+        leg_ranges=[(date(2026, 4, 1), date(2026, 4, 30))],
+        leg_predicate=lambda d: date(2026, 4, 1) <= d <= date(2026, 4, 30),
+    )
+
+    assert selected["trade_symbol"].tolist() == ["NEW-A", "NEW-B"]
+    callout = symbol_execution_callout(selected)
+    assert callout["title"] == "Early exits cost you"
+    assert callout["amount_label"] == "$200"
 
 
 def test_legs_to_sessions_list_preserves_leg_id_and_display_order():
