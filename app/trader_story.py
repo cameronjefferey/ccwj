@@ -252,7 +252,7 @@ def _compose_profile(totals, busiest):
     if totals.get("rolls"):
         short_bits.append(f"{totals['rolls']} roll"
                           f"{'s' if totals['rolls'] != 1 else ''}")
-    income_detail = "premium collected"
+    income_detail = "Premium received"
     if short_bits:
         income_detail += " · " + " · ".join(short_bits)
     long_detail = (f"placed at risk buying options · {n_long} "
@@ -278,7 +278,7 @@ def _compose_profile(totals, busiest):
             "label": "Income book", "value": _money(premium),
             "tone": "pos", "detail": income_detail,
             "chips": list(short_bits),
-            "lead": "premium collected",
+            "lead": "Premium received.",
         })
     if risk > 1:
         buy_chip = (f"{n_long} purchase{'s' if n_long != 1 else ''}"
@@ -426,7 +426,7 @@ def _build_eras(trades_df, book=None):
         elif y == this_year:
             title = "Year to date"
         elif y == max_premium_year and p["premium"] > 1:
-            title = "Highest premium collected"
+            title = "Highest premium received"
         elif y == max_new_year and p["new_symbols"] > 2:
             title = "Most new symbols"
         elif y == max_fills_year:
@@ -438,7 +438,7 @@ def _build_eras(trades_df, book=None):
             f"{p['new_symbols']} new symbol{'s' if p['new_symbols'] != 1 else ''}",
         ]
         if p["premium"] > 1:
-            bits.append(f"{_money(p['premium'])} premium collected")
+            bits.append(f"{_money(p['premium'])} premium received")
         if p["risk"] > 1:
             bits.append(f"{_money(p['risk'])} placed on long options")
         if p["top_symbol"]:

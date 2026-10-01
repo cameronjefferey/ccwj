@@ -125,7 +125,7 @@ def test_eras_one_row_per_year_with_new_names_and_premium():
     assert eras[0]["title"] == "First year of activity"
     assert "2 new symbols" in eras[0]["line"]
     assert "calendar days" in eras[0]["line"]
-    assert "$100 premium collected" in eras[0]["line"]
+    assert "$100 premium received" in eras[0]["line"]
     assert "$500 placed on long options" in eras[0]["line"]
     assert "1 new symbol" in eras[1]["line"]
 
