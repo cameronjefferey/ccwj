@@ -61,7 +61,7 @@
     body:has(#positionsTable) .card,
     body:has(#symbolTable) .card { max-width: 100%; min-width: 0; }
     /* 768–1366: share the card width so no column runs past the edge.
-       Text wraps inside the cell. Money stays on one line. */
+       Text wraps inside the cell, including money. */
     @media (min-width: 768px) and (max-width: 1366px) {
         #symbolTable {
             table-layout: fixed;
@@ -88,33 +88,56 @@
             overflow-wrap: anywhere;
             vertical-align: top;
         }
+        /* Money may wrap inside its cell. nowrap plus a narrow fixed
+           column painted $287,353.26 out of Collected. */
         #symbolTable td.pos-money,
-        #positionsTable td.pos-money { white-space: nowrap; overflow-wrap: normal; }
-        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 11%; }
-        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 7%; }
-        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 10%; }
-        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 15%; }
-        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 9%; }
-        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 8%; }
-        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 8%; }
-        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 8%; }
-        #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 6%; }
-        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 6%; }
+        #positionsTable td.pos-money {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        .pos-wl-pair { white-space: nowrap; }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 10%; }
+        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 8%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 12%; }
+        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 10%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 10%; }
+        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 10%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 10%; }
+        #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 5%; }
+        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 4%; }
         #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 5%; }
-        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 7%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 10%; }
         #positionsTable th:nth-child(1), #positionsTable td:nth-child(1) { width: 10%; }
         #positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 12%; }
         #positionsTable th:nth-child(3), #positionsTable td:nth-child(3) { width: 7%; }
         #positionsTable th:nth-child(4), #positionsTable td:nth-child(4) { width: 9%; }
-        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 8%; }
-        #positionsTable th:nth-child(6), #positionsTable td:nth-child(6) { width: 8%; }
-        #positionsTable th:nth-child(7), #positionsTable td:nth-child(7) { width: 7%; }
-        #positionsTable th:nth-child(8), #positionsTable td:nth-child(8) { width: 6%; }
-        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9) { width: 6%; }
-        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 5%; }
-        #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 7%; }
-        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 7%; }
-        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 8%; }
+        #positionsTable th:nth-child(5), #positionsTable td:nth-child(5) { width: 9%; }
+        #positionsTable th:nth-child(6), #positionsTable td:nth-child(6) { width: 9%; }
+        #positionsTable th:nth-child(7), #positionsTable td:nth-child(7) { width: 8%; }
+        #positionsTable th:nth-child(8), #positionsTable td:nth-child(8) { width: 5%; }
+        #positionsTable th:nth-child(9), #positionsTable td:nth-child(9) { width: 4%; }
+        #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 4%; }
+        #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 8%; }
+        #positionsTable th:nth-child(12), #positionsTable td:nth-child(12) { width: 5%; }
+        #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 10%; }
+    }
+    /* Symbol-table header sticks to the page, under the nav. Not an
+       inner 75vh scroller: overflow stays visible so columns are not
+       clipped, and sticky is relative to the document. */
+    @media (min-width: 768px) {
+        .pos-page .pos-pad > .table-responsive { overflow: visible; }
+        #symbolTable {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        body .pos-page #symbolTable thead th {
+            position: sticky;
+            top: var(--ht-nav-h, 3.5rem);
+            z-index: 6;
+            background: #24262e;
+            box-shadow: inset 0 -1px 0 #243049;
+        }
     }
     #positionsTable thead th,
     #symbolTable thead th { font-size: .68rem; letter-spacing: 0; }
@@ -634,9 +657,7 @@
                         </td>
                         <td data-label="Trades" data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
                         <td data-label="W/L" data-val="{{ row.num_winners }}">
-                            <span class="text-positive">{{ row.num_winners | int }}</span>
-                            /
-                            <span class="text-negative">{{ row.num_losers | int }}</span>
+                            <span class="pos-wl-pair"><span class="text-positive">{{ row.num_winners | int }}</span> / <span class="text-negative">{{ row.num_losers | int }}</span></span>
                         </td>
                         <td data-label="Collected" data-val="{{ row.total_premium_received }}" class="pos-money text-positive">
                             {{ money(row.total_premium_received) }}
@@ -752,9 +773,7 @@
                         </td>
                         <td data-label="Trades" data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
                         <td data-label="W/L" data-val="{{ row.num_winners }}">
-                            <span class="text-positive">{{ row.num_winners | int }}</span>
-                            /
-                            <span class="text-negative">{{ row.num_losers | int }}</span>
+                            <span class="pos-wl-pair"><span class="text-positive">{{ row.num_winners | int }}</span> / <span class="text-negative">{{ row.num_losers | int }}</span></span>
                         </td>
                         <td data-label="Avg P&amp;L" data-val="{{ row.avg_pnl_per_trade }}"
                             class="pos-money {{ 'text-positive' if row.avg_pnl_per_trade >= 0 else 'text-negative' }}">
