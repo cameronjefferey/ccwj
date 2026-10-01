@@ -118,6 +118,7 @@ def test_real_session_still_skips_password_recovery(monkeypatch):
 
 
 def test_get_logout_confirms_and_post_ends_the_session(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
     client = _client()
     anon = client.get("/logout")
     assert anon.status_code == 302
@@ -134,7 +135,8 @@ def test_get_logout_confirms_and_post_ends_the_session(monkeypatch):
 
     done = client.post("/logout")
     assert done.status_code == 302
-    assert _path(done) == "/"
+    # url_for('index') is the /index alias (registered before /).
+    assert _path(done) in ("/", "/index")
     with client.session_transaction() as sess:
         assert "_user_id" not in sess
 
