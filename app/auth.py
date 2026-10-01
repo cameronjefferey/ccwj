@@ -1,8 +1,9 @@
 import hmac
 import os
 import re
+import secrets
 import click
-from flask import render_template, redirect, url_for, request, flash, abort, jsonify
+from flask import render_template, redirect, url_for, request, flash, abort, jsonify, session
 from flask_login import login_required, login_user, logout_user, current_user
 from app import app
 from app.email import send_password_reset_email, send_welcome_verify_email
@@ -21,6 +22,16 @@ from app.models import (
     peek_password_reset_token,
     record_login_attempt,
     unsubscribe_user_by_token,
+)
+from app.client_ip import real_client_ip
+from app.demo_guard import (
+    DemoSessionUser,
+    IP_SESSION_CAP,
+    is_ephemeral_demo_user,
+    limited_page,
+    reserve_demo_ip,
+    turnstile_keys,
+    verify_turnstile,
 )
 from app.utils import demo_block_writes, is_demo_user, safe_internal_next
 
@@ -106,7 +117,7 @@ def _landing_endpoint(prof) -> str:
 def _release_shared_demo_session() -> bool:
     """Log out the shared demo account so an auth page can render.
 
-    ``/demo/start`` signs the visitor in as the shared ``demo`` user.
+    ``/demo/start`` used to sign the visitor in as the shared ``demo`` user.
     ``/login`` and ``/signup`` treat every authenticated session as
     already inside the app and redirect to Overview. That trapped the
     demo banner's "Create your own account" button — and a typed
@@ -187,6 +198,11 @@ def login():
             ip_address=request.remote_addr,
             user_agent=request.headers.get("User-Agent"),
         )
+        # The shared demo row is not a personal login. Password auth for
+        # that username would recreate the crawler session this gate replaced.
+        if (getattr(user, "username", "") or "").lower() == "demo":
+            flash("The public demo starts from the demo page.", "info")
+            return redirect(url_for("demo_start"))
         login_user(user, remember=remember)
 
         # Prefer hidden form field (reliable on POST); fall back to query string.
@@ -347,28 +363,74 @@ def logout():
     return redirect(url_for("index"))
 
 
-@app.route("/demo/start")
+def _demo_gate_context(next_page):
+    site_key, _secret = turnstile_keys()
+    return {
+        "title": "Try the demo",
+        "next_for_form": next_page or "",
+        "turnstile_site_key": site_key,
+    }
+
+
+@app.route("/demo/start", methods=["GET", "POST"])
+@limiter.limit(
+    "3 per day;1 per minute",
+    methods=["POST"],
+    key_func=real_client_ip,
+)
 def demo_start():
-    """Log in as the demo user and redirect. No sign-up required.
+    """Public demo gate.
 
-    Accepts an optional ``?next=`` so inbound deep-links (notably the
+    GET renders a landing page (homepage and other CTAs still link here).
+    POST creates a short-lived ``demo-session:`` identity after Turnstile
+    (when configured) and the per-IP session cap. The shared Postgres
+    ``demo`` user is not signed in.
+
+    Accepts an optional ``next`` so inbound deep-links (notably the
     EarningsFollower bridge at /earningsfollower/<symbol>) can drop a
-    visitor straight onto a specific page instead of the dashboard. The
-    target is validated by ``safe_internal_next`` — same-origin path and
-    query only, so this can never become an open redirect.
+    visitor straight onto a specific page. The target is validated by
+    ``safe_internal_next`` — same-origin path and query only.
     """
-    next_page = safe_internal_next(request.args.get("next"))
+    import time
 
-    if current_user.is_authenticated:
+    next_page = safe_internal_next(request.values.get("next"))
+    ephemeral = is_ephemeral_demo_user(current_user)
+    username = (getattr(current_user, "username", "") or "").lower()
+    shared_demo = (
+        current_user.is_authenticated and not ephemeral and username == "demo"
+    )
+    real_user = current_user.is_authenticated and not ephemeral and not shared_demo
+
+    if real_user or (ephemeral and request.method == "GET"):
         return redirect(next_page or url_for("weekly_review"))
 
-    demo = User.get_by_username("demo")
-    if demo is None:
-        flash("Demo is not available. Please create an account to get started.", "warning")
-        target = "login" if not app.config.get("SIGNUP_ENABLED", True) else "signup"
-        return redirect(url_for(target))
+    if request.method == "GET":
+        if shared_demo:
+            logout_user()
+        return render_template("demo_start.html", **_demo_gate_context(next_page))
 
-    login_user(demo, remember=False)
+    if ephemeral:
+        return redirect(next_page or url_for("weekly_review"))
+    if shared_demo:
+        logout_user()
+
+    ip = real_client_ip()
+    token = (request.form.get("cf-turnstile-response") or "").strip()
+    if not verify_turnstile(token, ip):
+        flash("Confirm you're a person and try the demo again.", "warning")
+        return render_template("demo_start.html", **_demo_gate_context(next_page)), 400
+
+    if not reserve_demo_ip(ip):
+        return limited_page(
+            f"This network has started {IP_SESSION_CAP} demos today. "
+            "Create an account to keep going on your own data."
+        )
+
+    session_token = secrets.token_urlsafe(24)
+    login_user(DemoSessionUser(session_token), remember=False)
+    session["_demo_token"] = session_token
+    session["_demo_started_at"] = time.time()
+    session.permanent = False
     return redirect(next_page or url_for("weekly_review"))
 
 

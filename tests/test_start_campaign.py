@@ -91,7 +91,7 @@ def test_campaign_write_routes_are_rate_limited(monkeypatch):
             for _ in range(21)
         ]
         assert statuses[:20] == [200] * 20
-        assert statuses[20] == 302  # HTML 429 handler redirects home.
+        assert statuses[20] == 429
         assert len(start_calls) == 20
 
         limiter.reset()
@@ -104,9 +104,10 @@ def test_campaign_write_routes_are_rate_limited(monkeypatch):
             client.get("/start/go/demo/hero", environ_base=remote)
             for _ in range(21)
         ]
-        assert all(r.status_code == 302 for r in responses)
+        assert all(r.status_code == 302 for r in responses[:20])
         assert all("/demo/start" in r.location for r in responses[:20])
-        assert responses[20].location.endswith("/index")
+        assert responses[20].status_code == 429
+        assert "a little fast" in responses[20].get_data(as_text=True)
         assert len(click_calls) == 20
     finally:
         limiter.reset()

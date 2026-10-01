@@ -560,7 +560,20 @@ def _inject_reddit_pixel():
 
 # Behind Render / other reverse proxies: trust X-Forwarded-* so request.host /
 # request.scheme / url_for(..., _external=True) match the public URL.
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+# PROXY_X_FOR is the hop count (default 1, Render's single proxy). Once the
+# site is proxied by Cloudflare, rate limits use CF-Connecting-IP instead.
+from app.client_ip import proxy_x_for_hops
+_proxy_hops = proxy_x_for_hops()
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=_proxy_hops, x_proto=1, x_host=1, x_prefix=1
+)
+
+
+@app.before_request
+def _redirect_onrender_host():
+    """Close the *.onrender.com origin. Health checks stay on this host."""
+    from app.security_headers import redirect_onrender_origin
+    return redirect_onrender_origin()
 
 
 @app.errorhandler(404)
@@ -571,7 +584,7 @@ def not_found(e):
 @app.errorhandler(429)
 def too_many_requests(e):
     """flask-limiter raises RateLimitExceeded → 429."""
-    from flask import jsonify, redirect
+    from flask import jsonify
 
     description = getattr(e, "description", "Too many requests, slow down.")
 
@@ -590,12 +603,13 @@ def too_many_requests(e):
             429,
         )
 
-    flash("You're going a little fast for our beta — give it a minute and try again.", "warning")
-
-    referrer = request.referrer or ""
-    if referrer.startswith(request.host_url):
-        return redirect(referrer)
-    return redirect(url_for("index"))
+    try:
+        return render_template("429.html", title="Slow down"), 429
+    except Exception:
+        return (
+            "You're going a little fast for our beta — give it a minute and try again.",
+            429,
+        )
 
 
 @app.errorhandler(500)
@@ -623,6 +637,12 @@ login_manager.init_app(app)
 
 @login_manager.user_loader
 def load_user(user_id):
+    from app.demo_guard import DemoSessionUser, is_ephemeral_demo_id, token_from_id
+    if is_ephemeral_demo_id(user_id):
+        token = token_from_id(user_id)
+        if not token:
+            return None
+        return DemoSessionUser(token)
     from app.models import User
     try:
         uid = int(user_id)
@@ -692,10 +712,17 @@ def _check_session_idle():
 
 def _touch_session_last_activity():
     if current_user.is_authenticated and not request.path.startswith("/static/"):
-        # Mark the session permanent so PERMANENT_SESSION_LIFETIME applies and
-        # the cookie survives browser restarts (otherwise it's a browser-session
-        # cookie that dies on close, regardless of the configured lifetime).
-        session.permanent = True
+        # Real accounts keep a persistent cookie (PERMANENT_SESSION_LIFETIME).
+        # Demo sessions do not: a 7-day cookie re-issued on every request is
+        # what let a crawler keep the shared demo login.
+        from app.demo_guard import is_ephemeral_demo_user
+        username = getattr(current_user, "username", "") or ""
+        try:
+            username = username.lower()
+        except Exception:
+            username = ""
+        demo_session = is_ephemeral_demo_user(current_user) or username == "demo"
+        session.permanent = not demo_session
         session[_SESSION_LAST_KEY] = time.time()
         session.modified = True
 
@@ -714,6 +741,10 @@ def _before_request_sentry_user():
     idle = _check_session_idle()
     if idle is not None:
         return idle
+    from app.demo_guard import guard_demo_request
+    blocked = guard_demo_request()
+    if blocked is not None:
+        return blocked
 
 
 @app.after_request
@@ -796,7 +827,47 @@ def _after_request_timing(response):
 from app.extensions import csrf, limiter
 
 csrf.init_app(app)
+
+
+@app.before_request
+def _sync_rate_limit_enabled():
+    """Honor ``RATELIMIT_ENABLED`` on each request.
+
+    ``Limiter.init_app`` copies the flag once. Tests (and a misconfigured
+    deploy that sets the flag after startup) flip ``app.config`` later.
+    The copy would keep limiting anyway.
+    """
+    limiter.enabled = bool(app.config.get("RATELIMIT_ENABLED", True))
+
+
 limiter.init_app(app)
+
+
+def _demo_heavy_key():
+    try:
+        return f"demo-heavy:{current_user.get_id()}"
+    except Exception:
+        return "demo-heavy:anon"
+
+
+from app.demo_guard import demo_heavy_exempt
+
+
+@app.before_request
+@limiter.limit(
+    "20 per minute;150 per day",
+    exempt_when=demo_heavy_exempt,
+    key_func=_demo_heavy_key,
+)
+def _limit_demo_heavy_pages():
+    """Per demo session, on the pages a crawler walks."""
+    return None
+
+
+@app.after_request
+def _security_headers(response):
+    from app.security_headers import apply_security_headers
+    return apply_security_headers(response)
 
 # Initialize the database and seed users from env.
 #

@@ -102,6 +102,12 @@ def get_user_plan_row(user_id):
     column would fail the whole read and silently exempt every user.
     """
     try:
+        from app.demo_guard import is_ephemeral_demo_id
+        if is_ephemeral_demo_id(user_id):
+            return None
+    except Exception:
+        pass
+    try:
         return fetch_one(
             "SELECT plan, trial_started_at, username, subscription_status, "
             "subscription_cancel_at_period_end, subscription_current_period_end "
