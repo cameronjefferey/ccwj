@@ -717,6 +717,13 @@ Symbol links in the concentration list preserve the selected account filter (`?a
 The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Strategy names stick left and the strategy total sticks right so a wide sector slice stays usable. The metric toggle (Total Return / Per trade / Win rate / Edge) rewrites cell values and the row, column, and grand totals in the same unit.
 
 **Still could be stronger:** richer narrative on the cards, less request-time SQL (pre-aggregate symbol tables in dbt), DTE breakdown moved fully into the warehouse.
+### Connected accounts (`/snaptrade/accounts`) and Settings (`/profile`)
+**Status: One story each. Linking, rename, sync, and billing posts are unchanged.**
+
+Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**.
+
+Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
+
 ### Accounts (`/accounts`) — two views
 **Status: Working. One surface for per-account performance AND value/composition.**
 
