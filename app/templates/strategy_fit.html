@@ -144,11 +144,13 @@
     .callouts-card .pair .pnl-big.pos { color: var(--gain); }
     .callouts-card .pair .pnl-big.neg { color: var(--loss); }
 
-    .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; scroll-margin-top: 4.5rem; }
+    .fit-controls { display: flex; flex-wrap: wrap; gap: .9rem; align-items: end; margin-bottom: .9rem; scroll-margin-top: 4.5rem; max-width: 100%; }
+    .fit-controls > div { min-width: 0; max-width: 100%; }
     .fit-controls label.lblh { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ht-muted); margin-bottom: .25rem; display: block; }
 
     .metric-toggle {
-        display: inline-flex; gap: 0; background: #121826; padding: 3px;
+        display: flex; flex-wrap: wrap; max-width: 100%; gap: 0;
+        background: #121826; padding: 3px;
         border-radius: 0.45rem; border: 1px solid #243049;
     }
     .metric-toggle button:not(.ht-term-btn),
@@ -275,6 +277,13 @@
     }
     .fit-col-short, .fit-corner-short { display: none; }
     @media (max-width: 480px) {
+        /* The metric row (Total Return / Per trade / Win rate / Edge)
+           is wider than a 390px screen when it stays one line. Stack
+           the control groups and let each toggle wrap inside the page. */
+        .fit-controls { flex-direction: column; align-items: stretch; }
+        .metric-toggle { width: 100%; }
+        .metric-toggle button:not(.ht-term-btn),
+        .metric-toggle a { padding: .35rem .6rem; }
         /* At ~400px a 108px strategy pin plus a sticky total left room
            for one sector. Narrow the cells, abbreviate headers, and let
            the total scroll so several sectors fit. */

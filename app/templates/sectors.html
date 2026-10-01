@@ -19,7 +19,8 @@
     .sec-pad { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
     .sec-head { margin-bottom: .85rem; }
     .sec-head .section-header { margin: 0; }
-    .sec-lead { margin: .2rem 0 0; font-size: .82rem; color: var(--ht-muted); }
+    .sec-lead { display: block; margin: .2rem 0 0; font-size: .82rem; color: var(--ht-muted); }
+    .sec-name { display: block; min-width: 0; overflow-wrap: break-word; word-break: normal; }
     body .sec-page .disclosure > summary .section-header { margin: 0; }
     .sec-note { font-size: .82rem; color: var(--ht-muted); margin: .85rem 0 0; }
     #secTable { font-size: .88rem; width: 100%; min-width: 0; }
@@ -95,6 +96,15 @@
             font-weight: 650;
             text-align: left;
             flex: 0 0 42%;
+        }
+        /* Long sector names ("Communication Services") wrap at spaces
+           inside the value column instead of poking past the card. */
+        .sec-page table.ht-stack > tbody > tr > td > .sec-name {
+            min-width: 0;
+            flex: 1 1 0;
+            text-align: right;
+            overflow-wrap: break-word;
+            word-break: normal;
         }
         .sec-sub {
             display: block;
@@ -212,8 +222,10 @@
                 {% set sec_id = s.sector|replace(' ', '-')|lower %}
                 <tr>
                     <td data-label="Sector">
-                        <a href="#{{ sec_id }}" class="fw-semibold text-decoration-none">{{ s.sector }}</a>
-                        <div class="sec-lead">{{ s.num_subsectors }} subsector{% if s.num_subsectors != 1 %}s{% endif %}</div>
+                        <div class="sec-name">
+                            <a href="#{{ sec_id }}" class="fw-semibold text-decoration-none">{{ s.sector }}</a>
+                            <div class="sec-lead">{{ s.num_subsectors }} subsector{% if s.num_subsectors != 1 %}s{% endif %}</div>
+                        </div>
                     </td>
                     <td data-label="Symbols" class="text-end">{{ s.num_symbols }}</td>
                     <td data-label="Trades" class="text-end">{{ s.num_trades | int }}</td>

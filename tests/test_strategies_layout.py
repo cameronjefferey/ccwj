@@ -28,6 +28,8 @@ def test_strategies_story_order_is_headline_then_cards_then_collapsed_rest():
     assert "position_detail" in PAGE
     assert "population_label" in PAGE
     assert "focus_strategy.num_symbols }} symbol" not in PAGE
+    assert "focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L" in PAGE
+    assert "strat-suffix" in PAGE
     assert "scoped_url('positions'" in PAGE
 
 
@@ -69,6 +71,7 @@ def test_fit_matrix_is_headline_then_matrix_then_notes():
     assert '<details class="disclosure" id="fit-notes">' in FIT
     assert "Where the result is negative" in FIT
     assert "Where you lose money" not in FIT
+    assert "display: flex; flex-wrap: wrap; max-width: 100%" in FIT
     assert "fit-table-wrap" in FIT
     assert "overflow: auto" in FIT
     assert "function renderTotal" in FIT
