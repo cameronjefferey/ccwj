@@ -16,8 +16,8 @@
         background: rgba(13,110,253,.04);
     }
     .upload-zone.has-file {
-        border-color: #198754;
-        background: rgba(25,135,84,.04);
+        border-color: var(--ht-blue);
+        background: color-mix(in srgb, var(--ht-blue) 8%, transparent);
     }
     .upload-zone input[type="file"] {
         position: absolute;
@@ -30,7 +30,7 @@
         color: var(--ht-muted);
         margin-bottom: .5rem;
     }
-    .upload-zone.has-file .upload-icon { color: #28c08a; }
+    .upload-zone.has-file .upload-icon { color: var(--ht-blue); }
     .upload-zone.disabled {
         opacity: .45;
         pointer-events: none;
@@ -48,7 +48,7 @@
     }
     .file-name {
         font-weight: 600;
-        color: #28c08a;
+        color: var(--ht-blue);
         font-size: .9rem;
     }
     .format-table {
@@ -103,10 +103,16 @@
         padding: .15rem .5rem;
         border-radius: 999px;
     }
-    .broker-export .ready-pill { background: #dcfce7; color: #166534; }
-    .broker-export .soon-pill { background: #1a2233; color: #8a97b1; }
-    [data-bs-theme="dark"] .broker-export .ready-pill { background: #14532d; color: #bbf7d0; }
-    [data-bs-theme="dark"] .broker-export .soon-pill { background: #1e293b; color: #94a3b8; }
+    .broker-export .ready-pill {
+        background: color-mix(in srgb, var(--ht-blue) 14%, transparent);
+        color: var(--ht-blue);
+        border: 1px solid color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
+    }
+    .broker-export .soon-pill {
+        background: transparent;
+        color: var(--ht-muted);
+        border: 1px solid var(--ht-line);
+    }
     .csv-req-prefill {
         background: var(--bs-tertiary-bg, #f8f9fa);
         border-radius: 8px;

@@ -482,13 +482,13 @@
     <div style="margin-top:.9rem;">
         <div class="text-muted small fw-bold mb-2" style="font-size:.7rem; text-transform:uppercase; letter-spacing:.4px;">
             Dividends paid {{ tm_day }}
-            <span style="color:#28c08a;">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+            <span style="color:var(--gain);">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
             <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge rounded-pill text-decoration-none"
                data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}"
-               style="font-size:.75rem; padding:.45em .8em; background:rgba(40,192,138,.16); color:#e8edf7; border:1px solid #5eead4;">
+               style="font-size:.75rem; padding:.45em .8em; background:color-mix(in srgb, var(--gain) 16%, transparent); color:#e8edf7; border:1px solid var(--gain);">
                 {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
             </a>
             {% endfor %}

@@ -12,8 +12,8 @@
     }
     .dd-hero .dd-date { font-size: .78rem; letter-spacing: 1px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
     .dd-hero .dd-delta { font-size: 2rem; font-weight: 600; }
-    .dd-hero .dd-delta.pos { color: #4ade80; }
-    .dd-hero .dd-delta.neg { color: #f87171; }
+    .dd-hero .dd-delta.pos { color: var(--gain); }
+    .dd-hero .dd-delta.neg { color: var(--loss); }
     .dd-hero .dd-sub { color: #94a3b8; font-size: .9rem; }
     .dd-nav a { color: #cbd5e1; text-decoration: none; font-size: .85rem; }
     .dd-nav a:hover { color: #fff; }
@@ -26,11 +26,11 @@
     .dd-money.pos { color: var(--color-positive); }
     .dd-money.neg { color: var(--color-negative); }
     .dd-muted { color: var(--ht-muted); font-size: .8rem; }
-    .dd-roll-ok { color: #28c08a; font-size: .75rem; font-weight: 600; }
+    .dd-roll-ok { color: var(--gain); font-size: .75rem; font-weight: 600; }
     .dd-roll-miss { color: #e8c07a; font-size: .75rem; font-weight: 600; }
     .dd-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
     .dd-verb.buy { background: #eff6ff; color: #1d4ed8; }
-    .dd-verb.sell { background: rgba(240,85,109,.12); color: #e8edf7; }
+    .dd-verb.sell { background: color-mix(in srgb, var(--loss) 12%, transparent); color: #e8edf7; }
     .dd-verb.lifecycle { background: rgba(176,107,255,.14); color: #e8edf7; }
     .dd-sym { font-weight: 700; color: var(--ht-ink); }
     .dd-empty { color: var(--ht-faint); font-size: .9rem; padding: .35rem 0; }
@@ -53,7 +53,7 @@
     [data-bs-theme="dark"] .dd-card { background: #111a2c; }
     [data-bs-theme="dark"] .dd-table td { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .dd-verb.buy { background: #172554; color: #93c5fd; }
-    [data-bs-theme="dark"] .dd-verb.sell { background: #450a0a; color: #fca5a5; }
+    [data-bs-theme="dark"] .dd-verb.sell { background: #450a0a; color: var(--loss); }
     [data-bs-theme="dark"] .dd-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
 </style>
 

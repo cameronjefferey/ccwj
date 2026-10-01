@@ -255,7 +255,7 @@
         font-variant-numeric: tabular-nums;
     }
     body .broker-line .name { color: var(--ht-ink, #1c1917); font-weight: 600; }
-    body .broker-line .amt { color: #28c08a; font-weight: 700; font-size: 1.15rem; }
+    body .broker-line .amt { color: var(--gain); font-weight: 700; font-size: 1.15rem; }
     body .start-example {
         margin: .55rem 0 0;
         font-size: .75rem;
@@ -277,8 +277,8 @@
         font-size: .95rem;
         white-space: nowrap;
     }
-    body .step-amt.up { color: #28c08a; }
-    body .step-amt.down { color: #f0556d; }
+    body .step-amt.up { color: var(--gain); }
+    body .step-amt.down { color: var(--loss); }
     body .step-amt.shares {
         color: var(--ht-muted, #57534e);
         font-weight: 600;
@@ -354,7 +354,7 @@
     body .start-profile .ts-book {
         border-radius: 14px; padding: .85rem .95rem .9rem; min-width: 0; border: 1px solid transparent;
     }
-    body .start-profile .ts-book.income { background: rgba(40,192,138,.12); border-color: #243049; border-top: 3px solid #0f766e; }
+    body .start-profile .ts-book.income { background: color-mix(in srgb, var(--gain) 12%, transparent); border-color: #243049; border-top: 3px solid #0f766e; }
     body .start-profile .ts-book.directional { background: rgba(176,107,255,.14); border-color: #243049; border-top: 3px solid #6d5bd0; }
     body .start-profile .ts-book-kicker { font-size: .78rem; font-weight: 700; margin-bottom: .3rem; }
     body .start-profile .ts-book.income .ts-book-kicker { color: #5eead4; }
@@ -460,8 +460,8 @@
     [data-bs-theme="dark"] body .start-panel-broker .broker-line .amt { color: #e7e5e4; }
     [data-bs-theme="dark"] body .start-panel-ht { border-color: #e2e8f0; }
     [data-bs-theme="dark"] body .step-n { background: #e2e8f0; color: #0f172a; }
-    [data-bs-theme="dark"] body .step-amt.up { color: #4ade80; }
-    [data-bs-theme="dark"] body .step-amt.down { color: #fca5a5; }
+    [data-bs-theme="dark"] body .step-amt.up { color: var(--gain); }
+    [data-bs-theme="dark"] body .step-amt.down { color: var(--loss); }
     [data-bs-theme="dark"] body .start-steps li.step-total { border-color: #334155; }
     [data-bs-theme="dark"] body .start-flow-1,
     [data-bs-theme="dark"] body .start-flow-3,

@@ -100,21 +100,21 @@
         align-items: center;
         justify-content: space-between;
         gap: .9rem;
-        background: rgba(240,85,109,.12);
-        border: 1px solid #f0556d;
+        background: color-mix(in srgb, var(--loss) 12%, transparent);
+        border: 1px solid var(--loss);
         border-radius: 10px;
         padding: .85rem 1rem;
         margin: .5rem 0 1rem;
     }
     .reconnect-banner .rb-title {
         font-weight: 700;
-        color: #f0556d;
+        color: var(--loss);
         font-size: .95rem;
         margin-bottom: .2rem;
     }
     .reconnect-banner .rb-sub {
         font-size: .82rem;
-        color: #f0556d;
+        color: var(--loss);
         line-height: 1.5;
         max-width: 60ch;
     }
@@ -122,12 +122,12 @@
     .reconnect-banner .reconnect-btn {
         white-space: nowrap;
         font-weight: 600;
-        background: #dc2626;
-        border-color: #dc2626;
+        background: var(--loss);
+        border-color: var(--loss);
         color: #fff;
     }
-    .reconnect-banner .reconnect-btn:hover { background: #b91c1c; border-color: #b91c1c; }
-    .needs-reconnect-note { font-size: .8125rem; color: #f0556d; font-weight: 600; }
+    .reconnect-banner .reconnect-btn:hover { background: var(--loss); border-color: var(--loss); filter: brightness(0.92); }
+    .needs-reconnect-note { font-size: .8125rem; color: var(--loss); font-weight: 600; }
 
     /* "Complete this account" — nickname (form above) + older CSV history
        + opening-balance disclosure, assembled in one place per account. */
@@ -219,7 +219,7 @@
 
         {% if any_reconnect_needed %}
         <div class="alert small mb-3" role="alert"
-             style="background: rgba(240,85,109,.12); border: 1px solid #f0556d; color: #e8edf7;">
+             style="background: color-mix(in srgb, var(--loss) 12%, transparent); border: 1px solid var(--loss); color: #e8edf7;">
             <strong>Action needed:</strong> one or more broker connections need to be
             reconnected before they can sync again. Use the
             <strong>Reconnect</strong> button on the affected broker below &mdash;

@@ -6,8 +6,8 @@
     /* One card, one gain, one loss. Numbers use the gain/loss tokens.
        Open/Closed and strategy names share one badge, not a second green. */
     .pd-page {
-        --pd-gain: var(--color-positive, #28c08a);
-        --pd-loss: var(--color-negative, #f0556d);
+        --pd-gain: var(--gain);
+        --pd-loss: var(--loss);
         --pd-ink: var(--ht-ink, #e8edf7);
         --pd-muted: var(--ht-muted, #8a97b1);
         --pd-surface: var(--ht-surface, #121826);
@@ -98,8 +98,8 @@
         font-weight: 500;
         font-size: 13px;
     }
-    .ht-pnl-tip-amt.pos { color: var(--pd-gain, #28c08a); }
-    .ht-pnl-tip-amt.neg { color: var(--pd-loss, #f0556d); }
+    .ht-pnl-tip-amt.pos { color: var(--pd-gain); }
+    .ht-pnl-tip-amt.neg { color: var(--pd-loss); }
     .ht-pnl-tip-more {
         margin: 4px 0 0 13px;
         color: #8a97b1;
@@ -975,7 +975,7 @@
       background:rgba(184,115,51,.14); color:var(--color-mirror-ink); }
   .leg-tag-x { border:none; background:none; color:inherit; cursor:pointer;
       font-size:.85rem; line-height:1; padding:0; }
-  .leg-tag-x:hover { color:#f0556d; }
+  .leg-tag-x:hover { color: var(--loss); }
   .leg-tag-open, .leg-tag-ui .btn { font-size:.68rem; font-weight:600; padding:0 .35rem;
       border:none; background:none; color:#8a97b1; cursor:pointer; }
   .leg-tag-open:hover { color:#e8edf7; }
@@ -1465,9 +1465,9 @@
                     {% set acct = (o.account_display or o.account) | account_label(o.tenant_id) %}
                     <td class="pd-tight">
                         {% if o.is_winner %}
-                        <span class="leg-arrow" style="color:#28c08a;font-size:.7rem;">&#9654;</span>
+                        <span class="leg-arrow" style="color:var(--gain);font-size:.7rem;">&#9654;</span>
                         {% else %}
-                        <span class="leg-arrow" style="color:#f0556d;font-size:.7rem;">&#9654;</span>
+                        <span class="leg-arrow" style="color:var(--loss);font-size:.7rem;">&#9654;</span>
                         {% endif %}
                     </td>
                     <td class="pd-tight text-center text-muted small">
@@ -1881,7 +1881,7 @@
     // Index chart dates once, then place each marker at its date's Total
     // value (walking back to the last non-null Total for sparse spines).
     var MARKER_COLORS = (window.htPnlTooltip && window.htPnlTooltip.colors) || {
-        buy: '#1d4ed8', sell: '#f0556d', lifecycle: '#6d28d9', income: '#28c08a'
+        buy: '#1d4ed8', sell: htColor('--loss'), lifecycle: '#6d28d9', income: htColor('--gain')
     };
     var markerDataset = null;
     var markerIndexByDate = {};   // story date iso -> point index in the marker dataset
@@ -2042,7 +2042,7 @@
                     {
                         label: 'Dividends',
                         data: chartData.dividends,
-                        borderColor: '#28c08a',
+                        borderColor: htColor('--gain'),
                         tension: 0,
                         pointRadius: 0,
                         pointHitRadius: 6,

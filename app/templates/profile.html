@@ -85,7 +85,11 @@
         font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
         padding: .3rem .7rem; border-radius: 999px;
     }
-    .sync-status.connected { background: #dcfce7; color: #14532d; }
+    .sync-status.connected {
+        background: color-mix(in srgb, var(--ht-blue) 14%, transparent);
+        color: var(--ht-blue);
+        border: 1px solid color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
+    }
     .sync-status.disconnected { background: #2a2118; color: #e8edf7; }
     .sync-status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
     .sync-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
@@ -121,10 +125,14 @@
         padding: .2rem .55rem; border-radius: 999px;
     }
     .pill .dot { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
-    .pill-ok { background: #dcfce7; color: #14532d; }
+    .pill-ok {
+        background: color-mix(in srgb, var(--ht-blue) 14%, transparent);
+        color: var(--ht-blue);
+        border: 1px solid color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
+    }
     .pill-warn { background: #2a2118; color: #e8edf7; }
     .pill-muted { background: #1a2233; color: #8a97b1; }
-    .pill-danger { background: rgba(240,85,109,.14); color: #e8edf7; }
+    .pill-danger { background: color-mix(in srgb, var(--loss) 14%, transparent); color: #e8edf7; }
 
     .ht-pick { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 1rem; }
     .ht-pick-chip {
@@ -345,7 +353,7 @@
                     {% endfor %}
                     {% if _ns_st_o.any_broken %}
                     <div class="alert small mb-3" role="alert"
-                         style="background: rgba(240,85,109,.12); border: 1px solid #f0556d; color: #e8edf7;">
+                         style="background: color-mix(in srgb, var(--loss) 12%, transparent); border: 1px solid var(--loss); color: #e8edf7;">
                         <strong>A broker connection needs reconnecting.</strong>
                         Syncing won't help until it's fixed — reconnect the broker (one
                         click fixes every account on that connection).
@@ -997,8 +1005,8 @@
                 </div>
             </div>
 
-            <div class="atlas-card" style="border-color:#fecaca;">
-                <div class="atlas-card-h" style="color:#f0556d;">Danger zone</div>
+            <div class="atlas-card" style="border-color:var(--loss);">
+                <div class="atlas-card-h" style="color:var(--loss);">Danger zone</div>
                 <div class="atlas-card-b">
                     <p class="atlas-hint mb-3">
                         Deleting your account is permanent. It removes your login, disconnects

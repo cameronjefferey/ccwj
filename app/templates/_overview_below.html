@@ -304,10 +304,10 @@
                     {% endif %}
                     {% set intensity = _int.v %}
                     {% if c.daily_change > 0 %}
-                        {% set bg = "rgba(25,135,84," ~ (0.08 + intensity * 0.007) ~ ")" %}
+                        {% set bg = "color-mix(in srgb, var(--gain) " ~ (8 + intensity * 0.7)|round(1) ~ "%, transparent)" %}
                         {% set fg = "var(--cal-pos-fg)" %}
                     {% elif c.daily_change < 0 %}
-                        {% set bg = "rgba(220,53,69," ~ (0.08 + intensity * 0.007) ~ ")" %}
+                        {% set bg = "color-mix(in srgb, var(--loss) " ~ (8 + intensity * 0.7)|round(1) ~ "%, transparent)" %}
                         {% set fg = "var(--cal-neg-fg)" %}
                     {% else %}
                         {% set bg = "var(--cal-zero-bg)" %}{% set fg = "var(--cal-zero-fg)" %}

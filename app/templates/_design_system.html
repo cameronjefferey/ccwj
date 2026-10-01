@@ -1,0 +1,213 @@
+<style>
+    /* Shared design system, promoted from the position page.
+       One gain (--gain), one loss (--loss), one flat card, one badge,
+       one section header, one tile, one disclosure.
+       Earnings and Admin opt out with body.ht-exempt.
+       Strategy swatches and buy/lifecycle marker colors stay categorical. */
+    body:not(.ht-exempt) .card:not(.feature-card),
+    body:not(.ht-exempt) .stat-card,
+    body:not(.ht-exempt) .chart-wrapper,
+    body:not(.ht-exempt) .narrative-card,
+    body:not(.ht-exempt) .review-section,
+    body:not(.ht-exempt) .review-hero,
+    body:not(.ht-exempt) .kpi-card,
+    body:not(.ht-exempt) .income-card,
+    body:not(.ht-exempt) .coaching-section,
+    body:not(.ht-exempt) .settings-card,
+    body:not(.ht-exempt) .atlas-card,
+    body:not(.ht-exempt) .sync-card,
+    body:not(.ht-exempt) .ts-card,
+    body:not(.ht-exempt) .dd-card,
+    body:not(.ht-exempt) .sec-card,
+    body:not(.ht-exempt) .data-section,
+    body:not(.ht-exempt) .since-card,
+    body:not(.ht-exempt) .insights-content,
+    body:not(.ht-exempt) .callouts-card,
+    body:not(.ht-exempt) .fit-card,
+    body:not(.ht-exempt) .static-card,
+    body:not(.ht-exempt) .broker-card,
+    body:not(.ht-exempt) .portal-card,
+    body:not(.ht-exempt) .processing-card,
+    body:not(.ht-exempt) .gs-step,
+    body:not(.ht-exempt) .gs-path,
+    body:not(.ht-exempt) .gs-done,
+    body:not(.ht-exempt) .fl-section,
+    body:not(.ht-exempt) .faq-item,
+    body:not(.ht-exempt) .learn-card,
+    body:not(.ht-exempt) .strat-card,
+    body:not(.ht-exempt) .focus-header,
+    body:not(.ht-exempt) .ht-group-card,
+    body:not(.ht-exempt) .pos-hero,
+    body:not(.ht-exempt) .insights-hero,
+    body:not(.ht-exempt) .settings-hero,
+    body:not(.ht-exempt) .ts-hero,
+    body:not(.ht-exempt) .atlas-hero,
+    body:not(.ht-exempt) .acct-hero,
+    body:not(.ht-exempt) .ind-hero,
+    body:not(.ht-exempt) .strat-hero {
+        background: var(--ht-surface);
+        background-image: none;
+        border: 1px solid var(--ht-line) !important;
+        border-radius: 12px !important;
+        box-shadow: none !important;
+        color: var(--ht-ink);
+    }
+    body:not(.ht-exempt) #storyCard.card {
+        border-radius: 16px !important;
+    }
+    body:not(.ht-exempt) .card:not(.feature-card):hover,
+    body:not(.ht-exempt) .strat-card:hover,
+    body:not(.ht-exempt) .sec-card:hover,
+    body:not(.ht-exempt) .discovery-card:hover,
+    body:not(.ht-exempt) a.stat-tile:hover,
+    body:not(.ht-exempt) .strip-card:hover {
+        box-shadow: none !important;
+        transform: none;
+    }
+
+    body:not(.ht-exempt) .tile,
+    body:not(.ht-exempt) .signal-card,
+    body:not(.ht-exempt) .stat-tile,
+    body:not(.ht-exempt) .discovery-card {
+        background: var(--ht-surface-2);
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        box-shadow: none;
+        min-width: 0;
+    }
+    body:not(.ht-exempt) .tile.is-pos { border-top: 2px solid var(--gain); }
+    body:not(.ht-exempt) .tile.is-neg { border-top: 2px solid var(--loss); }
+    body:not(.ht-exempt) .tile-value,
+    body:not(.ht-exempt) .signal-value,
+    body:not(.ht-exempt) .stat-tile .n {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+    }
+
+    /* Outline pill. Open uses the accent. Strategy names match Closed. */
+    body:not(.ht-exempt) .badge,
+    body:not(.ht-exempt) .badge-open,
+    body:not(.ht-exempt) .badge-closed,
+    body:not(.ht-exempt) .badge-mixed,
+    body:not(.ht-exempt) .badge-strategy,
+    body:not(.ht-exempt) .pill-status,
+    body:not(.ht-exempt) .account-badge,
+    body:not(.ht-exempt) .ov-pill,
+    body:not(.ht-exempt) .trend-badge,
+    body:not(.ht-exempt) .watch-badge {
+        font-size: .68rem;
+        font-weight: 650;
+        padding: .2em .6em;
+        border-radius: 999px !important;
+        background: transparent !important;
+        color: var(--ht-muted) !important;
+        border: 1px solid var(--ht-line) !important;
+        box-shadow: none !important;
+        white-space: normal;
+        max-width: 100%;
+        line-height: 1.35;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+    body:not(.ht-exempt) .badge-open,
+    body:not(.ht-exempt) .badge.bg-success,
+    body:not(.ht-exempt) .badge.bg-success-subtle,
+    body:not(.ht-exempt) .pill-status.open,
+    body:not(.ht-exempt) .trend-badge:not(.declining):not(.stable) {
+        background: color-mix(in srgb, var(--ht-blue) 14%, transparent) !important;
+        color: var(--ht-blue) !important;
+        border-color: color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line)) !important;
+    }
+    body:not(.ht-exempt) .trend-badge.declining,
+    body:not(.ht-exempt) .watch-badge.itm {
+        background: color-mix(in srgb, var(--loss) 14%, transparent) !important;
+        color: var(--loss) !important;
+        border-color: color-mix(in srgb, var(--loss) 45%, var(--ht-line)) !important;
+    }
+    body:not(.ht-exempt) .watch-badge.otm {
+        background: color-mix(in srgb, var(--gain) 14%, transparent) !important;
+        color: var(--gain) !important;
+        border-color: color-mix(in srgb, var(--gain) 45%, var(--ht-line)) !important;
+    }
+
+    body:not(.ht-exempt) .section-header,
+    body:not(.ht-exempt) .section-label,
+    body:not(.ht-exempt) .atlas-card-h,
+    body:not(.ht-exempt) .settings-card .card-header,
+    body:not(.ht-exempt) .learn-section h2,
+    body:not(.ht-exempt) h2.ts-section-title {
+        font-size: .95rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        line-height: 1.3;
+        text-transform: none;
+        color: var(--ht-ink);
+        margin: 0 0 .55rem;
+        overflow-wrap: break-word;
+    }
+
+    body:not(.ht-exempt) .disclosure {
+        background: var(--ht-surface);
+        border: 1px solid var(--ht-line);
+        border-radius: 12px;
+        box-shadow: none;
+        padding: 0;
+        margin-bottom: 1rem;
+    }
+    body:not(.ht-exempt) .disclosure > summary,
+    body:not(.ht-exempt) .disclosure > .pd-fold-sum {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: .35rem .75rem;
+        padding: .9rem 1.1rem;
+        cursor: pointer;
+        list-style: none;
+    }
+    body:not(.ht-exempt) .disclosure > summary::-webkit-details-marker { display: none; }
+    body:not(.ht-exempt) .disclosure > summary::after {
+        content: "▸";
+        color: var(--ht-muted);
+        margin-left: auto;
+        font-size: .8rem;
+    }
+    body:not(.ht-exempt) .disclosure[open] > summary::after { content: "▾"; }
+
+    body:not(.ht-exempt) .pos,
+    body:not(.ht-exempt) .text-positive { color: var(--gain) !important; }
+    body:not(.ht-exempt) .neg,
+    body:not(.ht-exempt) .text-negative { color: var(--loss) !important; }
+
+    body:not(.ht-exempt) .dot.open,
+    body:not(.ht-exempt) .ov-dot.open,
+    body:not(.ht-exempt) .pill-dot.open,
+    body:not(.ht-exempt) .sym-tab__dot.open {
+        background: var(--ht-blue);
+    }
+
+    @media (max-width: 640px) {
+        body:not(.ht-exempt) .insights-hero,
+        body:not(.ht-exempt) .settings-hero,
+        body:not(.ht-exempt) .atlas-hero,
+        body:not(.ht-exempt) .ts-hero,
+        body:not(.ht-exempt) .strat-hero,
+        body:not(.ht-exempt) .acct-hero,
+        body:not(.ht-exempt) .ind-hero,
+        body:not(.ht-exempt) .review-hero {
+            padding: 1.15rem 1rem;
+        }
+        body:not(.ht-exempt) .strat-cards,
+        body:not(.ht-exempt) .sec-grid,
+        body:not(.ht-exempt) .signal-grid,
+        body:not(.ht-exempt) .discovery-grid {
+            grid-template-columns: 1fr;
+        }
+        body:not(.ht-exempt) .section-header,
+        body:not(.ht-exempt) .section-label,
+        body:not(.ht-exempt) .badge,
+        body:not(.ht-exempt) .badge-strategy {
+            overflow-wrap: break-word;
+        }
+    }
+</style>

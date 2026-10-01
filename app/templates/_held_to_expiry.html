@@ -176,8 +176,8 @@
         font-family: "JetBrains Mono", ui-monospace, monospace;
     }
     .held-fold-contract { color: #e8edf7; }
-    .held-fold-table .pos { color: #28c08a; }
-    .held-fold-table .neg { color: #f0556d; }
+    .held-fold-table .pos { color: var(--gain); }
+    .held-fold-table .neg { color: var(--loss); }
     .held-fold-row { cursor: pointer; }
     .held-fold-row:hover, .held-fold-row:focus-visible { background: rgba(91, 140, 255, .08); }
     .held-fold-row:focus-visible { outline: 2px solid #5b8cff; outline-offset: -2px; }
@@ -211,8 +211,8 @@
         font-size: .85rem;
         color: #e8edf7;
     }
-    .held-fold-card-metrics .v.pos { color: #28c08a; }
-    .held-fold-card-metrics .v.neg { color: #f0556d; }
+    .held-fold-card-metrics .v.pos { color: var(--gain); }
+    .held-fold-card-metrics .v.neg { color: var(--loss); }
     .held-fold-card-pill { text-align: right; }
     .sr {
         position: absolute;
@@ -246,8 +246,8 @@
         line-height: 1.35;
         color: #8a97b1;
     }
-    .held-pill.held-more { color: #28c08a; }
-    .held-pill.held-less { color: #f0556d; }
+    .held-pill.held-more { color: var(--gain); }
+    .held-pill.held-less { color: var(--loss); }
     .held-pill:hover, .held-pill:focus-visible { border-color: #5b8cff; }
     .held-pill:focus-visible { outline: 2px solid #5b8cff; outline-offset: 2px; }
     .held-step {
@@ -416,8 +416,8 @@
         line-height: 1.15;
         color: #e8edf7;
     }
-    .held-stat .val.pos { color: #28c08a; }
-    .held-stat .val.neg { color: #f0556d; }
+    .held-stat .val.pos { color: var(--gain); }
+    .held-stat .val.neg { color: var(--loss); }
     .held-stat .val.held-diff {
         font-size: 1rem;
         line-height: 1.3;
