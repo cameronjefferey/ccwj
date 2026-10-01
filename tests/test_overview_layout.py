@@ -58,31 +58,35 @@ def test_realized_pill_and_collected_premium_stay_literal():
     assert "collected $" in BELOW
 
 
-def test_snapshot_columns_stack_on_a_phone_instead_of_hiding():
-    assert 'data-label="Share of book"' in PAGE
-    assert 'data-label="1 month"' in PAGE
-    assert "snap-col-share { display: none" not in STYLES
-    assert "content: attr(data-label)" in STYLES
+def test_snapshot_stays_columns_on_a_phone():
+    """Account rows stay a table at phone width. Share of book moves under the name."""
+    assert 'class="snapshot-scroll"' in PAGE
+    assert 'class="acct-share-phone"' in PAGE
+    assert ">1W<" in PAGE
+    assert ">1M<" in PAGE
+    assert "1 week" in PAGE and "1 month" in PAGE
+    phone = STYLES.split("@media (max-width: 720px)", 1)[1].split("@media", 1)[0]
+    assert ".snapshot-table { display: flex" not in phone
+    assert "flex-direction: column" not in phone
+    assert "content: attr(data-label)" not in phone
+    assert "grid-column: 1 / -1" not in phone
+    assert "text-align: left" not in phone
+    assert ".snap-col-share { display: none" in phone
+    assert "position: sticky" in phone
+    assert "left: 0" in phone
+    assert "overflow-x: auto" in phone
+    assert "overflow-x: clip" in phone
+    assert "repeat(3, max-content)" in phone
+    assert "var(--font-mono)" in phone
+    assert ".acct-share-phone" in phone
     assert "box-shadow: none" in STYLES
     section = STYLES.split(".review-section {", 1)[1].split("}", 1)[0]
     assert "box-shadow: none" in section
-
-
-def test_benchmark_rows_match_account_stack_on_a_phone():
-    phone = STYLES.split("@media (max-width: 720px)", 1)[1].split("@media", 1)[0]
-    assert '[data-bs-theme="dark"] .snapshot-table .snapshot-table-row.benchmark > div' in phone
-    assert "background: transparent" in phone
-    assert "text-align: left" in phone
-    # (0,3,1) so it beats the desktop (0,2,1) right-align on every row.
-    rule = phone.split(
-        ".snapshot-table .snapshot-table-row > div:not(:first-child)", 1
-    )[1].split("}", 1)[0]
-    assert "text-align: left" in rule
     desktop = STYLES.split("@media (max-width: 720px)", 1)[0]
+    assert "minmax(0, 1.15fr) minmax(6.5rem, .9fr) max-content repeat(3, minmax(4.25rem, .8fr))" in desktop
     assert ".snapshot-table-row > div:not(:first-child)" in desktop
     assert "text-align: right" in desktop
-    assert ".snapshot-table-row.benchmark > div" in desktop
-    assert ".snapshot-table .snapshot-table-row > div:not(:first-child)" not in desktop
+    assert ".snap-col-share { display: none" not in desktop
 
 
 def test_headline_figures_stay_one_line_and_shrink_on_a_narrow_screen():
