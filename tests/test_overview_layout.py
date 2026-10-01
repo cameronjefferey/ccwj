@@ -90,7 +90,9 @@ def test_headline_figures_stay_one_line_and_shrink_on_a_narrow_screen():
     assert "clamp(" in big
     assert "container-type: inline-size" in STYLES
     sized = STYLES.split(".ov-top .ov-big:not(.ov-invest) {", 1)[1].split("}", 1)[0]
-    assert "clamp(1.05rem, 18cqi, 2.75rem)" in sized
+    assert "clamp(1.05rem, 13.5cqi, 2.15rem)" in sized
+    assert "18cqi" not in sized
+    assert "2.75rem" not in sized
     assert "5.2vw" not in sized
     figures = STYLES.split(".ov-big, .ov-pct {", 1)[1].split("}", 1)[0]
     assert "white-space: nowrap" in figures

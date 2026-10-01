@@ -5,6 +5,7 @@ A shared demo session must be able to open password recovery (same trap as
 /login). GET /logout confirms; only POST ends the session. Error pages use
 the house card. SnapTrade and Stripe HTTP calls cannot wait forever.
 """
+from pathlib import Path
 from urllib.parse import urlparse
 
 from app import app
@@ -139,6 +140,27 @@ def test_get_logout_confirms_and_post_ends_the_session(monkeypatch):
     assert _path(done) in ("/", "/index")
     with client.session_transaction() as sess:
         assert "_user_id" not in sess
+
+
+def test_nav_mobile_menu_and_settings_logout_posts():
+    """GET /logout is a confirm page. Every control must POST so one
+    click still ends the session. The phone menu is the same #navContent
+    collapse, and Settings has no second logout link."""
+    root = Path("app/templates")
+    base = (root / "base.html").read_text()
+    nav = base.split('id="navContent"', 1)[1].split("</nav>", 1)[0]
+    assert nav.count("url_for('logout')") == 1
+    before = nav.split("url_for('logout')", 1)[0]
+    assert 'method="post"' in before[-240:]
+    assert "navbar-toggler" in base
+    assert 'data-bs-target="#navContent"' in base
+    for name in ("profile.html", "settings.html"):
+        text = (root / name).read_text()
+        assert "logout" not in text.lower()
+    for path in root.rglob("*.html"):
+        text = path.read_text()
+        assert 'href="/logout"' not in text
+        assert "url_for('logout')" not in text or 'method="post"' in text
 
 
 def test_unknown_path_is_a_house_404():
