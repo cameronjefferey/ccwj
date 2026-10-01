@@ -1,1048 +1,875 @@
 {% extends "base.html" %}
 
+{# Settings — one page. Headline, then the tab's main action, then the rest
+   behind disclosures. Linking, sync, email, password, and billing posts
+   are unchanged. #}
+
 {% block head %}
+{% include '_review_styles.html' %}
 <style>
-    .atlas { background: #1a2233; margin: -1rem -1.5rem 0; padding: 2rem 1.25rem 3rem; min-height: 75vh; }
-    .atlas-shell { max-width: 1160px; margin: 0 auto; }
-    .atlas-hero {
-        border-radius: 16px;
-        padding: 2rem 2rem;
-        background: #1a1a2e;
-        color: #fff;
-        margin-bottom: 1.75rem;
+    .settings-page { max-width: 920px; margin: 0 auto; min-width: 0; overflow-x: clip; }
+    .settings-page .review-hero,
+    .settings-page .section-header,
+    .settings-page .settings-lead,
+    .settings-page .conn-row,
+    .settings-page .ht-group-card,
+    .settings-page .settings-tabs a {
+        overflow-wrap: break-word;
+        word-break: normal;
     }
-    .atlas-hero-in { position: relative; z-index: 1; }
-    .atlas-kicker { font-size: .7rem; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; color: rgba(255,255,255,.7); margin-bottom: .5rem; }
-    .atlas-hero h1 {
-        font-weight: 700;
-        font-size: clamp(1.5rem, 3.5vw, 2.1rem);
-        line-height: 1.2;
-        margin: 0 0 .4rem;
+    .settings-pad { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
+    .settings-lead { margin: .2rem 0 0; font-size: .82rem; color: var(--ht-muted); line-height: 1.5; }
+    .settings-page .disclosure > summary .section-header { margin: 0; }
+    .settings-tabs {
+        display: flex; flex-wrap: wrap; gap: .4rem;
+        margin: 0 0 1rem;
     }
-    .atlas-hero p.lead { font-size: .98rem; line-height: 1.55; color: rgba(255,255,255,.85); max-width: 44rem; margin: 0; }
-    .atlas-stat-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-    .atlas-stat {
-        background: rgba(255,255,255,.12); border-radius: 12px;
-        padding: .5rem .9rem; text-align: center; min-width: 82px;
+    .settings-tabs a {
+        display: inline-block;
+        border: 1px solid var(--ht-line);
+        border-radius: 999px;
+        padding: .35rem .75rem;
+        color: var(--ht-muted);
+        font-weight: 650;
+        font-size: .82rem;
+        text-decoration: none;
+        background: transparent;
     }
-    .atlas-stat .n { font-size: 1.2rem; font-weight: 700; line-height: 1; }
-    .atlas-stat .l { font-size: .6rem; text-transform: uppercase; letter-spacing: .1em; opacity: .75; margin-top: .15rem; }
-
-    .atlas-grid { display: grid; grid-template-columns: 220px 1fr; gap: 1.75rem; align-items: start; }
-    @media (max-width: 991px) {
-        .atlas-grid { grid-template-columns: 1fr; }
-        .atlas-nav { display: flex; flex-wrap: wrap; gap: .35rem; }
-    }
-    .atlas-nav .nav-link {
-        border-radius: 8px; color: var(--ht-muted); font-weight: 600; font-size: .88rem;
-        padding: .55rem .95rem; border: 1px solid transparent;
-    }
-    .atlas-nav .nav-link:hover { background: #121826; color: #5b8cff; border-color: #243049; }
-    .atlas-nav .nav-link.active {
-        background: #121826; color: #e8edf7; border-color: #243049;
-        box-shadow: 0 2px 8px rgba(15,23,42,.05);
-    }
-    .atlas-card {
-        background: #121826;
-        border-radius: 12px;
-        border: 1px solid #243049;
-        box-shadow: 0 1px 3px rgba(15,23,42,.04);
-        margin-bottom: 1rem;
-        overflow: hidden;
-    }
-    .atlas-card-h {
-        font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-        color: var(--ht-muted); padding: 1rem 1.5rem .4rem;
-    }
-    .atlas-card-b { padding: 0 1.5rem 1.3rem; }
-    .atlas-label { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ht-muted); margin-bottom: .35rem; }
-    .atlas-field { margin-bottom: 1.1rem; }
-    .atlas-hint { font-size: .85rem; color: var(--ht-muted); line-height: 1.5; }
-    .account-badge {
-        display: inline-block; background: #1a2233; border: 1px solid #243049; border-radius: 8px;
-        padding: .35rem .75rem; font-size: .85rem; font-weight: 500; margin: 0 .45rem .45rem 0;
-        color: #e8edf7;
-    }
-
-    /* Sync card — prominent on Overview */
-    .sync-card {
-        background: #121826;
-        border: 1px solid #243049;
-        border-radius: 12px;
-        padding: 1.5rem 1.75rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 1px 3px rgba(15,23,42,.04);
-    }
-    .sync-card .sync-title {
-        font-size: 1.15rem;
-        font-weight: 700;
-        color: var(--ht-ink);
-        margin: 0 0 .25rem;
-    }
-    .sync-card .sync-sub { font-size: .88rem; color: var(--ht-muted); margin: 0 0 1rem; }
-    .sync-status {
-        display: inline-flex; align-items: center; gap: .5rem;
-        font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-        padding: .3rem .7rem; border-radius: 999px;
-    }
-    .sync-status.connected {
-        background: color-mix(in srgb, var(--ht-blue) 14%, transparent);
+    .settings-tabs a.active,
+    .settings-tabs a[aria-current="page"] {
+        background: color-mix(in srgb, var(--ht-blue) 15%, transparent);
         color: var(--ht-blue);
-        border: 1px solid color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
+        border-color: color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
     }
-    .sync-status.disconnected { background: #2a2118; color: #e8edf7; }
-    .sync-status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
-    .sync-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
-    .btn-sync-primary {
-        background: #1e3a8a;
-        color: #fff !important; border: none; font-weight: 600;
-        padding: .55rem 1.25rem; border-radius: 6px;
-        text-decoration: none !important; display: inline-block;
+    .conn-row {
+        display: flex; flex-wrap: wrap; align-items: center;
+        justify-content: space-between; gap: .5rem .75rem;
+        padding: .7rem 0;
+        border-top: 1px solid var(--ht-line);
+        min-width: 0;
     }
-    .btn-sync-primary:hover { background: #1e40af; color: #fff !important; }
-    .btn-sync-ghost {
-        border: 1px solid #cbd5e1; color: #e8edf7 !important;
-        padding: .5rem 1.15rem; border-radius: 6px; font-weight: 500;
-        text-decoration: none !important; background: #121826;
-    }
-    .btn-sync-ghost:hover { background: #1a2233; color: #e8edf7 !important; }
-
-    /* Identity card */
-    .id-card { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
-    .id-avatar {
-        width: 60px; height: 60px; border-radius: 50%;
-        background: #1a1a2e;
-        color: #fff; font-weight: 700; font-size: 1.5rem;
-        display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
-    }
-    .id-name { font-size: 1.25rem; font-weight: 700; color: var(--ht-ink); line-height: 1.2; }
-    .id-handle { font-size: .85rem; color: var(--ht-muted); }
-    .id-email-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .15rem; }
-    .id-email { font-size: .9rem; color: var(--ht-ink); }
-    .pill {
-        display: inline-flex; align-items: center; gap: .35rem;
-        font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
-        padding: .2rem .55rem; border-radius: 999px;
-    }
-    .pill .dot { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
-    .pill-ok {
-        background: color-mix(in srgb, var(--ht-blue) 14%, transparent);
-        color: var(--ht-blue);
-        border: 1px solid color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
-    }
-    .pill-warn { background: #2a2118; color: #e8edf7; }
-    .pill-muted { background: #1a2233; color: #8a97b1; }
-    .pill-danger { background: color-mix(in srgb, var(--loss) 14%, transparent); color: #e8edf7; }
-
+    .conn-row:first-of-type { border-top: none; }
+    .conn-meta { font-size: .78rem; color: var(--ht-muted); }
+    .settings-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .85rem; }
     .ht-pick { display: flex; flex-wrap: wrap; gap: .45rem; margin: .35rem 0 1rem; }
     .ht-pick-chip {
         display: inline-flex; align-items: center; margin: 0;
-        padding: .4rem .85rem; border-radius: 8px; cursor: pointer;
-        background: #1a2233; border: 1px solid #243049;
-        font-size: .85rem; font-weight: 600; color: #e8edf7; user-select: none;
+        padding: .4rem .85rem; border-radius: 999px; cursor: pointer;
+        background: transparent; border: 1px solid var(--ht-line);
+        font-size: .85rem; font-weight: 650; color: var(--ht-ink); user-select: none;
+        overflow-wrap: break-word; word-break: normal; max-width: 100%;
     }
     .ht-pick-chip input { position: absolute; opacity: 0; pointer-events: none; }
-    .ht-pick-chip:hover { border-color: #94a3b8; }
-    .ht-pick-chip.is-on { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .ht-pick-chip.is-on {
+        background: color-mix(in srgb, var(--ht-blue) 15%, transparent);
+        color: var(--ht-blue);
+        border-color: color-mix(in srgb, var(--ht-blue) 45%, var(--ht-line));
+    }
     .ht-group-card {
-        border: 1px solid #e2e8f0; border-radius: 10px; padding: .85rem 1rem;
-        margin-bottom: .65rem;
+        border: 1px solid var(--ht-line); border-radius: 12px; padding: .85rem 1rem;
+        margin-bottom: .65rem; min-width: 0;
     }
-    .ht-group-card h3 { font-size: .95rem; font-weight: 700; margin: 0 0 .35rem; color: var(--ht-ink); }
+    .ht-group-card h3 { font-size: .95rem; font-weight: 650; margin: 0 0 .35rem; }
     .ht-group-card .members { font-size: .82rem; color: var(--ht-muted); }
-    .ht-group-card .actions { margin-top: .55rem; display: flex; gap: .75rem; align-items: center; }
-
-    /* At-a-glance stat tiles */
-    .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .75rem; }
-    .stat-tile {
-        display: block; background: #121826; border: 1px solid #243049; border-radius: 10px;
-        padding: .9rem 1rem; text-decoration: none; transition: border-color .12s, box-shadow .12s;
+    .ht-group-card .actions { margin-top: .55rem; display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+    .acct-line {
+        display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .65rem;
+        padding: .55rem 0;
+        border-top: 1px solid var(--ht-line);
+        min-width: 0;
     }
-    a.stat-tile:hover { border-color: var(--color-mirror-ink); box-shadow: 0 2px 8px rgba(15,23,42,.06); }
-    .stat-tile .n { font-size: 1.5rem; font-weight: 700; color: var(--ht-ink); line-height: 1; }
-    .stat-tile .l { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ht-muted); margin-top: .35rem; }
-
-    /* Connection health rows */
-    .conn-row {
-        display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap;
-        padding: .7rem 0; border-top: 1px solid #243049;
-    }
-    .conn-row:first-child { border-top: none; }
-    .conn-meta { font-size: .78rem; color: #94a3b8; }
-
-    /* Quick action grid */
-    .qa-grid { display: flex; flex-wrap: wrap; gap: .6rem; }
-
-    /* Dark mode: these cards are not Bootstrap .card, so the theme used to
-       leave white surfaces under inherited light ink (plan name vanished)
-       and paint .table with the dark table variables inside them. */
-    [data-bs-theme="dark"] .atlas { background: transparent; color: var(--ht-ink); }
-    [data-bs-theme="dark"] .atlas-card,
-    [data-bs-theme="dark"] .sync-card,
-    [data-bs-theme="dark"] .stat-tile,
-    [data-bs-theme="dark"] .ht-group-card {
-        background: var(--ht-surface);
-        border-color: var(--ht-line);
-        color: var(--ht-ink);
-    }
-    [data-bs-theme="dark"] .atlas-card strong,
-    [data-bs-theme="dark"] .id-name,
-    [data-bs-theme="dark"] .sync-card .sync-title,
-    [data-bs-theme="dark"] .stat-tile .n,
-    [data-bs-theme="dark"] .ht-group-card h3,
-    [data-bs-theme="dark"] .id-email,
-    [data-bs-theme="dark"] .ht-group-card .members {
-        color: var(--ht-ink);
-    }
-    [data-bs-theme="dark"] .atlas-card-h,
-    [data-bs-theme="dark"] .atlas-label,
-    [data-bs-theme="dark"] .atlas-hint,
-    [data-bs-theme="dark"] .sync-card .sync-sub,
-    [data-bs-theme="dark"] .stat-tile .l,
-    [data-bs-theme="dark"] .id-handle,
-    [data-bs-theme="dark"] .conn-meta {
-        color: var(--ht-muted);
-    }
-    [data-bs-theme="dark"] .atlas-nav .nav-link { color: var(--ht-muted); }
-    [data-bs-theme="dark"] .atlas-nav .nav-link:hover,
-    [data-bs-theme="dark"] .atlas-nav .nav-link.active {
-        background: var(--ht-surface);
-        color: var(--ht-ink);
-        border-color: var(--ht-line);
-    }
-    [data-bs-theme="dark"] .atlas .table {
-        --bs-table-bg: transparent;
-        --bs-table-color: var(--ht-ink);
-        --bs-table-border-color: var(--ht-line);
-        --bs-table-striped-bg: transparent;
-        --bs-table-hover-bg: var(--ht-hover);
-        color: var(--ht-ink);
-        background: transparent;
-    }
-    [data-bs-theme="dark"] .atlas .table-light,
-    [data-bs-theme="dark"] .atlas .table thead,
-    [data-bs-theme="dark"] .atlas .table thead th {
-        --bs-table-bg: transparent;
-        --bs-table-color: var(--ht-muted);
-        background: transparent;
-        color: var(--ht-muted);
-    }
-    [data-bs-theme="dark"] .account-badge {
-        background: var(--ht-hover);
-        border-color: var(--ht-line);
-        color: var(--ht-ink);
-    }
-    [data-bs-theme="dark"] .ht-pick-chip {
-        background: var(--ht-hover);
-        border-color: var(--ht-line);
-        color: var(--ht-ink);
-    }
-    [data-bs-theme="dark"] .ht-pick-chip.is-on {
-        background: #e2e8f0;
-        color: #0f172a;
-        border-color: #e2e8f0;
-    }
-    [data-bs-theme="dark"] .btn-sync-ghost {
-        background: transparent;
-        border-color: var(--ht-line);
-        color: var(--ht-ink) !important;
+    @media (max-width: 767px) {
+        .settings-page { overflow-x: clip; }
+        .settings-page .table-responsive { overflow: visible; }
+        .settings-page table.ht-stack { display: block; width: 100%; }
+        .settings-page table.ht-stack > thead { display: none !important; }
+        .settings-page table.ht-stack > tbody { display: block; }
+        .settings-page table.ht-stack > tbody > tr {
+            display: block;
+            border: 1px solid var(--ht-line);
+            border-radius: 10px;
+            margin: 0 0 .6rem;
+            padding: .45rem .7rem .5rem;
+        }
+        .settings-page table.ht-stack > tbody > tr > td {
+            display: flex !important;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: .75rem;
+            width: auto !important;
+            white-space: normal !important;
+            text-align: right;
+            border: 0;
+            padding: .16rem 0;
+            overflow-wrap: break-word;
+            word-break: normal;
+        }
+        .settings-page table.ht-stack > tbody > tr > td::before {
+            content: attr(data-label);
+            color: var(--ht-muted);
+            font-size: .66rem;
+            font-weight: 650;
+            text-align: left;
+            flex: 0 0 42%;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-{% set vis = profile_row.profile_visibility or 'private' %}
 {% set _snaptrade_accounts = snaptrade_accounts | default([]) %}
 {% set snaptrade_connected = _snaptrade_accounts|length > 0 %}
 
-<div class="atlas">
-<div class="atlas-shell">
-    <div class="atlas-hero">
-        <div class="atlas-hero-in row g-3 align-items-center">
-            <div class="col-lg-8">
-                <div class="atlas-kicker">Settings</div>
-                <h1>{{ profile_row.display_name or (current_user.username | privacy_hide) }}</h1>
-                <p class="lead">Manage how your data syncs, how the app opens, and your login.</p>
+<div class="settings-page" id="settings-page">
+    <div class="review-hero" id="settings-hero">
+        <p class="ov-date">Settings</p>
+        <h1>{{ profile_row.display_name or (current_user.username | privacy_hide) }}</h1>
+        <div class="ov-top">
+            <div>
+                <div class="ov-k">Accounts</div>
+                <div class="ov-pct">{{ account_count }}</div>
             </div>
-            <div class="col-lg-4 d-flex justify-content-lg-end">
-                <div class="atlas-stat-row">
-                    <div class="atlas-stat"><div class="n">{{ account_count }}</div><div class="l">Accounts</div></div>
-                    <div class="atlas-stat"><div class="n">{{ upload_count }}</div><div class="l">Uploads</div></div>
-                    {% if snaptrade_enabled %}
-                    <div class="atlas-stat"><div class="n">{{ broker_count }}</div><div class="l">Brokers</div></div>
-                    {% endif %}
-                </div>
+            <div>
+                <div class="ov-k">Uploads</div>
+                <div class="ov-pct">{{ upload_count }}</div>
             </div>
+            {% if snaptrade_enabled %}
+            <div>
+                <div class="ov-k">Brokers</div>
+                <div class="ov-pct">{{ broker_count }}</div>
+            </div>
+            {% endif %}
         </div>
+        <p class="ov-line">
+            @{{ current_user.username | privacy_hide }}
+            {% if current_user.email %}
+                · {{ current_user.email | privacy_hide }}
+                {% if email_unverified %}· unverified{% else %}· verified{% endif %}
+            {% else %}
+                · no email on file
+            {% endif %}
+        </p>
+        {% if current_user.email and email_unverified %}
+        <form method="POST" action="{{ url_for('resend_verification') }}" class="acct-cta mt-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-primary">Resend link</button>
+        </form>
+        {% elif not current_user.email %}
+        <div class="acct-cta mt-3">
+            <a href="{{ url_for('profile', tab='security') }}" class="btn btn-outline-primary">Add one for password recovery</a>
+        </div>
+        {% endif %}
     </div>
+    <!-- /settings-hero -->
 
-    <div class="atlas-grid">
-        <nav class="atlas-nav nav flex-lg-column">
-            <a class="nav-link {% if tab == 'overview' %}active{% endif %}" href="{{ url_for('profile', tab='overview') }}">Overview</a>
-            <a class="nav-link {% if tab == 'account' %}active{% endif %}" href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>
-            <a class="nav-link {% if tab == 'security' %}active{% endif %}" href="{{ url_for('profile', tab='security') }}">Login &amp; security</a>
-            <a class="nav-link {% if tab == 'notifications' %}active{% endif %}" href="{{ url_for('profile', tab='notifications') }}">Notifications</a>
-            <a class="nav-link {% if tab == 'preferences' %}active{% endif %}" href="{{ url_for('profile', tab='preferences') }}">Preferences</a>
-            <a class="nav-link {% if tab == 'billing' %}active{% endif %}" href="{{ url_for('profile', tab='billing') }}">Plan &amp; billing</a>
-        </nav>
+    <nav class="settings-tabs" aria-label="Settings">
+        <a {% if tab == 'overview' %}class="active" aria-current="page"{% endif %} href="{{ url_for('profile', tab='overview') }}">Overview</a>
+        <a {% if tab == 'account' %}class="active" aria-current="page"{% endif %} href="{{ url_for('profile', tab='account') }}">Accounts &amp; data</a>
+        <a {% if tab == 'security' %}class="active" aria-current="page"{% endif %} href="{{ url_for('profile', tab='security') }}">Login &amp; security</a>
+        <a {% if tab == 'notifications' %}class="active" aria-current="page"{% endif %} href="{{ url_for('profile', tab='notifications') }}">Notifications</a>
+        <a {% if tab == 'preferences' %}class="active" aria-current="page"{% endif %} href="{{ url_for('profile', tab='preferences') }}">Preferences</a>
+        <a {% if tab == 'billing' %}class="active" aria-current="page"{% endif %} href="{{ url_for('profile', tab='billing') }}">Plan &amp; billing</a>
+    </nav>
 
-        <div>
-            {% if tab == 'overview' %}
-            {# Identity card — who you are + how to recover the account #}
-            <div class="atlas-card">
-                <div class="atlas-card-b pt-4">
-                    <div class="id-card">
-                        <div class="id-avatar">{% if privacy_mode and not profile_row.display_name %}•{% else %}{{ (profile_row.display_name or current_user.username)[:1]|upper }}{% endif %}</div>
-                        <div class="flex-grow-1">
-                            <div class="id-name">{{ profile_row.display_name or (current_user.username | privacy_hide) }}</div>
-                            <div class="id-handle">@{{ current_user.username | privacy_hide }}</div>
-                            <div class="id-email-row">
-                                {% if current_user.email %}
-                                <span class="id-email">{{ current_user.email | privacy_hide }}</span>
-                                {% if email_unverified %}
-                                <span class="pill pill-warn"><span class="dot"></span> Unverified</span>
-                                <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0 d-inline">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-link btn-sm p-0 align-baseline">Resend link</button>
-                                </form>
-                                {% else %}
-                                <span class="pill pill-ok"><span class="dot"></span> Verified</span>
-                                {% endif %}
-                                {% else %}
-                                <span class="pill pill-danger"><span class="dot"></span> No email</span>
-                                <a href="{{ url_for('profile', tab='security') }}" class="small fw-semibold">Add one for password recovery</a>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <a href="{{ url_for('profile', tab='security') }}" class="btn btn-outline-secondary btn-sm align-self-start">Login &amp; security</a>
-                    </div>
-                </div>
-            </div>
-
-            {# At-a-glance counts — each links to where you manage it #}
-            <div class="stat-tiles mb-3">
-                <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
-                    <div class="n">{{ account_count }}</div><div class="l">Accounts</div>
-                </a>
-                {% if snaptrade_enabled %}
-                <a class="stat-tile" href="{{ url_for('snaptrade_accounts_page') }}">
-                    <div class="n">{{ broker_count }}</div><div class="l">Brokers</div>
-                </a>
+    {% if tab == 'overview' %}
+    <div class="card" id="settings-connections">
+        <div class="settings-pad">
+            <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+                <h2 class="section-header">Connected accounts</h2>
+                {% if snaptrade_connected %}
+                <span class="badge badge-open">Connected</span>
+                {% else %}
+                <span class="badge">Not connected</span>
                 {% endif %}
-                <a class="stat-tile" href="{{ url_for('profile', tab='account') }}">
-                    <div class="n">{{ upload_count }}</div><div class="l">Uploads</div>
-                </a>
             </div>
-
-            {# Connection health — status of every linked broker at a glance #}
-            <div class="atlas-card">
-                <div class="atlas-card-h d-flex justify-content-between align-items-center">
-                    <span>Connection health</span>
-                    {% if snaptrade_connected %}
-                    <span class="pill pill-ok"><span class="dot"></span> Connected</span>
-                    {% else %}
-                    <span class="pill pill-muted"><span class="dot"></span> Not connected</span>
-                    {% endif %}
-                </div>
-                <div class="atlas-card-b">
-                    {% if _snaptrade_accounts %}
-                    {% set _ns_st_o = namespace(any_first_pending=false, any_broken=false) %}
-                    {% for a in _snaptrade_accounts %}
-                        {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
-                        {% if a.connection_broken_at %}{% set _ns_st_o.any_broken = true %}{% endif %}
-                    {% endfor %}
-                    {% if _ns_st_o.any_broken %}
-                    <div class="alert small mb-3" role="alert"
-                         style="background: color-mix(in srgb, var(--loss) 12%, transparent); border: 1px solid var(--loss); color: #e8edf7;">
-                        <strong>A broker connection needs reconnecting.</strong>
-                        Syncing won't help until it's fixed — reconnect the broker (one
-                        click fixes every account on that connection).
-                        <a href="{{ url_for('snaptrade_accounts_page') }}" class="fw-semibold">Reconnect now →</a>
-                    </div>
-                    {% endif %}
-                    {% for a in _snaptrade_accounts %}
-                    <div class="conn-row">
-                        <div>
-                            <span class="account-badge mb-0">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
-                            <span class="small text-body-secondary ms-1">{{ a.broker_slug | title | privacy_hide }}</span>
-                            {% if a.holdings_last_successful_sync %}
-                            <div class="conn-meta">Broker data as of {{ a.holdings_last_successful_sync.strftime('%b %-d, %Y') }}</div>
-                            {% elif a.last_sync_at %}
-                            <div class="conn-meta">Last refresh {{ a.last_sync_at | friendly_time }}</div>
-                            {% endif %}
-                        </div>
-                        {% if a.connection_broken_at %}
-                        <span class="pill pill-danger"><span class="dot"></span> Reconnect needed</span>
-                        {% elif not a.first_sync_completed %}
-                        <span class="pill pill-warn"><span class="dot"></span> First sync pending</span>
-                        {% else %}
-                        <span class="pill pill-ok"><span class="dot"></span> Connected</span>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                    <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mt-3">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="sync_all" value="1">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox"
-                                   name="full_history_again" id="snaptrade_sync_all_full_o"
-                                   value="1"{% if _ns_st_o.any_first_pending %} checked{% endif %}>
-                            <label class="form-check-label small" for="snaptrade_sync_all_full_o">
-                                Pull the longest history the broker still has on file
-                            </label>
-                        </div>
-                        <p class="small text-body-secondary mb-2">
-                            Not a 5-year archive. Schwab typically returns about 1&ndash;2 years.
-                            Older years: <a href="{{ url_for('upload') }}">upload a CSV</a>.
-                        </p>
-                        <div class="sync-actions">
-                            <button type="submit" class="btn-sync-primary">Sync all accounts</button>
-                            <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn-sync-ghost">Manage accounts</a>
-                        </div>
-                        <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
-                            Pulling from each brokerage. This can take a minute or two &mdash; keep this tab open.
-                        </p>
-                    </form>
-                    {% elif snaptrade_enabled %}
-                    <p class="atlas-hint mb-3">
-                        Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and ~20 other brokers
-                        through SnapTrade. This is not a lifetime archive &mdash;
-                        older years only arrive if you
-                        <a href="{{ url_for('upload') }}">upload a CSV</a>.
-                    </p>
-                    <div class="qa-grid">
-                        <a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-primary">Connect a broker</a>
-                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV instead</a>
-                    </div>
-                    {% else %}
-                    <p class="atlas-hint mb-3">Broker sync is not configured on this server. You can still upload CSV exports.</p>
-                    <div class="qa-grid">
-                        <a href="{{ url_for('upload') }}" class="btn-sync-primary">Upload CSV</a>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            {# Quick actions — the common next steps in one place #}
-            <div class="atlas-card">
-                <div class="atlas-card-h">Quick actions</div>
-                <div class="atlas-card-b">
-                    <div class="qa-grid">
-                        {% if snaptrade_enabled %}<a href="{{ url_for('snaptrade_connect') }}" class="btn-sync-ghost">Add a broker or another account</a>{% endif %}
-                        <a href="{{ url_for('upload') }}" class="btn-sync-ghost">Upload CSV</a>
-                        <a href="{{ url_for('profile', tab='preferences') }}" class="btn-sync-ghost">Edit profile</a>
-                        <a href="{{ url_for('profile', tab='security') }}" class="btn-sync-ghost">Change password</a>
-                    </div>
-                </div>
+            {% if _snaptrade_accounts %}
+            {% set _ns_st_o = namespace(any_first_pending=false, any_broken=false) %}
+            {% for a in _snaptrade_accounts %}
+                {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
+                {% if a.connection_broken_at %}{% set _ns_st_o.any_broken = true %}{% endif %}
+            {% endfor %}
+            {% if _ns_st_o.any_broken %}
+            <p class="settings-lead">A broker connection needs reconnecting. Syncing won't help until it's fixed.</p>
+            <div class="settings-actions">
+                <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-primary btn-lg">Reconnect now</a>
             </div>
             {% endif %}
-
-            {% if tab == 'preferences' %}
-            <form method="POST" action="{{ url_for('set_privacy_mode_route') }}" class="mb-3">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
-                <input type="hidden" name="next" value="{{ url_for('profile', tab='preferences') }}">
-                <div class="atlas-card">
-                    <div class="atlas-card-h">Privacy mode</div>
-                    <div class="atlas-card-b d-flex flex-wrap justify-content-between align-items-center gap-3">
-                        <p class="atlas-hint mb-0">Hide account names, broker names, balances, your username, and your email. Trade P&amp;L and prices stay visible.</p>
-                        <button type="submit" class="btn {% if privacy_mode %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                            {% if privacy_mode %}Turn off{% else %}Turn on{% endif %}
-                        </button>
-                    </div>
-                </div>
-            </form>
-            <form method="POST" action="{{ url_for('profile', tab='preferences') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="action" value="save_profile">
-                <input type="hidden" name="settings_tab" value="preferences">
-
-                <div class="atlas-card">
-                    <div class="atlas-card-h">Profile</div>
-                    <div class="atlas-card-b">
-                        <div class="atlas-field mb-0">
-                            <label class="atlas-label" for="display_name">Display name</label>
-                            <input type="text" class="form-control form-control-lg" id="display_name" name="display_name" maxlength="80"
-                                   value="{{ profile_row.display_name or '' }}" placeholder="How should we address you?" autocomplete="nickname">
-                            <p class="atlas-hint mb-0 mt-2">Login stays <code>{{ current_user.username | privacy_hide }}</code>.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="atlas-card">
-                    <div class="atlas-card-h">App behavior</div>
-                    <div class="atlas-card-b">
-                        <div class="row g-3">
-                            <div class="col-md-6 atlas-field">
-                                <label class="atlas-label" for="timezone">Timezone</label>
-                                <select class="form-select" id="timezone" name="timezone">
-                                    {% for zone in timezone_choices %}
-                                    <option value="{{ zone }}" {% if (profile_row.timezone or 'America/New_York') == zone %}selected{% endif %}>{{ zone }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-6 atlas-field">
-                                <label class="atlas-label">Week starts</label>
-                                <div class="form-check form-switch mt-2 pt-1">
-                                    <input class="form-check-input" type="checkbox" name="week_starts_monday" id="wsm"
-                                           {% if profile_row.get('week_starts_monday', True) %}checked{% endif %}>
-                                    <label class="form-check-label" for="wsm">Monday (off = Sunday)</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 atlas-field">
-                                <label class="atlas-label">After sign-in, land on</label>
-                                <select class="form-select" name="default_route">
-                                    {% for r in default_routes %}
-                                    <option value="{{ r }}" {% if profile_row.default_route == r %}selected{% endif %}>{{ default_route_labels.get(r, r) }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-6 atlas-field">
-                                <label class="atlas-label">Tables</label>
-                                <div class="form-check form-switch mt-2 pt-1">
-                                    <input class="form-check-input" type="checkbox" name="compact_tables" id="ct" {% if profile_row.compact_tables %}checked{% endif %}>
-                                    <label class="form-check-label" for="ct">Prefer tighter tables</label>
-                                    <p class="atlas-hint mb-0">Less padding on data tables across the app.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold">Save</button>
-            </form>
-            {% endif %}
-
-            {% if tab == 'notifications' %}
-            <form method="POST" action="{{ url_for('profile', tab='notifications') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="action" value="save_profile">
-                <input type="hidden" name="settings_tab" value="notifications">
-
-                <div class="atlas-card">
-                    <div class="atlas-card-h">Email notifications</div>
-                    <div class="atlas-card-b">
-                        <p class="atlas-hint mb-3">Choose which optional emails we send. You can change these anytime.</p>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" name="digest_email" id="de" {% if profile_row.digest_email %}checked{% endif %}>
-                            <label class="form-check-label" for="de">Weekly summary <span class="text-muted">— a recap of how your week traded</span></label>
-                        </div>
-                        <div class="form-check form-switch mt-2">
-                            <input class="form-check-input" type="checkbox" name="weekly_preview_email" id="wpe" {% if profile_row.weekly_preview_email %}checked{% endif %}>
-                            <label class="form-check-label" for="wpe">Weekly preview <span class="text-muted">— upcoming earnings, expirations &amp; ex-dividends</span></label>
-                        </div>
-                        <div class="form-check form-switch mt-2">
-                            <input class="form-check-input" type="checkbox" name="product_update_email" id="pue" {% if profile_row.product_update_email %}checked{% endif %}>
-                            <label class="form-check-label" for="pue">Product updates &amp; reminders <span class="text-muted">— new features and a nudge if you've been away</span></label>
-                        </div>
-                        <p class="atlas-hint mt-3 mb-0">Account emails (password resets, broker reconnect notices) are always sent.</p>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary btn-lg px-5 fw-bold">Save</button>
-            </form>
-            {% endif %}
-
-            {% if tab == 'billing' %}
-            {# Plan & billing. `plan_state` is the derived reverse-trial state
-               (app/plan.py); `subscription` is the Stripe mirror
-               (app/billing.py) and is None for anyone who never subscribed. #}
-            <div class="atlas-card">
-                <div class="atlas-card-h">Your plan</div>
-                <div class="atlas-card-b">
-                    {% if plan_state == 'active' %}
-                        <p class="mb-1"><strong>Pro
-                        {%- if subscription and subscription.amount %} &mdash; ${{ subscription.amount }}/{{ 'year' if subscription.period == 'annual' else 'month' }}{% endif %}</strong></p>
-                        {% if subscription and subscription.cancel_at_period_end %}
-                        <p class="atlas-hint mb-0">
-                            Cancelled &mdash; you keep full access until
-                            {% if subscription.renews_on %}{{ subscription.renews_on.strftime('%b %-d, %Y') }}{% endif %},
-                            then your mirror freezes and stays readable.
-                        </p>
-                        {% elif subscription and subscription.renews_on %}
-                        <p class="atlas-hint mb-0">Renews {{ subscription.renews_on.strftime('%b %-d, %Y') }}. Cancel any time.</p>
-                        {% else %}
-                        <p class="atlas-hint mb-0">Your mirror updates every close.</p>
-                        {% endif %}
-                        {% if subscription and subscription.status == 'past_due' %}
-                        <div class="alert alert-warning mt-3 mb-0 py-2 small">
-                            Your last payment didn't go through. Update your card to avoid losing daily updates.
-                        </div>
-                        {% endif %}
-                    {% elif plan_state == 'beta' %}
-                        <p class="mb-1"><strong>Beta &mdash; free, no expiry</strong></p>
-                        <p class="atlas-hint mb-0">You were here early, so your mirror keeps updating at no charge. Nothing to do.</p>
-                    {% elif plan_state == 'trialing' %}
-                        <p class="mb-1"><strong>Free trial &mdash; full access</strong></p>
-                        <p class="atlas-hint mb-0">
-                            {% if plan_status and plan_status.days_left is not none %}{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} left.{% endif %}
-                            When it ends your mirror freezes: every page stays readable, daily updates stop.
-                        </p>
-                    {% elif plan_state in ('frozen', 'grace_expired') %}
-                        <p class="mb-1"><strong>Frozen &mdash; readable, not updating</strong></p>
-                        <p class="atlas-hint mb-0">Your history is intact. Subscribe to pick the daily record back up{% if plan_state == 'grace_expired' %} (you'll reconnect your broker too){% endif %}.</p>
-                    {% else %}
-                        <p class="mb-1"><strong>Free trial &mdash; not started</strong></p>
-                        <p class="atlas-hint mb-0">Your 30 days begin with your first broker sync or CSV upload, not at signup.</p>
+            {% for a in _snaptrade_accounts %}
+            <div class="conn-row">
+                <div>
+                    <span class="badge">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
+                    <span class="small text-body-secondary">{{ a.broker_slug | title | privacy_hide }}</span>
+                    {% if a.holdings_last_successful_sync %}
+                    <div class="conn-meta">Broker data as of {{ a.holdings_last_successful_sync.strftime('%b %-d, %Y') }}</div>
+                    {% elif a.last_sync_at %}
+                    <div class="conn-meta">Last refresh {{ a.last_sync_at | friendly_time }}</div>
                     {% endif %}
                 </div>
+                {% if a.connection_broken_at %}
+                <span class="badge">Reconnect needed</span>
+                {% elif not a.first_sync_completed %}
+                <span class="badge">First sync pending</span>
+                {% else %}
+                <span class="badge badge-open">Connected</span>
+                {% endif %}
             </div>
-
-            {% if billing_enabled %}
-            <div class="atlas-card">
-                <div class="atlas-card-h">{% if subscription and subscription.has_customer %}Manage billing{% else %}Subscribe{% endif %}</div>
-                <div class="atlas-card-b">
-                    {% if subscription and subscription.has_customer %}
-                    <p class="atlas-hint mb-3">Update your card, switch between monthly and yearly, download invoices, or cancel &mdash; all handled securely by Stripe.</p>
-                    <form method="POST" action="{{ url_for('billing_portal') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-primary btn-lg px-4 fw-bold"
-                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
-                            Open billing portal
-                        </button>
-                    </form>
-                    {% else %}
-                    <p class="atlas-hint mb-2">${{ price_monthly }}/month, or ${{ price_annual }}/year (${{ price_annual_equiv }}/month &mdash; two months free).</p>
-                    {% if subscribe_offer %}
-                    <p class="atlas-hint mb-2">{{ subscribe_offer }}</p>
-                    {% endif %}
-                    <p class="atlas-hint mb-3">You aren't subscribed yet, so there is no billing portal to open. After you subscribe, Stripe's portal is where you change the card, switch monthly or yearly, or cancel. Your data stays readable either way.</p>
-                    <div class="d-flex flex-wrap gap-2">
-                        <form method="POST" action="{{ url_for('billing_checkout') }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="period" value="monthly">
-                            <button type="submit" class="btn btn-primary btn-lg px-4 fw-bold"
-                                    {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
-                                Subscribe ${{ price_monthly }}/mo
-                            </button>
-                        </form>
-                        <form method="POST" action="{{ url_for('billing_checkout') }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="period" value="annual">
-                            <button type="submit" class="btn btn-outline-primary btn-lg px-4"
-                                    {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
-                                Pay yearly &mdash; ${{ price_annual }}
-                            </button>
-                        </form>
-                    </div>
-                    {% endif %}
+            {% endfor %}
+            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mt-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="sync_all" value="1">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox"
+                           name="full_history_again" id="snaptrade_sync_all_full_o"
+                           value="1"{% if _ns_st_o.any_first_pending %} checked{% endif %}>
+                    <label class="form-check-label small" for="snaptrade_sync_all_full_o">
+                        Pull the longest history the broker still has on file
+                    </label>
                 </div>
+                <div class="settings-actions">
+                    <button type="submit" class="btn btn-primary">Sync all accounts</button>
+                    <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-primary">Manage accounts</a>
+                    <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary btn-lg">Connect an account</a>
+                </div>
+                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
+                    Pulling from each brokerage. This can take a minute or two — keep this tab open.
+                </p>
+            </form>
+            {% elif snaptrade_enabled %}
+            <p class="settings-lead">Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and other brokers through SnapTrade.</p>
+            <div class="settings-actions">
+                <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary btn-lg">Connect an account</a>
+                <a href="{{ url_for('upload') }}" class="btn btn-outline-secondary">Upload CSV instead</a>
             </div>
             {% else %}
-            <div class="atlas-card">
-                <div class="atlas-card-h">Subscriptions</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint mb-0">Paid plans aren't switched on in this environment. See the <a href="{{ url_for('pricing') }}">pricing page</a>.</p>
-                </div>
+            <p class="settings-lead">Broker sync is not configured on this server. You can still upload CSV exports.</p>
+            <div class="settings-actions">
+                <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg">Upload CSV</a>
             </div>
             {% endif %}
-            {% if insights_enabled %}
-            <div class="atlas-card">
-                <div class="atlas-card-h">HappyTrader AI</div>
-                <div class="atlas-card-b">
-                    {% if subscription and subscription.ai_is_paying %}
-                    <p class="mb-1"><strong>Add-on active{% if subscription.ai_amount %} &mdash; ${{ subscription.ai_amount }}/month{% endif %}</strong></p>
-                    <p class="atlas-hint mb-3">Gemini 2.5 Pro, Claude Sonnet, and Claude Opus on Insights and Ask AI. Flash and Haiku stay included.</p>
-                    {% if subscription.has_customer %}
-                    <form method="POST" action="{{ url_for('billing_portal') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-outline-primary"
-                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
-                            Manage AI add-on
-                        </button>
-                    </form>
-                    {% endif %}
-                    {% elif ai_billing_enabled %}
-                    <p class="atlas-hint mb-3">Unlock Gemini 2.5 Pro, Claude Sonnet, and Claude Opus on Insights. Flash and Haiku stay included. ${{ price_ai }}/month. After you subscribe, cancel any time in the billing portal.</p>
-                    <form method="POST" action="{{ url_for('billing_checkout_ai') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-primary"
-                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
-                            Unlock HappyTrader AI &mdash; ${{ price_ai }}/mo
-                        </button>
-                    </form>
-                    {% else %}
-                    <p class="atlas-hint mb-0">Higher-tier models aren't switched on yet. Flash and Haiku on Insights stay available.</p>
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
-            {% endif %}
-
-            {% if tab == 'account' %}
-            {% if snaptrade_enabled %}
-            <div class="atlas-card" id="snaptrade-sync">
-                <div class="atlas-card-h">Broker sync (via SnapTrade)</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint">
-                        Schwab, Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Wealthsimple, and others
-                        through the SnapTrade Connection Portal. Connect once per broker; we refresh
-                        from then on. This is not a lifetime archive of the account.
-                    </p>
-                    <div class="alert alert-warning small mb-3" role="alert" style="background: #2a2118; border-color:#e8c07a; color:#e8c07a;">
-                        <strong>What broker sync actually includes:</strong>
-                        <ul class="mb-0 ps-3 mt-1">
-                            <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>
-                            <li><strong>Within a few hours:</strong> recent trade history (sometimes up to 24h for the very first sync).</li>
-                            <li><strong>Not the life of the account.</strong> We request up to {{ snaptrade_full_history_lookback_days | history_window }}; each broker only returns what it still has on file. Schwab typically sends about 1&ndash;2 years of trades, not 5 years and not the account open date. Daily values start the first day we captured a snapshot.</li>
-                        </ul>
-                        <div class="mt-2">
-                            If trades aren't visible right away, sync again later &mdash; the broker
-                            still posts them on its own schedule. Years the aggregator never sent
-                            only arrive if you
-                            <a href="{{ url_for('upload') }}" class="fw-semibold">upload a CSV of older history</a>.
-                        </div>
-                    </div>
-                    {% if _snaptrade_accounts %}
-                    {# Default the "pull full history" toggle on whenever any
-                       linked brokerage is still pending its first sync —
-                       same heuristic as the Schwab card so a fresh-link
-                       user doesn't accidentally re-pull just the routine
-                       window. SnapTrade clamps to whatever the broker
-                       actually returns, so over-asking is safe.
-
-                       Use a Jinja2 namespace() because {% set %} inside
-                       {% for %} doesn't escape loop scope — same reason
-                       the Schwab block above this looks slightly buggy
-                       (its sibling check has the same issue but happens
-                       to default-correct enough of the time). #}
-                    {% set _ns = namespace(any_first_pending=false) %}
-                    {% for a in _snaptrade_accounts %}
-                        {% if not a.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
-                    {% endfor %}
-                    {% set _any_first_pending_st = _ns.any_first_pending %}
-                    <p class="small text-body-secondary mb-2">
-                        You have <strong>{{ _snaptrade_accounts|length }}</strong>
-                        brokerage account{{ '' if _snaptrade_accounts|length == 1 else 's' }}
-                        connected via SnapTrade.
-                    </p>
-
-                    {# Sync-all form (mirrors the Schwab "Sync all accounts" UX) #}
-                    <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-3">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="sync_all" value="1">
-                        <button type="submit" class="btn btn-primary">Sync all accounts</button>
-                        <div class="form-check mt-2 mb-0">
-                            <input class="form-check-input" type="checkbox"
-                                   name="full_history_again" id="snaptrade_sync_all_full"
-                                   value="1"{% if _any_first_pending_st %} checked{% endif %}>
-                            <label class="form-check-label small" for="snaptrade_sync_all_full">
-                                Pull the longest history the broker still has on file
-                            </label>
-                        </div>
-                        <p class="atlas-hint small mb-0 mt-1">
-                            Unchecked is a routine {{ snaptrade_routine_lookback_days }}-day refresh.
-                            Brokers only send the history they still have.
-                            Older years: <a href="{{ url_for('upload') }}">upload a CSV</a>.
-                        </p>
-                        <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
-                            Pulling from each account. This can take a minute or two &mdash; keep this tab open.
-                        </p>
-                    </form>
-
-                    {# Per-account rows with inline Sync (each row is one brokerage
-                       account; the button syncs only that account's data). #}
-                    <p class="atlas-hint small mb-2">Or sync just one account:</p>
-                    <ul class="list-unstyled mb-3">
-                        {% for a in _snaptrade_accounts %}
-                        <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                            <span class="account-badge mb-0">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
-                            <span class="small text-body-secondary">{{ a.broker_slug | privacy_hide }}</span>
-                            {% if not a.first_sync_completed %}
-                            <span class="badge text-bg-warning">First sync pending</span>
-                            {% endif %}
-                            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="snaptrade_account_id" value="{{ a.snaptrade_account_id }}">
-                                {% if not a.first_sync_completed %}
-                                <input type="hidden" name="full_history_again" value="1">
-                                {% endif %}
-                                <button type="submit" class="btn btn-sm btn-outline-primary">Sync this account</button>
-                                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
-                                    Pulling this account from your broker. This can take a minute &mdash; keep this tab open.
-                                </p>
-                            </form>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                    <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-secondary btn-sm">Manage &amp; nickname accounts</a>
-                    <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-outline-secondary btn-sm">Add a broker or another account</a>
-                    <p class="atlas-hint small mb-0 mt-2">Already on Schwab (or any connected broker)? Connect again and pick the extra account in the portal — another household Schwab, a second IBKR login, a TD RRSP. Same broker is fine.</p>
-                    {% else %}
-                    <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary">Connect a brokerage</a>
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
-
-            <div class="atlas-card" id="account-groups">
-                <div class="atlas-card-h">Account groups</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint">
-                        Click the accounts that belong together, then name the group.
-                        One account can be in several groups. On Overview and the rest,
-                        picking more than one group shows all of them.
-                    </p>
-                    {% if group_tenant_choices %}
-                    {% set _picked = editing_group.tenant_ids if editing_group else [] %}
-                    <form method="POST" action="{{ url_for('profile', tab='account') }}" class="mt-3 mb-3" id="group-composer">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="save_account_group">
-                        {% if editing_group %}
-                        <input type="hidden" name="group_id" value="{{ editing_group.id }}">
-                        {% endif %}
-                        <div class="atlas-label">{% if editing_group %}Editing {{ editing_group.name }}{% else %}New group{% endif %}</div>
-                        <div class="ht-pick">
-                            {% for acct in group_tenant_choices %}
-                            <label class="ht-pick-chip{% if acct.tenant_id in _picked %} is-on{% endif %}">
-                                <input type="checkbox" name="tenant_id" value="{{ acct.tenant_id }}"
-                                       {% if acct.tenant_id in _picked %}checked{% endif %}
-                                       {% if is_demo_user %}disabled{% endif %}>
-                                {{ acct.label | account_label(acct.tenant_id) }}
-                            </label>
-                            {% endfor %}
-                        </div>
-                        <p id="group-composer-error" class="text-danger small mb-2" hidden></p>
-                        <div class="d-flex flex-wrap gap-2 align-items-end">
-                            <div class="flex-grow-1" style="min-width:12rem;">
-                                <label class="atlas-label" for="group_name">Name</label>
-                                <input type="text" class="form-control" id="group_name" name="group_name"
-                                       maxlength="40" placeholder="kids, sara, 401ks…"
-                                       value="{{ editing_group.name if editing_group else '' }}"
-                                       {% if is_demo_user %}disabled{% endif %}>
-                            </div>
-                            <button type="submit" class="btn btn-primary"
-                                    {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
-                                {% if editing_group %}Save{% else %}Save group{% endif %}
-                            </button>
-                            {% if editing_group %}
-                            <a class="btn btn-outline-secondary" href="{{ url_for('profile', tab='account') }}#account-groups">Cancel</a>
-                            {% endif %}
-                        </div>
-                    </form>
-                    <script>
-                    (function () {
-                        var form = document.getElementById('group-composer');
-                        if (!form) return;
-                        form.querySelectorAll('.ht-pick-chip input').forEach(function (inp) {
-                            inp.addEventListener('change', function () {
-                                inp.closest('.ht-pick-chip').classList.toggle('is-on', inp.checked);
-                            });
-                        });
-                        form.addEventListener('submit', function (ev) {
-                            var any = form.querySelector('input[name="tenant_id"]:checked');
-                            var nameEl = form.querySelector('[name="group_name"]');
-                            var name = (nameEl && nameEl.value || '').trim();
-                            var err = document.getElementById('group-composer-error');
-                            if (any && name) {
-                                if (err) err.hidden = true;
-                                return;
-                            }
-                            ev.preventDefault();
-                            if (!err) return;
-                            err.hidden = false;
-                            err.textContent = any
-                                ? 'Name the group.'
-                                : 'Click at least one account, then name the group.';
-                        });
-                    })();
-                    </script>
-                    {% else %}
-                    <p class="atlas-hint mb-0 mt-3">Connect or upload an account first, then you can group them.</p>
-                    {% endif %}
-                    {% if account_groups %}
-                    <div class="atlas-label mt-4">Your groups</div>
-                    {% for g in account_groups %}
-                    <div class="ht-group-card">
-                        <h3>{{ g.name }}</h3>
-                        <div class="members">{% for acct in group_tenant_choices if acct.tenant_id in g.tenant_ids %}{{ acct.label | account_label(acct.tenant_id) }}{% if not loop.last %} · {% endif %}{% else %}No accounts yet{% endfor %}</div>
-                        <div class="actions">
-                            <a href="{{ url_for('profile', tab='account', edit=g.id) }}#group-composer">Edit</a>
-                            <form method="POST" action="{{ url_for('profile', tab='account') }}" class="m-0"
-                                  onsubmit="return confirm('Remove the {{ g.name }} group? Accounts stay; only the label is deleted.');">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="action" value="delete_account_group">
-                                <input type="hidden" name="group_id" value="{{ g.id }}">
-                                <button type="submit" class="btn btn-link btn-sm text-danger p-0"
-                                        {% if is_demo_user %}disabled{% endif %}>Delete</button>
-                            </form>
-                        </div>
-                    </div>
-                    {% endfor %}
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="atlas-card">
-                <div class="atlas-card-h">Account labels</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint">These labels tie your uploads and syncs to the rows you see across the app.</p>
-                    {% if group_tenant_choices %}
-                    <div class="mt-2">{% for c in group_tenant_choices %}<span class="account-badge">{{ c.label | account_label(c.tenant_id) }}</span>{% endfor %}</div>
-                    {% elif accounts %}
-                    <div class="mt-2">{% for acct in accounts %}<span class="account-badge">{{ acct | account_label }}</span>{% endfor %}</div>
-                    {% else %}
-                    <p class="text-muted small mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if snaptrade_enabled %} or <a href="{{ url_for('snaptrade_connect') }}">connect a broker</a>{% endif %}.</p>
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="atlas-card">
-                <div class="atlas-card-h">Recent uploads</div>
-                <div class="atlas-card-b p-0">
-                    {% if recent_uploads %}
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0 align-middle">
-                            <thead class="table-light"><tr><th class="ps-3">Account</th><th>History</th><th>Positions</th><th class="pe-3">When</th></tr></thead>
-                            <tbody>
-                                {% for u in recent_uploads %}
-                                <tr><td class="ps-3">{{ u.account_name | account_label(u.tenant_id) }}</td><td>{{ u.history_rows }}</td><td>{{ u.current_rows }}</td><td class="text-muted small pe-3">{{ u.uploaded_at | friendly_time }}</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}<p class="text-muted small p-3 mb-0">No uploads yet.</p>{% endif %}
-                </div>
-            </div>
-
-            {% endif %}
-
-            {% if tab == 'security' %}
-            <div class="atlas-card">
-                <div class="atlas-card-h d-flex justify-content-between align-items-center">
-                    <span>Email</span>
-                    {% if current_user.email %}
-                        {% if email_unverified %}
-                        <span class="pill pill-warn"><span class="dot"></span> Unverified</span>
-                        {% else %}
-                        <span class="pill pill-ok"><span class="dot"></span> Verified</span>
-                        {% endif %}
-                    {% else %}
-                    <span class="pill pill-danger"><span class="dot"></span> None on file</span>
-                    {% endif %}
-                </div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint mb-3">
-                        Used for password recovery and (if you opt in) your weekly recap. We never
-                        share it or sell it.
-                    </p>
-                    {% if not current_user.email %}
-                    <p class="text-warning small mb-3">
-                        <strong>Heads up:</strong> no email on file means you can't reset your password if you lose it. Add one below.
-                    </p>
-                    {% elif email_unverified %}
-                    <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
-                        <span class="atlas-hint mb-0">We sent a confirmation link to <strong>{{ current_user.email | privacy_hide }}</strong> — check your inbox (and spam).</span>
-                        <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-outline-primary btn-sm">Resend verification email</button>
-                        </form>
-                    </div>
-                    {% endif %}
-                    {% if privacy_mode %}
-                    <p class="atlas-hint mb-0">Turn off privacy mode to view or change your email.</p>
-                    {% else %}
-                    <form method="POST" action="{{ url_for('profile', tab='security') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="set_email">
-                        <div class="mb-3">
-                            <label class="form-label">Email</label>
-                            <input type="email" class="form-control" name="email"
-                                   value="{{ current_user.email or '' }}"
-                                   placeholder="you@example.com" autocomplete="email">
-                        </div>
-                        <button type="submit" class="btn btn-primary px-4 fw-semibold"
-                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
-                            Save email
-                        </button>
-                    </form>
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="atlas-card">
-                <div class="atlas-card-h">Password</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint mb-3">Two-factor sign-in and passkeys aren't available yet. Password recovery uses the email above.</p>
-                    <form method="POST" action="{{ url_for('profile', tab='security') }}">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="change_password">
-                        <div class="mb-3">
-                            <label class="form-label" for="pw_username">Username</label>
-                            <input type="text" class="form-control" id="pw_username" name="username"
-                                   value="{{ current_user.username | privacy_hide }}" autocomplete="username" readonly>
-                        </div>
-                        <div class="mb-3"><label class="form-label" for="pw_current">Current</label>
-                            <div class="input-group">
-                                <input type="password" class="form-control" id="pw_current" name="current_password" required autocomplete="current-password">
-                                <button class="btn btn-outline-secondary" type="button" data-password-toggle="pw_current" aria-label="Show password" aria-pressed="false">
-                                    <svg class="pw-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/></svg>
-                                    <svg class="pw-eye-slash d-none" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7 7 0 0 0 2.79-.588M5.21 3.088A7 7 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474z"/><path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12z"/></svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="mb-3"><label class="form-label" for="pw_new">New</label>
-                            <div class="input-group">
-                                <input type="password" class="form-control" id="pw_new" name="new_password" required minlength="8" autocomplete="new-password">
-                                <button class="btn btn-outline-secondary" type="button" data-password-toggle="pw_new" aria-label="Show password" aria-pressed="false">
-                                    <svg class="pw-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/></svg>
-                                    <svg class="pw-eye-slash d-none" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7 7 0 0 0 2.79-.588M5.21 3.088A7 7 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474z"/><path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12z"/></svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="mb-3"><label class="form-label" for="pw_confirm">Confirm</label>
-                            <div class="input-group">
-                                <input type="password" class="form-control" id="pw_confirm" name="confirm_password" required minlength="8" autocomplete="new-password">
-                                <button class="btn btn-outline-secondary" type="button" data-password-toggle="pw_confirm" aria-label="Show password" aria-pressed="false">
-                                    <svg class="pw-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/></svg>
-                                    <svg class="pw-eye-slash d-none" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7 7 0 0 0 2.79-.588M5.21 3.088A7 7 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474z"/><path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12z"/></svg>
-                                </button>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn btn-primary px-4 fw-semibold"
-                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>Update password</button>
-                    </form>
-                </div>
-            </div>
-
-            <div class="atlas-card" style="border-color:var(--loss);">
-                <div class="atlas-card-h" style="color:var(--loss);">Danger zone</div>
-                <div class="atlas-card-b">
-                    <p class="atlas-hint mb-3">
-                        Deleting your account is permanent. It removes your login, disconnects
-                        your brokers, and erases your trade history, positions and balances from
-                        our systems. There is no undo and no grace period.
-                    </p>
-                    <button type="button" class="btn btn-outline-danger fw-semibold"
-                            {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}
-                            onclick="document.getElementById('delete-account-form').classList.toggle('d-none')">
-                        Delete my account&hellip;
-                    </button>
-                    <form id="delete-account-form" class="d-none mt-3" method="POST"
-                          action="{{ url_for('delete_account') }}"
-                          onsubmit="return confirm('Really delete your account and ALL trading data? This cannot be undone.');">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div class="mb-3">
-                            <label class="form-label" for="del_pw">Your password</label>
-                            <input type="password" class="form-control" id="del_pw" name="password"
-                                   required autocomplete="current-password">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label" for="del_confirm">Type <strong>DELETE</strong> to confirm</label>
-                            <input type="text" class="form-control" id="del_confirm" name="confirm_text"
-                                   required pattern="DELETE" placeholder="DELETE" autocomplete="off">
-                        </div>
-                        <button type="submit" class="btn btn-danger fw-semibold">
-                            Permanently delete my account and data
-                        </button>
-                    </form>
-                </div>
-            </div>
-            {% endif %}
-
         </div>
     </div>
-</div>
+
+    <details class="disclosure" id="settings-sync-notes">
+        <summary>
+            <span class="section-header">How sync works</span>
+            <span class="disclosure-note">What arrives, and what does not.</span>
+        </summary>
+        <div class="disclosure-body">
+            <p class="settings-lead">Not a 5-year archive. Schwab typically returns about 1–2 years. Older years: <a href="{{ url_for('upload') }}">upload a CSV</a>.</p>
+        </div>
+    </details>
+
+    <details class="disclosure" id="settings-actions">
+        <summary>
+            <span class="section-header">Quick actions</span>
+        </summary>
+        <div class="disclosure-body">
+            <div class="settings-actions">
+                {% if snaptrade_enabled %}<a href="{{ url_for('snaptrade_connect') }}" class="btn btn-outline-primary">Add a broker or another account</a>{% endif %}
+                <a href="{{ url_for('upload') }}" class="btn btn-outline-secondary">Upload CSV</a>
+                <a href="{{ url_for('profile', tab='preferences') }}" class="btn btn-outline-secondary">Edit profile</a>
+                <a href="{{ url_for('profile', tab='security') }}" class="btn btn-outline-secondary">Change password</a>
+            </div>
+        </div>
+    </details>
+    {% endif %}
+
+    {% if tab == 'preferences' %}
+    <form method="POST" action="{{ url_for('set_privacy_mode_route') }}" class="mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
+        <input type="hidden" name="next" value="{{ url_for('profile', tab='preferences') }}">
+        <div class="card" id="settings-privacy">
+            <div class="settings-pad d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div>
+                    <h2 class="section-header">Privacy mode</h2>
+                    <p class="settings-lead mb-0">Hide account names, broker names, balances, your username, and your email. Trade P&amp;L and prices stay visible.</p>
+                </div>
+                <button type="submit" class="btn {% if privacy_mode %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                    {% if privacy_mode %}Turn off{% else %}Turn on{% endif %}
+                </button>
+            </div>
+        </div>
+    </form>
+    <form method="POST" action="{{ url_for('profile', tab='preferences') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="save_profile">
+        <input type="hidden" name="settings_tab" value="preferences">
+
+        <div class="card" id="settings-profile">
+            <div class="settings-pad">
+                <h2 class="section-header">Profile</h2>
+                <label class="form-label" for="display_name">Display name</label>
+                <input type="text" class="form-control form-control-lg" id="display_name" name="display_name" maxlength="80"
+                       value="{{ profile_row.display_name or '' }}" placeholder="How should we address you?" autocomplete="nickname">
+                <p class="settings-lead mb-0 mt-2">Login stays <code>{{ current_user.username | privacy_hide }}</code>.</p>
+            </div>
+        </div>
+
+        <details class="disclosure" id="settings-behavior">
+            <summary>
+                <span class="section-header">App behavior</span>
+                <span class="disclosure-note">Timezone, week start, landing page, tables.</span>
+            </summary>
+            <div class="disclosure-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="timezone">Timezone</label>
+                        <select class="form-select" id="timezone" name="timezone">
+                            {% for zone in timezone_choices %}
+                            <option value="{{ zone }}" {% if (profile_row.timezone or 'America/New_York') == zone %}selected{% endif %}>{{ zone }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Week starts</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="week_starts_monday" id="wsm"
+                                   {% if profile_row.get('week_starts_monday', True) %}checked{% endif %}>
+                            <label class="form-check-label" for="wsm">Monday (off = Sunday)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">After sign-in, land on</label>
+                        <select class="form-select" name="default_route">
+                            {% for r in default_routes %}
+                            <option value="{{ r }}" {% if profile_row.default_route == r %}selected{% endif %}>{{ default_route_labels.get(r, r) }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Tables</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="compact_tables" id="ct" {% if profile_row.compact_tables %}checked{% endif %}>
+                            <label class="form-check-label" for="ct">Prefer tighter tables</label>
+                            <p class="settings-lead mb-0">Less padding on data tables across the app.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <button type="submit" class="btn btn-primary btn-lg px-5">Save</button>
+    </form>
+    {% endif %}
+
+    {% if tab == 'notifications' %}
+    <form method="POST" action="{{ url_for('profile', tab='notifications') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="save_profile">
+        <input type="hidden" name="settings_tab" value="notifications">
+
+        <div class="card" id="settings-email-notes">
+            <div class="settings-pad">
+                <h2 class="section-header">Email notifications</h2>
+                <p class="settings-lead">Choose which optional emails we send. You can change these anytime.</p>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="digest_email" id="de" {% if profile_row.digest_email %}checked{% endif %}>
+                    <label class="form-check-label" for="de">Weekly summary <span class="text-muted">— a recap of how your week traded</span></label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="weekly_preview_email" id="wpe" {% if profile_row.weekly_preview_email %}checked{% endif %}>
+                    <label class="form-check-label" for="wpe">Weekly preview <span class="text-muted">— upcoming earnings, expirations &amp; ex-dividends</span></label>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="product_update_email" id="pue" {% if profile_row.product_update_email %}checked{% endif %}>
+                    <label class="form-check-label" for="pue">Product updates &amp; reminders <span class="text-muted">— new features and a nudge if you've been away</span></label>
+                </div>
+                <p class="settings-lead mt-3 mb-3">Account emails (password resets, broker reconnect notices) are always sent.</p>
+                <button type="submit" class="btn btn-primary btn-lg px-5">Save</button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+
+    {% if tab == 'billing' %}
+    <div class="card" id="settings-plan">
+        <div class="settings-pad">
+            <h2 class="section-header">Your plan</h2>
+            {% if plan_state == 'active' %}
+                <p class="mb-1"><strong>Pro
+                {%- if subscription and subscription.amount %} — ${{ subscription.amount }}/{{ 'year' if subscription.period == 'annual' else 'month' }}{% endif %}</strong></p>
+                {% if subscription and subscription.cancel_at_period_end %}
+                <p class="settings-lead mb-0">
+                    Cancelled — you keep full access until
+                    {% if subscription.renews_on %}{{ subscription.renews_on.strftime('%b %-d, %Y') }}{% endif %},
+                    then your mirror freezes and stays readable.
+                </p>
+                {% elif subscription and subscription.renews_on %}
+                <p class="settings-lead mb-0">Renews {{ subscription.renews_on.strftime('%b %-d, %Y') }}. Cancel any time.</p>
+                {% else %}
+                <p class="settings-lead mb-0">Your mirror updates every close.</p>
+                {% endif %}
+                {% if subscription and subscription.status == 'past_due' %}
+                <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                    Your last payment didn't go through. Update your card to avoid losing daily updates.
+                </div>
+                {% endif %}
+            {% elif plan_state == 'beta' %}
+                <p class="mb-1"><strong>Beta — free, no expiry</strong></p>
+                <p class="settings-lead mb-0">You were here early, so your mirror keeps updating at no charge. Nothing to do.</p>
+            {% elif plan_state == 'trialing' %}
+                <p class="mb-1"><strong>30-day free trial, no credit card</strong></p>
+                <p class="settings-lead mb-0">
+                    {% if plan_status and plan_status.days_left is not none %}{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} left.{% endif %}
+                    When it ends your mirror freezes: every page stays readable, daily updates stop.
+                </p>
+            {% elif plan_state in ('frozen', 'grace_expired') %}
+                <p class="mb-1"><strong>Frozen — readable, not updating</strong></p>
+                <p class="settings-lead mb-0">Your history is intact. Subscribe to pick the daily record back up{% if plan_state == 'grace_expired' %} (you'll reconnect your broker too){% endif %}.</p>
+            {% else %}
+                <p class="mb-1"><strong>30-day free trial, no credit card</strong></p>
+                <p class="settings-lead mb-0">Your 30 days begin with your first broker sync or CSV upload, not at signup.</p>
+            {% endif %}
+
+            {% if billing_enabled %}
+            <div class="mt-3" id="settings-subscribe">
+                {% if subscription and subscription.has_customer %}
+                <p class="settings-lead">Update your card, switch between monthly and yearly, download invoices, or cancel — all handled securely by Stripe.</p>
+                <form method="POST" action="{{ url_for('billing_portal') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-primary btn-lg"
+                            {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                        Open billing portal
+                    </button>
+                </form>
+                {% else %}
+                <p class="settings-lead mb-2">${{ price_monthly }}/month, or ${{ price_annual }}/year (${{ price_annual_equiv }}/month — two months free).</p>
+                {% if subscribe_offer %}
+                <p class="settings-lead mb-2">{{ subscribe_offer }}</p>
+                {% endif %}
+                <p class="settings-lead mb-3">You aren't subscribed yet, so there is no billing portal to open. After you subscribe, Stripe's portal is where you change the card, switch monthly or yearly, or cancel. Your data stays readable either way.</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <form method="POST" action="{{ url_for('billing_checkout') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="period" value="monthly">
+                        <button type="submit" class="btn btn-primary btn-lg"
+                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                            Subscribe ${{ price_monthly }}/mo
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ url_for('billing_checkout') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="period" value="annual">
+                        <button type="submit" class="btn btn-outline-primary btn-lg"
+                                {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                            Pay yearly — ${{ price_annual }}
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="mt-3" id="settings-subscribe">
+                <h2 class="section-header">Subscriptions</h2>
+                <p class="settings-lead mb-0">Paid plans aren't switched on in this environment. See the <a href="{{ url_for('pricing') }}">pricing page</a>.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% if insights_enabled %}
+    <div class="card" id="settings-ai">
+        <div class="settings-pad">
+            <h2 class="section-header">HappyTrader AI</h2>
+            {% if subscription and subscription.ai_is_paying %}
+            <p class="mb-1"><strong>Add-on active{% if subscription.ai_amount %} — ${{ subscription.ai_amount }}/month{% endif %}</strong></p>
+            <p class="settings-lead mb-3">Gemini 2.5 Pro, Claude Sonnet, and Claude Opus on Insights and Ask AI. Flash and Haiku stay included.</p>
+            {% if subscription.has_customer %}
+            <form method="POST" action="{{ url_for('billing_portal') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-primary"
+                        {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                    Manage AI add-on
+                </button>
+            </form>
+            {% endif %}
+            {% elif ai_billing_enabled %}
+            <p class="settings-lead mb-3">Unlock Gemini 2.5 Pro, Claude Sonnet, and Claude Opus on Insights. Flash and Haiku stay included. ${{ price_ai }}/month. After you subscribe, cancel any time in the billing portal.</p>
+            <form method="POST" action="{{ url_for('billing_checkout_ai') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary"
+                        {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                    Unlock HappyTrader AI — ${{ price_ai }}/mo
+                </button>
+            </form>
+            {% else %}
+            <p class="settings-lead mb-0">Higher-tier models aren't switched on yet. Flash and Haiku on Insights stay available.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if tab == 'account' %}
+    {% if snaptrade_enabled %}
+    <div class="card" id="snaptrade-sync">
+        <div class="settings-pad">
+            <h2 class="section-header">Connected accounts</h2>
+            <p class="settings-lead">
+                Schwab, Fidelity, Vanguard, Robinhood, IBKR, Alpaca, Wealthsimple, and others
+                through the SnapTrade Connection Portal. Connect once per broker; we refresh
+                from then on.
+            </p>
+            {% if _snaptrade_accounts %}
+            {% set _ns = namespace(any_first_pending=false) %}
+            {% for a in _snaptrade_accounts %}
+                {% if not a.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
+            {% endfor %}
+            {% set _any_first_pending_st = _ns.any_first_pending %}
+            <p class="settings-lead">
+                You have <strong>{{ _snaptrade_accounts|length }}</strong>
+                brokerage account{{ '' if _snaptrade_accounts|length == 1 else 's' }}
+                connected via SnapTrade.
+            </p>
+            <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="sync_all" value="1">
+                <button type="submit" class="btn btn-primary">Sync all accounts</button>
+                <div class="form-check mt-2 mb-0">
+                    <input class="form-check-input" type="checkbox"
+                           name="full_history_again" id="snaptrade_sync_all_full"
+                           value="1"{% if _any_first_pending_st %} checked{% endif %}>
+                    <label class="form-check-label small" for="snaptrade_sync_all_full">
+                        Pull the longest history the broker still has on file
+                    </label>
+                </div>
+                <p class="settings-lead mb-0 mt-1">
+                    Unchecked is a routine {{ snaptrade_routine_lookback_days }}-day refresh.
+                    Brokers only send the history they still have.
+                </p>
+                <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
+                    Pulling from each account. This can take a minute or two — keep this tab open.
+                </p>
+            </form>
+            <p class="settings-lead mb-2">Or sync just one account:</p>
+            {% for a in _snaptrade_accounts %}
+            <div class="acct-line">
+                <span class="badge">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
+                <span class="small text-body-secondary">{{ a.broker_slug | privacy_hide }}</span>
+                {% if not a.first_sync_completed %}
+                <span class="badge">First sync pending</span>
+                {% endif %}
+                <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="snaptrade_account_id" value="{{ a.snaptrade_account_id }}">
+                    {% if not a.first_sync_completed %}
+                    <input type="hidden" name="full_history_again" value="1">
+                    {% endif %}
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Sync this account</button>
+                    <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">
+                        Pulling this account from your broker. This can take a minute — keep this tab open.
+                    </p>
+                </form>
+            </div>
+            {% endfor %}
+            <div class="settings-actions">
+                <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary btn-lg">Connect an account</a>
+                <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-primary">Manage &amp; nickname accounts</a>
+            </div>
+            {% else %}
+            <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary btn-lg">Connect a brokerage</a>
+            {% endif %}
+        </div>
+    </div>
+    <details class="disclosure" id="settings-sync-window">
+        <summary>
+            <span class="section-header">What broker sync includes</span>
+        </summary>
+        <div class="disclosure-body">
+            <ul class="settings-lead ps-3">
+                <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>
+                <li><strong>Within a few hours:</strong> recent trade history (sometimes up to 24h for the very first sync).</li>
+                <li><strong>Not the life of the account.</strong> We request up to {{ snaptrade_full_history_lookback_days | history_window }}; each broker only returns what it still has on file. Schwab typically sends about 1–2 years of trades, not 5 years and not the account open date. Daily values start the first day we captured a snapshot.</li>
+            </ul>
+            <p class="settings-lead">
+                If trades aren't visible right away, sync again later — the broker
+                still posts them on its own schedule. Years the aggregator never sent
+                only arrive if you
+                <a href="{{ url_for('upload') }}">upload a CSV of older history</a>.
+                Already on Schwab (or any connected broker)? Connect again and pick the extra account in the portal — another household Schwab, a second IBKR login, a TD RRSP. Same broker is fine.
+            </p>
+        </div>
+    </details>
+    {% endif %}
+
+    <details class="disclosure" id="account-groups" {% if editing_group %}open{% endif %}>
+        <summary>
+            <span class="section-header">Account groups</span>
+            <span class="disclosure-note">Kids, a person, or a set of 401ks.</span>
+        </summary>
+        <div class="disclosure-body">
+            <p class="settings-lead">
+                Click the accounts that belong together, then name the group.
+                One account can be in several groups. On Overview and the rest,
+                picking more than one group shows all of them.
+            </p>
+            {% if group_tenant_choices %}
+            {% set _picked = editing_group.tenant_ids if editing_group else [] %}
+            <form method="POST" action="{{ url_for('profile', tab='account') }}" class="mt-3 mb-3" id="group-composer">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="save_account_group">
+                {% if editing_group %}
+                <input type="hidden" name="group_id" value="{{ editing_group.id }}">
+                {% endif %}
+                <div class="form-label">{% if editing_group %}Editing {{ editing_group.name }}{% else %}New group{% endif %}</div>
+                <div class="ht-pick">
+                    {% for acct in group_tenant_choices %}
+                    <label class="ht-pick-chip{% if acct.tenant_id in _picked %} is-on{% endif %}">
+                        <input type="checkbox" name="tenant_id" value="{{ acct.tenant_id }}"
+                               {% if acct.tenant_id in _picked %}checked{% endif %}
+                               {% if is_demo_user %}disabled{% endif %}>
+                        {{ acct.label | account_label(acct.tenant_id) }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <p id="group-composer-error" class="text-danger small mb-2" hidden></p>
+                <div class="d-flex flex-wrap gap-2 align-items-end">
+                    <div class="flex-grow-1" style="min-width:12rem;">
+                        <label class="form-label" for="group_name">Name</label>
+                        <input type="text" class="form-control" id="group_name" name="group_name"
+                               maxlength="40" placeholder="kids, sara, 401ks…"
+                               value="{{ editing_group.name if editing_group else '' }}"
+                               {% if is_demo_user %}disabled{% endif %}>
+                    </div>
+                    <button type="submit" class="btn btn-primary"
+                            {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                        {% if editing_group %}Save{% else %}Save group{% endif %}
+                    </button>
+                    {% if editing_group %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('profile', tab='account') }}#account-groups">Cancel</a>
+                    {% endif %}
+                </div>
+            </form>
+            <script>
+            (function () {
+                var form = document.getElementById('group-composer');
+                if (!form) return;
+                form.querySelectorAll('.ht-pick-chip input').forEach(function (inp) {
+                    inp.addEventListener('change', function () {
+                        inp.closest('.ht-pick-chip').classList.toggle('is-on', inp.checked);
+                    });
+                });
+                form.addEventListener('submit', function (ev) {
+                    var any = form.querySelector('input[name="tenant_id"]:checked');
+                    var nameEl = form.querySelector('[name="group_name"]');
+                    var name = (nameEl && nameEl.value || '').trim();
+                    var err = document.getElementById('group-composer-error');
+                    if (any && name) {
+                        if (err) err.hidden = true;
+                        return;
+                    }
+                    ev.preventDefault();
+                    if (!err) return;
+                    err.hidden = false;
+                    err.textContent = any
+                        ? 'Name the group.'
+                        : 'Click at least one account, then name the group.';
+                });
+            })();
+            </script>
+            {% else %}
+            <p class="settings-lead mb-0 mt-3">Connect or upload an account first, then you can group them.</p>
+            {% endif %}
+            {% if account_groups %}
+            <div class="form-label mt-4">Your groups</div>
+            {% for g in account_groups %}
+            <div class="ht-group-card">
+                <h3>{{ g.name }}</h3>
+                <div class="members">{% for acct in group_tenant_choices if acct.tenant_id in g.tenant_ids %}{{ acct.label | account_label(acct.tenant_id) }}{% if not loop.last %} · {% endif %}{% else %}No accounts yet{% endfor %}</div>
+                <div class="actions">
+                    <a href="{{ url_for('profile', tab='account', edit=g.id) }}#group-composer">Edit</a>
+                    <form method="POST" action="{{ url_for('profile', tab='account') }}" class="m-0"
+                          onsubmit="return confirm('Remove the {{ g.name }} group? Accounts stay; only the label is deleted.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="delete_account_group">
+                        <input type="hidden" name="group_id" value="{{ g.id }}">
+                        <button type="submit" class="btn btn-link btn-sm text-danger p-0"
+                                {% if is_demo_user %}disabled{% endif %}>Delete</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </div>
+    </details>
+
+    <details class="disclosure" id="settings-labels">
+        <summary>
+            <span class="section-header">Account labels</span>
+        </summary>
+        <div class="disclosure-body">
+            <p class="settings-lead">These labels tie your uploads and syncs to the rows you see across the app.</p>
+            {% if group_tenant_choices %}
+            <div class="mt-2">{% for c in group_tenant_choices %}<span class="badge">{{ c.label | account_label(c.tenant_id) }}</span>{% endfor %}</div>
+            {% elif accounts %}
+            <div class="mt-2">{% for acct in accounts %}<span class="badge">{{ acct | account_label }}</span>{% endfor %}</div>
+            {% else %}
+            <p class="settings-lead mb-0 mt-2">None yet. <a href="{{ url_for('upload') }}">Upload</a>{% if snaptrade_enabled %} or <a href="{{ url_for('snaptrade_connect') }}">connect a broker</a>{% endif %}.</p>
+            {% endif %}
+        </div>
+    </details>
+
+    <details class="disclosure" id="settings-uploads">
+        <summary>
+            <span class="section-header">Recent uploads</span>
+        </summary>
+        <div class="disclosure-body">
+            {% if recent_uploads %}
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle ht-stack">
+                    <thead><tr><th>Account</th><th>History</th><th>Positions</th><th>When</th></tr></thead>
+                    <tbody>
+                        {% for u in recent_uploads %}
+                        <tr>
+                            <td data-label="Account">{{ u.account_name | account_label(u.tenant_id) }}</td>
+                            <td data-label="History">{{ u.history_rows }}</td>
+                            <td data-label="Positions">{{ u.current_rows }}</td>
+                            <td data-label="When" class="text-muted small">{{ u.uploaded_at | friendly_time }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<p class="settings-lead mb-0">No uploads yet.</p>{% endif %}
+        </div>
+    </details>
+    {% endif %}
+
+    {% if tab == 'security' %}
+    <div class="card" id="settings-email">
+        <div class="settings-pad">
+            <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+                <h2 class="section-header">Email</h2>
+                {% if current_user.email %}
+                    {% if email_unverified %}
+                    <span class="badge">Unverified</span>
+                    {% else %}
+                    <span class="badge badge-open">Verified</span>
+                    {% endif %}
+                {% else %}
+                <span class="badge">None on file</span>
+                {% endif %}
+            </div>
+            <p class="settings-lead mb-3">
+                Used for password recovery and (if you opt in) your weekly recap. We never
+                share it or sell it.
+            </p>
+            {% if not current_user.email %}
+            <p class="settings-lead mb-3">
+                <strong>Heads up:</strong> no email on file means you can't reset your password if you lose it. Add one below.
+            </p>
+            {% elif email_unverified %}
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+                <span class="settings-lead mb-0">We sent a confirmation link to <strong>{{ current_user.email | privacy_hide }}</strong> — check your inbox (and spam).</span>
+                <form method="POST" action="{{ url_for('resend_verification') }}" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-primary btn-sm">Resend verification email</button>
+                </form>
+            </div>
+            {% endif %}
+            {% if privacy_mode %}
+            <p class="settings-lead mb-0">Turn off privacy mode to view or change your email.</p>
+            {% else %}
+            <form method="POST" action="{{ url_for('profile', tab='security') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="set_email">
+                <div class="mb-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" name="email"
+                           value="{{ current_user.email or '' }}"
+                           placeholder="you@example.com" autocomplete="email">
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg"
+                        {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>
+                    Save email
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card" id="settings-password">
+        <div class="settings-pad">
+            <h2 class="section-header">Password</h2>
+            <p class="settings-lead mb-3">Two-factor sign-in and passkeys aren't available yet. Password recovery uses the email above.</p>
+            <form method="POST" action="{{ url_for('profile', tab='security') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="change_password">
+                <div class="mb-3">
+                    <label class="form-label" for="pw_username">Username</label>
+                    <input type="text" class="form-control" id="pw_username" name="username"
+                           value="{{ current_user.username | privacy_hide }}" autocomplete="username" readonly>
+                </div>
+                <div class="mb-3"><label class="form-label" for="pw_current">Current</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="pw_current" name="current_password" required autocomplete="current-password">
+                        <button class="btn btn-outline-secondary" type="button" data-password-toggle="pw_current" aria-label="Show password" aria-pressed="false">
+                            <svg class="pw-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/></svg>
+                            <svg class="pw-eye-slash d-none" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7 7 0 0 0 2.79-.588M5.21 3.088A7 7 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474z"/><path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mb-3"><label class="form-label" for="pw_new">New</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="pw_new" name="new_password" required minlength="8" autocomplete="new-password">
+                        <button class="btn btn-outline-secondary" type="button" data-password-toggle="pw_new" aria-label="Show password" aria-pressed="false">
+                            <svg class="pw-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/></svg>
+                            <svg class="pw-eye-slash d-none" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7 7 0 0 0 2.79-.588M5.21 3.088A7 7 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474z"/><path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mb-3"><label class="form-label" for="pw_confirm">Confirm</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="pw_confirm" name="confirm_password" required minlength="8" autocomplete="new-password">
+                        <button class="btn btn-outline-secondary" type="button" data-password-toggle="pw_confirm" aria-label="Show password" aria-pressed="false">
+                            <svg class="pw-eye" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/></svg>
+                            <svg class="pw-eye-slash d-none" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7 7 0 0 0 2.79-.588M5.21 3.088A7 7 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474z"/><path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg"
+                        {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}>Update password</button>
+            </form>
+        </div>
+    </div>
+
+    <details class="disclosure" id="settings-danger">
+        <summary>
+            <span class="section-header">Delete account</span>
+            <span class="disclosure-note">Permanent. There is no undo.</span>
+        </summary>
+        <div class="disclosure-body">
+            <p class="settings-lead mb-3">
+                Deleting your account is permanent. It removes your login, disconnects
+                your brokers, and erases your trade history, positions and balances from
+                our systems. There is no undo and no grace period.
+            </p>
+            <button type="button" class="btn btn-outline-danger"
+                    {% if is_demo_user %}disabled title="Read-only in demo mode"{% endif %}
+                    onclick="document.getElementById('delete-account-form').classList.toggle('d-none')">
+                Delete my account…
+            </button>
+            <form id="delete-account-form" class="d-none mt-3" method="POST"
+                  action="{{ url_for('delete_account') }}"
+                  onsubmit="return confirm('Really delete your account and ALL trading data? This cannot be undone.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label class="form-label" for="del_pw">Your password</label>
+                    <input type="password" class="form-control" id="del_pw" name="password"
+                           required autocomplete="current-password">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="del_confirm">Type <strong>DELETE</strong> to confirm</label>
+                    <input type="text" class="form-control" id="del_confirm" name="confirm_text"
+                           required pattern="DELETE" placeholder="DELETE" autocomplete="off">
+                </div>
+                <button type="submit" class="btn btn-danger">
+                    Permanently delete my account and data
+                </button>
+            </form>
+        </div>
+    </details>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -1063,6 +890,16 @@
             if (slash) slash.classList.toggle("d-none", !show);
         });
     });
+    function openFromHash() {
+        var id = (location.hash || "").replace("#", "");
+        if (!id) return;
+        var el = document.getElementById(id);
+        if (!el) return;
+        var details = el.tagName === "DETAILS" ? el : (el.closest ? el.closest("details") : null);
+        if (details) details.open = true;
+    }
+    openFromHash();
+    window.addEventListener("hashchange", openFromHash);
 })();
 </script>
 {% endblock %}

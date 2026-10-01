@@ -85,6 +85,27 @@ def test_benchmark_rows_match_account_stack_on_a_phone():
     assert ".snapshot-table .snapshot-table-row > div:not(:first-child)" not in desktop
 
 
+def test_headline_figures_stay_one_line_and_shrink_on_a_narrow_screen():
+    big = STYLES.split(".ov-big {", 1)[1].split("}", 1)[0]
+    assert "clamp(" in big
+    assert "container-type: inline-size" in STYLES
+    sized = STYLES.split(".ov-top .ov-big:not(.ov-invest) {", 1)[1].split("}", 1)[0]
+    assert "clamp(1.05rem, 18cqi, 2.75rem)" in sized
+    assert "5.2vw" not in sized
+    figures = STYLES.split(".ov-big, .ov-pct {", 1)[1].split("}", 1)[0]
+    assert "white-space: nowrap" in figures
+    assert ".ov-sub" not in figures
+    sub = STYLES.split(".ov-sub {", 1)[1].split("}", 1)[0]
+    assert "white-space: normal" in sub
+    assert "overflow-wrap: break-word" in sub
+    assert "word-break: normal" in sub
+    assert "white-space: nowrap" not in sub
+    assert "overflow-wrap: normal" in STYLES
+    assert "word-break: normal" in STYLES
+    assert ".ov-big { font-size: 1.45rem; overflow-wrap: anywhere" not in STYLES
+    assert ".ov-big { font-size: 2.15rem; }" not in STYLES
+
+
 def test_today_story_order_keeps_since_last_looked_off_overview():
     happened = TODAY.index('id="ov-happened"')
     since = TODAY.index("{% include '_since_last_looked.html' %}")

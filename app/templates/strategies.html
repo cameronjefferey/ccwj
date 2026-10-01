@@ -244,7 +244,7 @@
         {% endif %}
     </div>
     {% if selected_strategy and focus_strategy %}
-    <p class="ov-date"><a class="strat-back" href="{{ scoped_url('strategies') }}">All strategies</a></p>
+    <p class="ov-date">{{ focus_strategy.strategy }} <a class="strat-back" href="{{ scoped_url('strategies') }}">All strategies</a></p>
     {% else %}
     <p class="ov-date">All time</p>
     {% endif %}
