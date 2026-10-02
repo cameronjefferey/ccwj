@@ -127,17 +127,22 @@ def test_turnstile_unset_skips_and_warns(app, monkeypatch, caplog):
 
 def test_per_ip_demo_cap(app, monkeypatch):
     _csrf_off(monkeypatch, app)
-    from app.demo_guard import reset_demo_caps
+    from app.demo_guard import IP_SESSION_CAP, reset_demo_caps
     reset_demo_caps()
     client = _client(app)
     remote = {"REMOTE_ADDR": "203.0.113.50"}
-    for _ in range(3):
+    for _ in range(IP_SESSION_CAP):
+        client.delete_cookie("ht_demo", path="/")
         resp = client.post("/demo/start", environ_base=remote, follow_redirects=False)
         assert resp.status_code == 302
         assert client.post("/logout", environ_base=remote).status_code in (302, 200)
+    client.delete_cookie("ht_demo", path="/")
     blocked = client.post("/demo/start", environ_base=remote, follow_redirects=False)
     assert blocked.status_code == 429
-    assert "3 demos today" in blocked.get_data(as_text=True)
+    body = blocked.get_data(as_text=True)
+    assert f"{IP_SESSION_CAP} demos today" in body
+    assert "Slow down" not in body
+    assert "Create an account" in body
 
 
 def test_page_cap_stops_the_session(app, monkeypatch):
@@ -262,10 +267,14 @@ def test_security_headers_and_demo_noindex(app, monkeypatch):
     assert inside.headers["X-Robots-Tag"] == "noindex, nofollow"
 
 
-def test_demo_start_rate_limit_returns_friendly_429(app, monkeypatch):
+def test_demo_start_reuses_cookie_and_limits_friendly(app, monkeypatch):
+    """A return visit is the same demo. A new visitor past the daily cap
+    gets the demo page, not the generic Slow down 429."""
+    from app.demo_guard import IP_SESSION_CAP, reset_demo_caps
     from app.extensions import limiter
 
     _csrf_off(monkeypatch, app)
+    reset_demo_caps()
     monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", True)
     limiter.reset()
     try:
@@ -273,12 +282,29 @@ def test_demo_start_rate_limit_returns_friendly_429(app, monkeypatch):
         remote = {"REMOTE_ADDR": "203.0.113.77"}
         first = client.post("/demo/start", environ_base=remote, follow_redirects=False)
         assert first.status_code == 302
+        assert any(
+            c.startswith("ht_demo=") for c in first.headers.getlist("Set-Cookie")
+        )
         client.post("/logout", environ_base=remote)
         second = client.post("/demo/start", environ_base=remote, follow_redirects=False)
-        assert second.status_code == 429
-        body = second.get_data(as_text=True)
-        assert "a little fast" in body
-        assert "card" in body
+        assert second.status_code == 302
+        assert "Slow down" not in second.get_data(as_text=True)
+        client.post("/logout", environ_base=remote)
+
+        for _ in range(IP_SESSION_CAP - 1):
+            client.delete_cookie("ht_demo", path="/")
+            resp = client.post("/demo/start", environ_base=remote, follow_redirects=False)
+            assert resp.status_code == 302
+            client.post("/logout", environ_base=remote)
+        client.delete_cookie("ht_demo", path="/")
+        blocked = client.post("/demo/start", environ_base=remote, follow_redirects=False)
+        assert blocked.status_code == 429
+        body = blocked.get_data(as_text=True)
+        assert f"{IP_SESSION_CAP} demos today" in body
+        assert "That's the end of this demo" in body
+        assert "Create an account" in body
+        assert "Slow down" not in body
+        assert "a little fast" not in body
     finally:
         limiter.reset()
 

@@ -27,9 +27,13 @@ from app.client_ip import real_client_ip
 from app.demo_guard import (
     DemoSessionUser,
     IP_SESSION_CAP,
+    attach_demo_visitor_cookie,
+    demo_start_reuses_visitor,
     is_ephemeral_demo_user,
     limited_page,
+    remember_demo_visitor,
     reserve_demo_ip,
+    reusable_demo_visitor,
     turnstile_keys,
     verify_turnstile,
 )
@@ -389,9 +393,10 @@ def _demo_gate_context(next_page):
 
 @app.route("/demo/start", methods=["GET", "POST"])
 @limiter.limit(
-    "3 per day;1 per minute",
+    "10 per day",
     methods=["POST"],
     key_func=real_client_ip,
+    exempt_when=demo_start_reuses_visitor,
 )
 def demo_start():
     """Public demo gate.
@@ -425,7 +430,11 @@ def demo_start():
         return render_template("demo_start.html", **_demo_gate_context(next_page))
 
     if ephemeral:
-        return redirect(next_page or url_for("weekly_review"))
+        return _enter_demo(
+            session.get("_demo_token"),
+            session.get("_demo_started_at") or time.time(),
+            next_page,
+        )
     if shared_demo:
         logout_user()
 
@@ -435,6 +444,10 @@ def demo_start():
         flash("Confirm you're a person and try the demo again.", "warning")
         return render_template("demo_start.html", **_demo_gate_context(next_page)), 400
 
+    reused = reusable_demo_visitor()
+    if reused:
+        return _enter_demo(reused[0], reused[1], next_page)
+
     if not reserve_demo_ip(ip):
         return limited_page(
             f"This network has started {IP_SESSION_CAP} demos today. "
@@ -442,11 +455,26 @@ def demo_start():
         )
 
     session_token = secrets.token_urlsafe(24)
-    login_user(DemoSessionUser(session_token), remember=False)
-    session["_demo_token"] = session_token
-    session["_demo_started_at"] = time.time()
+    started = time.time()
+    remember_demo_visitor(session_token, started)
+    return _enter_demo(session_token, started, next_page)
+
+
+def _enter_demo(session_token, started_at, next_page):
+    """Sign in a demo session and stamp the visitor cookie that resumes it."""
+    token = str(session_token or "").strip()
+    if not token:
+        token = secrets.token_urlsafe(24)
+        started_at = time.time()
+        remember_demo_visitor(token, started_at)
+    started = float(started_at)
+    remember_demo_visitor(token, started)
+    login_user(DemoSessionUser(token), remember=False)
+    session["_demo_token"] = token
+    session["_demo_started_at"] = started
     session.permanent = False
-    return redirect(next_page or url_for("weekly_review"))
+    response = redirect(next_page or url_for("weekly_review"))
+    return attach_demo_visitor_cookie(response, token, started)
 
 
 @app.route("/settings", methods=["GET", "POST"])

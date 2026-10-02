@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -39,9 +40,11 @@ DEMO_TENANT_ID = "demo:demo-account"
 DEMO_ACCOUNT_NAME = "Demo Account"
 
 PAGE_CAP = 150
-IP_SESSION_CAP = 3
+IP_SESSION_CAP = 10
 IDLE_SECONDS = 30 * 60
 HARD_SECONDS = 2 * 60 * 60
+VISITOR_COOKIE = "ht_demo"
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
@@ -80,6 +83,7 @@ APP_PREFIXES = (
 _lock = threading.Lock()
 _memory_pages: dict[str, int] = {}
 _memory_ips: dict[str, int] = {}
+_memory_minted: dict[str, float] = {}
 _redis_client = None
 _redis_checked = False
 _redis_warned = False
@@ -317,6 +321,102 @@ def reserve_demo_ip(ip: str) -> bool:
         return count <= IP_SESSION_CAP
 
 
+def remember_demo_visitor(token: str, started_at: float) -> None:
+    """Remember a minted demo token so the same browser can resume it."""
+    if not token or not _TOKEN_RE.match(token):
+        return
+    started = float(started_at)
+    with _lock:
+        _memory_minted[token] = started
+    client = _redis()
+    if client is None:
+        return
+    try:
+        client.setex(
+            f"demo:mint:{token}",
+            HARD_SECONDS + 60,
+            str(started),
+        )
+    except Exception as exc:
+        log.warning("demo visitor redis failed; memory still holds it: %s", exc)
+
+
+def demo_visitor_started_at(token: str | None) -> float | None:
+    """Started-at for a token this process (or Redis) actually minted."""
+    token = (token or "").strip()
+    if not _TOKEN_RE.match(token):
+        return None
+    client = _redis()
+    if client is not None:
+        try:
+            raw = client.get(f"demo:mint:{token}")
+            if raw:
+                return float(raw)
+        except Exception as exc:
+            log.warning("demo visitor lookup failed; using memory: %s", exc)
+    with _lock:
+        started = _memory_minted.get(token)
+    return float(started) if started is not None else None
+
+
+def reusable_demo_visitor() -> tuple[str, float] | None:
+    """Cookie token that is still inside the 2-hour hard window."""
+    from flask import request
+
+    token = (request.cookies.get(VISITOR_COOKIE) or "").strip()
+    started = demo_visitor_started_at(token)
+    if started is None:
+        return None
+    if (time.time() - started) > HARD_SECONDS:
+        return None
+    return token, started
+
+
+def demo_start_reuses_visitor() -> bool:
+    """Limiter exemption: a live demo, or a return with the visitor cookie.
+
+    A second click from the same browser is the same session. It must not
+    burn the per-IP start cap. A missing or forged cookie still counts.
+    """
+    from flask import request
+
+    if request.method != "POST":
+        return False
+    try:
+        if is_ephemeral_demo_user():
+            return True
+    except Exception:
+        pass
+    try:
+        return reusable_demo_visitor() is not None
+    except Exception:
+        return False
+
+
+def attach_demo_visitor_cookie(response, token: str, started_at: float):
+    """First-party cookie so the next /demo/start resumes this session."""
+    from flask import current_app
+
+    remaining = int(HARD_SECONDS - (time.time() - float(started_at)))
+    if remaining < 1 or not _TOKEN_RE.match(token or ""):
+        return response
+    secure = False
+    try:
+        secure = bool(current_app.config.get("SESSION_COOKIE_SECURE"))
+    except Exception:
+        secure = False
+    response.set_cookie(
+        VISITOR_COOKIE,
+        token,
+        max_age=remaining,
+        httponly=True,
+        samesite="Lax",
+        secure=secure,
+        path="/",
+    )
+    return response
+
+
 def note_demo_page(token: str) -> bool:
     """Count one app page. False when this session is over the cap."""
     if not token:
@@ -344,6 +444,7 @@ def reset_demo_caps() -> None:
     with _lock:
         _memory_pages.clear()
         _memory_ips.clear()
+        _memory_minted.clear()
     _redis_client = None
     _redis_checked = False
     _redis_warned = False

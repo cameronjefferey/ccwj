@@ -543,8 +543,7 @@ on load), then a hero CTA block (solid `#5b8cff` button "Start your
 30-day free trial", subline "No credit card", outline button "Try the
 live demo", and a small Sign in link), a tight qualitative proof strip,
 How it works (connect read-only, strategies detected, see what's working),
-then the live demo as its own band — a mirror of a trading bot's paper
-account. Shorts are themed bands
+then the live demo as its own band — a paper account. Shorts are themed bands
 with one or two phones beside the copy (which strategies work, every
 position's story, if held, covered-call income, the fit matrix), not one
 sideways row. Just before that, "Here's what you'd catch with HappyTrader"

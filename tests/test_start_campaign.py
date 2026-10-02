@@ -36,6 +36,14 @@ def test_start_explains_the_mirror_and_the_honest_offer(monkeypatch):
     assert "Read-only" in body
     assert "5 years" not in body
     assert "five years" not in body.lower()
+    assert "trading bot" not in body.lower()
+    assert "1,500 shares" not in body
+    assert "100 shares" not in body
+    assert "15 contracts" not in body
+    assert "$428,049" not in body
+    assert "$942,367" not in body
+    assert "Income book" not in body
+    assert "Example, not a result" in body
     assert 'href="/start/go/signup/hero?utm_source=reddit' in body
     assert 'href="/start/go/signup/chart?' in body
     assert 'href="/start/go/demo/profile?' in body

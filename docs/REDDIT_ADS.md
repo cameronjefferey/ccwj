@@ -129,4 +129,8 @@ Rate limits: public GET `/`, `/start`, `/pricing`, `/signup`, `/learn`,
 and `/faq` are outside the 300/hour default so one carrier NAT is not
 429'd for reading. `/start` itself allows 120/minute. The hero click
 redirect allows 60/minute. Signup POST allows 10/minute and 120/hour per
-IP. A bot still hits a ceiling. A shared mobile NAT can finish the form.
+IP. A script still hits a ceiling. A shared mobile NAT can finish the form.
+`/demo/start` allows 10 new sessions per IP per day. The same browser
+cookie resumes the open demo and does not count again. Turnstile and the
+demo's 150-page / 20-per-minute caps stay. Over the daily cap, the page
+offers an account instead of a bare "Slow down".

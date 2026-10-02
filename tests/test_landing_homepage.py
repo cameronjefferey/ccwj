@@ -205,7 +205,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "See what's working" in html
     assert "ht-band-demo" in html
     assert "A mirror of a paper account" in html
-    assert "trading bot" in html
+    assert "The live demo is a paper account" in html
+    assert "trading bot" not in html.lower()
     assert "Every position's full story" in html
     assert "Covered-call income tracked" in html
     assert "Which strategies actually work" in html

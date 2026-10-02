@@ -632,6 +632,14 @@ def too_many_requests(e):
             429,
         )
 
+    if request.path == "/demo/start":
+        from app.demo_guard import IP_SESSION_CAP, limited_page
+
+        return limited_page(
+            f"This network has started {IP_SESSION_CAP} demos today. "
+            "Create an account to keep going on your own data."
+        )
+
     try:
         return render_template("429.html", title="Slow down"), 429
     except Exception:
