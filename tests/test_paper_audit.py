@@ -507,6 +507,7 @@ def test_simple_view_holds_full_pages():
     from app.paper_accounts import safe_full_view_next
 
     assert safe_full_view_next("/strategies?view=fit") == "/strategies?view=fit"
+    assert safe_full_view_next("/sectors") == "/sectors"
     assert safe_full_view_next("/story") == "/story"
     assert safe_full_view_next("https://evil.example/strategies") is None
     assert safe_full_view_next("//evil.example/story") is None
@@ -535,6 +536,7 @@ def test_simple_view_holds_full_pages():
             sess["_fresh"] = True
         for path, title in (
             ("/strategies", "Strategies"),
+            ("/sectors", "Sectors"),
             ("/story", "Trader Profile"),
             ("/insights", "AI Insights"),
         ):

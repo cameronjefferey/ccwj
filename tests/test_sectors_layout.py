@@ -33,20 +33,25 @@ def test_collected_means_premium_received():
     assert "term('Unrealized')" in PAGE
 
 
-def test_phone_rows_stack_with_labels_and_desktop_columns_are_not_clipped():
+def test_phone_rows_stay_columns_and_desktop_columns_are_not_clipped():
     assert 'data-label="Sector"' in PAGE
     assert 'data-label="Total return"' in PAGE
     assert 'data-label="Realized"' in PAGE
     assert 'data-label="Unrealized"' in PAGE
     assert 'data-label="Symbols"' in PAGE
-    assert "content: attr(data-label)" in PAGE
+    assert "content: attr(data-label)" not in PAGE
+    assert "thead { display: none" not in PAGE
     assert "overflow-x: clip" in PAGE
+    assert "overflow-x: auto" in PAGE
     assert "text-overflow: ellipsis" not in PAGE
-    assert "display: flex !important" in PAGE
+    assert "display: table" in PAGE
+    assert "display: flex !important" not in PAGE
     assert "table-layout: fixed" in PAGE
     assert 'class="sec-name"' in PAGE
     assert "overflow-wrap: break-word" in PAGE
     assert "word-break: normal" in PAGE
+    assert "sec-sub-head" in PAGE
+    assert "sec-subs" in PAGE
 
 
 def test_account_picker_stays_in_the_page_header():

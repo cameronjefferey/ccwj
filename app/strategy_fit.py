@@ -61,11 +61,12 @@ STRATEGY_FIT_QUERY = """
 """
 
 # Per-option-contract grain for the DTE / Moneyness slices. Shaped so the
-# matrix builder can consume it identically to the positions_summary path:
-# realized = closed contracts, unrealized = open contracts; winners/losers
-# only counted on closed contracts so win-rate semantics match the rest of
-# the app. underlying_symbol is exposed as `symbol` to keep the per-cell
-# symbol drill-down code path uniform.
+# matrix builder can consume it identically to the positions_summary path.
+# Win/loss is applied in Python (`annotate_contract_outcomes`) so a closed
+# $0 is neither and an unsettled ITM expiry is not booked as a loss.
+# Settlement-pending rows are dropped here too: a $0 pending contract
+# would otherwise dilute expectancy. underlying_symbol is exposed as
+# `symbol` to keep the per-cell symbol drill-down code path uniform.
 STRATEGY_FIT_OPTIONS_QUERY = """
     SELECT
         account,
@@ -76,13 +77,9 @@ STRATEGY_FIT_OPTIONS_QUERY = """
         dte_bucket,
         moneyness_at_open,
         total_pnl,
-        CASE WHEN status = 'Closed' THEN total_pnl ELSE 0 END AS realized_pnl,
-        CASE WHEN status = 'Open'   THEN total_pnl ELSE 0 END AS unrealized_pnl,
-        num_trades AS num_individual_trades,
-        CASE WHEN status = 'Closed' AND total_pnl >  0 THEN 1 ELSE 0 END AS num_winners,
-        CASE WHEN status = 'Closed' AND total_pnl <= 0 THEN 1 ELSE 0 END AS num_losers
+        num_trades AS num_individual_trades
     FROM `ccwj-dbt.analytics.int_option_trade_kinds`
-    WHERE 1=1
+    WHERE status != 'Settlement pending'
     {tenant_filter}
 """
 
@@ -569,6 +566,10 @@ def render_strategy_fit_view():
         # can't leak another tenant's contracts into the matrix.
         options_df = _filter_df_by_tenant_ids(options_df, tenant_ids)
         # tenant scope already narrowed to the selected account's tenant_id
+        # Shared with Strategies DTE: pending out, $0 closed is neither,
+        # open marks stay in unrealized and out of the win rate.
+        from app.outcome_units import annotate_contract_outcomes
+        options_df = annotate_contract_outcomes(options_df)
 
         for col in ("total_pnl", "realized_pnl", "unrealized_pnl",
                     "num_individual_trades", "num_winners", "num_losers"):

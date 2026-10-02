@@ -139,15 +139,13 @@ DTE_MONEYNESS_QUERY = """
 SELECT
   tenant_id,
   dte_bucket,
-  moneyness_at_open,
-  outcome,
-  num_trades,
+  status,
   total_pnl,
-  win_rate_pct
-FROM `ccwj-dbt.analytics.mart_option_trades_by_kind`
+  num_trades
+FROM `ccwj-dbt.analytics.int_option_trade_kinds`
 WHERE strategy = @strategy
+  AND status != 'Settlement pending'
   {tenant_filter}
-ORDER BY dte_bucket, moneyness_at_open
 """
 
 
@@ -157,7 +155,9 @@ SELECT
   trade_group_type,
   ROUND(SUM(realized_pnl), 2) AS realized_sum,
   ROUND(SUM(unrealized_pnl), 2) AS unrealized_sum,
-  COUNT(*) AS num_groups,
+  -- Settlement pending is not a closed group. Counting it made an
+  -- unsettled ITM contract look like a finished $0 round.
+  COUNTIF(status != 'Settlement pending') AS num_groups,
   COUNTIF(status = 'Open') AS num_open_groups,
   -- Real broker fees (informational — already netted into realized_pnl
   -- above via net_cash_flow, NOT an additional deduction). Sep 2026.
@@ -221,6 +221,85 @@ def trend_signal_for_strategy(rows) -> str:
     if trades >= 8:
         return "stable"
     return "new"
+
+
+def roll_strategy_months(trend_df: pd.DataFrame) -> pd.DataFrame:
+    """One row per (strategy, month). Win rate is pooled, not averaged.
+
+    Averaging each account's ``win_rate_pct`` made a one-trade 100%
+    account count the same as a hundred-trade 40% account. Average P&L
+    is total dollars over closed trades, not the mean of per-account
+    averages.
+    """
+    columns = [
+        "strategy", "month_start", "trades_closed", "num_winners",
+        "num_losers", "total_pnl", "win_rate_pct", "avg_pnl",
+    ]
+    if trend_df is None or getattr(trend_df, "empty", True):
+        return pd.DataFrame(columns=columns)
+    if "strategy" not in trend_df.columns or "month_start" not in trend_df.columns:
+        return pd.DataFrame(columns=columns)
+    work = trend_df.copy()
+    work["month_start"] = pd.to_datetime(work["month_start"], errors="coerce")
+    for col in ("trades_closed", "num_winners", "num_losers", "total_pnl"):
+        if col not in work.columns:
+            work[col] = 0
+        work[col] = pd.to_numeric(work[col], errors="coerce").fillna(0)
+    grouped = (
+        work.groupby(["strategy", "month_start"], dropna=False)
+        .agg(
+            trades_closed=("trades_closed", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            total_pnl=("total_pnl", "sum"),
+        )
+        .reset_index()
+        .sort_values(["strategy", "month_start"])
+    )
+    decided = grouped["num_winners"] + grouped["num_losers"]
+    grouped["win_rate_pct"] = grouped["num_winners"] / decided.replace(0, pd.NA) * 100
+    trades = grouped["trades_closed"].replace(0, pd.NA)
+    grouped["avg_pnl"] = grouped["total_pnl"] / trades
+    return grouped
+
+
+def dte_breakdown(df: pd.DataFrame) -> list:
+    """Closed-contract win rate by days-to-expiration bucket.
+
+    Trade count is fills. Win rate is decided contracts: open marks and
+    a closed $0 are neither, and settlement-pending rows are left out
+    so an unsettled ITM expiry is not a loss.
+    """
+    from app.outcome_units import decided_win_loss
+
+    if df is None or getattr(df, "empty", True) or "dte_bucket" not in df.columns:
+        return []
+    work = df.copy()
+    if "status" in work.columns:
+        work = work[work["status"].astype(str) != "Settlement pending"]
+    if work.empty:
+        return []
+    work["total_pnl"] = pd.to_numeric(work["total_pnl"], errors="coerce").fillna(0)
+    if "num_trades" not in work.columns:
+        work["num_trades"] = 1
+    work["num_trades"] = pd.to_numeric(work["num_trades"], errors="coerce").fillna(0)
+    rows = []
+    for bucket, chunk in work.groupby("dte_bucket", dropna=False):
+        winners = losers = 0
+        statuses = chunk["status"].tolist() if "status" in chunk.columns else [""] * len(chunk)
+        for status, amount in zip(statuses, chunk["total_pnl"].tolist()):
+            won, lost = decided_win_loss(status, amount)
+            winners += won
+            losers += lost
+        decided = winners + losers
+        rows.append({
+            "dte_bucket": str(bucket),
+            "num_trades": int(chunk["num_trades"].sum()),
+            "total_pnl": round(float(chunk["total_pnl"].sum()), 2),
+            "win_rate_pct": round(winners / decided * 100, 1) if decided else None,
+        })
+    rows.sort(key=lambda r: r["num_trades"], reverse=True)
+    return rows
 
 
 def _weighted_avg_days(df: pd.DataFrame) -> dict:
@@ -292,6 +371,12 @@ def _focus_breakdown_rows(breakdown_df: pd.DataFrame, dividend_total: float, div
             suf_parts.append(f"{open_g} open")
 
         total = round(st["realized"] + st["unrealized"], 2)
+        # Options that are only settlement-pending have no counted groups
+        # and no dollars. A $0 Options row looked like a finished round.
+        # Equity still renders a $0 line when the sums are missing, so a
+        # NaN equity bucket does not disappear.
+        if lbl == "Options" and grp == 0 and abs(total) < 0.005:
+            continue
 
         out_rows.append(
             {
@@ -705,33 +790,22 @@ def strategies():
         }
 
         # ── Trend data: monthly performance per strategy ──
-        # Loaded with the symbol and book queries above.
+        # Loaded with the symbol and book queries above. Months are
+        # pooled across accounts (winners / decided), not averaged.
         latest_trend = {}
         recent_wr_3m = {}
+        rolled_trend = roll_strategy_months(trend_df)
         if not trend_df.empty and "month_start" in trend_df.columns:
-            trend_df["month_start"] = pd.to_datetime(trend_df["month_start"])
-            for col in ["trades_closed", "win_rate_pct", "total_pnl", "win_rate_3m_pct", "avg_pnl_per_trade"]:
-                if col in trend_df.columns:
-                    trend_df[col] = pd.to_numeric(trend_df[col], errors="coerce").fillna(0)
-
-            # Aggregate across accounts per (strategy, month)
-            agg_trend = trend_df.groupby(["strategy", "month_start"]).agg({
-                "trades_closed": "sum",
-                "win_rate_pct": "mean",
-                "total_pnl": "sum",
-                "avg_pnl_per_trade": "mean",
-                "trend_signal": "first",
-                "win_rate_3m_pct": "mean",
-            }).reset_index()
-
-            for strat in agg_trend["strategy"].unique():
-                strat_rows = agg_trend[agg_trend["strategy"] == strat].sort_values("month_start")
+            for strat in rolled_trend["strategy"].unique():
+                strat_rows = rolled_trend[rolled_trend["strategy"] == strat]
                 raw_rows = trend_df[trend_df["strategy"] == strat]
-                if not strat_rows.empty:
-                    latest_trend[strat] = trend_signal_for_strategy(raw_rows)
-                    wr3 = strat_rows.iloc[-1].get("win_rate_3m_pct")
-                    if wr3 and float(wr3) > 0:
-                        recent_wr_3m[strat] = round(float(wr3), 1)
+                if strat_rows.empty:
+                    continue
+                latest_trend[strat] = trend_signal_for_strategy(raw_rows)
+                prior = strat_rows.iloc[:-1].tail(3)
+                decided = float(prior["num_winners"].sum() + prior["num_losers"].sum()) if not prior.empty else 0
+                if decided:
+                    recent_wr_3m[strat] = round(float(prior["num_winners"].sum()) / decided * 100, 1)
 
         avg_days_weighted = _weighted_avg_days(df)
 
@@ -768,24 +842,18 @@ def strategies():
                 else int(unique_symbols.get(strat_name, 0))
             )
 
-            # Build sparkline data: last 6 months of win rate
+            # Build sparkline data: last 6 months of pooled win rate
             sparkline = []
-            if not trend_df.empty:
-                strat_trend = trend_df[trend_df["strategy"] == strat_name].copy()
-                if not strat_trend.empty:
-                    agg_monthly = strat_trend.groupby("month_start").agg(
-                        wr=("win_rate_pct", "mean"),
-                        pnl=("total_pnl", "sum"),
-                        trades=("trades_closed", "sum"),
-                    ).reset_index().sort_values("month_start")
-                    for _, m in agg_monthly.tail(6).iterrows():
-                        m_wr = m["wr"]
-                        sparkline.append({
-                            "month": str(m["month_start"])[:7],
-                            "win_rate": round(float(m_wr), 1) if pd.notna(m_wr) else None,
-                            "pnl": round(float(m["pnl"]), 2),
-                            "trades": int(m["trades"]),
-                        })
+            if not rolled_trend.empty:
+                strat_trend = rolled_trend[rolled_trend["strategy"] == strat_name]
+                for _, m in strat_trend.tail(6).iterrows():
+                    m_wr = m["win_rate_pct"]
+                    sparkline.append({
+                        "month": str(m["month_start"])[:7],
+                        "win_rate": round(float(m_wr), 1) if pd.notna(m_wr) else None,
+                        "pnl": round(float(m["total_pnl"]), 2),
+                        "trades": int(m["trades_closed"]),
+                    })
 
             strategies_list.append({
                 "strategy": strat_name,
@@ -838,27 +906,20 @@ def strategies():
                 context["book_hero"] = hero_book(strategy_row=focus_rows[0])
                 context["unclassified_return"] = None
 
-                # Monthly trend data for chart
-                if not trend_df.empty:
-                    strat_trend = trend_df[trend_df["strategy"] == selected_strategy].copy()
-                    if not strat_trend.empty:
-                        agg = strat_trend.groupby("month_start").agg(
-                            trades=("trades_closed", "sum"),
-                            winners=("win_rate_pct", "mean"),
-                            pnl=("total_pnl", "sum"),
-                            avg_pnl=("avg_pnl_per_trade", "mean"),
-                        ).reset_index().sort_values("month_start")
-                        context["focus_trend_months"] = [
-                            {
-                                "month": str(m["month_start"])[:7],
-                                "month_label": pd.to_datetime(m["month_start"]).strftime("%b %Y"),
-                                "trades": int(m["trades"]),
-                                "win_rate": round(float(m["winners"]), 1),
-                                "pnl": round(float(m["pnl"]), 2),
-                                "avg_pnl": round(float(m["avg_pnl"]), 2),
-                            }
-                            for _, m in agg.iterrows()
-                        ]
+                # Monthly trend data for chart — same pooled months as the cards.
+                if not rolled_trend.empty:
+                    strat_trend = rolled_trend[rolled_trend["strategy"] == selected_strategy]
+                    context["focus_trend_months"] = [
+                        {
+                            "month": str(m["month_start"])[:7],
+                            "month_label": pd.to_datetime(m["month_start"]).strftime("%b %Y"),
+                            "trades": int(m["trades_closed"]),
+                            "win_rate": round(float(m["win_rate_pct"]), 1) if pd.notna(m["win_rate_pct"]) else None,
+                            "pnl": round(float(m["total_pnl"]), 2),
+                            "avg_pnl": round(float(m["avg_pnl"]), 2) if pd.notna(m["avg_pnl"]) else None,
+                        }
+                        for _, m in strat_trend.iterrows()
+                    ]
 
                 # Breakdown by type (equity / options / dividends) for drill-in
                 try:
@@ -908,33 +969,7 @@ def strategies():
                         job_config=dte_cfg,
                     )
                     dte_df = _filter_df_by_tenant_ids(dte_df, tenant_ids)
-                    if not dte_df.empty:
-                        for col in ["num_trades", "total_pnl"]:
-                            dte_df[col] = pd.to_numeric(dte_df[col], errors="coerce").fillna(0)
-                        # Aggregate by DTE bucket
-                        dte_agg = dte_df.groupby("dte_bucket").agg(
-                            num_trades=("num_trades", "sum"),
-                            total_pnl=("total_pnl", "sum"),
-                        ).reset_index()
-                        # Compute win rate per bucket from winner/loser rows
-                        for bucket in dte_agg["dte_bucket"].unique():
-                            bucket_rows = dte_df[dte_df["dte_bucket"] == bucket]
-                            w = bucket_rows[bucket_rows["outcome"] == "Winner"]["num_trades"].sum()
-                            l = bucket_rows[bucket_rows["outcome"] == "Loser"]["num_trades"].sum()
-                            total = w + l
-                            dte_agg.loc[dte_agg["dte_bucket"] == bucket, "win_rate_pct"] = (
-                                round(w / total * 100, 1) if total > 0 else None
-                            )
-
-                        dte_list = []
-                        for _, r in dte_agg.sort_values("num_trades", ascending=False).iterrows():
-                            dte_list.append({
-                                "dte_bucket": str(r["dte_bucket"]),
-                                "num_trades": int(r["num_trades"]),
-                                "total_pnl": round(float(r["total_pnl"]), 2),
-                                "win_rate_pct": float(r["win_rate_pct"]) if r.get("win_rate_pct") is not None and not pd.isna(r.get("win_rate_pct")) else None,
-                            })
-                        context["focus_dte_breakdown"] = dte_list
+                    context["focus_dte_breakdown"] = dte_breakdown(dte_df)
                 except Exception:
                     app.logger.exception("strategy DTE breakdown query failed")
 
@@ -952,13 +987,17 @@ def strategies():
                     acct_rows = []
                     for _, r in acct_df.iterrows():
                         raw_wr = r.get("win_rate")
+                        if raw_wr is None or pd.isna(raw_wr):
+                            acct_wr = None
+                        else:
+                            acct_wr = float(raw_wr) * 100
                         acct_rows.append({
                             "account": _acct_label(r),
                             "tenant_id": str(r.get("tenant_id") or "") or None,
                             "total_return": float(r.get("total_return") or 0),
                             "realized_pnl": float(r.get("realized_pnl") or 0),
                             "num_trades": int(r.get("num_trades") or 0),
-                            "win_rate": float(raw_wr) * 100 if raw_wr is not None else None,
+                            "win_rate": acct_wr,
                         })
                     context["focus_accounts"] = acct_rows
 

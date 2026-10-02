@@ -274,6 +274,7 @@
     @media (max-width: 720px) {
         table.fit td.cell { min-width: 72px; }
         table.fit tbody th.strategy { min-width: 108px; }
+        .fit-controls { gap: .45rem; margin-bottom: .5rem; }
     }
     .fit-col-short, .fit-corner-short { display: none; }
     @media (max-width: 480px) {
@@ -505,18 +506,9 @@
 
 {% block content %}
 
-{# View switch — one Strategies surface, two lenses. #}
-<div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
-    <a class="btn btn-outline-secondary"
-       href="{{ scoped_url('strategies') }}">Performance</a>
-    <a class="btn btn-primary" aria-current="page"
-       href="{{ scoped_url('strategies', view='fit') }}">Fit matrix</a>
-</div>
-
-{% include "_history_window_note.html" %}
-
 <div class="review-hero strat-hero" id="fit-hero">
-    <div class="ov-bar">
+    <div class="ov-bar ov-bar-keep">
+        {% include "_strategies_view_switch.html" %}
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             <input type="hidden" name="view" value="fit">
@@ -550,6 +542,7 @@
     <p class="ov-line">Which strategies have an edge across {{ dim_label_plural or 'sectors' }}. Each cell is trades you actually placed.</p>
 </div>
 <!-- /fit-hero -->
+{% include "_history_window_note.html" %}
 
 {% if error %}
 <div class="alert alert-danger">
@@ -719,7 +712,7 @@
                 </th>
                 {% for col in col_labels %}
                     {% set c = cells.get(strat, {}).get(col) %}
-                    {% if c and c.num_trades and c.num_trades > 0 %}
+                    {% if c and (c.num_trades or c.total_pnl) %}
                         {% if positions_dim %}
                             {% set drill_url = scoped_url('positions', strategy=strat, sector=(col if dim == 'sector' else drill_sector), subsector=('' if dim == 'sector' else col)) %}
                         {% else %}

@@ -22,8 +22,10 @@ def test_strategies_story_order_is_headline_then_cards_then_collapsed_rest():
     assert 'class="section-header">Over time</span>' in PAGE
     assert 'class="section-header">What moves this strategy</span>' in PAGE
     assert "shadow-sm" not in PAGE
-    assert 'aria-label="Strategies view"' in PAGE
-    assert PAGE.index('aria-label="Strategies view"') < hero
+    assert "_strategies_view_switch.html" in PAGE
+    hero_close = PAGE.index("<!-- /strat-hero -->")
+    assert hero < PAGE.index("_strategies_view_switch.html") < hero_close
+    assert hero_close < PAGE.index("_history_window_note.html")
     assert "<!-- /strat-hero -->" in PAGE
     assert "position_detail" in PAGE
     assert "population_label" in PAGE
@@ -44,17 +46,21 @@ def test_collected_means_premium_received_and_net_is_labeled_net():
     assert "term('Unrealized')" in PAGE
 
 
-def test_phone_rows_stack_and_the_chart_resizes_when_opened():
+def test_phone_rows_stay_columns_and_the_chart_resizes_when_opened():
     assert 'data-label="Total return"' in PAGE
     assert 'data-label="Realized"' in PAGE
     assert 'data-label="Unrealized"' in PAGE
-    assert "content: attr(data-label)" in PAGE
+    assert "content: attr(data-label)" not in PAGE
+    assert "thead { display: none" not in PAGE
     assert "overflow-x: clip" in PAGE
+    assert "overflow-x: auto" in PAGE
     assert "text-overflow: ellipsis" not in PAGE
-    assert "display: flex !important" in PAGE
+    assert "display: table" in PAGE
+    assert "display: flex !important" not in PAGE
     assert "table-layout: fixed" in PAGE
     assert "Chart.getChart" in PAGE
     assert "minmax(min(100%, 280px), 1fr)" in PAGE
+    assert "strat-detail { display: none" in PAGE
 
 
 def test_account_picker_stays_in_the_page_header():
@@ -78,8 +84,13 @@ def test_fit_matrix_is_headline_then_matrix_then_notes():
     assert "function renderTotal" in FIT
     assert 'id="fitScrollHint"' in FIT
     assert "<!-- /fit-hero -->" in FIT
-    assert 'aria-label="Strategies view"' in FIT
-    assert FIT.index('aria-label="Strategies view"') < hero
+    assert "_strategies_view_switch.html" in FIT
+    hero_close = FIT.index("<!-- /fit-hero -->")
+    assert hero < FIT.index("_strategies_view_switch.html") < hero_close
+    assert hero_close < FIT.index("_history_window_note.html")
+    switch = Path("app/templates/_strategies_view_switch.html").read_text()
+    assert 'aria-label="Strategies view"' in switch
+    assert "c.num_trades or c.total_pnl" in FIT
     assert "_account_scope_filters.html" in FIT
     assert "data-ht-persist-tenants" in FIT
     assert "scope_account_choices|length > 1" in FIT
