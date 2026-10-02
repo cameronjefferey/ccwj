@@ -217,8 +217,21 @@ def get_conn():
         if nested:
             yield shared
             return
-        with shared:
+        # Do not use ``with shared``. psycopg 3.3 closes a connection on
+        # __exit__ (commit, then close unless it belongs to a pool), which
+        # threw away the request connection after every query.
+        try:
             yield shared
+        except Exception:
+            if not getattr(shared, "closed", False) and not _idle(shared):
+                try:
+                    shared.rollback()
+                except Exception:
+                    pass
+            raise
+        else:
+            if not getattr(shared, "closed", False) and not _idle(shared):
+                shared.commit()
     except (psycopg.OperationalError, psycopg.InterfaceError):
         _drop_request_connection()
         raise

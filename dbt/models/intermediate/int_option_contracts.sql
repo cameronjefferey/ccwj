@@ -639,12 +639,13 @@ flagged2 as (
          and coalesce(option_expiry >= current_date(), true)
          and not coalesce(inferred_otm_today, false)) as is_partial_open,
         -- Past expiry, no closing fill, and not a proven worthless
-        -- expiry. The calendar branch used to realize net_cash_flow
-        -- (the opening credit) and the leg rendered as closed at $0.
-        -- Cash-settled index roots (SPXW and the rest) stay pending
-        -- even when the underlying close is missing — yfinance often
-        -- has SPX, not SPXW — until the as-of settlement row arrives.
-        -- A priced equity that is strictly OTM still expires worthless.
+        -- expiry. Equity options keep the calendar close (net_cash_flow
+        -- on the expiry date, including a strictly-OTM worthless expiry).
+        -- Assignment for those contracts is a later change. Cash-settled
+        -- index roots (SPXW and the rest) stay pending even when the
+        -- underlying close is missing — yfinance often has SPX, not
+        -- SPXW — until the as-of settlement row arrives. A strictly OTM
+        -- index still expires worthless.
         (
             coalesce(close_type, '') = ''
             and _activity_flat_close_date is null
@@ -653,12 +654,9 @@ flagged2 as (
             and option_expiry < current_date()
             and not coalesce(inferred_otm_today, false)
             and not coalesce(strictly_otm, false)
-            and (
-                expiry_close is not null
-                or upper(trim(coalesce(underlying_symbol, ''))) in (
-                    'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
-                    'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
-                )
+            and upper(trim(coalesce(underlying_symbol, ''))) in (
+                'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
             )
         ) as settlement_pending
     from flagged

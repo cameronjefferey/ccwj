@@ -5,6 +5,10 @@ open its own connection, and a signed-in page did that about fifteen
 times before the first byte. The values here live for two minutes and
 are dropped when a sync, connect, or profile write changes them.
 
+Plan, Simple/Full, and Stripe billing columns are not stored here.
+This dict is per process, so a webhook on another worker cannot clear
+it. Those fields are read from Postgres on each request.
+
 Disabled under pytest so a test that inserts a row and reads it back
 does not see another test's cache. Production leaves the env var unset.
 """

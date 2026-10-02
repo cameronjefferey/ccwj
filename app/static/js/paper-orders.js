@@ -218,4 +218,37 @@
     });
 
     if (hasOpen()) schedule(15000);
+    window.htApplyPaperOrders = apply;
+})();
+
+(function () {
+    var pending = document.getElementById("pp-broker-pending");
+    var url = pending && pending.getAttribute("data-broker-url");
+    if (!url) return;
+    fetch(url, {
+        headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin"
+    }).then(function (response) {
+        if (!response.ok) throw new Error("broker");
+        return response.json();
+    }).then(function (data) {
+        pending.classList.add("d-none");
+        var connect = document.getElementById("pp-connect");
+        var ticket = document.getElementById("pp-ticket");
+        if (data && data.connected) {
+            if (connect) connect.classList.add("d-none");
+            if (ticket) ticket.classList.remove("d-none");
+            var power = document.getElementById("pp-buying-power");
+            if (power && data.buying_power_label) {
+                power.textContent = "Buying power on this paper account: " + data.buying_power_label + ". Buying power is what a new trade can use. Account value is the balance on Overview.";
+                power.classList.remove("d-none");
+            }
+            if (window.htApplyPaperOrders) window.htApplyPaperOrders(data);
+            return;
+        }
+        if (ticket) ticket.classList.add("d-none");
+        if (connect) connect.classList.remove("d-none");
+    }).catch(function () {
+        pending.textContent = "We couldn't reach the paper account. Refresh to try again.";
+    });
 })();

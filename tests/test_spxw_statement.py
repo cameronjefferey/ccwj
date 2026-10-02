@@ -231,6 +231,108 @@ def test_gross_order_is_netted_once_and_loses_to_the_activity():
     assert "INDEX" in str(merged.iloc[0]["Description"])
 
 
+def test_blank_fee_reads_commission_or_a_linked_fee_activity():
+    """Oct 1 SPXW opens shipped fee 0. The commission is another field or a FEE row."""
+    from app.snaptrade_normalize import activities_to_history_df
+
+    gross = {
+        "type": "SELL",
+        "option_type": "SELL_TO_OPEN",
+        "trade_date": "2026-10-01",
+        "description": "CALL S & P 500 INDEX SPXW 10/01/2026 7650.00 C",
+        "symbol": "SPXW 10/01/2026 7650.00 C",
+        "units": 10,
+        "price": 7.77,
+        "fee": None,
+        "commission": 12.22,
+        "amount": 7770.0,
+    }
+    df = activities_to_history_df(
+        [gross], account_name=ACCOUNT, user_id=9, tenant_id=TENANT,
+    )
+    assert float(df.iloc[0]["Amount"]) == 7757.78
+    assert float(df.iloc[0]["fees_and_comm"]) == 12.22
+
+    linked = activities_to_history_df(
+        [
+            {
+                "type": "SELL",
+                "option_type": "SELL_TO_OPEN",
+                "trade_date": "2026-10-01",
+                "description": "CALL S & P 500 INDEX SPXW 10/01/2026 7650.00 C",
+                "symbol": "SPXW 10/01/2026 7650.00 C",
+                "units": 10,
+                "price": 7.77,
+                "fee": 0,
+                "amount": 7770.0,
+                "external_reference_id": "fill-7650",
+            },
+            {
+                "type": "FEE",
+                "trade_date": "2026-10-01",
+                "description": "Commission",
+                "amount": -12.22,
+                "fee": 0,
+                "external_reference_id": "fill-7650",
+            },
+        ],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    assert len(linked) == 1
+    assert linked.iloc[0]["Action"] == "Sell to Open"
+    assert float(linked.iloc[0]["Amount"]) == 7757.78
+    assert float(linked.iloc[0]["fees_and_comm"]) == 12.22
+
+
+def test_order_commission_survives_when_the_activity_fee_is_blank():
+    orders = orders_to_history_df(
+        [{
+            "action": "SELL_TO_OPEN",
+            "option_symbol": {
+                "underlying_symbol": "SPXW",
+                "expiration_date": "2026-10-01",
+                "strike_price": 7650,
+                "option_type": "CALL",
+            },
+            "status": "EXECUTED",
+            "time_executed": "2026-10-01T14:30:00Z",
+            "filled_quantity": 10,
+            "execution_price": 7.77,
+            "commission": 12.22,
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    activity = activities_to_history_df(
+        [{
+            "type": "SELL",
+            "option_type": "SELL_TO_OPEN",
+            "trade_date": "2026-10-01",
+            "description": "CALL S & P 500 INDEX SPXW 10/01/2026 7650.00 C",
+            "symbol": "SPXW 10/01/2026 7650.00 C",
+            "units": 10,
+            "price": 7.77,
+            "fee": 0,
+            "amount": 7770.0,
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    assert float(activity.iloc[0]["Amount"]) == 7770.0
+    assert activity.iloc[0]["fees_and_comm"] in ("", 0, 0.0)
+    merged = _dedup_history_rows(
+        pd.concat([orders, activity], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(merged) == 1
+    assert float(merged.iloc[0]["fees_and_comm"]) == 12.22
+    assert "INDEX" in str(merged.iloc[0]["Description"])
+
+
 def test_cash_settlement_type_uses_the_as_of_date_in_the_description():
     df = activities_to_history_df(
         [{
