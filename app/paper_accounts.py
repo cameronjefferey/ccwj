@@ -199,6 +199,46 @@ def set_app_view(user_id, view: str) -> bool:
         return False
 
 
+FULL_VIEW_PAGES = {
+    "/strategies": "Strategies",
+    "/story": "Trader Profile",
+    "/insights": "AI Insights",
+}
+
+
+def safe_full_view_next(raw) -> str | None:
+    """A same-site Full-view path. Anything else is dropped."""
+    text = (raw or "").strip()
+    if not text.startswith("/") or text.startswith("//") or "\\" in text:
+        return None
+    path, _, query = text.partition("?")
+    if path not in FULL_VIEW_PAGES:
+        return None
+    if any(ch in query for ch in " <>\"'#"):
+        return None
+    return path if not query else f"{path}?{query}"
+
+
+def simple_view_hold():
+    """The switch-to-Full card, or None when this request should load the page."""
+    from flask import render_template, request
+    from flask_login import current_user
+
+    if not getattr(current_user, "is_authenticated", False):
+        return None
+    path = request.path.rstrip("/") or "/"
+    title = FULL_VIEW_PAGES.get(path)
+    if not title or get_app_view(current_user.id) != "simple":
+        return None
+    nxt = request.full_path[:-1] if request.full_path.endswith("?") else request.full_path
+    return render_template(
+        "simple_hold.html",
+        title=title,
+        page_title=title,
+        next_path=nxt,
+    )
+
+
 def viewer_flags(user_id) -> tuple[bool, bool]:
     """``(simple_view, has_paper_account)``. Both fail closed to the full app."""
     simple = get_app_view(user_id) == "simple"

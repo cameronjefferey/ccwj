@@ -142,6 +142,7 @@
         font-weight: 650;
         font-size: .92rem;
     }
+    .learn-shorts-scroller { position: relative; }
     .learn-shorts-row {
         display: flex;
         gap: .75rem;
@@ -149,7 +150,33 @@
         scroll-snap-type: x mandatory;
         -webkit-overflow-scrolling: touch;
         padding-bottom: .35rem;
+        scrollbar-width: thin;
     }
+    .learn-shorts-scroller.is-more .learn-shorts-row {
+        -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 2.75rem), transparent);
+        mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 2.75rem), transparent);
+    }
+    .learn-shorts-scroller.is-more.is-scrolled .learn-shorts-row {
+        -webkit-mask-image: linear-gradient(to right, transparent, #000 2.75rem, #000 calc(100% - 2.75rem), transparent);
+        mask-image: linear-gradient(to right, transparent, #000 2.75rem, #000 calc(100% - 2.75rem), transparent);
+    }
+    .learn-shorts-nav {
+        position: absolute;
+        top: 28%;
+        z-index: 2;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        border: 1px solid var(--ht-line);
+        background: #121826;
+        color: #fff;
+        font-size: 1.35rem;
+        line-height: 1;
+        padding: 0;
+    }
+    .learn-shorts-nav.is-prev { left: .2rem; }
+    .learn-shorts-nav.is-next { right: .2rem; }
+    .learn-shorts-nav[hidden] { display: none; }
     .learn-short {
         flex: 0 0 88%;
         max-width: 16.5rem;

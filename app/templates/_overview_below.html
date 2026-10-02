@@ -185,6 +185,8 @@
 </details>
 {% endif %}
 
+{# simple-view-full-start: execution review stays in Full view #}
+{% if not simple_view %}
 {# ════════════════════════════════════
    EXECUTION REVIEW — verdicts that matured + live open-option record
    A verdict "lands" on the contract's expiry date: that's the day the
@@ -261,6 +263,7 @@
     </div>
 </details>
 {% endif %}
+{% endif %}{# /simple-view-full execution #}
 
 {# Daily change is an open section. The full page renders it after
    Accounts. This fragment includes it only for the lazy fetch, which
@@ -269,6 +272,8 @@
 {% include "_overview_daily.html" %}
 {% endif %}
 
+{# simple-view-full-start: performance by account stays in Full view #}
+{% if not simple_view %}
 {# ════════════════════════════════════
    PERFORMANCE BY ACCOUNT — summarized scorecard, one row per account
    (impacted by the account filter), split by asset type with lifetime
@@ -371,6 +376,7 @@
     </div>
 </details>
 {% endif %}
+{% endif %}{# /simple-view-full performance #}
 
 {# ════════════════════════════════════
    TRADES THIS WEEK — every trade group opened or closed in the ISO week,

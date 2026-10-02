@@ -208,7 +208,7 @@ def profile():
             return redirect(url_for("profile", tab="account") + "#account-groups")
 
         if action == "set_app_view":
-            from app.paper_accounts import set_app_view
+            from app.paper_accounts import safe_full_view_next, set_app_view
 
             view = (request.form.get("app_view") or "").strip().lower()
             if view not in ("simple", "full"):
@@ -218,7 +218,8 @@ def profile():
                 flash("Could not save that view. Check server logs.", "danger")
                 return redirect(url_for("profile", tab="preferences"))
             flash("Simple view is on." if view == "simple" else "Full view is on.", "success")
-            return redirect(url_for("profile", tab="preferences"))
+            nxt = safe_full_view_next(request.form.get("next")) if view == "full" else None
+            return redirect(nxt or url_for("profile", tab="preferences"))
 
         if action == "save_profile":
             settings_tab = (request.form.get("settings_tab") or "").strip().lower()

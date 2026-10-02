@@ -189,7 +189,35 @@ def test_logged_in_user_can_open_learn(monkeypatch):
         sess["_fresh"] = True
     response = client.get("/learn/calls-and-puts")
     assert response.status_code == 200
-    assert "Calls and puts" in response.get_data(as_text=True)
+    html = response.get_data(as_text=True)
+    assert "Calls and puts" in html
+    assert "Start your free 30-day trial" not in html
+    assert 'href="/practice"' in html
+    assert ">Practice</a>" in html
+    index = client.get("/learn").get_data(as_text=True)
+    assert "Start your free 30-day trial" not in index
+    assert ">Practice</a>" in index
+
+
+def test_later_episodes_show_a_duration():
+    expected = {
+        "buying-and-selling": "5:37",
+        "covered-calls": "4:37",
+        "cash-secured-puts": "4:41",
+        "the-wheel": "4:19",
+        "spreads": "4:45",
+        "options-risk": "4:41",
+        "reading-a-position": "3:42",
+    }
+    html = _html("/learn")
+    for episode in catalog.episodes():
+        if episode["number"] < 4:
+            continue
+        assert episode["duration"] == expected[episode["slug"]]
+        assert catalog.duration_iso(episode["duration"])
+        assert episode["duration"] in html
+    assert 'aria-label="Next shorts"' in html
+    assert "learn-shorts-nav" in html
 
 
 def test_youtube_id_turns_on_nocookie_embed_and_video_metadata(monkeypatch):

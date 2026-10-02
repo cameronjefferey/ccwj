@@ -173,6 +173,38 @@ def test_brokerage_view_is_a_chain_header_not_a_lesson():
     assert "Mid is halfway" in views["brokerage"]["note"]
 
 
+def test_closed_market_review_uses_the_last_price():
+    from app.paper_practice import quote_from_chain_row, review_limit
+
+    quote = quote_from_chain_row(0, 0, last=1.154, previous=0.90)
+    limit, note, err = review_limit(None, quote, "SPY", session_open=False)
+    assert err is None
+    assert limit == "1.15"
+    assert note == "last price at close"
+    # A missing last trade uses the previous close.
+    previous = quote_from_chain_row(0, 0, last=None, previous=2.4)
+    limit, note, err = review_limit(None, previous, "SPY", session_open=False)
+    assert limit == "2.40" and note == "last price at close" and err is None
+    # Nothing to price is a closed-market message, not a retry prompt.
+    empty = quote_from_chain_row(0, 0, last=float("nan"), previous=None)
+    limit, note, err = review_limit(None, empty, "SPY", session_open=False)
+    assert limit is None and note is None
+    assert "last price" in err
+    assert "Pick it again in a moment" not in err
+
+
+def test_open_session_review_still_requires_a_live_quote():
+    from app.paper_practice import quote_from_chain_row, review_limit
+
+    quote = quote_from_chain_row(1.10, 1.20, last=1.15, previous=1.00)
+    limit, note, err = review_limit(None, quote, "SPY", session_open=True)
+    assert limit is None and note is None
+    assert "Pick it again in a moment" in err
+    limit, note, err = review_limit(1.16, quote, "SPY", session_open=True)
+    assert err is None and note is None
+    assert limit == "1.15"
+
+
 def test_limit_matches_the_quoted_premium_in_cents():
     assert limit_from_quote(1.154) == "1.15"
     assert limit_from_quote(1.155) == "1.16"

@@ -1454,6 +1454,10 @@ def _live_demo_insight(client, tenant_ids, coaching_data):
 @limiter.limit("120 per minute; 2000 per hour")
 def insights():
     """Show coaching data + cached AI analysis."""
+    from app.paper_accounts import simple_view_hold
+    held = simple_view_hold()
+    if held:
+        return held
     from app.routes import _redirect_if_no_accounts
     bounce = _redirect_if_no_accounts()
     if bounce:

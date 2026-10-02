@@ -56,7 +56,9 @@
     </div>
     {% endif %}
 
+    {% if not simple_view %}
     <p class="story-profile">
         <a href="{{ scoped_url('trader_story') }}" class="story-profile-link">See your full trader profile &rarr;</a>
     </p>
+    {% endif %}
 </div>

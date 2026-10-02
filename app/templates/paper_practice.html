@@ -135,6 +135,9 @@
                 {% if ticket.session_note %}
                 <p class="pp-note">{{ ticket.session_note }}</p>
                 {% endif %}
+                {% if ticket.price_note %}
+                <p class="pp-note">{{ ticket.price_note }}</p>
+                {% endif %}
                 {% if ticket.views %}
                 {% with voice=ticket.voice, views=ticket.views, chain=ticket.chain, picked_strike=ticket.strike, picked_side=ticket.side %}
                 {% include "_paper_trade_views.html" %}
@@ -171,7 +174,7 @@
                 {% endif %}
             {% else %}
                 {% if buying_power_label %}
-                <p class="pp-note">Buying power on this paper account: {{ buying_power_label }}.</p>
+                <p class="pp-note">Buying power on this paper account: {{ buying_power_label }}. Buying power is what a new trade can use. Account value is the balance on Overview.</p>
                 {% endif %}
                 {% if session_note %}
                 <p class="pp-note">{{ session_note }}</p>

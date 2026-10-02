@@ -93,11 +93,43 @@
     {% if shorts %}
     <section class="learn-section" aria-labelledby="learn-shorts-heading">
         <h2 id="learn-shorts-heading">Shorts</h2>
-        <div class="learn-shorts-row">
-            {% for short in shorts %}
-            {% include "learn/_short.html" %}
-            {% endfor %}
+        <div class="learn-shorts-scroller">
+            <button type="button" class="learn-shorts-nav is-prev" aria-label="Previous shorts" hidden>&lsaquo;</button>
+            <div class="learn-shorts-row" tabindex="0">
+                {% for short in shorts %}
+                {% include "learn/_short.html" %}
+                {% endfor %}
+            </div>
+            <button type="button" class="learn-shorts-nav is-next" aria-label="Next shorts">&rsaquo;</button>
         </div>
+        <script>
+        (function () {
+            var scroller = document.querySelector(".learn-shorts-scroller");
+            if (!scroller) return;
+            var row = scroller.querySelector(".learn-shorts-row");
+            var prev = scroller.querySelector(".is-prev");
+            var next = scroller.querySelector(".is-next");
+            var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            function sync() {
+                var max = row.scrollWidth - row.clientWidth;
+                var more = max > 8;
+                var atStart = row.scrollLeft <= 8;
+                var atEnd = row.scrollLeft >= max - 8;
+                scroller.classList.toggle("is-more", more && !atEnd);
+                scroller.classList.toggle("is-scrolled", more && !atStart);
+                prev.hidden = !more || atStart;
+                next.hidden = !more || atEnd;
+            }
+            function step(dir) {
+                row.scrollBy({left: dir * Math.max(row.clientWidth * 0.8, 160), behavior: reduce ? "auto" : "smooth"});
+            }
+            prev.addEventListener("click", function () { step(-1); });
+            next.addEventListener("click", function () { step(1); });
+            row.addEventListener("scroll", sync, {passive: true});
+            window.addEventListener("resize", sync);
+            sync();
+        })();
+        </script>
     </section>
     {% endif %}
 

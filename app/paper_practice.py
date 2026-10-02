@@ -541,11 +541,15 @@ def _views_as_placed(views, ticket) -> dict:
 def trade_views(
     symbol, side, strike, distance, expiry: date, limit_label, cost_label, occ, cash_settled,
     bid_label=None, mid_label=None, ask_label=None, as_of_label=None, placed=False,
+    price_note=None,
 ) -> dict:
     """Three readings of one paper order. Beginner is the lesson. Brokerage is the ticket."""
     side_name = "Call" if side == "call" else "Put"
     when = expiry.strftime("%b %-d, %Y")
-    price_label = "Price per point" if cash_settled else "Price per share"
+    if price_note:
+        price_label = "Last price at close"
+    else:
+        price_label = "Price per point" if cash_settled else "Price per share"
     notes = _order_notes(limit_label, cost_label, cash_settled, placed)
     beginner_rows = [
         {"label": price_label, "value": limit_label},
@@ -762,7 +766,7 @@ def _px(price) -> str | None:
         amount = Decimal(str(price))
     except Exception:
         return None
-    if amount <= 0:
+    if not amount.is_finite() or amount <= 0:
         return None
     shown = amount.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
     text = f"{shown:.3f}"
@@ -779,6 +783,50 @@ def quote_triplet(bid, ask) -> dict:
     if bid_txt and ask_txt:
         mid_txt = _px((Decimal(bid_txt) + Decimal(ask_txt)) / 2)
     return {"bid": bid_txt, "mid": mid_txt, "ask": ask_txt}
+
+
+def quote_from_chain_row(bid, ask, last=None, previous=None) -> dict:
+    """Chain quote plus the last trade and the previous close."""
+    quote = quote_triplet(bid, ask)
+    quote["last"] = _px(last)
+    quote["previous"] = _px(previous)
+    return quote
+
+
+def review_limit(raw_live, quote, symbol, *, session_open: bool):
+    """Limit for the review ticket.
+
+    While the session is open, a live quote is required and the limit is
+    the chain mid. After the close, a missing live quote falls back to the
+    last trade, then the previous close, then a leftover bid or ask. That
+    fallback is labelled so the ticket does not pretend it is a live quote.
+    Returns ``(limit, price_note, error)``.
+    """
+    quote = quote or {}
+    live_ok = limit_from_quote(raw_live, symbol) is not None
+    shown = quote.get("mid") or quote.get("ask") or quote.get("bid")
+    if session_open:
+        if not live_ok:
+            return None, None, (
+                "We couldn't get a price for that contract. Pick it again in a moment."
+            )
+        limit = limit_from_quote(shown, symbol)
+        if not limit:
+            return None, None, "No bid and ask for that contract. Pick another strike."
+        return limit, None, None
+    if live_ok:
+        limit = limit_from_quote(shown, symbol) or limit_from_quote(raw_live, symbol)
+        if limit:
+            return limit, None, None
+    for key in ("last", "previous", "mid", "ask", "bid"):
+        limit = limit_from_quote(quote.get(key), symbol)
+        if limit:
+            return limit, "last price at close", None
+    return None, None, (
+        "We don't have a last price for that contract. "
+        "The market is closed, so there is no live quote. "
+        "Pick another strike, or try again when the next session opens."
+    )
 
 
 def _chain_cache_key(symbol, expiry: date):
@@ -816,7 +864,12 @@ def load_option_chain(symbol, expiry: date, strikes: list[int]) -> list[dict]:
                 continue
             if strike not in wanted:
                 continue
-            sided[strike][side] = quote_triplet(rec.bid, rec.ask)
+            sided[strike][side] = quote_from_chain_row(
+                getattr(rec, "bid", None),
+                getattr(rec, "ask", None),
+                getattr(rec, "lastPrice", None),
+                getattr(rec, "previousClose", None),
+            )
     rows = [
         {"strike": strike, "call": sided[strike]["call"], "put": sided[strike]["put"]}
         for strike in strikes
@@ -889,7 +942,6 @@ def _build_ticket(selection, spots, account, today=None):
         _log.warning("practice chain failed: %s", exc)
         chain = []
     quote = _side_quote(chain, strike, selection["side"])
-    shown = quote.get("mid") or quote.get("ask") or quote.get("bid")
     try:
         raw = quote_option_premium(
             current_user.id, account["snaptrade_account_id"], occ
@@ -897,13 +949,14 @@ def _build_ticket(selection, spots, account, today=None):
     except Exception as exc:
         _log.warning("practice option quote failed: %s", exc)
         raw = None
-    if not limit_from_quote(raw, symbol):
-        return None, (
-            "We couldn't get a price for that contract. Pick it again in a moment."
+    limit_price, price_note, price_err = review_limit(
+        raw, quote, symbol, session_open=regular_session_open(),
+    )
+    if price_err or not limit_price:
+        return None, price_err or (
+            "We don't have a last price for that contract. "
+            "Pick another strike, or try again when the next session opens."
         )
-    limit_price = limit_from_quote(shown, symbol)
-    if not limit_price:
-        return None, "No bid and ask for that contract. Pick another strike."
     as_of = spot_as_of_label(symbol)
     sentence = practice_sentence(
         selection["symbol"], selection["side"], strike, distance, expiry,
@@ -944,8 +997,12 @@ def _build_ticket(selection, spots, account, today=None):
             mid_label=f"${quote['mid']}" if quote.get("mid") else None,
             ask_label=f"${quote['ask']}" if quote.get("ask") else None,
             as_of_label=as_of,
+            price_note=price_note,
         ),
         "session_note": session_wait_note(expiry),
+        "price_note": (
+            "This limit is the last price at close." if price_note else None
+        ),
     }, None
 
 

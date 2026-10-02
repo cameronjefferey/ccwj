@@ -541,6 +541,10 @@ def _focus_insights(focus_strategy, overall_win_rate, trend_months, dte_data):
 @limiter.limit("120 per minute; 2000 per hour")
 def strategies():
     """Strategy performance — process-focused, trend-aware."""
+    from app.paper_accounts import simple_view_hold
+    held = simple_view_hold()
+    if held:
+        return held
     # One "Strategies" surface, two views (Aug 2026 surface audit):
     # Performance (this function, default) and Fit matrix (the former
     # /strategy-fit page — win-rate/expectancy by strategy x sector/DTE/

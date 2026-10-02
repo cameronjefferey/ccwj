@@ -571,9 +571,13 @@ There is no separate dashboard page — Overview is the authenticated home.
 **Status: Working. Public Options 101 series. No login.**
 
 Logged-out nav and footer link here. Logged-in users can open the same pages.
+The trial CTA at the bottom is for logged-out visitors. A signed-in page
+replaces it with Practice.
 Copy and video ids live in `app/learn_episodes.json` (loaded by
 `app/learn_catalog.py`). All 10 episodes are published with public YouTube
 ids, in series order (the wheel is episode 7, spreads 8, options risk 9).
+Each episode shows its length. The Shorts row on `/learn` fades and has
+arrows when more cards sit off to the side.
 The series page links the playlist
 `https://www.youtube.com/playlist?list=PLcVwygMVS3Ig`. Each episode page
 is a click-to-play nocookie embed (no iframe until click), with that
@@ -901,6 +905,12 @@ logged-out Home/Pricing/FAQ count). Non-admins get 404.
 (`POST /get-started/paper`) stores `users.app_view='simple'` (default
 `full` for everyone else) and opens Practice. Settings can switch Simple
 and Full. Simple nav is Practice, Learn, Overview, and Positions.
+Direct visits to Strategies, Trader Profile, and AI Insights show a
+switch-to-Full card instead of the page. Overview in Simple hides
+Execution review, Performance by account, and the trader-profile link.
+The position review does the same with its profile link. After the close,
+Practice review uses the last price at close when a live quote is missing,
+and labels buying power separately from the paper account value on Overview.
 No SnapTrade brokerage yet:
 Connect brokerage is the primary CTA (pre-portal interstitial, then
 SnapTrade), "I'll do this later" / skip to Overview is secondary, and
