@@ -280,7 +280,7 @@
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">
         <div class="ov-subk">
-            Dividends paid today
+            {% if today_movers.as_of_label and not today_movers.is_today %}Dividends paid {{ today_movers.as_of_label }}{% else %}Dividends paid today{% endif %}
             <span class="pos">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
