@@ -120,6 +120,36 @@ def _get_crypto_symbols():
 _YAHOO_BARE_IS_THE_STOCK = frozenset({"SNX", "SEI", "COMP"})
 
 
+# Cash-settled index options. Yahoo has no equity named SPXW (or SPX).
+# The official close is the index. Confirmed 2026-10-02 against yfinance:
+# ^GSPC and ^SPX both printed 7666.45 on 2026-10-01 (above the 7655
+# long strike of that day's SPXW call spread). ^NDX, ^RUT, and ^VIX
+# also return a daily close. XSP is the mini SPX, one tenth of ^GSPC.
+# The loader writes the scaled close back under the broker root so
+# SPXW joins on SPXW and the parent SPX row is the same print.
+_INDEX_YAHOO = {
+    "SPX": (("^GSPC", "^SPX"), 1.0),
+    "SPXW": (("^GSPC", "^SPX"), 1.0),
+    "XSP": (("^GSPC", "^SPX"), 0.1),
+    "NDX": (("^NDX",), 1.0),
+    "NDXP": (("^NDX",), 1.0),
+    "RUT": (("^RUT",), 1.0),
+    "RUTW": (("^RUT",), 1.0),
+    "VIX": (("^VIX",), 1.0),
+}
+
+
+def _index_yahoo_spec(broker_sym):
+    """Return ``(yahoo_tickers, scale)`` for a cash index, else None.
+
+    Scale multiplies the Yahoo close before it is stored under the
+    broker symbol. XSP is ^GSPC / 10. Every other mapped root is 1.
+    """
+    if not isinstance(broker_sym, str):
+        return None
+    return _INDEX_YAHOO.get(broker_sym.strip().upper())
+
+
 def _yahoo_symbol_candidates(broker_sym, crypto_symbols=None):
     """Return ordered list of Yahoo-symbol candidates to try for one broker symbol.
 
@@ -140,6 +170,11 @@ def _yahoo_symbol_candidates(broker_sym, crypto_symbols=None):
     sym = broker_sym.strip()
     if not sym:
         return []
+    index = _index_yahoo_spec(sym)
+    if index is not None:
+        # Never try the bare root. Yahoo's "SPXW" is empty, and a
+        # successful empty-looking equity would be the wrong series.
+        return list(index[0])
     if crypto_symbols is None:
         crypto_symbols = _get_crypto_symbols()
     if sym.upper() in crypto_symbols:
@@ -173,6 +208,13 @@ def _fetch_history_for_symbol(broker_sym, start_iso, end_iso, crypto_symbols=Non
             last_err = e
             continue
         if h is not None and not h.empty:
+            spec = _index_yahoo_spec(broker_sym)
+            scale = float(spec[1]) if spec is not None else 1.0
+            if scale != 1.0:
+                h = h.copy()
+                for col in ("Open", "High", "Low", "Close"):
+                    if col in h.columns:
+                        h[col] = h[col].astype(float) * scale
             if cand != broker_sym:
                 print(
                     f"Yahoo symbol fallback for {broker_sym!r}: using {cand!r} "

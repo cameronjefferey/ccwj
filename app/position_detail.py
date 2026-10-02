@@ -41,7 +41,6 @@ from app.outcome_units import (
     annotate_strategy_structures,
     closing_without_an_open,
     group_vertical_spreads,
-    legs_activity_summary,
     net_collected,
 )
 from app.pnl_charts import (
@@ -190,6 +189,162 @@ def _option_return_pct(leg, pnl):
     if basis < 0.01:
         return None
     return round(float(pnl) / basis * 100, 1)
+
+
+def _option_identity(symbol):
+    """OCC identity so a long-form fill matches a snapshot OCC symbol.
+
+    ``BE 10/02/2026 297.50 C`` and ``BE   261002C00297500`` are one contract.
+    """
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(symbol)
+    if not parsed:
+        return None
+    return (
+        parsed["root"],
+        parsed["yy"],
+        int(parsed["mm"]),
+        int(parsed["dd"]),
+        parsed["cp"],
+        round(float(parsed["strike"]), 4),
+    )
+
+
+def _same_option_scope(outcome, trade) -> bool:
+    ot = str(outcome.get("tenant_id") or "")
+    tt = str(trade.get("tenant_id") or "")
+    if ot and tt:
+        return ot == tt
+    oa = str(outcome.get("account") or "").strip()
+    ta = str(trade.get("account") or "").strip()
+    if oa and ta:
+        return oa == ta
+    return True
+
+
+def _outcome_qty(outcome) -> float:
+    try:
+        return abs(float(outcome.get("quantity") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def repair_snapshot_option_outcomes(outcomes, trades):
+    """Fix an estimated expiry row that came from a snapshot-only contract.
+
+    That row has quantity 0, no premium (kept % is an em dash), and an
+    open date equal to the expiry (the snapshot day) while the fills
+    that opened it are earlier. Recover quantity, the open date, and
+    premium from those fills. Drop the empty row when a history row
+    for the same contract is already in the list.
+    """
+    rows = list(outcomes or [])
+    fills_by_id = {}
+    for trade in trades or []:
+        ident = _option_identity(trade.get("trade_symbol"))
+        if ident:
+            fills_by_id.setdefault(ident, []).append(trade)
+
+    real = set()
+    for outcome in rows:
+        if outcome.get("type") not in (None, "option"):
+            continue
+        ident = _option_identity(outcome.get("trade_symbol"))
+        if ident and _outcome_qty(outcome) >= 1e-6:
+            real.add((str(outcome.get("tenant_id") or ""), ident))
+
+    kept = []
+    for outcome in rows:
+        if outcome.get("type") not in (None, "option"):
+            kept.append(outcome)
+            continue
+        ident = _option_identity(outcome.get("trade_symbol"))
+        key = (str(outcome.get("tenant_id") or ""), ident)
+        if ident and _outcome_qty(outcome) < 1e-6 and key in real:
+            continue
+        if ident:
+            _fill_option_outcome_from_opens(outcome, fills_by_id.get(ident) or [])
+        kept.append(outcome)
+    return kept
+
+
+def _opening_fills(outcome, fills):
+    direction = str(outcome.get("direction") or "")
+    if direction == "Sold":
+        actions = {"option_sell_to_open"}
+    elif direction == "Bought":
+        actions = {"option_buy_to_open"}
+    else:
+        actions = {"option_sell_to_open", "option_buy_to_open"}
+    return [
+        trade for trade in fills
+        if str(trade.get("action") or "") in actions
+        and _same_option_scope(outcome, trade)
+    ]
+
+
+def _fill_option_open_date(outcome, fills):
+    """Replace an open date that is the expiry with the real opening fill."""
+    opens = _opening_fills(outcome, fills)
+    if not opens:
+        return
+    open_s = str(outcome.get("open_date") or "")[:10]
+    expiry_s = str(outcome.get("option_expiry") or "")[:10]
+    close_s = str(outcome.get("close_date") or "")[:10]
+    if open_s and open_s not in {expiry_s, close_s}:
+        return
+    dates = [str(trade.get("trade_date") or "")[:10] for trade in opens]
+    dates = [d for d in dates if len(d) == 10]
+    if not dates:
+        return
+    opened = min(dates)
+    if open_s == opened:
+        return
+    outcome["open_date"] = opened
+    if close_s:
+        try:
+            outcome["days_held"] = (
+                pd.to_datetime(close_s) - pd.to_datetime(opened)
+            ).days
+        except Exception:
+            pass
+
+
+def _fill_option_outcome_from_opens(outcome, fills):
+    opens = _opening_fills(outcome, fills)
+    if not opens:
+        _fill_option_open_date(outcome, fills)
+        return
+    filled_premium = False
+    qty = sum(abs(float(trade.get("quantity") or 0)) for trade in opens)
+    if _outcome_qty(outcome) < 1e-9 and qty >= 1e-9:
+        outcome["quantity"] = qty
+        outcome["quantity_display"] = _format_share_qty(qty)
+    direction = str(outcome.get("direction") or "")
+    cash = round(sum(abs(float(trade.get("amount") or 0)) for trade in opens), 2)
+    premium_missing = (
+        abs(float(outcome.get("premium_received") or 0)) < 0.01
+        and abs(float(outcome.get("premium_paid") or 0)) < 0.01
+    )
+    if premium_missing and cash >= 0.01:
+        if direction == "Sold":
+            outcome["premium_received"] = cash
+        else:
+            outcome["premium_paid"] = cash
+        filled_premium = True
+    _fill_option_open_date(outcome, fills)
+    if filled_premium:
+        pnl = float(outcome.get("pnl") or 0)
+        cost, proceeds, _pnl = _option_leg_cost_proceeds({
+            **outcome,
+            "total_pnl": pnl,
+        })
+        outcome["cost"] = cost
+        outcome["proceeds"] = proceeds
+        outcome["return_pct"] = _option_return_pct(outcome, pnl)
+    if str(outcome.get("close_type") or "") == "Settlement pending":
+        outcome["is_winner"] = None
 
 
 def _equity_session_keys(closed_equity_df):
@@ -565,6 +720,58 @@ def _story_realized_footer(breakdown_rows):
     }
 
 
+def align_headline_kpis(kpis, breakdown_rows):
+    """Make realized + unrealized + dividends equal the headline total.
+
+    Breakdown-by-type is the ledger the page reconciles against. Dividends
+    are their own row (cash, no mark) and must not also sit inside realized,
+    or the three parts would overshoot the total. Each part is the same
+    cents the hero prints, so the sum is the number next to them.
+    """
+    if not kpis or not breakdown_rows:
+        return kpis
+    realized = 0.0
+    unrealized = 0.0
+    dividends = 0.0
+    for row in breakdown_rows:
+        if str(row.get("type") or "") == "Dividends":
+            dividends += float(row.get("total") or 0)
+            continue
+        realized += float(row.get("realized") or 0)
+        if row.get("unrealized") is not None:
+            unrealized += float(row.get("unrealized") or 0)
+    kpis["realized_pnl"] = round(realized, 2)
+    kpis["unrealized_pnl"] = round(unrealized, 2)
+    kpis["dividend_income"] = round(dividends, 2)
+    kpis["total_return"] = round(
+        kpis["realized_pnl"] + kpis["unrealized_pnl"] + kpis["dividend_income"],
+        2,
+    )
+    return kpis
+
+
+def history_window_hint(connected_on, first_trade):
+    """Label when the account was connected after the first fill.
+
+    The shared banner on other pages always names the connect date. Here
+    the hint only earns a line when that date is after trading started,
+    so the record is missing the earlier fills.
+    """
+    if connected_on is None or not first_trade:
+        return None
+    try:
+        first = date.fromisoformat(str(first_trade)[:10])
+    except ValueError:
+        return None
+    connected = connected_on
+    if isinstance(connected, datetime):
+        connected = connected.date()
+    if not isinstance(connected, date) or connected <= first:
+        return None
+    from app.wealth import _fmt_as_of
+    return _fmt_as_of(connected)
+
+
 def _breakdown_footer(breakdown_rows):
     """Realized, unrealized, and count for the Breakdown-by-Type total."""
     realized = 0.0
@@ -704,7 +911,7 @@ POSITION_CLOSED_LEGS_QUERY = """
      AND sc.account = oc.account
      AND sc.trade_symbol = oc.trade_symbol
      AND sc.user_id IS NOT DISTINCT FROM oc.user_id
-    WHERE sc.status in ('Closed', 'Settlement pending')
+    WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{symbol}'))
     {sc_tenant_filter}
@@ -1189,7 +1396,7 @@ def _fetch_closed_option_legs_from_classification(
         sc.close_type,
         sc.days_in_trade
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
-    WHERE sc.status in ('Closed', 'Settlement pending')
+    WHERE sc.status = 'Closed'
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{safe_symbol}'))
     {acct}
@@ -2097,6 +2304,7 @@ def position_detail(symbol):
             symbol_company="",
             symbol_next_earnings=None,
             opening_balances=[],
+            history_hint=None,
             tabs=[],
             active_symbol=symbol,
             tab_href_base="/position/",
@@ -2837,15 +3045,9 @@ def position_detail(symbol):
     # frames + unreal — but Breakdown-by-type / mart chart fold dividends from
     # ``int_dividend_events`` (synthesised ex-div × holdings etc.). Those streams
     # can materially diverge (~12k on BE Schwab •••0044): hero read low while
-    # ledger + chart agreed. Pin hero ``total_return`` to the same Σ as the card
-    # above Strategy Breakdown so reconciliation and user trust aren't split.
-    if kpis and breakdown_rows:
-        ledger_total = sum(float(r.get("total") or 0) for r in breakdown_rows)
-        kpis["total_return"] = round(ledger_total, 2)
-        for _br in breakdown_rows:
-            if str(_br.get("type") or "") == "Dividends":
-                kpis["dividend_income"] = round(float(_br.get("total") or 0), 2)
-                break
+    # ledger + chart agreed. Pin the hero parts to that ledger so realized +
+    # unrealized + dividends is the same total the card and the chart use.
+    align_headline_kpis(kpis, breakdown_rows)
 
     breakdown_totals = _breakdown_footer(breakdown_rows)
 
@@ -3065,8 +3267,7 @@ def position_detail(symbol):
     for leg in closed_legs_list:
         direction = str(leg.get("direction") or "")
         o_cost, o_proceeds, o_pnl = _option_leg_cost_proceeds(leg)
-        pending = str(leg.get("close_type") or "") == "Settlement pending"
-        o_return = None if pending else _option_return_pct(leg, o_pnl)
+        o_return = _option_return_pct(leg, o_pnl)
         trade_outcomes.append({
             "trade_symbol": leg.get("trade_symbol"),
             "strategy": leg.get("strategy") or "",
@@ -3081,8 +3282,7 @@ def position_detail(symbol):
             "pnl": round(o_pnl, 2),
             "return_pct": o_return,
             "is_winner": (
-                None if pending
-                else True if round(o_pnl, 2) > 0
+                True if round(o_pnl, 2) > 0
                 else False if round(o_pnl, 2) < 0
                 else None
             ),
@@ -3167,6 +3367,8 @@ def position_detail(symbol):
                 close_milestone=o.get("close_date"),
             )
         o["raw_trades"] = matching
+
+    trade_outcomes = repair_snapshot_option_outcomes(trade_outcomes, trades)
 
     # Assign leg numbers to trade outcomes and open positions
     def _date_to_leg(d_str):
@@ -3466,9 +3668,6 @@ def position_detail(symbol):
     # protective leg stays inside the expand, not as its own red loss.
     trade_outcomes = group_vertical_spreads(trade_outcomes)
     annotate_strategy_structures(strategy_rows, trade_outcomes)
-    legs_activity = legs_activity_summary(
-        trade_outcomes, (kpis or {}).get("total_trades"),
-    )
 
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
@@ -3620,6 +3819,18 @@ def position_detail(symbol):
         if _tsym in _direction_by_symbol:
             _trade["direction"] = _direction_by_symbol[_tsym]
     history_before_open = closing_without_an_open(trades)
+    history_hint = None
+    if kpis and kpis.get("first_trade") and tenant_scope:
+        try:
+            from app.accounts_page import _account_connected_on
+            history_hint = history_window_hint(
+                _account_connected_on(tenant_scope), kpis.get("first_trade")
+            )
+        except Exception:
+            app.logger.exception(
+                "position history hint failed for %s", safe_symbol
+            )
+            history_hint = None
     beginner_trades = []
     try:
         from app.paper_practice import beginner_readouts
@@ -3643,8 +3854,8 @@ def position_detail(symbol):
         breakdown_fees_total=round(breakdown_fees_total, 2),
         trades=trades,
         history_before_open=history_before_open,
+        history_hint=history_hint,
         trade_outcomes=trade_outcomes,
-        legs_activity=legs_activity,
         current_positions=current_positions,
         option_matrices=option_matrices,
         sessions=sessions_list,
@@ -3709,10 +3920,10 @@ def position_chart_read(symbol):
     screen. The paid remainder never crosses the response boundary for a
     locked user.
     """
-    from app.db import execute
+    from app.db import execute, release_request_connection
     from app.llm_access import user_can_use_paid_llm
     from app.position_chart_read import (
-        generate_chart_body,
+        chart_body_within,
         load_chart_read,
         visible_chart_read,
     )
@@ -3720,30 +3931,60 @@ def position_chart_read(symbol):
     digest = (request.form.get("digest") or "").strip()[:64]
     scope = (request.form.get("scope") or "").strip()[:800]
     if not digest:
-        return jsonify(ok=False), 400
-    row = load_chart_read(current_user.id, symbol, scope, digest)
+        return jsonify(ok=False, hide=True), 400
+    try:
+        row = load_chart_read(current_user.id, symbol, scope, digest)
+    except Exception:
+        app.logger.exception("chart read load failed for %s", symbol)
+        return jsonify(ok=False, hide=True, lead="", body="")
     if not row:
-        return jsonify(ok=False), 404
+        return jsonify(ok=False, hide=True), 404
     body = (row.get("body") or "").strip()
     if not body:
         try:
             facts = json.loads(row.get("brief") or "{}")
         except json.JSONDecodeError:
             facts = {}
-        body = generate_chart_body(facts) or ""
+        # The model call sits between two queries. Drop the request
+        # socket first so a slow vendor response cannot leave the later
+        # UPDATE blocked on a dead connection.
+        release_request_connection()
+        try:
+            body = chart_body_within(facts) or ""
+        except Exception:
+            app.logger.exception("chart read generation failed for %s", symbol)
+            body = ""
         if body:
-            execute(
-                """
-                UPDATE position_chart_reads
-                SET body = %s, generated_at = NOW()
-                WHERE user_id = %s AND symbol = %s AND scope = %s AND brief_hash = %s
-                """,
-                (body, current_user.id, symbol.upper(), scope, digest),
-            )
-    unlocked = user_can_use_paid_llm(current_user.id)
+            try:
+                execute(
+                    """
+                    UPDATE position_chart_reads
+                    SET body = %s, generated_at = NOW()
+                    WHERE user_id = %s AND symbol = %s AND scope = %s AND brief_hash = %s
+                    """,
+                    (body, current_user.id, symbol.upper(), scope, digest),
+                )
+            except Exception:
+                app.logger.exception("chart read cache write failed for %s", symbol)
+    try:
+        unlocked = user_can_use_paid_llm(current_user.id)
+    except Exception:
+        app.logger.exception("chart read unlock check failed for %s", symbol)
+        unlocked = False
     lead, visible_body = visible_chart_read(body, unlocked=unlocked)
+    # An empty lead is a missing key, a rejected draft, or a timeout.
+    # The page hides the section instead of leaving "Reading this chart…".
+    if not lead:
+        return jsonify(
+            ok=True,
+            hide=True,
+            lead="",
+            body="",
+            locked=not unlocked,
+        )
     return jsonify(
         ok=True,
+        hide=False,
         lead=lead,
         body=visible_body,
         locked=not unlocked,

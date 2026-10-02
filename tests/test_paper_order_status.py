@@ -417,6 +417,37 @@ def test_position_page_orders_stay_in_the_session(monkeypatch):
     assert [row["brokerage_order_id"] for row in rows] == ["ord-local"]
 
 
+def test_practice_broker_bundle_skips_alpaca_until_asked(monkeypatch):
+    from app import app
+    from app.paper_practice import practice_broker_snapshot, reset_order_status_state
+
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    reset_order_status_state()
+    calls = []
+
+    def _list(*args, **kwargs):
+        calls.append(1)
+        return []
+
+    monkeypatch.setattr("app.paper_practice.snaptrade_enabled", lambda: True)
+    monkeypatch.setattr("app.paper_practice.list_account_recent_orders", _list)
+    monkeypatch.setattr(
+        "app.paper_practice.alpaca_paper_trade_account",
+        lambda user_id: {"snaptrade_account_id": "acct", "row": {}},
+    )
+    monkeypatch.setattr("app.paper_practice.account_buying_power", lambda *a, **k: 1000.0)
+    with app.test_request_context("/practice"):
+        assert practice_broker_snapshot(7, fetch=False) is None
+        assert calls == []
+        first = practice_broker_snapshot(7, fetch=True)
+        assert first["account"]["snaptrade_account_id"] == "acct"
+        assert first["power"] == 1000.0
+        assert calls == [1]
+        practice_broker_snapshot(7, fetch=True)
+        assert calls == [1]
+    reset_order_status_state()
+
+
 def test_open_orders_panel_and_poll_script(monkeypatch):
     from app import app
     from app.models import User

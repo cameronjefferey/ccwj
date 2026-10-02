@@ -3,12 +3,15 @@ import inspect
 import time
 from types import SimpleNamespace
 
+from pathlib import Path
+
 from app.position_chart_read import (
     _SYSTEM,
     _is_small_sum,
     _too_long,
     _ungrounded,
     _waiting_cost,
+    chart_body_within,
     chart_path_facts,
     chart_read_sentences,
     review_brief,
@@ -228,4 +231,138 @@ def test_locked_chart_read_endpoint_redacts_cached_body(monkeypatch):
     assert payload["lead"] == "You opened the position in April."
     assert payload["body"] == ""
     assert payload["locked"] is True
+    assert payload["hide"] is False
     assert "protected comparison" not in response.get_data(as_text=True)
+
+
+def _chart_read_view(monkeypatch, *, row, generate=None, execute=None, unlock=False):
+    from app import app
+    import app.db as db
+    import app.llm_access as llm_access
+    import app.position_chart_read as chart_read_module
+    import app.position_detail as position_detail_module
+
+    monkeypatch.setattr(chart_read_module, "load_chart_read", lambda *_args: row)
+    monkeypatch.setattr(llm_access, "user_can_use_paid_llm", lambda _user_id: unlock)
+    monkeypatch.setattr(
+        position_detail_module, "current_user", SimpleNamespace(id=17)
+    )
+    if generate is not None:
+        monkeypatch.setattr(chart_read_module, "chart_body_within", generate)
+    if execute is not None:
+        monkeypatch.setattr(db, "execute", execute)
+    view = inspect.unwrap(app.view_functions["position_chart_read"])
+    with app.test_request_context(
+        "/position/BE/chart-read",
+        method="POST",
+        data={"digest": "abc123", "scope": "tenant|1"},
+    ):
+        return view("BE")
+
+
+def test_chart_read_endpoint_hides_when_generation_returns_nothing(monkeypatch):
+    response = _chart_read_view(
+        monkeypatch,
+        row={"body": "", "brief": "{}"},
+        generate=lambda *_args, **_kwargs: None,
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["hide"] is True
+    assert payload["lead"] == ""
+    assert payload["body"] == ""
+
+
+def test_chart_read_endpoint_hides_when_generation_raises(monkeypatch):
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("vendor down")
+
+    response = _chart_read_view(
+        monkeypatch,
+        row={"body": "", "brief": "{}"},
+        generate=explode,
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["hide"] is True
+    assert payload["lead"] == ""
+    assert "vendor down" not in response.get_data(as_text=True)
+
+
+def test_chart_read_endpoint_hides_when_the_stored_read_cannot_be_loaded(monkeypatch):
+    from app import app
+    import app.position_chart_read as chart_read_module
+    import app.position_detail as position_detail_module
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(chart_read_module, "load_chart_read", explode)
+    monkeypatch.setattr(
+        position_detail_module, "current_user", SimpleNamespace(id=17)
+    )
+    view = inspect.unwrap(app.view_functions["position_chart_read"])
+    with app.test_request_context(
+        "/position/BE/chart-read",
+        method="POST",
+        data={"digest": "abc123", "scope": "tenant|1"},
+    ):
+        response = view("BE")
+
+    payload = response.get_json()
+    assert payload["hide"] is True
+    assert payload["lead"] == ""
+    assert "db down" not in response.get_data(as_text=True)
+
+
+def test_chart_read_endpoint_still_returns_text_when_the_cache_write_fails(monkeypatch):
+    prose = (
+        "You opened the position in April. "
+        "The lesson from this chart is that the exits cost $430."
+    )
+
+    def refuse_write(*_args, **_kwargs):
+        raise RuntimeError("socket closed")
+
+    response = _chart_read_view(
+        monkeypatch,
+        row={"body": "", "brief": "{}"},
+        generate=lambda *_args, **_kwargs: prose,
+        execute=refuse_write,
+        unlock=True,
+    )
+
+    payload = response.get_json()
+    assert payload["hide"] is False
+    assert payload["lead"] == "You opened the position in April."
+    assert "exits cost $430" in payload["body"]
+
+
+def test_chart_body_within_returns_before_a_hung_model(monkeypatch):
+    import app.position_chart_read as chart_read_module
+
+    def hang(_facts, deadline=None):
+        time.sleep(5)
+        return "late prose that must not be used"
+
+    monkeypatch.setattr(chart_read_module, "generate_chart_body", hang)
+    started = time.perf_counter()
+    body = chart_body_within({"review_lines": []}, budget_s=0.2)
+    elapsed = time.perf_counter() - started
+
+    assert body is None
+    assert elapsed < 1.5
+
+
+def test_chart_read_script_clears_the_skeleton_on_failure():
+    page = Path("app/templates/position_detail.html").read_text()
+    script = page.split("getElementById('chartRead')", 1)[1].split("</script>", 1)[0]
+
+    assert "AbortController" in script
+    assert "10000" in script
+    assert "box.hidden = true" in script
+    assert "data.hide" in script
+    assert ".catch(function () {})" not in script

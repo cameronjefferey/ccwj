@@ -80,6 +80,16 @@ def test_video_catalog_uses_public_ids():
     )
     for row in (*STORY_STEPS, *TRADE_STORIES):
         assert row["poster"] == ""
+    assert [row["feature_image"] for row in STORY_STEPS] == [
+        "marketing/strategies.webp",
+        "marketing/pnl_real.webp",
+        "marketing/msft-if-held.webp",
+        "marketing/catch/win-rate.webp",
+        "marketing/fit-matrix.webp",
+        "",
+    ]
+    assert STORY_STEPS[1]["feature_caption"] == "Real account · BE"
+    assert STORY_STEPS[4]["feature_caption"] == "Where your edge is"
     assert STORY_STEPS[-1]["links_learn"] is True
     assert "Options 101" in STORY_STEPS[-1]["caption"]
 
@@ -124,6 +134,10 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     how = html.find('class="ht-band ht-band-how')
     assert 0 <= stage < cta < proof < how
     assert html.count('class="ht-facade"') == 9
+    assert html.count('data-lightbox="short"') == 6
+    assert "ht-phone" not in html
+    assert "ht-lightbox-stage" in html
+    assert "min-width: 360px" in html
     assert 'data-youtube-id=""' not in html
     assert "https://i.ytimg.com/vi/NpU79Lwkdn4/maxresdefault.jpg" not in html
     assert "/static/marketing/walkthrough_poster_1280.webp" in html
@@ -143,7 +157,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         blob = path.read_bytes()
         assert blob[8:12] == b"WEBP"
         assert _webp_width(blob) == width
-    assert "https://i.ytimg.com/vi/uAmHW-4RtaA/maxresdefault.jpg" in html
+    assert "https://i.ytimg.com/vi/VssdUIrHcjs/maxresdefault.jpg" in html
+    assert "https://i.ytimg.com/vi/BwVHe9MmA9c/maxresdefault.jpg" in html
     assert "ht-band-catch" in html
     assert "Here's what you'd catch with HappyTrader" in html
     catch_at = html.index('id="ht-catch"')

@@ -68,9 +68,13 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
-from app.option_formatting import format_option_symbol as _format_option_symbol
+from app.option_formatting import (
+    compact_contract_label as _compact_contract_label,
+    format_option_symbol as _format_option_symbol,
+)
 
 app.add_template_filter(_format_option_symbol, name="option_symbol")
+app.add_template_filter(_compact_contract_label, name="compact_contract")
 
 
 def _account_label_filter(account_name, tenant_id=None):
@@ -451,9 +455,11 @@ def _inject_feature_flags():
         is_admin_user = False
 
     # Reverse-trial banner data (app/plan.py). One users-row read per request
-    # for authenticated users, cached on flask.g and for two minutes in
-    # the shell cache; None for beta/active/no-data so beta users and
-    # subscribers pay nothing visually or query-wise.
+    # for authenticated users, cached on flask.g for that request only.
+    # Plan, Simple/Full, and Stripe columns are not kept in the process
+    # shell cache — a webhook or view write on another worker has to be
+    # visible on the next page. None for beta/active/no-data so beta users
+    # and subscribers pay nothing visually.
     plan_status = None
     try:
         if current_user.is_authenticated:

@@ -228,7 +228,8 @@ def _normalized_history(history):
 
 def call_llm(system: str, user: str, *, kind: str, max_tokens: int,
              temperature: float, model_key: str | None = None,
-             allow_paid: bool = False, history=None):
+             allow_paid: bool = False, history=None,
+             timeout: float | None = None):
     """Run one narration turn against the resolved model.
 
     system      : instructions / role (Claude's top-level system field;
@@ -239,6 +240,8 @@ def call_llm(system: str, user: str, *, kind: str, max_tokens: int,
                   default_model_key() when missing or not selectable)
     allow_paid  : caller has already checked the AI add-on
     history     : prior [{role, content}] turns, oldest first (Ask AI thread)
+    timeout     : optional wall-clock cap in seconds for this vendor call.
+                  Other callers stay on the vendor SDK default.
 
     Returns (text, None) on success or (None, user_facing_error). Cost is
     logged here (vendor + kind + model + duration_ms + token counts) so
@@ -250,15 +253,14 @@ def call_llm(system: str, user: str, *, kind: str, max_tokens: int,
         return None, _UNAVAILABLE
     spec = MODEL_CATALOG[key]
     prior = _normalized_history(history)
-    if spec["provider"] == "claude":
-        return _call_claude(
-            spec["model"], system, user, kind=kind, max_tokens=max_tokens,
-            temperature=temperature, history=prior,
-        )
-    return _call_gemini(
-        spec["model"], system, user, kind=kind, max_tokens=max_tokens,
-        temperature=temperature, history=prior,
+    vendor_kwargs = dict(
+        kind=kind, max_tokens=max_tokens, temperature=temperature, history=prior,
     )
+    if timeout is not None:
+        vendor_kwargs["timeout"] = timeout
+    if spec["provider"] == "claude":
+        return _call_claude(spec["model"], system, user, **vendor_kwargs)
+    return _call_gemini(spec["model"], system, user, **vendor_kwargs)
 
 
 # --------------------------------------------------------------------
@@ -291,7 +293,7 @@ def _gemini_usage_fields(response) -> dict:
 
 
 def _call_gemini(model, system, user, *, kind, max_tokens, temperature,
-                 history=None):
+                 history=None, timeout=None):
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         _log.warning("LLM call (%s) requested but GEMINI_API_KEY is not configured", kind)
@@ -305,7 +307,13 @@ def _call_gemini(model, system, user, *, kind, max_tokens, temperature,
             label = "User" if turn["role"] == "user" else "Assistant"
             parts.append(f"{label}: {turn['content']}")
         parts.append(f"User: {user}")
-        client = genai.Client(api_key=api_key)
+        client_kwargs = {"api_key": api_key}
+        if timeout is not None:
+            # google-genai measures this in milliseconds.
+            client_kwargs["http_options"] = types.HttpOptions(
+                timeout=max(1, int(float(timeout) * 1000))
+            )
+        client = genai.Client(**client_kwargs)
         t0 = _time.monotonic()
         response = client.models.generate_content(
             model=model,
@@ -365,7 +373,7 @@ def _claude_usage_fields(response) -> dict:
 
 
 def _call_claude(model, system, user, *, kind, max_tokens, temperature,
-                 history=None):
+                 history=None, timeout=None):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         _log.warning("LLM call (%s) requested but ANTHROPIC_API_KEY is not configured", kind)
@@ -375,7 +383,11 @@ def _call_claude(model, system, user, *, kind, max_tokens, temperature,
 
         messages = list(history or [])
         messages.append({"role": "user", "content": user})
-        client = anthropic.Anthropic(api_key=api_key)
+        client_kwargs = {"api_key": api_key}
+        if timeout is not None:
+            # The SDK default is 10 minutes, which pins a page request.
+            client_kwargs["timeout"] = float(timeout)
+        client = anthropic.Anthropic(**client_kwargs)
         t0 = _time.monotonic()
         response = client.messages.create(
             model=model,

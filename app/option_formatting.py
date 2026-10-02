@@ -105,6 +105,55 @@ def parse_occ(symbol):
     }
 
 
+_SPREAD_STRIKES = re.compile(
+    r"\$(\d+(?:\.\d+)?)\s*/\s*\$(\d+(?:\.\d+)?)([CP])\s*$"
+)
+
+
+def _strike_num(strike) -> str:
+    if abs(float(strike) - round(float(strike))) < 1e-6:
+        return str(int(round(float(strike))))
+    return f"{float(strike):.2f}"
+
+
+def _qty_prefix(quantity) -> str:
+    # Jinja passes Undefined when a row has no quantity key. That is not
+    # None, and float() raises UndefinedError rather than TypeError.
+    if quantity is None or quantity == "":
+        return ""
+    try:
+        qty = abs(float(quantity))
+    except Exception:
+        return ""
+    if qty < 1e-9:
+        return ""
+    if abs(qty - round(qty)) < 1e-6:
+        return f"{int(round(qty))}× "
+    return f"{qty:.4f}".rstrip("0").rstrip(".") + "× "
+
+
+def compact_contract_label(symbol, quantity=None):
+    """Short contract label for the legs table: ``2× $297.50C``.
+
+    A vertical's display symbol (``SPXW Oct 1 '26 $7650 / $7655C``)
+    collapses to ``10× 7650/7655C``. The full name stays on the title.
+    """
+    text = str(symbol or "").strip()
+    if not text:
+        return ""
+    prefix = _qty_prefix(quantity)
+    spread = _SPREAD_STRIKES.search(text)
+    if spread:
+        return (
+            f"{prefix}{_strike_num(spread.group(1))}/"
+            f"{_strike_num(spread.group(2))}{spread.group(3)}"
+        )
+    parsed = parse_occ(text)
+    if parsed is None:
+        return f"{prefix}{text}" if prefix else text
+    return f"{prefix}${_strike_num(parsed['strike'])}{parsed['cp']}"
+
+
 def format_option_symbol(symbol, *, with_ticker=True):
     """Render an OCC symbol as e.g. "PLTR Apr 24 '26 $141C".
 

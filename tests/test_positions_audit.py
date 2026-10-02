@@ -260,7 +260,36 @@ def test_covered_call_run_net_includes_fees():
 
 
 def test_premium_collected_tile_and_fills_label():
-    assert "(kpis.premium_collected or 0) > 0" in PAGE
+    """Premium collected left the hero. The review card shows it."""
+    from app.position_story import _story_tiles
+
+    assert "(kpis.premium_collected or 0) > 0" not in PAGE
+    assert "Premium Collected" not in PAGE
+    assert '{% include "_story_summary.html" %}' in PAGE
+    card = Path("app/templates/_story_summary.html").read_text()
+    assert 'id="storyCard"' in card
+    assert "story_summary.tiles" in card
+    tiles = _story_tiles({
+        "premium_collected": 430.0,
+        "covered_calls": 2,
+        "puts_sold": 0,
+        "short_calls": 0,
+        "long_opens": 0,
+        "long_risk": 0.0,
+        "rolls": 0,
+        "roll_credit": 0.0,
+        "expired_kept": 0,
+        "expired_premium": 0.0,
+        "wheels_completed": 0,
+        "quiet_gain": 0.0,
+        "quiet_loss": 0.0,
+        "dividend_total": 0.0,
+        "adds": 0,
+        "trims": 0,
+    })
+    income = next(tile for tile in tiles if tile["label"] == "Income strategy")
+    assert income["value"] == "$430"
+    assert income["sub"].startswith("collected")
     assert ">Fills</th>" in POSITIONS or ">Fills</a>" in POSITIONS
     assert "incl. dividends" in POSITIONS
     assert "open rows" in POSITIONS

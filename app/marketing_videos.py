@@ -53,6 +53,14 @@ STORY_STEPS = [
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
+        # Same still as the strategy-cards band. Dollars on that still are
+        # the published marketing crop.
+        "feature_image": "marketing/strategies.webp",
+        "feature_width": 1400,
+        "feature_height": 748,
+        "feature_alt": "Strategy cards from the demo account, with return, win rate, and a six-month strip.",
+        "feature_caption": "",
+        "feature_note": "",
     },
     {
         "step": 2,
@@ -66,6 +74,18 @@ STORY_STEPS = [
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
+        "feature_image": "marketing/pnl_real.webp",
+        "feature_width": 1600,
+        "feature_height": 804,
+        "feature_alt": (
+            "Cumulative P&L on BE trades, April to September 2026, "
+            "with trade-day markers"
+        ),
+        "feature_caption": "Real account · BE",
+        "feature_note": (
+            "Every trade day on one line. The run-up, the drawdown and "
+            "the recovery, with options and shares split out."
+        ),
     },
     {
         "step": 3,
@@ -80,6 +100,12 @@ STORY_STEPS = [
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
+        "feature_image": "marketing/msft-if-held.webp",
+        "feature_width": 1400,
+        "feature_height": 315,
+        "feature_alt": "If held to expiration summary for MSFT in the demo account.",
+        "feature_caption": "Demo account",
+        "feature_note": "",
     },
     {
         "step": 4,
@@ -94,6 +120,18 @@ STORY_STEPS = [
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
+        # Masked strategy cards. The covered-call card is the subject.
+        # Dollar totals on this still are already hidden.
+        "feature_image": "marketing/catch/win-rate.webp",
+        "feature_width": 1280,
+        "feature_height": 720,
+        "feature_alt": (
+            "Strategy cards for covered calls, a 74% win rate across 662 "
+            "trades, and long calls, a 44% win rate across 218 trades. "
+            "Dollar totals on the screen are masked."
+        ),
+        "feature_caption": "",
+        "feature_note": "",
     },
     {
         "step": 5,
@@ -107,6 +145,12 @@ STORY_STEPS = [
         "mp4_url": "",
         "poster": "",
         "links_learn": False,
+        "feature_image": "marketing/fit-matrix.webp",
+        "feature_width": 1400,
+        "feature_height": 641,
+        "feature_alt": "Strategy fit matrix from the demo account, return by strategy and sector.",
+        "feature_caption": "Where your edge is",
+        "feature_note": "",
     },
     {
         "step": 6,
@@ -120,6 +164,13 @@ STORY_STEPS = [
         "mp4_url": "",
         "poster": "",
         "links_learn": True,
+        # No app still for the series. The Short poster is the frame.
+        "feature_image": "",
+        "feature_width": 0,
+        "feature_height": 0,
+        "feature_alt": "",
+        "feature_caption": "",
+        "feature_note": "",
     },
 ]
 
@@ -214,6 +265,15 @@ def present_video(item):
     out["poster_srcset"] = _poster_srcset(out)
     out["poster_sizes"] = (item.get("poster_sizes") or "").strip()
     out["links_learn"] = bool(item.get("links_learn"))
+    out["feature_image"] = (item.get("feature_image") or "").strip()
+    out["feature_image_url"] = (
+        _static_poster(out["feature_image"]) if out["feature_image"] else ""
+    )
+    out["feature_width"] = int(item.get("feature_width") or 0)
+    out["feature_height"] = int(item.get("feature_height") or 0)
+    out["feature_alt"] = item.get("feature_alt") or ""
+    out["feature_caption"] = item.get("feature_caption") or ""
+    out["feature_note"] = item.get("feature_note") or ""
     return out
 
 

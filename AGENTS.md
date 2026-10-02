@@ -271,6 +271,11 @@ What's working:
 - Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). On a phone this stays a table — Account (share of book under the name), Value, Today, 1W, 1M — and only the table scrolls, with Account sticky. The unfinished session is named in the nav strip, not as a blank extra column.
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
+  Option rows read `int_option_contract_daily_pnl` (the same realize-on-close
+  plus expiry estimate as the position chart), not a zero mark's opening
+  credit. The line under the symbol is the contracts (`10× 7650/7655C spread`,
+  `2× MU 120C`). The other line is `Open contracts, change in value`,
+  `Closed today`, or both dollars when the day mixed a mark change and a close.
   Clicking a mover opens the same right-side position drawer as Today.
 - Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the current New York market date. It must not start on the older settled close: doing so shortens the forward window every weekend / pre-market and hides day-14 events whenever any earlier chip makes the radar replace the legacy list. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
@@ -361,9 +366,9 @@ Implementation notes:
 
 What could be better:
 - ~~"Today's $ impact" only covers equity price-moves~~ — closed Aug 2026: the movers
- card now folds in per-symbol option P&L day-moves (`TODAY_OPTIONS_MOVES_QUERY`, the
- day delta of `cumulative_options_pnl + open_options_unrealized_pnl` from
- `mart_daily_pnl` — captures MTM drift AND same-day realizations) and dividends paid
+ card now folds in per-symbol option P&L day-moves (`TODAY_OPTIONS_MOVES_QUERY`,
+ the day change from `int_option_contract_daily_pnl`: open-mark change, plus
+ realized on the close date including an expiry estimate) and dividends paid
  today (`TODAY_DIVIDENDS_QUERY` on `int_dividend_events`, anchored to the equity
  movers' as-of date). Header shows combined "Today's $ impact" with a
  stocks/options/dividends split. Both queries live inside `build_daily_review_batch`
@@ -452,10 +457,23 @@ What's working:
   buy and a post-split sale stay in the same units) and says so when a
   split moved them. P&amp;L is unchanged.
   Pinned by `tests/test_covered_call_runs.py`.
-- Position Detail reads as one story: the hero, then the mirror, then
-  Position Legs. Cumulative P&amp;L and What worked follow. Breakdown by
-  Type and the raw log sit behind one Details toggle.
-  The Win/Loss matrix stays behind a disclosure. Gain and loss on this
+- Position Detail reads as one story: the hero (total return, then a
+  compact row of realized, unrealized, dividends, win rate, and average
+  days — those three dollars are the headline), then the mirror, then
+  the Cumulative P&amp;L chart, then the Win/Loss matrix (open, DTE versus
+  strike distance), then Position Legs. On a phone the matrix stays a
+  column table and scrolls sideways. The note under the
+  chart fills in within about 10 seconds; if that read is unavailable
+  the note is removed instead of staying on "Reading this chart…".
+  What worked follows.
+  Premium collected stays on the review card. Groups and Account are
+  small chips under the symbol in that hero (one row on a phone). Total
+  return stays on the right. A one-line history hint appears only when
+  the account was connected after the first fill, and dismissing it
+  sticks (`ht-pd-window-hint-dismissed`). The shared history banner
+  stays on the other all-time pages.
+  Breakdown by Type and the raw log sit behind one Details toggle.
+  Gain and loss on this
   page use one green and one red (`--pd-gain` / `--pd-loss`). The strategy
   column that is premium received is labeled Collected.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
@@ -555,20 +573,24 @@ on load), then a hero CTA block (solid `#5b8cff` button "Start your
 live demo", and a small Sign in link), a tight qualitative proof strip,
 How it works (connect read-only, strategies detected, see what's working),
 then the live demo as its own band — a paper account. Shorts are themed bands
-with one or two phones beside the copy (which strategies work, every
-position's story, if held, covered-call income, the fit matrix), not one
-sideways row. Just before that, "Here's what you'd catch with HappyTrader"
+with a large screenshot of the feature beside the copy (which strategies work,
+every position's story, if held, covered-call income, the fit matrix).
+Clicking the screenshot opens that Short in a lightbox, at least 360px wide
+on a desktop and the full width of a phone. Options 101 uses the same
+lightbox; its poster is the Short, at least 360px wide on desktop and full
+width on a phone. Just before the real-trades band, "Here's what you'd catch with HappyTrader"
 is one still at a time (ONON, RKLB, the BE buyback, the BE swing, win
 rate versus return) from `CATCH_STORIES` in `app/marketing_videos.py`.
 Each still's YouTube id lives in `CATCH_STORY_VIDEOS`. "Watch the story" renders only when `CATCH_STORY_VIDEOS_LIVE=1`; unset hides the links and leaves the band complete. A Real
 trades band plays the ONON and RKLB stories wide.
 Privacy mode and share cards stay a sentence on the proof strip (there is
-no matching upload). Still frames from the demo account sit in their own
-bands: the cumulative P&amp;L on BE trades (`app/static/marketing/pnl_real.webp`,
-caption "Real account · BE"), the if-held summary, strategy cards, and
-the fit matrix (`app/static/marketing/`). The day-by-day chart is that
-still of BE trades from April to September 2026, with trade-day markers,
-not the demo AMD crop. Those crops do not show
+no matching upload). The short-section posters are those stills: the
+cumulative P&amp;L on BE trades (`app/static/marketing/pnl_real.webp`,
+caption "Real account · BE"), the if-held summary, and the fit matrix
+(`app/static/marketing/`). Covered-call income uses the masked win-rate
+still (`marketing/catch/win-rate.webp`). Strategy cards stay their own
+band. The day-by-day chart is that still of BE trades from April to
+September 2026, with trade-day markers, not the demo AMD crop. Those crops do not show
 ORCL, CFLT, or the Earnings or Admin tabs. Options 101 and the full-width
 trial close stay. The Options 101 step links to `/learn` only when that
 exact route exists. Hero primary CTA: "Start your 30-day free trial"
@@ -1327,34 +1349,42 @@ totally wrong shape. Realize-on-close fixes this by attributing the
 single net realized P&L to the actual realization moment.
 
 **Schwab's snapshot lags actual expiry by 1-2 trading days.** The
-`status` and `close_date` columns in `int_option_contracts` use
-calendar truth (`option_expiry < current_date()` overrides
-"snapshot-implies-open"), and the today-row patch in chart helpers
+`status` and `close_date` columns in `int_option_contracts` realize
+a past expiry only when the official close (or a broker fill) is in,
+and the today-row patch in chart helpers
 filters live `current_df` rows by `option_expiry >= today` to avoid
 double-counting an expired contract that the broker hasn't dropped yet.
 Both layers must keep this invariant.
 
-**OTM-at-expiry inference (same-day auto-close).** The calendar-truth
-rule above only fires the DAY AFTER expiry — on expiry day itself
-(`option_expiry = current_date()`) the contract stays Open until BQ's
-`current_date()` advances. That gap matters when a Friday-expiry short
-call closes OTM at 4:00 PM ET: the trader checking the page Friday
-evening or over the weekend would otherwise see the broker snapshot's
-stale cost-to-close baked into the live override, even though the
-bell already settled the contract at $0. The `otm_at_expiry` CTE in
-`int_option_contracts` joins `stg_daily_prices` on the underlying's
-expiry-day close and marks the contract Closed (with
-`close_type='ExpiredOTM'`) when the close is STRICTLY OTM relative to
-the strike (call: `close < strike`; put: `close > strike`). ITM/ATM
-expiries are left as Open because the broker still has discretion
-(auto-exercise threshold) and the realized number differs by
-assignment vs. exercise — wait for the broker action. The Monday sync
-ships explicit `option_expired` and the existing `close_type` branch
-takes over with the same `net_cash_flow`. `int_enriched_current`
-mirrors the decision by filtering out option rows whose
-`int_option_contracts.status='Closed'`, so the chart's live override
-and `_compute_breakdown_by_type` don't double-count the broker's
-stale mark on top of the mart's already-realized credit.
+**Expiry settlement from the official close.** Do not wait for the
+broker's expired / as-of / cash-settlement line, and do not book the
+opening credit just because the calendar date has passed. Once the
+expiry session is over — 4:00 PM ET, or 4:15 PM ET for cash-settled
+index roots, and any time after that New York date — a contract with
+no closing activity realizes from `stg_daily_prices` on the expiry
+date (`otm_at_expiry` in `int_option_contracts`, same rule in
+`app/expiry_settlement.py`). OTM and ATM settlement cash is $0 (short
+keeps the premium, long loses the debit). ITM index options
+(SPX/SPXW/XSP/NDX/RUT, plus the weekly aliases and VIX/DJX/OEX/XEO/RVX)
+add intrinsic, strike vs close × 100 × contracts (short pays, long
+receives). ITM equity stays option-cash only, the same as assignment;
+the shares are the equity line. The row is
+`close_type='Settled at expiry (est.)'` until a broker close arrives,
+and that close replaces the estimate — `net_cash_flow` already
+includes the broker cash, so intrinsic is not added again. Price is
+the exact underlying, else SPXW→SPX / NDXP→NDX / RUTW→RUT when the
+exact symbol has no row. The price loader fetches those index closes
+from Yahoo (`^GSPC`/`^SPX` for SPX and SPXW, `^GSPC`/10 for XSP,
+`^NDX`, `^RUT`, `^VIX`) and writes them under the broker root.
+No official close stays Open, P&L $0 (or the live snapshot mark),
+until the next weekday after expiry (Friday → Monday). Equity still
+missing then expires at $0 under the same estimate label, with
+`close_date` on the expiry. A cash-settled index (SPX/SPXW/XSP/NDX/
+NDXP/RUT/RUTW/VIX/DJX/OEX/XEO/RVX) never takes that $0 fallback: it
+stays `Settlement pending` with realized $0, so a missing ^GSPC print
+cannot book an ITM spread as a worthless win. `int_enriched_current`
+drops `status='Closed'`, so the chart does not keep the broker's
+stale mark on top of a realized credit.
 
 **Reconciliation invariant.** `cumulative_options_pnl(today) +
 open_options_unrealized_pnl(today)`, summed across all (account,

@@ -12,10 +12,16 @@ import hashlib
 import json
 import logging
 import re
+import threading
+import time
 
 from app.db import execute, fetch_one
 
 _log = logging.getLogger(__name__)
+
+# The page skeleton must clear within about 10s. The vendor call is
+# capped here, and the browser aborts a second later.
+CHART_READ_BUDGET_SECONDS = 8
 
 _MIN_POINTS = 12
 _MIN_MOVE = 50.0
@@ -473,7 +479,7 @@ def _is_small_sum(target: float, amounts: set[float]) -> bool:
     return False
 
 
-def generate_chart_body(facts: dict) -> str | None:
+def generate_chart_body(facts: dict, *, deadline: float | None = None) -> str | None:
     from app.llm import call_llm, llm_available
 
     if not llm_available():
@@ -483,6 +489,12 @@ def generate_chart_body(facts: dict) -> str | None:
         return None
     user = "Trade-day review:\n" + json.dumps(lines, indent=2)
     for _attempt in range(3):
+        remaining = None
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining < 1:
+                _log.info("chart read skipped: budget spent")
+                return None
         text, err = call_llm(
             _SYSTEM,
             user,
@@ -490,6 +502,7 @@ def generate_chart_body(facts: dict) -> str | None:
             max_tokens=220,
             temperature=0.2,
             allow_paid=False,
+            timeout=remaining,
         )
         if err or not text:
             _log.info("chart read skipped: %s", err)
@@ -512,3 +525,33 @@ def generate_chart_body(facts: dict) -> str | None:
     if not text or _too_long(text):
         return None
     return text
+
+
+def chart_body_within(facts: dict, *, budget_s: float | None = None) -> str | None:
+    """Run ``generate_chart_body`` and return within ``budget_s``.
+
+    A missing key, a vendor error, a rejected draft, and a hung client all
+    come back as None so the page can drop the skeleton. The worker is a
+    daemon: if the vendor SDK ignores its own timeout, the request still
+    returns and does not write a late result.
+    """
+    budget = CHART_READ_BUDGET_SECONDS if budget_s is None else max(0.0, float(budget_s))
+    deadline = time.monotonic() + budget
+    box: dict = {}
+
+    def run():
+        try:
+            box["body"] = generate_chart_body(facts, deadline=deadline)
+        except Exception as exc:
+            box["error"] = exc
+            _log.warning("chart read generation failed: %s", exc)
+
+    worker = threading.Thread(target=run, name="chart-read", daemon=True)
+    worker.start()
+    worker.join(budget)
+    if worker.is_alive():
+        _log.info("chart read timed out after %.1fs", budget)
+        return None
+    if box.get("error"):
+        return None
+    return box.get("body")

@@ -264,20 +264,24 @@ def _protection_paid(row) -> float:
 
 
 def leg_outcome(row, expiry) -> str:
-    """Expired, Closed, Assigned, or Settlement pending.
+    """Expired, Closed, Assigned, or the expiry estimate.
 
     A same-day expiry with no buy-to-close (short) and no sell-to-close
     (long) is Expired even when the broker close type says Closed.
     A buy-to-close on expiry day stays Closed. Assignment wins.
-    Settlement pending wins over that zero-cash expiry heuristic: a
-    short that finished in the money has no closing fill yet, and
-    treating the missing close as a $0 expiry books the opening credit.
+    ``Settled at expiry (est.)`` wins over that zero-cash expiry
+    heuristic: an ITM short has no closing fill and cost ≈ $0, which
+    would otherwise read as a worthless expiry.
     """
+    from app.expiry_settlement import ESTIMATE_LABEL, PENDING_LABEL
+
     close_type = str(row.get("close_type") or "").strip()
     folded = close_type.lower()
     direction = str(row.get("direction") or "")
-    if close_type == "Settlement pending":
-        return "Settlement pending"
+    if close_type == PENDING_LABEL:
+        return PENDING_LABEL
+    if close_type == ESTIMATE_LABEL:
+        return ESTIMATE_LABEL
     if close_type == "Exercised" and direction == "Sold":
         return "Assigned"
     if close_type in ("Assigned", "Exercised"):
@@ -364,8 +368,12 @@ def _spread_label(short_meta, long_meta) -> str:
 
 
 def _spread_outcome(short_outcome, long_outcome) -> str:
-    if "Settlement pending" in (short_outcome, long_outcome):
-        return "Settlement pending"
+    from app.expiry_settlement import ESTIMATE_LABEL, PENDING_LABEL
+
+    if PENDING_LABEL in (short_outcome, long_outcome):
+        return PENDING_LABEL
+    if ESTIMATE_LABEL in (short_outcome, long_outcome):
+        return ESTIMATE_LABEL
     if short_outcome == "Expired" and long_outcome == "Expired":
         return "Expired"
     if "Assigned" in (short_outcome, long_outcome):
@@ -396,12 +404,12 @@ def _make_vertical(short, long, short_meta, long_meta):
     else:
         basis = protection
         direction = "Bought"
+    return_pct = round(pnl / basis * 100, 1) if basis >= 0.01 else None
+    is_winner = True if pnl > 0 else False if pnl < 0 else None
     if outcome == "Settlement pending":
-        return_pct = None
+        # An unpriced index spread is not a win, even if a child row
+        # still carries the opening credit.
         is_winner = None
-    else:
-        return_pct = round(pnl / basis * 100, 1) if basis >= 0.01 else None
-        is_winner = True if pnl > 0 else False if pnl < 0 else None
     child_short = dict(short)
     child_long = dict(long)
     child_short["outcome"] = short_outcome

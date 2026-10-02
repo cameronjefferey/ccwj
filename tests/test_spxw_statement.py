@@ -231,6 +231,108 @@ def test_gross_order_is_netted_once_and_loses_to_the_activity():
     assert "INDEX" in str(merged.iloc[0]["Description"])
 
 
+def test_blank_fee_reads_commission_or_a_linked_fee_activity():
+    """Oct 1 SPXW opens shipped fee 0. The commission is another field or a FEE row."""
+    from app.snaptrade_normalize import activities_to_history_df
+
+    gross = {
+        "type": "SELL",
+        "option_type": "SELL_TO_OPEN",
+        "trade_date": "2026-10-01",
+        "description": "CALL S & P 500 INDEX SPXW 10/01/2026 7650.00 C",
+        "symbol": "SPXW 10/01/2026 7650.00 C",
+        "units": 10,
+        "price": 7.77,
+        "fee": None,
+        "commission": 12.22,
+        "amount": 7770.0,
+    }
+    df = activities_to_history_df(
+        [gross], account_name=ACCOUNT, user_id=9, tenant_id=TENANT,
+    )
+    assert float(df.iloc[0]["Amount"]) == 7757.78
+    assert float(df.iloc[0]["fees_and_comm"]) == 12.22
+
+    linked = activities_to_history_df(
+        [
+            {
+                "type": "SELL",
+                "option_type": "SELL_TO_OPEN",
+                "trade_date": "2026-10-01",
+                "description": "CALL S & P 500 INDEX SPXW 10/01/2026 7650.00 C",
+                "symbol": "SPXW 10/01/2026 7650.00 C",
+                "units": 10,
+                "price": 7.77,
+                "fee": 0,
+                "amount": 7770.0,
+                "external_reference_id": "fill-7650",
+            },
+            {
+                "type": "FEE",
+                "trade_date": "2026-10-01",
+                "description": "Commission",
+                "amount": -12.22,
+                "fee": 0,
+                "external_reference_id": "fill-7650",
+            },
+        ],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    assert len(linked) == 1
+    assert linked.iloc[0]["Action"] == "Sell to Open"
+    assert float(linked.iloc[0]["Amount"]) == 7757.78
+    assert float(linked.iloc[0]["fees_and_comm"]) == 12.22
+
+
+def test_order_commission_survives_when_the_activity_fee_is_blank():
+    orders = orders_to_history_df(
+        [{
+            "action": "SELL_TO_OPEN",
+            "option_symbol": {
+                "underlying_symbol": "SPXW",
+                "expiration_date": "2026-10-01",
+                "strike_price": 7650,
+                "option_type": "CALL",
+            },
+            "status": "EXECUTED",
+            "time_executed": "2026-10-01T14:30:00Z",
+            "filled_quantity": 10,
+            "execution_price": 7.77,
+            "commission": 12.22,
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    activity = activities_to_history_df(
+        [{
+            "type": "SELL",
+            "option_type": "SELL_TO_OPEN",
+            "trade_date": "2026-10-01",
+            "description": "CALL S & P 500 INDEX SPXW 10/01/2026 7650.00 C",
+            "symbol": "SPXW 10/01/2026 7650.00 C",
+            "units": 10,
+            "price": 7.77,
+            "fee": 0,
+            "amount": 7770.0,
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    assert float(activity.iloc[0]["Amount"]) == 7770.0
+    assert activity.iloc[0]["fees_and_comm"] in ("", 0, 0.0)
+    merged = _dedup_history_rows(
+        pd.concat([orders, activity], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(merged) == 1
+    assert float(merged.iloc[0]["fees_and_comm"]) == 12.22
+    assert "INDEX" in str(merged.iloc[0]["Description"])
+
+
 def test_cash_settlement_type_uses_the_as_of_date_in_the_description():
     df = activities_to_history_df(
         [{
@@ -323,19 +425,21 @@ def test_statement_spreads_group_and_the_oct1_credit_is_a_loss():
     assert closed_twenty["is_winner"] is True
 
 
-def test_pending_itm_short_is_not_an_expiry_win():
+def test_estimated_itm_spread_is_a_loss_not_a_worthless_win():
+    from app.expiry_settlement import ESTIMATE_LABEL
+
     short = {
         "type": "option",
         "strategy": "Call Spread",
         "trade_symbol": "SPXW  261001C07650000",
         "direction": "Sold",
-        "close_type": "Settlement pending",
+        "close_type": ESTIMATE_LABEL,
         "open_date": "2026-10-01",
         "close_date": "2026-10-01",
         "quantity": 10,
         "cost": 0,
         "proceeds": 7757.78,
-        "pnl": 0,
+        "pnl": 7757.78 - 50000,
         "premium_received": 7757.78,
         "tenant_id": TENANT,
         "account": ACCOUNT,
@@ -347,15 +451,17 @@ def test_pending_itm_short_is_not_an_expiry_win():
         "direction": "Bought",
         "proceeds": 0,
         "cost": 6332.22,
+        "pnl": -6332.22 + 45000,
         "premium_received": 0,
         "premium_paid": 6332.22,
     }
-    assert leg_outcome(short, "2026-10-01") == "Settlement pending"
+    assert leg_outcome(short, "2026-10-01") == ESTIMATE_LABEL
     grouped = group_vertical_spreads([short, long])
     assert len(grouped) == 1
-    assert grouped[0]["outcome"] == "Settlement pending"
-    assert grouped[0]["is_winner"] is None
-    assert grouped[0]["close_type"] == "Settlement pending"
+    assert grouped[0]["outcome"] == ESTIMATE_LABEL
+    assert grouped[0]["is_winner"] is False
+    assert round(grouped[0]["pnl"], 2) == -3574.44
+    assert grouped[0]["close_type"] == ESTIMATE_LABEL
 
     from pathlib import Path
 
@@ -392,8 +498,9 @@ def test_pending_itm_short_is_not_an_expiry_win():
             trade_outcomes=[row],
             symbol="SPXW",
         )
-    assert html.count("Settlement pending") >= 2
+    assert "Settlement pending" not in html
+    assert "Settled at expiry (est.)" in html
     assert "100% kept" not in html
     pnl_cell = html.split("pd-pnl", 1)[1].split("</td>", 1)[0]
-    assert "Settlement pending" in pnl_cell
-    assert "$0.00" not in pnl_cell
+    assert "-$3,574.44" in pnl_cell
+    assert "Settlement pending" not in pnl_cell

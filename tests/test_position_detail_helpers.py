@@ -1515,5 +1515,57 @@ def test_count_placed_fills_excludes_drips_and_dividends():
     assert _count_placed_fills(None) == 0
 
 
+def test_headline_parts_sum_to_the_total():
+    """Realized −$821.94 + unrealized $10,578 + dividends $0 = $9,756.06."""
+    from app.position_detail import align_headline_kpis
+
+    kpis = {
+        "total_return": 0.0,
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
+        "dividend_income": 99.0,
+    }
+    rows = [
+        {"type": "Equity", "total": 2000.00, "realized": -500.00, "unrealized": 2500.00},
+        {"type": "Options", "total": 7756.06, "realized": -321.94, "unrealized": 8078.00},
+        {"type": "Dividends", "total": 0.0, "realized": 0.0, "unrealized": None},
+    ]
+    align_headline_kpis(kpis, rows)
+    assert kpis["realized_pnl"] == -821.94
+    assert kpis["unrealized_pnl"] == 10578.00
+    assert kpis["dividend_income"] == 0.0
+    assert kpis["total_return"] == 9756.06
+    assert round(
+        kpis["realized_pnl"] + kpis["unrealized_pnl"] + kpis["dividend_income"], 2
+    ) == kpis["total_return"]
+
+
+def test_dividends_stay_out_of_realized():
+    from app.position_detail import align_headline_kpis
+
+    kpis = {"total_return": 0}
+    rows = [
+        {"type": "Equity", "total": 15.0, "realized": 10.0, "unrealized": 5.0},
+        {"type": "Dividends", "total": 100.0, "realized": 100.0, "unrealized": None},
+    ]
+    align_headline_kpis(kpis, rows)
+    assert kpis["realized_pnl"] == 10.0
+    assert kpis["unrealized_pnl"] == 5.0
+    assert kpis["dividend_income"] == 100.0
+    assert kpis["total_return"] == 115.0
+
+
+def test_history_hint_only_after_the_first_trade():
+    from datetime import date
+
+    from app.position_detail import history_window_hint
+
+    assert history_window_hint(date(2026, 6, 1), "2026-04-23") == "Jun 1, 2026"
+    assert history_window_hint(date(2026, 4, 23), "2026-04-23") is None
+    assert history_window_hint(date(2026, 4, 1), "2026-04-23") is None
+    assert history_window_hint(None, "2026-04-23") is None
+    assert history_window_hint(date(2026, 6, 1), "") is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

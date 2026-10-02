@@ -1,18 +1,26 @@
+{{ config(severity='warn') }}
+
 /*
-    A short (or long) option that is past expiry, with no closing fill,
-    must not be booked as if it expired worthless when the expiry close
-    is missing or not strictly out of the money.
+    An option with no closing activity settles from the official close
+    once the expiry session is over. It must not book the opening credit
+    as a worthless win, and it must not wait in 'Settlement pending'.
 
-    Cash-settled index options (SPXW and the rest) settle the next
-    morning. The as-of Buy to Close / Sell to Close is the real close.
-    Until that row is in history, realizing net_cash_flow reports the
-    opening credit as a win (SPXW 7650/7655, Oct 2026: the page showed
-    +$2,325.56 while the statement was down $821.08).
+    With a close:
+      status Closed, close_type 'Settled at expiry (est.)', close_date
+      is the expiry, realized/total = net_cash_flow + signed intrinsic
+      for an ITM cash-settled index (else + $0). SPXW uses the SPX close
+      when SPXW itself has no price row.
 
-    Strictly OTM contracts are excluded: those still realize on the
-    expiry close. A priced equity that is ITM or ATM, and an unpriced
-    index root, must be status 'Settlement pending' with no close date
-    and no booked P&L.
+    Without a close, before the next weekday after expiry: stay Open,
+    no close date, no booked P&L. Once that weekday has started and the
+    close is still missing, equity expires at $0 under the estimate
+    label, with close_date on the expiry (realized = net_cash_flow).
+    A cash-settled index does not. It stays 'Settlement pending' with
+    realized and total at $0, never the opening credit.
+
+    A broker close (contracts_closed > 0) must not keep the estimate
+    label, and its realized P&L must stay net_cash_flow so the intrinsic
+    is not added a second time.
 */
 
 with prices as (
@@ -23,7 +31,218 @@ with prices as (
     from {{ ref('stg_daily_prices') }}
     where close_price is not null
     group by 1, 2
+),
+
+resolved as (
+    select
+        c.*,
+        coalesce(exact.close_price, parent.close_price) as expiry_close
+    from {{ ref('int_option_contracts') }} c
+    left join prices exact
+        on upper(trim(c.underlying_symbol)) = upper(trim(exact.symbol))
+        and c.option_expiry = exact.date
+    left join prices parent
+        on exact.close_price is null
+        and c.option_expiry = parent.date
+        and upper(trim(parent.symbol)) = case upper(trim(c.underlying_symbol))
+            when 'SPXW' then 'SPX'
+            when 'NDXP' then 'NDX'
+            when 'RUTW' then 'RUT'
+        end
+),
+
+gated as (
+    select
+        *,
+        (
+            option_expiry < current_date('America/New_York')
+            or (
+                option_expiry = current_date('America/New_York')
+                and time(current_datetime('America/New_York')) >= (
+                    case
+                        when upper(trim(coalesce(underlying_symbol, ''))) in (
+                            'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                            'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+                        )
+                        then time '16:15:00'
+                        else time '16:00:00'
+                    end
+                )
+            )
+        ) as session_over,
+        (
+            option_expiry is not null
+            and current_date('America/New_York') >= case extract(dayofweek from option_expiry)
+                when 6 then date_add(option_expiry, interval 3 day)
+                when 7 then date_add(option_expiry, interval 2 day)
+                else date_add(option_expiry, interval 1 day)
+            end
+        ) as fallback_due,
+        case
+            when upper(trim(coalesce(underlying_symbol, ''))) not in (
+                'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+            ) then 0.0
+            else round(
+                (case when direction = 'Sold' then -1.0 else 1.0 end)
+                * greatest(
+                    case
+                        when option_type = 'C' then expiry_close - option_strike
+                        when option_type = 'P' then option_strike - expiry_close
+                        else 0.0
+                    end,
+                    0.0
+                )
+                * 100.0
+                * coalesce(
+                    case
+                        when direction = 'Sold' then contracts_sold_to_open
+                        else contracts_bought_to_open
+                    end,
+                    0.0
+                ),
+                2
+            )
+        end as est_cash
+    from resolved
+    where not coalesce(opened_before_history, false)
+      and option_expiry is not null
+      and coalesce(contracts_closed, 0) < 1e-6
 )
+
+select
+    tenant_id,
+    account,
+    trade_symbol,
+    underlying_symbol,
+    option_expiry,
+    status,
+    close_type,
+    close_date,
+    realized_pnl,
+    total_pnl,
+    net_cash_flow,
+    expiry_close,
+    'estimate' as violation
+from gated
+where session_over
+  and expiry_close is not null
+  and option_strike is not null
+  and coalesce(close_type, '') not in (
+      'Expired', 'ExpiredOTM', 'Assigned', 'Exercised', 'Closed'
+  )
+  and (
+      status != 'Closed'
+      or close_type != 'Settled at expiry (est.)'
+      or close_date != option_expiry
+      or abs(coalesce(realized_pnl, 0) - (coalesce(net_cash_flow, 0) + est_cash)) > 0.05
+      or abs(coalesce(total_pnl, 0) - (coalesce(net_cash_flow, 0) + est_cash)) > 0.05
+  )
+
+union all
+
+select
+    tenant_id,
+    account,
+    trade_symbol,
+    underlying_symbol,
+    option_expiry,
+    status,
+    close_type,
+    close_date,
+    realized_pnl,
+    total_pnl,
+    net_cash_flow,
+    expiry_close,
+    'unpriced' as violation
+from gated
+where session_over
+  and expiry_close is null
+  and not fallback_due
+  and coalesce(close_type, '') not in (
+      'Expired', 'ExpiredOTM', 'Assigned', 'Exercised', 'Closed'
+  )
+  and (
+      status = 'Closed'
+      or close_type = 'Settled at expiry (est.)'
+      or close_date is not null
+      or abs(coalesce(realized_pnl, 0)) > 0.01
+  )
+
+union all
+
+select
+    tenant_id,
+    account,
+    trade_symbol,
+    underlying_symbol,
+    option_expiry,
+    status,
+    close_type,
+    close_date,
+    realized_pnl,
+    total_pnl,
+    net_cash_flow,
+    expiry_close,
+    'unpriced_fallback' as violation
+from gated
+where session_over
+  and expiry_close is null
+  and fallback_due
+  and upper(trim(coalesce(underlying_symbol, ''))) not in (
+      'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+      'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+  )
+  and coalesce(close_type, '') not in (
+      'Expired', 'ExpiredOTM', 'Assigned', 'Exercised', 'Closed'
+  )
+  and (
+      status != 'Closed'
+      or close_type != 'Settled at expiry (est.)'
+      or close_date != option_expiry
+      or abs(coalesce(realized_pnl, 0) - coalesce(net_cash_flow, 0)) > 0.05
+      or abs(coalesce(total_pnl, 0) - coalesce(net_cash_flow, 0)) > 0.05
+  )
+
+union all
+
+select
+    tenant_id,
+    account,
+    trade_symbol,
+    underlying_symbol,
+    option_expiry,
+    status,
+    close_type,
+    close_date,
+    realized_pnl,
+    total_pnl,
+    net_cash_flow,
+    expiry_close,
+    'index_unpriced_pending' as violation
+from gated
+where session_over
+  and expiry_close is null
+  and fallback_due
+  and upper(trim(coalesce(underlying_symbol, ''))) in (
+      'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+      'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+  )
+  and coalesce(close_type, '') not in (
+      'Expired', 'ExpiredOTM', 'Assigned', 'Exercised'
+  )
+  and (
+      close_type != 'Settlement pending'
+      or close_type = 'Settled at expiry (est.)'
+      or abs(coalesce(realized_pnl, 0)) > 0.05
+      or abs(coalesce(total_pnl, 0)) > 0.05
+      or (
+          abs(coalesce(net_cash_flow, 0)) > 1
+          and abs(coalesce(realized_pnl, 0) - coalesce(net_cash_flow, 0)) < 0.05
+      )
+  )
+
+union all
 
 select
     c.tenant_id,
@@ -31,43 +250,19 @@ select
     c.trade_symbol,
     c.underlying_symbol,
     c.option_expiry,
-    c.option_strike,
-    c.option_type,
-    c.direction,
     c.status,
     c.close_type,
     c.close_date,
     c.realized_pnl,
     c.total_pnl,
-    c.premium_received,
-    p.close_price as expiry_close
+    c.net_cash_flow,
+    cast(null as float64) as expiry_close,
+    'broker_dedupe' as violation
 from {{ ref('int_option_contracts') }} c
-left join prices p
-    on upper(trim(c.underlying_symbol)) = upper(trim(p.symbol))
-    and c.option_expiry = p.date
-where c.option_expiry < current_date()
-  and coalesce(c.contracts_closed, 0) < 1e-6
-  and not coalesce(c.opened_before_history, false)
+where not coalesce(c.opened_before_history, false)
+  and coalesce(c.contracts_closed, 0) >= 1e-6
+  and c.status = 'Closed'
   and (
-      (
-          p.close_price is not null
-          and c.option_strike is not null
-          and not (
-              (c.option_type = 'C' and p.close_price < c.option_strike)
-              or (c.option_type = 'P' and p.close_price > c.option_strike)
-          )
-      )
-      or (
-          p.close_price is null
-          and upper(trim(coalesce(c.underlying_symbol, ''))) in (
-              'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
-              'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
-          )
-      )
-  )
-  and (
-      c.status != 'Settlement pending'
-      or c.close_date is not null
-      or abs(coalesce(c.realized_pnl, 0)) > 0.01
-      or abs(coalesce(c.total_pnl, 0)) > 0.01
+      c.close_type = 'Settled at expiry (est.)'
+      or abs(coalesce(c.realized_pnl, 0) - coalesce(c.net_cash_flow, 0)) > 0.05
   )

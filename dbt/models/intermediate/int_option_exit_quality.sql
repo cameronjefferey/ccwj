@@ -80,7 +80,10 @@ with closed_contracts as (
         premium_paid,
         cost_to_close,
         proceeds_from_close,
-        net_cash_flow as realized_pnl,
+        -- Contract realized_pnl, not net_cash_flow. They match on a broker
+        -- close. An expiry estimate adds index intrinsic on top of the
+        -- opening fills; using net_cash_flow here would drop that cash.
+        realized_pnl,
         -- Opened quantity scales the intrinsic counterfactual. Zero for
         -- snapshot-only contracts (no fills in history) — those are
         -- excluded from grading below.

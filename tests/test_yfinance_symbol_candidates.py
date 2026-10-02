@@ -121,6 +121,75 @@ class TestCryptoMapping:
         assert _load_crypto_symbols(str(missing)) == frozenset()
 
 
+class TestIndexCloses:
+    """Cash-settled index options have no Yahoo equity ticker.
+
+    SPXW Oct 1 2026 7650/7655C was booked as a worthless win because the
+    loader never wrote an SPX close. ^GSPC (and ^SPX) closed at 7666.45
+    that day, above 7655.
+    """
+
+    def test_spx_and_spxw_use_the_gspc_index(self):
+        assert _yahoo_symbol_candidates("SPX") == ["^GSPC", "^SPX"]
+        assert _yahoo_symbol_candidates("SPXW") == ["^GSPC", "^SPX"]
+        assert "SPXW" not in _yahoo_symbol_candidates("SPXW")
+        assert "SPX" not in _yahoo_symbol_candidates("SPX")
+
+    def test_xsp_uses_the_same_index(self):
+        assert _yahoo_symbol_candidates("XSP") == ["^GSPC", "^SPX"]
+
+    def test_other_cash_indexes(self):
+        assert _yahoo_symbol_candidates("NDX") == ["^NDX"]
+        assert _yahoo_symbol_candidates("NDXP") == ["^NDX"]
+        assert _yahoo_symbol_candidates("RUT") == ["^RUT"]
+        assert _yahoo_symbol_candidates("RUTW") == ["^RUT"]
+        assert _yahoo_symbol_candidates("VIX") == ["^VIX"]
+
+    def test_xsp_close_is_one_tenth_of_gspc(self, monkeypatch):
+        import pandas as pd
+
+        from current_position_stock_price import _fetch_history_for_symbol
+
+        gspc = pd.DataFrame(
+            {"Close": [7666.45], "Dividends": [0.0]},
+            index=pd.to_datetime(["2026-10-01"]),
+        )
+
+        def fake_ticker(sym):
+            assert sym == "^GSPC"
+            return _FakeTicker(gspc)
+
+        monkeypatch.setattr("current_position_stock_price.yf.Ticker", fake_ticker)
+        hist, _, yahoo_sym = _fetch_history_for_symbol("XSP", "2026-10-01", "2026-10-02")
+        assert yahoo_sym == "^GSPC"
+        assert abs(float(hist["Close"].iloc[0]) - 766.645) < 1e-6
+
+    def test_spxw_keeps_the_index_close(self, monkeypatch):
+        import pandas as pd
+
+        from current_position_stock_price import _fetch_history_for_symbol
+
+        gspc = pd.DataFrame(
+            {"Close": [7666.45], "Dividends": [0.0]},
+            index=pd.to_datetime(["2026-10-01"]),
+        )
+        calls = []
+
+        def fake_ticker(sym):
+            calls.append(sym)
+            if sym == "^GSPC":
+                return _FakeTicker(gspc)
+            raise AssertionError(f"bare root must not be fetched, got {sym}")
+
+        monkeypatch.setattr("current_position_stock_price.yf.Ticker", fake_ticker)
+        hist, _, yahoo_sym = _fetch_history_for_symbol(
+            "SPXW", "2026-09-01", "2026-10-02"
+        )
+        assert calls == ["^GSPC"]
+        assert yahoo_sym == "^GSPC"
+        assert float(hist["Close"].iloc[0]) > 7655
+
+
 class TestEdgeCases:
     def test_empty_string_returns_empty(self):
         assert _yahoo_symbol_candidates("") == []
