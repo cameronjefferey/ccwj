@@ -62,7 +62,12 @@ def apply_security_headers(response):
     )
 
     path = request.path or ""
-    if path.startswith("/demo/") or path == "/demo" or is_demo_user():
+    if (
+        path.startswith("/demo/")
+        or path == "/demo"
+        or path.startswith("/go/")
+        or is_demo_user()
+    ):
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
     # Flask's test client and a None SEND_FILE_MAX_AGE_DEFAULT both emit
     # no-cache. Public assets should stay cacheable in production too.

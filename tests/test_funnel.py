@@ -1,7 +1,11 @@
 """First-party funnel: cookie, events, pixel gating, admin analytics."""
 
+import html
 import json
+import os
+from urllib.parse import urlparse
 
+import pytest
 from flask import g, session
 
 from app import app
@@ -10,7 +14,9 @@ from app.funnel import (
     clean_click_id,
     clean_referrer,
     clean_utm,
+    conversion_rates,
     decode_touch_cookie,
+    device_type,
     encode_touch_cookie,
     log_event,
     merge_touch,
@@ -235,6 +241,8 @@ def test_signup_persists_first_and_last_touch(monkeypatch):
             "utm_term": "",
             "rdt_cid": "",
             "referrer": "https://www.youtube.com/watch",
+            "landing": "learn",
+            "variant": "past",
         },
         "lt": {
             "utm_source": "reddit",
@@ -244,6 +252,8 @@ def test_signup_persists_first_and_last_touch(monkeypatch):
             "utm_term": "wheel",
             "rdt_cid": "click12345",
             "referrer": "https://www.reddit.com/r/thetagang",
+            "landing": "mistakes",
+            "variant": "early",
         },
         "_dirty": True,
     }
@@ -256,6 +266,9 @@ def test_signup_persists_first_and_last_touch(monkeypatch):
     assert params[0] == "youtube"
     assert params[7] == "reddit"
     assert params[12] == "click12345"
+    assert params[14] == "learn"
+    assert params[16] == "mistakes"
+    assert "acquisition_landing" in sql
     assert params[-1] == 42
 
 
@@ -309,6 +322,35 @@ def test_admin_analytics_is_admin_only(monkeypatch):
                 "paid": 0,
             }],
             "youtube": {"visits": 3, "signups": 1},
+            "acquisition": {
+                "range_key": "7d",
+                "days": [{"day": "2026-10-01", "visitors": 8, "views": 11}],
+                "pages": [{"path": "/go/learn", "visitors": 8, "views": 11}],
+                "campaigns": [{
+                    "landing": "learn",
+                    "steps": conversion_rates({
+                        "visitors": 8,
+                        "cta": 4,
+                        "signups": 2,
+                        "lessons": 1,
+                        "paper": 0,
+                        "broker": 0,
+                        "paid": 0,
+                    }),
+                }],
+                "sources": [{
+                    "source": "reddit",
+                    "campaign": "learn",
+                    "content": "past",
+                    "visitors": 8,
+                    "signups": 2,
+                }],
+                "devices": [{"device": "phone", "visitors": 5, "signups": 1}],
+                "referrers": [
+                    {"host": "YouTube", "visitors": 3},
+                    {"host": "Reddit", "visitors": 8},
+                ],
+            },
         },
     )
     page = client.get("/admin/analytics")
@@ -319,6 +361,10 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     assert "Landing view" in body
     assert "mirror-v1" in body
     assert "YouTube" in body
+    assert "Acquisition" in body
+    assert "Campaign funnel" in body
+    assert "50.0%" in body
+    assert "/go/learn" in body
 
 
 def test_start_hero_offers_learning_and_the_demo(monkeypatch):
@@ -344,3 +390,243 @@ def test_static_images_are_cached():
     assert "https://www.redditstatic.com" in policy
     assert "https://pixel-config.reddit.com" in policy
     assert "https://alb.reddit.com" in policy
+    assert "cta_click" in resp.get_data(as_text=True)
+    assert "scroll_depth" in resp.get_data(as_text=True)
+
+
+def test_conversion_rates_are_percent_of_visitors():
+    rows = conversion_rates({
+        "visitors": 8,
+        "cta": 4,
+        "signups": 2,
+        "lessons": 1,
+        "paper": 1,
+        "broker": 0,
+        "paid": 0,
+    })
+    by_key = {row["key"]: row for row in rows}
+    assert by_key["visitors"]["rate"] == 100.0
+    assert by_key["cta"]["count"] == 4
+    assert by_key["cta"]["rate"] == 50.0
+    assert by_key["signups"]["rate"] == 25.0
+    assert by_key["broker"]["rate"] == 0.0
+    assert conversion_rates({})[0]["rate"] == 0.0
+    assert [row["label"] for row in rows] == [
+        "Visitors",
+        "CTA clicks",
+        "Signups",
+        "First lesson",
+        "Paper connect",
+        "Real broker connect",
+        "Paid",
+    ]
+
+
+def test_device_type_is_coarse_and_drops_the_raw_agent():
+    assert device_type("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)") == "phone"
+    assert device_type("Mozilla/5.0 (iPad; CPU OS 17_0)") == "tablet"
+    assert device_type("Mozilla/5.0 (Windows NT 10.0)") == "desktop"
+
+
+def test_landing_slug_sticks_on_first_touch_and_moves_last_touch():
+    first, _dirty = merge_touch(None, {
+        "utm_source": "reddit",
+        "utm_campaign": "learn",
+        "landing": "learn",
+        "variant": "past",
+    })
+    assert first["ft"]["landing"] == "learn"
+    second, dirty = merge_touch(first, {
+        "landing": "mistakes",
+        "variant": "early",
+    })
+    assert dirty is True
+    assert second["ft"]["landing"] == "learn"
+    assert second["ft"]["variant"] == "past"
+    assert second["lt"]["landing"] == "mistakes"
+    assert second["lt"]["variant"] == "early"
+    restored = decode_touch_cookie(encode_touch_cookie(second))
+    assert restored["lt"]["landing"] == "mistakes"
+    assert restored["ft"]["variant"] == "past"
+
+
+def test_go_pages_are_focused_noindex_and_free_of_account_totals():
+    client = app.test_client()
+    pages = {
+        "learn": (
+            "Learn options free, with real past trades and paper money.",
+            "Start learning free",
+            "start-learning",
+        ),
+        "real-pnl": (
+            "See what your options trades really made (rolls, covered-call runs, early exits).",
+            "Try the live demo",
+            "try-demo",
+        ),
+        "mistakes": (
+            "Catch the mistakes your broker won't show you (early exits, assignments, missed premium).",
+            "Connect your broker, free 30 days",
+            "connect-broker",
+        ),
+    }
+    for slug, (headline, label, cta) in pages.items():
+        resp = client.get(f"/go/{slug}")
+        assert resp.status_code == 200
+        body = html.unescape(resp.get_data(as_text=True))
+        assert headline in body
+        assert label in body
+        assert f'data-ht-cta="{cta}"' in body
+        assert "Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage." in body
+        assert 'name="robots" content="noindex"' in body
+        assert "noindex" in (resp.headers.get("X-Robots-Tag") or "")
+        assert "ORCL" not in body
+        assert "CFLT" not in body
+        assert "1,500" not in body
+        assert "$428,049" not in body
+        assert 'class="go-cta"' in body
+    varied = client.get("/go/learn?v=past")
+    varied_body = varied.get_data(as_text=True)
+    assert "Learn from real past trades, then practice with paper money." in varied_body
+    assert "route=learn" in varied_body
+    unknown = client.get("/go/learn?v=not-a-variant")
+    assert "Learn options free, with real past trades and paper money." in unknown.get_data(as_text=True)
+    assert client.get("/go/nope").status_code == 404
+    demo = client.get("/go/real-pnl")
+    assert 'data-ht-cta="start-trial"' in demo.get_data(as_text=True)
+    mistakes = client.get("/go/mistakes")
+    assert "be-swing.webp" in mistakes.get_data(as_text=True)
+
+
+def test_public_page_view_records_landing_device_and_not_identity():
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    from app.db import fetch_one
+
+    client = app.test_client()
+    resp = client.get(
+        "/pricing",
+        headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile",
+            "Referer": "https://www.reddit.com/r/options?token=sekret",
+            "DNT": "1",
+        },
+    )
+    assert resp.status_code == 200
+    assert "redditstatic.com" not in resp.get_data(as_text=True)
+    row = fetch_one(
+        """
+        SELECT path, device, referrer, utm_source
+          FROM funnel_events
+         WHERE event = 'page_view' AND path = '/pricing'
+         ORDER BY id DESC
+         LIMIT 1
+        """
+    )
+    assert row["path"] == "/pricing"
+    assert row["device"] == "phone"
+    assert row["referrer"] == "https://www.reddit.com/r/options"
+    assert "sekret" not in (row["referrer"] or "")
+    assert row["utm_source"] in (None, "")
+
+    landed = client.get(
+        "/go/real-pnl?utm_source=reddit&utm_medium=paid&utm_campaign=real-pnl"
+        "&utm_content=rolls&v=rolls",
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0)"},
+    )
+    assert landed.status_code == 200
+    cookie = " ".join(landed.headers.getlist("Set-Cookie"))
+    assert "ht_touch=" in cookie
+    row = fetch_one(
+        """
+        SELECT landing, variant, device, utm_campaign, utm_content
+          FROM funnel_events
+         WHERE event = 'page_view' AND path = '/go/real-pnl'
+         ORDER BY id DESC
+         LIMIT 1
+        """
+    )
+    assert row["landing"] == "real-pnl"
+    assert row["variant"] == "rolls"
+    assert row["device"] == "desktop"
+    assert row["utm_campaign"] == "real-pnl"
+    assert row["utm_content"] == "rolls"
+
+    clicked = client.post(
+        "/funnel/beacon",
+        json={"event": "cta_click", "path": "/go/real-pnl", "detail": "try-demo"},
+    )
+    assert clicked.status_code == 200
+    click = fetch_one(
+        """
+        SELECT detail, landing FROM funnel_events
+         WHERE event = 'cta_click' AND path = '/go/real-pnl'
+         ORDER BY id DESC LIMIT 1
+        """
+    )
+    assert click["detail"] == "try-demo"
+    assert click["landing"] == "real-pnl"
+    bad = client.post(
+        "/funnel/beacon",
+        json={"event": "scroll_depth", "path": "/go/real-pnl", "detail": "10"},
+    )
+    assert bad.status_code == 400
+    depth = client.post(
+        "/funnel/beacon",
+        json={"event": "scroll_depth", "path": "/go/real-pnl", "detail": "50"},
+    )
+    assert depth.status_code == 200
+    played = client.post(
+        "/funnel/beacon",
+        json={"event": "video_play", "path": "/learn", "detail": "NpU79Lwkdn4"},
+    )
+    assert played.status_code == 200
+    from app.funnel import build_acquisition
+    acq = build_acquisition("7d")
+    by_landing = {row["landing"]: row for row in acq["campaigns"]}
+    visitors = by_landing["real-pnl"]["steps"][0]
+    assert visitors["key"] == "visitors"
+    assert visitors["count"] >= 1
+    assert visitors["rate"] == 100.0
+    hosts = {row["host"] for row in acq["referrers"]}
+    assert "YouTube" in hosts and "Reddit" in hosts
+
+
+def test_learn_route_signup_opens_learn(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
+    monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
+    created = {}
+
+    class _User:
+        id = 4242
+        username = "learnrouteuser"
+
+    monkeypatch.setattr(
+        "app.auth.User.create",
+        staticmethod(lambda username, password, email=None: created.setdefault("user", _User())),
+    )
+    monkeypatch.setattr("app.auth.User.get_by_email", staticmethod(lambda email: None))
+    monkeypatch.setattr(
+        "app.auth.User.get_by_username",
+        staticmethod(lambda name: created.get("user")),
+    )
+    monkeypatch.setattr("app.auth.login_user", lambda *a, **k: None)
+    monkeypatch.setattr("app.auth.get_accounts_for_user", lambda uid: [])
+    monkeypatch.setattr("app.auth._send_welcome_verification", lambda user: None)
+    monkeypatch.setattr("app.funnel.on_signup", lambda uid: created.setdefault("signed", uid))
+    monkeypatch.setattr("app.campaign.stamp_signup", lambda uid: None)
+    monkeypatch.setattr("app.ops_notify.notify_event", lambda *a, **k: None)
+
+    client = app.test_client()
+    page = client.get("/signup?route=learn")
+    assert 'name="route" value="learn"' in page.get_data(as_text=True)
+    resp = client.post("/signup", data={
+        "username": "learnrouteuser",
+        "email": "learnroute@example.com",
+        "password": "Secret1pass",
+        "confirm": "Secret1pass",
+        "route": "learn",
+    }, follow_redirects=False)
+    assert resp.status_code in (302, 303)
+    assert urlparse(resp.headers["Location"]).path == "/learn"
+    assert created["signed"] == 4242

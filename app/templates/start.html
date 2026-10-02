@@ -480,9 +480,9 @@
 <div class="{% if tone == 'card' %}start-cta{% endif %}">
     <div class="start-actions">
         {% if signup_enabled %}
-        <a class="start-btn start-btn-primary" href="{{ url_for('campaign_go', dest='signup', place=place, **utm_query) }}">{{ spec.primary }}</a>
+        <a class="start-btn start-btn-primary" data-ht-cta="signup-{{ place }}" href="{{ url_for('campaign_go', dest='signup', place=place, **utm_query) }}">{{ spec.primary }}</a>
         {% endif %}
-        <a class="start-btn start-btn-ghost" href="{{ url_for('campaign_go', dest='demo', place=place, **utm_query) }}">{{ spec.demo }}</a>
+        <a class="start-btn start-btn-ghost" data-ht-cta="demo-{{ place }}" href="{{ url_for('campaign_go', dest='demo', place=place, **utm_query) }}">{{ spec.demo }}</a>
     </div>
     {% if note %}<p class="start-cta-note">30 days. No card.</p>{% endif %}
 </div>

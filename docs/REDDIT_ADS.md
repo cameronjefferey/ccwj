@@ -22,10 +22,36 @@ paper account or real brokerage fires Lead. A new Pro payment fires Purchase.
 event id. Both stay off when the env var is empty, and both stay off when
 the browser sends Do Not Track or Global Privacy Control.
 
-First-party counts live at Admin → Analytics (`/admin/analytics`): signups
-per day, funnel steps, utm_source / utm_campaign, and YouTube referrals.
-That page is the source of truth when the pixel is blocked. The older
-Admin → Overview card is still the `/start` button funnel.
+First-party counts live at Admin → Acquisition (`/admin/analytics`):
+logged-out visitors and page views, the campaign funnel, utm_source /
+utm_campaign / utm_content, device, and referrers (YouTube and Reddit
+stay on the list). The window is today, 7 days, or 30 days. That page
+is the source of truth when the pixel is blocked. The older Admin →
+Overview card is still the `/start` button funnel.
+
+## Message tests
+
+One focused page per message. `utm_content` is the ad variant. `v` is
+the headline variant and is stored on the funnel row and on the user
+at signup, next to the UTMs and `rdt_cid`.
+
+```
+https://happytrader.me/go/learn?utm_source=reddit&utm_medium=paid&utm_campaign=learn&utm_content=control
+https://happytrader.me/go/learn?utm_source=reddit&utm_medium=paid&utm_campaign=learn&utm_content=past&v=past
+https://happytrader.me/go/learn?utm_source=reddit&utm_medium=paid&utm_campaign=learn&utm_content=free&v=free
+
+https://happytrader.me/go/real-pnl?utm_source=reddit&utm_medium=paid&utm_campaign=real-pnl&utm_content=control
+https://happytrader.me/go/real-pnl?utm_source=reddit&utm_medium=paid&utm_campaign=real-pnl&utm_content=rolls&v=rolls
+https://happytrader.me/go/real-pnl?utm_source=reddit&utm_medium=paid&utm_campaign=real-pnl&utm_content=runs&v=runs
+
+https://happytrader.me/go/mistakes?utm_source=reddit&utm_medium=paid&utm_campaign=mistakes&utm_content=control
+https://happytrader.me/go/mistakes?utm_source=reddit&utm_medium=paid&utm_campaign=mistakes&utm_content=early&v=early
+https://happytrader.me/go/mistakes?utm_source=reddit&utm_medium=paid&utm_campaign=mistakes&utm_content=premium&v=premium
+```
+
+`control` keeps the default headline. `past` and `free` are the learn
+headlines. `rolls` and `runs` are the real-P&L headlines. `early` and
+`premium` are the mistakes headlines.
 
 The landing says learning and paper trading are free, and that the 30-day
 trial starts when a real brokerage is connected. Ad creative can keep
@@ -125,7 +151,7 @@ BigQuery pages also hold a connection. Move Postgres off the free instance
 before spending if it is still there. Do not add a client pool back; the
 old one wedged behind Render's idle TCP timeouts.
 
-Rate limits: public GET `/`, `/start`, `/pricing`, `/signup`, `/learn`,
+Rate limits: public GET `/`, `/start`, `/go/*`, `/pricing`, `/signup`, `/learn`,
 and `/faq` are outside the 300/hour default so one carrier NAT is not
 429'd for reading. `/start` itself allows 120/minute. The hero click
 redirect allows 60/minute. Signup POST allows 10/minute and 120/hour per

@@ -36,7 +36,7 @@ UTM_FIELDS = (
     "utm_content",
     "utm_term",
 )
-_TOUCH_KEYS = UTM_FIELDS + ("rdt_cid", "referrer")
+_TOUCH_KEYS = UTM_FIELDS + ("rdt_cid", "referrer", "landing", "variant")
 
 # first=True: one row per user (or per visit, while anonymous).
 # reddit: Conversions API / pixel standard event, or None.
@@ -55,13 +55,40 @@ EVENTS = {
     "broker_connected": {"first": True, "reddit": "Lead"},
     "checkout_started": {"first": True, "reddit": None},
     "paid": {"first": True, "reddit": "Purchase"},
+    # Logged-out public pages. These stay first-party even when an ad
+    # pixel is off. detail carries a CTA name, a scroll mark, or a video id.
+    "page_view": {"first": False, "reddit": None},
+    "cta_click": {"first": False, "reddit": None},
+    "scroll_depth": {"first": False, "reddit": None},
+    "video_play": {"first": False, "reddit": None},
 }
 # The browser beacon may only name these. Paid and signup stay server-side.
 BEACON_EVENTS = frozenset({
     "lesson_started",
     "lesson_completed",
     "landing_view",
+    "cta_click",
+    "scroll_depth",
+    "video_play",
 })
+ACQ_STEPS = (
+    ("visitors", "Visitors"),
+    ("cta", "CTA clicks"),
+    ("signups", "Signups"),
+    ("lessons", "First lesson"),
+    ("paper", "Paper connect"),
+    ("broker", "Real broker connect"),
+    ("paid", "Paid"),
+)
+_RANGE_WHERE = {
+    "today": (
+        "(created_at AT TIME ZONE 'America/New_York')::date "
+        "= (NOW() AT TIME ZONE 'America/New_York')::date"
+    ),
+    "7d": "created_at >= NOW() - INTERVAL '7 days'",
+    "30d": "created_at >= NOW() - INTERVAL '30 days'",
+}
+_RANGE_DAYS = {"today": 1, "7d": 7, "30d": 30}
 FUNNEL_STEPS = (
     ("landing_view", "Landing view"),
     ("demo_start", "Demo start"),
@@ -130,6 +157,8 @@ def _touch_from_mapping(raw) -> dict:
         touch[field] = clean_utm(raw.get(field))
     touch["rdt_cid"] = clean_click_id(raw.get("rdt_cid"))
     touch["referrer"] = clean_referrer(raw.get("referrer"))
+    touch["landing"] = clean_utm(raw.get("landing"))
+    touch["variant"] = clean_utm(raw.get("variant"))
     return touch
 
 
@@ -146,6 +175,14 @@ def parse_request_touch() -> dict:
         touch[field] = clean_utm(args.get(field))
     touch["rdt_cid"] = clean_click_id(args.get("rdt_cid"))
     touch["referrer"] = clean_referrer(request.referrer)
+    slug = (request.path or "").split("/")
+    # /go/<slug> is the campaign. Only an allow-listed headline variant sticks.
+    if len(slug) == 3 and slug[1] == "go" and slug[2]:
+        from app.go_landings import LANDINGS, allowed_variant
+        page_slug = clean_utm(slug[2])
+        if page_slug in LANDINGS:
+            touch["landing"] = page_slug
+            touch["variant"] = allowed_variant(page_slug, args.get("v"))
     return touch
 
 
@@ -158,6 +195,8 @@ def _pack_touch(touch: dict) -> dict:
         "t": touch.get("utm_term") or "",
         "r": touch.get("rdt_cid") or "",
         "f": touch.get("referrer") or "",
+        "l": touch.get("landing") or "",
+        "a": touch.get("variant") or "",
     }
 
 
@@ -172,6 +211,8 @@ def _unpack_touch(raw) -> dict:
         "utm_term": raw.get("t"),
         "rdt_cid": raw.get("r"),
         "referrer": raw.get("f"),
+        "landing": raw.get("l"),
+        "variant": raw.get("a"),
     })
 
 
@@ -244,11 +285,44 @@ def merge_touch(existing, incoming) -> tuple[dict, bool]:
     elif incoming.get("referrer") and not lt.get("referrer"):
         lt["referrer"] = incoming["referrer"]
         dirty = True
+    dirty = _apply_landing(ft, lt, incoming) or dirty
     return {
         "visit_id": existing["visit_id"],
         "ft": ft,
         "lt": lt,
     }, dirty
+
+
+def _apply_landing(ft: dict, lt: dict, incoming: dict) -> bool:
+    """First landing sticks. The latest /go visit moves last-touch."""
+    dirty = False
+    landing = incoming.get("landing") or ""
+    variant = incoming.get("variant") or ""
+    if landing and not ft.get("landing"):
+        ft["landing"] = landing
+        dirty = True
+    if landing and lt.get("landing") != landing:
+        lt["landing"] = landing
+        dirty = True
+    if variant and not ft.get("variant"):
+        ft["variant"] = variant
+        dirty = True
+    if variant and lt.get("variant") != variant:
+        lt["variant"] = variant
+        dirty = True
+    return dirty
+
+
+def device_type(user_agent=None) -> str:
+    """Coarse device class. The raw user agent is not stored."""
+    if user_agent is None and has_request_context():
+        user_agent = request.headers.get("User-Agent") or ""
+    ua = (user_agent or "").lower()
+    if "ipad" in ua or "tablet" in ua:
+        return "tablet"
+    if any(tok in ua for tok in ("mobi", "iphone", "android", "phone")):
+        return "phone"
+    return "desktop"
 
 
 def tracking_opt_out() -> bool:
@@ -334,17 +408,30 @@ def _already(event: str, user_id, visit_id) -> bool:
     return bool(row)
 
 
-def _recent_landing(visit_id: str, path: str) -> bool:
+def _recent_same(event: str, visit_id: str, path: str, detail: str, hours: int) -> bool:
     from app.db import fetch_one
-    row = fetch_one(
-        """
-        SELECT 1 FROM funnel_events
-         WHERE event = 'landing_view' AND visit_id = %s AND path = %s
-           AND created_at > NOW() - INTERVAL '12 hours'
-         LIMIT 1
-        """,
-        (visit_id, path),
-    )
+    if not visit_id:
+        return False
+    if detail:
+        row = fetch_one(
+            """
+            SELECT 1 FROM funnel_events
+             WHERE event = %s AND visit_id = %s AND path = %s AND detail = %s
+               AND created_at > NOW() - (%s || ' hours')::interval
+             LIMIT 1
+            """,
+            (event, visit_id, path, detail, str(int(hours))),
+        )
+    else:
+        row = fetch_one(
+            """
+            SELECT 1 FROM funnel_events
+             WHERE event = %s AND visit_id = %s AND path = %s
+               AND created_at > NOW() - (%s || ' hours')::interval
+             LIMIT 1
+            """,
+            (event, visit_id, path, str(int(hours))),
+        )
     return bool(row)
 
 
@@ -356,6 +443,7 @@ def log_event(
     referrer=None,
     event_id=None,
     first=None,
+    detail=None,
 ) -> str | None:
     """Insert one funnel row. Never raises. Returns the event id or None."""
     spec = EVENTS.get(event)
@@ -375,7 +463,17 @@ def log_event(
         referrer = clean_referrer(referrer) or (referrer or "")[:300]
         if first is None:
             first = bool(spec["first"])
-        if event == "landing_view" and _recent_landing(visit_id, path):
+        detail = clean_utm(detail) if detail else ""
+        device = device_type() if has_request_context() else ""
+        landing = lt.get("landing") or ""
+        variant = lt.get("variant") or ""
+        if event == "landing_view" and _recent_same(event, visit_id, path, "", 12):
+            return None
+        if event == "page_view" and _recent_same(event, visit_id, path, "", 1):
+            return None
+        if event in ("cta_click", "scroll_depth", "video_play") and _recent_same(
+            event, visit_id, path, detail, 12,
+        ):
             return None
         if first and _already(event, user_id, visit_id):
             return None
@@ -396,8 +494,9 @@ def log_event(
             INSERT INTO funnel_events
                 (event, event_id, visit_id, user_id, path, referrer,
                  utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-                 rdt_cid)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 rdt_cid, landing, variant, device, detail)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s)
             """,
             (
                 event,
@@ -412,6 +511,10 @@ def log_event(
                 lt.get("utm_content") or None,
                 lt.get("utm_term") or None,
                 lt.get("rdt_cid") or None,
+                landing or None,
+                variant or None,
+                device or None,
+                detail or None,
             ),
         )
         reddit_name = spec["reddit"]
@@ -431,7 +534,7 @@ def _arm_reddit(event, reddit_name, event_id, user_id, click_id):
             path = request.path or ""
         # Server PageVisit only on the ad and home landings. The pixel
         # still fires in the browser on the other public pages.
-        if path not in ("/", "/index", "/start"):
+        if path not in ("/", "/index", "/start") and not _is_go_path(path):
             return
         if getattr(g, "_funnel_pagevisit_sent", False):
             return
@@ -523,7 +626,11 @@ def persist_signup(user_id) -> None:
                acquisition_lt_content = NULLIF(%s, ''),
                acquisition_lt_term = NULLIF(%s, ''),
                acquisition_lt_click_id = NULLIF(%s, ''),
-               acquisition_lt_referrer = NULLIF(%s, '')
+               acquisition_lt_referrer = NULLIF(%s, ''),
+               acquisition_landing = COALESCE(NULLIF(%s, ''), acquisition_landing),
+               acquisition_variant = COALESCE(NULLIF(%s, ''), acquisition_variant),
+               acquisition_lt_landing = NULLIF(%s, ''),
+               acquisition_lt_variant = NULLIF(%s, '')
          WHERE id = %s
         """,
         (
@@ -541,6 +648,10 @@ def persist_signup(user_id) -> None:
             lt.get("utm_term") or "",
             lt.get("rdt_cid") or "",
             lt.get("referrer") or "",
+            ft.get("landing") or "",
+            ft.get("variant") or "",
+            lt.get("landing") or "",
+            lt.get("variant") or "",
             user_id,
         ),
     )
@@ -559,14 +670,29 @@ def note_paid(user_id, subscription_id=None) -> None:
         session.modified = True
 
 
+def _is_go_path(path: str) -> bool:
+    return path.startswith("/go/") and path.count("/") == 2
+
+
 def _is_landing_path(path: str) -> bool:
-    if path in _LANDING_EXACT:
+    if path in _LANDING_EXACT or _is_go_path(path):
         return True
     return path.startswith("/learn/") and path != "/learn/progress"
 
 
+def _is_public_path(path: str) -> bool:
+    """Logged-out pages that record a first-party page view."""
+    if path in _PIXEL_EXACT or path in ("/login",):
+        return True
+    if path.startswith("/learn/") and path != "/learn/progress":
+        return True
+    if _is_go_path(path) or path.startswith("/demo/"):
+        return True
+    return False
+
+
 def _pixel_path(path: str) -> bool:
-    if path in _PIXEL_EXACT:
+    if path in _PIXEL_EXACT or _is_go_path(path):
         return True
     return path.startswith("/learn/") and "progress" not in path
 
@@ -605,6 +731,13 @@ def _observe(response):
     method = request.method
     if method == "GET" and status == 200 and _is_landing_path(path):
         log_event("landing_view", path=path, referrer=clean_referrer(request.referrer))
+    if (
+        method == "GET"
+        and status == 200
+        and _is_public_path(path)
+        and _viewer_user_id() is None
+    ):
+        log_event("page_view", path=path, referrer=clean_referrer(request.referrer))
     if method == "GET" and path == "/signup" and status == 200:
         log_event("signup_started", path=path)
     if (
@@ -658,7 +791,15 @@ def beacon(payload) -> tuple[dict, int]:
     path = payload.get("path") or (request.path if has_request_context() else "")
     if not isinstance(path, str) or not path.startswith("/") or "?" in path or len(path) > 300:
         path = request.path if has_request_context() else ""
-    log_event(event, path=path)
+    detail = payload.get("detail") or ""
+    if not isinstance(detail, str):
+        return {"ok": False}, 400
+    detail = clean_utm(detail)
+    if event in ("cta_click", "scroll_depth", "video_play") and not detail:
+        return {"ok": False}, 400
+    if event == "scroll_depth" and detail not in ("25", "50", "75", "100"):
+        return {"ok": False}, 400
+    log_event(event, path=path, detail=detail)
     return {"ok": True}, 200
 
 
@@ -801,6 +942,209 @@ def _user_opted_out(user_id) -> bool:
         return False
 
 
+def conversion_rates(counts: dict) -> list[dict]:
+    """Each step as a count and a percent of visitors. Zero visitors stay 0."""
+    visitors = int((counts or {}).get("visitors") or 0)
+    rows = []
+    for key, label in ACQ_STEPS:
+        n = int((counts or {}).get(key) or 0)
+        rate = round(100.0 * n / visitors, 1) if visitors else 0.0
+        rows.append({"key": key, "label": label, "count": n, "rate": rate})
+    return rows
+
+
+def _range_key() -> str:
+    raw = ""
+    if has_request_context():
+        raw = (request.args.get("range") or "").strip()
+    if raw not in _RANGE_WHERE:
+        return "7d"
+    return raw
+
+
+def _referrer_bucket(host: str) -> str:
+    text = (host or "").lower()
+    if "youtube.com" in text or "youtu.be" in text:
+        return "YouTube"
+    if "reddit.com" in text:
+        return "Reddit"
+    return host or "(none)"
+
+
+def _empty_acquisition(range_key="7d") -> dict:
+    from app.go_landings import LANDING_SLUGS
+    return {
+        "range_key": range_key,
+        "days": [],
+        "pages": [],
+        "campaigns": [
+            {"landing": slug, "steps": conversion_rates({})}
+            for slug in LANDING_SLUGS
+        ],
+        "sources": [],
+        "devices": [],
+        "referrers": [
+            {"host": "YouTube", "visitors": 0},
+            {"host": "Reddit", "visitors": 0},
+        ],
+    }
+
+
+def build_acquisition(range_key=None) -> dict:
+    """Logged-out visitors, campaign funnel, and referrers for one window."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from app.db import fetch_all
+    from app.go_landings import LANDING_SLUGS
+
+    range_key = range_key or _range_key()
+    if range_key not in _RANGE_WHERE:
+        range_key = "7d"
+    window = _RANGE_WHERE[range_key]
+    empty = _empty_acquisition(range_key)
+    if not _db_ready():
+        return empty
+    try:
+        day_rows = fetch_all(
+            f"""
+            SELECT to_char(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
+                   COUNT(*) FILTER (WHERE event = 'page_view')::int AS views,
+                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors
+              FROM funnel_events
+             WHERE {window}
+             GROUP BY 1
+            """
+        )
+        pages = fetch_all(
+            f"""
+            SELECT COALESCE(path, '/') AS path,
+                   COUNT(*)::int AS views,
+                   COUNT(DISTINCT visit_id)::int AS visitors
+              FROM funnel_events
+             WHERE event = 'page_view' AND {window}
+             GROUP BY 1
+             ORDER BY views DESC, visitors DESC
+             LIMIT 12
+            """
+        )
+        campaigns = fetch_all(
+            f"""
+            SELECT COALESCE(NULLIF(landing, ''), '(none)') AS landing,
+                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
+                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'cta_click')::int AS cta,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'signup_completed')::int AS signups,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'lesson_started')::int AS lessons,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'paper_connected')::int AS paper,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'broker_connected')::int AS broker,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'paid')::int AS paid
+              FROM funnel_events
+             WHERE {window}
+             GROUP BY 1
+            """
+        )
+        sources = fetch_all(
+            f"""
+            SELECT COALESCE(NULLIF(utm_source, ''), '(none)') AS source,
+                   COALESCE(NULLIF(utm_campaign, ''), '(none)') AS campaign,
+                   COALESCE(NULLIF(utm_content, ''), '(none)') AS content,
+                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'signup_completed')::int AS signups
+              FROM funnel_events
+             WHERE {window}
+             GROUP BY 1, 2, 3
+             ORDER BY visitors DESC, signups DESC
+             LIMIT 30
+            """
+        )
+        devices = fetch_all(
+            f"""
+            SELECT COALESCE(NULLIF(device, ''), 'desktop') AS device,
+                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'signup_completed')::int AS signups
+              FROM funnel_events
+             WHERE {window}
+             GROUP BY 1
+             ORDER BY visitors DESC
+            """
+        )
+        referrers = fetch_all(
+            f"""
+            SELECT substring(referrer from '^https?://([^/]+)') AS host,
+                   COUNT(DISTINCT visit_id)::int AS visitors
+              FROM funnel_events
+             WHERE event = 'page_view'
+               AND referrer IS NOT NULL
+               AND {window}
+             GROUP BY 1
+             ORDER BY visitors DESC
+             LIMIT 20
+            """
+        )
+    except Exception as exc:
+        _log.warning("acquisition query failed: %s", exc)
+        return empty
+
+    by_day = {
+        row["day"]: {
+            "views": int(row["views"] or 0),
+            "visitors": int(row["visitors"] or 0),
+        }
+        for row in day_rows or []
+    }
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    span = _RANGE_DAYS[range_key]
+    days = []
+    for offset in range(span - 1, -1, -1):
+        day = (today - timedelta(days=offset)).isoformat()
+        found = by_day.get(day) or {"views": 0, "visitors": 0}
+        days.append({"day": day, "views": found["views"], "visitors": found["visitors"]})
+
+    by_landing = {row["landing"]: row for row in campaigns or []}
+    ordered = list(LANDING_SLUGS)
+    for key in by_landing:
+        if key not in ordered:
+            ordered.append(key)
+    campaign_rows = []
+    for slug in ordered:
+        raw = by_landing.get(slug) or {}
+        campaign_rows.append({
+            "landing": slug,
+            "steps": conversion_rates(raw),
+        })
+
+    buckets = {"YouTube": 0, "Reddit": 0}
+    extras = []
+    for row in referrers or []:
+        label = _referrer_bucket(row.get("host") or "")
+        n = int(row.get("visitors") or 0)
+        if label in buckets:
+            buckets[label] += n
+        else:
+            extras.append({"host": label, "visitors": n})
+    referrer_rows = [
+        {"host": "YouTube", "visitors": buckets["YouTube"]},
+        {"host": "Reddit", "visitors": buckets["Reddit"]},
+    ] + extras[:8]
+
+    return {
+        "range_key": range_key,
+        "days": days,
+        "pages": pages or [],
+        "campaigns": campaign_rows,
+        "sources": sources or [],
+        "devices": devices or [],
+        "referrers": referrer_rows,
+    }
+
+
 def build_admin_analytics() -> dict:
     """Signups, funnel, UTM, and YouTube referrals for the last 30 days."""
     from datetime import datetime, timedelta
@@ -813,6 +1157,7 @@ def build_admin_analytics() -> dict:
         "steps": [],
         "sources": [],
         "youtube": {"visits": 0, "signups": 0},
+        "acquisition": _empty_acquisition(_range_key()),
     }
     if not _db_ready():
         return empty
@@ -856,12 +1201,12 @@ def build_admin_analytics() -> dict:
             SELECT
               COUNT(DISTINCT visit_id) FILTER (
                 WHERE event = 'landing_view'
-                  AND (referrer ILIKE '%youtube.com%' OR referrer ILIKE '%youtu.be%'
+                  AND (referrer ILIKE '%%youtube.com%%' OR referrer ILIKE '%%youtu.be%%'
                        OR utm_source ILIKE 'youtube')
               )::int AS visits,
               COUNT(DISTINCT user_id) FILTER (
                 WHERE event = 'signup_completed'
-                  AND (referrer ILIKE '%youtube.com%' OR referrer ILIKE '%youtu.be%'
+                  AND (referrer ILIKE '%%youtube.com%%' OR referrer ILIKE '%%youtu.be%%'
                        OR utm_source ILIKE 'youtube')
               )::int AS signups
               FROM funnel_events
@@ -870,6 +1215,7 @@ def build_admin_analytics() -> dict:
         )
     except Exception as exc:
         _log.warning("admin analytics query failed: %s", exc)
+        empty["acquisition"] = build_acquisition()
         return empty
 
     by_day = {row["day"]: int(row["signups"] or 0) for row in day_rows or []}
@@ -899,6 +1245,7 @@ def build_admin_analytics() -> dict:
             "visits": int(yt_row.get("visits") or 0),
             "signups": int(yt_row.get("signups") or 0),
         },
+        "acquisition": build_acquisition(),
     }
 
 

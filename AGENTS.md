@@ -627,6 +627,16 @@ or uploaded a CSV, and which button was clicked.
 `REDDIT_PIXEL_ID` adds PageVisit on `/start` and SignUp after signup.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
+Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
+(`app/go_landings.py`). Each is noindex, one headline, one screenshot, and
+one primary button. `?v=` swaps an allow-listed headline. The slug and
+variant stick on `ht_touch` and are copied to `funnel_events` and
+`users.acquisition_landing` at signup, beside the UTMs and `rdt_cid`.
+`/go/learn` sends signup to `/learn`. Logged-out public pages also record
+page views, CTA clicks, scroll depth, and public video plays. Ad pixels
+stay off on DNT/GPC; those first-party rows still write. Admin →
+Acquisition is `/admin/analytics`.
+
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. One story: headline, then right now, then the rest behind disclosures.**
 

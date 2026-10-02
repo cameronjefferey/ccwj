@@ -16,7 +16,7 @@
     <meta property="og:description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
     {% endblock %}
     <meta property="og:url" content="{{ request.base_url }}">
-    {% if request.endpoint not in ('learn_index', 'learn_episode') %}
+    {% if request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
     <meta property="og:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
     <meta property="og:image:alt" content="HappyTrader, the trading mirror">
     <meta name="twitter:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
@@ -79,7 +79,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     {# Public landings do not draw charts. Skipping Chart.js is the
        largest script on those pages. #}
-    {% if request.endpoint not in ('index', 'campaign_start', 'pricing', 'learn_index', 'learn_episode', 'faq', 'privacy', 'terms', 'contact', 'feature_detail') %}
+    {% if request.endpoint not in ('index', 'campaign_start', 'pricing', 'learn_index', 'learn_episode', 'learn_replay_page', 'faq', 'privacy', 'terms', 'contact', 'feature_detail', 'go_landing') %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Chart.js global theme defaults — must run after chart.js loads
@@ -1291,7 +1291,7 @@
                 {% endif %}
                 {% if simple_view %}
                 <li class="nav-item">
-                    <a class="nav-link {% if ep in ('learn_index', 'learn_episode') %}active{% endif %}"
+                    <a class="nav-link {% if ep in ('learn_index', 'learn_episode', 'learn_replay_page') %}active{% endif %}"
                        href="{{ url_for('learn_index') }}">Learn</a>
                 </li>
                 <li class="nav-item">
@@ -1440,7 +1440,7 @@
             {% else %}
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link{% if request.endpoint in ('learn_index', 'learn_episode') %} active{% endif %}" href="{{ url_for('learn_index') }}">Learn</a>
+                        <a class="nav-link{% if request.endpoint in ('learn_index', 'learn_episode', 'learn_replay_page') %} active{% endif %}" href="{{ url_for('learn_index') }}">Learn</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pricing') }}">Pricing</a>
@@ -1913,7 +1913,7 @@
             });
         }
     </script>
-    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode') %}
+    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
     {% include "learn/_progress.html" %}
     {% endif %}
     {% block scripts %}{% endblock %}

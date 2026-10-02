@@ -241,12 +241,18 @@ def register_redirect():
     return redirect(url_for("signup"))
 
 
+def _signup_route(raw) -> str:
+    """The learn ad preselects the learning path. Anything else is blank."""
+    return "learn" if (raw or "").strip() == "learn" else ""
+
+
 def _render_signup_form(
     invite_required,
     *,
     username="",
     email="",
     invite="",
+    route="",
 ):
     """Re-render signup without reflecting submitted credentials.
 
@@ -260,6 +266,7 @@ def _render_signup_form(
         form_username=username,
         form_email=email,
         form_invite=invite,
+        form_route=_signup_route(route),
     )
 
 
@@ -281,6 +288,8 @@ def signup():
         invite = (request.form.get("invite_code", "") or "").strip()
         email_raw = request.form.get("email", "")
 
+        route = _signup_route(request.form.get("route"))
+
         def _retry(message, category="danger"):
             flash(message, category)
             return _render_signup_form(
@@ -288,6 +297,7 @@ def signup():
                 username=username,
                 email=(email_raw or "").strip(),
                 invite=invite,
+                route=route,
             )
 
         # Closed-beta gate: when SIGNUP_INVITE_CODE is set in the env, the
@@ -357,14 +367,19 @@ def signup():
         # New accounts have no brokerage yet. /get-started is the
         # broker-first connect screen (CSV is a quiet secondary there).
         accounts = get_accounts_for_user(user.id)
-        if not accounts:
+        if not accounts and route == "learn":
+            next_page = url_for("learn_index")
+        elif not accounts:
             next_page = url_for("get_started")
         else:
             prof = get_user_profile(user.id) or {}
             next_page = url_for(_landing_endpoint(prof))
         return redirect(next_page)
 
-    return _render_signup_form(invite_required)
+    return _render_signup_form(
+        invite_required,
+        route=_signup_route(request.args.get("route")),
+    )
 
 
 @app.route("/logout", methods=["GET", "POST"])

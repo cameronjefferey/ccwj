@@ -76,6 +76,7 @@ def _default_limit_exempt() -> bool:
         )
         or path.startswith("/learn/")
         or path.startswith("/features/")
+        or path.startswith("/go/")
     ):
         return True
     return False

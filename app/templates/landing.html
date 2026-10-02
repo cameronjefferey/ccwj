@@ -674,15 +674,15 @@
             </div>
             <div class="ht-hero-cta">
                 {% if signup_enabled %}
-                <a class="ht-hero-primary" href="{{ url_for('signup') }}">
+                <a class="ht-hero-primary" href="{{ url_for('signup') }}" data-ht-cta="start-trial">
                     {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial{%- endif -%}
                 </a>
                 {% if not signup_invite_required %}
                 <p class="ht-hero-sub">No credit card</p>
                 {% endif %}
                 {% endif %}
-                <a class="ht-hero-secondary" href="{{ url_for('demo_start') }}">Try the live demo</a>
-                <a class="ht-hero-secondary" href="{{ url_for('learn_index') }}">New to options? Start learning free</a>
+                <a class="ht-hero-secondary" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Try the live demo</a>
+                <a class="ht-hero-secondary" href="{{ url_for('learn_index') }}" data-ht-cta="start-learning">New to options? Start learning free</a>
                 <p class="ht-hero-signin"><a href="{{ url_for('login') }}">Sign in</a></p>
                 {% if signup_invite_required %}
                 <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
@@ -963,7 +963,7 @@
         <div class="ht-wrap">
             <p class="ht-cta-kicker">30 days · no card</p>
             {% if signup_enabled %}
-            <a class="ht-cta" href="{{ url_for('signup') }}">{{ trial_label() }}</a>
+            <a class="ht-cta" href="{{ url_for('signup') }}" data-ht-cta="start-trial">{{ trial_label() }}</a>
             {% else %}
             <a class="ht-cta" href="{{ url_for('login') }}">Sign in</a>
             {% endif %}

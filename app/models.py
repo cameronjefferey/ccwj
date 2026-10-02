@@ -875,6 +875,10 @@ def _migrate_funnel_events():
             ("acquisition_lt_referrer", "TEXT"),
             ("acquisition_captured", "BOOLEAN"),
             ("acquisition_ads_opt_out", "BOOLEAN"),
+            ("acquisition_landing", "TEXT"),
+            ("acquisition_variant", "TEXT"),
+            ("acquisition_lt_landing", "TEXT"),
+            ("acquisition_lt_variant", "TEXT"),
         ):
             execute(
                 f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {column} {typedef}"
@@ -917,6 +921,15 @@ def _migrate_funnel_events():
             ON funnel_events (utm_source, utm_campaign, created_at DESC)
             """
         )
+        for column, typedef in (
+            ("landing", "TEXT"),
+            ("variant", "TEXT"),
+            ("device", "TEXT"),
+            ("detail", "TEXT"),
+        ):
+            execute(
+                f"ALTER TABLE funnel_events ADD COLUMN IF NOT EXISTS {column} {typedef}"
+            )
     except Exception as exc:
         _log.warning("funnel events migration skipped: %s", exc)
 
