@@ -1703,6 +1703,22 @@ def build_tenant_id(broker_slug, broker_uuid):
     return f"{slug}:{uuid_part}"
 
 
+def _forget_shell(user_id):
+    """Drop the two-minute shell cache after a connect, sync, or profile write."""
+    if user_id is None:
+        return
+    try:
+        from app.shell_cache import invalidate
+        invalidate(user_id)
+    except Exception:
+        return
+
+
+def _shell_load(user_id, key, loader):
+    from app.shell_cache import load
+    return load(user_id, key, loader)
+
+
 def get_or_create_broker_tenant(
     user_id,
     broker_slug,
@@ -1785,6 +1801,7 @@ def get_or_create_broker_tenant(
                 + " WHERE tenant_id = %s",
                 tuple(params),
             )
+        _forget_shell(uid)
         return tenant_id
 
     execute(
@@ -1813,6 +1830,7 @@ def get_or_create_broker_tenant(
             "tenant_id ownership could not be established; refusing to "
             "write user data"
         )
+    _forget_shell(uid)
     return tenant_id
 
 
@@ -1845,6 +1863,7 @@ def update_broker_tenant_display_nickname(user_id, tenant_id, nickname):
             "WHERE tenant_id = %s AND user_id = %s",
             (value, str(tenant_id), uid),
         )
+        _forget_shell(uid)
         return True
     except Exception as exc:
         _log.warning("update_broker_tenant_display_nickname failed: %s", exc)
@@ -1891,6 +1910,7 @@ def delete_broker_tenant(tenant_id):
         )
         if sibling is None:
             remove_account_for_user(int(uid), name)
+    _forget_shell(uid)
     return row
 
 
@@ -1915,14 +1935,18 @@ def get_tenant_ids_for_user(user_id):
     uid = _postgres_user_id(user_id)
     if uid is None:
         return []
-    rows = fetch_all(
-        "SELECT tenant_id FROM broker_tenants "
-        "WHERE user_id = %s "
-        "AND connection_status IN ('active', 'disconnected') "
-        "ORDER BY created_at",
-        (uid,),
-    )
-    return [r["tenant_id"] for r in rows]
+
+    def _load():
+        rows = fetch_all(
+            "SELECT tenant_id FROM broker_tenants "
+            "WHERE user_id = %s "
+            "AND connection_status IN ('active', 'disconnected') "
+            "ORDER BY created_at",
+            (uid,),
+        )
+        return [r["tenant_id"] for r in rows]
+
+    return _shell_load(uid, "tenant_ids", _load)
 
 
 def get_broker_tenants_for_user(user_id, include_inactive=False):
@@ -1952,7 +1976,8 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
     if not include_inactive:
         sql += " AND connection_status IN ('active', 'disconnected')"
     sql += " ORDER BY created_at"
-    return fetch_all(sql, (uid,))
+    key = "broker_tenants_all" if include_inactive else "broker_tenants"
+    return _shell_load(uid, key, lambda: fetch_all(sql, (uid,)))
 
 
 ACCOUNT_GROUP_NAME_MAX = 40
@@ -1979,30 +2004,34 @@ def list_account_groups(user_id):
     uid = _postgres_user_id(user_id)
     if uid is None:
         return []
-    rows = fetch_all(
-        "SELECT g.id, g.name, "
-        "COALESCE(ARRAY_AGG(m.tenant_id) FILTER (WHERE m.tenant_id IS NOT NULL), "
-        "'{}') AS tenant_ids "
-        "FROM account_groups g "
-        "LEFT JOIN account_group_members m ON m.group_id = g.id "
-        "WHERE g.user_id = %s "
-        "GROUP BY g.id, g.name "
-        "ORDER BY LOWER(g.name), g.id",
-        (uid,),
-    ) or []
-    out = []
-    for row in rows:
-        tids = row.get("tenant_ids") or []
-        if isinstance(tids, str):
-            tids = [tids] if tids else []
-        else:
-            tids = [str(t) for t in list(tids) if t]
-        out.append({
-            "id": int(row["id"]),
-            "name": row.get("name") or "",
-            "tenant_ids": tids,
-        })
-    return _correct_group_display_names(out)
+
+    def _load():
+        rows = fetch_all(
+            "SELECT g.id, g.name, "
+            "COALESCE(ARRAY_AGG(m.tenant_id) FILTER (WHERE m.tenant_id IS NOT NULL), "
+            "'{}') AS tenant_ids "
+            "FROM account_groups g "
+            "LEFT JOIN account_group_members m ON m.group_id = g.id "
+            "WHERE g.user_id = %s "
+            "GROUP BY g.id, g.name "
+            "ORDER BY LOWER(g.name), g.id",
+            (uid,),
+        ) or []
+        out = []
+        for row in rows:
+            tids = row.get("tenant_ids") or []
+            if isinstance(tids, str):
+                tids = [tids] if tids else []
+            else:
+                tids = [str(t) for t in list(tids) if t]
+            out.append({
+                "id": int(row["id"]),
+                "name": row.get("name") or "",
+                "tenant_ids": tids,
+            })
+        return _correct_group_display_names(out)
+
+    return _shell_load(uid, "groups", _load)
 
 
 def create_account_group(user_id, name):
@@ -2025,6 +2054,7 @@ def create_account_group(user_id, name):
     )
     if not row:
         raise ValueError("Could not create the group.")
+    _forget_shell(uid)
     return {"id": int(row["id"]), "name": row.get("name") or cleaned, "tenant_ids": []}
 
 
@@ -2051,6 +2081,7 @@ def rename_account_group(user_id, group_id, name):
         "UPDATE account_groups SET name = %s WHERE id = %s AND user_id = %s",
         (cleaned, int(group_id), uid),
     )
+    _forget_shell(uid)
     return cleaned
 
 
@@ -2069,6 +2100,7 @@ def delete_account_group(user_id, group_id):
         "DELETE FROM account_groups WHERE id = %s AND user_id = %s",
         (int(group_id), uid),
     )
+    _forget_shell(uid)
     return True
 
 
@@ -2103,6 +2135,7 @@ def set_account_group_members(user_id, group_id, tenant_ids):
             "ON CONFLICT DO NOTHING",
             (int(group_id), tid),
         )
+    _forget_shell(uid)
     return wanted
 
 
@@ -2165,6 +2198,7 @@ def mark_tenant_connection_broken(tenant_id):
     """
     if not tenant_id:
         return
+    owner = get_broker_tenant(tenant_id)
     try:
         execute(
             "UPDATE broker_tenants SET "
@@ -2174,6 +2208,8 @@ def mark_tenant_connection_broken(tenant_id):
             "WHERE tenant_id = %s",
             (str(tenant_id),),
         )
+        if owner:
+            _forget_shell(owner.get("user_id"))
     except Exception as exc:
         _log.warning("mark_tenant_connection_broken failed: %s", exc)
 
@@ -2182,6 +2218,7 @@ def clear_tenant_connection_broken(tenant_id):
     """Clear the broken-connection flag after successful re-auth."""
     if not tenant_id:
         return
+    owner = get_broker_tenant(tenant_id)
     execute(
         "UPDATE broker_tenants SET "
         "connection_status = 'active', "
@@ -2190,6 +2227,8 @@ def clear_tenant_connection_broken(tenant_id):
         "WHERE tenant_id = %s",
         (str(tenant_id),),
     )
+    if owner:
+        _forget_shell(owner.get("user_id"))
 
 
 def reactivate_snaptrade_tenant(
@@ -2236,6 +2275,7 @@ def reactivate_snaptrade_tenant(
     )
     if not row:
         raise ValueError("SnapTrade tenant ownership could not be established")
+    _forget_shell(uid)
     return row["tenant_id"]
 
 
@@ -2634,6 +2674,7 @@ def mark_broker_tenants_disconnected(user_id):
             "WHERE user_id = %s AND broker_slug = 'snaptrade'",
             (user_id,),
         )
+        _forget_shell(user_id)
         return True
     except Exception as exc:
         _log.warning("mark_broker_tenants_disconnected(%s) failed: %s", user_id, exc)
@@ -2696,6 +2737,7 @@ def upsert_snaptrade_account(
             account_name,
         ),
     )
+    _forget_shell(user_id)
 
 
 def get_snaptrade_accounts(user_id):
@@ -2708,17 +2750,21 @@ def get_snaptrade_accounts(user_id):
     """
     if user_id is None:
         return []
-    return fetch_all(
-        "SELECT id, snaptrade_account_id, tenant_id, institution_account_id, "
-        "broker_slug, account_number_masked, "
-        "account_name, display_nickname, first_sync_completed, last_sync_at, "
-        "holdings_last_successful_sync, "
-        "last_sync_error, connection_broken_at, brokerage_authorization_id, "
-        "last_force_refresh_at, early_broker_cohort, created_at "
-        "FROM snaptrade_accounts WHERE user_id = %s "
-        "ORDER BY created_at",
-        (user_id,),
-    )
+
+    def _load():
+        return fetch_all(
+            "SELECT id, snaptrade_account_id, tenant_id, institution_account_id, "
+            "broker_slug, account_number_masked, "
+            "account_name, display_nickname, first_sync_completed, last_sync_at, "
+            "holdings_last_successful_sync, "
+            "last_sync_error, connection_broken_at, brokerage_authorization_id, "
+            "last_force_refresh_at, early_broker_cohort, created_at "
+            "FROM snaptrade_accounts WHERE user_id = %s "
+            "ORDER BY created_at",
+            (user_id,),
+        )
+
+    return _shell_load(user_id, "snap_accounts", _load)
 
 
 def get_snaptrade_account(user_id, snaptrade_account_id):
@@ -2953,6 +2999,7 @@ def record_snaptrade_holdings_sync(
             f"{where_generation}",
             tuple(params),
         )
+        _forget_shell(user_id)
         return True
     except Exception as exc:
         _log.warning("record_snaptrade_holdings_sync failed: %s", exc)
@@ -3037,6 +3084,7 @@ def mark_snaptrade_connection_broken(
                 )
             except Exception:
                 pass
+        _forget_shell(user_id)
         return bool(transitioned)
     except Exception as exc:
         _log.warning("mark_snaptrade_connection_broken failed: %s", exc)
@@ -3065,6 +3113,7 @@ def clear_snaptrade_connection_broken(
             f"{where_generation}",
             tuple(params),
         )
+        _forget_shell(user_id)
     except Exception as exc:
         _log.warning("clear_snaptrade_connection_broken failed: %s", exc)
 
@@ -3240,17 +3289,21 @@ def get_user_profile(user_id):
     """
     if _is_ephemeral_demo_user(user_id):
         return _default_profile_row(user_id)
-    try:
-        ensure_user_profile(user_id)
-        row = fetch_one(
-            f"SELECT {_PROFILE_COLUMNS} FROM user_profiles WHERE user_id = %s",
-            (user_id,),
-        )
-        if row:
-            return row
-    except Exception as exc:
-        _log.warning("get_user_profile failed (using defaults): %s", exc)
-    return _default_profile_row(user_id)
+
+    def _load():
+        try:
+            ensure_user_profile(user_id)
+            row = fetch_one(
+                f"SELECT {_PROFILE_COLUMNS} FROM user_profiles WHERE user_id = %s",
+                (user_id,),
+            )
+            if row:
+                return row
+        except Exception as exc:
+            _log.warning("get_user_profile failed (using defaults): %s", exc)
+        return _default_profile_row(user_id)
+
+    return _shell_load(user_id, "profile", _load)
 
 
 def update_user_profile(user_id, **fields):
@@ -3289,6 +3342,7 @@ def update_user_profile(user_id, **fields):
     try:
         ensure_user_profile(user_id)
         execute(f"UPDATE user_profiles SET {', '.join(sets)} WHERE user_id = %s", tuple(values))
+        _forget_shell(user_id)
         return True
     except Exception as exc:
         _log.warning("update_user_profile failed: %s", exc)
@@ -4007,6 +4061,7 @@ def consume_email_verification_token(raw_token: str) -> int | None:
     if not raw_token:
         return None
     token_hash = _hash_reset_token(raw_token)
+    verified_id = None
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -4034,7 +4089,10 @@ def consume_email_verification_token(raw_token: str) -> int | None:
                 "WHERE id = %s",
                 (row["user_id"],),
             )
-            return int(row["user_id"])
+            verified_id = int(row["user_id"])
+    if verified_id is not None:
+        _forget_shell(verified_id)
+    return verified_id
 
 
 def mark_email_verified(user_id: int) -> None:
@@ -4045,6 +4103,7 @@ def mark_email_verified(user_id: int) -> None:
             "WHERE id = %s",
             (user_id,),
         )
+        _forget_shell(user_id)
     except Exception as exc:
         _log.warning("mark_email_verified failed: %s", exc)
 
@@ -4055,18 +4114,22 @@ def email_needs_verification(user_id: int) -> bool:
     raises (returns False) so a stale DB can't break page render."""
     if user_id is None:
         return False
-    try:
-        row = fetch_one(
-            "SELECT email, email_verified_at FROM users WHERE id = %s",
-            (user_id,),
-        )
-    except Exception as exc:
-        _log.warning("email_needs_verification failed: %s", exc)
-        return False
-    if not row:
-        return False
-    has_email = bool((row.get("email") or "").strip())
-    return has_email and row.get("email_verified_at") is None
+
+    def _load():
+        try:
+            row = fetch_one(
+                "SELECT email, email_verified_at FROM users WHERE id = %s",
+                (user_id,),
+            )
+        except Exception as exc:
+            _log.warning("email_needs_verification failed: %s", exc)
+            return False
+        if not row:
+            return False
+        has_email = bool((row.get("email") or "").strip())
+        return has_email and row.get("email_verified_at") is None
+
+    return _shell_load(user_id, "email_unverified", _load)
 
 
 # ------------------------------------------------------------------

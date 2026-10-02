@@ -728,7 +728,10 @@ def _inject_email_verification_needed():
         if getattr(_g, "_ht_skeleton", False):
             return {"email_unverified": False}
         if current_user.is_authenticated:
-            return {"email_unverified": email_needs_verification(current_user.id)}
+            from app.request_timing import stage
+            with stage("email"):
+                unverified = email_needs_verification(current_user.id)
+            return {"email_unverified": unverified}
     except Exception:
         pass
     return {"email_unverified": False}

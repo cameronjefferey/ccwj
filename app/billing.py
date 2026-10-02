@@ -569,6 +569,8 @@ def activate_subscription(
                 note_paid(user_id, subscription_id=subscription_id)
             except Exception:
                 _log.warning("funnel paid event skipped for user_id=%s", user_id)
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         return True
     except Exception as exc:
         _log.exception("activate_subscription(%s) failed: %s", user_id, exc)
@@ -630,6 +632,8 @@ def deactivate_subscription(user_id, *, status="canceled", subscription_id=None)
         )
         _log.info("Stripe: user_id=%s subscription ended (status=%s)", user_id, status)
         _notify_pro_ended(user_id, before=before, status=status)
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         return True
     except Exception as exc:
         _log.exception("deactivate_subscription(%s) failed: %s", user_id, exc)

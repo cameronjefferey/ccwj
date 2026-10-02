@@ -186,6 +186,9 @@ def test_logged_in_user_can_open_learn(monkeypatch):
         return user if str(user_id) == "1" else None
 
     monkeypatch.setattr(User, "get_by_id", staticmethod(get_by_id))
+    monkeypatch.setattr("app.paper_accounts.viewer_flags", lambda user_id: (False, False))
+    monkeypatch.setattr("app.paper_accounts.full_view_offer_open", lambda user_id: False)
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: False)
     client = _client()
     with client.session_transaction() as sess:
         sess["_user_id"] = "1"
@@ -197,10 +200,12 @@ def test_logged_in_user_can_open_learn(monkeypatch):
     assert "Create a free account" not in html
     assert "Start your free 30-day trial" not in html
     assert 'href="/practice"' in html
-    assert ">Practice</a>" in html
+    nav = html[html.find('class="navbar-nav me-auto"'):html.find('id="userMenu"')]
+    assert ">Practice</a>" in nav
     index = client.get("/learn").get_data(as_text=True)
     assert "Create a free account" not in index
-    assert ">Practice</a>" in index
+    index_nav = index[index.find('class="navbar-nav me-auto"'):index.find('id="userMenu"')]
+    assert ">Practice</a>" in index_nav
     replay = client.get("/learn/replay/long-call").get_data(as_text=True)
     assert replay.count('src="/static/js/learn-progress.js"') == 1
 
@@ -209,6 +214,7 @@ def test_simple_view_marks_learn_active_on_a_replay(monkeypatch):
     monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: False)
     monkeypatch.setattr("app.paper_accounts.viewer_flags", lambda user_id: (True, True))
     monkeypatch.setattr("app.paper_accounts.full_view_offer_open", lambda user_id: False)
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: True)
     client = _client()
     _login(monkeypatch, client, "alice")
     html = client.get("/learn/replay/covered-call").get_data(as_text=True)
@@ -451,6 +457,9 @@ def test_signed_in_progress_fails_open_and_skips_the_demo(monkeypatch):
     )
     assert skipped.status_code == 204
     assert saved["user_id"] == 1
+    faq = client.get("/faq").get_data(as_text=True)
+    assert 'src="/static/js/learn-progress.js"' not in faq
+    assert page.count('src="/static/js/learn-progress.js"') == 1
 
 
 def test_empty_progress_does_not_wipe_a_saved_resume(monkeypatch):
@@ -509,6 +518,10 @@ def test_lesson_ends_with_a_try_it_and_a_check():
     assert "X-CSRF-Token" in js
     assert "pull(recordEpisodeVisit)" in js
     assert "if (sync && !synced && keep === 0) return;" in js
+    assert "if (!page && sync) upload" not in js
+    assert "if (!page) return;" in js
+    base = open("app/templates/base.html", encoding="utf-8").read()
+    assert "learn/_progress.html" not in base
 
     with app.test_request_context():
         learn_login = url_for("login", next="/learn")

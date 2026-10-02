@@ -116,23 +116,28 @@ def get_user_plan_row(user_id):
             return None
     except Exception:
         pass
-    try:
-        return fetch_one(
-            "SELECT plan, trial_started_at, username, subscription_status, "
-            "subscription_cancel_at_period_end, subscription_current_period_end "
-            "FROM users WHERE id = %s",
-            (user_id,),
-        )
-    except Exception as exc:
-        _log.warning("get_user_plan_row(%s) wide read failed: %s", user_id, exc)
-    try:
-        return fetch_one(
-            "SELECT plan, trial_started_at, username FROM users WHERE id = %s",
-            (user_id,),
-        )
-    except Exception as exc:
-        _log.warning("get_user_plan_row(%s) failed: %s", user_id, exc)
-        return None
+    from app.shell_cache import load
+
+    def _load():
+        try:
+            return fetch_one(
+                "SELECT plan, trial_started_at, username, subscription_status, "
+                "subscription_cancel_at_period_end, subscription_current_period_end "
+                "FROM users WHERE id = %s",
+                (user_id,),
+            )
+        except Exception as exc:
+            _log.warning("get_user_plan_row(%s) wide read failed: %s", user_id, exc)
+        try:
+            return fetch_one(
+                "SELECT plan, trial_started_at, username FROM users WHERE id = %s",
+                (user_id,),
+            )
+        except Exception as exc:
+            _log.warning("get_user_plan_row(%s) failed: %s", user_id, exc)
+            return None
+
+    return load(user_id, "plan_row", _load)
 
 
 def _is_exempt_username(username):
@@ -246,6 +251,8 @@ def clear_stale_trial_clocks():
             f"AND NOT EXISTS ({exists_sql})",
             (PLAN_TRIAL, *params),
         )
+        from app.shell_cache import clear as clear_shell_cache
+        clear_shell_cache()
     except Exception as exc:
         _log.warning("clear_stale_trial_clocks failed: %s", exc)
 
@@ -263,6 +270,8 @@ def clear_stale_trial_clock(user_id):
             "WHERE id = %s AND plan = %s AND trial_started_at IS NOT NULL",
             (user_id, PLAN_TRIAL),
         )
+        from app.shell_cache import invalidate
+        invalidate(user_id)
     except Exception as exc:
         _log.warning("clear_stale_trial_clock(%s) failed: %s", user_id, exc)
 
@@ -284,6 +293,8 @@ def start_trial_clock(user_id):
             "RETURNING username",
             (user_id, PLAN_TRIAL),
         )
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         if row:
             try:
                 from app.ops_notify import notify_event
@@ -305,6 +316,8 @@ def set_user_plan(user_id, plan):
             "UPDATE users SET plan = %s, plan_updated_at = NOW() WHERE id = %s",
             (plan, user_id),
         )
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         return True
     except Exception as exc:
         _log.warning("set_user_plan(%s, %s) failed: %s", user_id, plan, exc)
@@ -319,6 +332,8 @@ def reset_trial_clock(user_id):
             "WHERE id = %s",
             (user_id,),
         )
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         return True
     except Exception as exc:
         _log.warning("reset_trial_clock(%s) failed: %s", user_id, exc)

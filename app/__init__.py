@@ -340,6 +340,64 @@ app.add_template_global(_render_term_link, name="term_link")
 app.add_template_global(_render_term_mark, name="term_mark")
 
 
+def _shell_account_scope():
+    """Account picker rows for the signed-in shell. Callers time this."""
+    from flask import request as _req
+    from flask_login import current_user
+    from app.models import (
+        get_broker_tenants_for_user as _get_broker_tenants_for_user,
+        list_account_groups as _list_account_groups,
+    )
+    from app.account_scope import picker_nickname_choices
+    from app.privacy import sort_masked_account_choices
+    from app.routes import (
+        _account_rename_urls_for_rows,
+        _blank_query_text,
+        _groups_query_value,
+        _picker_tenant_ids,
+        _requested_account,
+        _requested_group_ids,
+        _scope_filter_options,
+        _scope_query_string,
+        _tenant_label_map_for_user,
+    )
+
+    account_groups = _list_account_groups(current_user.id) or []
+    selected_group_ids = _requested_group_ids()
+    groups_query = _groups_query_value()
+    owned_rows = _get_broker_tenants_for_user(current_user.id) or []
+    label_map = _tenant_label_map_for_user(current_user.id) or {}
+    account_rename_urls = _account_rename_urls_for_rows(owned_rows)
+    # Header picker: nicknames only. Masks and "Schwab Account"
+    # stay out of this menu. Table cells still use account_label.
+    scope_account_choices = sort_masked_account_choices(
+        picker_nickname_choices(owned_rows)
+    )
+    try:
+        args = _req.args
+    except Exception:
+        args = {}
+    selected_tenant_ids = _picker_tenant_ids(args, owned_rows, label_map)
+    tenants_query = ",".join(selected_tenant_ids) if selected_tenant_ids else None
+    scope_query_string = _scope_query_string(args)
+    visible_account_groups, visible_account_choices = _scope_filter_options(
+        account_groups, selected_group_ids, selected_tenant_ids,
+        scope_account_choices,
+    )
+    visible_account_choices = sort_masked_account_choices(visible_account_choices)
+    scope_is_filtered = bool(
+        selected_group_ids or selected_tenant_ids
+        or _requested_account(args)
+        or _blank_query_text(args.get("tenant"))
+    )
+    return (
+        account_groups, selected_group_ids, groups_query,
+        visible_account_groups, visible_account_choices,
+        scope_account_choices, selected_tenant_ids, tenants_query,
+        scope_query_string, scope_is_filtered, account_rename_urls,
+    )
+
+
 @app.context_processor
 def _inject_feature_flags():
     from flask import current_app, g
@@ -382,6 +440,7 @@ def _inject_feature_flags():
             "privacy_mode": False,
             "simple_view": False,
             "has_paper_account": False,
+            "has_real_brokerage": False,
         }
 
     is_admin_user = False
@@ -392,17 +451,20 @@ def _inject_feature_flags():
         is_admin_user = False
 
     # Reverse-trial banner data (app/plan.py). One users-row read per request
-    # for authenticated users, cached on flask.g; None for beta/active/no-data
-    # so beta users and subscribers pay nothing visually or query-wise.
+    # for authenticated users, cached on flask.g and for two minutes in
+    # the shell cache; None for beta/active/no-data so beta users and
+    # subscribers pay nothing visually or query-wise.
     plan_status = None
     try:
         if current_user.is_authenticated:
             from flask import g
-            plan_status = getattr(g, "_plan_status", "__unset__")
-            if plan_status == "__unset__":
-                from app.plan import plan_status_for_banner
-                plan_status = plan_status_for_banner(current_user.id)
-                g._plan_status = plan_status
+            from app.request_timing import stage
+            with stage("plan"):
+                plan_status = getattr(g, "_plan_status", "__unset__")
+                if plan_status == "__unset__":
+                    from app.plan import plan_status_for_banner
+                    plan_status = plan_status_for_banner(current_user.id)
+                    g._plan_status = plan_status
     except Exception:
         plan_status = None
 
@@ -412,12 +474,14 @@ def _inject_feature_flags():
     try:
         if current_user.is_authenticated:
             from flask import g
-            history_since = getattr(g, "_history_since", "__unset__")
-            if history_since == "__unset__":
-                from app.accounts_page import _account_created_for_scope
-                from app.routes import _tenants_for_scope
-                history_since = _account_created_for_scope(_tenants_for_scope())
-                g._history_since = history_since
+            from app.request_timing import stage
+            with stage("history"):
+                history_since = getattr(g, "_history_since", "__unset__")
+                if history_since == "__unset__":
+                    from app.accounts_page import _account_created_for_scope
+                    from app.routes import _tenants_for_scope
+                    history_since = _account_created_for_scope(_tenants_for_scope())
+                    g._history_since = history_since
     except Exception:
         history_since = None
 
@@ -434,55 +498,14 @@ def _inject_feature_flags():
     account_rename_urls = {}
     try:
         if current_user.is_authenticated:
-            from flask import request as _req
-            from app.models import (
-                get_broker_tenants_for_user as _get_broker_tenants_for_user,
-                list_account_groups as _list_account_groups,
-            )
-            from app.account_scope import picker_nickname_choices
-            from app.privacy import sort_masked_account_choices
-            from app.routes import (
-                _account_rename_urls_for_rows,
-                _blank_query_text,
-                _groups_query_value,
-                _picker_tenant_ids,
-                _requested_account,
-                _requested_group_ids,
-                _scope_filter_options,
-                _scope_query_string,
-                _tenant_label_map_for_user,
-            )
-
-            account_groups = _list_account_groups(current_user.id) or []
-            selected_group_ids = _requested_group_ids()
-            groups_query = _groups_query_value()
-            _owned_rows = _get_broker_tenants_for_user(current_user.id) or []
-            _label_map = _tenant_label_map_for_user(current_user.id) or {}
-            account_rename_urls = _account_rename_urls_for_rows(_owned_rows)
-            # Header picker: nicknames only. Masks and "Schwab Account"
-            # stay out of this menu. Table cells still use account_label.
-            scope_account_choices = sort_masked_account_choices(
-                picker_nickname_choices(_owned_rows)
-            )
-            try:
-                _args = _req.args
-            except Exception:
-                _args = {}
-            selected_tenant_ids = _picker_tenant_ids(_args, _owned_rows, _label_map)
-            tenants_query = ",".join(selected_tenant_ids) if selected_tenant_ids else None
-            scope_query_string = _scope_query_string(_args)
-            visible_account_groups, visible_account_choices = _scope_filter_options(
-                account_groups, selected_group_ids, selected_tenant_ids,
-                scope_account_choices,
-            )
-            visible_account_choices = sort_masked_account_choices(
-                visible_account_choices
-            )
-            scope_is_filtered = bool(
-                selected_group_ids or selected_tenant_ids
-                or _requested_account(_args)
-                or _blank_query_text(_args.get("tenant"))
-            )
+            from app.request_timing import stage
+            with stage("groups"):
+                (
+                    account_groups, selected_group_ids, groups_query,
+                    visible_account_groups, visible_account_choices,
+                    scope_account_choices, selected_tenant_ids, tenants_query,
+                    scope_query_string, scope_is_filtered, account_rename_urls,
+                ) = _shell_account_scope()
     except Exception:
         account_groups = []
         selected_group_ids = []
@@ -524,6 +547,8 @@ def _inject_feature_flags():
     privacy_mode = False
     simple_view = False
     has_paper_account = False
+    # Failed account lookup keeps the full-app nav (Practice in Account).
+    has_real_brokerage = True
     full_view_offer = False
     try:
         if current_user.is_authenticated:
@@ -532,13 +557,21 @@ def _inject_feature_flags():
             from app.privacy import privacy_mode_on
             privacy_mode = privacy_mode_on()
             from app.paper_accounts import full_view_offer_open, viewer_flags
-            simple_view, has_paper_account = viewer_flags(current_user.id)
-            full_view_offer = full_view_offer_open(current_user.id)
+            from app.plan import user_has_real_brokerage
+            from app.request_timing import stage
+            with stage("view"):
+                simple_view, has_paper_account = viewer_flags(current_user.id)
+                full_view_offer = full_view_offer_open(current_user.id)
+                looked_up = user_has_real_brokerage(current_user.id)
+                has_real_brokerage = looked_up is not False
+        else:
+            has_real_brokerage = False
     except Exception:
         compact_tables = False
         privacy_mode = False
         simple_view = False
         has_paper_account = False
+        has_real_brokerage = True
         full_view_offer = False
 
     return {
@@ -572,6 +605,7 @@ def _inject_feature_flags():
         "privacy_mode": privacy_mode,
         "simple_view": simple_view,
         "has_paper_account": has_paper_account,
+        "has_real_brokerage": has_real_brokerage,
         "full_view_offer": full_view_offer,
     }
 
@@ -664,6 +698,17 @@ def internal_error(e):
         return ("Something went wrong on our end. The team has been notified. "
                 "Try refreshing in a minute."), 500
 
+@app.before_request
+def _begin_request_timing():
+    """Start the timing slot before Flask-Login loads the user.
+
+    ``load_user`` records the user stage into this slot. Resetting again
+    in a later hook would drop it.
+    """
+    from app.request_timing import begin_request_timing
+    begin_request_timing()
+
+
 # Flask-Login setup
 login_manager = LoginManager()
 login_manager.login_view = 'login'
@@ -674,6 +719,15 @@ login_manager.init_app(app)
 
 @login_manager.user_loader
 def load_user(user_id):
+    from app.db import bind_request_thread
+    from app.request_timing import stage
+
+    bind_request_thread()
+    with stage("user"):
+        return _load_user(user_id)
+
+
+def _load_user(user_id):
     from app.demo_guard import (
         DemoSessionUser,
         is_ephemeral_demo_id,
@@ -771,7 +825,10 @@ def _touch_session_last_activity():
 @app.before_request
 def _before_request_sentry_user():
     from flask import g
+    from app.db import bind_request_thread
+
     g._req_start = time.perf_counter()
+    bind_request_thread()
     try:
         from app import query_cache
         query_cache.start_request_stats()
@@ -852,17 +909,31 @@ def _after_request_timing(response):
             return response
         total_ms = (time.perf_counter() - start) * 1000.0
         stats = query_cache.get_request_stats()
-        response.headers["Server-Timing"] = f"total;dur={total_ms:.0f}"
+        from app.db import request_connect_count
+        from app.request_timing import format_hooks, hook_ms, outbound_ms_and_count
+
+        out_ms, out_n = outbound_ms_and_count()
+        response.headers["Server-Timing"] = (
+            f"total;dur={total_ms:.0f}, out;dur={out_ms:.0f}"
+        )
         had_work = stats is not None and bool(
             stats.query_hits or stats.query_miss
             or stats.payload_hits or stats.payload_miss
         )
-        # Only log pages that actually do data work or were slow, so the log
-        # isn't flooded by trivial redirects / static-ish responses.
-        if had_work or total_ms > 500:
+        try:
+            signed_in = bool(getattr(current_user, "is_authenticated", False))
+        except Exception:
+            signed_in = False
+        # Signed-in pages always log. The shell (plan, tenants, freshness)
+        # was a multi-second tax with no BigQuery work, so a "slow or BQ"
+        # filter hid it.
+        if had_work or total_ms > 500 or signed_in or out_n:
             _timing_logger.info(
-                "REQUEST_TIMING path=%s status=%s total_ms=%.0f %s",
+                "REQUEST_TIMING path=%s status=%s total_ms=%.0f "
+                "out_ms=%.0f out_n=%s db_conn=%s %s %s",
                 path, response.status_code, total_ms,
+                out_ms, out_n, request_connect_count(),
+                format_hooks(hook_ms()),
                 query_cache.format_stats(stats),
             )
     except Exception:
@@ -914,6 +985,12 @@ def _limit_demo_heavy_pages():
 def _security_headers(response):
     from app.security_headers import apply_security_headers
     return apply_security_headers(response)
+
+
+@app.teardown_request
+def _close_request_db(_exc):
+    from app.db import close_request_connection
+    close_request_connection()
 
 # Initialize the database and seed users from env.
 #

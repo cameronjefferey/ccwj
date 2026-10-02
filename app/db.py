@@ -1,8 +1,16 @@
 """
 Postgres connection helpers.
 
-Each call to :func:`get_conn` opens a fresh psycopg connection and closes it
-when the context exits. We deliberately do **not** use a connection pool.
+Each call to :func:`get_conn` used to open a fresh psycopg connection.
+A signed-in page runs the shell (plan, tenants, SnapTrade rows, email,
+Simple view) as many separate queries, and each TLS handshake stacked.
+Inside one request the first query still opens a connection, and the
+rest of that request's queries reuse it. The connection is closed at
+the end of the request. Worker threads never share it: psycopg
+connections are not thread-safe, and ``_bq_parallel`` copies the
+request context onto other threads.
+
+We deliberately do **not** use a connection pool.
 
 Why no pool?
     We previously used ``psycopg_pool.ConnectionPool``. Behind Render's
@@ -31,12 +39,18 @@ Usage:
 from __future__ import annotations
 
 import os
+import threading
 import time
 from contextlib import contextmanager
 from typing import Any, Iterable, Optional
 
 import psycopg
+from psycopg.pq import TransactionStatus
 from psycopg.rows import dict_row
+
+# The request thread's connection. threading.local, not flask.g: a copied
+# request context on a BigQuery worker must not see this socket.
+_local = threading.local()
 
 
 def _run_db_twice(fn):
@@ -75,6 +89,70 @@ def _normalize_url(url: str) -> str:
     return url
 
 
+def bind_request_thread() -> None:
+    """Mark this thread as the owner of the request's Postgres connection."""
+    if getattr(_local, "request_ident", None) != threading.get_ident():
+        _local.request_ident = threading.get_ident()
+        _local.opens = 0
+
+
+def request_connect_count() -> int:
+    if getattr(_local, "request_ident", None) != threading.get_ident():
+        return 0
+    return int(getattr(_local, "opens", 0) or 0)
+
+
+def close_request_connection() -> None:
+    """Close the request thread's connection. Other threads are left alone."""
+    if getattr(_local, "request_ident", None) != threading.get_ident():
+        return
+    conn = getattr(_local, "conn", None)
+    _local.conn = None
+    _local.request_ident = None
+    _local.opens = 0
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def _request_connection():
+    """The open connection for this request thread, or None to open a private one."""
+    try:
+        from flask import has_request_context
+    except Exception:
+        return None
+    if not has_request_context():
+        return None
+    if getattr(_local, "request_ident", None) != threading.get_ident():
+        return None
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        if getattr(conn, "closed", False):
+            _local.conn = None
+        else:
+            return conn
+    conn = _connect()
+    _local.conn = conn
+    _local.opens = int(getattr(_local, "opens", 0) or 0) + 1
+    return conn
+
+
+def _drop_request_connection() -> None:
+    if getattr(_local, "request_ident", None) != threading.get_ident():
+        return
+    conn = getattr(_local, "conn", None)
+    _local.conn = None
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
 def _connect() -> psycopg.Connection:
     """Open a single fresh Postgres connection.
 
@@ -102,23 +180,48 @@ def _connect() -> psycopg.Connection:
     )
 
 
+def _idle(conn) -> bool:
+    try:
+        return conn.info.transaction_status == TransactionStatus.IDLE
+    except Exception:
+        return True
+
+
 @contextmanager
 def get_conn():
-    """Yield a fresh Postgres connection.
+    """Yield a Postgres connection.
 
-    The connection is wrapped in ``with conn:``, so it commits on a clean
-    exit and rolls back on exception. The outer ``finally`` always closes
-    the underlying socket, even if commit/rollback raises.
+    On the request thread this is the one connection opened for that
+    request. Each call still commits or rolls back its own transaction.
+    A nested call (a write inside an open transaction) joins that
+    transaction instead of committing early. A dropped socket is closed
+    so the retry opens a new one.
+
+    Outside a request, or on a worker thread, this still opens a private
+    connection and closes it before returning.
     """
-    conn = _connect()
-    try:
-        with conn:
-            yield conn
-    finally:
+    shared = _request_connection()
+    if shared is None:
+        conn = _connect()
         try:
-            conn.close()
-        except Exception:
-            pass
+            with conn:
+                yield conn
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return
+    nested = not _idle(shared)
+    try:
+        if nested:
+            yield shared
+            return
+        with shared:
+            yield shared
+    except (psycopg.OperationalError, psycopg.InterfaceError):
+        _drop_request_connection()
+        raise
 
 
 @contextmanager

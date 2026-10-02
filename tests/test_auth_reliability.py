@@ -207,6 +207,7 @@ def test_snaptrade_timeout_replaces_none_only():
     client = _Client()
     wrapped = _apply_snaptrade_timeout(client)
     assert wrapped == 1
+    assert _SNAPTRADE_HTTP_TIMEOUT <= 3
     assert client.account_information.api_client.request(method="GET", timeout=None) == "ok"
     assert seen["timeout"] == _SNAPTRADE_HTTP_TIMEOUT
     client.account_information.api_client.request(method="GET", timeout=3)

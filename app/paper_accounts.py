@@ -183,6 +183,13 @@ def _view_state(user_id) -> dict:
         cached = getattr(g, "_ht_app_view_state", None)
         if isinstance(cached, dict) and cached.get("user_id") == user_id:
             return cached
+    from app.shell_cache import get as shell_get, put as shell_put
+    from app.shell_cache import _MISS
+    hit = shell_get(user_id, "app_view")
+    if hit is not _MISS and isinstance(hit, dict):
+        if in_req:
+            setattr(g, "_ht_app_view_state", hit)
+        return hit
     try:
         from app.models import _postgres_user_id
         from app.db import fetch_one
@@ -207,6 +214,7 @@ def _view_state(user_id) -> dict:
     }
     if in_req:
         setattr(g, "_ht_app_view_state", state)
+    shell_put(user_id, "app_view", state)
     return state
 
 
@@ -261,6 +269,8 @@ def set_app_view(user_id, view: str, *, chosen: bool = False) -> bool:
                 (uid,),
             )
         _clear_view_cache()
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         return True
     except Exception as exc:
         _log.warning("app_view write failed: %s", exc)
@@ -289,6 +299,8 @@ def offer_full_view_prompt(user_id) -> bool:
             (uid,),
         )
         _clear_view_cache()
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         return True
     except Exception as exc:
         _log.warning("full view offer failed: %s", exc)
@@ -311,6 +323,8 @@ def dismiss_full_view_offer(user_id) -> bool:
             (uid,),
         )
         _clear_view_cache()
+        from app.shell_cache import invalidate
+        invalidate(user_id)
         return True
     except Exception as exc:
         _log.warning("full view offer dismiss failed: %s", exc)

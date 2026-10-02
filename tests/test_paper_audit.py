@@ -370,6 +370,7 @@ def test_simple_nav_hides_advanced_items():
     with patch.object(User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "7" else None)), \
          patch("app.paper_accounts.viewer_flags", return_value=(True, True)), \
          patch("app.paper_accounts.full_view_offer_open", return_value=False), \
+         patch("app.plan.user_has_real_brokerage", return_value=False), \
          patch("app.paper_practice.snaptrade_enabled", return_value=False), \
          patch("app.paper_practice.latest_spots", return_value={}):
         with client.session_transaction() as sess:
@@ -380,9 +381,100 @@ def test_simple_nav_hides_advanced_items():
     assert ">Learn<" in html
     assert ">Overview<" in html
     assert ">Positions<" in html
+    nav = _main_nav(html)
+    menu = _account_menu(html)
+    assert ">Practice</a>" in nav
+    assert ">Practice</a>" not in menu
+    assert 'data-learner-nav="1"' in html
     assert "Trader Profile" not in html
     assert "AI Insights" not in html
     assert ">Strategies<" not in html
+
+
+def _main_nav(html):
+    start = html.find('class="navbar-nav me-auto"')
+    assert start != -1
+    return html[start:html.find("</ul>", start)]
+
+
+def _account_menu(html):
+    start = html.find('id="userMenu"')
+    assert start != -1
+    return html[start:html.find("Log out", start)]
+
+
+def test_practice_nav_is_top_level_for_learners_and_in_account_for_a_real_brokerage():
+    """Simple, paper-only, and no-account users keep Practice in the bar.
+
+    Full view with a real brokerage (even alongside paper) moves Practice
+    and Learn into Account. /practice still renders.
+    """
+    from app import app
+    from app.models import User
+
+    class _SessionUser:
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "ada"
+
+        @property
+        def is_authenticated(self):
+            return True
+
+        def get_id(self):
+            return "7"
+
+    user = _SessionUser()
+    client = app.test_client()
+
+    def render(simple, paper, real):
+        with patch.object(User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "7" else None)), \
+             patch("app.paper_accounts.viewer_flags", return_value=(simple, paper)), \
+             patch("app.paper_accounts.full_view_offer_open", return_value=False), \
+             patch("app.plan.user_has_real_brokerage", return_value=real), \
+             patch("app.paper_practice.snaptrade_enabled", return_value=False), \
+             patch("app.paper_practice.latest_spots", return_value={}):
+            with client.session_transaction() as sess:
+                sess["_user_id"] = "7"
+                sess["_fresh"] = True
+            html = client.get("/learn").get_data(as_text=True)
+            practice = client.get("/practice")
+        return html, practice.status_code
+
+    html, status = render(False, False, False)
+    assert status == 200
+    assert ">Practice</a>" in _main_nav(html)
+    assert ">Practice</a>" not in _account_menu(html)
+    assert 'data-learner-nav="1"' in html
+
+    html, status = render(False, True, False)
+    assert status == 200
+    assert ">Practice</a>" in _main_nav(html)
+    assert ">Learn</a>" not in _main_nav(html)
+    assert ">Practice</a>" not in _account_menu(html)
+    assert 'data-learner-nav="1"' in html
+
+    html, status = render(True, True, True)
+    assert status == 200
+    assert ">Practice</a>" in _main_nav(html)
+    assert ">Learn</a>" in _main_nav(html)
+    assert ">Practice</a>" not in _account_menu(html)
+    assert 'data-learner-nav="1"' in html
+
+    html, status = render(False, True, True)
+    nav = _main_nav(html)
+    menu = _account_menu(html)
+    assert status == 200
+    assert ">Practice</a>" not in nav
+    assert ">Learn</a>" not in nav
+    assert 'id="navReview"' in nav
+    assert 'class="dropdown-item' in menu
+    assert ">Practice</a>" in menu
+    assert ">Learn</a>" in menu
+    assert 'href="/practice"' in menu
+    assert 'href="/learn"' in menu
+    assert 'data-learner-nav="0"' in html
 
 
 def test_buy_receipt_does_not_say_premium():

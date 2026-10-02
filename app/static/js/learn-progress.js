@@ -504,8 +504,8 @@
         });
     });
 
-    if (!page && sync) upload(false);
     window.addEventListener("pagehide", function () {
+        if (!page) return;
         if (syncTimer) {
             clearTimeout(syncTimer);
             syncTimer = null;

@@ -35,6 +35,7 @@ def test_phone_landing_keeps_the_sticky_signup_clear_of_the_cookie_notice():
     phone = css.split("@media (max-width: 640px)", 1)[1]
     assert "html:not(.ht-cookie-ok) body.ht-campaign:has(#ht-cookie-notice) .ht-cookie-notice" in phone
     assert "bottom: calc(4.75rem + 0.35rem + env(safe-area-inset-bottom, 0px));" in phone
+    assert "padding-bottom: calc(4.75rem + 10rem + env(safe-area-inset-bottom, 0px));" in phone
     assert "body.ht-campaign .ht-feedback-fab { display: none; }" in phone
 
 

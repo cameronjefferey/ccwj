@@ -675,7 +675,9 @@
             bottom: calc(4.75rem + 0.35rem + env(safe-area-inset-bottom, 0px));
         }
         html:not(.ht-cookie-ok) body.ht-campaign:has(#ht-cookie-notice) {
-            padding-bottom: calc(4.75rem + 7.5rem + env(safe-area-inset-bottom, 0px));
+            /* Notice copy wraps to about 8.5rem on a 390px phone. Keep the
+               last line above that notice and the signup bar. */
+            padding-bottom: calc(4.75rem + 10rem + env(safe-area-inset-bottom, 0px));
         }
         /* Signed-in visitors still get the feedback bubble. On a phone it
            sits on the sticky signup bar, so landing pages hide it there. */

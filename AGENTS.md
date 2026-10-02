@@ -954,6 +954,9 @@ paper path must not replace the click. The first real brokerage does not
 change the view; if the user is on Simple it sets `full_view_offer` and
 the shell shows a one-click "Switch to Full view" (Keep Simple dismisses
 it). Simple nav is Practice, Learn, Overview, and Positions.
+Full view keeps Practice in the top nav when the only connected accounts
+are paper, or there are none. A real brokerage moves Practice and Learn
+into the Account menu. `/practice` stays available either way.
 Direct visits to Strategies, Trader Profile, and AI Insights show a
 switch-to-Full card instead of the page. Overview in Simple hides
 Execution review, Performance by account, and the trader-profile link.
