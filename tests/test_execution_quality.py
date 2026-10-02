@@ -137,6 +137,7 @@ def test_profile_summary_buckets_and_copy():
 
     # Headline: -120 + 820 - 25 + 400 + 900 - 200 = +$1,775 net.
     assert out["headline"]["value"] == "+$1,775"
+    assert "more by exiting early" in out["headline"]["text"]
     assert out["headline"]["tone"] == "pos"
     assert "8 contracts graded" in out["headline"]["sub"]
 
@@ -171,7 +172,8 @@ def test_profile_marks_finding_when_coverage_reliable():
             for i in range(5)]
     out = summarize_execution(pd.DataFrame(rows))
     f = {x["label"]: x for x in out["findings"]}
-    assert f["Peak capture"]["value"] == "80% median"
+    assert f["Peak capture"]["value"] == "80%"
+    assert "Median" in f["Peak capture"]["detail"]
     assert "5 winners" in f["Peak capture"]["detail"]
     assert out["pending_note"] is None
 
@@ -226,8 +228,10 @@ def test_symbol_callout_saved_and_partial_worthless():
     out = symbol_execution_callout(df)
     assert out["tone"] == "saved"
     assert out["title"] == "Early exits saved you"
-    assert out["lead"] == ("1 of 2 option series you closed early here "
-                            "expired worthless anyway.")
+    assert "1 of 2 option series would have expired worthless" in out["lead"]
+    assert "gave up $40" in out["lead"]
+    assert "saved $820" in out["lead"]
+    assert "anyway" not in out["lead"]
     assert out["amount_label"] == "$780"
     assert "ahead versus holding" in out["tail_after"]
 

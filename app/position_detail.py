@@ -1985,6 +1985,7 @@ def collapse_raw_trade_log(trades):
 
 @app.route("/position/<symbol>")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 @skeleton_page
 def position_detail(symbol):
     bounce = _redirect_if_no_accounts()
@@ -2926,12 +2927,30 @@ def position_detail(symbol):
     kp_ref = float(kpis.get("total_return") or 0) if kpis else None
     mart_term = _chart_data_terminal(chart_data)
 
-    ch_stg = (
-        _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df)
-        if not trades_pre_leg.empty else None
-    )
+    if not trades_pre_leg.empty:
+        # Same numbers as a direct call. The walk is pure in its inputs,
+        # so a repeat view of this symbol skips it.
+        _stg_key = (
+            "pos_stg_chart",
+            str(date.today()),
+            frame_fingerprint(trades_pre_leg, current_df),
+        )
+        ch_stg = cached_payload(
+            _stg_key,
+            lambda: _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df),
+        )
+    else:
+        ch_stg = None
     n_stg = len(ch_stg["dates"]) if ch_stg and ch_stg.get("dates") else 0
-    ch_leg = _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg)
+    _leg_key = (
+        "pos_leg_chart",
+        str(date.today()),
+        frame_fingerprint(closed_legs_pre_leg, closed_equity_pre_leg),
+    )
+    ch_leg = cached_payload(
+        _leg_key,
+        lambda: _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg),
+    )
     n_leg = len(ch_leg["dates"]) if ch_leg and ch_leg.get("dates") else 0
 
     cands_src = []
@@ -3511,7 +3530,8 @@ def position_detail(symbol):
     # Covered-call / wheel runs use the tenant-scoped fill stream from
     # before the leg filter, so clicking one leg does not split a cycle
     # into a share piece and a call piece. Inferred opening balances restore
-    # shares acquired before the broker's history window. Fees stay out.
+    # shares acquired before the broker's history window. The whole-run
+    # net subtracts broker fees; each call's amount stays the premium.
     covered_call_runs = []
     try:
         covered_call_runs = build_covered_call_runs(
@@ -3560,6 +3580,11 @@ def position_detail(symbol):
                 "scope": _scope,
                 "pending": not _body,
                 "locked": not _unlocked,
+                # The button is an upsell for a withheld remainder. An
+                # entitled user (paid AI add-on) never sees it. A locked
+                # user does not see it until a read actually exists —
+                # "read the rest" with an empty body is not a remainder.
+                "show_upgrade": (not _unlocked) and bool(_body),
             }
     except Exception as exc:
         app.logger.warning("chart read prep failed for %s: %s", symbol, exc)
@@ -3654,7 +3679,10 @@ def position_detail(symbol):
 
 @app.route("/position/<symbol>/chart-read", methods=["POST"])
 @login_required
-@limiter.limit("3 per minute; 10 per hour; 30 per day")
+# A position page posts this on load. 3/minute and 10/hour 429'd the
+# second or third symbol in one sitting (RKLB, then KLAC). Browsing a
+# book of symbols has to fit; the brief is cached after the first write.
+@limiter.limit("30 per minute; 200 per hour")
 def position_chart_read(symbol):
     """Generate the chart read and return only the caller-visible portion.
 
@@ -3911,6 +3939,7 @@ _PEEK_SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,16}$")
 
 @app.route("/api/position/<symbol>/peek")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 def position_peek(symbol):
     """Lightweight JSON for the right-side position drawer on Today / Overview.
 

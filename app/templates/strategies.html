@@ -218,18 +218,8 @@
 </div>
 {% else %}
 
-{% set book = namespace(ret=0, real=0, unreal=0) %}
-{% if selected_strategy and focus_strategy %}
-    {% set book.ret = focus_strategy.total_return %}
-    {% set book.real = focus_strategy.realized_pnl %}
-    {% set book.unreal = focus_strategy.unrealized_pnl %}
-    {% set book.wr = focus_strategy.win_rate %}
-{% elif summary %}
-    {% set book.ret = strategies | sum(attribute='total_return') %}
-    {% set book.real = strategies | sum(attribute='realized_pnl') %}
-    {% set book.unreal = strategies | sum(attribute='unrealized_pnl') %}
-    {% set book.wr = summary.overall_win_rate %}
-{% endif %}
+{% set book = book_hero or {} %}
+{% set book_wr = focus_strategy.win_rate if selected_strategy and focus_strategy else (summary.overall_win_rate if summary else none) %}
 
 <div class="review-hero strat-hero" id="strat-hero">
     <div class="ov-bar">
@@ -251,20 +241,20 @@
     {% if summary or (selected_strategy and focus_strategy) %}
     <div class="ov-top">
         <div>
-            <div class="ov-k">Total return</div>
-            <div class="ov-big {% if book.ret > 0 %}pos{% elif book.ret < 0 %}neg{% endif %}">{% if book.ret > 0 %}+{% endif %}{{ money(book.ret, 0) }}</div>
+            <div class="ov-k">Total return, incl. dividends</div>
+            <div class="ov-big {% if book.total > 0 %}pos{% elif book.total < 0 %}neg{% endif %}">{% if book.total > 0 %}+{% endif %}{{ money(book.total, 0) }}</div>
         </div>
         <div>
             <div class="ov-k">{{ term('Realized') }}</div>
-            <div class="ov-pct {% if book.real > 0 %}pos{% elif book.real < 0 %}neg{% endif %}">{% if book.real > 0 %}+{% endif %}{{ money(book.real, 0) }}</div>
+            <div class="ov-pct {% if book.realized > 0 %}pos{% elif book.realized < 0 %}neg{% endif %}">{% if book.realized > 0 %}+{% endif %}{{ money(book.realized, 0) }}</div>
         </div>
         <div>
             <div class="ov-k">{{ term('Unrealized') }}</div>
-            <div class="ov-pct {% if book.unreal > 0 %}pos{% elif book.unreal < 0 %}neg{% endif %}">{% if book.unreal > 0 %}+{% endif %}{{ money(book.unreal, 0) }}</div>
+            <div class="ov-pct {% if book.unrealized > 0 %}pos{% elif book.unrealized < 0 %}neg{% endif %}">{% if book.unrealized > 0 %}+{% endif %}{{ money(book.unrealized, 0) }}</div>
         </div>
         <div>
             <div class="ov-k">{{ term('Win rate') }}</div>
-            <div class="ov-big ov-invest">{% if book.wr is not none %}{{ "%.0f"|format(book.wr) }}%{% else %}&mdash;{% endif %}</div>
+            <div class="ov-big ov-invest">{% if book_wr is not none %}{{ "%.0f"|format(book_wr) }}%{% else %}&mdash;{% endif %}</div>
             {% if selected_strategy and focus_strategy and focus_strategy.win_rate is not none %}
             <div class="ov-sub">{{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L</div>
             {% endif %}
@@ -292,6 +282,12 @@
     <div class="ov-pills">
         <span class="ov-pill">{{ summary.strategies_count }} strateg{{ 'y' if summary.strategies_count == 1 else 'ies' }}</span>
         <span class="ov-pill">{{ summary.total_trades }} trades</span>
+        {% if book.dividends %}
+        <span class="ov-pill" title="Cash dividends. Total return is realized + unrealized + dividends.">Dividends {% if book.dividends > 0 %}+{% endif %}{{ money(book.dividends, 0) }}</span>
+        {% endif %}
+        {% if unclassified_return %}
+        <span class="ov-pill" title="Positions with no strategy label. They are in the total above and on Positions.">Unclassified {% if unclassified_return > 0 %}+{% endif %}{{ money(unclassified_return, 0) }}</span>
+        {% endif %}
         {% if selected_strategy and focus_strategy and focus_strategy.premium_received %}
         <span class="ov-pill" title="Premium received.">{{ term('Collected') }} {{ money(focus_strategy.premium_received, 0) }}</span>
         {% endif %}
@@ -316,16 +312,19 @@
                 <div>
                     <div class="strat-card-name">{{ s.strategy or 'Unclassified' }}</div>
                     <div class="strat-card-meta">
-                        {{ s.num_trades }} trades &middot;
+                        {{ s.num_trades }} {{ s.count_label|default('trades') }} &middot;
                         <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ s.population_label }}</span>
+                        {% if s.is_holding %} &middot; holding{% endif %}
                     </div>
                 </div>
+                {% if s.show_trend|default(true) %}
                 <span class="trend-badge {{ s.trend_signal }}">
                     {% if s.trend_signal == 'improving' %}Improving
                     {% elif s.trend_signal == 'declining' %}Declining
                     {% elif s.trend_signal == 'new' %}New
                     {% else %}Stable{% endif %}
                 </span>
+                {% endif %}
             </div>
             <div class="strat-card-stats">
                 <div>
@@ -338,7 +337,7 @@
                         {{ money(s.total_return, 0, true) }}
                     </div>
                 </div>
-                {% if s.avg_days > 0 %}
+                {% if s.show_avg_hold|default(false) and s.avg_days > 0 %}
                 <div>
                     <div class="sc-stat-label">Avg hold</div>
                     <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>

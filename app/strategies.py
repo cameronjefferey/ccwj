@@ -11,6 +11,7 @@ import pandas as pd
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.extensions import limiter
 from app.query_cache import cached_query_df
 from app.models import is_admin
 
@@ -25,6 +26,25 @@ from app.routes import (  # noqa: E402
     _tenant_sql_and,
     _filter_df_by_tenant_ids,
 )
+
+
+# Same grain as /positions (positions_summary), including blank strategy.
+# The performance mart drops those rows, so the hero must not be the
+# sum of the cards. Filtered in Python like every other tenant frame.
+BOOK_TOTALS_QUERY = """
+SELECT
+  tenant_id,
+  realized_pnl,
+  unrealized_pnl,
+  total_dividend_income,
+  total_return
+FROM `ccwj-dbt.analytics.positions_summary`
+WHERE 1=1 {tenant_filter}
+"""
+
+# A holding is not an options strategy. Cards keep the dollars and drop
+# the "New" / avg-hold treatment that belongs on round-trip trades.
+HOLDING_STRATEGIES = frozenset({"Buy and Hold", "Dividend", "Crypto"})
 
 
 STRATEGY_PERFORMANCE_QUERY = """
@@ -162,6 +182,61 @@ TYPE_LABEL_FOR_GROUP = {
     "equity_session": "Equity",
     "option_contract": "Options",
 }
+
+
+def trend_signal_for_strategy(rows) -> str:
+    """Latest-month badge. A long record is never New.
+
+    ``mart_strategy_trend`` marks one account ``new`` when that account
+    has fewer than two baseline months. Reading the first account's
+    signal then badges a 200-fill Buy and Hold as New. New survives only
+    when every account's latest month says so and the strategy has fewer
+    than 8 closed trades in the trend.
+    """
+    if rows is None:
+        return "stable"
+    frame = rows if isinstance(rows, pd.DataFrame) else pd.DataFrame(rows)
+    if frame.empty or "trend_signal" not in frame.columns or "month_start" not in frame.columns:
+        return "stable"
+    work = frame.copy()
+    work["month_start"] = pd.to_datetime(work["month_start"], errors="coerce")
+    work = work.dropna(subset=["month_start"])
+    if work.empty:
+        return "stable"
+    last = work["month_start"].max()
+    month = work[work["month_start"] == last]
+    signals = [str(s).strip() for s in month["trend_signal"].tolist() if str(s).strip() and str(s) != "nan"]
+    trades = 0.0
+    if "trades_closed" in work.columns:
+        trades = float(pd.to_numeric(work["trades_closed"], errors="coerce").fillna(0).sum())
+    non_new = [s for s in signals if s != "new"]
+    if non_new:
+        if "declining" in non_new and "improving" not in non_new:
+            return "declining"
+        if "improving" in non_new and "declining" not in non_new:
+            return "improving"
+        return "stable"
+    if not signals:
+        return "stable"
+    if trades >= 8:
+        return "stable"
+    return "new"
+
+
+def _weighted_avg_days(df: pd.DataFrame) -> dict:
+    """Trade-weighted average hold, per strategy. An unweighted mean of
+    per-account averages made a dividend book read as 357 days."""
+    out = {}
+    if df is None or df.empty or "strategy" not in df.columns:
+        return out
+    if "avg_days_in_trade" not in df.columns or "num_trades" not in df.columns:
+        return out
+    for strat, group in df.groupby("strategy"):
+        weights = pd.to_numeric(group["num_trades"], errors="coerce").fillna(0)
+        days = pd.to_numeric(group["avg_days_in_trade"], errors="coerce").fillna(0)
+        total_w = float(weights.sum())
+        out[strat] = float((days * weights).sum() / total_w) if total_w else 0.0
+    return out
 
 
 def _focus_breakdown_rows(breakdown_df: pd.DataFrame, dividend_total: float, dividend_events: int):
@@ -463,6 +538,7 @@ def _focus_insights(focus_strategy, overall_win_rate, trend_months, dte_data):
 
 @app.route("/strategies")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 def strategies():
     """Strategy performance — process-focused, trend-aware."""
     # One "Strategies" surface, two views (Aug 2026 surface audit):
@@ -503,6 +579,8 @@ def strategies():
         "auth_accounts": sorted(user_accounts) if user_accounts else [],
         "selected_account": selected_account,
         "selected_strategy": selected_strategy,
+        "book_hero": None,
+        "unclassified_return": None,
     }
 
     try:
@@ -518,16 +596,21 @@ def strategies():
             return render_template("strategies.html", **context)
 
         unique_symbols = None
+        book_df = pd.DataFrame()
+        trend_df = pd.DataFrame()
         try:
-            sym_df = cached_query_df(
-                client,
-                STRATEGY_SYMBOL_GRAIN_QUERY.format(tenant_filter=tenant_filter),
-                label="strategy_symbols",
-            )
-            sym_df = _filter_df_by_tenant_ids(sym_df, tenant_ids)
+            from app.routes import _bq_parallel
+            side = _bq_parallel(client, {
+                "symbols": STRATEGY_SYMBOL_GRAIN_QUERY.format(tenant_filter=tenant_filter),
+                "trend": STRATEGY_TREND_QUERY.format(tenant_filter=tenant_filter),
+                "book": BOOK_TOTALS_QUERY.format(tenant_filter=tenant_filter),
+            })
+            sym_df = _filter_df_by_tenant_ids(side.get("symbols"), tenant_ids)
             unique_symbols = _unique_symbols_by_strategy(sym_df)
+            trend_df = _filter_df_by_tenant_ids(side.get("trend"), tenant_ids)
+            book_df = _filter_df_by_tenant_ids(side.get("book"), tenant_ids)
         except Exception:
-            app.logger.exception("strategy unique-symbol lookup failed")
+            app.logger.exception("strategy side queries failed")
 
         # Disambiguating label map so several physical accounts sharing a
         # base label (e.g. multiple "Schwab Account"s) read distinctly.
@@ -618,17 +701,7 @@ def strategies():
         }
 
         # ── Trend data: monthly performance per strategy ──
-        trend_df = pd.DataFrame()
-        try:
-            trend_df = cached_query_df(
-                client,
-                STRATEGY_TREND_QUERY.format(tenant_filter=tenant_filter)
-            )
-            trend_df = _filter_df_by_tenant_ids(trend_df, tenant_ids)
-        except Exception:
-            app.logger.exception("mart_strategy_trend lookup failed")
-
-        # Build latest trend signal per strategy (from most recent month)
+        # Loaded with the symbol and book queries above.
         latest_trend = {}
         recent_wr_3m = {}
         if not trend_df.empty and "month_start" in trend_df.columns:
@@ -649,12 +722,14 @@ def strategies():
 
             for strat in agg_trend["strategy"].unique():
                 strat_rows = agg_trend[agg_trend["strategy"] == strat].sort_values("month_start")
+                raw_rows = trend_df[trend_df["strategy"] == strat]
                 if not strat_rows.empty:
-                    latest = strat_rows.iloc[-1]
-                    latest_trend[strat] = str(latest.get("trend_signal", "stable"))
-                    wr3 = latest.get("win_rate_3m_pct")
+                    latest_trend[strat] = trend_signal_for_strategy(raw_rows)
+                    wr3 = strat_rows.iloc[-1].get("win_rate_3m_pct")
                     if wr3 and float(wr3) > 0:
                         recent_wr_3m[strat] = round(float(wr3), 1)
+
+        avg_days_weighted = _weighted_avg_days(df)
 
         strategies_list = []
         for _, row in all_by_strategy.sort_values("total_return", ascending=False).iterrows():
@@ -680,6 +755,9 @@ def strategies():
 
             strat_name = row["strategy"]
             signal = latest_trend.get(strat_name, "stable")
+            if signal == "new" and int(row["num_trades"] or 0) >= 8:
+                signal = "stable"
+            is_holding = strat_name in HOLDING_STRATEGIES
             num_positions = int(row["num_symbols"] or 0)
             num_symbols = (
                 None if unique_symbols is None
@@ -718,13 +796,18 @@ def strategies():
                 "wr_signal": wr_signal,
                 "premium_received": round(float(row["premium_received"] or 0), 2),
                 "premium_paid": round(float(row["premium_paid"] or 0), 2),
+                "dividend_income": round(float(row.get("dividend_income") or 0), 2),
                 "num_positions": num_positions,
                 "num_symbols": num_symbols,
                 "population_label": _population_label(num_symbols, num_positions),
                 "is_selected": bool(selected_strategy and strat_name == selected_strategy),
-                "trend_signal": signal,
+                "trend_signal": "stable" if is_holding else signal,
+                "show_trend": not is_holding,
+                "is_holding": is_holding,
+                "count_label": "fills" if is_holding else "trades",
                 "recent_wr_3m": recent_wr_3m.get(strat_name),
-                "avg_days": round(float(row.get("avg_days_in_trade") or 0), 1),
+                "avg_days": round(float(avg_days_weighted.get(strat_name, 0) or 0), 1),
+                "show_avg_hold": (not is_holding) and float(avg_days_weighted.get(strat_name, 0) or 0) > 0,
                 "sparkline": sparkline,
                 "first_trade_date": str(row.get("first_trade_date", ""))[:10] if row.get("first_trade_date") is not None else None,
                 "last_trade_date": str(row.get("last_trade_date", ""))[:10] if row.get("last_trade_date") is not None else None,
@@ -732,12 +815,24 @@ def strategies():
 
         context["strategies"] = strategies_list
         context["narrative"] = _strategy_narrative(context["summary"], strategies_list, trend_df)
+        from app.book_totals import hero_book
+        if book_df is not None and not book_df.empty:
+            context["book_hero"] = hero_book(book_df)
+        else:
+            context["book_hero"] = hero_book(all_by_strategy)
+        card_raw = float(all_by_strategy["total_return"].sum() or 0)
+        gap = context["book_hero"]["raw_total"] - card_raw
+        if abs(gap) >= 1:
+            context["unclassified_return"] = gap
 
         # ── Focus detail for the selected strategy ──
         if selected_strategy:
             focus_rows = [s for s in strategies_list if s["strategy"] == selected_strategy]
             if focus_rows:
                 context["focus_strategy"] = focus_rows[0]
+                from app.book_totals import hero_book
+                context["book_hero"] = hero_book(strategy_row=focus_rows[0])
+                context["unclassified_return"] = None
 
                 # Monthly trend data for chart
                 if not trend_df.empty:

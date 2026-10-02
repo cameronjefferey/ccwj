@@ -324,6 +324,9 @@ def test_fees_are_not_subtracted_from_premium():
     ]
     runs = build_covered_call_runs(_frame(rows), as_of=date(2026, 1, 4))
     assert runs[0]["calls"][0]["premium"] == 100.0
+    assert runs[0]["fees"] == 2.3
+    assert runs[0]["net"] == round(runs[0]["premium_total"] + runs[0]["share_pnl"] - runs[0]["fees"], 2)
+    assert "after fees" in runs[0]["net_label"]
     # Share result uses the fill price, not the fee-netted cash amount.
     assert runs[0]["share_sentence"].startswith("100 shares bought at $50.")
 

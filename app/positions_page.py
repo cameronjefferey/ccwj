@@ -19,6 +19,7 @@ from google.cloud import bigquery
 
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.extensions import limiter
 from app.query_cache import cached_query_df
 from app.skeleton import skeleton_page
 # is_admin is not called directly here, but the positions fixtures
@@ -736,6 +737,7 @@ def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
 
 @app.route("/positions")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 @skeleton_page
 def positions():
     bounce = _redirect_if_no_accounts()
@@ -953,15 +955,16 @@ def positions():
     total_losers = int(filtered["num_losers"].sum())
     total_closed = total_winners + total_losers
 
+    # Same identity Strategies uses (app.book_totals.hero_book): total =
+    # realized + unrealized + dividends, including rows with no strategy
+    # label. Whole-dollar figures are reconciled so they add up on screen.
+    from app.book_totals import hero_book
+    _book = hero_book(filtered)
     kpis = {
-        "total_return": float(filtered["total_return"].sum()),
-        "realized_pnl": float(filtered["realized_pnl"].sum()),
-        "unrealized_pnl": float(filtered["unrealized_pnl"].sum()),
-        "dividend_income": (
-            float(filtered["total_dividend_income"].sum())
-            if "total_dividend_income" in filtered.columns
-            else 0.0
-        ),
+        "total_return": _book["total"],
+        "realized_pnl": _book["realized"],
+        "unrealized_pnl": _book["unrealized"],
+        "dividend_income": _book["dividends"],
         "premium_collected": float(filtered["total_premium_received"].sum()),
         "win_rate": (total_winners / total_closed) if total_closed else None,
         "num_positions": len(filtered),

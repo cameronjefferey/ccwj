@@ -835,7 +835,11 @@ def _present(run, mark, as_of):
         "fees": round(run.fees, 2),
         "missing_close": bool(run.missing_close),
         "net": round(premium_total + share_pnl - run.fees, 2),
-        "net_label": "Whole run so far" if status == "open" else "Whole run",
+        "net_label": (
+            ("Whole run so far, after fees" if status == "open" else "Whole run, after fees")
+            if abs(run.fees) >= 0.005
+            else ("Whole run so far" if status == "open" else "Whole run")
+        ),
         "has_open_call": has_open_call,
         "calls": rows,
     }

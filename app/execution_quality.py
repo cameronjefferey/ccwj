@@ -202,10 +202,16 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         return None
 
     net_all = float(graded["early_close_vs_expiry_delta"].sum())
+    if net_all > 1:
+        headline_text = "more by exiting early than holding to expiry"
+    elif net_all < -1:
+        headline_text = "less by exiting early than holding to expiry"
+    else:
+        headline_text = "about the same as holding every contract to expiry"
     headline = {
         "value": _signed(net_all),
         "tone": "pos" if net_all >= 0 else "neg",
-        "text": ("your early exits vs holding to expiry"),
+        "text": headline_text,
         "sub": (f"Every early buyback, roll, and long sale — "
                 f"{len(graded)} contracts graded against what each one "
                 f"actually did at expiry."),
@@ -236,9 +242,10 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
             shorts["early_close_vs_expiry_delta"] > 0,
             "early_close_vs_expiry_delta"].sum())
         net = float(shorts["early_close_vs_expiry_delta"].sum())
-        detail = (f"{n_worthless} of {len(shorts)} buybacks would have "
-                  f"expired worthless anyway.")
-        if saved > 1:
+        detail = _worthless_detail(
+            shorts, n_worthless, noun="buybacks",
+        )
+        if saved > 1 and n_worthless == 0:
             n_saved = int((shorts["early_close_vs_expiry_delta"] > 0).sum())
             detail += (f" Closing dodged {_money(saved)} on the {n_saved} "
                        f"that finished in the money.")
@@ -310,10 +317,13 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         med = float(capture.median()) * 100
         findings.append({
             "label": "Peak capture",
-            "value": f"{med:.0f}% median",
+            "value": f"{med:.0f}%",
             "tone": "neutral",
-            "detail": (f"Share of the best exit the daily marks recorded, "
-                       f"across {len(marked)} winners."),
+            "detail": (
+                f"Median share of the best mark you kept at the exit, "
+                f"across {len(marked)} winners. "
+                f"100% means the exit matched the best daily mark on record."
+            ),
         })
     else:
         pending_note = ("Daily option marks are still accumulating — "
@@ -783,8 +793,62 @@ def _graded_early_closes(df, min_graded):
     return graded
 
 
-def _worthless_lead(worthless, n):
-    """Counterfactual lead. Only claims 'worthless' for contracts that were."""
+def _group_early_sums(graded):
+    """(n, n_worthless, worthless_sum, n_other, other_sum)."""
+    mask = graded["expired_worthless"].fillna(False).astype(bool)
+    worthless = graded[mask]
+    other = graded[~mask]
+
+    def _sum(part):
+        if part.empty:
+            return 0.0
+        return float(part["early_close_vs_expiry_delta"].sum())
+
+    return len(graded), len(worthless), _sum(worthless), len(other), _sum(other)
+
+
+def _worthless_detail(frame, n_worthless, noun="option series"):
+    """Split worthless-cost and in-the-money-save so a net save is not
+    described as if the worthless closes were the reason."""
+    n, n_w, w_sum, n_o, o_sum = _group_early_sums(frame)
+    if n_worthless <= 0:
+        return ""
+    if n_w == n:
+        if n == 1:
+            return f"The {noun[:-1] if noun.endswith('s') else noun} you closed early would have expired worthless."
+        if n == 2 and noun == "option series":
+            return ("Both option series you closed early here would have "
+                    "expired worthless anyway.")
+        if noun == "buybacks":
+            return f"All {n} buybacks would have expired worthless."
+        return (f"All {n} option series you closed early here would have "
+                f"expired worthless anyway.")
+    bits = [
+        f"{n_w} of {n} {noun} would have expired worthless.",
+    ]
+    if w_sum < -1:
+        bits.append(f"Closing those gave up {_money(w_sum)} versus holding.")
+    elif w_sum > 1:
+        bits.append(f"Closing those came out {_money(w_sum)} ahead of holding.")
+    if n_o and o_sum > 1:
+        bits.append(
+            f"The {n_o} that finished in the money saved {_money(o_sum)}."
+        )
+    elif n_o and o_sum < -1:
+        bits.append(
+            f"The {n_o} that finished in the money cost {_money(o_sum)} versus holding."
+        )
+    return " ".join(bits)
+
+
+def _worthless_lead(worthless, n, graded=None):
+    """Counterfactual lead. Only claims 'worthless' for contracts that were.
+
+    When some finished in the money, the lead states both sides. Gluing
+    "expired worthless anyway" to a net save is not true of those contracts.
+    """
+    if graded is not None and worthless > 0 and worthless < n:
+        return _worthless_detail(graded, worthless)
     if worthless <= 0:
         return ""
     if worthless == n:
@@ -843,7 +907,7 @@ def symbol_execution_callout(df, min_graded=MIN_GRADED_SYMBOL):
     return {
         "tone": tone,
         "title": title,
-        "lead": _worthless_lead(worthless, n),
+        "lead": _worthless_lead(worthless, n, graded=graded),
         "tail_before": tail_before,
         "amount_label": amount_label,
         "tail_after": tail_after,
@@ -865,8 +929,16 @@ def symbol_execution_sentences(df, min_graded=MIN_GRADED_SYMBOL):
         verdict = f"closing early came out {_money(net)} ahead"
     else:
         verdict = "closing early came out about even"
-    out.append(f"Early exits here: {worthless} of {len(graded)} expired "
-               f"worthless anyway — {verdict}.")
+    if worthless <= 0:
+        out.append(f"Early exits here: {verdict}.")
+    elif worthless < len(graded):
+        out.append(
+            f"Early exits here: {_worthless_detail(graded, worthless)} "
+            f"Net, {verdict}."
+        )
+    else:
+        out.append(f"Early exits here: {worthless} of {len(graded)} expired "
+                   f"worthless anyway — {verdict}.")
     if "was_rolled" in graded.columns:
         rolls = graded[graded["was_rolled"]]
         if len(rolls) >= 2:

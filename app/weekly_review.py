@@ -23,6 +23,7 @@ from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.extensions import limiter
 from app.query_cache import cached_query_df
 from app.skeleton import skeleton_page
 from app.privacy import shown_account as _privacy_account_label
@@ -3761,6 +3762,9 @@ def _group_day_rolls(trade_rows):
             success_bits.append("strike")
         if short_side and occ["option_type"] == "Put" and strike_dir == "down":
             success_bits.append("strike")
+        roll_qty = closed.get("quantity")
+        if roll_qty is None:
+            roll_qty = opened.get("quantity")
         out.append({
             "kind": "roll",
             "is_roll": True,
@@ -3769,7 +3773,7 @@ def _group_day_rolls(trade_rows):
             "symbol": row.get("symbol") or "",
             "trade_symbol": "",
             "description": "",
-            "quantity": None,
+            "quantity": roll_qty,
             "price": None,
             "amount": None if net is None else round(net, 2),
             "cash_amount": round(cash_net, 2),
@@ -3858,8 +3862,10 @@ def _group_day_open_and_settle(trade_rows):
         opened = row if action in _OPEN_OPTION_ACTIONS else other
         closed = other if action in _OPEN_OPTION_ACTIONS else row
         merged = dict(closed)
-        if opened.get("price") is not None:
-            merged["price"] = opened["price"]
+        # Settlement is not a fill price. Copying the open premium onto an
+        # Expired / Assigned / Exercised row showed "@ $x.xx" on a contract
+        # that had already finished.
+        merged["price"] = None
         if merged.get("quantity") is None:
             merged["quantity"] = opened.get("quantity")
         merged["cash_amount"] = round(
@@ -4483,6 +4489,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
 @app.route("/daily-review")
 @app.route("/overview")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 @skeleton_page
 def weekly_review():
     """Overview — close-based recap of the last completed session.
@@ -5868,7 +5875,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     Returns ``{trades, cash, count, net_cash, net_gl, symbols, has_any}``.
     """
     empty = {
-        "trades": [], "cash": [], "count": 0, "roll_count": 0,
+        "trades": [], "cash": [], "count": 0, "fill_count": 0, "roll_count": 0,
         "net_cash": 0.0, "net_gl": 0.0, "symbols": [], "has_any": False,
     }
     if trades_df is None or trades_df.empty:
@@ -5892,6 +5899,8 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         action = str(r.get("action") or "")
         qty = r.get("quantity")
         price = r.get("price")
+        if action in ("option_expired", "option_assigned", "option_exercised"):
+            price = None
         amount = float(r.get("amount") or 0)
         realized = (
             _finite_or_none(r.get("realized_pnl"))
@@ -5952,7 +5961,8 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     return {
         "trades": grouped,
         "cash": cash_rows,
-        "count": len(trade_rows),
+        "count": len(grouped),
+        "fill_count": len(trade_rows),
         "roll_count": sum(1 for r in grouped if r.get("is_roll")),
         "net_cash": round(net_cash, 2),
         "net_gl": round(net_gl, 2),

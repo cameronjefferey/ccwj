@@ -35,6 +35,7 @@ from app.llm import (
     resolved_user_model_key, model_is_paid,
 )
 from app.llm_access import user_can_use_paid_llm
+from app.money import signed_points
 
 
 # ------------------------------------------------------------------
@@ -393,7 +394,7 @@ def _discovery_cards_from_series(r: pd.Series):
             cards.append({
                 "tag": "Timing",
                 "title": "Longer-dated shorts give back more of the peak than short-dated ones",
-                "stat": f"{dte_gap:+.0f} pp avg giveback",
+                "stat": f"{signed_points(dte_gap, 0)} pp avg giveback",
                 "body": (
                     f"Shorts opened beyond about 45 days to expiry give back about **{lg:.0f}%** of the peak mark. "
                     f"Shorts opened inside about 14 days give back about **{sh:.0f}%**."
@@ -426,7 +427,7 @@ def _discovery_cards_from_series(r: pd.Series):
             cards.append({
                 "tag": "Sequence",
                 "title": "Win rate is lower on the trade after a loss",
-                "stat": f"{rgap * 100:.1f} pts vs your usual win rate",
+                "stat": f"{signed_points(rgap * 100, 1)} pts vs your usual win rate",
                 "body": (
                     f"After a losing close, the next option trade won about **{pct_al:.0f}%** of the time, "
                     f"versus about **{pct_overall:.0f}%** overall."
@@ -1450,6 +1451,7 @@ def _live_demo_insight(client, tenant_ids, coaching_data):
 
 @app.route("/insights")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 def insights():
     """Show coaching data + cached AI analysis."""
     from app.routes import _redirect_if_no_accounts

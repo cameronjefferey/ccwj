@@ -160,16 +160,14 @@
                             {% endif %}
                         </td>
                         <td class="dd-muted d-none d-sm-table-cell">
+                            {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
                             {% if t.is_roll %}
                             {% if t.successful %}
                             <span class="dd-roll-ok">Met the roll{% if t.success_bits %} · {{ t.success_bits|join(' + ') }}{% endif %}</span>
                             {% elif t.successful is sameas false %}
                             <span class="dd-roll-miss">{% if t.strike_dir == 'same' %}Debit roll, strike unchanged{% else %}Did not meet the roll{% endif %}</span>
                             {% endif %}
-                            {% else %}
-                            {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
-                            {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
-                            {% endif %}
+                            {% elif t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
                         </td>
                         <td class="dd-money {{ 'pos' if t.amount is not none and t.amount > 0 else 'neg' if t.amount is not none and t.amount < 0 else '' }}">
                             {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}

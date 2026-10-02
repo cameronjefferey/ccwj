@@ -1,0 +1,1 @@
+{% if fill_count and count and fill_count != count %}{{ count }} trade{{ 's' if count != 1 else '' }} from {{ fill_count }} fills{% else %}{{ count }} fill{{ 's' if count != 1 else '' }}{% endif %}

@@ -1128,12 +1128,10 @@
         <p class="chart-read-lead">{{ chart_read.lead }}</p>
         <div class="chart-read-more {% if chart_read.locked %}is-locked{% endif %}">
             <p class="chart-read-rest" id="chartReadRest">{{ chart_read.rest }}</p>
-            {% if chart_read.locked %}
-            <form class="chart-read-upgrade" method="post" action="{{ url_for('billing_checkout_ai') }}">
+            <form class="chart-read-upgrade" method="post" action="{{ url_for('billing_checkout_ai') }}"{% if not chart_read.show_upgrade %} hidden{% endif %}>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm btn-primary">Upgrade to HappyTrader AI to read the rest</button>
             </form>
-            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -1272,6 +1270,9 @@
     <details class="pd-row">
         <summary>
             <span class="badge badge-strategy">{{ r.strategy }}</span>
+            {% if strategy_rows|length > 1 %}
+            <span class="text-muted small">{{ (r.account_display or r.account) | account_label(r.tenant_id) }}</span>
+            {% endif %}
             {% if r.status == 'Open' %}<span class="badge badge-open">Open</span>
             {% else %}<span class="badge badge-closed">Closed</span>{% endif %}
             <span class="pd-row-val {{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }}">{{ money(r.total_pnl) }}</span>
@@ -1628,7 +1629,12 @@
         var lead = box.querySelector('.chart-read-lead');
         if (lead && data.lead) lead.textContent = data.lead;
         var rest = document.getElementById('chartReadRest');
-        if (rest) rest.textContent = data.body;
+        if (rest) rest.textContent = data.body || '';
+        var upgrade = box.querySelector('.chart-read-upgrade');
+        if (upgrade) {
+            var withheld = data.locked && data.lead && !data.body;
+            upgrade.hidden = !withheld;
+        }
     }).catch(function () {});
 })();
 </script>

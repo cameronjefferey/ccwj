@@ -1419,7 +1419,8 @@ class TestSplitDayFills:
             self._jpm("option_sell_to_open", "JPM   260828C00305000", 180),
         ])
         out = _split_day_fills(df)
-        assert out["count"] == 2
+        assert out["fill_count"] == 2
+        assert out["count"] == 1
         assert out["roll_count"] == 1
         assert len(out["trades"]) == 1
         g = out["trades"][0]
@@ -1459,12 +1460,13 @@ class TestSplitDayFills:
             option_expiry=date(2026, 8, 28),
         )
         out = _split_day_fills(pd.DataFrame([sto, expired]))
-        assert out["count"] == 2
+        assert out["fill_count"] == 2
+        assert out["count"] == 1
         assert len(out["trades"]) == 1
         t = out["trades"][0]
         assert t["verb"] == "Expired"
         assert t["action"] == "option_expired"
-        assert t["price"] == 0.34
+        assert t["price"] is None
         assert t["quantity"] == 8.0
         assert t["amount"] == 266.65
         assert out["net_gl"] == 266.65
@@ -1485,7 +1487,7 @@ class TestSplitDayFills:
         out = _split_day_fills(pd.DataFrame([expired, sto]))
         assert len(out["trades"]) == 1
         assert out["trades"][0]["verb"] == "Expired"
-        assert out["trades"][0]["price"] == 2.26
+        assert out["trades"][0]["price"] is None
 
     def test_sto_and_same_day_assignment_is_one_row(self):
         sto = self._row(
@@ -1503,7 +1505,7 @@ class TestSplitDayFills:
         out = _split_day_fills(pd.DataFrame([sto, assigned]))
         assert len(out["trades"]) == 1
         assert out["trades"][0]["verb"] == "Assigned"
-        assert out["trades"][0]["price"] == 6.16
+        assert out["trades"][0]["price"] is None
         assert out["trades"][0]["amount"] == 616.33
 
     def test_different_contracts_stay_two_rows(self):
@@ -1568,7 +1570,7 @@ class TestSplitDayFills:
         assert out["trades"][0]["amount"] is None
         assert out["trades"][0].get("is_roll") is not True
 
-    def test_fill_count_stays_raw_when_grouped(self):
+    def test_displayed_count_matches_rows_when_grouped(self):
         df = pd.DataFrame([
             self._jpm("option_buy_to_close", "JPM   260821C00300000", -120),
             self._jpm("option_sell_to_open", "JPM   260828C00305000", 180),
@@ -1578,7 +1580,8 @@ class TestSplitDayFills:
                       tenant_id="snaptrade:cam", account="Cameron Investment"),
         ])
         out = _split_day_fills(df)
-        assert out["count"] == 3
+        assert out["fill_count"] == 3
+        assert out["count"] == 2
         assert out["roll_count"] == 1
         assert any(t["symbol"] == "SPCE" and not t.get("is_roll") for t in out["trades"])
 
@@ -2579,4 +2582,16 @@ class TestCoveredCallsWithoutShort:
         assert "scope-filters.js" in filters
         base = (root / "app/templates/base.html").read_text()
         assert "js/scope-filters.js" in base
+
+
+def test_fill_count_copy_names_grouped_trades():
+    from jinja2 import Environment
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "app/templates/_fill_count.html").read_text()
+    tpl = Environment().from_string(src)
+    assert tpl.render(count=2, fill_count=4) == "2 trades from 4 fills"
+    assert tpl.render(count=1, fill_count=2) == "1 trade from 2 fills"
+    assert tpl.render(count=4, fill_count=4) == "4 fills"
+    assert tpl.render(count=1, fill_count=None) == "1 fill"
 
