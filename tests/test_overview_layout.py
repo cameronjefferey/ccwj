@@ -52,8 +52,12 @@ def test_daily_change_is_open_after_accounts():
     slot = PAGE.index('id="ht-overview-daily"')
     inline = PAGE.index('{% include "_overview_daily.html" %}')
     building = PAGE.index('id="ov-building"')
+    show_more = PAGE.index('id="ov-show-more"')
     assert accounts < slot < building
     assert accounts < inline < building
+    assert slot < show_more
+    assert inline < show_more
+    assert "Daily change didn't load" in PAGE
     assert '<div class="review-section" id="ov-daily">' in DAILY
     assert '<h2 class="section-header">Daily change</h2>' in DAILY
     assert "<details" not in DAILY
@@ -67,6 +71,31 @@ def test_realized_pill_and_collected_premium_stay_literal():
     assert "net premium" not in TODAY.lower()
     assert "collected $" in TODAY
     assert "collected $" in BELOW
+
+
+def test_session_trades_stay_columns_on_a_phone():
+    """Fills stay a table. Phone width scrolls the wrap; it does not stack cards."""
+    assert 'class="breakdown-wrap"' in PAGE
+    assert 'class="tt-table"' in PAGE
+    assert "tbody { display: block" not in STYLES
+    assert ".ov-page .tt-table tbody" not in STYLES
+    assert ".tt-table td:nth-child(3)" not in STYLES
+    assert ".tt-table td:nth-child(5)" not in STYLES
+
+
+def test_heatmap_dollars_shrink_instead_of_clipping():
+    rule = STYLES.split(".cal-day .cal-day-pnl {", 1)[1].split("}", 1)[0]
+    assert "clamp(.38rem, 16cqi, .68rem)" in rule
+    assert "ellipsis" not in rule
+    assert "text-overflow" not in rule
+    phone = STYLES.split("@media (max-width: 480px)", 1)[1].split("@media", 1)[0]
+    assert "clamp(.38rem, 14cqi, .58rem)" in phone
+
+
+def test_today_names_the_dividend_bar_date_when_it_is_not_today():
+    assert "Dividends paid {{ today_movers.as_of_label }}" in TODAY
+    assert "Dividends paid today" in TODAY
+    assert "combined_impact is not none" in PAGE
 
 
 def test_snapshot_stays_columns_on_a_phone():

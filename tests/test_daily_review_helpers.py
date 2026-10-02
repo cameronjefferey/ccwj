@@ -17,6 +17,7 @@ from app.weekly_review import (
     ANNUALIZED_DENOMINATOR_FLOOR,
     ANNUALIZED_MIN_DAYS,
     DAY_TRADES_QUERY,
+    CLOSE_SLEEVE_QUERY,
     TODAY_OPTIONS_MOVES_QUERY,
     _aggregate_breakdown_by,
     _annualized_pct,
@@ -27,6 +28,7 @@ from app.weekly_review import (
     _build_breakdown_totals,
     _build_position_breakdown,
     _build_today_movers,
+    _invested_from_close_sleeve,
     _build_trades_this_week,
     _build_upcoming_dividends,
     _coerce_date,
@@ -445,6 +447,38 @@ class TestBuildTodayMovers:
         assert result["is_today"] is True
         assert result["as_of_label"] is None
         assert "options_as_of" not in result
+
+    def test_stale_option_rows_stay_off_a_newer_equity_close(self):
+        eq = pd.DataFrame([
+            {"symbol": "AAPL", "shares": 100, "current_value": 17000,
+             "today_close": 170, "prev_close": 169,
+             "price_change": 1.0, "price_change_pct": 0.6,
+             "dollar_impact": 100.0, "today_date": date(2026, 5, 19)},
+        ])
+        opt = pd.DataFrame([
+            {"symbol": "AAPL", "today_date": date(2026, 5, 18), "dollar_impact": -500.0},
+        ])
+        result = _build_today_movers(eq, options_moves_df=opt)
+        assert result["options"] == []
+        assert result["options_impact"] == 0.0
+        assert result["combined_impact"] == 100.0
+        assert result["as_of"] == "2026-05-19"
+        assert all(w["kind"] != "option" for w in result["winners"] + result["losers"])
+
+    def test_options_only_keeps_the_latest_mart_date(self):
+        opt = pd.DataFrame([
+            {"symbol": "SPY", "today_date": date(2026, 5, 18), "dollar_impact": 210.0},
+            {"symbol": "QQQ", "today_date": date(2026, 5, 15), "dollar_impact": -999.0},
+        ])
+        div = pd.DataFrame([
+            {"symbol": "JEPI", "trade_date": date(2026, 5, 18), "amount": 50.0},
+            {"symbol": "JEPI", "trade_date": date(2026, 5, 15), "amount": 42.0},
+        ])
+        result = _build_today_movers(None, options_moves_df=opt, dividends_df=div)
+        assert [o["symbol"] for o in result["options"]] == ["SPY"]
+        assert result["options_impact"] == 210.0
+        assert result["as_of"] == "2026-05-18"
+        assert result["dividends_impact"] == 50.0
 
     def test_dividend_anchor_falls_back_to_option_date(self):
         opt = pd.DataFrame([
@@ -1844,6 +1878,30 @@ class TestDailyReviewBatchIncludesTodayTrades:
         assert OVERVIEW_CORE_KEYS | OVERVIEW_BELOW_KEYS == set(batch)
         assert "attribution" in OVERVIEW_BELOW_KEYS
         assert "today_trades" in OVERVIEW_CORE_KEYS
+        assert "close_sleeve" in OVERVIEW_CORE_KEYS
+
+    def test_close_sleeve_is_the_session_cash_aggregate(self):
+        friday = date(2026, 9, 18)
+        batch = build_daily_review_batch(
+            "AND tenant_id IN ('snaptrade:abc')",
+            date(2026, 9, 21), date(2026, 9, 14),
+            trades_as_of=friday, moves_as_of=friday)
+        sql, cfg = batch["close_sleeve"]
+        assert "mart_account_equity_daily" in sql
+        select = sql.lower().split("from", 1)[0]
+        assert "tenant_id" not in select
+        assert "snaptrade:abc" in sql
+        params = {p.name: p.value for p in cfg.query_parameters}
+        assert params["as_of"] == friday
+        assert "date = @as_of" in " ".join(CLOSE_SLEEVE_QUERY.lower().split())
+
+    def test_invested_pct_matches_the_close_only_when_totals_agree(self):
+        cash, invested, pct = _invested_from_close_sleeve(100000, 100000.4, 20000)
+        assert (cash, invested, pct) == (20000.0, 80000.0, 80.0)
+        # A live placeholder in the hero must not borrow close cash.
+        assert _invested_from_close_sleeve(150000, 100000, 20000) == (None, None, None)
+        assert _invested_from_close_sleeve(None, 100000, 20000) == (None, None, None)
+        assert _invested_from_close_sleeve(0, 0, 0) == (None, None, None)
 
 
     def test_attribution_week_follows_the_close_not_calendar_monday(self):
