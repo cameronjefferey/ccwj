@@ -6,6 +6,7 @@ PAGE = Path("app/templates/position_detail.html").read_text()
 
 
 def test_story_order_is_headline_mirror_then_chart_then_legs():
+    stats = PAGE.find('class="pos-hero-stats"')
     story = PAGE.find('{% include "_story_summary.html" %}')
     mirror_end = PAGE.find("<!-- MIRROR-END -->")
     legs = PAGE.find('id="pd-legs"')
@@ -15,7 +16,13 @@ def test_story_order_is_headline_mirror_then_chart_then_legs():
     by_type = PAGE.find('id="pd-by-type"')
     raw = PAGE.find('id="pd-raw"')
     matrix = PAGE.find('id="pd-matrix"')
-    assert story < mirror_end < chart < legs < worked
+    assert stats < story < mirror_end < chart < legs < worked
+    assert "Across everything" not in PAGE
+    assert "individual fill" not in PAGE
+    assert '_history_window_note.html' not in PAGE
+    assert "Premium Collected" not in PAGE
+    assert "ht-pd-window-hint-dismissed" in PAGE
+    assert ">Realized<" in PAGE and ">Unrealized<" in PAGE and ">Dividends<" in PAGE
     assert PAGE.count('id="position-chart"') == 1
     assert PAGE.count('id="pnlChart"') == 1
     assert details < by_type < raw < matrix
@@ -51,9 +58,9 @@ def test_hero_scope_chips_sit_in_the_hero_not_a_full_width_bar():
     assert "scope_account_choices|length > 1" in PAGE
     hero = PAGE.split('class="review-hero pos-hero"', 1)[1].split("<!-- MIRROR-END -->", 1)[0]
     assert hero.find("pos-hero-id") < hero.find("pos-total") < hero.find("pd-hero-scope")
-    assert 'grid-template-areas: "id total" "scope total"' in PAGE
+    assert 'grid-template-areas: "id total" "scope total" "stats stats"' in PAGE
     phone = PAGE.split("@media (max-width: 640px)", 1)[1].split("</style>", 1)[0]
-    assert 'grid-template-areas: "id total" "scope scope"' in phone
+    assert 'grid-template-areas: "id total" "scope scope" "stats stats"' in phone
     assert "minmax(8.75rem, 11.5rem)" in phone
     assert "flex-wrap: nowrap" in phone
     assert "padding: .6rem 1.15rem .65rem" in PAGE

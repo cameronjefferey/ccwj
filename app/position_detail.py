@@ -41,7 +41,6 @@ from app.outcome_units import (
     annotate_strategy_structures,
     closing_without_an_open,
     group_vertical_spreads,
-    legs_activity_summary,
     net_collected,
 )
 from app.pnl_charts import (
@@ -563,6 +562,58 @@ def _story_realized_footer(breakdown_rows):
         "dividends": round(dividends, 2),
         "combined": round(options + shares + dividends, 2),
     }
+
+
+def align_headline_kpis(kpis, breakdown_rows):
+    """Make realized + unrealized + dividends equal the headline total.
+
+    Breakdown-by-type is the ledger the page reconciles against. Dividends
+    are their own row (cash, no mark) and must not also sit inside realized,
+    or the three parts would overshoot the total. Each part is the same
+    cents the hero prints, so the sum is the number next to them.
+    """
+    if not kpis or not breakdown_rows:
+        return kpis
+    realized = 0.0
+    unrealized = 0.0
+    dividends = 0.0
+    for row in breakdown_rows:
+        if str(row.get("type") or "") == "Dividends":
+            dividends += float(row.get("total") or 0)
+            continue
+        realized += float(row.get("realized") or 0)
+        if row.get("unrealized") is not None:
+            unrealized += float(row.get("unrealized") or 0)
+    kpis["realized_pnl"] = round(realized, 2)
+    kpis["unrealized_pnl"] = round(unrealized, 2)
+    kpis["dividend_income"] = round(dividends, 2)
+    kpis["total_return"] = round(
+        kpis["realized_pnl"] + kpis["unrealized_pnl"] + kpis["dividend_income"],
+        2,
+    )
+    return kpis
+
+
+def history_window_hint(connected_on, first_trade):
+    """Label when the account was connected after the first fill.
+
+    The shared banner on other pages always names the connect date. Here
+    the hint only earns a line when that date is after trading started,
+    so the record is missing the earlier fills.
+    """
+    if connected_on is None or not first_trade:
+        return None
+    try:
+        first = date.fromisoformat(str(first_trade)[:10])
+    except ValueError:
+        return None
+    connected = connected_on
+    if isinstance(connected, datetime):
+        connected = connected.date()
+    if not isinstance(connected, date) or connected <= first:
+        return None
+    from app.wealth import _fmt_as_of
+    return _fmt_as_of(connected)
 
 
 def _breakdown_footer(breakdown_rows):
@@ -2097,6 +2148,7 @@ def position_detail(symbol):
             symbol_company="",
             symbol_next_earnings=None,
             opening_balances=[],
+            history_hint=None,
             tabs=[],
             active_symbol=symbol,
             tab_href_base="/position/",
@@ -2837,15 +2889,9 @@ def position_detail(symbol):
     # frames + unreal — but Breakdown-by-type / mart chart fold dividends from
     # ``int_dividend_events`` (synthesised ex-div × holdings etc.). Those streams
     # can materially diverge (~12k on BE Schwab •••0044): hero read low while
-    # ledger + chart agreed. Pin hero ``total_return`` to the same Σ as the card
-    # above Strategy Breakdown so reconciliation and user trust aren't split.
-    if kpis and breakdown_rows:
-        ledger_total = sum(float(r.get("total") or 0) for r in breakdown_rows)
-        kpis["total_return"] = round(ledger_total, 2)
-        for _br in breakdown_rows:
-            if str(_br.get("type") or "") == "Dividends":
-                kpis["dividend_income"] = round(float(_br.get("total") or 0), 2)
-                break
+    # ledger + chart agreed. Pin the hero parts to that ledger so realized +
+    # unrealized + dividends is the same total the card and the chart use.
+    align_headline_kpis(kpis, breakdown_rows)
 
     breakdown_totals = _breakdown_footer(breakdown_rows)
 
@@ -3464,9 +3510,6 @@ def position_detail(symbol):
     # protective leg stays inside the expand, not as its own red loss.
     trade_outcomes = group_vertical_spreads(trade_outcomes)
     annotate_strategy_structures(strategy_rows, trade_outcomes)
-    legs_activity = legs_activity_summary(
-        trade_outcomes, (kpis or {}).get("total_trades"),
-    )
 
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
@@ -3618,6 +3661,18 @@ def position_detail(symbol):
         if _tsym in _direction_by_symbol:
             _trade["direction"] = _direction_by_symbol[_tsym]
     history_before_open = closing_without_an_open(trades)
+    history_hint = None
+    if kpis and kpis.get("first_trade") and tenant_scope:
+        try:
+            from app.accounts_page import _account_connected_on
+            history_hint = history_window_hint(
+                _account_connected_on(tenant_scope), kpis.get("first_trade")
+            )
+        except Exception:
+            app.logger.exception(
+                "position history hint failed for %s", safe_symbol
+            )
+            history_hint = None
     beginner_trades = []
     try:
         from app.paper_practice import beginner_readouts
@@ -3641,8 +3696,8 @@ def position_detail(symbol):
         breakdown_fees_total=round(breakdown_fees_total, 2),
         trades=trades,
         history_before_open=history_before_open,
+        history_hint=history_hint,
         trade_outcomes=trade_outcomes,
-        legs_activity=legs_activity,
         current_positions=current_positions,
         option_matrices=option_matrices,
         sessions=sessions_list,

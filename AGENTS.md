@@ -452,10 +452,16 @@ What's working:
   buy and a post-split sale stay in the same units) and says so when a
   split moved them. P&amp;L is unchanged.
   Pinned by `tests/test_covered_call_runs.py`.
-- Position Detail reads as one story: the hero, then the mirror, then
+- Position Detail reads as one story: the hero (total return, then a
+  compact row of realized, unrealized, dividends, win rate, and average
+  days — those three dollars are the headline), then the mirror, then
   the Cumulative P&amp;L chart, then Position Legs. What worked follows.
-  Groups and Account are small chips under the symbol in that hero
-  (one row on a phone). Total return stays on the right.
+  Premium collected stays on the review card. Groups and Account are
+  small chips under the symbol in that hero (one row on a phone). Total
+  return stays on the right. A one-line history hint appears only when
+  the account was connected after the first fill, and dismissing it
+  sticks (`ht-pd-window-hint-dismissed`). The shared history banner
+  stays on the other all-time pages.
   Breakdown by Type and the raw log sit behind one Details toggle.
   The Win/Loss matrix stays behind a disclosure. Gain and loss on this
   page use one green and one red (`--pd-gain` / `--pd-loss`). The strategy
