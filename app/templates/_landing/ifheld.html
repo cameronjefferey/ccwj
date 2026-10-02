@@ -1,0 +1,14 @@
+    <section class="ht-band ht-band-shot-b ht-section" aria-label="If held to expiration">
+        <div class="ht-wrap ht-split media-end">
+            <figure class="ht-media ht-shot">
+                <img src="{{ url_for('static', filename='marketing/msft-if-held.webp') }}"
+                     alt="If held to expiration summary for MSFT in the demo account."
+                     width="1400" height="315" {% if section_eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %} decoding="async">
+                <figcaption>Demo account</figcaption>
+            </figure>
+            <div class="ht-copy">
+                <h2 class="ht-section-title">If held to expiration</h2>
+                <p>On an early close, the P&amp;L you took sits next to the P&amp;L if the contract had been held. The gap is what closing early cost or saved.</p>
+            </div>
+        </div>
+    </section>

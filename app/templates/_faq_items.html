@@ -1,0 +1,178 @@
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq1" aria-expanded="false" aria-controls="faq1">
+                    How do I connect a brokerage?
+                </h3>
+                <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Create an account, then choose <strong>Connect brokerage</strong>.
+                        HappyTrader opens a short explanation, then SnapTrade's connection window.
+                        You sign in on your broker's own page. Access is read-only, and HappyTrader never stores your broker password.
+                        <br><br>
+                        {% include "_broker_sync_timing.html" %}
+                        Cancel in that window and you come back here with nothing new connected.
+                        <br><br>
+                        <strong>Older history (optional).</strong> Broker sync is not a lifetime archive.
+                        Schwab's web export can fill years SnapTrade never sent:
+                        Accounts → History → Transactions, filter All Transactions, Export CSV.
+                        Current positions: Accounts → Positions → Export.
+                        Upload that from <a href="{{ url_for('upload') }}">Upload</a> after you connect.
+                        We parse schwab.com's export, not thinkorswim.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-history-depth" aria-expanded="false" aria-controls="faq-history-depth">
+                    How far back does broker sync go?
+                </h3>
+                <div id="faq-history-depth" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Not the life of the account, and not 5 years. We request the longest
+                        window the aggregator allows (up to 5 years); each broker only returns
+                        what it still has on file. For Schwab that is typically about 1&ndash;2 years
+                        of trades. Daily account-value charts start even later &mdash; the first day
+                        we captured an end-of-day balance, which is after you connected, not when
+                        the account opened.
+                        <br><br>
+                        That gap changes how an account looks: P&amp;L, positions, and the value
+                        chart only cover the window we actually received. To fill in older trades
+                        and cost basis, export from schwab.com
+                        (Accounts → History → Transactions, date range as far back as you can)
+                        and <a href="{{ url_for('upload') }}">upload the CSV</a>. A CSV cannot
+                        recreate daily balances before we started snapshotting.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq2" aria-expanded="false" aria-controls="faq2">
+                    Is my data secure?
+                </h3>
+                <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Your trade data is processed and stored in Google BigQuery. Broker access goes through SnapTrade and is read-only. You sign in on your broker's page. HappyTrader does not store brokerage passwords. A CSV upload is optional, for older history the sync didn't include.
+                        Your HappyTrader password is hashed. Use a strong, unique one.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq3" aria-expanded="false" aria-controls="faq3">
+                    What brokers are supported?
+                </h3>
+                <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Connect Schwab, Fidelity, Vanguard, Robinhood, Interactive Brokers,
+                        Alpaca, Wealthsimple, and more through SnapTrade. If we haven't
+                        fitted a given brokerage into our models yet, SnapTrade still
+                        connects it. If you are one of the first handful and you
+                        subscribe, 6 months of Pro is included before the first charge,
+                        while we calibrate.
+                        <br><br>
+                        CSV upload is the fallback for older history, and today it
+                        parses Charles Schwab's web export (schwab.com, not thinkorswim).
+                        Steps live on <a href="{{ url_for('upload') }}">Upload</a>.
+                        Request any other brokerage's CSV from that page.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-schwab-connect" aria-expanded="false" aria-controls="faq-schwab-connect">
+                    Do I have to upload CSVs to get started?
+                </h3>
+                <div id="faq-schwab-connect" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        No. Connect your brokerage once through SnapTrade and we pull
+                        new transactions on a schedule &mdash; no daily export.
+                        <br><br>
+                        Broker sync is not a lifetime archive. If the aggregator didn't send years
+                        you still have in schwab.com, export those and
+                        <a href="{{ url_for('upload') }}">upload the CSV</a> once, after connecting.
+                        We never see your broker password.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq4" aria-expanded="false" aria-controls="faq4">
+                    Can I have multiple accounts?
+                </h3>
+                <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Yes. Connect each brokerage (or another account at the same broker) and we'll track them separately. You can filter by account on Positions, Strategies, and other views. Portfolio-wide totals are shown on Overview.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq5" aria-expanded="false" aria-controls="faq5">
+                    What strategies does HappyTrader recognize?
+                </h3>
+                <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        We auto-detect Covered Calls, Cash-Secured Puts, Wheels, Call Spreads, Put Spreads, Long Calls, Long Puts, Buy and Hold, and other option strategies. Classification is based on your trade patterns—no manual tagging.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-insights" aria-expanded="false" aria-controls="faq-insights">
+                    What does AI Insights actually do?
+                </h3>
+                <div id="faq-insights" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        AI Insights reads the same numbers we compute from your trades &mdash; especially exit timing and giveback vs daily option marks, DTE buckets, and strategy-level performance &mdash; and writes a plain-English read of what's working and where you've left money on the table. It surfaces patterns; it does not give financial advice.
+                        <br><br>
+                        You can also ask follow-up questions about your own trading patterns. Every answer is grounded in your data &mdash; observations only, not recommendations.
+                        <br><br>
+                        Flash and Haiku are included. Gemini 2.5 Pro, Claude Sonnet, and Claude Opus are part of the <a href="{{ url_for('pricing') }}">HappyTrader AI add-on</a>.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-fit" aria-expanded="false" aria-controls="faq-fit">
+                    What is the Strategy fit matrix?
+                </h3>
+                <div id="faq-fit" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        A heatmap of every strategy you've used crossed against every sector you've traded. Each cell shows how your real trades performed &mdash; expectancy, win rate, and number of trades.
+                        <br><br>
+                        It surfaces sweet spots ("Covered Calls in Tech are paying off") and soft spots ("Cash-Secured Puts in Energy are bleeding"), so you can lean into what works and avoid the corners that don't.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-sectors" aria-expanded="false" aria-controls="faq-sectors">
+                    How do you tag sectors and subsectors?
+                </h3>
+                <div id="faq-sectors" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Every ticker you trade is automatically tagged with its sector and subsector using public market data &mdash; no manual entry. Your performance rolls up by sector on the <strong>Sectors</strong> page so you can see at a glance where your edge actually lives.
+                    </div>
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#faq-cost" aria-expanded="false" aria-controls="faq-cost">
+                    What does it cost?
+                </h3>
+                <div id="faq-cost" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="faq-answer">
+                        Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. After the trial the mirror stays readable and daily syncing pauses until you subscribe. People already on the grandfathered beta stay free, with no expiry. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free). If you are one of the first people to connect a brokerage we are still calibrating, subscribing includes 6 months of Pro before the first charge. After you subscribe, the Stripe billing portal is where you change the card or cancel. HappyTrader AI is an optional ${{ price_ai or '9.99' }}/month add-on (Gemini 2.5 Pro, Claude Sonnet, and Claude Opus). See the <a href="{{ url_for('pricing') }}">pricing page</a> for the story that matches your account.
+                    </div>
+                </div>
+            </div>

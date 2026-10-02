@@ -1,0 +1,10 @@
+    <section class="ht-band ht-band-shot-b ht-section" aria-label="Pricing">
+        <div class="ht-wrap">
+            <div class="ht-kicker">Pricing</div>
+            <h2 class="ht-section-title">What it costs</h2>
+            <div class="ht-copy">
+                <p>{{ trial_line }}</p>
+                <p>After the trial the mirror stays readable and daily syncing pauses until you subscribe. Pro is <span class="ht-price">${{ price_monthly or '19.99' }}</span>/month or <span class="ht-price">${{ price_annual or '199.99' }}</span>/year. <a href="{{ url_for('pricing') }}" data-ht-cta="pricing">See pricing</a>.</p>
+            </div>
+        </div>
+    </section>

@@ -1,0 +1,31 @@
+{% from "_landing_macros.html" import phone %}
+    <section class="ht-band ht-band-how ht-section" aria-label="How it works">
+        <div class="ht-wrap ht-how-grid">
+            {% for step in story_steps if step.step == 1 %}
+            <div class="ht-media ht-phone-single">
+                {{ phone(step, eager=section_eager|default(false)) }}
+            </div>
+            {% endfor %}
+            <div>
+                <div class="ht-kicker">How it works</div>
+                <h2 class="ht-section-title">Three steps, then the record</h2>
+                <ol class="ht-steps">
+                    <li>
+                        <div class="ht-kicker">01</div>
+                        <h3>Connect your brokerage</h3>
+                        <p>Read-only, through SnapTrade. Schwab, Fidelity, Vanguard, Robinhood, and others. HappyTrader never stores your broker password.</p>
+                    </li>
+                    <li>
+                        <div class="ht-kicker">02</div>
+                        <h3>Strategies detected</h3>
+                        <p>Covered calls, cash-secured puts, spreads, and the other labels are read from the fills and from the shares held when the option was written.</p>
+                    </li>
+                    <li>
+                        <div class="ht-kicker">03</div>
+                        <h3>See what's working</h3>
+                        <p>Positions, strategies, and the fit matrix show where the P&amp;L came from. The page is the record. It does not tell you what to trade next.</p>
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </section>

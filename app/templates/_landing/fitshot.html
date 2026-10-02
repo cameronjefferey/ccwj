@@ -1,0 +1,14 @@
+    <section class="ht-band ht-band-shot-b ht-section" aria-label="Where your edge is">
+        <div class="ht-wrap ht-split media-end">
+            <figure class="ht-media ht-shot">
+                <img src="{{ url_for('static', filename='marketing/fit-matrix.webp') }}"
+                     alt="Strategy fit matrix from the demo account, return by strategy and sector."
+                     width="1400" height="641" {% if section_eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %} decoding="async">
+                <figcaption>Demo account</figcaption>
+            </figure>
+            <div class="ht-copy">
+                <h2 class="ht-section-title">Where your edge is</h2>
+                <p>Win rate and return by strategy and sector, from the closes in the account. Cells with no trades stay empty.</p>
+            </div>
+        </div>
+    </section>

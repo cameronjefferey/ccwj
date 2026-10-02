@@ -259,6 +259,7 @@ def test_capi_v3_payload_matches_the_pixel_conversion_id(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", _urlopen)
     app.config["REDDIT_PIXEL_ID"] = "t2_testpixel"
     app.config["REDDIT_CAPI_TOKEN"] = "token-secret"
+    app.config["REDDIT_CAPI_TEST_ID"] = ""
     pixel_id = "pagevisitabc123"
     try:
         with app.test_request_context("/start?rdt_cid=secretclick&utm_source=reddit"):
@@ -299,9 +300,62 @@ def test_capi_v3_payload_matches_the_pixel_conversion_id(monkeypatch):
         assert posted[2]["body"]["data"]["events"][0]["type"]["tracking_type"] == "LEAD"
         assert posted[3]["body"]["data"]["events"][0]["type"]["tracking_type"] == "PURCHASE"
         assert posted[3]["body"]["data"]["events"][0]["metadata"]["conversion_id"] == "purchaseabc123"
+        assert "test_id" not in body
+        assert "test_id" not in body["data"]
     finally:
         app.config["REDDIT_PIXEL_ID"] = previous_pixel
         app.config["REDDIT_CAPI_TOKEN"] = previous_token
+        app.config["REDDIT_CAPI_TEST_ID"] = ""
+
+
+def test_capi_test_id_is_included_only_when_set(monkeypatch):
+    """Event testing id is data.test_id. Unset omits the key entirely."""
+    previous_pixel = app.config.get("REDDIT_PIXEL_ID")
+    previous_token = app.config.get("REDDIT_CAPI_TOKEN")
+    previous_test = app.config.get("REDDIT_CAPI_TEST_ID")
+    posted = []
+
+    class _Resp:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _urlopen(req, timeout=0):
+        posted.append(json.loads(req.data.decode()))
+        return _Resp()
+
+    monkeypatch.setenv("FUNNEL_CAPI_SYNC", "1")
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    app.config["REDDIT_PIXEL_ID"] = "t2_testpixel"
+    app.config["REDDIT_CAPI_TOKEN"] = "token-secret"
+    app.config["REDDIT_CAPI_TEST_ID"] = ""
+    try:
+        with app.test_request_context("/"):
+            assert send_capi("PageVisit", "pagevisitabc123") is True
+        quiet = posted[0]
+        assert list(quiet) == ["data"]
+        assert "test_id" not in quiet["data"]
+        assert "test_id" not in quiet["data"]["events"][0]
+
+        app.config["REDDIT_CAPI_TEST_ID"] = "  t2_eventtest  "
+        with app.test_request_context("/go/real-pnl"):
+            assert send_capi("SignUp", "signupabc12345", click_id="click12345") is True
+        marked = posted[1]
+        assert marked["data"]["test_id"] == "t2_eventtest"
+        assert list(marked["data"])[0] == "test_id"
+        event = marked["data"]["events"][0]
+        assert "test_id" not in event
+        assert event["metadata"]["conversion_id"] == "signupabc12345"
+        assert event["type"]["tracking_type"] == "SIGN_UP"
+    finally:
+        app.config["REDDIT_PIXEL_ID"] = previous_pixel
+        app.config["REDDIT_CAPI_TOKEN"] = previous_token
+        app.config["REDDIT_CAPI_TEST_ID"] = previous_test
 
 
 def test_signup_persists_first_and_last_touch(monkeypatch):
@@ -526,51 +580,127 @@ def test_landing_slug_sticks_on_first_touch_and_moves_last_touch():
     assert restored["ft"]["variant"] == "past"
 
 
-def test_go_pages_are_focused_noindex_and_free_of_account_totals():
+def _go_body(client, path):
+    resp = client.get(path)
+    assert resp.status_code == 200, path
+    return resp, html.unescape(resp.get_data(as_text=True))
+
+
+def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
+    monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
+    monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
     client = app.test_client()
     pages = {
         "learn": (
-            "Learn options free, with real past trades and paper money.",
+            "Learn options free, then practice with paper money",
             "Start learning free",
             "start-learning",
+            "Replay a trade, free",
         ),
         "real-pnl": (
-            "See what your options trades really made (rolls, covered-call runs, early exits).",
-            "Try the live demo",
-            "try-demo",
+            "Do you know what your covered calls really made after all the rolls?",
+            "Create free account",
+            "create-account",
+            "Covered-call income tracked",
         ),
         "mistakes": (
-            "Catch the mistakes your broker won't show you (early exits, assignments, missed premium).",
-            "Connect your broker, free 30 days",
-            "connect-broker",
+            "Bought it back early. Then it expired worthless.",
+            "Create free account",
+            "create-account",
+            "If held to expiration",
         ),
     }
-    for slug, (headline, label, cta) in pages.items():
-        resp = client.get(f"/go/{slug}")
-        assert resp.status_code == 200
-        body = html.unescape(resp.get_data(as_text=True))
+    trial = (
+        "Learning and paper trading are free. "
+        "Your 30-day trial starts when you connect a real brokerage."
+    )
+    for slug, (headline, label, cta, first_section) in pages.items():
+        resp, body = _go_body(client, f"/go/{slug}")
         assert headline in body
         assert label in body
-        assert f'data-ht-cta="{cta}"' in body
-        assert "Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage." in body
+        assert trial in body
         assert 'name="robots" content="noindex"' in body
         assert "noindex" in (resp.headers.get("X-Robots-Tag") or "")
         assert "ORCL" not in body
         assert "CFLT" not in body
         assert "1,500" not in body
         assert "$428,049" not in body
-        assert 'class="go-cta"' in body
+        assert "Broker data as of" not in body
+        assert 'id="userMenu"' not in body
+        assert 'id="navReview"' not in body
+        # Signup is the prominent button. Demo is a text link, not a button.
+        hero = body.split('class="ht-hero-cta"', 1)[1].split("</header>", 1)[0]
+        assert f'class="ht-hero-primary" href="/signup' in hero
+        assert f'data-ht-cta="{cta}"' in hero
+        assert label in hero
+        assert 'class="ht-hero-secondary"' not in hero
+        assert 'class="ht-demo-btn"' not in body
+        assert 'class="ht-hero-signin"' in hero
+        assert 'data-ht-cta="try-demo"' in hero
+        assert "Try the live demo" in hero
+        for place in ("mid", "close", "sticky", "nav", "footer"):
+            assert f'data-ht-cta="{cta}-{place}"' in body
+        assert 'data-youtube-id="' in body
+        assert 'loading="lazy"' in body
+        assert 'fetchpriority="high"' in body
+        # The ad's section is the first product band under the hero.
+        assert body.index(first_section) < body.index("How it works")
+        assert "Read-only" in body
+        assert "SnapTrade" in body
+        assert "What it costs" in body
+        assert "How do I connect a brokerage?" in body
+        assert "Trader Profile" in body
+        assert "Practice with paper money" in body
+        assert "Replay a trade, free" in body
     varied = client.get("/go/learn?v=past")
     varied_body = varied.get_data(as_text=True)
-    assert "Learn from real past trades, then practice with paper money." in varied_body
+    assert "Learn from real past trades, then practice with paper money" in varied_body
     assert "route=learn" in varied_body
+    assert 'data-ht-cta="start-learning"' in varied_body
     unknown = client.get("/go/learn?v=not-a-variant")
-    assert "Learn options free, with real past trades and paper money." in unknown.get_data(as_text=True)
+    assert "Learn options free, then practice with paper money" in unknown.get_data(as_text=True)
     assert client.get("/go/nope").status_code == 404
-    demo = client.get("/go/real-pnl")
-    assert 'data-ht-cta="start-trial"' in demo.get_data(as_text=True)
-    mistakes = client.get("/go/mistakes")
-    assert "be-swing.webp" in mistakes.get_data(as_text=True)
+    _, mistakes = _go_body(client, "/go/mistakes")
+    assert "be-swing.webp" in mistakes
+    assert mistakes.index("If held to expiration") < mistakes.index("Covered-call income tracked")
+    _, real = _go_body(client, "/go/real-pnl")
+    assert real.index("Covered-call income tracked") < real.index("If held to expiration")
+
+
+def test_go_pages_keep_marketing_chrome_when_signed_in(monkeypatch):
+    monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
+    monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
+    from datetime import date
+
+    from app.models import User
+
+    user = type("U", (), {})()
+    user.id = 1
+    user.username = "ada"
+    user.is_active = True
+    user.is_anonymous = False
+    user.is_authenticated = True
+    user.get_id = lambda: "1"
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "1" else None))
+    monkeypatch.setattr(
+        "app.snaptrade.broker_data_freshness",
+        lambda user_id, today=None, tenant_ids=None: (date(2026, 10, 1), 1, None),
+    )
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "1"
+        sess["_fresh"] = True
+    resp, body = _go_body(client, "/go/real-pnl")
+    assert "ht-public" in body
+    assert "Go to your dashboard" in body
+    assert "Sign In" in body
+    assert "Create free account" in body
+    assert "Broker data as of" not in body
+    assert 'id="userMenu"' not in body
+    assert "Jump to" not in body
+    assert 'id="navReview"' not in body
+    assert resp.status_code == 200
 
 
 def test_public_page_view_records_landing_device_and_not_identity():

@@ -634,14 +634,23 @@ or uploaded a CSV, and which button was clicked.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
 Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
-(`app/go_landings.py`). Each is noindex, one headline, one screenshot, and
-one primary button. `?v=` swaps an allow-listed headline. The slug and
-variant stick on `ht_touch` and are copied to `funnel_events` and
-`users.acquisition_landing` at signup, beside the UTMs and `rdt_cid`.
-`/go/learn` sends signup to `/learn`. Logged-out public pages also record
-page views, CTA clicks, scroll depth, and public video plays. Ad pixels
-stay off on DNT/GPC; those first-party rows still write. Admin →
-Acquisition is `/admin/analytics`.
+(`app/go_landings.py`). Each is noindex and reuses the homepage sections
+(proof, positions, covered-call runs, strategies, if-held, fit, Learn,
+Practice, pricing, FAQ). The hero is the ad, and that page's section
+comes first. Primary button is **Create free account** (Learn:
+**Start learning free**) to `/signup`, repeated mid-page, at the bottom,
+and as a sticky bar on phones. The live demo is a text link. `?v=`
+swaps an allow-listed headline. The slug and variant stick on `ht_touch`
+and are copied to `funnel_events` and `users.acquisition_landing` at
+signup, beside the UTMs and `rdt_cid`. `/go/learn` sends signup to
+`/learn`. These pages keep the marketing header (logo, Sign in, sign-up)
+even when a session exists; signed-in visitors get **Go to your
+dashboard** and do not see the app nav or the broker-data bar.
+Logged-out public pages also record page views, CTA clicks, scroll
+depth, and public video plays. Ad pixels stay off on DNT/GPC; those
+first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
+`data.test_id` to every v3 CAPI body for Event testing and must be
+removed after. Admin → Acquisition is `/admin/analytics`.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. One story: headline, then right now, then the rest behind disclosures.**

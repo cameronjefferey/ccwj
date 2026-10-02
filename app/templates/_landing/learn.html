@@ -1,0 +1,23 @@
+{% from "_landing_macros.html" import video_frame %}
+    {% for step in story_steps if step.links_learn %}
+    <section class="ht-band ht-band-learn ht-section" aria-label="Options 101">
+        <div class="ht-wrap ht-learn">
+            <div>
+                <div class="ht-kicker">Options 101</div>
+                <h2 class="ht-section-title">{{ step.title }}</h2>
+                <p>
+                    {{ step.caption }}
+                    {% if learn_url %}
+                    <a href="{{ learn_url }}"{% if campaign %} data-ht-cta="learn-series"{% endif %}>Open the series</a>
+                    {% endif %}
+                </p>
+            </div>
+            <div class="ht-learn-phone">
+                <div class="ht-phone">
+                    <div class="ht-phone-bar" aria-hidden="true"></div>
+                    {{ video_frame(step, eager=section_eager|default(false)) }}
+                </div>
+            </div>
+        </div>
+    </section>
+    {% endfor %}

@@ -1,0 +1,14 @@
+{% from "_landing_macros.html" import trial_label with context %}
+    <section class="ht-band ht-band-cta" aria-label="Start a trial">
+        <div class="ht-wrap">
+            <p class="ht-cta-kicker">30 days · no card</p>
+            {% if campaign %}
+            <a class="ht-cta" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-close">{{ cta_label }}</a>
+            {% elif signup_enabled %}
+            <a class="ht-cta" href="{{ url_for('signup') }}" data-ht-cta="start-trial">{{ trial_label() }}</a>
+            {% else %}
+            <a class="ht-cta" href="{{ url_for('login') }}">Sign in</a>
+            {% endif %}
+            <p class="ht-cta-note">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
+        </div>
+    </section>

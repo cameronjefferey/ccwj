@@ -1,0 +1,92 @@
+<script>
+/* Click-to-play only. No iframe is in the initial HTML, and nothing plays
+   (with or without sound) until this handler runs. autoplay=1 is applied
+   to the embed created by that click so the visitor does not have to
+   press play a second time inside the player. */
+(function () {
+    var YT = "https://www.youtube-nocookie.com/embed/";
+
+    function youtubeId(raw) {
+        return /^[A-Za-z0-9_-]{6,64}$/.test(raw || "") ? raw : "";
+    }
+
+    function mediaUrl(raw) {
+        if (!raw) return "";
+        if (raw.charAt(0) === "/" && raw.charAt(1) !== "/") return raw;
+        try {
+            var parsed = new URL(raw, window.location.origin);
+            if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+            if (parsed.protocol === "http:" && parsed.origin !== window.location.origin) return "";
+            return parsed.href;
+        } catch (err) {
+            return "";
+        }
+    }
+
+    function mount(btn) {
+        var title = btn.getAttribute("data-title") || "Video";
+        var id = youtubeId(btn.getAttribute("data-youtube-id"));
+        var mp4 = mediaUrl(btn.getAttribute("data-mp4-url"));
+        var player = document.createElement("div");
+        player.className = "ht-player";
+        if (id) {
+            var iframe = document.createElement("iframe");
+            iframe.src = YT + encodeURIComponent(id) + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
+            iframe.title = title;
+            iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+            iframe.setAttribute("allowfullscreen", "");
+            iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+            player.appendChild(iframe);
+        } else if (mp4) {
+            var video = document.createElement("video");
+            video.src = mp4;
+            video.controls = true;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.setAttribute("playsinline", "");
+            player.appendChild(video);
+        } else {
+            player.className += " ht-player-pending";
+            player.setAttribute("role", "status");
+            player.textContent = "This video is not public yet.";
+        }
+        btn.replaceWith(player);
+        var focusTarget = player.querySelector("iframe, video") || player;
+        if (focusTarget.tabIndex < 0 && focusTarget === player) player.tabIndex = -1;
+        try { focusTarget.focus(); } catch (err) { /* focus is optional */ }
+    }
+
+    document.querySelectorAll(".ht-facade").forEach(function (btn) {
+        btn.addEventListener("click", function () { mount(btn); });
+    });
+
+    document.querySelectorAll("[data-catch]").forEach(function (root) {
+        var tabs = root.querySelectorAll("[role=tab]");
+        function select(id) {
+            tabs.forEach(function (tab) {
+                var on = tab.getAttribute("aria-controls") === id;
+                tab.setAttribute("aria-selected", on ? "true" : "false");
+                tab.tabIndex = on ? 0 : -1;
+            });
+            root.querySelectorAll("[role=tabpanel]").forEach(function (panel) {
+                if (panel.id === id) panel.removeAttribute("hidden");
+                else panel.setAttribute("hidden", "");
+            });
+        }
+        tabs.forEach(function (tab, index) {
+            tab.addEventListener("click", function () {
+                select(tab.getAttribute("aria-controls"));
+            });
+            tab.addEventListener("keydown", function (event) {
+                var next = index;
+                if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+                else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+                else return;
+                event.preventDefault();
+                tabs[next].focus();
+                select(tabs[next].getAttribute("aria-controls"));
+            });
+        });
+    });
+})();
+</script>

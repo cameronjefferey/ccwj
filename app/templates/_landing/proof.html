@@ -1,0 +1,40 @@
+    <section class="ht-band ht-band-proof" aria-label="How the trial works">
+        <div class="ht-wrap">
+            <ul class="ht-proof">
+                <li>
+                    <div class="ht-proof-k">01</div>
+                    <strong>Read-only</strong>
+                    <p>Through SnapTrade. Schwab, Fidelity, Vanguard, Robinhood, and others.</p>
+                </li>
+                <li>
+                    <div class="ht-proof-k">02</div>
+                    <strong>Your password stays put</strong>
+                    <p>HappyTrader never stores your broker password.</p>
+                </li>
+                <li>
+                    <div class="ht-proof-k">30</div>
+                    <strong>Days, no card</strong>
+                    <p>Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
+                </li>
+                <li>
+                    <div class="ht-proof-k">Demo</div>
+                    <strong>Paper account</strong>
+                    <p>A paper account. Simulated money, real market data.</p>
+                </li>
+            </ul>
+            <p class="ht-fine">
+                Sync your accounts. {% include "_broker_sync_timing.html" %}
+                See your trading profile once the sync finishes.
+                Need older history? Broker sync is not a lifetime archive.
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
+                {% else %}
+                You can upload a CSV after you connect.
+                {% endif %}
+                Privacy mode masks account names and balances on your screen.
+                A share card is a picture of one closed trade — symbol, strategy,
+                dates, and realized P&amp;L — and it leaves out the account, the broker,
+                and the balance.
+            </p>
+        </div>
+    </section>
