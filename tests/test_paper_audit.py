@@ -369,6 +369,7 @@ def test_simple_nav_hides_advanced_items():
     client = app.test_client()
     with patch.object(User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "7" else None)), \
          patch("app.paper_accounts.viewer_flags", return_value=(True, True)), \
+         patch("app.paper_accounts.full_view_offer_open", return_value=False), \
          patch("app.paper_practice.snaptrade_enabled", return_value=False), \
          patch("app.paper_practice.latest_spots", return_value={}):
         with client.session_transaction() as sess:
