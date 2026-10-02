@@ -1234,7 +1234,7 @@
                 {% endif %}
                 {% if simple_view %}
                 <li class="nav-item">
-                    <a class="nav-link {% if ep in ('learn_index', 'learn_episode') %}active{% endif %}"
+                    <a class="nav-link {% if ep in ('learn_index', 'learn_episode', 'learn_replay_page') %}active{% endif %}"
                        href="{{ url_for('learn_index') }}">Learn</a>
                 </li>
                 <li class="nav-item">
@@ -1379,7 +1379,7 @@
             {% else %}
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link{% if request.endpoint in ('learn_index', 'learn_episode') %} active{% endif %}" href="{{ url_for('learn_index') }}">Learn</a>
+                        <a class="nav-link{% if request.endpoint in ('learn_index', 'learn_episode', 'learn_replay_page') %} active{% endif %}" href="{{ url_for('learn_index') }}">Learn</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pricing') }}">Pricing</a>
@@ -1853,7 +1853,7 @@
             });
         }
     </script>
-    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode') %}
+    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
     {% include "learn/_progress.html" %}
     {% endif %}
     {% block scripts %}{% endblock %}

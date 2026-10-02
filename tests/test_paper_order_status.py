@@ -140,6 +140,35 @@ def test_confirmed_place_labels_accepted_and_syncs_once(monkeypatch):
     assert syncs == [(7, {"snaptrade_account_id": "learner-acct"})]
 
 
+def test_rejected_receipt_does_not_promise_a_position():
+    from flask import render_template
+
+    from app import app
+
+    rejected = practice_receipt(
+        _ticket(),
+        {
+            "brokerage_order_id": "ord-r",
+            "status": "REJECTED",
+            "rejection_reason": "insufficient buying power",
+        },
+    )
+    filled = practice_receipt(
+        _ticket(),
+        {
+            "brokerage_order_id": "ord-f",
+            "status": "EXECUTED",
+            "execution_price": "1.16",
+        },
+    )
+    with app.test_request_context("/practice?placed=1"):
+        rejected_html = render_template("_paper_trade_receipt.html", sent=rejected)
+        filled_html = render_template("_paper_trade_receipt.html", sent=filled)
+    assert "Rejected: insufficient buying power" in rejected_html
+    assert "before the fill syncs" not in rejected_html
+    assert "before the fill syncs" in filled_html
+
+
 def test_rejected_place_confirms_without_syncing(monkeypatch):
     from flask import session
     from flask_login import login_user
