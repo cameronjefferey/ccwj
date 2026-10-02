@@ -103,6 +103,7 @@ option_intervals as (
         cast(0 as float64)                              as max_quantity_held,
         cast(1 as int64)                                as num_trades
     from {{ ref('int_option_contracts') }}
+    where not coalesce(opened_before_history, false)
 ),
 
 all_intervals_raw as (

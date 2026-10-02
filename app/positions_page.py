@@ -172,6 +172,49 @@ WITH classified AS (
       {tenant_filter}
 ),
 
+-- Same outcome grain as positions_summary: a same-day spread is one
+-- win/loss. $0 is neither. ATTRIBUTION_INVARIANT with the mart's
+-- outcome_units / unit_counts CTEs.
+outcome_units AS (
+    SELECT
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        strategy,
+        CASE
+            WHEN strategy IN (
+                'Call Spread', 'Put Spread', 'Iron Condor',
+                'Diagonal Call Spread', 'Diagonal Put Spread',
+                'Straddle', 'Strangle'
+            )
+            THEN CONCAT(
+                COALESCE(CAST(open_date AS STRING), ''),
+                '|',
+                COALESCE(CAST(option_expiry AS STRING), '')
+            )
+            ELSE trade_symbol
+        END AS unit_key,
+        LOGICAL_AND(status = 'Closed') AS unit_closed,
+        SUM(total_pnl) AS unit_pnl
+    FROM classified
+    GROUP BY 1, 2, 3, 4, 5, 6
+),
+
+unit_counts AS (
+    SELECT
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        strategy,
+        COUNTIF(unit_closed AND ROUND(unit_pnl, 2) > 0) AS num_winners,
+        COUNTIF(unit_closed AND ROUND(unit_pnl, 2) < 0) AS num_losers,
+        COUNTIF(unit_closed AND ROUND(unit_pnl, 2) != 0) AS num_decided
+    FROM outcome_units
+    GROUP BY 1, 2, 3, 4, 5
+),
+
 -- Read dividends from int_dividend_events (per-event). int_dividend_events
 -- UNIONs CSV-reported dividends (from stg_history.action='dividend') with
 -- yfinance-synthesized ex-div × holdings events. Reading stg_history
@@ -198,11 +241,11 @@ dividends AS (
 
 strategy_summary AS (
     SELECT
-        tenant_id,
-        account,
-        user_id,
-        symbol,
-        strategy,
+        c.tenant_id,
+        c.account,
+        c.user_id,
+        c.symbol,
+        c.strategy,
 
         -- Match positions_summary's 2-state status. The mart deliberately
         -- folds "both open and closed positions for this (account, symbol,
@@ -214,11 +257,11 @@ strategy_summary AS (
         -- restores ATTRIBUTION_INVARIANT and stops users from seeing
         -- chips that vanish when they clear the date filter.
         CASE
-            WHEN COUNTIF(status = 'Open') > 0 THEN 'Open'
+            WHEN COUNTIF(c.status = 'Open') > 0 THEN 'Open'
             ELSE 'Closed'
         END AS status,
 
-        SUM(total_pnl) AS total_pnl,
+        SUM(c.total_pnl) AS total_pnl,
         -- Use pre-split realized_pnl / unrealized_pnl from
         -- int_strategy_classification rather than deriving from total_pnl
         -- by status. The pre-split version correctly attributes the
@@ -228,32 +271,38 @@ strategy_summary AS (
         -- Open session's P&L into unrealized — even after the trader
         -- had banked $X selling half the position. positions_summary has
         -- always done it this way; this restores ATTRIBUTION_INVARIANT.
-        SUM(realized_pnl)   AS realized_pnl,
-        SUM(unrealized_pnl) AS unrealized_pnl,
+        SUM(c.realized_pnl)   AS realized_pnl,
+        SUM(c.unrealized_pnl) AS unrealized_pnl,
 
-        SUM(premium_received) AS total_premium_received,
-        SUM(ABS(premium_paid)) AS total_premium_paid,
+        SUM(c.premium_received) AS total_premium_received,
+        SUM(ABS(c.premium_paid)) AS total_premium_paid,
 
         COUNT(*) AS num_trade_groups,
-        SUM(num_trades) AS num_individual_trades,  -- DRIPs excluded in int_equity_sessions
-        COUNTIF(is_winner AND status = 'Closed') AS num_winners,
-        COUNTIF(NOT is_winner AND status = 'Closed') AS num_losers,
+        SUM(c.num_trades) AS num_individual_trades,  -- DRIPs excluded in int_equity_sessions
+        MAX(COALESCE(uc.num_winners, 0)) AS num_winners,
+        MAX(COALESCE(uc.num_losers, 0)) AS num_losers,
 
         SAFE_DIVIDE(
-            COUNTIF(is_winner AND status = 'Closed'),
-            NULLIF(COUNTIF(status = 'Closed'), 0)
+            MAX(COALESCE(uc.num_winners, 0)),
+            NULLIF(MAX(COALESCE(uc.num_decided, 0)), 0)
         ) AS win_rate,
 
         SAFE_DIVIDE(
-            SUM(CASE WHEN status = 'Closed' THEN total_pnl ELSE 0 END),
-            NULLIF(COUNTIF(status = 'Closed'), 0)
+            SUM(CASE WHEN c.status = 'Closed' THEN c.total_pnl ELSE 0 END),
+            NULLIF(COUNTIF(c.status = 'Closed'), 0)
         ) AS avg_pnl_per_trade,
 
-        ROUND(AVG(days_in_trade), 1) AS avg_days_in_trade,
-        MIN(open_date) AS first_trade_date,
-        MAX(COALESCE(close_date, CURRENT_DATE())) AS last_trade_date
+        ROUND(AVG(c.days_in_trade), 1) AS avg_days_in_trade,
+        MIN(c.open_date) AS first_trade_date,
+        MAX(COALESCE(c.close_date, CURRENT_DATE())) AS last_trade_date
 
-    FROM classified
+    FROM classified c
+    LEFT JOIN unit_counts uc
+        ON (c.tenant_id IS NOT DISTINCT FROM uc.tenant_id)
+        AND c.account = uc.account
+        AND (c.user_id IS NOT DISTINCT FROM uc.user_id)
+        AND c.symbol = uc.symbol
+        AND c.strategy = uc.strategy
     GROUP BY 1, 2, 3, 4, 5
 ),
 
@@ -622,10 +671,12 @@ def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
               "premium_received", "premium_paid", "num_trades", "days_in_trade"]:
         if c in sc.columns:
             sc[c] = pd.to_numeric(sc[c], errors="coerce").fillna(0)
-    sc["is_winner"] = sc["is_winner"].astype(bool)
+    # $0 and NULL are neither. astype(bool) turns NULL into True.
     _closed = sc["status"].astype(str).eq("Closed")
-    sc["_win_closed"] = (sc["is_winner"] & _closed).astype(int)
-    sc["_los_closed"] = (~sc["is_winner"] & _closed).astype(int)
+    _win_flag = sc["is_winner"].eq(True)
+    _loss_flag = sc["is_winner"].eq(False)
+    sc["_win_closed"] = (_win_flag & _closed).astype(int)
+    sc["_los_closed"] = (_loss_flag & _closed).astype(int)
     sc["_open_cnt"] = (~_closed).astype(int)
     sc["_closed_pnl"] = sc["total_pnl"].where(_closed, 0.0)
     sc["_premium_paid_abs"] = sc["premium_paid"].abs()
@@ -785,6 +836,8 @@ def positions():
             df[col] = df[col].astype(str).replace("NaT", "")
 
     from app.sector_labels import apply_sector_labels, canonical_sector_param, sort_unclassified_last
+    from app.outcome_units import apply_spread_collected
+    df = apply_spread_collected(df)
     df = apply_sector_labels(df)
     if selected_subsector:
         selected_subsector = canonical_sector_param(selected_subsector) or selected_subsector

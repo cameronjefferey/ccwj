@@ -63,7 +63,11 @@ with equity_sessions as (
 ),
 
 option_contracts as (
+    -- Closing fills with no opening trade have no cost basis. They stay
+    -- in int_option_contracts (raw log, zero P&L) and out of strategy
+    -- tags, win/loss, and realized.
     select * from {{ ref('int_option_contracts') }}
+    where not coalesce(opened_before_history, false)
 ),
 
 -- Crypto whitelist (see stg_crypto_symbols header comment). Used to
@@ -579,7 +583,13 @@ options_classified as (
             else 'Other Option'
         end as strategy,
 
-        case when oc.total_pnl > 0 then true else false end as is_winner
+        -- $0 is neither a win nor a loss. NULL is not counted by
+        -- countif(is_winner) or countif(not is_winner).
+        case
+            when round(oc.total_pnl, 2) > 0 then true
+            when round(oc.total_pnl, 2) < 0 then false
+            else null
+        end as is_winner
 
     from option_contracts oc
     -- Check for spread membership
@@ -844,8 +854,12 @@ equity_classified as (
         end as strategy,
 
         case
-            when e.status = 'Closed' then coalesce(sr.realized_pnl, 0) > 0
-            else e.total_pnl > 0
+            when e.status = 'Closed' and round(coalesce(sr.realized_pnl, 0), 2) > 0 then true
+            when e.status = 'Closed' and round(coalesce(sr.realized_pnl, 0), 2) < 0 then false
+            when e.status = 'Closed' then null
+            when round(e.total_pnl, 2) > 0 then true
+            when round(e.total_pnl, 2) < 0 then false
+            else null
         end as is_winner
 
     from equity_sessions e

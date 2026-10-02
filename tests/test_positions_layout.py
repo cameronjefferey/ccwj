@@ -77,23 +77,31 @@ def test_headers_and_names_are_not_squeezed_into_midword_breaks():
     assert "#symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 7%; }" in PAGE
     assert "#positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 7%; }" in PAGE
     assert "#positionsTable th:nth-child(2), #positionsTable td:nth-child(2) { width: 9%; }" in PAGE
-    phone = PAGE.split("@media (max-width: 767px)", 1)[1]
-    assert "--bs-table-bg: transparent" in phone
-    assert "background: var(--ht-surface)" in phone
+    phone = PAGE.split("@media (max-width: 767px)", 1)[1].split("@media", 1)[0]
+    assert "display: table" in phone
+    assert "pos-more-row" in phone
+    assert "tbody { display: block" not in phone
+    assert "thead { display: none" not in phone
 
 
-def test_phone_rows_stack_with_labels_and_desktop_columns_are_not_clipped():
+def test_phone_rows_keep_compact_columns():
     assert 'data-label="Collected"' in PAGE
     assert 'data-label="Total return"' in PAGE
-    assert 'data-label="W/L"' in PAGE
-    assert "content: attr(data-label)" in PAGE
-    assert "overflow-x: clip" in PAGE
+    assert 'data-label="Fills"' in PAGE
+    assert 'data-m="hide"' in PAGE
+    assert 'class="pos-more"' in PAGE
+    assert ">Fills</th>" in PAGE or ">Fills</a>" in PAGE
+    assert "open rows" in PAGE
+    assert "closed rows" in PAGE
+    assert "incl. dividends" in PAGE
+    assert "$%.1f" not in PAGE
     assert "text-overflow: ellipsis" not in PAGE
     assert "swipe" not in PAGE
     assert "body:has(#positionsTable) .ht-page { max-width: none; }" in PAGE
     assert "@media (min-width: 768px) and (max-width: 1366px)" in PAGE
     assert PAGE.count("table-layout: fixed") >= 2
-    assert "display: flex !important" in PAGE
+    assert "display: flex !important" not in PAGE
+    assert "tbody { display: block" not in PAGE
 
 
 def test_account_picker_stays_in_the_page_header():

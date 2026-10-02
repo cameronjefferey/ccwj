@@ -209,7 +209,7 @@ def test_symbol_callout_cost_when_both_expired_worthless():
     out = symbol_execution_callout(df)
     assert out["tone"] == "cost"
     assert out["title"] == "Early exits cost you"
-    assert out["lead"].startswith("Both contracts you closed early")
+    assert out["lead"].startswith("Both option series you closed early")
     assert "expired worthless anyway" in out["lead"]
     assert out["amount_label"] == "$75"
     assert out["tail_before"] == "Closing early gave up "
@@ -226,7 +226,7 @@ def test_symbol_callout_saved_and_partial_worthless():
     out = symbol_execution_callout(df)
     assert out["tone"] == "saved"
     assert out["title"] == "Early exits saved you"
-    assert out["lead"] == ("1 of 2 contracts you closed early here "
+    assert out["lead"] == ("1 of 2 option series you closed early here "
                             "expired worthless anyway.")
     assert out["amount_label"] == "$780"
     assert "ahead versus holding" in out["tail_after"]

@@ -235,6 +235,12 @@ def _new_stats():
         "expired_lost": 0, "expired_lost_premium": 0.0,
         "contract_wins": 0, "contract_win_total": 0.0,
         "contract_losses": 0, "contract_loss_total": 0.0,
+        # Directional tile: buy-to-open contracts only, including the
+        # ones that expired or were exercised. Bought-back shorts stay
+        # in contract_wins / contract_losses and out of these.
+        "short_calls": 0,
+        "long_wins": 0, "long_win_total": 0.0,
+        "long_losses": 0, "long_loss_total": 0.0,
         "assignments": 0, "wheels_opened": 0, "wheels_completed": 0,
         "stock_opens": 0, "adds": 0, "trims": 0,
         "dividend_total": 0.0, "drip_shares": 0.0,
@@ -416,12 +422,32 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
                     # rollups (the /story eras sum STO credits directly).
                     if short_side:
                         stats["premium_collected"] += max(o["amount"], 0.0)
+                        occ_o = o.get("occ") or {}
+                        n_open = abs(o["quantity"])
+                        if occ_o.get("option_type") == "put":
+                            stats["puts_sold"] += 1
+                        elif occ_o.get("option_type") == "call":
+                            if st.shares + 0.0001 >= 100 * n_open:
+                                stats["covered_calls"] += 1
+                                stats["cc_rent"] += max(o["amount"], 0.0)
+                            else:
+                                stats["short_calls"] += 1
+                    else:
+                        closed = st.opt(c["trade_symbol"])
+                        if closed.get("opened_long"):
+                            close_net = closed["net"] - abs(c["quantity"])
+                            if abs(close_net) < 0.0001:
+                                _record_long_outcome(
+                                    stats, closed["cash"] + c["amount"],
+                                )
                     # State: apply both fills.
                     for f in (c, o):
                         rec = st.opt(f["trade_symbol"])
                         sign = 1 if f["action"] in ("option_buy_to_open", "option_buy_to_close") else -1
                         rec["net"] += sign * abs(f["quantity"])
                         rec["cash"] += f["amount"]
+                        if f["action"] == "option_buy_to_open":
+                            rec["opened_long"] = True
                     if short_side and st.wheel_active:
                         net_credit = c["amount"] + o["amount"]
                         st.wheel_premium += max(net_credit, 0.0)
@@ -555,9 +581,12 @@ def _apply_option_open_state(f, st, stats):
         stats["premium_collected"] += max(amt, 0.0)
         if occ and occ["option_type"] == "put":
             stats["puts_sold"] += 1
+        elif occ and occ["option_type"] == "call":
+            stats["short_calls"] += 1
     elif f["action"] == "option_buy_to_open":
         rec["net"] += n
         rec["cash"] += amt
+        rec["opened_long"] = True
         stats["long_opens"] += 1
         stats["long_risk"] += abs(min(amt, 0.0))
 
@@ -1000,6 +1029,7 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
                 f"Sold {_contracts(n)} of the {strike} covered call ({exp}) "
                 f"against your shares, collecting {_money(amt)}."
             )
+        stats["short_calls"] += 1
         return (
             f"Sold {_contracts(n)} of the {strike} call ({exp}), "
             f"collecting {_money(amt)}."
@@ -1010,6 +1040,7 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
         rec["cash"] += amt
         stats["long_opens"] += 1
         stats["long_risk"] += abs(min(amt, 0.0))
+        rec["opened_long"] = True
         stance = "bullish" if otype == "call" else "downside protection" if st.shares > 0 else "bearish"
         return (
             f"Bought {_contracts(n)} of the {strike} {otype} ({exp}) — "
@@ -1049,6 +1080,8 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
                 stats["contract_losses"] += 1
                 stats["contract_loss_total"] += abs(pnl)
                 outcome = f"taking the {_money(pnl)} loss"
+            if rec.get("opened_long"):
+                _record_long_outcome(stats, pnl)
             return f"Sold the {strike} {otype}s ({exp}) for {_money(amt)} — {outcome}."
         return f"Sold {_contracts(n)} of the {strike} {otype} ({exp}) for {_money(amt)}."
 
@@ -1073,6 +1106,8 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
             stats["expired_lost_premium"] += abs(premium)
             stats["contract_losses"] += 1
             stats["contract_loss_total"] += abs(premium)
+            if rec.get("opened_long"):
+                _record_long_outcome(stats, premium)
             return (
                 f"The {strike} {otype} expired worthless — "
                 f"the {_money(premium)} paid for it was lost."
@@ -1109,8 +1144,12 @@ def _phrase_option(f, st, day_ctx=None, stats=None):
     if action == "option_exercised":
         was_short = rec["net"] < -0.0001
         was_long = rec["net"] > 0.0001
+        prior_cash = rec["cash"]
+        opened_long = rec.get("opened_long")
         rec["net"] = 0.0
         rec["cash"] = 0.0
+        if opened_long and not was_short:
+            _record_long_outcome(stats, prior_cash)
         if not (was_short or was_long):
             # Untracked contract (opened before our window, or the OCC
             # symbol was renamed by a split): infer the side from the
@@ -2196,6 +2235,16 @@ def _span_text(days):
     return f"{days / 365:.1f} years"
 
 
+def _record_long_outcome(stats, pnl):
+    """Buy-to-open result. $0 is neither a win nor a loss."""
+    if pnl > 0.005:
+        stats["long_wins"] += 1
+        stats["long_win_total"] += pnl
+    elif pnl < -0.005:
+        stats["long_losses"] += 1
+        stats["long_loss_total"] += abs(pnl)
+
+
 def _income_across(stats):
     """' across 18 covered calls and 2 short puts', or '' when uncounted.
 
@@ -2205,6 +2254,8 @@ def _income_across(stats):
     bits = []
     if stats["covered_calls"]:
         bits.append(_plural(stats["covered_calls"], "covered call"))
+    if stats.get("short_calls"):
+        bits.append(_plural(stats["short_calls"], "short call"))
     if stats["puts_sold"]:
         bits.append(_plural(stats["puts_sold"], "short put"))
     if not bits:
@@ -2363,8 +2414,8 @@ def _story_tiles(stats):
             "sub": f"collected{across}" if across else "collected on short options",
         })
     if stats["long_opens"] and stats["long_risk"] > 1:
-        closed = stats["contract_wins"] + stats["contract_losses"]
-        net = stats["contract_win_total"] - stats["contract_loss_total"]
+        closed = stats.get("long_wins", 0) + stats.get("long_losses", 0)
+        net = stats.get("long_win_total", 0.0) - stats.get("long_loss_total", 0.0)
         if closed:
             if net > 1:
                 tone = "pos"

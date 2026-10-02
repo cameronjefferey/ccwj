@@ -661,13 +661,13 @@ def test_template_renders_the_headline_and_keeps_the_chart_card():
     page = Path("app/templates/position_detail.html").read_text()
     held_at = page.find('{% include "_held_to_expiry.html" %}')
     runs_at = page.find('{% include "_covered_call_runs.html" %}')
-    legs_at = page.rfind("Position Legs")
-    assert runs_at < held_at < legs_at
-    assert legs_at - held_at < 400
+    legs_at = page.find('id="pd-legs"')
+    mirror_at = page.find("<!-- MIRROR-END -->")
+    assert mirror_at < legs_at < runs_at < held_at
     assert page.count('{% include "_held_to_expiry.html" %}') == 1
     if_held = page.find(">If held<")
-    assert if_held > held_at
-    header_start = page.rfind("<th", held_at, if_held)
+    assert if_held > legs_at
+    header_start = page.rfind("<th", legs_at, if_held)
     assert 'data-m="hide"' not in page[header_start:if_held]
     assert 'colspan="14"' in page
     assert "held-pill" in page

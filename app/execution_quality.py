@@ -789,14 +789,14 @@ def _worthless_lead(worthless, n):
         return ""
     if worthless == n:
         if n == 1:
-            return ("The contract you closed early here would have "
+            return ("The option series you closed early here would have "
                     "expired worthless anyway.")
         if n == 2:
-            return ("Both contracts you closed early here would have "
+            return ("Both option series you closed early here would have "
                     "expired worthless anyway.")
-        return (f"All {n} contracts you closed early here would have "
+        return (f"All {n} option series you closed early here would have "
                 f"expired worthless anyway.")
-    return (f"{worthless} of {n} contracts you closed early here "
+    return (f"{worthless} of {n} option series you closed early here "
             f"expired worthless anyway.")
 
 

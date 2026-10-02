@@ -148,7 +148,12 @@
             padding-right: .22rem;
         }
         #symbolTable td.pos-money,
-        #positionsTable td.pos-money { font-size: .68rem; }
+        #positionsTable td.pos-money {
+            font-size: .68rem;
+            white-space: nowrap;
+            overflow-wrap: normal;
+            word-break: keep-all;
+        }
         #symbolTable td:nth-child(1),
         #positionsTable td:nth-child(1) { overflow-wrap: break-word; }
         .pos-page,
@@ -207,71 +212,60 @@
     #symbolTable th .ht-term-btn { color: inherit; text-decoration: none; letter-spacing: 0; }
     /* Sortable-header + row-click styles are global (see static/js/tables.js). */
 
-    /* Phone: one card per row, each value labeled. No sideways scroll. */
+    /* Phone: four columns (name, total return, win rate, fills).
+       The rest lives in the row's More disclosure. Never stacked cards. */
+    .pos-page td.pos-money {
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: keep-all;
+        font-variant-numeric: tabular-nums;
+    }
+    .pos-acct { display: none; }
+    .pos-more-row { display: none; }
+    .pos-more {
+        margin-top: .25rem;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-weight: 500;
+        font-size: .72rem;
+    }
+    .pos-more summary { cursor: pointer; color: var(--ht-muted); }
+    .pos-more dl {
+        display: grid;
+        grid-template-columns: auto max-content;
+        gap: .15rem .75rem;
+        margin: .35rem 0 0;
+    }
+    .pos-more dt { color: var(--ht-muted); font-weight: 500; }
+    .pos-more dd {
+        margin: 0;
+        text-align: right;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
     @media (max-width: 767px) {
-        .pos-page { overflow-x: clip; }
+        .pos-page { overflow-x: auto; }
         .pos-list-head { flex-direction: column; }
         .pos-search { max-width: none; width: 100%; }
         .pos-page .filter-bar > div { flex: 1 1 100%; min-width: 0; }
         .pos-page .filter-bar .form-select,
         .pos-page .filter-bar .form-control { max-width: 100%; }
         .pos-page .table-responsive {
-            overflow: visible;
+            overflow-x: auto;
             box-shadow: none;
         }
         .pos-page table.pos-stack {
-            display: block;
+            display: table;
             width: 100%;
             max-width: 100%;
         }
-        .pos-page table.pos-stack > thead { display: none !important; }
-        .pos-page table.pos-stack > tbody { display: block; }
-        .pos-page table.pos-stack > tbody > tr {
-            display: block;
-            border: 1px solid var(--ht-line);
-            border-radius: 10px;
-            margin: 0 0 .6rem;
-            padding: .45rem .7rem .5rem;
-            background: var(--ht-surface);
-        }
-        .pos-page table.pos-stack > tbody > tr > td {
-            display: flex !important;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: .75rem;
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-            white-space: normal !important;
-            overflow: visible !important;
-            text-align: right;
-            border: 0;
-            padding: .16rem 0;
-            /* Bootstrap paints cells with the page fill, darker than the card. */
-            background-color: transparent;
-            --bs-table-bg: transparent;
-            --bs-table-accent-bg: transparent;
-            box-shadow: none;
-        }
-        .pos-page table.pos-stack > tbody > tr > td.pos-money {
-            white-space: nowrap !important;
-            overflow-wrap: normal !important;
-            word-break: keep-all !important;
-            flex: 0 0 auto;
-        }
-        .pos-page table.pos-stack > tbody > tr > td::before {
-            content: attr(data-label);
-            color: var(--ht-muted);
-            font-size: .66rem;
-            font-weight: 650;
-            text-align: left;
-            flex: 0 0 42%;
-        }
+        .pos-acct { display: block; font-weight: 500; font-size: .68rem; color: var(--ht-muted); }
+        .pos-more-row { display: table-row; }
         .pos-strat-row {
-            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-columns: minmax(0, 1fr) max-content;
         }
         .pos-strat-name { grid-column: 1; }
-        .pos-strat-total { grid-column: 2; }
+        .pos-strat-total { grid-column: 2; white-space: nowrap; }
         .pos-strat-track { grid-column: 1 / -1; }
         .pos-axis { margin-left: 0; margin-right: 0; }
     }
@@ -307,7 +301,7 @@
     .pos-legend .real { background: #4f6ef7; }
     .pos-legend .unreal { background: #e09a2b; }
     .pos-strat-row {
-        display: grid; grid-template-columns: minmax(8rem, 11.5rem) minmax(0, 1fr) 4.6rem;
+        display: grid; grid-template-columns: minmax(8rem, 11.5rem) minmax(0, 1fr) max-content;
         gap: .6rem; align-items: center; margin: .28rem 0;
     }
     .pos-strat-name { font-size: .82rem; color: var(--ht-label); white-space: normal; min-width: 0; }
@@ -322,6 +316,8 @@
     .pos-strat-total {
         text-align: right; font-size: .82rem; font-weight: 600;
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
     }
     .pos-axis {
         display: grid; margin-left: 12.1rem; margin-right: 5.2rem;
@@ -386,7 +382,7 @@
     {% if kpis and _auth_acct_count > 0 %}
     <div class="ov-top">
         <div>
-            <div class="ov-k">Total return</div>
+            <div class="ov-k">Total return, incl. dividends</div>
             <div class="ov-big {% if kpis.total_return > 0 %}pos{% elif kpis.total_return < 0 %}neg{% endif %}">{% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return, 0) }}</div>
         </div>
         <div>
@@ -418,11 +414,11 @@
     </p>
     {% if _auth_acct_count > 0 %}
     <div class="ov-pills">
-        <span class="hero-chip" title="Open rows in this list — one per account × symbol × strategy."><span class="dot open"></span>{{ _open_ct }} open</span>
+        <span class="hero-chip" title="Position rows in this list — one per account × symbol × strategy."><span class="dot open"></span>{{ _open_ct }} open rows</span>
         {% if open_symbol_count is defined and open_symbol_count and open_symbol_count != _open_ct %}
         <span class="hero-chip" title="Unique symbols currently held across those open rows.">{{ open_symbol_count }} symbols</span>
         {% endif %}
-        <span class="hero-chip"><span class="dot closed"></span>{{ _closed_ct }} closed</span>
+        <span class="hero-chip" title="Position rows in this list — one per account × symbol × strategy."><span class="dot closed"></span>{{ _closed_ct }} closed rows</span>
         {% if _mixed_ct %}
         <span class="hero-chip"><span class="dot mixed"></span>{{ _mixed_ct }} mixed</span>
         {% endif %}
@@ -673,21 +669,21 @@
             <table class="table table-hover table-sm align-middle mb-0 pos-stack" id="symbolTable">
                 <thead class="table-light">
                     <tr>
-                        <th class="sortable" data-sort="str">Account</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Account</th>
                         <th class="sortable" data-sort="str">Symbol</th>
-                        <th class="sortable" data-sort="str">Subsector</th>
-                        <th>Strategies</th>
+                        <th class="sortable" data-sort="str" data-m="hide">Subsector</th>
+                        <th data-m="hide">Strategies</th>
                         <th class="sortable" data-sort="num"
                             title="Realized + unrealized + dividends — the headline P&amp;L for this symbol.">
                             Total return
                         </th>
-                        <th class="sortable" data-sort="num">{{ term('Realized') }}</th>
-                        <th class="sortable" data-sort="num">{{ term('Unrealized') }}</th>
-                        <th class="sortable" data-sort="num">Dividends</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Realized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">{{ term('Unrealized') }}</th>
+                        <th class="sortable" data-sort="num" data-m="hide">Dividends</th>
                         <th class="sortable" data-sort="num">{{ term('Win Rate') }}</th>
-                        <th class="sortable" data-sort="num">Trades</th>
-                        <th class="sortable" data-sort="num">W/L</th>
-                        <th class="sortable" data-sort="num" title="Premium received.">{{ term('Collected') }}</th>
+                        <th class="sortable" data-sort="num" title="Individual fills.">Fills</th>
+                        <th class="sortable" data-sort="num" data-m="hide">W/L</th>
+                        <th class="sortable" data-sort="num" data-m="hide" title="Premium received.">{{ term('Collected') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -698,6 +694,7 @@
                             <a href="{{ scoped_url('position_detail', symbol=row.symbol, strategy=selected_strategy, status=selected_statuses, subsector=selected_subsector, sector=selected_sector, tag=selected_tag, start_date=selected_start_date, end_date=selected_end_date) }}" class="text-decoration-none" data-symbol="{{ row.symbol }}">
                                 {{ row.symbol }}
                             </a>
+                            <span class="pos-acct">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</span>
                         </td>
                         <td class="small text-muted" data-label="Subsector"
                             title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
@@ -739,12 +736,29 @@
                         <td data-label="Win rate" data-val="{{ row.win_rate if (row.num_winners or 0) + (row.num_losers or 0) else '' }}">
                             {{ win_rate_label(row.win_rate, row.num_winners, row.num_losers) }}
                         </td>
-                        <td data-label="Trades" data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
+                        <td data-label="Fills" data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
                         <td data-label="W/L" data-val="{{ row.num_winners }}">
                             <span class="pos-wl-pair"><span class="text-positive">{{ row.num_winners | int }}</span> / <span class="text-negative">{{ row.num_losers | int }}</span></span>
                         </td>
                         <td data-label="Collected" data-val="{{ row.total_premium_received }}" class="pos-money text-positive">
                             {{ money(row.total_premium_received) }}
+                        </td>
+                    </tr>
+                    <tr class="pos-more-row" data-no-sort data-no-row-nav>
+                        <td colspan="12">
+                            <details class="pos-more" data-no-row-nav>
+                                <summary>More</summary>
+                                <dl>
+                                    <dt>Account</dt><dd>{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</dd>
+                                    <dt>Subsector</dt><dd>{% if row.subsector and row.subsector not in ('Unknown', 'Unclassified', 'Other') %}{{ row.subsector }}{% else %}—{% endif %}</dd>
+                                    <dt>Strategies</dt><dd>{{ row.strategies }}</dd>
+                                    <dt>Realized</dt><dd>{{ money(row.realized_pnl) }}</dd>
+                                    <dt>Unrealized</dt><dd>{{ money(row.unrealized_pnl) }}</dd>
+                                    <dt>Dividends</dt><dd>{% if (row.total_dividend_income or 0) != 0 %}{{ money(row.total_dividend_income) }}{% else %}—{% endif %}</dd>
+                                    <dt>W/L</dt><dd>{{ row.num_winners | int }} / {{ row.num_losers | int }}</dd>
+                                    <dt>Collected</dt><dd>{% if (row.total_premium_received or 0) != 0 %}{{ money(row.total_premium_received) }}{% else %}—{% endif %}</dd>
+                                </dl>
+                            </details>
                         </td>
                     </tr>
                     {% endfor %}
@@ -783,25 +797,25 @@
             <table class="table table-hover table-sm align-middle mb-0 pos-stack" id="positionsTable" data-server-sort="1">
                 <thead class="table-light">
                     <tr>
-                        <th class="sortable {% if sort_key == 'account' %}{{ sort_dir }}{% endif %}" data-sort="str"><a href="{{ pos_sort('account') }}">Account</a></th>
+                        <th class="sortable {% if sort_key == 'account' %}{{ sort_dir }}{% endif %}" data-sort="str" data-m="hide"><a href="{{ pos_sort('account') }}">Account</a></th>
                         <th class="sortable {% if sort_key == 'strategy' %}{{ sort_dir }}{% endif %}" data-sort="str"><a href="{{ pos_sort('strategy') }}">Strategy</a></th>
-                        <th class="sortable {% if sort_key == 'status' %}{{ sort_dir }}{% endif %}" data-sort="str"><a href="{{ pos_sort('status') }}">Status</a></th>
+                        <th class="sortable {% if sort_key == 'status' %}{{ sort_dir }}{% endif %}" data-sort="str" data-m="hide"><a href="{{ pos_sort('status') }}">Status</a></th>
                         <th class="sortable {% if sort_key == 'total_return' %}{{ sort_dir }}{% endif %}" data-sort="num"
                             title="Realized + unrealized + dividends — the headline P&amp;L for this strategy.">
                             <a href="{{ pos_sort('total_return') }}">Total return</a>
                         </th>
-                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num">{{ term_link('Realized', pos_sort('realized')) }}</th>
-                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num">{{ term_link('Unrealized', pos_sort('unrealized')) }}</th>
-                        <th class="sortable {% if sort_key == 'dividends' %}{{ sort_dir }}{% endif %}" data-sort="num"
+                        <th class="sortable {% if sort_key == 'realized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Realized', pos_sort('realized')) }}</th>
+                        <th class="sortable {% if sort_key == 'unrealized' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide">{{ term_link('Unrealized', pos_sort('unrealized')) }}</th>
+                        <th class="sortable {% if sort_key == 'dividends' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"
                             title="Cash dividends received while this strategy held the underlying. Attributed to one strategy per symbol to avoid double-counting.">
                             <a href="{{ pos_sort('dividends') }}">Dividends</a>
                         </th>
                         <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num">{{ term_link('Win Rate', pos_sort('win_rate')) }}</th>
-                        <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num"><a href="{{ pos_sort('trades') }}">Trades</a></th>
-                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num"><a href="{{ pos_sort('wl') }}">W/L</a></th>
-                        <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
-                        <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num"><a href="{{ pos_sort('avg_days') }}">Avg days</a></th>
-                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" title="Premium received.">{{ term_link('Collected', pos_sort('premium')) }}</th>
+                        <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num" title="Individual fills."><a href="{{ pos_sort('trades') }}">Fills</a></th>
+                        <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W/L</a></th>
+                        <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
+                        <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_days') }}">Avg days</a></th>
+                        <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide" title="Premium received.">{{ term_link('Collected', pos_sort('premium')) }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -822,6 +836,7 @@
                                     {{ row.strategy }}
                                 </span>
                             </a>
+                            <span class="pos-acct">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</span>
                         </td>
                         <td data-label="Status">
                             {% if row.status == 'Open' %}
@@ -855,7 +870,7 @@
                         <td data-label="Win rate" data-val="{{ row.win_rate if (row.num_winners or 0) + (row.num_losers or 0) else '' }}">
                             {{ win_rate_label(row.win_rate, row.num_winners, row.num_losers) }}
                         </td>
-                        <td data-label="Trades" data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
+                        <td data-label="Fills" data-val="{{ row.num_individual_trades }}">{{ row.num_individual_trades | int }}</td>
                         <td data-label="W/L" data-val="{{ row.num_winners }}">
                             <span class="pos-wl-pair"><span class="text-positive">{{ row.num_winners | int }}</span> / <span class="text-negative">{{ row.num_losers | int }}</span></span>
                         </td>
@@ -863,9 +878,27 @@
                             class="pos-money {{ 'text-positive' if row.avg_pnl_per_trade >= 0 else 'text-negative' }}">
                             {{ money(row.avg_pnl_per_trade) }}
                         </td>
-                        <td data-label="Avg days" data-val="{{ row.avg_days_in_trade }}">{{ "{:,.0f}".format(row.avg_days_in_trade) if row.avg_days_in_trade is not none else '—' }}</td>
+                        <td data-label="Avg days" data-val="{{ row.avg_days_in_trade }}">{% if (row.num_individual_trades or 0)|int == 0 %}—{% elif row.avg_days_in_trade is not none %}{{ "{:,.0f}".format(row.avg_days_in_trade) }}{% else %}—{% endif %}</td>
                         <td data-label="Collected" data-val="{{ row.total_premium_received }}" class="pos-money text-positive">
                             {{ money(row.total_premium_received) }}
+                        </td>
+                    </tr>
+                    <tr class="pos-more-row" data-no-sort data-no-row-nav>
+                        <td colspan="13">
+                            <details class="pos-more" data-no-row-nav>
+                                <summary>More</summary>
+                                <dl>
+                                    <dt>Account</dt><dd>{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</dd>
+                                    <dt>Status</dt><dd>{{ row.status }}</dd>
+                                    <dt>Realized</dt><dd>{{ money(row.realized_pnl) }}</dd>
+                                    <dt>Unrealized</dt><dd>{{ money(row.unrealized_pnl) }}</dd>
+                                    <dt>Dividends</dt><dd>{% if (row.total_dividend_income or 0) != 0 %}{{ money(row.total_dividend_income) }}{% else %}—{% endif %}</dd>
+                                    <dt>W/L</dt><dd>{{ row.num_winners | int }} / {{ row.num_losers | int }}</dd>
+                                    <dt>Avg P&amp;L</dt><dd>{{ money(row.avg_pnl_per_trade) }}</dd>
+                                    <dt>Avg days</dt><dd>{% if (row.num_individual_trades or 0)|int == 0 %}—{% elif row.avg_days_in_trade is not none %}{{ "{:,.0f}".format(row.avg_days_in_trade) }}{% else %}—{% endif %}</dd>
+                                    <dt>Collected</dt><dd>{% if (row.total_premium_received or 0) != 0 %}{{ money(row.total_premium_received) }}{% else %}—{% endif %}</dd>
+                                </dl>
+                            </details>
                         </td>
                     </tr>
                     {% endfor %}
@@ -976,9 +1009,7 @@
             {% endif %}
         </div>
         <div class="pos-strat-total {% if _net > 0 %}text-positive{% elif _net < 0 %}text-negative{% endif %}">
-            {% if _net|abs >= 1000 %}{{ '+' if _net > 0 else '-' }}${{ '%.1f'|format(_net|abs / 1000) }}k
-            {% elif _net %}{{ '+' if _net > 0 else '-' }}${{ '{:,.0f}'.format(_net|abs) }}
-            {% else %}$0{% endif %}
+            {% if _net > 0 %}+{% endif %}{{ money(_net) }}
         </div>
     </div>
     {% endfor %}

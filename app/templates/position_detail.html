@@ -230,388 +230,46 @@
     .account-toggle .pill-dot.open { background: var(--pd-accent, #5b8cff); }
     .account-toggle .pill-dot.closed { background: var(--pd-muted, #8a97b1); }
 
-    @media (max-width: 640px) {
-        .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; margin-bottom: 1rem; }
-        .pos-hero h1 { font-size: 1.5rem; }
-        .kpi-mini .value { font-size: 1.05rem; }
-        .kpi-mini .label { font-size: .58rem; }
-        .stat-card .card-body { padding: .9rem; }
-
-        /* Section padding stays generous; the matrix gets its own scroll. */
-        .stat-card.p-4 { padding: 1rem !important; }
-
-        /* Session/leg pills: smaller on phones so they wrap to ~2 per row
-           instead of 1 per row + horizontal scroll. */
-        .session-pill { padding: .3rem .65rem; font-size: .72rem; }
-        .session-pill .pill-pnl { font-size: .65rem; }
-
-        /* Win/loss matrix rows can be 6+ columns wide; keep them inside
-           a horizontal scroll container instead of breaking the layout.
-           bordered table + min-width keeps cells legible while scrolling. */
-        .table-responsive { -webkit-overflow-scrolling: touch; }
-        .leg-detail-table { font-size: .7rem; }
-    }
-    .wl-matrix {
-        --bs-table-bg: #121826;
-        --bs-table-color: #e8edf7;
-        --bs-table-border-color: #243049;
-    }
-    .wl-matrix .wl-axis {
-        background: #1a2233;
-        color: #8a97b1;
-        border-color: #243049;
-    }
-    .chart-read-kicker {
-        font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
-        color: #8a97b1; font-weight: 650; margin-bottom: .35rem;
-    }
-    .chart-read-lead, .chart-read-rest {
-        color: #e8edf7; font-size: .95rem; line-height: 1.55; margin: 0;
-    }
-    .chart-read-more { position: relative; margin-top: .65rem; }
-    .chart-read-more.is-locked .chart-read-rest {
-        user-select: none;
-        min-height: 3.6rem;
-        border-radius: .35rem;
-        background:
-            linear-gradient(90deg, rgba(138,151,177,.18) 68%, transparent 68%) 0 0 / 100% .8rem,
-            linear-gradient(90deg, rgba(138,151,177,.12) 82%, transparent 82%) 0 1.35rem / 100% .8rem,
-            linear-gradient(90deg, rgba(138,151,177,.09) 54%, transparent 54%) 0 2.7rem / 100% .8rem;
-        background-repeat: no-repeat;
-    }
-    .chart-read-upgrade {
-        position: absolute; left: 0; right: 0; bottom: .2rem;
-        display: flex; justify-content: center;
-    }
-
-    /* ── Cohesive position page ── */
-    body .pd-page .review-hero {
-        box-shadow: none;
-        border-radius: var(--pd-radius);
-        margin-bottom: var(--pd-gap);
-    }
-    body .pd-page .review-hero .text-positive,
-    body .pd-page .text-positive,
-    body .pd-page .text-success,
-    body .pd-page .story-pos,
-    body .pd-page .story-metric-pos,
-    body .pd-page .pos {
-        color: var(--pd-gain) !important;
-    }
-    body .pd-page .review-hero .text-negative,
-    body .pd-page .text-negative,
-    body .pd-page .text-danger,
-    body .pd-page .story-neg,
-    body .pd-page .story-metric-neg,
-    body .pd-page .neg {
-        color: var(--pd-loss) !important;
-    }
-    body .pd-page .stat-card,
-    body .pd-page .chart-wrapper,
-    body .pd-page .narrative-card,
-    body .pd-page .ht-statbar,
-    body .pd-page #storyCard.card,
-    body .pd-page .held-fold,
-    body .pd-page .ht-runs,
-    body .pd-page .pd-fold {
-        background: var(--pd-surface);
-        border: 1px solid var(--pd-line);
-        border-radius: var(--pd-radius);
-        box-shadow: none;
-        margin-bottom: var(--pd-gap);
-    }
-    body .pd-page .pd-h,
-    body .pd-page .chart-wrapper h6,
-    body .pd-page .stat-card > h6,
-    body .pd-page .ht-runs > h6,
-    body .pd-page .held-fold-kicker {
-        font-size: .95rem;
-        font-weight: 650;
-        letter-spacing: -0.01em;
-        line-height: 1.3;
-        color: var(--pd-ink);
-        margin: 0;
-    }
-    body .pd-page .pd-sub,
-    body .pd-page .pd-fold-note {
+    .pd-more { display: none; }
+    .pd-more summary {
+        cursor: pointer;
         color: var(--pd-muted);
-        font-size: .82rem;
-        font-weight: 400;
-        letter-spacing: 0;
-        line-height: 1.4;
-        margin: .2rem 0 0;
-    }
-    body .pd-page .pd-kicker {
-        font-size: .68rem;
-        font-weight: 650;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-        color: var(--pd-muted);
-        margin: 1.35rem 0 .55rem;
-    }
-    body .pd-page .badge,
-    body .pd-page .badge-open,
-    body .pd-page .badge-closed,
-    body .pd-page .badge-strategy,
-    body .pd-page .badge.bg-success,
-    body .pd-page .badge.bg-warning {
-        background: transparent !important;
-        color: var(--pd-muted) !important;
-        border: 1px solid var(--pd-line);
-        border-radius: 999px;
-        font-weight: 650;
-        box-shadow: none;
-    }
-    body .pd-page .badge-open,
-    body .pd-page .badge.bg-success {
-        background: color-mix(in srgb, var(--pd-accent) 14%, transparent) !important;
-        color: var(--pd-accent) !important;
-        border-color: color-mix(in srgb, var(--pd-accent) 45%, var(--pd-line));
-    }
-    body .pd-page .session-pill.active,
-    body .pd-page .session-pill.active.session-open,
-    body[data-bs-theme="dark"] .pd-page .session-pill.active.session-open {
-        border-color: var(--pd-accent);
-        background: color-mix(in srgb, var(--pd-accent) 16%, transparent);
-        color: var(--pd-ink);
-    }
-    body .pd-page .session-pill .pill-dot.open,
-    body .pd-page .account-toggle .pill-dot.open { background: var(--pd-accent); }
-    body .pd-page .story-income {
-        background: color-mix(in srgb, var(--pd-gain) 16%, transparent);
-        color: var(--pd-gain);
-    }
-    body .pd-page .story-sell { color: var(--pd-loss); }
-    body .pd-page .story-col-sh { color: var(--pd-gain); border-bottom-color: var(--pd-gain); }
-    body .pd-page .pd-story-lead #storyCard .story-symbol { display: none; }
-    body .pd-page .pd-story-lead #storyCard { margin-bottom: var(--pd-gap); }
-    .pd-num, .pd-page .pd-row-val, .pd-page .pd-dl dd {
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-variant-numeric: tabular-nums;
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
         font-weight: 500;
-    }
-    .pd-fold { padding: 0; }
-    .pd-fold-head { padding: .9rem 1.1rem .35rem; }
-    .pd-fold-sum {
-        display: flex;
-        align-items: baseline;
-        flex-wrap: wrap;
-        gap: .35rem .75rem;
-        padding: .9rem 1.1rem;
-        cursor: pointer;
-        list-style: none;
-    }
-    .pd-fold-sum::-webkit-details-marker { display: none; }
-    .pd-fold-sum::after {
-        content: "▸";
-        color: var(--pd-muted);
-        flex: none;
-        margin-left: auto;
-        font-size: .8rem;
-    }
-    .pd-fold[open] > .pd-fold-sum::after { content: "▾"; }
-    .pd-fold-meta { color: var(--pd-muted); font-size: .78rem; font-weight: 500; }
-    .pd-fold-body { padding: 0 1.1rem 1rem; }
-    .pd-row {
-        border-top: 1px solid var(--pd-line);
-    }
-    .pd-row > summary {
-        display: flex;
-        align-items: center;
-        gap: .6rem;
-        padding: .7rem .15rem;
-        cursor: pointer;
-        list-style: none;
-        min-width: 0;
-    }
-    .pd-row > summary::-webkit-details-marker { display: none; }
-    .pd-row-name { font-weight: 650; min-width: 0; }
-    .pd-row-val { margin-left: auto; white-space: nowrap; }
-    .pd-row-total {
-        display: flex;
-        align-items: center;
-        gap: .6rem;
-        padding: .75rem .15rem .15rem;
-        border-top: 1px solid var(--pd-line);
-        font-weight: 650;
-    }
-    .pd-dl {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-        gap: .55rem .9rem;
-        margin: 0 0 .75rem;
-        padding: .15rem .15rem .35rem 1.4rem;
-    }
-    .pd-dl div { min-width: 0; }
-    .pd-dl dt {
-        font-size: .66rem;
-        font-weight: 650;
-        letter-spacing: .05em;
-        text-transform: uppercase;
-        color: var(--pd-muted);
-        margin: 0 0 .1rem;
-    }
-    .pd-dl dd { margin: 0; font-size: .88rem; }
-    .pd-strategy-link {
-        display: inline-block;
-        margin: .15rem 0 .65rem 1.4rem;
-        font-size: .8rem;
-        font-weight: 600;
-    }
-    .wl-win { background: var(--pd-gain); color: #0a0e17; }
-    .wl-win-soft { background: color-mix(in srgb, var(--pd-gain) 42%, var(--pd-surface-2)); color: var(--pd-ink); }
-    .wl-loss-soft { background: color-mix(in srgb, var(--pd-loss) 42%, var(--pd-surface-2)); color: var(--pd-ink); }
-    .wl-loss { background: var(--pd-loss); color: #fff; }
-    .wl-empty { background: var(--pd-surface-2); color: var(--pd-muted); }
-    .wl-scroll { overflow-x: auto; max-width: 100%; }
-    .wl-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
-    .wl-matrix { font-size: .72rem; width: max-content; min-width: 100%; }
-    .wl-matrix .wl-pnl {
-        font-family: "JetBrains Mono", ui-monospace, monospace;
-        font-weight: 700;
-        font-size: .8rem;
-        font-variant-numeric: tabular-nums;
-    }
-    .wl-matrix .wl-meta { font-size: .6rem; opacity: .75; }
-    .wl-axis { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; }
-    .pd-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .55rem 1rem;
-        margin-top: .75rem;
         font-size: .68rem;
-        color: var(--pd-muted);
     }
+    .pd-more dl {
+        display: grid;
+        grid-template-columns: auto max-content;
+        gap: .12rem .6rem;
+        margin: .3rem 0 0;
+    }
+    .pd-more dd {
+        margin: 0;
+        text-align: right;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    /* Phone: keep columns. Hidden fields open from More. Never stacked cards. */
     @media (max-width: 640px) {
-        .pd-page { overflow-x: clip; }
+        .pd-page { overflow-x: auto; }
         .pd-page .pd-legs-scroll {
-            overflow: visible !important;
-            max-height: none !important;
+            overflow-x: auto;
+            max-width: 100%;
         }
         .pd-page table.pd-legs,
         .pd-page table.pd-stack {
-            display: block;
+            display: table;
             width: 100%;
             max-width: 100%;
         }
-        .pd-page table.pd-legs > thead,
-        .pd-page table.pd-stack > thead { display: none !important; }
-        .pd-page table.pd-legs > tbody,
-        .pd-page table.pd-legs > tfoot,
-        .pd-page table.pd-stack > tbody,
-        .pd-page table.pd-stack > tfoot { display: block; }
-        .pd-page table.pd-legs > tbody > tr,
-        .pd-page table.pd-legs > tfoot > tr,
-        .pd-page table.pd-stack > tbody > tr {
-            display: block;
-            border: 1px solid var(--pd-line);
-            border-radius: 10px;
-            margin: 0 0 .6rem;
-            padding: .5rem .7rem .55rem;
-            background: var(--pd-surface-2);
-        }
-        .pd-page table.pd-legs > tbody > tr.leg-detail-row { display: none !important; background: transparent; border: 0; padding: 0; margin: 0; }
-        .pd-page table.pd-legs > tbody > tr.leg-detail-row.open { display: block !important; overflow-x: auto; }
-        .pd-page table.pd-legs > tbody > tr > td,
-        .pd-page table.pd-legs > tfoot > tr > td,
-        .pd-page table.pd-stack > tbody > tr > td {
-            display: flex !important;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: .75rem;
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-            white-space: normal !important;
-            text-align: right;
-            border: 0;
-            padding: .16rem 0;
-            background: transparent !important;
-        }
-        .pd-page table.pd-legs > tbody > tr.leg-detail-row.open > td {
-            display: block !important;
-            text-align: left;
-            overflow-x: auto;
-        }
-        .pd-page table.pd-legs tr.leg-detail-row table td,
-        .pd-page table.pd-legs tr.leg-detail-row table th {
-            display: table-cell !important;
-            width: auto !important;
-            text-align: inherit;
-            white-space: nowrap !important;
-        }
-        .pd-page table.pd-legs > tbody > tr > td::before,
-        .pd-page table.pd-legs > tfoot > tr > td::before,
-        .pd-page table.pd-stack > tbody > tr > td::before {
-            color: var(--pd-muted);
-            font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-            font-size: .66rem;
-            font-weight: 650;
-            letter-spacing: .04em;
-            text-transform: uppercase;
-            text-align: left;
-            flex: none;
-        }
-        .pd-page table.pd-stack > tbody > tr > td::before { content: attr(data-label); }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(2)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(2)::before { content: "Leg"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(3)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(3)::before { content: "Contract"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(4)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(4)::before { content: "Strategy"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(5)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(5)::before { content: "Account"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(6)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(6)::before { content: "Qty"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(7)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(7)::before { content: "Opened"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(8)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(8)::before { content: "Closed"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(9)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(9)::before { content: "Days"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(10)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(10)::before { content: "Cost"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(11)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(11)::before { content: "Value"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(12)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(12)::before { content: "P&L"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(13)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(13)::before { content: "If held"; }
-        .pd-page table.pd-legs > tbody > tr > td:nth-child(14)::before,
-        .pd-page table.pd-legs > tfoot > tr > td:nth-child(14)::before { content: "Return"; }
-        .pd-page table.pd-stack > tbody > tr > td:not([data-label])::before,
-        .pd-page table.pd-stack > tbody > tr > td[data-label=""]::before { content: none; }
-        /* Key numbers stay on the card. The rest opens with the row. */
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(2),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(4),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(5),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(6),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(7),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(8),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(9),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(10),
-        .pd-page table.pd-legs > tbody > tr:not(.pd-open) > td:nth-child(11),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(2),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(4),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(5),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(6),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(7),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(8),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(9),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(10),
-        .pd-page table.pd-legs > tfoot > tr:not(.pd-open) > td:nth-child(11) {
-            display: none !important;
-        }
         .pd-page table.pd-legs .pd-num,
-        .pd-page table.pd-legs .pd-date,
-        .pd-page table.pd-legs .pd-tight,
-        .pd-page table.pd-legs .pd-clip,
-        .pd-page table.pd-legs .pd-flex {
-            min-width: 0;
-            width: auto;
-            max-width: none;
+        .pd-page table.pd-stack td[data-label="Amount"] {
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
         }
-        .pd-page table.pd-stack tr:not(.pd-open) td.pd-extra { display: none !important; }
+        .pd-more { display: block; margin-top: .2rem; }
         .pd-dl { grid-template-columns: 1fr 1fr; padding-left: .15rem; }
     }
 </style>
@@ -623,6 +281,7 @@
 {% if t.is_dividend_reinvestment %}
 <span class="tt-verb buy" title="Dividend reinvestment — the broker took a cash dividend and bought fractional shares.">DRIP</span>
 {% else %}
+{% set exercised_label = 'Assigned' if action == 'option_exercised' and (t.direction or '') == 'Sold' else 'Exercised' %}
 {% set labels = {
     'equity_buy': 'Bought',
     'equity_sell': 'Sold',
@@ -633,7 +292,7 @@
     'option_sell_to_close': 'Sold to close',
     'option_expired': 'Expired',
     'option_assigned': 'Assigned',
-    'option_exercised': 'Exercised',
+    'option_exercised': exercised_label,
     'dividend': 'Dividend',
     'margin_interest': 'Margin interest',
     'credit_interest': 'Interest',
@@ -799,8 +458,8 @@
                     data-symbol="{{ symbol }}"
                     {% if share_tenants %}data-tenants="{{ share_tenants }}"{% endif %}>Share</button>
             {% endif %}
-            <div class="small text-white-50">Total return</div>
-            <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized{% if kpis.dividend_income and kpis.dividend_income != 0 %} + dividends{% endif %}</div>
+            <div class="small text-white-50">Total return, incl. dividends</div>
+            <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized + dividends</div>
             <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
                 {{ money(kpis.total_return) }}
             </div>
@@ -818,6 +477,301 @@
     {% include "_story_summary.html" %}
 </div>
 {% endif %}
+<!-- MIRROR-END -->
+{% if history_before_open %}
+<p class="pd-lede">Opened before your history — cost basis before your history. These closing fills are not counted as realized profit.</p>
+{% endif %}
+
+{% if current_positions or trade_outcomes %}
+<div class="pd-fold" id="pd-legs">
+    <div class="pd-fold-head">
+        <h2 class="pd-h">Position Legs</h2>
+        <p class="pd-fold-note">
+            {% if current_positions %}{{ current_positions|length }} open{% endif %}{% if current_positions and trade_outcomes %}, {% endif %}{% if trade_outcomes %}{{ trade_outcomes|length }} closed{% endif %}
+            {% if trade_outcomes %}
+            {% set winners = trade_outcomes | selectattr('is_winner', 'equalto', true) | list | length %}
+            {% set losers = trade_outcomes | selectattr('is_winner', 'equalto', false) | list | length %}
+            {% set decided = winners + losers %}
+            {% if decided %}&middot; {{ winners }}/{{ decided }} winners ({{ (winners / decided * 100) | round(0) | int }}%){% endif %}
+            {% endif %}
+        </p>
+    </div>
+    <div class="pd-fold-body">
+    <div class="table-responsive pd-legs-scroll" style="max-height: 600px; overflow-y: auto;">
+        <table class="table table-sm table-hover align-middle mb-0 pd-legs">
+            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                <tr>
+                    {# data-m="hide": collapsed on phones (tables.js) — the
+                       expander + Contract + P&L + If held + Return stay.
+                       pd-opt drops Account and Days a step earlier, once
+                       the money columns need the width. If held has no
+                       data-m so a dash or counterfactual is not dropped. #}
+                    <th class="pd-tight"></th>
+                    <th class="pd-tight text-center" data-m="hide">Leg</th>
+                    <th class="pd-flex" title="Contract or leg">Contract</th>
+                    <th class="pd-clip" data-m="hide">Strategy</th>
+                    <th class="pd-clip pd-opt" data-m="hide">Account</th>
+                    <th class="pd-num" data-m="hide">Qty</th>
+                    <th class="pd-date" data-m="hide">Opened</th>
+                    <th class="pd-date" data-m="hide">Closed</th>
+                    <th class="pd-num pd-opt" data-m="hide">Days</th>
+                    <th class="pd-num" data-m="hide">Cost</th>
+                    <th class="pd-num" data-m="hide" title="Market value, or proceeds if closed">Value</th>
+                    <th class="pd-num">P&amp;L</th>
+                    <th class="pd-num pd-ifheld" title="P&amp;L if held to expiration. A dash means that does not apply.">If held</th>
+                    <th class="pd-num">Return</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set ocost = current_positions | sum(attribute='cost_basis') if current_positions else 0 %}
+                {% set omv = current_positions | sum(attribute='market_value') if current_positions else 0 %}
+                {% set opnl = current_positions | sum(attribute='unrealized_pnl') if current_positions else 0 %}
+                {% set ccost = trade_outcomes | sum(attribute='cost') if trade_outcomes else 0 %}
+                {% set cproc = trade_outcomes | sum(attribute='proceeds') if trade_outcomes else 0 %}
+                {% set cpnl = trade_outcomes | sum(attribute='pnl') if trade_outcomes else 0 %}
+                {% set gcost = ocost + ccost %}
+                {% set gval = omv + cproc %}
+                {% set gpnl = opnl + cpnl %}
+                {# ── Open legs ── #}
+                {% if current_positions %}
+                {% for p in current_positions %}
+                <tr class="pd-openable">
+                    {% set contract = (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else (p.description or '') %}
+                    {% set strat = p.leg_kind or p.instrument_type or '' %}
+                    {% set acct = (p.account_display or p.account) | account_label(p.tenant_id) %}
+                    <td class="pd-tight"><span class="badge badge-open">Open</span></td>
+                    <td class="pd-tight text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
+                    <td class="fw-semibold small pd-flex">
+                        <div class="pd-contract-line"><span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span></div>
+                        <details class="pd-more">
+                            <summary>More</summary>
+                            <dl>
+                                <dt>Strategy</dt><dd>{{ strat or '—' }}</dd>
+                                <dt>Account</dt><dd>{{ acct or '—' }}</dd>
+                                <dt>Qty</dt><dd>{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '—') }}</dd>
+                                <dt>Opened</dt><dd>{{ p.open_date|compact_date if p.open_date else '—' }}</dd>
+                                <dt>Cost</dt><dd>{{ money(p.cost_basis) }}</dd>
+                                <dt>Value</dt><dd>{{ money(p.market_value) }}</dd>
+                            </dl>
+                        </details>
+                    </td>
+                    <td class="text-muted small pd-clip" {% if strat %}title="{{ strat }}"{% endif %}>{{ strat }}</td>
+                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
+                    <td class="pd-num">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
+                    <td class="pd-date" {% if p.open_date %}title="{{ p.open_date|human_date }}"{% endif %}>{{ p.open_date|compact_date if p.open_date else '—' }}</td>
+                    <td class="pd-date text-muted">—</td>
+                    <td class="pd-num pd-opt text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
+                    <td class="pd-num">{{ money(p.cost_basis) }}</td>
+                    <td class="pd-num">{{ money(p.market_value) }}</td>
+                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
+                        {{ money(p.unrealized_pnl) }}
+                    </td>
+                    <td class="pd-num pd-ifheld text-muted" title="Not applicable">—</td>
+                    <td class="pd-num {{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
+                        {{ "{:.1f}%".format(p.unrealized_pnl_pct) }}
+                    </td>
+                </tr>
+                {% endfor %}
+                {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
+                <tr class="fw-semibold table-light pd-open" style="font-size:.8rem;">
+                    <td class="pd-tight"></td>
+                    <td></td>
+                    <td class="text-nowrap">Open Total</td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td class="pd-num">{{ money(ocost) }}</td>
+                    <td class="pd-num">{{ money(omv) }}</td>
+                    <td class="pd-num {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
+                        {{ money(opnl) }}
+                    </td>
+                    <td class="pd-num text-muted">—</td>
+                    <td class="pd-num text-muted">—</td>
+                </tr>
+                {% endif %}
+
+                {# ── Separator ── #}
+                {% if current_positions and trade_outcomes %}
+                <tr>
+                    <td colspan="14" class="text-center text-muted py-1" style="font-size:.65rem; background: #1a2233; letter-spacing:.5px;">
+                        Closed legs
+                    </td>
+                </tr>
+                {% endif %}
+
+                {# ── Closed legs (expandable) ── #}
+                {% if trade_outcomes %}
+                {% for o in trade_outcomes %}
+                <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
+                    {% set contract = o.trade_symbol|option_symbol %}
+                    {% set acct = (o.account_display or o.account) | account_label(o.tenant_id) %}
+                    <td class="pd-tight">
+                        {% if o.is_winner is true %}
+                        <span class="leg-arrow" style="color:var(--gain);font-size:.7rem;">&#9654;</span>
+                        {% elif o.is_winner is false %}
+                        <span class="leg-arrow" style="color:var(--loss);font-size:.7rem;">&#9654;</span>
+                        {% else %}
+                        <span class="leg-arrow" style="color:var(--ht-muted);font-size:.7rem;">&#9654;</span>
+                        {% endif %}
+                    </td>
+                    <td class="pd-tight text-center text-muted small">
+                        {{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}
+                        {% if o.equity_partial_n is defined and o.equity_partial_n > 1 %}
+                        <span class="d-block lh-sm" style="font-size:.6rem;">partial {{ o.equity_partial_ix }}/{{ o.equity_partial_n }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="fw-semibold small pd-flex">
+                        <div class="pd-contract-line">
+                            <span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span>
+                            {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
+                            {% set _badge = 'Assigned' if o.close_type == 'Exercised' and o.direction == 'Sold' else o.close_type %}
+                            <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ _badge }}</span>
+                            {% endif %}
+                        </div>
+                        <details class="pd-more">
+                            <summary>More</summary>
+                            <dl>
+                                <dt>Strategy</dt><dd>{{ o.strategy or '—' }}</dd>
+                                <dt>Account</dt><dd>{{ acct or '—' }}</dd>
+                                <dt>Qty</dt><dd>{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '—') }}</dd>
+                                <dt>Opened</dt><dd>{{ o.open_date|compact_date if o.open_date else '—' }}</dd>
+                                <dt>Closed</dt><dd>{{ o.close_date|compact_date if o.close_date else '—' }}</dd>
+                                <dt>Cost</dt><dd>{% if o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</dd>
+                                <dt>Value</dt><dd>{{ money(o.proceeds) }}</dd>
+                            </dl>
+                        </details>
+                    </td>
+                    <td class="text-muted small pd-clip" {% if o.strategy %}title="{{ o.strategy }}"{% endif %}>{{ o.strategy }}</td>
+                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
+                    <td class="pd-num">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
+                    <td class="pd-date" {% if o.open_date %}title="{{ o.open_date|human_date }}"{% endif %}>{{ o.open_date|compact_date }}</td>
+                    <td class="pd-date" {% if o.close_date %}title="{{ o.close_date|human_date }}"{% endif %}>{{ o.close_date|compact_date }}</td>
+                    <td class="pd-num pd-opt text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
+                    <td class="pd-num">{% if o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</td>
+                    <td class="pd-num">{{ money(o.proceeds) }}</td>
+                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
+                        <div>{{ money(o.pnl) }}</div>
+                        <button type="button" class="ht-share-btn"
+                                {% if o.type == 'equity' %}
+                                data-ref="equity"
+                                data-symbol="{{ symbol }}"
+                                data-tenant="{{ o.tenant_id or '' }}"
+                                data-session="{{ o.session_id if o.session_id is not none else '' }}"
+                                data-close="{{ (o.close_date|string)[:10] if o.close_date else '' }}"
+                                {% else %}
+                                data-ref="option"
+                                data-symbol="{{ symbol }}"
+                                data-tenant="{{ o.tenant_id or '' }}"
+                                data-trade-symbol="{{ o.trade_symbol or '' }}"
+                                {% endif %}>Share</button>
+                    </td>
+                    <td class="pd-num pd-ifheld">
+                        {% if o.held_id %}
+                        <button type="button" class="held-pill {{ 'text-positive' if o.pnl_if_held > 0 else 'text-negative' if o.pnl_if_held < 0 else '' }}"
+                                data-held-open="{{ o.held_id }}"
+                                {% if o.held_pill %}title="{{ o.held_pill }}"{% endif %}>{{ money(o.pnl_if_held) }}</button>
+                        {% else %}
+                        <span class="text-muted" title="Not applicable">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="pd-num {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else 'text-muted' }}">
+                        {% if o.direction == 'Sold' and o.return_pct is not none %}{{ "{:.0f}% kept".format(o.return_pct) }}
+                        {% elif o.return_pct is not none %}{{ "{:.1f}%".format(o.return_pct) }}
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% if o.raw_trades %}
+                <tr class="leg-detail-row" id="leg-detail-{{ loop.index0 }}">
+                    <td colspan="14" class="leg-detail-cell">
+                        <table class="table leg-detail-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                    <th>Qty</th>
+                                    <th class="text-end" data-m="hide">Price</th>
+                                    <th class="text-end" data-m="hide">Fees</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for t in o.raw_trades %}
+                                <tr>
+                                    <td class="text-nowrap">{{ t.trade_date }}</td>
+                                    <td>{{ trade_action(t) }}</td>
+                                    <td>
+                                        {% if t.quantity is number and (t.quantity % 1) != 0 %}
+                                        {{ "{:,.4f}".format(t.quantity) }}
+                                        {% elif t.quantity %}
+                                        {{ "{:,.0f}".format(t.quantity) }}
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ money(t.price) if t.price else '' }}</td>
+                                    <td class="text-end text-muted">{{ money(t.fees) if t.fees else '' }}</td>
+                                    <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
+                                        {{ money(t.amount) }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+            </tbody>
+            {% if trade_outcomes %}
+            <tfoot class="table-light">
+                <tr class="fw-semibold pd-open" style="font-size:.8rem;">
+                    <td class="pd-tight"></td>
+                    <td></td>
+                    <td class="text-nowrap">Closed Total</td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td class="pd-num">{{ money(ccost) }}</td>
+                    <td class="pd-num">{{ money(cproc) }}</td>
+                    <td class="pd-num {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
+                        {{ money(cpnl) }}
+                    </td>
+                    <td class="pd-num text-muted">—</td>
+                    <td class="pd-num text-muted">—</td>
+                </tr>
+                {% if current_positions %}
+                <tr class="fw-semibold border-top border-secondary pd-open" style="font-size:.8rem;">
+                    <td class="pd-tight"></td>
+                    <td></td>
+                    <td class="text-nowrap">Total</td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="pd-opt"></td>
+                    <td class="pd-num">{{ money(gcost) }}</td>
+                    <td class="pd-num">{{ money(gval) }}</td>
+                    <td class="pd-num {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
+                        {{ money(gpnl) }}
+                    </td>
+                    <td class="pd-num text-muted">—</td>
+                    <td class="pd-num text-muted">—</td>
+                </tr>
+                {% endif %}
+            </tfoot>
+            {% endif %}
+        </table>
+    </div>
+    </div>
+</div>
+{% endif %}
+
 
 {# ── Position Narrative (open = snapshot; history = all trades) ── #}
 {% if kpis %}
@@ -923,7 +877,7 @@
         <span class="ht-stat-l">{{ term('Unrealized P&L') }}</span>
         <span class="ht-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.unrealized_pnl) }}</span>
     </div>
-    {% if 'Income strategy' not in _tile_labels %}
+    {% if (kpis.premium_collected or 0) > 0 %}
     <div class="ht-stat">
         <span class="ht-stat-l">{{ term('Premium Collected') }}</span>
         <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected) }}</span>
@@ -935,7 +889,7 @@
     </div>
     <div class="ht-stat">
         <span class="ht-stat-l">Avg Days</span>
-        <span class="ht-stat-v">{{ "{:.0f}".format(kpis.avg_days) }}</span>
+        <span class="ht-stat-v">{% if (kpis.total_trades or 0) == 0 %}—{% else %}{{ "{:.0f}".format(kpis.avg_days) }}{% endif %}</span>
     </div>
     {% if 'Dividends' not in _tile_labels %}
     <div class="ht-stat">
@@ -1346,7 +1300,7 @@
                 <dd>{{ win_rate_label(r.win_rate, r.num_winners, r.num_losers) }}</dd>
             </div>
             <div>
-                <dt>Trades</dt>
+                <dt>Fills</dt>
                 <dd>
                     {% if r.status == 'Open' and (r.num_individual_trades or 0) == 0 %}
                     <span class="text-muted" title="Per-strategy fill count not in summary; see History and trade tables">—</span>
@@ -1361,7 +1315,7 @@
             </div>
             <div>
                 <dt>Avg days</dt>
-                <dd>{{ "{:,.0f}".format(r.avg_days_in_trade) if r.avg_days_in_trade is not none else '—' }}</dd>
+                <dd>{% if (r.num_individual_trades or 0)|int == 0 %}—{% elif r.avg_days_in_trade is not none %}{{ "{:,.0f}".format(r.avg_days_in_trade) }}{% else %}—{% endif %}</dd>
             </div>
             <div>
                 <dt title="Premium received on this strategy.">Collected</dt>
@@ -1396,274 +1350,19 @@
     </div>
 </details>
 {% endif %}
-<p class="pd-kicker">Details</p>
-{% if current_positions or trade_outcomes %}
-<details class="pd-fold" id="pd-legs">
+<details class="pd-fold" id="pd-details">
     <summary class="pd-fold-sum">
-        <span class="pd-h">Position Legs</span>
-        <span class="pd-fold-note">
-            {% if current_positions %}{{ current_positions|length }} open{% endif %}{% if current_positions and trade_outcomes %}, {% endif %}{% if trade_outcomes %}{{ trade_outcomes|length }} closed{% endif %}
-            {% if trade_outcomes %}
-            {% set winners = trade_outcomes | selectattr('is_winner') | list | length %}
-            &middot; {{ winners }}/{{ trade_outcomes|length }} winners ({{ (winners / trade_outcomes|length * 100) | round(0) | int }}%)
-            {% endif %}
-        </span>
+        <span class="pd-h">Details</span>
+        <span class="pd-fold-note">Breakdown by type and the raw log</span>
     </summary>
     <div class="pd-fold-body">
-    <div class="table-responsive pd-legs-scroll" style="max-height: 600px; overflow-y: auto;">
-        <table class="table table-sm table-hover align-middle mb-0 pd-legs">
-            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                <tr>
-                    {# data-m="hide": collapsed on phones (tables.js) — the
-                       expander + Contract + P&L + If held + Return stay.
-                       pd-opt drops Account and Days a step earlier, once
-                       the money columns need the width. If held has no
-                       data-m so a dash or counterfactual is not dropped. #}
-                    <th class="pd-tight"></th>
-                    <th class="pd-tight text-center" data-m="hide">Leg</th>
-                    <th class="pd-flex" title="Contract or leg">Contract</th>
-                    <th class="pd-clip" data-m="hide">Strategy</th>
-                    <th class="pd-clip pd-opt" data-m="hide">Account</th>
-                    <th class="pd-num" data-m="hide">Qty</th>
-                    <th class="pd-date" data-m="hide">Opened</th>
-                    <th class="pd-date" data-m="hide">Closed</th>
-                    <th class="pd-num pd-opt" data-m="hide">Days</th>
-                    <th class="pd-num" data-m="hide">Cost</th>
-                    <th class="pd-num" data-m="hide" title="Market value, or proceeds if closed">Value</th>
-                    <th class="pd-num">P&amp;L</th>
-                    <th class="pd-num pd-ifheld" title="P&amp;L if held to expiration. A dash means that does not apply.">If held</th>
-                    <th class="pd-num">Return</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% set ocost = current_positions | sum(attribute='cost_basis') if current_positions else 0 %}
-                {% set omv = current_positions | sum(attribute='market_value') if current_positions else 0 %}
-                {% set opnl = current_positions | sum(attribute='unrealized_pnl') if current_positions else 0 %}
-                {% set ccost = trade_outcomes | sum(attribute='cost') if trade_outcomes else 0 %}
-                {% set cproc = trade_outcomes | sum(attribute='proceeds') if trade_outcomes else 0 %}
-                {% set cpnl = trade_outcomes | sum(attribute='pnl') if trade_outcomes else 0 %}
-                {% set gcost = ocost + ccost %}
-                {% set gval = omv + cproc %}
-                {% set gpnl = opnl + cpnl %}
-                {# ── Open legs ── #}
-                {% if current_positions %}
-                {% for p in current_positions %}
-                <tr class="pd-openable">
-                    {% set contract = (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else (p.description or '') %}
-                    {% set strat = p.leg_kind or p.instrument_type or '' %}
-                    {% set acct = (p.account_display or p.account) | account_label(p.tenant_id) %}
-                    <td class="pd-tight"><span class="badge badge-open">Open</span></td>
-                    <td class="pd-tight text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
-                    <td class="fw-semibold small pd-flex">
-                        <div class="pd-contract-line"><span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span></div>
-                    </td>
-                    <td class="text-muted small pd-clip" {% if strat %}title="{{ strat }}"{% endif %}>{{ strat }}</td>
-                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
-                    <td class="pd-num">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
-                    <td class="pd-date" {% if p.open_date %}title="{{ p.open_date|human_date }}"{% endif %}>{{ p.open_date|compact_date if p.open_date else '—' }}</td>
-                    <td class="pd-date text-muted">—</td>
-                    <td class="pd-num pd-opt text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
-                    <td class="pd-num">{{ money(p.cost_basis) }}</td>
-                    <td class="pd-num">{{ money(p.market_value) }}</td>
-                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
-                        {{ money(p.unrealized_pnl) }}
-                    </td>
-                    <td class="pd-num pd-ifheld text-muted" title="Not applicable">—</td>
-                    <td class="pd-num {{ 'text-positive' if p.unrealized_pnl_pct >= 0 else 'text-negative' }}">
-                        {{ "{:.1f}%".format(p.unrealized_pnl_pct) }}
-                    </td>
-                </tr>
-                {% endfor %}
-                {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
-                <tr class="fw-semibold table-light pd-open" style="font-size:.8rem;">
-                    <td class="pd-tight"></td>
-                    <td></td>
-                    <td class="text-nowrap">Open Total</td>
-                    <td></td>
-                    <td class="pd-opt"></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td class="pd-opt"></td>
-                    <td class="pd-num">{{ money(ocost) }}</td>
-                    <td class="pd-num">{{ money(omv) }}</td>
-                    <td class="pd-num {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
-                        {{ money(opnl) }}
-                    </td>
-                    <td class="pd-num text-muted">—</td>
-                    <td class="pd-num text-muted">—</td>
-                </tr>
-                {% endif %}
-
-                {# ── Separator ── #}
-                {% if current_positions and trade_outcomes %}
-                <tr>
-                    <td colspan="14" class="text-center text-muted py-1" style="font-size:.65rem; background: #1a2233; letter-spacing:.5px;">
-                        CLOSED TRADES
-                    </td>
-                </tr>
-                {% endif %}
-
-                {# ── Closed legs (expandable) ── #}
-                {% if trade_outcomes %}
-                {% for o in trade_outcomes %}
-                <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
-                    {% set contract = o.trade_symbol|option_symbol %}
-                    {% set acct = (o.account_display or o.account) | account_label(o.tenant_id) %}
-                    <td class="pd-tight">
-                        {% if o.is_winner %}
-                        <span class="leg-arrow" style="color:var(--gain);font-size:.7rem;">&#9654;</span>
-                        {% else %}
-                        <span class="leg-arrow" style="color:var(--loss);font-size:.7rem;">&#9654;</span>
-                        {% endif %}
-                    </td>
-                    <td class="pd-tight text-center text-muted small">
-                        {{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}
-                        {% if o.equity_partial_n is defined and o.equity_partial_n > 1 %}
-                        <span class="d-block lh-sm" style="font-size:.6rem;">partial {{ o.equity_partial_ix }}/{{ o.equity_partial_n }}</span>
-                        {% endif %}
-                    </td>
-                    <td class="fw-semibold small pd-flex">
-                        <div class="pd-contract-line">
-                            <span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span>
-                            {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
-                            <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ o.close_type }}</span>
-                            {% endif %}
-                        </div>
-                    </td>
-                    <td class="text-muted small pd-clip" {% if o.strategy %}title="{{ o.strategy }}"{% endif %}>{{ o.strategy }}</td>
-                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
-                    <td class="pd-num">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
-                    <td class="pd-date" {% if o.open_date %}title="{{ o.open_date|human_date }}"{% endif %}>{{ o.open_date|compact_date }}</td>
-                    <td class="pd-date" {% if o.close_date %}title="{{ o.close_date|human_date }}"{% endif %}>{{ o.close_date|compact_date }}</td>
-                    <td class="pd-num pd-opt text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
-                    <td class="pd-num">{{ money(o.cost) }}</td>
-                    <td class="pd-num">{{ money(o.proceeds) }}</td>
-                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
-                        <div>{{ money(o.pnl) }}</div>
-                        <button type="button" class="ht-share-btn"
-                                {% if o.type == 'equity' %}
-                                data-ref="equity"
-                                data-symbol="{{ symbol }}"
-                                data-tenant="{{ o.tenant_id or '' }}"
-                                data-session="{{ o.session_id if o.session_id is not none else '' }}"
-                                data-close="{{ (o.close_date|string)[:10] if o.close_date else '' }}"
-                                {% else %}
-                                data-ref="option"
-                                data-symbol="{{ symbol }}"
-                                data-tenant="{{ o.tenant_id or '' }}"
-                                data-trade-symbol="{{ o.trade_symbol or '' }}"
-                                {% endif %}>Share</button>
-                    </td>
-                    <td class="pd-num pd-ifheld">
-                        {% if o.held_id %}
-                        <button type="button" class="held-pill {{ 'text-positive' if o.pnl_if_held > 0 else 'text-negative' if o.pnl_if_held < 0 else '' }}"
-                                data-held-open="{{ o.held_id }}"
-                                {% if o.held_pill %}title="{{ o.held_pill }}"{% endif %}>{{ money(o.pnl_if_held) }}</button>
-                        {% else %}
-                        <span class="text-muted" title="Not applicable">—</span>
-                        {% endif %}
-                    </td>
-                    <td class="pd-num {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else 'text-muted' }}">
-                        {% if o.return_pct is not none %}{{ "{:.1f}%".format(o.return_pct) }}{% else %}—{% endif %}
-                    </td>
-                </tr>
-                {% if o.raw_trades %}
-                <tr class="leg-detail-row" id="leg-detail-{{ loop.index0 }}">
-                    <td colspan="14" class="leg-detail-cell">
-                        <table class="table leg-detail-table mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Action</th>
-                                    <th>Qty</th>
-                                    <th class="text-end" data-m="hide">Price</th>
-                                    <th class="text-end" data-m="hide">Fees</th>
-                                    <th class="text-end">Amount</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for t in o.raw_trades %}
-                                <tr>
-                                    <td class="text-nowrap">{{ t.trade_date }}</td>
-                                    <td>{{ trade_action(t) }}</td>
-                                    <td>
-                                        {% if t.quantity is number and (t.quantity % 1) != 0 %}
-                                        {{ "{:,.4f}".format(t.quantity) }}
-                                        {% elif t.quantity %}
-                                        {{ "{:,.0f}".format(t.quantity) }}
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">{{ money(t.price) if t.price else '' }}</td>
-                                    <td class="text-end text-muted">{{ money(t.fees) if t.fees else '' }}</td>
-                                    <td class="text-end fw-semibold {{ 'text-positive' if t.amount >= 0 else 'text-negative' }}">
-                                        {{ money(t.amount) }}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </td>
-                </tr>
-                {% endif %}
-                {% endfor %}
-                {% endif %}
-            </tbody>
-            {% if trade_outcomes %}
-            <tfoot class="table-light">
-                <tr class="fw-semibold pd-open" style="font-size:.8rem;">
-                    <td class="pd-tight"></td>
-                    <td></td>
-                    <td class="text-nowrap">Closed Total</td>
-                    <td></td>
-                    <td class="pd-opt"></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td class="pd-opt"></td>
-                    <td class="pd-num">{{ money(ccost) }}</td>
-                    <td class="pd-num">{{ money(cproc) }}</td>
-                    <td class="pd-num {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
-                        {{ money(cpnl) }}
-                    </td>
-                    <td class="pd-num text-muted">—</td>
-                    <td class="pd-num text-muted">—</td>
-                </tr>
-                {% if current_positions %}
-                <tr class="fw-semibold border-top border-secondary pd-open" style="font-size:.8rem;">
-                    <td class="pd-tight"></td>
-                    <td></td>
-                    <td class="text-nowrap">Total</td>
-                    <td></td>
-                    <td class="pd-opt"></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td class="pd-opt"></td>
-                    <td class="pd-num">{{ money(gcost) }}</td>
-                    <td class="pd-num">{{ money(gval) }}</td>
-                    <td class="pd-num {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
-                        {{ money(gpnl) }}
-                    </td>
-                    <td class="pd-num text-muted">—</td>
-                    <td class="pd-num text-muted">—</td>
-                </tr>
-                {% endif %}
-            </tfoot>
-            {% endif %}
-        </table>
-    </div>
-    </div>
-</details>
-{% endif %}
-
 {# ── Breakdown by Type (equity / options / dividends) ── #}
 {% if breakdown_rows %}
-<details class="pd-fold" id="pd-by-type">
-    <summary class="pd-fold-sum">
-        <span class="pd-h">Breakdown by Type</span>
-        <span class="pd-fold-note">Equity, options, and dividends{% if leg_param %} for the selected leg{% endif %}</span>
-    </summary>
+<div class="pd-fold" id="pd-by-type">
+    <div class="pd-fold-head">
+        <h2 class="pd-h">Breakdown by Type</h2>
+        <p class="pd-fold-note">Equity, options, and dividends{% if leg_param %} for the selected leg{% endif %}</p>
+    </div>
     <div class="pd-fold-body">
         {% for r in breakdown_rows %}
         <details class="pd-row">
@@ -1708,17 +1407,17 @@
         </p>
         {% endif %}
     </div>
-</details>
+</div>
 {% endif %}
 
 {# ── Raw Trade History (collapsed). Phone rows keep date, action, qty,
    and amount; the rest opens with the row. #}
 {% if trades %}
-<details class="pd-fold" id="pd-raw">
-    <summary class="pd-fold-sum">
-        <span class="pd-h">Raw Transaction Log</span>
-        <span class="pd-fold-note">{{ trades|length }} entries</span>
-    </summary>
+<div class="pd-fold" id="pd-raw">
+    <div class="pd-fold-head">
+        <h2 class="pd-h">Raw Transaction Log</h2>
+        <p class="pd-fold-note">{{ trades|length }} fills</p>
+    </div>
     <div class="pd-fold-body">
         <input type="text" id="tradeSearch" class="form-control form-control-sm mb-2"
                style="max-width:240px" placeholder="Search trades...">
@@ -1740,7 +1439,19 @@
                 <tbody>
                     {% for t in trades %}
                     <tr class="pd-openable">
-                        <td class="text-nowrap" data-label="Date" data-val="{{ t.trade_date }}">{{ t.trade_date }}</td>
+                        <td class="text-nowrap" data-label="Date" data-val="{{ t.trade_date }}">
+                            {{ t.trade_date }}
+                            <details class="pd-more" data-no-row-nav>
+                                <summary>More</summary>
+                                <dl>
+                                    <dt>Account</dt><dd>{{ (t.account_display or t.account) | account_label(t.tenant_id) }}</dd>
+                                    <dt>Instrument</dt><dd>{{ t.instrument_type }}</dd>
+                                    <dt>Description</dt><dd>{{ t.description }}</dd>
+                                    <dt>Price</dt><dd>{{ money(t.price) }}</dd>
+                                    <dt>Fees</dt><dd>{{ money(t.fees) }}</dd>
+                                </dl>
+                            </details>
+                        </td>
                         <td class="pd-extra" data-label="Account" data-val="{{ (t.account_display or t.account) | account_label(t.tenant_id) }}">{{ (t.account_display or t.account) | account_label(t.tenant_id) }}</td>
                         <td data-label="Action" data-val="{{ 'DRIP' if t.is_dividend_reinvestment else t.action }}">{{ trade_action(t) }}</td>
                         <td class="pd-extra" data-label="Instrument">{{ t.instrument_type }}</td>
@@ -1763,8 +1474,11 @@
             </table>
         </div>
     </div>
-</details>
+</div>
 {% endif %}
+
+    </div>
+</details>
 
 {# ── Win/Loss matrix. Secondary, so it stays behind this disclosure.
    Cell color is the page gain/loss pair, not a second palette. #}
@@ -1772,14 +1486,14 @@
 <details class="pd-fold" id="pd-matrix">
     <summary class="pd-fold-sum">
         <span class="pd-h">Win/Loss matrix</span>
-        <span class="pd-fold-note">DTE versus strike distance. Avg P&amp;L, trades, and win rate.</span>
+        <span class="pd-fold-note">DTE versus strike distance. Avg P&amp;L, contracts, and win rate.</span>
     </summary>
     <div class="pd-fold-body">
         {% for mat in option_matrices %}
         <div class="{% if not loop.first %}mt-3{% endif %}">
             <h3 class="pd-h mb-1">
                 {{ mat.strategy }}
-                <span class="pd-fold-note">({{ mat.trade_count }} trades)</span>
+                <span class="pd-fold-note">({{ mat.trade_count }} contracts)</span>
             </h3>
             <div class="wl-scroll">
                 <table class="table table-sm table-bordered align-middle mb-0 wl-matrix">

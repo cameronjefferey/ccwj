@@ -133,10 +133,18 @@ def build_covered_call_runs(
             label = str(labels[tenant_id] or "")
         if not label:
             label = account
-        mark = marks.get(tenant_key)
+        if marks is None:
+            mark, broker_qty = None, None
+        else:
+            info = marks.get(tenant_key)
+            if info is None:
+                mark, broker_qty = None, 0.0
+            else:
+                mark, broker_qty = info["price"], info["qty"]
         runs.extend(
             _build_tenant(
                 tenant_fills, splits, mark, as_of, label, tenant_id,
+                broker_qty=broker_qty,
             )
         )
 
@@ -401,9 +409,13 @@ def _normalize_openings(opening_df, splits):
 
 
 def _equity_marks(current_df):
-    """tenant_key → live equity price, for an open run's share result."""
+    """tenant_key → {qty, price}, or None when no snapshot was passed.
+
+    Qty 0 is meaningful: the broker does not hold the shares. A missing
+    key in a provided frame means the same thing.
+    """
     if current_df is None:
-        return {}
+        return None
     try:
         empty = current_df.empty
     except AttributeError:
@@ -419,15 +431,17 @@ def _equity_marks(current_df):
             continue
         qty = _num(_cell(row, "quantity")) or 0.0
         price = _num(_cell(row, "current_price"))
-        if qty <= _FLAT or price is None or price <= 0:
-            continue
         tenant_id = _text(_cell(row, "tenant_id"))
         account = _text(_cell(row, "account"))
         key = _tenant_key(tenant_id, account)
+        held = abs(qty)
         prev = best.get(key)
-        if prev is None or abs(qty) > prev[0]:
-            best[key] = (abs(qty), price)
-    return {key: price for key, (_qty, price) in best.items()}
+        if prev is None or held > prev["qty"]:
+            best[key] = {
+                "qty": held,
+                "price": price if price and price > 0 else None,
+            }
+    return best
 
 
 # ── Per-tenant simulation ────────────────────────────────────────────────
@@ -473,9 +487,11 @@ class _Run:
         self.shares = 0.0
         self.cost = 0.0
         self.realized = 0.0
+        self.fees = 0.0
         self.contracts = []
         self.entry_put = False
         self.exit_reason = None
+        self.missing_close = False
 
 
 def _contract_for(book, fill):
@@ -539,7 +555,14 @@ def _matched_share_fill(fills, strike, share_qty):
     return False
 
 
-def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id):
+def _note_fee(run, fill):
+    if run is None:
+        return
+    run.fees += abs(_num(fill.get("fees")) or 0.0)
+
+
+def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id,
+                  broker_qty=None):
     fills_by_day = {}
     for fill in fills:
         fills_by_day.setdefault(fill["date"], []).append(fill)
@@ -601,6 +624,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id):
 
         for fill in buys:
             add_shares(day, fill["qty"], _share_price(fill))
+            _note_fee(active, fill)
 
         for fill in btos:
             contract = _contract_for(book, fill)
@@ -617,6 +641,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id):
             contract.open_date = day if contract.open_date is None else min(contract.open_date, day)
             contract.sto_qty += fill["qty"]
             contract.credit += _option_cash(fill)
+            _note_fee(active, fill)
 
         for fill in assigns:
             if fill["option_type"] != "put":
@@ -645,6 +670,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id):
             contract.open_date = day if contract.open_date is None else min(contract.open_date, day)
             contract.sto_qty += fill["qty"]
             contract.credit += _option_cash(fill)
+            _note_fee(active, fill)
             if active is not None and active.shares > _FLAT and contract.short:
                 _attach(active, contract, active.shares)
             sto_calls.append(contract)
@@ -655,6 +681,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id):
             contract.btc_qty += fill["qty"]
             contract.debit += _option_cash(fill)
             contract.close_date = day
+            _note_fee(active, fill)
             btc_today.append(contract)
 
         for fill in expires:
@@ -689,6 +716,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id):
             call_assigns.append((contract, fill["qty"] * _MULT))
 
         for fill in sells:
+            _note_fee(active, fill)
             reason = "sold"
             for contract, share_qty in call_assigns:
                 if _near(fill["qty"], share_qty, tol=0.5) and _near(
@@ -704,6 +732,13 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id):
             if _matched_share_fill(sells, contract.strike, share_qty):
                 continue
             remove_shares(day, share_qty, contract.strike or 0.0, "assigned")
+
+    if broker_qty is not None and broker_qty <= _FLAT:
+        for run in runs:
+            if run.status == "open" and run.shares > _FLAT:
+                run.missing_close = True
+                run.status = "closed"
+                run.exit_reason = "missing"
 
     out = []
     for run in runs:
@@ -797,7 +832,9 @@ def _present(run, mark, as_of):
         "call_count": len(rows),
         "call_count_label": _count_label(len(rows)),
         "outcome_groups": groups,
-        "net": round(premium_total + share_pnl, 2),
+        "fees": round(run.fees, 2),
+        "missing_close": bool(run.missing_close),
+        "net": round(premium_total + share_pnl - run.fees, 2),
         "net_label": "Whole run so far" if status == "open" else "Whole run",
         "has_open_call": has_open_call,
         "calls": rows,
@@ -843,7 +880,9 @@ def _share_sentence(run):
         else:
             bits.append(f"{_shares(buy_qty)} bought at {_px(entry)}")
 
-    if run.status == "open":
+    if run.missing_close:
+        bits.append("sale or transfer missing from broker history")
+    elif run.status == "open":
         if run.sells:
             sold_qty, avg_exit = _exit_avg(run.sells)
             bits.append(f"sold {_shares(sold_qty)} at {_px(avg_exit)}")

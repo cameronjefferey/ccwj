@@ -274,6 +274,18 @@ writeoffs as (
       -- See ~/.cursor/skills/broker-sync-safety/SKILL.md (2026-05-11).
       and not (sac.total_sell_qty = 0
                and coalesce(uoh.shares_held_elsewhere, 0) = 0)
+      -- A fractional leftover after a split (SCHD 0.7852 shares, "Cost
+      -- Written Off") is split dust, not a transfer. Suppress only when
+      -- the residual is under one share AND this symbol actually split.
+      and not (
+          (sac.total_buy_qty - sac.total_sell_qty) < 1
+          and exists (
+              select 1
+              from {{ ref('int_split_factors') }} sf
+              where sf.symbol = sac.symbol
+                and abs(coalesce(sf.cumulative_split_factor, 1) - 1) > 1e-9
+          )
+      )
 ),
 
 all_legs as (

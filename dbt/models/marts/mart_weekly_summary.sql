@@ -47,7 +47,7 @@ weekly_agg as (
         count(*)                                          as trades_closed,
         sum(total_pnl)                                    as total_pnl,
         countif(is_winner)                                as num_winners,
-        countif(not is_winner)                            as num_losers,
+        countif(is_winner is false)                       as num_losers,
         sum(premium_received)                             as premium_received,
         sum(abs(premium_paid))                            as premium_paid,
         sum(num_trades)                                   as num_individual_trades
@@ -80,7 +80,10 @@ strategy_stats as (
         strategy,
         count(*)                                          as strat_trades,
         countif(is_winner)                                as strat_winners,
-        safe_divide(countif(is_winner), count(*))         as strat_win_rate,
+        safe_divide(
+            countif(is_winner),
+            nullif(countif(is_winner is not null), 0)
+        )                                                 as strat_win_rate,
         sum(total_pnl)                                    as strat_pnl
     from closed_trades
     group by 1, 2, 3, 4, 5

@@ -141,13 +141,18 @@
     input.addEventListener("input", function () {
       var q = this.value.toLowerCase().trim();
       var rows = Array.prototype.filter.call(table.tBodies[0].rows, function (row) {
-        return !row.classList.contains("ht-search-empty");
+        return !row.classList.contains("ht-search-empty")
+          && !row.classList.contains("pos-more-row");
       });
       var shown = 0;
       rows.forEach(function (row) {
         var match = !q || row.textContent.toLowerCase().indexOf(q) !== -1;
         row.style.display = match ? "" : "none";
         if (match) shown += 1;
+        var more = row.nextElementSibling;
+        if (more && more.classList.contains("pos-more-row")) {
+          more.style.display = match ? "" : "none";
+        }
       });
       if (empty) empty.classList.toggle("d-none", !(q && shown === 0));
       if (!label) return;
