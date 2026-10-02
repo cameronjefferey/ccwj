@@ -7,7 +7,7 @@
 <p class="fw-semibold mb-3">{{ sent.sentence }}</p>
 <div class="ht-statbar mb-3">
     <div class="ht-stat">
-        <span class="ht-stat-l">{% if sent.cash_settled %}Premium per point{% else %}Premium per share{% endif %}</span>
+        <span class="ht-stat-l">{% if sent.cash_settled %}Price per point{% else %}Price per share{% endif %}</span>
         <span class="ht-stat-v">{{ sent.limit_label }}</span>
     </div>
     <div class="ht-stat">

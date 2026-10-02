@@ -776,7 +776,7 @@
 </div>
 </div>
 
-{% if rows %}
+{% if rows and not simple_view %}
 <details class="disclosure" id="strategy-detail">
     <summary>
         <span class="section-header">By strategy</span>

@@ -252,7 +252,7 @@ What's working:
  groups yet, Overview keeps last week's table so Monday tagging does not
  vanish. Lives in `build_daily_review_batch` as `today_trades` (same
  `trades_as_of` as `moves_as_of`) so the cache warmer replays it.
-- Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). The unfinished session is named in the nav strip, not as a blank extra column.
+- Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). On a phone this stays a table — Account (share of book under the name), Value, Today, 1W, 1M — and only the table scrolls, with Account sticky. The unfinished session is named in the nav strip, not as a blank extra column.
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Clicking a mover opens the same right-side position drawer as Today.

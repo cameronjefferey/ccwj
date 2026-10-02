@@ -28,6 +28,34 @@
         box-shadow: none;
     }
     .pos-hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .25rem; }
+    /* The total sits in its own column so the same cqi clamp as the
+       other heroes can shrink +$121,456.75 to the column instead of
+       spilling a few pixels past the box. No ellipsis. */
+    .pos-hero .pos-hero-split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(14rem, 22.5rem);
+        gap: .75rem 1.25rem;
+        align-items: start;
+    }
+    .pos-hero .pos-hero-id { min-width: 0; }
+    .pos-hero .pos-total {
+        min-width: 0;
+        max-width: 100%;
+        container-type: inline-size;
+        text-align: right;
+    }
+    .pos-hero .pos-total .ov-big {
+        display: block;
+        white-space: nowrap;
+        overflow: visible;
+        text-overflow: clip;
+        font-size: clamp(1.05rem, 13.5cqi, 2.75rem);
+        font-weight: 750;
+        letter-spacing: -.02em;
+        line-height: 1.05;
+        font-variant-numeric: tabular-nums;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+    }
     .badge-open, .badge-closed, .badge-mixed, .badge-strategy {
         font-size: .68rem; font-weight: 650;
         padding: .2em .6em; border-radius: 999px;
@@ -230,6 +258,260 @@
     .account-toggle .pill-dot.open { background: var(--pd-accent, #5b8cff); }
     .account-toggle .pill-dot.closed { background: var(--pd-muted, #8a97b1); }
 
+@media (max-width: 640px) {
+        .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; margin-bottom: 1rem; }
+        .pos-hero h1 { font-size: 1.5rem; }
+        .pos-hero .pos-hero-split { grid-template-columns: minmax(0, 1fr); }
+        .pos-hero .pos-total { text-align: left; }
+        .kpi-mini .value { font-size: 1.05rem; }
+        .kpi-mini .label { font-size: .58rem; }
+        .stat-card .card-body { padding: .9rem; }
+
+        /* Section padding stays generous; the matrix gets its own scroll. */
+        .stat-card.p-4 { padding: 1rem !important; }
+
+        /* Session/leg pills: smaller on phones so they wrap to ~2 per row
+           instead of 1 per row + horizontal scroll. */
+        .session-pill { padding: .3rem .65rem; font-size: .72rem; }
+        .session-pill .pill-pnl { font-size: .65rem; }
+
+        /* Win/loss matrix rows can be 6+ columns wide; keep them inside
+           a horizontal scroll container instead of breaking the layout.
+           bordered table + min-width keeps cells legible while scrolling. */
+        .table-responsive { -webkit-overflow-scrolling: touch; }
+        .leg-detail-table { font-size: .7rem; }
+    }
+    .wl-matrix {
+        --bs-table-bg: #121826;
+        --bs-table-color: #e8edf7;
+        --bs-table-border-color: #243049;
+    }
+    .wl-matrix .wl-axis {
+        background: #1a2233;
+        color: #8a97b1;
+        border-color: #243049;
+    }
+    .chart-read-kicker {
+        font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+        color: #8a97b1; font-weight: 650; margin-bottom: .35rem;
+    }
+    .chart-read-lead, .chart-read-rest {
+        color: #e8edf7; font-size: .95rem; line-height: 1.55; margin: 0;
+    }
+    .chart-read-more { position: relative; margin-top: .65rem; }
+    .chart-read-more.is-locked .chart-read-rest {
+        user-select: none;
+        min-height: 3.6rem;
+        border-radius: .35rem;
+        background:
+            linear-gradient(90deg, rgba(138,151,177,.18) 68%, transparent 68%) 0 0 / 100% .8rem,
+            linear-gradient(90deg, rgba(138,151,177,.12) 82%, transparent 82%) 0 1.35rem / 100% .8rem,
+            linear-gradient(90deg, rgba(138,151,177,.09) 54%, transparent 54%) 0 2.7rem / 100% .8rem;
+        background-repeat: no-repeat;
+    }
+    .chart-read-upgrade {
+        position: absolute; left: 0; right: 0; bottom: .2rem;
+        display: flex; justify-content: center;
+    }
+
+    /* ── Cohesive position page ── */
+    body .pd-page .review-hero {
+        box-shadow: none;
+        border-radius: var(--pd-radius);
+        margin-bottom: var(--pd-gap);
+    }
+    body .pd-page .review-hero .text-positive,
+    body .pd-page .text-positive,
+    body .pd-page .text-success,
+    body .pd-page .story-pos,
+    body .pd-page .story-metric-pos,
+    body .pd-page .pos {
+        color: var(--pd-gain) !important;
+    }
+    body .pd-page .review-hero .text-negative,
+    body .pd-page .text-negative,
+    body .pd-page .text-danger,
+    body .pd-page .story-neg,
+    body .pd-page .story-metric-neg,
+    body .pd-page .neg {
+        color: var(--pd-loss) !important;
+    }
+    body .pd-page .stat-card,
+    body .pd-page .chart-wrapper,
+    body .pd-page .narrative-card,
+    body .pd-page .ht-statbar,
+    body .pd-page #storyCard.card,
+    body .pd-page .held-fold,
+    body .pd-page .ht-runs,
+    body .pd-page .pd-fold {
+        background: var(--pd-surface);
+        border: 1px solid var(--pd-line);
+        border-radius: var(--pd-radius);
+        box-shadow: none;
+        margin-bottom: var(--pd-gap);
+    }
+    body .pd-page .pd-h,
+    body .pd-page .chart-wrapper h6,
+    body .pd-page .stat-card > h6,
+    body .pd-page .ht-runs > h6,
+    body .pd-page .held-fold-kicker {
+        font-size: .95rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        line-height: 1.3;
+        color: var(--pd-ink);
+        margin: 0;
+    }
+    body .pd-page .pd-sub,
+    body .pd-page .pd-fold-note {
+        color: var(--pd-muted);
+        font-size: .82rem;
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.4;
+        margin: .2rem 0 0;
+    }
+    body .pd-page .pd-kicker {
+        font-size: .68rem;
+        font-weight: 650;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--pd-muted);
+        margin: 1.35rem 0 .55rem;
+    }
+    body .pd-page .badge,
+    body .pd-page .badge-open,
+    body .pd-page .badge-closed,
+    body .pd-page .badge-strategy,
+    body .pd-page .badge.bg-success,
+    body .pd-page .badge.bg-warning {
+        background: transparent !important;
+        color: var(--pd-muted) !important;
+        border: 1px solid var(--pd-line);
+        border-radius: 999px;
+        font-weight: 650;
+        box-shadow: none;
+    }
+    body .pd-page .badge-open,
+    body .pd-page .badge.bg-success {
+        background: color-mix(in srgb, var(--pd-accent) 14%, transparent) !important;
+        color: var(--pd-accent) !important;
+        border-color: color-mix(in srgb, var(--pd-accent) 45%, var(--pd-line));
+    }
+    body .pd-page .session-pill.active,
+    body .pd-page .session-pill.active.session-open,
+    body[data-bs-theme="dark"] .pd-page .session-pill.active.session-open {
+        border-color: var(--pd-accent);
+        background: color-mix(in srgb, var(--pd-accent) 16%, transparent);
+        color: var(--pd-ink);
+    }
+    body .pd-page .session-pill .pill-dot.open,
+    body .pd-page .account-toggle .pill-dot.open { background: var(--pd-accent); }
+    body .pd-page .story-income {
+        background: color-mix(in srgb, var(--pd-gain) 16%, transparent);
+        color: var(--pd-gain);
+    }
+    body .pd-page .story-sell { color: var(--pd-loss); }
+    body .pd-page .story-col-sh { color: var(--pd-gain); border-bottom-color: var(--pd-gain); }
+    body .pd-page .pd-story-lead #storyCard .story-symbol { display: none; }
+    body .pd-page .pd-story-lead #storyCard { margin-bottom: var(--pd-gap); }
+    .pd-num, .pd-page .pd-row-val, .pd-page .pd-dl dd {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+    }
+    .pd-fold { padding: 0; }
+    .pd-fold-head { padding: .9rem 1.1rem .35rem; }
+    .pd-fold-sum {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: .35rem .75rem;
+        padding: .9rem 1.1rem;
+        cursor: pointer;
+        list-style: none;
+    }
+    .pd-fold-sum::-webkit-details-marker { display: none; }
+    .pd-fold-sum::after {
+        content: "▸";
+        color: var(--pd-muted);
+        flex: none;
+        margin-left: auto;
+        font-size: .8rem;
+    }
+    .pd-fold[open] > .pd-fold-sum::after { content: "▾"; }
+    .pd-fold-meta { color: var(--pd-muted); font-size: .78rem; font-weight: 500; }
+    .pd-fold-body { padding: 0 1.1rem 1rem; }
+    .pd-row {
+        border-top: 1px solid var(--pd-line);
+    }
+    .pd-row > summary {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        padding: .7rem .15rem;
+        cursor: pointer;
+        list-style: none;
+        min-width: 0;
+    }
+    .pd-row > summary::-webkit-details-marker { display: none; }
+    .pd-row-name { font-weight: 650; min-width: 0; }
+    .pd-row-val { margin-left: auto; white-space: nowrap; }
+    .pd-row-total {
+        display: flex;
+        align-items: center;
+        gap: .6rem;
+        padding: .75rem .15rem .15rem;
+        border-top: 1px solid var(--pd-line);
+        font-weight: 650;
+    }
+    .pd-dl {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+        gap: .55rem .9rem;
+        margin: 0 0 .75rem;
+        padding: .15rem .15rem .35rem 1.4rem;
+    }
+    .pd-dl div { min-width: 0; }
+    .pd-dl dt {
+        font-size: .66rem;
+        font-weight: 650;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: var(--pd-muted);
+        margin: 0 0 .1rem;
+    }
+    .pd-dl dd { margin: 0; font-size: .88rem; }
+    .pd-strategy-link {
+        display: inline-block;
+        margin: .15rem 0 .65rem 1.4rem;
+        font-size: .8rem;
+        font-weight: 600;
+    }
+    .wl-win { background: var(--pd-gain); color: #0a0e17; }
+    .wl-win-soft { background: color-mix(in srgb, var(--pd-gain) 42%, var(--pd-surface-2)); color: var(--pd-ink); }
+    .wl-loss-soft { background: color-mix(in srgb, var(--pd-loss) 42%, var(--pd-surface-2)); color: var(--pd-ink); }
+    .wl-loss { background: var(--pd-loss); color: #fff; }
+    .wl-empty { background: var(--pd-surface-2); color: var(--pd-muted); }
+    .wl-scroll { overflow-x: auto; max-width: 100%; }
+    .wl-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
+    .wl-matrix { font-size: .72rem; width: max-content; min-width: 100%; }
+    .wl-matrix .wl-pnl {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-weight: 700;
+        font-size: .8rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .wl-matrix .wl-meta { font-size: .6rem; opacity: .75; }
+    .wl-axis { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; }
+    .pd-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .55rem 1rem;
+        margin-top: .75rem;
+        font-size: .68rem;
+        color: var(--pd-muted);
+    }
     .pd-more { display: none; }
     .pd-more summary {
         cursor: pointer;
@@ -395,8 +677,8 @@
         </form>
         {% endif %}
     </div>
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-        <div>
+    <div class="pos-hero-split">
+        <div class="pos-hero-id">
             <h1>{{ symbol }}</h1>
             {% if symbol_company %}
             <div class="text-white-50" style="font-size: .9rem; margin-top: -.15rem;">{{ symbol_company }}</div>
@@ -451,7 +733,7 @@
             {% endif %}
         </div>
         {% if kpis %}
-        <div class="text-end">
+        <div class="pos-total">
             {% if overall_status == 'Closed' %}
             <button type="button" class="ht-share-btn ht-share-btn-hero mb-2"
                     data-ref="position"
@@ -460,8 +742,8 @@
             {% endif %}
             <div class="small text-white-50">Total return, incl. dividends</div>
             <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized + dividends</div>
-            <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
-                {{ money(kpis.total_return) }}
+            <div class="ov-big {% if kpis.total_return >= 0 %}pos{% else %}neg{% endif %}">
+                {% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return) }}
             </div>
         </div>
         {% endif %}
@@ -1256,6 +1538,19 @@
 </p>
 {% endif %}
 
+{# Simple view keeps the chart and the legs up front. Strategy rows,
+   if-held, the breakdown, and the matrix stay behind one disclosure. #}
+{% if simple_view %}
+<details class="disclosure" id="pd-show-more">
+    <summary><span class="section-header">Show more</span></summary>
+    <div class="disclosure-body">
+        {% if chart_read %}
+        <div class="chart-read mt-3">
+            <div class="chart-read-kicker">On this chart</div>
+            <p class="chart-read-lead">{{ chart_read.lead }}</p>
+        </div>
+        {% endif %}
+{% endif %}
 {# ── What worked: strategy rows. The headline number is total return.
    Realized, unrealized, dividends, and premium received open on the row.
    Collected is premium received — not a net result. #}
@@ -1335,22 +1630,7 @@
 
 {# ── All Legs (Open + Closed). The summary is the only "Position Legs"
    heading, and it stays next to If held. #}
-{% if simple_view %}
-<details class="disclosure" id="pd-show-more">
-    <summary><span class="section-header">Show more</span></summary>
-    <div class="disclosure-body">
-        {% if chart_read %}
-        <div class="chart-read mt-3">
-            <div class="chart-read-kicker">On this chart</div>
-            <p class="chart-read-lead">{{ chart_read.lead }}</p>
-        </div>
-        {% endif %}
-{% endif %}
 {% include "_held_to_expiry.html" %}
-{% if simple_view %}
-    </div>
-</details>
-{% endif %}
 <details class="pd-fold" id="pd-details">
     <summary class="pd-fold-sum">
         <span class="pd-h">Details</span>
@@ -1551,6 +1831,10 @@
 </details>
 {% endif %}
 
+{% if simple_view %}
+    </div>
+</details>
+{% endif %}
 
 <div class="ht-share-modal" id="htShareModal" hidden>
     <div class="ht-share-panel" role="dialog" aria-labelledby="htShareTitle">
