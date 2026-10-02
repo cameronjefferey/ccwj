@@ -267,8 +267,8 @@ def test_status_poll_is_cached_and_rate_limit_is_friendly(monkeypatch):
 
     calls = []
 
-    def _list(user_id, account_id, raise_on_error=False):
-        calls.append(1)
+    def _list(user_id, account_id, raise_on_error=False, recent_only=False):
+        calls.append(recent_only)
         if len(calls) > 1:
             raise RuntimeError("429 Too Many Requests")
         return [{
@@ -288,7 +288,7 @@ def test_status_poll_is_cached_and_rate_limit_is_friendly(monkeypatch):
         login_user(_viewer())
         first = paper_practice_order_status.__wrapped__()
         second = paper_practice_order_status.__wrapped__()
-    assert len(calls) == 1
+    assert calls == [True]
     body = first.get_json()
     assert body["orders"][0]["status_label"] == "Accepted"
     assert body["orders"][0]["quantity_label"] == "1 contract"
@@ -356,6 +356,65 @@ def test_only_a_new_fill_syncs_the_paper_account(monkeypatch):
         assert shown[0]["status_label"] == "Filled at $1.16"
         merged_paper_orders(7)
     assert syncs == [7]
+
+
+def test_status_poll_does_not_sync_a_new_fill(monkeypatch):
+    from flask import session
+    from flask_login import login_user
+
+    from app import app
+    from app.paper_practice import paper_practice_order_status
+
+    syncs = []
+
+    def _list(user_id, account_id, raise_on_error=False, recent_only=False):
+        assert recent_only is True
+        return [{
+            "brokerage_order_id": "ord-f",
+            "status": "EXECUTED",
+            "execution_price": "1.16",
+            "option_symbol": {"underlying_symbol": "SPY"},
+        }]
+
+    monkeypatch.setattr("app.paper_practice.alpaca_paper_trade_account", lambda user_id: _account())
+    monkeypatch.setattr("app.paper_practice.list_account_recent_orders", _list)
+    monkeypatch.setattr(
+        "app.paper_practice.queue_account_read_sync",
+        lambda user_id, row: syncs.append(user_id),
+    )
+    with app.test_request_context("/practice/orders/status"):
+        login_user(_viewer())
+        session[ORDERS_KEY] = [{
+            "brokerage_order_id": "ord-f",
+            "status": "open",
+            "status_label": "Accepted",
+            "symbol": "SPY",
+            "snaptrade_account_id": "learner-acct",
+        }]
+        body = paper_practice_order_status.__wrapped__().get_json()
+    assert syncs == []
+    assert body["orders"][0]["status"] == "filled"
+
+
+def test_position_page_orders_stay_in_the_session(monkeypatch):
+    from flask import session
+
+    from app import app
+    from app.paper_practice import paper_orders_for_page
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("position page called the broker")
+
+    monkeypatch.setattr("app.paper_practice.list_account_recent_orders", _boom)
+    monkeypatch.setattr("app.paper_practice.alpaca_paper_trade_account", _boom)
+    with app.test_request_context("/position/SPY"):
+        session[ORDERS_KEY] = [{
+            "brokerage_order_id": "ord-local",
+            "status": "open",
+            "symbol": "SPY",
+        }]
+        rows = paper_orders_for_page(7, "SPY")
+    assert [row["brokerage_order_id"] for row in rows] == ["ord-local"]
 
 
 def test_open_orders_panel_and_poll_script(monkeypatch):
@@ -451,6 +510,36 @@ def test_paper_fill_notice_skips_symbols_already_listed(monkeypatch):
     assert [item["symbol"] for item in notices] == ["SPY"]
     assert notices[0]["sentence"] == "SPY filled on the paper account. Syncing that account now."
     assert syncs == ["learner-acct"]
+
+
+def test_paper_sync_bumps_the_overview_cache_epoch(monkeypatch):
+    import app.snaptrade as snap
+    from app import query_cache
+    from app.query_cache import bind_user_query_epoch, make_key, user_query_epoch
+    from app.snaptrade import queue_account_read_sync
+
+    query_cache.clear()
+    monkeypatch.setattr(snap, "_sync_one_connection", lambda *a, **k: {"ok": True})
+
+    class _InlineThread:
+        def __init__(self, target=None, **kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr(snap.threading, "Thread", _InlineThread)
+    plain = make_key("SELECT 1")
+    queue_account_read_sync(42, {"snaptrade_account_id": "learner-acct"})
+    assert user_query_epoch(42) not in ("", "0")
+    with bind_user_query_epoch(42):
+        assert make_key("SELECT 1") != plain
+
+    monkeypatch.setattr(snap, "_sync_one_connection", lambda *a, **k: {"ok": False})
+    before = user_query_epoch(42)
+    queue_account_read_sync(42, {"snaptrade_account_id": "learner-acct"})
+    assert user_query_epoch(42) == before
+    query_cache.clear()
 
 
 def test_positions_names_a_filled_paper_trade_without_a_pnl_row():

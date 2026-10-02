@@ -308,10 +308,10 @@ def snaptrade_enabled() -> bool:
 
 # Per HTTP call, not per sync. urllib3 treats timeout=None as "wait
 # forever", and the SDK's request() default is None — a stalled broker
-# call then holds a gunicorn worker until the 120s worker kill. Connect
-# is short; read covers a slow activities page without capping a
-# multi-account sync (each page is its own call).
-_SNAPTRADE_HTTP_TIMEOUT = (10, 45)
+# call then holds a gunicorn worker until the worker kill. A single
+# number is both the connect and the read budget. Three seconds is the
+# cap so one slow broker cannot pin a worker for the whole site.
+_SNAPTRADE_HTTP_TIMEOUT = 3
 
 
 def _apply_snaptrade_timeout(client):
@@ -347,7 +347,12 @@ def _apply_snaptrade_timeout(client):
         def _request(*args, _orig=original, **kwargs):
             if kwargs.get("timeout") is None:
                 kwargs["timeout"] = _SNAPTRADE_HTTP_TIMEOUT
-            return _orig(*args, **kwargs)
+            from app.request_timing import add_outbound
+            started = time.perf_counter()
+            try:
+                return _orig(*args, **kwargs)
+            finally:
+                add_outbound(time.perf_counter() - started)
 
         api_client.request = _request
     return len(seen)
@@ -1384,8 +1389,10 @@ def quote_option_premium(user_id, account_id, occ_symbol):
         "https://api.snaptrade.com" + resource,
         headers={"Signature": signature, "Accept": "application/json"},
     )
+    from app.request_timing import add_outbound
+    started = time.perf_counter()
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=_SNAPTRADE_HTTP_TIMEOUT) as resp:
             payload = resp.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300]
@@ -1401,6 +1408,8 @@ def quote_option_premium(user_id, account_id, occ_symbol):
             account_id, occ_symbol, exc.reason,
         )
         raise
+    finally:
+        add_outbound(time.perf_counter() - started)
     body = json.loads(payload)
     if isinstance(body, list):
         body = body[0] if body else {}
@@ -1485,7 +1494,7 @@ def place_single_leg_option_order(user_id, account_id, occ_symbol, limit_price):
     return _mapping(body) if not isinstance(body, dict) else body
 
 
-def list_account_recent_orders(user_id, account_id, *, raise_on_error=False):
+def list_account_recent_orders(user_id, account_id, *, raise_on_error=False, recent_only=False):
     """Open, cancelled, filled, and rejected orders for one account.
 
     ``recent_orders`` is the last 24 hours and defaults to executed-only,
@@ -1497,7 +1506,8 @@ def list_account_recent_orders(user_id, account_id, *, raise_on_error=False):
     Practice status polling passes ``raise_on_error`` so a 403 or a rate
     limit can show a friendly error instead of looking like the order
     disappeared. The older feed stays best-effort: a failure there is
-    empty and the 24-hour rows still return.
+    empty and the 24-hour rows still return. The open-page poll passes
+    ``recent_only`` so it does not also call the 30-day orders endpoint.
     """
     snap = get_snaptrade_user(user_id)
     client = _get_snaptrade_client()
@@ -1511,6 +1521,8 @@ def list_account_recent_orders(user_id, account_id, *, raise_on_error=False):
         only_executed=False,
         raise_on_error=raise_on_error,
     )
+    if recent_only:
+        return recent or []
     older = _fetch_account_orders(
         client,
         snap["snaptrade_user_id"],
@@ -1596,7 +1608,7 @@ def queue_account_read_sync(user_id, acc_row):
     def _worker():
         with app.app_context():
             try:
-                _sync_one_connection(
+                result = _sync_one_connection(
                     user_id,
                     acc_row,
                     lookback_days=_routine_lookback_days(),
@@ -1607,6 +1619,19 @@ def queue_account_read_sync(user_id, acc_row):
                     "Practice order sync failed for user_id=%s: %s",
                     user_id, exc,
                 )
+                return
+            if isinstance(result, dict) and result.get("ok"):
+                # Overview is close-based, so the fill itself waits for the
+                # next settled mart. Drop this user's cached Overview queries
+                # now so the next load is not a 24h L2 hit of the pre-sync book.
+                try:
+                    from app.query_cache import bump_user_query_epoch
+                    bump_user_query_epoch(user_id)
+                except Exception as exc:
+                    _log.warning(
+                        "Practice order cache bump failed for user_id=%s: %s",
+                        user_id, exc,
+                    )
     threading.Thread(target=_worker, daemon=True, name="paper-practice-sync").start()
 
 
@@ -3735,7 +3760,9 @@ def _inject_snaptrade_reauth_needed():
             return {"snaptrade_reauth_needed": []}
         if not getattr(current_user, "is_authenticated", False):
             return {"snaptrade_reauth_needed": []}
-        rows = snaptrade_accounts_needing_attention(current_user.id)
+        from app.request_timing import stage
+        with stage("reauth"):
+            rows = snaptrade_accounts_needing_attention(current_user.id)
         return {"snaptrade_reauth_needed": rows}
     except Exception:
         return {"snaptrade_reauth_needed": []}
@@ -3905,7 +3932,9 @@ def _inject_broker_data_freshness():
             return dict(_EMPTY_FRESHNESS)
         if not getattr(current_user, "is_authenticated", False):
             return dict(_EMPTY_FRESHNESS)
-        as_of, stale_days, oldest = broker_data_freshness(current_user.id)
+        from app.request_timing import stage
+        with stage("fresh"):
+            as_of, stale_days, oldest = broker_data_freshness(current_user.id)
         return {
             "broker_data_as_of": as_of,
             "broker_data_stale_days": stale_days,

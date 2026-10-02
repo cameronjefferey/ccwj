@@ -150,6 +150,15 @@
         max-width: 100%;
     }
     .ov-page { min-width: 0; max-width: 100%; }
+    .ov-paper-fills {
+        border: 1px solid var(--ht-line);
+        background: var(--ht-surface);
+        border-radius: 12px;
+        padding: .9rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .ov-paper-fills p { margin: 0 0 .4rem; }
+    .ov-paper-fills p:last-child { margin-bottom: 0; }
     .ov-block { min-width: 0; }
     .ov-block + .ov-block {
         margin-top: 1.15rem; padding-top: 1rem;
@@ -586,7 +595,9 @@
     }
     .cal-day .cal-day-num { font-size: .68rem; color: inherit; opacity: .8; line-height: 1; }
     .cal-day .cal-day-pnl {
-        font-size: clamp(.5rem, 18cqi, .68rem);
+        /* Floor stays under .5rem so a five- or six-figure day still
+           fits a phone cell. The amount is never abbreviated. */
+        font-size: clamp(.38rem, 16cqi, .68rem);
         font-weight: 700; margin-top: .15rem; line-height: 1;
         max-width: 100%; white-space: nowrap;
     }
@@ -602,6 +613,7 @@
         }
         .cal-day { padding: .28rem .04rem; min-height: 2.35rem; }
         .cal-day .cal-day-num { font-size: .6rem; }
+        .cal-day .cal-day-pnl { font-size: clamp(.38rem, 14cqi, .58rem); }
     }
     .cal-day.today { outline: 2px solid var(--color-mirror-ink); }
     /* Time-machine: past cells are links to the day-detail page. */
@@ -737,22 +749,7 @@
     [data-bs-theme="dark"] .tw-tag-chip { background:rgba(224,181,106,.16); color:var(--color-mirror-ink); }
     [data-bs-theme="dark"] .tw-tag-x { color:var(--color-mirror-ink); }
     @media (max-width: 640px) {
-        .ov-page .tt-table,
-        .ov-page .tt-table tbody { display: block; width: 100%; }
-        .ov-page .tt-table tr {
-            display: grid;
-            grid-template-columns: auto minmax(0, 1fr) auto;
-            gap: .15rem .55rem;
-            padding: .55rem 0;
-            border-bottom: 1px solid var(--ht-line);
-        }
-        .ov-page .tt-table td {
-            display: block; width: auto; border: 0; padding: 0; min-width: 0;
-        }
-        .ov-page .tt-table td:nth-child(3) { grid-column: 1 / -1; }
-        .ov-page .tt-table td:nth-child(5) { grid-column: 1 / -1; }
         .tt-muted { overflow-wrap: anywhere; }
-        .tt-verb { white-space: normal; }
     }
     [data-bs-theme="dark"] .tt-table td { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }

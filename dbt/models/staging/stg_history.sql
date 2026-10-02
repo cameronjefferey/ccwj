@@ -225,6 +225,27 @@ amount_signed as (
     select
         c.* except (amount_raw),
         case
+            -- Option order rows store gross premium (qty × price × 100)
+            -- and the commission in ``fees``. The broker statement Amount
+            -- is already net (Sep SPXW: 5 × 2.87 × 100 − 6.11 = 1,428.89).
+            -- Subtract the fee only when the raw amount still matches the
+            -- gross, so a net activity amount is not charged twice.
+            when c.action in (
+                'option_buy_to_open', 'option_buy_to_close',
+                'option_sell_to_open', 'option_sell_to_close'
+            )
+             and abs(coalesce(c.fees, 0)) > 0.005
+             and c.quantity is not null
+             and c.price is not null
+             and abs(
+                    abs(c.amount_raw) - abs(c.quantity) * c.price * 100
+                 ) <= 0.05
+            then case
+                when c.action in ('option_sell_to_open', 'option_sell_to_close')
+                    then abs(c.quantity) * c.price * 100 - abs(c.fees)
+                else -(abs(c.quantity) * c.price * 100 + abs(c.fees))
+            end
+
             when c.action in (
                 'equity_buy',
                 'option_buy_to_open',

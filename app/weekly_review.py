@@ -18,13 +18,14 @@ merge / re-aggregation. See `.cursor/rules/bigquery-tenant-isolation.mdc`.
 """
 import math
 from datetime import date, datetime, time, timedelta
+from functools import wraps
 from zoneinfo import ZoneInfo
 from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.extensions import limiter
-from app.query_cache import cached_query_df
+from app.query_cache import bind_user_query_epoch, cached_query_df
 from app.skeleton import skeleton_page
 from app.privacy import shown_account as _privacy_account_label
 from app.models import (
@@ -35,6 +36,36 @@ from google.cloud import bigquery
 from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import re
+
+
+def _with_overview_cache_epoch(view):
+    """Bind this user's Overview cache generation for the view and its workers."""
+    @wraps(view)
+    def _wrapped(*args, **kwargs):
+        uid = None
+        try:
+            if getattr(current_user, "is_authenticated", False):
+                uid = current_user.id
+        except Exception:
+            uid = None
+        with bind_user_query_epoch(uid):
+            return view(*args, **kwargs)
+    return _wrapped
+
+
+def _paper_known_symbols(batch):
+    """Symbols already on the Overview positions frame.
+
+    Same grain Positions uses for the paper-fill notice: a filled order
+    whose underlying is already in the book does not get the syncing line.
+    """
+    pos = (batch or {}).get("positions")
+    if pos is None or getattr(pos, "empty", True):
+        return []
+    columns = getattr(pos, "columns", [])
+    if "symbol" not in columns:
+        return []
+    return [str(symbol) for symbol in pos["symbol"].dropna().unique()]
 
 
 def _bq_parallel(client, queries):
@@ -468,11 +499,29 @@ WHERE 1=1 {tenant_filter}
 GROUP BY tenant_id
 """
 
+# Close-dated cash for the hero's invested %. Live ``stg_account_balances``
+# cash sits next to a settled account value during the session and after
+# the bell. This aggregate is the same date as the snapshot hero.
+# SQL-only scope: no tenant_id in the SELECT. Do NOT pass the frame
+# through ``_filter_df_by_tenant_ids`` — a missing tenant column
+# fail-closes the sum to empty for every non-admin.
+CLOSE_SLEEVE_QUERY = """
+SELECT
+  COALESCE(SUM(cash_value), 0) AS cash_value,
+  COALESCE(SUM(account_value), 0) AS account_value
+FROM `ccwj-dbt.analytics.mart_account_equity_daily`
+WHERE date = @as_of {tenant_filter}
+"""
+
 # Weekly account return from dbt mart (replaces inline WEEKLY_ACCOUNT_CHANGE_QUERY)
 
 
 
-# Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts
+# Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts.
+# The hero uses the latest row on or before the settled close. The first-week
+# banner only needs to tell "< 5 distinct dates" from an established book.
+# Twelve rows per tenant cover both, plus a few days of rewind, without
+# shipping every historical snapshot to the app.
 TODAY_SNAPSHOT_ENRICHED_QUERY = """
 SELECT account, tenant_id, date, account_value,
   base_1d_date, base_1d_value, delta_1d, delta_1d_pct,
@@ -480,7 +529,7 @@ SELECT account, tenant_id, date, account_value,
   base_1m_date, base_1m_value, delta_1m, delta_1m_pct
 FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
 WHERE 1=1 {tenant_filter}
-ORDER BY date DESC
+QUALIFY ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY date DESC) <= 12
 """
 
 # Trades this week from dbt mart (replaces TRADES_THIS_WEEK_QUERY + Python cost/value calc)
@@ -1143,13 +1192,25 @@ WHERE c.next_ex_div_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
 """
 
 OPEN_POSITIONS_QUERY = """
-WITH latest_prices AS (
+WITH held_symbols AS (
+    SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE quantity IS NOT NULL AND quantity != 0
+      AND underlying_symbol IS NOT NULL
+      {tenant_filter}
+),
+latest_prices AS (
+    -- Latest close for symbols this scope actually holds. Scanning every
+    -- symbol's full price history was the cold Overview wait: the strip
+    -- only needs a recent print, and a listed name prints inside 60 days.
     SELECT symbol, close_price
     FROM (
-        SELECT symbol, close_price,
-               ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-        FROM `ccwj-dbt.analytics.stg_daily_prices`
-        WHERE close_price IS NOT NULL AND close_price > 0
+        SELECT p.symbol, p.close_price,
+               ROW_NUMBER() OVER (PARTITION BY p.symbol ORDER BY p.date DESC) AS rn
+        FROM `ccwj-dbt.analytics.stg_daily_prices` p
+        JOIN held_symbols h ON UPPER(TRIM(p.symbol)) = h.symbol
+        WHERE p.close_price IS NOT NULL AND p.close_price > 0
+          AND p.date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY)
     )
     WHERE rn = 1
 )
@@ -3381,6 +3442,59 @@ def _build_today_movers(today_moves_df, account_total_value=None,
     return out
 
 
+def _iso_day(value):
+    """ISO date prefix, or None for missing / NaT cells."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "isoformat"):
+        text = value.isoformat()[:10]
+    else:
+        text = str(value)[:10]
+    if not text or text in ("NaT", "None", "nan"):
+        return None
+    return text
+
+
+def _invested_from_close_sleeve(hero_value, sleeve_value, sleeve_cash):
+    """Cash and invested % that match a close-based hero total.
+
+    Returns ``(cash, invested, pct)``. All three are None unless the
+    equity-daily account value agrees with the hero within $1 — a live
+    placeholder mixed into the total must not borrow close cash.
+    """
+    try:
+        hero = float(hero_value)
+        sleeve = float(sleeve_value)
+        cash = float(sleeve_cash)
+    except (TypeError, ValueError):
+        return None, None, None
+    if hero != hero or sleeve != sleeve or cash != cash:
+        return None, None, None
+    if hero <= 0 or abs(hero - sleeve) > 1.0:
+        return None, None, None
+    invested = hero - cash
+    return round(cash, 2), round(invested, 2), round(invested / hero * 100, 1)
+
+
+def _close_sleeve_from_frame(df):
+    """One-row SUM from ``CLOSE_SLEEVE_QUERY``, or None when it missed."""
+    if df is None or getattr(df, "empty", True):
+        return None
+    try:
+        row = df.iloc[0]
+        return {
+            "cash_value": float(row.get("cash_value") or 0),
+            "account_value": float(row.get("account_value") or 0),
+        }
+    except (TypeError, ValueError, KeyError, IndexError):
+        return None
+
+
 def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
     """Option day-moves + dividends-paid-today sub-blocks for the movers card.
 
@@ -3389,6 +3503,11 @@ def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
     equity movers show Friday's move, so Friday's dividends match. When
     there is no equity as-of (options-only scope) we use the latest
     option-mart date, falling back to the newest dividend date.
+
+    Option rows stay on that same date. ``TODAY_OPTIONS_MOVES_QUERY``
+    keeps the latest mart row at or before ``@as_of``, so a symbol with
+    no row on the equity close still arrives dated earlier. Summing those
+    stale deltas into a newer equity bar mixes two sessions.
     """
     out = {
         "options": [], "options_impact": 0.0,
@@ -3402,18 +3521,25 @@ def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
         df["dollar_impact"] = pd.to_numeric(df["dollar_impact"], errors="coerce").fillna(0)
         opts = []
         for _, r in df.iterrows():
-            td = r.get("today_date")
-            iso = td.isoformat() if hasattr(td, "isoformat") else str(td)[:10]
-            if opt_as_of is None or iso > opt_as_of:
+            iso = _iso_day(r.get("today_date"))
+            if iso and (opt_as_of is None or iso > opt_as_of):
                 opt_as_of = iso
             opts.append({
                 "symbol": str(r.get("symbol") or ""),
                 "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
+                "_iso": iso,
             })
+        # Dividends still anchor on the newest option date when there is
+        # no equity bar. The tiles themselves keep only one session.
+        anchor = equity_as_of or opt_as_of
+        if anchor:
+            opts = [o for o in opts if o.get("_iso") == anchor]
+        for o in opts:
+            o.pop("_iso", None)
         opts.sort(key=lambda x: abs(x["dollar_impact"]), reverse=True)
         out["options"] = opts
         out["options_impact"] = round(sum(o["dollar_impact"] for o in opts), 2)
-        out["options_as_of"] = opt_as_of
+        out["options_as_of"] = anchor if opts else None
 
     if dividends_df is not None and not dividends_df.empty:
         anchor = equity_as_of or opt_as_of
@@ -4237,6 +4363,10 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
 
     return {
         "account_value": ACCOUNT_VALUE_QUERY.format(tenant_filter=tenant_filter),
+        "close_sleeve": (
+            CLOSE_SLEEVE_QUERY.format(tenant_filter=tenant_filter),
+            _moves_job_config(as_of),
+        ),
         "snapshots": TODAY_SNAPSHOT_ENRICHED_QUERY.format(tenant_filter=tenant_filter),
         "positions": OPEN_POSITIONS_QUERY.format(tenant_filter=tenant_filter),
         "style_snapshot": OVERVIEW_STYLE_QUERY.format(tenant_filter=tenant_filter),
@@ -4275,7 +4405,7 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
 # second request when the skeleton's X-HT-Full fetch is in flight so that
 # round-trip is not gated on attribution / upcoming_divs / calendar.
 OVERVIEW_CORE_KEYS = frozenset({
-    "account_value", "snapshots", "positions", "style_snapshot",
+    "account_value", "close_sleeve", "snapshots", "positions", "style_snapshot",
     "today_moves", "today_options_moves", "today_dividends",
     "today_trades", "benchmark_snapshot", "market_perf",
 })
@@ -4491,6 +4621,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
 @login_required
 @limiter.limit("120 per minute; 2000 per hour")
 @skeleton_page
+@_with_overview_cache_epoch
 def weekly_review():
     """Overview — close-based recap of the last completed session.
 
@@ -4588,6 +4719,7 @@ def weekly_review():
     }
 
     daily_changes_map = {}
+    paper_known = []
 
     try:
         client = get_bigquery_client()
@@ -4649,6 +4781,9 @@ def weekly_review():
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
+        # close_sleeve is a one-row SUM with no tenant_id column. The
+        # {tenant_filter} in CLOSE_SLEEVE_QUERY is the scope. The
+        # DataFrame filter would fail-close that aggregate to empty.
         # style_snapshot has no ``account`` column (tenant_id only) — filter
         # unconditionally rather than gating on the "account" column check
         # above.
@@ -4712,6 +4847,19 @@ def weekly_review():
                 "benchmark_snapshot", pd.DataFrame())
             batch["market_perf"] = rewound_market.get(
                 "market_perf", pd.DataFrame())
+            # Invested % must use the same settled date as the hero.
+            try:
+                rewound_sleeve = _bq_parallel(client, {
+                    "close_sleeve": (
+                        CLOSE_SLEEVE_QUERY.format(tenant_filter=tenant_filter),
+                        _moves_job_config(snap_cutoff),
+                    ),
+                })
+                batch["close_sleeve"] = rewound_sleeve.get(
+                    "close_sleeve", pd.DataFrame())
+            except Exception as exc:
+                app.logger.warning("close sleeve rewind failed: %s", exc)
+                batch["close_sleeve"] = pd.DataFrame()
         session_date = snap_cutoff
         context["review_date"] = snap_cutoff
         if snap_cutoff:
@@ -4726,6 +4874,8 @@ def weekly_review():
         context["overview_prior_date"] = (
             _adjacent_weekday(snap_cutoff, -1) if snap_cutoff else None
         )
+        context["close_sleeve"] = _close_sleeve_from_frame(
+            batch.get("close_sleeve"))
 
         # Market context — neutral framing line ("SPY +1.2% · QQQ +0.8%"),
         # NOT a "you outperformed" badge (manifesto: framing, not scoring).
@@ -5010,6 +5160,8 @@ def weekly_review():
         except Exception:
             pass
 
+        paper_known = _paper_known_symbols(batch)
+
     except Exception as e:
         context["error"] = str(e)
 
@@ -5038,9 +5190,31 @@ def weekly_review():
         _hero_av = _snaps[0]["today_value"]
     if _hero_av is None:
         _hero_av = (context.get("equity_snapshot") or {}).get("account_value")
+    else:
+        # Hero is the settled close. Live cash / invested % from
+        # stg_account_balances is a different clock (intraday marks).
+        # Replace that split with the equity-daily sleeve on the same
+        # date, or blank it when the sleeve is missing or disagrees.
+        _cash, _invested, _pct = _invested_from_close_sleeve(
+            _hero_av,
+            (context.get("close_sleeve") or {}).get("account_value"),
+            (context.get("close_sleeve") or {}).get("cash_value"),
+        )
+        _eq = dict(context.get("equity_snapshot") or {})
+        _eq["cash_balance"] = _cash
+        _eq["invested_value"] = _invested
+        _eq["pct_invested"] = _pct
+        context["equity_snapshot"] = _eq
+    context.pop("close_sleeve", None)
     context["hero_account_value"] = _hero_av
     context["paper_only"] = False
     context["paper_aside"] = None
+    context["paper_fills"] = []
+    try:
+        from app.paper_practice import paper_fill_notices
+        context["paper_fills"] = paper_fill_notices(current_user.id, paper_known)
+    except Exception as exc:
+        app.logger.warning("overview paper fill notices failed: %s", exc)
     try:
         context["paper_only"], context["paper_aside"] = _paper_book_aside(
             current_user.id, tenant_ids,
@@ -5071,6 +5245,7 @@ def weekly_review():
 
 @app.route("/overview/below")
 @login_required
+@_with_overview_cache_epoch
 def overview_below():
     """Deferred Overview sections (watch, heatmap, scorecards, week trades).
 

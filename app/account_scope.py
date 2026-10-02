@@ -256,9 +256,11 @@ def persist_account_scope_response():
     if endpoint not in SCOPE_ENDPOINTS:
         return None
     from app.models import get_broker_tenants_for_user
+    from app.request_timing import stage
 
     try:
-        rows = get_broker_tenants_for_user(current_user.id) or []
+        with stage("scope"):
+            rows = get_broker_tenants_for_user(current_user.id) or []
     except Exception:
         return None
     decision = decide_persisted_scope(

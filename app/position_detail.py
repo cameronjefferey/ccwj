@@ -37,7 +37,13 @@ from app.tenant_scope import (
     filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
     tenant_sql_and as _tenant_sql_and,
 )
-from app.outcome_units import closing_without_an_open, net_collected
+from app.outcome_units import (
+    annotate_strategy_structures,
+    closing_without_an_open,
+    group_vertical_spreads,
+    legs_activity_summary,
+    net_collected,
+)
 from app.pnl_charts import (
     CHART_DATA_ALL_QUERY,
     CHART_DATA_QUERY,
@@ -698,7 +704,7 @@ POSITION_CLOSED_LEGS_QUERY = """
      AND sc.account = oc.account
      AND sc.trade_symbol = oc.trade_symbol
      AND sc.user_id IS NOT DISTINCT FROM oc.user_id
-    WHERE sc.status = 'Closed'
+    WHERE sc.status in ('Closed', 'Settlement pending')
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{symbol}'))
     {sc_tenant_filter}
@@ -1183,7 +1189,7 @@ def _fetch_closed_option_legs_from_classification(
         sc.close_type,
         sc.days_in_trade
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
-    WHERE sc.status = 'Closed'
+    WHERE sc.status in ('Closed', 'Settlement pending')
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{safe_symbol}'))
     {acct}
@@ -3059,7 +3065,8 @@ def position_detail(symbol):
     for leg in closed_legs_list:
         direction = str(leg.get("direction") or "")
         o_cost, o_proceeds, o_pnl = _option_leg_cost_proceeds(leg)
-        o_return = _option_return_pct(leg, o_pnl)
+        pending = str(leg.get("close_type") or "") == "Settlement pending"
+        o_return = None if pending else _option_return_pct(leg, o_pnl)
         trade_outcomes.append({
             "trade_symbol": leg.get("trade_symbol"),
             "strategy": leg.get("strategy") or "",
@@ -3074,13 +3081,17 @@ def position_detail(symbol):
             "pnl": round(o_pnl, 2),
             "return_pct": o_return,
             "is_winner": (
-                True if round(o_pnl, 2) > 0
+                None if pending
+                else True if round(o_pnl, 2) > 0
                 else False if round(o_pnl, 2) < 0
                 else None
             ),
             "type": "option",
             "tenant_id": leg.get("tenant_id"),
             "account": str(leg.get("account") or "").strip(),
+            "premium_received": leg.get("premium_received"),
+            "premium_paid": leg.get("premium_paid"),
+            "option_expiry": str(leg.get("option_expiry") or "")[:10],
         })
     for leg in closed_equity_list:
         eq_proceeds = float(leg.get("sell_proceeds") or 0)
@@ -3451,6 +3462,13 @@ def position_detail(symbol):
         app.logger.warning("held-to-expiry chart build failed for %s: %s", symbol, exc)
         held_charts = []
     held_summary = held_page_summary(held_charts)
+    # Verticals are one row: net credit, width, and one win/loss. The long
+    # protective leg stays inside the expand, not as its own red loss.
+    trade_outcomes = group_vertical_spreads(trade_outcomes)
+    annotate_strategy_structures(strategy_rows, trade_outcomes)
+    legs_activity = legs_activity_summary(
+        trade_outcomes, (kpis or {}).get("total_trades"),
+    )
 
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
@@ -3626,6 +3644,7 @@ def position_detail(symbol):
         trades=trades,
         history_before_open=history_before_open,
         trade_outcomes=trade_outcomes,
+        legs_activity=legs_activity,
         current_positions=current_positions,
         option_matrices=option_matrices,
         sessions=sessions_list,

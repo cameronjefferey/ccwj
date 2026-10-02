@@ -30,6 +30,13 @@
     Your latest upload is still processing. Data may lag by a few minutes.
 </div>
 {% endif %}
+{% if paper_fills %}
+<div class="ov-paper-fills" role="status">
+    {% for fill in paper_fills %}
+    <p>{{ fill.sentence }} <a href="{{ scoped_url('position_detail', symbol=fill.symbol) }}">See {{ fill.symbol }}</a></p>
+    {% endfor %}
+</div>
+{% endif %}
 
 <div class="ov-page">
 {# ════════════════════════════════════
@@ -264,7 +271,7 @@
             <h3>Biggest movers, {{ tm_day }}</h3>
             <p>Your holdings. Top 5 up and top 5 down by dollar impact.</p>
         </div>
-        {% if today_movers.combined_impact %}
+        {% if today_movers.combined_impact is not none %}
         {% set ti = today_movers.combined_impact %}
         <div class="ov-pills-lite">
             <span class="ov-pl {{ 'gn' if ti >= 0 else 'rd' }}">{{ "+" if ti >= 0 else "−" }}${{ "{:,.0f}".format(ti|abs) }} impact</span>
@@ -494,18 +501,19 @@
 </div>
 {% endif %}
 
-{# Daily change is the last open section. The lazy fragment still owns
-   the markup; this slot is where that fetch places it. A full render
-   includes the section here so it is in the document on first paint. #}
-{% if simple_view %}
-<details class="disclosure" id="ov-show-more">
-    <summary><span class="section-header">Show more</span></summary>
-    <div class="disclosure-body">
-{% endif %}
+{# Daily change is the last open section, including Simple view. The lazy
+   fragment still owns the markup; this slot is where that fetch places it.
+   A full render includes the section here so it is in the document on
+   first paint. #}
 {% if overview_below_deferred %}
 <div id="ht-overview-daily" class="ov-below-slot"></div>
 {% else %}
 {% include "_overview_daily.html" %}
+{% endif %}
+{% if simple_view %}
+<details class="disclosure" id="ov-show-more">
+    <summary><span class="section-header">Show more</span></summary>
+    <div class="disclosure-body">
 {% endif %}
 
 {% if building_history %}
@@ -576,8 +584,7 @@
             var visible = (html || "").replace(/<!--[\s\S]*?-->/g, "").trim();
             if (!visible) {
                 el.remove();
-                var empty = document.getElementById("ht-overview-daily");
-                if (empty) empty.remove();
+                noteDailyMiss();
                 return;
             }
             el.outerHTML = html;
@@ -585,10 +592,14 @@
         })
         .catch(function () {
             if (el) el.remove();
-            var empty = document.getElementById("ht-overview-daily");
-            if (empty) empty.remove();
+            noteDailyMiss();
         });
 })();
+function noteDailyMiss() {
+    var slot = document.getElementById("ht-overview-daily");
+    if (!slot) return;
+    slot.innerHTML = "<p class=\"ov-held\">Daily change didn't load. Refresh to try again.</p>";
+}
 function placeOverviewDaily() {
     var daily = document.getElementById("ov-daily");
     var slot = document.getElementById("ht-overview-daily");

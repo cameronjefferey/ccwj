@@ -200,6 +200,11 @@ keeps them. An unscoped admin read (`tenant_ids` None) also drops known
 paper tenants from real totals; a lookup miss leaves that read unscoped.
 Overview shows that paper value beside the real total,
 labeled Paper, with a link that opens just the paper book.
+A filled paper order that is not in the positions frame yet shows the
+same syncing sentence Positions uses, and that read starts the on-demand
+account sync. A successful paper sync bumps that user's Overview
+query-cache epoch so the next load misses the previous entry. The fill
+itself still waits for the next settled close.
 
 The page reads in one order: the headline (session date, account value, the
 close labeled Today, this week), then one **What happened** section (that
@@ -208,7 +213,10 @@ session's fills and the notable moves), then the account breakdown, then
 lazy `/overview/below` fragment and placed in `#ht-overview-daily`), then
 secondary items collapsed in disclosures — building your history, the radar,
 execution review, performance by account, and trades this week.
-`#ht-overview-below` is not a card; an empty or failed load removes the slot.
+Simple view keeps Daily change open under Accounts and tucks the rest
+under Show more. `#ht-overview-below` is not a card; an empty or failed
+load removes that slot. Daily change stays, with a refresh line when the
+fragment never arrives.
 
 What's working:
 - Session hero: brand and the Group filter sit in the dark
@@ -440,6 +448,9 @@ What's working:
   click does not split the cycle). Opening quantities are converted from
   today's units back to their opening-date units before split events are
   replayed, so pre-history holdings do not disappear or double-split.
+  The share sentence shows split-adjusted counts and prices (a pre-split
+  buy and a post-split sale stay in the same units) and says so when a
+  split moved them. P&amp;L is unchanged.
   Pinned by `tests/test_covered_call_runs.py`.
 - Position Detail reads as one story: the hero, then the mirror, then
   Position Legs. Cumulative P&amp;L and What worked follow. Breakdown by
@@ -943,9 +954,13 @@ paper path must not replace the click. The first real brokerage does not
 change the view; if the user is on Simple it sets `full_view_offer` and
 the shell shows a one-click "Switch to Full view" (Keep Simple dismisses
 it). Simple nav is Practice, Learn, Overview, and Positions.
+Full view keeps Practice in the top nav when the only connected accounts
+are paper, or there are none. A real brokerage moves Practice and Learn
+into the Account menu. `/practice` stays available either way.
 Direct visits to Strategies, Trader Profile, and AI Insights show a
 switch-to-Full card instead of the page. Overview in Simple hides
 Execution review, Performance by account, and the trader-profile link.
+Daily change stays open under Accounts.
 The position review does the same with its profile link. After the close,
 Practice review uses the last price at close when a live quote is missing.
 While the session is open, a failed or empty SnapTrade per-contract quote

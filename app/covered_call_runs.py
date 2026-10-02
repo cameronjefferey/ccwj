@@ -484,6 +484,7 @@ class _Run:
         self.account_label = account_label
         self.buys = []
         self.sells = []
+        self.splits = []
         self.shares = 0.0
         self.cost = 0.0
         self.realized = 0.0
@@ -582,7 +583,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id,
         if active is None:
             active = _Run(day, tenant_id, account_label)
             runs.append(active)
-        active.buys.append((qty, abs(price)))
+        active.buys.append((qty, abs(price), day))
         active.shares += qty
         active.cost += qty * abs(price)
 
@@ -598,7 +599,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id,
         active.realized += (price - avg) * qty
         active.cost -= avg * qty
         active.shares -= qty
-        active.sells.append((qty, price, reason))
+        active.sells.append((qty, price, reason, day))
         if active.shares <= _FLAT:
             active.shares = 0.0
             active.cost = 0.0
@@ -612,6 +613,7 @@ def _build_tenant(fills, splits, mark, as_of, account_label, tenant_id,
         if active is not None and active.shares > _FLAT:
             for ratio in splits_by_day.get(day, []):
                 active.shares *= ratio
+                active.splits.append((day, ratio))
 
         day_fills = fills_by_day.get(day, [])
         buys = [f for f in day_fills if f["kind"] == "buy"]
@@ -812,6 +814,7 @@ def _present(run, mark, as_of):
         })
 
     share_pnl, share_note = _share_pnl(run, mark)
+    _buys, _sells, prices_adjusted = _display_share_lots(run)
     premium_total = rows[-1]["running_premium"] if rows else 0.0
     groups = _outcome_groups(rows)
     status = run.status
@@ -824,8 +827,9 @@ def _present(run, mark, as_of):
         "start": run.start,
         "end": run.end,
         "when": _when(run),
-        "share_sentence": _share_sentence(run),
+        "share_sentence": _share_sentence(run, buys=_buys, sells=_sells),
         "share_note": share_note,
+        "price_note": "Prices are adjusted for the stock split." if prices_adjusted else "",
         "share_pnl": share_pnl,
         "premium_total": premium_total,
         "premium_label": "Calls net",
@@ -858,17 +862,55 @@ def _share_pnl(run, mark):
     return round(pnl, 2), note
 
 
-def _share_sentence(run):
-    buy_qty = sum(qty for qty, _price in run.buys)
-    buy_cost = sum(qty * price for qty, price in run.buys)
-    prices = {round(price, 2) for _qty, price in run.buys}
+def _factor_after(splits, fill_date):
+    """Product of splits that happen after this fill.
+
+    A split is applied to the running share count before that day's fills,
+    so a fill on the split date is already in post-split units.
+    """
+    factor = 1.0
+    for split_date, ratio in splits or []:
+        if fill_date is not None and split_date > fill_date and ratio:
+            factor *= float(ratio)
+    return factor or 1.0
+
+
+def _display_share_lots(run):
+    """Share counts and prices in the same split-adjusted units.
+
+    P&L stays on the running lot (cost is split-invariant). The sentence
+    was mixing a pre-split buy price with a post-split sale price.
+    """
+    splits = getattr(run, "splits", None) or []
+    buys = []
+    sells = []
+    adjusted = False
+    for qty, price, day in run.buys:
+        factor = _factor_after(splits, day)
+        if abs(factor - 1.0) > 1e-9:
+            adjusted = True
+        buys.append((qty * factor, price / factor))
+    for qty, price, reason, day in run.sells:
+        factor = _factor_after(splits, day)
+        if abs(factor - 1.0) > 1e-9:
+            adjusted = True
+        sells.append((qty * factor, price / factor, reason))
+    return buys, sells, adjusted
+
+
+def _share_sentence(run, buys=None, sells=None):
+    if buys is None or sells is None:
+        buys, sells, _adjusted = _display_share_lots(run)
+    buy_qty = sum(qty for qty, _price in buys)
+    buy_cost = sum(qty * price for qty, price in buys)
+    prices = {round(price, 2) for _qty, price in buys}
     bits = []
     if run.entry_put:
         puts = [c for c in run.contracts if c.option_type == "put" and c.assigned_qty > _FLAT]
         strike = puts[0].strike if puts and puts[0].strike is not None else (
             buy_cost / buy_qty if buy_qty else 0.0
         )
-        from_put = buy_qty > _FLAT and all(_near(price, strike) for _qty, price in run.buys)
+        from_put = buy_qty > _FLAT and all(_near(price, strike) for _qty, price in buys)
         if from_put:
             bits.append(f"{_shares(buy_qty)} from the {_px(strike)} put")
         elif buy_qty > _FLAT:
@@ -889,19 +931,19 @@ def _share_sentence(run):
     if run.missing_close and run.status != "closed":
         bits.append("sale or transfer missing from broker history")
     elif run.status == "open":
-        if run.sells:
-            sold_qty, avg_exit = _exit_avg(run.sells)
+        if sells:
+            sold_qty, avg_exit = _exit_avg(sells)
             bits.append(f"sold {_shares(sold_qty)} at {_px(avg_exit)}")
             bits.append(f"{_shares(run.shares)} still held")
         elif buy_qty > _FLAT and abs(run.shares - buy_qty) < 0.01:
             bits.append("still holding them")
         elif run.shares > _FLAT:
             bits.append(f"{_shares(run.shares)} still held")
-    elif run.sells and all(reason == "assigned" for _q, _p, reason in run.sells):
-        _sold, avg_exit = _exit_avg(run.sells)
+    elif sells and all(reason == "assigned" for _q, _p, reason in sells):
+        _sold, avg_exit = _exit_avg(sells)
         bits.append(f"called away at {_px(avg_exit)}")
-    elif run.sells:
-        _sold, avg_exit = _exit_avg(run.sells)
+    elif sells:
+        _sold, avg_exit = _exit_avg(sells)
         bits.append(f"sold at {_px(avg_exit)}")
 
     if not bits:

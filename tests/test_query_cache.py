@@ -96,6 +96,23 @@ def test_make_key_differs_by_array_params():
     assert make_key(sql, cfg1) != make_key(sql, cfg2)
 
 
+def test_make_key_includes_a_bound_user_epoch():
+    """An empty epoch must not change keys. A bump must, and only while bound."""
+    sql = "SELECT 1 FROM t WHERE tenant_id IN ('snaptrade:aaa')"
+    plain = make_key(sql)
+    with query_cache.bind_user_query_epoch(42):
+        assert make_key(sql) == plain
+    query_cache.bump_user_query_epoch(42)
+    bumped = query_cache.user_query_epoch(42)
+    assert bumped not in ("", "0")
+    with query_cache.bind_user_query_epoch(42):
+        assert make_key(sql) != plain
+    assert make_key(sql) == plain
+    query_cache.bump_user_query_epoch(42)
+    with query_cache.bind_user_query_epoch(42):
+        assert make_key(sql) != plain
+
+
 def test_make_key_folds_dataset_override(monkeypatch):
     """Dev and prod must never collide on the same key."""
     sql = "SELECT * FROM `ccwj-dbt.analytics.positions_summary`"

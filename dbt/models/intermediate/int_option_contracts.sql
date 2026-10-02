@@ -490,6 +490,19 @@ otm_at_expiry as (
         c.account,
         c.user_id,
         c.trade_symbol,
+        e.close_price as expiry_close,
+        -- Strictly OTM on the expiry close, any day. ATM and ITM are
+        -- not worthless: a short ITM index option cash-settles the next
+        -- morning, and booking the opening credit before that fill
+        -- arrives reports a phantom win (SPXW 7650C, Oct 2026).
+        (
+            c.option_strike is not null
+            and e.close_price is not null
+            and (
+                (c.option_type = 'C' and e.close_price < c.option_strike)
+                or (c.option_type = 'P' and e.close_price > c.option_strike)
+            )
+        ) as strictly_otm,
         case
             -- Strict OTM call: underlying closed BELOW the strike.
             when c.option_expiry = current_date()
@@ -526,6 +539,8 @@ joined as (
     select
         c.*,
         iotm.inferred_otm_today,
+        iotm.expiry_close,
+        iotm.strictly_otm,
         cur.trade_symbol   as cur_trade_symbol,
         cur.market_value   as cur_market_value,
         cur.unrealized_pnl as cur_unrealized_pnl,
@@ -622,7 +637,30 @@ flagged2 as (
          and remaining_open_qty > 1e-6
          and coalesce(contracts_closed, 0) > 1e-6
          and coalesce(option_expiry >= current_date(), true)
-         and not coalesce(inferred_otm_today, false)) as is_partial_open
+         and not coalesce(inferred_otm_today, false)) as is_partial_open,
+        -- Past expiry, no closing fill, and not a proven worthless
+        -- expiry. The calendar branch used to realize net_cash_flow
+        -- (the opening credit) and the leg rendered as closed at $0.
+        -- Cash-settled index roots (SPXW and the rest) stay pending
+        -- even when the underlying close is missing — yfinance often
+        -- has SPX, not SPXW — until the as-of settlement row arrives.
+        -- A priced equity that is strictly OTM still expires worthless.
+        (
+            coalesce(close_type, '') = ''
+            and _activity_flat_close_date is null
+            and coalesce(contracts_closed, 0) < 1e-6
+            and option_expiry is not null
+            and option_expiry < current_date()
+            and not coalesce(inferred_otm_today, false)
+            and not coalesce(strictly_otm, false)
+            and (
+                expiry_close is not null
+                or upper(trim(coalesce(underlying_symbol, ''))) in (
+                    'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                    'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+                )
+            )
+        ) as settlement_pending
     from flagged
 )
 
@@ -646,13 +684,20 @@ select
     -- The realized credit for the CLOSED portion attributes on
     -- realized_close_date instead. For fully-closed contracts this is the
     -- same effective close_date as before.
-    case when is_partial_open then null else eff_close_date end as close_date,
+    case
+        when settlement_pending then cast(null as date)
+        when is_partial_open then null
+        else eff_close_date
+    end as close_date,
 
     -- Date to attribute the realized P&L of the closed portion. Equals the
     -- effective close date for fully-closed contracts and the last closing
     -- fill date for partial closes; NULL when nothing has closed. Read by
     -- int_option_contract_daily_pnl's realized branch.
-    eff_close_date as realized_close_date,
+    case
+        when settlement_pending then cast(null as date)
+        else eff_close_date
+    end as realized_close_date,
 
     contracts_sold_to_open,
     contracts_bought_to_open,
@@ -672,6 +717,7 @@ select
     -- and overrides this value in the next build (same realized
     -- credit either way — net_cash_flow doesn't change).
     case
+        when settlement_pending then 'Settlement pending'
         when close_type is not null then close_type
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null then 'Closed'
@@ -704,6 +750,7 @@ select
     -- when the underlying closed strictly OTM, realize before the
     -- broker confirms on Monday. See ``otm_at_expiry`` CTE header.
     case
+        when settlement_pending                    then 'Settlement pending'
         when close_type is not null and not is_partial_open then 'Closed'
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then 'Closed'
@@ -755,6 +802,9 @@ select
         -- alone is a phantom profit (or a phantom loss on an exercised
         -- split-adjusted symbol).
         when coalesce(opened_before_history, false) then 0.0
+        -- No settlement fill yet. Do not book the opening credit as if
+        -- the short expired at $0.
+        when settlement_pending then 0.0
         when close_type is not null and not is_partial_open then net_cash_flow
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then net_cash_flow
@@ -780,6 +830,7 @@ select
     -- consumers are byte-for-byte unchanged for the non-partial case.
     case
         when coalesce(opened_before_history, false) then 0.0
+        when settlement_pending then 0.0
         when close_type is not null and not is_partial_open then net_cash_flow
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then net_cash_flow
@@ -797,7 +848,10 @@ select
     -- the effective close date; open contracts run open → today.
     date_diff(
         coalesce(
-            case when is_partial_open then null else eff_close_date end,
+            case
+                when settlement_pending or is_partial_open then null
+                else eff_close_date
+            end,
             current_date()
         ),
         open_date,

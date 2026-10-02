@@ -12,6 +12,7 @@ least 100 shares.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import secrets
 import threading
@@ -896,7 +897,10 @@ def _chain_from_cache(symbol, expiry: date):
     return hit[1]
 
 
-def load_option_chain(symbol, expiry: date, strikes: list[int]) -> list[dict]:
+_CHAIN_LOAD_TIMEOUT = 3.0
+
+
+def _read_option_chain(symbol, expiry: date, strikes: list[int]) -> list[dict]:
     """Bid, mid, and ask for a strike window. Public option quotes, not a tenant read."""
     ticker = "^SPX" if symbol == "SPX" else symbol
     try:
@@ -930,6 +934,27 @@ def load_option_chain(symbol, expiry: date, strikes: list[int]) -> list[dict]:
     with _CHAIN_LOCK:
         _CHAIN_CACHE[_chain_cache_key(symbol, expiry)] = (time.monotonic(), rows)
     return rows
+
+
+def load_option_chain(symbol, expiry: date, strikes: list[int]) -> list[dict]:
+    """Same quotes as ``_read_option_chain``, but a hung vendor call cannot pin a worker."""
+    box = {}
+
+    def _run():
+        try:
+            box["rows"] = _read_option_chain(symbol, expiry, strikes)
+        except Exception as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_run, name="practice-option-chain", daemon=True)
+    worker.start()
+    worker.join(_CHAIN_LOAD_TIMEOUT)
+    if worker.is_alive():
+        _log.warning("practice chain timed out for %s %s", symbol, expiry)
+        raise TimeoutError("option chain timed out")
+    if "error" in box:
+        raise box["error"]
+    return box["rows"]
 
 
 def _side_quote(chain, strike, side) -> dict:
@@ -1149,6 +1174,8 @@ _STATUS_CACHE_SECONDS = 15.0
 _status_cache: dict[tuple, dict] = {}
 _account_cache: dict[int, dict] = {}
 _ACCOUNT_CACHE_SECONDS = 60.0
+_power_cache: dict[tuple, dict] = {}
+_POWER_CACHE_SECONDS = 60.0
 _status_lock = threading.Lock()
 _filled_synced: set[tuple] = set()
 _seen_open: set[tuple] = set()
@@ -1161,6 +1188,7 @@ def reset_order_status_state() -> None:
     with _status_lock:
         _status_cache.clear()
         _account_cache.clear()
+        _power_cache.clear()
     with _filled_lock:
         _filled_synced.clear()
         _seen_open.clear()
@@ -1499,7 +1527,7 @@ def _cached_recent_orders(user_id, account_id):
             return list(hit["orders"]), None
     try:
         raw = list_account_recent_orders(
-            user_id, account_id, raise_on_error=True,
+            user_id, account_id, raise_on_error=True, recent_only=True,
         ) or []
     except Exception as exc:
         _log.warning("paper order list failed: %s", exc)
@@ -1571,7 +1599,17 @@ def _note_fills(user_id, account, orders) -> None:
 
 
 def _paper_account_cached(user_id):
-    """Reuse the paper-account lookup for a minute so status polls don't relist grants."""
+    """Reuse the paper-account lookup for a minute so status polls don't relist grants.
+
+    Tests patch ``alpaca_paper_trade_account`` and expect every call to
+    hit that patch, so the minute cache stays off under pytest.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            return alpaca_paper_trade_account(user_id)
+        except Exception as exc:
+            _log.warning("paper order account lookup failed: %s", exc)
+            return None
     now = time.monotonic()
     key = int(user_id)
     with _status_lock:
@@ -1588,11 +1626,34 @@ def _paper_account_cached(user_id):
     return account
 
 
-def merged_paper_orders(user_id, *, use_cache=False, account=None) -> list[dict]:
+def _buying_power_cached(user_id, account_id):
+    """Buying power for the practice page. A minute is enough; polls do not read it.
+
+    Tests patch ``account_buying_power`` and expect a live call, so the
+    cache stays off under pytest.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return account_buying_power(user_id, account_id)
+    key = (int(user_id), str(account_id))
+    now = time.monotonic()
+    with _status_lock:
+        hit = _power_cache.get(key)
+        if hit and now - float(hit["at"]) < _POWER_CACHE_SECONDS:
+            return hit["power"]
+    power = account_buying_power(user_id, account_id)
+    with _status_lock:
+        _power_cache[key] = {"at": now, "power": power}
+    return power
+
+
+def merged_paper_orders(user_id, *, use_cache=False, account=None, note_fills=True) -> list[dict]:
     """Broker orders plus anything just placed that SnapTrade has not listed yet.
 
     ``use_cache`` is for the open-page poll. A normal page render reads
     once. Tests that patch the order list rely on that uncached read.
+    ``note_fills`` queues a background account read when a session order
+    first shows filled. The status poll passes False: polling must not
+    start a sync.
     """
     live = []
     error = None
@@ -1660,7 +1721,8 @@ def merged_paper_orders(user_id, *, use_cache=False, account=None) -> list[dict]
         row["link_symbol"] = position_link_symbol(row.get("link_symbol") or row.get("symbol"))
         row["source"] = "session"
         merged.insert(0, row)
-    _note_fills(user_id, account, merged)
+    if note_fills:
+        _note_fills(user_id, account, merged)
     _apply_live_statuses(merged)
     return merged
 
@@ -1794,10 +1856,17 @@ def _local_account_rows(user_id) -> dict:
 
 
 def paper_orders_for_page(user_id, symbol=None) -> list[dict]:
-    """Orders for one position page. SPX and SPXW are the same contract root."""
+    """Orders this browser just placed. SPX and SPXW are the same contract root.
+
+    The position page used to call SnapTrade for the whole paper book on
+    every load. The session already has the receipt. A fill still syncs
+    from the practice page and from the fill notice, not from here.
+    """
     wanted = position_link_symbol(symbol) if symbol else ""
     out = []
-    for order in merged_paper_orders(user_id):
+    for order in _session_orders():
+        if not isinstance(order, dict):
+            continue
         link = position_link_symbol(order.get("link_symbol") or order.get("symbol"))
         if wanted and link != wanted:
             continue
@@ -1869,13 +1938,13 @@ def paper_practice():
     buying_power_label = None
     if snaptrade_enabled():
         try:
-            account = alpaca_paper_trade_account(current_user.id)
+            account = _paper_account_cached(current_user.id)
         except Exception as exc:
             _log.warning("practice account lookup failed: %s", exc)
             account = None
         if account:
             try:
-                power = account_buying_power(
+                power = _buying_power_cached(
                     current_user.id, account["snaptrade_account_id"],
                 )
             except Exception as exc:
@@ -1886,7 +1955,7 @@ def paper_practice():
     orders = []
     orders_error = None
     try:
-        orders = merged_paper_orders(current_user.id)
+        orders = merged_paper_orders(current_user.id, account=account)
         orders_error = getattr(_status_error, "value", None)
     except Exception as exc:
         _log.warning("practice orders failed: %s", exc)
@@ -1967,7 +2036,7 @@ def paper_practice_chain():
     if not spot:
         return jsonify(error="No price for those shares yet."), 400
     try:
-        account = alpaca_paper_trade_account(current_user.id)
+        account = _paper_account_cached(current_user.id)
     except Exception as exc:
         _log.warning("practice chain account lookup failed: %s", exc)
         account = None
@@ -2127,7 +2196,7 @@ def paper_practice_order_status():
         return jsonify(orders=[], open_count=0, error=None, poll_after_ms=0)
     try:
         orders = merged_paper_orders(
-            current_user.id, use_cache=True, account=account,
+            current_user.id, use_cache=True, account=account, note_fills=False,
         )
     except Exception as exc:
         _log.warning("paper status poll failed: %s", exc)

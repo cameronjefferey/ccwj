@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import datetime, date
 from typing import Iterable, Mapping, Optional, Sequence
 
@@ -216,7 +217,49 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
     "QUALIFIEDDIVIDEND": "Qualified Dividend",
     "MARGININTEREST": "Margin Interest",
     "STOCKSPLIT": None,
+    # Raw brokerage strings SnapTrade forwards when it does not fold
+    # them into BUY/SELL. Cash-settled index closes (SPXW "as of"
+    # Buy to Close / Sell to Close, zero commission) arrived this way
+    # and were logged as unknown and dropped.
+    "BUY TO OPEN": "Buy to Open",
+    "BUY TO CLOSE": "Buy to Close",
+    "SELL TO OPEN": "Sell to Open",
+    "SELL TO CLOSE": "Sell to Close",
+    "BUY_TO_OPEN": "Buy to Open",
+    "BUY_TO_CLOSE": "Buy to Close",
+    "SELL_TO_OPEN": "Sell to Open",
+    "SELL_TO_CLOSE": "Sell to Close",
+    "EXPIRED": "Expired",
+    "ASSIGNED": "Assigned",
+    "EXERCISED": "Exchange or Exercise",
+    "EXERCISE": "Exchange or Exercise",
+    "ASSIGNMENT": "Assigned",
+    "EXPIRATION": "Expired",
+    "OPTION_EXPIRATION": "Expired",
+    "OPTION_ASSIGNMENT": "Assigned",
+    "OPTION_EXERCISE": "Exchange or Exercise",
+    "EXCHANGE OR EXERCISE": "Exchange or Exercise",
 }
+
+
+# Index-option cash settlement. Not a share exercise. Side comes from
+# option_type, the description, or the cash sign.
+_CASH_SETTLEMENT_TYPES = frozenset({
+    "CASH_SETTLEMENT",
+    "CASHSETTLEMENT",
+    "OPTIONCASHSETTLEMENT",
+    "OPTION_CASH_SETTLEMENT",
+    "INDEX_OPTION_SETTLEMENT",
+    "INDEXOPTIONSETTLEMENT",
+})
+
+_AS_OF_MDY_RE = re.compile(
+    r"\bas of\s+(\d{1,2})/(\d{1,2})/(\d{4})\b", re.IGNORECASE,
+)
+_SCHWAB_OPTION_TEXT_RE = re.compile(
+    r"\b([A-Z]{1,6})\s+(\d{1,2}/\d{1,2}/\d{2,4})\s+([\d.]+)\s+([CP])\b",
+    re.IGNORECASE,
+)
 
 
 # SnapTrade's activity-level ``option_type`` field carries the EXPLICIT
@@ -336,6 +379,9 @@ def _format_date_mdy(value) -> str:
     s = str(value).strip()
     if not s:
         return ""
+    as_of = _as_of_trade_date(s)
+    if as_of:
+        return as_of
     # ISO 8601 ("2026-05-11" or "2026-05-11T14:30:00Z")
     iso_head = s.split("T", 1)[0].split(" ", 1)[0]
     try:
@@ -355,6 +401,104 @@ def _format_date_mdy(value) -> str:
 # ---------------------------------------------------------------------------
 # Option symbol formatting
 # ---------------------------------------------------------------------------
+
+def _as_of_trade_date(value) -> str:
+    """Trade date from ``10/02/2026 as of 10/01/2026``.
+
+    The first date is when Schwab posted the cash settlement. The date
+    after "as of" is the expiry / trade date the fill belongs to.
+    A clock suffix (``as of 08:30 PM``) returns empty.
+    """
+    if value is None:
+        return ""
+    match = _AS_OF_MDY_RE.search(str(value))
+    if not match:
+        return ""
+    month, day, year = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    try:
+        return date(year, month, day).strftime("%m/%d/%Y")
+    except ValueError:
+        return ""
+
+
+def _net_option_cash(amount_signed: float, units: float, price: float, fees: float) -> float:
+    """Net a gross option premium by the commission once.
+
+    Statement Amount is already net (STO 10 × 7.77 × 100 − 12.22 =
+    7,757.78). An order row is the gross (7,770) with the fee beside
+    it. If ``|amount|`` already matches ``qty × price × 100`` minus the
+    fee, leave it — subtracting again double-charges the Sep legs.
+    """
+    if not fees or not units or not price:
+        return amount_signed
+    gross = abs(units) * abs(price) * 100.0
+    if abs(abs(amount_signed) - gross) > 0.05:
+        return amount_signed
+    fee = abs(fees)
+    if amount_signed < 0:
+        return round(-(gross + fee), 2)
+    return round(gross - fee, 2)
+
+
+def _osi_from_broker_text(text: str) -> str:
+    """OCC symbol from a Schwab symbol cell or a description.
+
+    ``SPXW 10/01/2026 7650.00 C`` and a bare OSI tail both work.
+    Cash-settled index activities sometimes ship the contract only as
+    text (``option_symbol`` null because the root is not a stock).
+    """
+    if not text or not isinstance(text, str):
+        return ""
+    raw = text.strip().upper()
+    compact = re.sub(r"\s+", "", raw)
+    occ = re.search(r"([A-Z]{1,6})(\d{6}[CP]\d{8})", compact)
+    if occ:
+        return f"{occ.group(1)[:6]:<6}{occ.group(2)}"
+    match = _SCHWAB_OPTION_TEXT_RE.search(raw)
+    if not match:
+        return ""
+    root, expiry_s, strike_s, cp = match.groups()
+    expiry_s = expiry_s.strip()
+    exp_dt = None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            exp_dt = datetime.strptime(expiry_s, fmt).date()
+            break
+        except ValueError:
+            continue
+    if exp_dt is None:
+        return ""
+    try:
+        strike_thou = int(round(float(strike_s) * 1000))
+    except (TypeError, ValueError):
+        return ""
+    return f"{root[:6]:<6}{exp_dt.strftime('%y%m%d')}{cp.upper()}{strike_thou:08d}"
+
+
+def _resolve_cash_settlement_action(description: str, option_type: str, amount: float) -> str:
+    """Side of an index cash settlement that is not a share exercise."""
+    explicit = SNAPTRADE_OPTION_TYPE_TO_ACTION.get(str(option_type or "").strip().upper())
+    if explicit:
+        return explicit
+    desc = (description or "").lower()
+    if "buy to close" in desc or "bought to close" in desc:
+        return "Buy to Close"
+    if "sell to close" in desc or "sold to close" in desc:
+        return "Sell to Close"
+    if "buy to open" in desc or "bought to open" in desc:
+        return "Buy to Open"
+    if "sell to open" in desc or "sold to open" in desc:
+        return "Sell to Open"
+    if "expir" in desc:
+        return "Expired"
+    if "assign" in desc:
+        return "Assigned"
+    if "exercis" in desc:
+        return "Exchange or Exercise"
+    if abs(amount) < 0.005:
+        return "Expired"
+    return "Buy to Close" if amount < 0 else "Sell to Close"
+
 
 def snaptrade_symbol_to_osi(symbol_obj: Mapping) -> str:
     """Turn a SnapTrade option ``symbol`` object into the compact OSI
@@ -525,14 +669,34 @@ def activities_to_history_df(
         atype = str(act.get("type") or "").strip().upper()
         if not atype:
             continue
+        broker_description = str(act.get("description") or "").strip()
+        option_type = act.get("option_type")
+        amount_preview = _safe_float(act.get("amount"), 0.0)
         action_label = SNAPTRADE_ACTIVITY_TO_ACTION.get(atype, "__UNKNOWN__")
         if action_label is None and atype == "JOURNAL" and _is_cash_only_journal(act):
             amt = _safe_float(act.get("amount"), 0.0)
             action_label = "Deposit" if amt >= 0 else "Withdrawal"
+        if atype in _CASH_SETTLEMENT_TYPES or action_label == "__UNKNOWN__":
+            settled = _resolve_cash_settlement_action(
+                broker_description, option_type, amount_preview,
+            )
+            # Unknown types with no option clue stay dropped. A cash
+            # settlement, or a raw option verb in the description /
+            # option_type, is a real fill (SPXW as-of closes).
+            has_option_clue = bool(option_type) or bool(
+                _osi_from_broker_text(broker_description)
+            ) or atype in _CASH_SETTLEMENT_TYPES
+            if action_label == "__UNKNOWN__" and (
+                atype in _CASH_SETTLEMENT_TYPES or has_option_clue
+            ):
+                action_label = settled
+            elif action_label == "__UNKNOWN__":
+                _log.warning(
+                    "snaptrade_normalize: dropping unknown activity type %r",
+                    atype,
+                )
+                continue
         if action_label is None:
-            continue
-        if action_label == "__UNKNOWN__":
-            _log.warning("snaptrade_normalize: dropping unknown activity type %r", atype)
             continue
 
         symbol_obj = act.get("symbol") or {}
@@ -558,8 +722,13 @@ def activities_to_history_df(
         # Description: prefer the activity-level description (broker-
         # original wording — usually carries "Buy to Close" / etc. for
         # options) over the symbol-level description (just a name).
-        broker_description = str(act.get("description") or "").strip()
         description = broker_description or _description_from_symbol(symbol_obj) or sym_str
+        if not sym_str:
+            sym_str = _osi_from_broker_text(description) or _osi_from_broker_text(
+                str(act.get("symbol") or "")
+            )
+            if sym_str:
+                is_option = True
 
         # Disambiguate option open/close from broker description for
         # BUY/SELL (SnapTrade collapses both into the same canonical
@@ -574,6 +743,15 @@ def activities_to_history_df(
             or act.get("settlement_date")
             or act.get("date")
         )
+        # Posted date (settlement) vs trade date. "10/02/2026 as of
+        # 10/01/2026" belongs on 10/01 even when trade_date is the post.
+        as_of = (
+            _as_of_trade_date(act.get("trade_date"))
+            or _as_of_trade_date(act.get("date"))
+            or _as_of_trade_date(broker_description)
+        )
+        if as_of:
+            trade_date = as_of
         units = _safe_float(act.get("units"), 0.0)
         price = _safe_float(act.get("price"), 0.0)
         fees = _safe_float(act.get("fee"), 0.0)
@@ -605,6 +783,8 @@ def activities_to_history_df(
             amount_signed = abs(amount_f)
         else:
             amount_signed = amount_f
+        if is_option and action_label not in ("Expired", "Assigned", "Exchange or Exercise"):
+            amount_signed = _net_option_cash(amount_signed, units, price, fees)
 
         rows.append({
             "Account": account_name,
@@ -772,6 +952,10 @@ def orders_to_history_df(
             # No fill price — can't construct an Amount. Skip; the
             # activities-side will eventually carry the right amount.
             continue
+        order_fees = _safe_float(
+            order.get("fee") or order.get("fees") or order.get("commission"),
+            0.0,
+        )
 
         # Options are quoted per-share but the contract is 100 shares, so
         # the dollar Amount needs the 100x multiplier to match the
@@ -788,6 +972,8 @@ def orders_to_history_df(
             amount_signed = -abs(amount)
         else:  # Sell / Sell to Open / Sell to Close
             amount_signed = abs(amount)
+        if is_option and order_fees:
+            amount_signed = _net_option_cash(amount_signed, units, price, order_fees)
 
         # Description: minimal so the cross-source dedup prefers activities'
         # richer broker text. Options have no universal_symbol (the contract
@@ -808,11 +994,10 @@ def orders_to_history_df(
             "Description": description,
             "Quantity": abs(units),
             "Price": price,
-            # Orders endpoint does not surface broker fees / commissions;
-            # leave empty so activities (which DOES carry them) wins on
-            # the cross-source dedup tie-break by descriptor length and
-            # this row is the one that gets dropped if activities arrives.
-            "fees_and_comm": "",
+            # A commission on the order is netted into Amount above.
+            # Blank when the feed omits it — the activity row's longer
+            # description then wins dedup and replaces the gross.
+            "fees_and_comm": order_fees if order_fees else "",
             "Amount": amount_signed,
         })
 

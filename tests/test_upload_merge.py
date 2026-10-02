@@ -987,6 +987,7 @@ def test_canonicalize_date_mdy_zero_pads_and_accepts_iso():
     assert d("1/20/23") == "01/20/2023"
     assert d("11/18/22") == "11/18/2022"
     assert d("05/14/2024 as of 08:30 PM") == "05/14/2024"
+    assert d("10/02/2026 as of 10/01/2026") == "10/01/2026"
     assert d("") == ""
     assert d(None) == ""
 

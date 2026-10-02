@@ -90,10 +90,13 @@
     { s: "Profile", href: "/profile", kind: "page" }
   ];
   var simpleNav = document.body.getAttribute("data-simple") === "1";
-  var paperNav = document.body.getAttribute("data-paper") === "1";
-  if (simpleNav || paperNav) {
+  var learnerNav = document.body.getAttribute("data-learner-nav") === "1";
+  if (learnerNav || simpleNav) {
     PAGES.unshift({ s: "Learn", href: "/learn", kind: "page" });
     PAGES.unshift({ s: "Practice", href: "/practice", kind: "page" });
+  } else {
+    PAGES.push({ s: "Learn", href: "/learn", kind: "page" });
+    PAGES.push({ s: "Practice", href: "/practice", kind: "page" });
   }
   if (simpleNav) {
     var simpleKeep = { Practice: 1, Learn: 1, Overview: 1, Positions: 1, Profile: 1 };
