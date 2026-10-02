@@ -211,6 +211,45 @@ def _option_identity(symbol):
     )
 
 
+def _cp_letter(value) -> str:
+    text = str(value or "").strip().upper()
+    if text in ("C", "CALL"):
+        return "C"
+    if text in ("P", "PUT"):
+        return "P"
+    return ""
+
+
+def _contract_key(row):
+    """One identity for a contract, from the symbol or the parsed columns.
+
+    The legs query's snapshot row is an OCC string. The opening fill may
+    be the Schwab long form, or a symbol ``parse_occ`` does not recognize
+    while ``option_expiry`` / strike / type are already parsed. Either
+    shape has to land on the same key or the Sep 28 sell-to-open never
+    reaches the Oct 2 row.
+    """
+    ident = _option_identity(row.get("trade_symbol"))
+    if ident:
+        return ident
+    exp = str(row.get("option_expiry") or "")[:10]
+    if len(exp) != 10 or exp[4] != "-" or exp[7] != "-":
+        return None
+    try:
+        strike = round(float(row.get("option_strike")), 4)
+        mm = int(exp[5:7])
+        dd = int(exp[8:10])
+    except (TypeError, ValueError):
+        return None
+    cp = _cp_letter(row.get("option_type"))
+    if not cp or not (1 <= mm <= 12 and 1 <= dd <= 31):
+        return None
+    root = str(
+        row.get("underlying") or row.get("symbol") or ""
+    ).strip().upper()
+    return (root, exp[2:4], mm, dd, cp, strike)
+
+
 def _same_option_scope(outcome, trade) -> bool:
     ot = str(outcome.get("tenant_id") or "")
     tt = str(trade.get("tenant_id") or "")
@@ -230,38 +269,50 @@ def _outcome_qty(outcome) -> float:
         return 0.0
 
 
+def _premium_missing(outcome) -> bool:
+    try:
+        received = abs(float(outcome.get("premium_received") or 0))
+        paid = abs(float(outcome.get("premium_paid") or 0))
+    except (TypeError, ValueError):
+        return True
+    if received != received or paid != paid:  # NaN
+        return True
+    return received < 0.01 and paid < 0.01
+
+
 def repair_snapshot_option_outcomes(outcomes, trades):
     """Fix an estimated expiry row that came from a snapshot-only contract.
 
-    That row has quantity 0, no premium (kept % is an em dash), and an
-    open date equal to the expiry (the snapshot day) while the fills
-    that opened it are earlier. Recover quantity, the open date, and
-    premium from those fills. Drop the empty row when a history row
-    for the same contract is already in the list.
+    That row's open date is the snapshot day (often the expiry) and it
+    has no premium, so kept % is an em dash. The sell-to-open is an
+    earlier fill. Recover quantity, that open date, and premium from
+    the fill. A history row for the same contract wins even when the
+    snapshot row now has a quantity — the qty fix must not keep a
+    second leg that still says it opened on the expiry.
     """
     rows = list(outcomes or [])
     fills_by_id = {}
     for trade in trades or []:
-        ident = _option_identity(trade.get("trade_symbol"))
+        ident = _contract_key(trade)
         if ident:
             fills_by_id.setdefault(ident, []).append(trade)
 
-    real = set()
+    priced = set()
     for outcome in rows:
         if outcome.get("type") not in (None, "option"):
             continue
-        ident = _option_identity(outcome.get("trade_symbol"))
-        if ident and _outcome_qty(outcome) >= 1e-6:
-            real.add((str(outcome.get("tenant_id") or ""), ident))
+        ident = _contract_key(outcome)
+        if ident and not _premium_missing(outcome):
+            priced.add((str(outcome.get("tenant_id") or ""), ident))
 
     kept = []
     for outcome in rows:
         if outcome.get("type") not in (None, "option"):
             kept.append(outcome)
             continue
-        ident = _option_identity(outcome.get("trade_symbol"))
+        ident = _contract_key(outcome)
         key = (str(outcome.get("tenant_id") or ""), ident)
-        if ident and _outcome_qty(outcome) < 1e-6 and key in real:
+        if ident and _premium_missing(outcome) and key in priced:
             continue
         if ident:
             _fill_option_outcome_from_opens(outcome, fills_by_id.get(ident) or [])
@@ -285,24 +336,27 @@ def _opening_fills(outcome, fills):
 
 
 def _fill_option_open_date(outcome, fills):
-    """Replace an open date that is the expiry with the real opening fill."""
+    """Use the earliest opening fill when the row's open date is later.
+
+    A snapshot-only contract dates its open to the sync day. That day
+    is often the expiry, but after the next rebuild it is the new
+    snapshot date, which is not the close and not the expiry. The
+    sell-to-open is still the real open. Never move an open date later.
+    """
     opens = _opening_fills(outcome, fills)
     if not opens:
-        return
-    open_s = str(outcome.get("open_date") or "")[:10]
-    expiry_s = str(outcome.get("option_expiry") or "")[:10]
-    close_s = str(outcome.get("close_date") or "")[:10]
-    if open_s and open_s not in {expiry_s, close_s}:
         return
     dates = [str(trade.get("trade_date") or "")[:10] for trade in opens]
     dates = [d for d in dates if len(d) == 10]
     if not dates:
         return
     opened = min(dates)
-    if open_s == opened:
+    open_s = str(outcome.get("open_date") or "")[:10]
+    if open_s and opened >= open_s:
         return
     outcome["open_date"] = opened
-    if close_s:
+    close_s = str(outcome.get("close_date") or "")[:10]
+    if len(close_s) == 10:
         try:
             outcome["days_held"] = (
                 pd.to_datetime(close_s) - pd.to_datetime(opened)
@@ -322,11 +376,25 @@ def _fill_option_outcome_from_opens(outcome, fills):
         outcome["quantity"] = qty
         outcome["quantity_display"] = _format_share_qty(qty)
     direction = str(outcome.get("direction") or "")
-    cash = round(sum(abs(float(trade.get("amount") or 0)) for trade in opens), 2)
-    premium_missing = (
-        abs(float(outcome.get("premium_received") or 0)) < 0.01
-        and abs(float(outcome.get("premium_paid") or 0)) < 0.01
-    )
+    cash = 0.0
+    for trade in opens:
+        try:
+            amount = abs(float(trade.get("amount") or 0))
+        except (TypeError, ValueError):
+            amount = 0.0
+        if amount >= 0.01:
+            cash += amount
+            continue
+        try:
+            cash += (
+                abs(float(trade.get("quantity") or 0))
+                * abs(float(trade.get("price") or 0))
+                * 100
+            )
+        except (TypeError, ValueError):
+            pass
+    cash = round(cash, 2)
+    premium_missing = _premium_missing(outcome)
     if premium_missing and cash >= 0.01:
         if direction == "Sold":
             outcome["premium_received"] = cash
@@ -827,6 +895,9 @@ POSITION_TRADES_QUERY = """
         h.price,
         h.fees,
         h.amount,
+        h.option_expiry,
+        h.option_strike,
+        h.option_type,
         (d.matched_ex_div_date IS NOT NULL) AS is_dividend_reinvestment
     FROM `ccwj-dbt.analytics.stg_history` h
     LEFT JOIN `ccwj-dbt.analytics.int_drip_fills` d
@@ -904,7 +975,10 @@ POSITION_CLOSED_LEGS_QUERY = """
         oc.proceeds_from_close,
         oc.direction,
         oc.close_type,
-        oc.days_in_trade
+        oc.days_in_trade,
+        oc.option_expiry,
+        oc.option_strike,
+        oc.option_type
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
     JOIN `ccwj-dbt.analytics.int_option_contracts` oc
       ON (sc.tenant_id IS NOT DISTINCT FROM oc.tenant_id)
@@ -3292,6 +3366,9 @@ def position_detail(symbol):
             "premium_received": leg.get("premium_received"),
             "premium_paid": leg.get("premium_paid"),
             "option_expiry": str(leg.get("option_expiry") or "")[:10],
+            "option_strike": leg.get("option_strike"),
+            "option_type": leg.get("option_type"),
+            "underlying": leg.get("symbol"),
         })
     for leg in closed_equity_list:
         eq_proceeds = float(leg.get("sell_proceeds") or 0)

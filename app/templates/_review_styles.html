@@ -762,39 +762,44 @@
     [data-bs-theme="dark"] .tw-tag-chip { background:rgba(224,181,106,.16); color:var(--color-mirror-ink); }
     [data-bs-theme="dark"] .tw-tag-x { color:var(--color-mirror-ink); }
     @media (max-width: 640px) {
-        /* A 390px card was squeezing every column to one character and
-           letting dollars overflow. Size to the text, scroll sideways,
-           keep the action pinned, and drop the tag field. */
-        .breakdown-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .tt-table { width: max-content; min-width: 100%; }
-        .tt-table td { white-space: nowrap; }
+        /* A 390px card (page pad + section pad) is about 330px inside.
+           A max-content table ran ~23px past that and the sticky dollar
+           column covered the quantity ("1 c", "10"). Fit the row: short
+           verb, ellipsized contract, full qty, full dollars. No sticky
+           overlay. */
+        .breakdown-wrap { overflow-x: hidden; }
+        .tt-table {
+            width: 100%;
+            table-layout: fixed;
+            font-size: .8rem;
+        }
+        .tt-table td {
+            white-space: nowrap;
+            padding: .35rem .12rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tt-verb { padding: .1rem .32rem; font-size: .66rem; }
         .tt-verb-long { display: none; }
         .tt-verb-short { display: inline; }
         .tt-tag { display: none; }
-        .tt-sticky {
-            position: sticky;
-            left: 0;
-            z-index: 1;
-            background: #121826;
+        .tt-sticky { width: 4.4rem; }
+        .tt-sym-cell { width: auto; }
+        td.tt-qty { width: 3.4rem; overflow: visible; text-overflow: clip; }
+        td.tt-money {
+            width: 5.7rem;
+            overflow: visible;
+            text-overflow: clip;
+            min-width: 0;
         }
-        /* The contract line is a nested .tt-muted. The quantity cell is
-           itself a td.tt-muted — display:block on that td drops it out
-           of the row. Ellipsize only the nested line. */
         .tt-table td .tt-muted {
             display: block;
-            max-width: 8rem;
+            max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
         .tt-px { display: none; }
-        .tt-money {
-            min-width: 4.75rem;
-            position: sticky;
-            right: 0;
-            z-index: 1;
-            background: #121826;
-        }
     }
     [data-bs-theme="dark"] .tt-table td { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }
