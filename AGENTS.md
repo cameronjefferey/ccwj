@@ -208,7 +208,10 @@ session's fills and the notable moves), then the account breakdown, then
 lazy `/overview/below` fragment and placed in `#ht-overview-daily`), then
 secondary items collapsed in disclosures — building your history, the radar,
 execution review, performance by account, and trades this week.
-`#ht-overview-below` is not a card; an empty or failed load removes the slot.
+Simple view keeps Daily change open under Accounts and tucks the rest
+under Show more. `#ht-overview-below` is not a card; an empty or failed
+load removes that slot. Daily change stays, with a refresh line when the
+fragment never arrives.
 
 What's working:
 - Session hero: brand and the Group filter sit in the dark
@@ -937,6 +940,7 @@ it). Simple nav is Practice, Learn, Overview, and Positions.
 Direct visits to Strategies, Trader Profile, and AI Insights show a
 switch-to-Full card instead of the page. Overview in Simple hides
 Execution review, Performance by account, and the trader-profile link.
+Daily change stays open under Accounts.
 The position review does the same with its profile link. After the close,
 Practice review uses the last price at close when a live quote is missing.
 While the session is open, a failed or empty SnapTrade per-contract quote
