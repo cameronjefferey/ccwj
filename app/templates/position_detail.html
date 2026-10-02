@@ -18,26 +18,115 @@
         --pd-gap: 1rem;
         color: var(--pd-ink);
     }
-    .pos-hero {
+    .review-hero.pos-hero {
         background: var(--pd-surface, #121826);
         border: 1px solid var(--pd-line, #243049);
         border-radius: var(--pd-radius, 12px);
-        padding: 1.35rem 1.5rem 1.2rem;
+        padding: .6rem 1.15rem .65rem;
         color: var(--pd-ink, #e8edf7);
-        margin-bottom: var(--pd-gap, 1rem);
+        margin-bottom: .65rem;
         box-shadow: none;
     }
-    .pos-hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .25rem; }
+    .pos-hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .05rem; line-height: 1.1; }
     /* The total sits in its own column so the same cqi clamp as the
        other heroes can shrink +$121,456.75 to the column instead of
-       spilling a few pixels past the box. No ellipsis. */
+       spilling a few pixels past the box. No ellipsis.
+       Groups and Account are chips under the symbol, not a full-width
+       bar. The total stays on the right and spans both rows. */
     .pos-hero .pos-hero-split {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(14rem, 22.5rem);
-        gap: .75rem 1.25rem;
+        grid-template-columns: minmax(0, 1fr) minmax(12rem, 22.5rem);
+        gap: .15rem 1.15rem;
         align-items: start;
     }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) {
+        grid-template-areas: "id total" "scope total";
+    }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) > .pos-hero-id { grid-area: id; }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) > .pos-total { grid-area: total; }
     .pos-hero .pos-hero-id { min-width: 0; }
+    .pos-hero-meta {
+        display: flex; flex-wrap: wrap; align-items: center;
+        gap: .3rem .65rem; margin-top: .3rem;
+    }
+    /* Chip-sized Groups / Account. The shared filter bar is a column
+       of wide selects; this page overrides that to a short pill row. */
+    .pd-page .pd-hero-scope {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: .35rem;
+        margin: .1rem 0 0;
+    }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) > .pd-hero-scope { grid-area: scope; }
+    .pd-page .pd-hero-scope .ht-ms-dd,
+    .pd-page .pd-hero-scope .ht-page-acct {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: .28rem;
+        min-width: 0;
+        position: relative;
+    }
+    .pd-page .pd-hero-scope .dropdown { width: auto; }
+    .pd-page .pd-hero-scope .lblh {
+        margin: 0;
+        font-size: .58rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: #8a97b1;
+    }
+    .pd-page .pd-hero-scope .ht-ms-btn.form-select {
+        display: inline-block;
+        width: auto;
+        min-width: 0;
+        max-width: 9.5rem;
+        min-height: 0;
+        height: auto;
+        font-size: .72rem;
+        line-height: 1.25;
+        padding: .08rem 1.25rem .08rem .5rem;
+        border-radius: 999px;
+        background-color: #0a0e17;
+        background-image: none;
+        color: #e8edf7;
+        border-color: #243049;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+    .pd-page .pd-hero-scope .ht-ms-btn.form-select:hover,
+    .pd-page .pd-hero-scope .ht-ms-btn.form-select:focus {
+        background-color: #1a2233;
+        color: #fff;
+        border-color: #5b8cff;
+    }
+    .pd-page .pd-hero-scope .dropdown-menu {
+        background: #121826;
+        border: 1px solid #243049;
+        z-index: 1050;
+    }
+    .pd-page .pd-hero-scope .ht-ms-item { color: #e8edf7; }
+    .pd-page .pd-hero-scope .ht-ms-item:hover,
+    .pd-page .pd-hero-scope .ht-ms-item:focus { background: #1a2233; color: #fff; }
+    .pd-page .pd-hero-scope .ht-ms-apply-row {
+        background: #121826;
+        border-top-color: #243049;
+    }
+    .pd-page .pd-hero-scope .ht-ms-hint {
+        display: inline-flex;
+        align-items: center;
+        min-height: 0;
+        font-size: .72rem;
+        line-height: 1.25;
+        padding: .08rem .55rem;
+        border: 1px solid #243049;
+        border-radius: 999px;
+        color: #c3cbdb;
+        background: #0a0e17;
+    }
     .pos-hero .pos-total {
         min-width: 0;
         max-width: 100%;
@@ -272,10 +361,36 @@
     .account-toggle .pill-dot.closed { background: var(--pd-muted, #8a97b1); }
 
 @media (max-width: 640px) {
-        .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; margin-bottom: 1rem; }
-        .pos-hero h1 { font-size: 1.5rem; }
-        .pos-hero .pos-hero-split { grid-template-columns: minmax(0, 1fr); }
-        .pos-hero .pos-total { text-align: left; }
+        .review-hero.pos-hero { padding: .45rem .65rem .5rem; margin-bottom: .45rem; }
+        .pos-hero h1 { font-size: 1.35rem; }
+        .pos-hero .pos-hero-split {
+            /* Definite total column. `auto` collapses to 0 because the
+               total is a size container (cqi), and the number then stacks
+               one character per line. */
+            grid-template-columns: minmax(0, 1fr) minmax(8.75rem, 11.5rem);
+            gap: .1rem .5rem;
+        }
+        .pos-hero .pos-hero-split:has(.pd-hero-scope) {
+            grid-template-areas: "id total" "scope scope";
+        }
+        .pos-hero .pos-total { text-align: right; max-width: none; }
+        .pos-hero .pos-total .small,
+        .pos-hero .pos-total .text-white-50 { font-size: .62rem; line-height: 1.2; }
+        .pd-page .pd-hero-scope {
+            flex-wrap: nowrap;
+            width: 100%;
+            margin-top: .15rem;
+            gap: .3rem;
+        }
+        .pd-page .pd-hero-scope .ht-ms-dd,
+        .pd-page .pd-hero-scope .ht-page-acct { flex: 0 1 auto; min-width: 0; }
+        .pd-page .pd-hero-scope .lblh {
+            position: absolute;
+            width: 1px; height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+        }
+        .pd-page .pd-hero-scope .ht-ms-btn.form-select { max-width: 9rem; }
         .kpi-mini .value { font-size: 1.05rem; }
         .kpi-mini .label { font-size: .58rem; }
         .stat-card .card-body { padding: .9rem; }
@@ -693,18 +808,9 @@
 </div>
 {% endif %}
 
-{# ── Hero ── #}
+{# ── Hero ──
+   Groups and Account are chips in the hero, not a full-width bar. #}
 <div class="review-hero pos-hero">
-    <div class="ov-bar">
-        {% if scope_account_choices|length > 1 or (accounts|length > 1) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
-            {% for _leg in request.args.getlist('leg') %}
-            <input type="hidden" name="leg" value="{{ _leg }}">
-            {% endfor %}
-            {% include "_account_scope_filters.html" %}
-        </form>
-        {% endif %}
-    </div>
     <div class="pos-hero-split">
         <div class="pos-hero-id">
             <h1>{{ symbol }}</h1>
@@ -736,7 +842,7 @@
             </div>
             {% endif %}
             {% if kpis %}
-            <div class="d-flex gap-3 flex-wrap mt-2">
+            <div class="pos-hero-meta">
                 {% if overall_status == 'Open' %}
                     <span class="badge badge-open">Open</span>
                 {% else %}
@@ -774,6 +880,14 @@
                 {% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return) }}
             </div>
         </div>
+        {% endif %}
+        {% if scope_account_choices|length > 1 or (accounts|length > 1) or account_groups %}
+        <form method="get" class="pd-hero-scope" data-ht-preserve-query="1" data-ht-persist-tenants="1">
+            {% for _leg in request.args.getlist('leg') %}
+            <input type="hidden" name="leg" value="{{ _leg }}">
+            {% endfor %}
+            {% include "_account_scope_filters.html" %}
+        </form>
         {% endif %}
     </div>
 

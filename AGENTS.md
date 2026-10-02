@@ -454,6 +454,8 @@ What's working:
   Pinned by `tests/test_covered_call_runs.py`.
 - Position Detail reads as one story: the hero, then the mirror, then
   the Cumulative P&amp;L chart, then Position Legs. What worked follows.
+  Groups and Account are small chips under the symbol in that hero
+  (one row on a phone). Total return stays on the right.
   Breakdown by Type and the raw log sit behind one Details toggle.
   The Win/Loss matrix stays behind a disclosure. Gain and loss on this
   page use one green and one red (`--pd-gain` / `--pd-loss`). The strategy

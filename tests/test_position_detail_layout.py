@@ -43,6 +43,23 @@ def test_gain_and_loss_are_one_pair_and_cards_share_one_style():
     assert '<details class="pd-fold" id="pd-matrix">' in PAGE
 
 
+def test_hero_scope_chips_sit_in_the_hero_not_a_full_width_bar():
+    assert 'class="ov-bar"' not in PAGE
+    assert 'class="filter-bar filter-bar-hero"' not in PAGE
+    assert 'class="pd-hero-scope"' in PAGE
+    assert "data-ht-persist-tenants" in PAGE
+    assert "scope_account_choices|length > 1" in PAGE
+    hero = PAGE.split('class="review-hero pos-hero"', 1)[1].split("<!-- MIRROR-END -->", 1)[0]
+    assert hero.find("pos-hero-id") < hero.find("pos-total") < hero.find("pd-hero-scope")
+    assert 'grid-template-areas: "id total" "scope total"' in PAGE
+    phone = PAGE.split("@media (max-width: 640px)", 1)[1].split("</style>", 1)[0]
+    assert 'grid-template-areas: "id total" "scope scope"' in phone
+    assert "minmax(8.75rem, 11.5rem)" in phone
+    assert "flex-wrap: nowrap" in phone
+    assert "padding: .6rem 1.15rem .65rem" in PAGE
+    assert "padding: .45rem .65rem .5rem" in phone
+
+
 def test_headline_total_uses_cqi_and_does_not_truncate():
     assert 'class="pos-total"' in PAGE
     assert 'class="ov-big' in PAGE
