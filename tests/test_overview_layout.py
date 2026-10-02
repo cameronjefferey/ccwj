@@ -95,6 +95,20 @@ def test_session_trades_stay_columns_on_a_phone():
     assert ".ov-page .tt-table tbody" not in STYLES
     assert ".tt-table td:nth-child(3)" not in STYLES
     assert ".tt-table td:nth-child(5)" not in STYLES
+    block = STYLES.split("@media (max-width: 640px) {\n        /* A 390px card", 1)[1]
+    block = block.split("@media", 1)[0]
+    assert "width: max-content" in block
+    assert ".tt-tag { display: none" in block
+    assert "position: sticky" in block
+    assert "left: 0" in block
+    assert ".tt-verb-short { display: inline" in block
+    assert ".tt-px { display: none" in block
+    assert "position: sticky" in block.split(".tt-money", 1)[1][:240]
+    assert "option_symbol" in PAGE
+    assert "tt-verb-short" in PAGE
+    assert "tt-tag" in PAGE
+    assert "tt-sticky" in PAGE
+    assert "tt-verb-short" in TODAY
 
 
 def test_heatmap_dollars_shrink_instead_of_clipping():

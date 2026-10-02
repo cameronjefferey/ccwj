@@ -7,6 +7,7 @@ import pandas as pd
 from app.execution_quality import held_to_expiry_kept
 from app.expiry_settlement import (
     ESTIMATE_LABEL,
+    PENDING_LABEL,
     settle_expired_option,
 )
 
@@ -132,17 +133,46 @@ def test_missing_close_does_not_book_the_opening_credit():
     assert missing.close_date is None
 
 
-def test_missing_close_expires_at_zero_on_the_next_trading_day():
-    # Thursday Oct 1. Friday morning, still no official close: the old
-    # calendar close, flagged as an estimate, dated on the expiry.
-    fallback = _leg(close=None, now_et=datetime(2026, 10, 2, 9, 30))
-    assert fallback.settled
-    assert fallback.close_type == ESTIMATE_LABEL
-    assert fallback.close_date == _EXPIRY
-    assert fallback.settlement_cash == 0.0
-    assert fallback.realized_pnl == _SHORT_OPEN
+def test_oct_1_spx_close_above_7655_settles_the_width():
+    # yfinance ^GSPC and ^SPX both closed at 7666.45 on 2026-10-01,
+    # through the 7655 long strike. Width is still −$5,000.
+    close = 7666.45
+    assert close > 7655
+    short = _leg(close=close)
+    long = _leg(
+        direction="Bought",
+        strike=7655,
+        close=close,
+        net_cash_flow=_LONG_OPEN,
+    )
+    assert short.settled and long.settled
+    assert round(short.settlement_cash + long.settlement_cash, 2) == -5000.00
+    assert round(short.realized_pnl + long.realized_pnl, 2) == -3574.44
 
-    # Friday expiry waits through the weekend. Monday is the deadline.
+
+def test_missing_spxw_close_stays_pending_not_a_worthless_win():
+    # Thursday Oct 1. Friday morning, still no official close. The $0
+    # fallback would book the opening credit (+1,425.56) as a win.
+    pending = _leg(close=None, now_et=datetime(2026, 10, 2, 9, 30))
+    cover = _leg(
+        direction="Bought",
+        strike=7655,
+        close=None,
+        net_cash_flow=_LONG_OPEN,
+        now_et=datetime(2026, 10, 2, 9, 30),
+    )
+    assert pending.close_type == PENDING_LABEL
+    assert cover.close_type == PENDING_LABEL
+    assert not pending.settled and not cover.settled
+    assert pending.realized_pnl == 0.0 and cover.realized_pnl == 0.0
+    assert pending.settlement_cash == 0.0
+    assert round(pending.realized_pnl + cover.realized_pnl, 2) != 1425.56
+    assert round(pending.realized_pnl + cover.realized_pnl, 2) != -3574.44
+
+
+def test_missing_close_expires_at_zero_on_the_next_trading_day():
+    # Friday equity expiry waits through the weekend. Monday is the
+    # deadline, and equity still expires at $0. A cash index does not.
     friday = date(2026, 10, 2)
     weekend = _leg(
         close=None,
@@ -168,6 +198,38 @@ def test_missing_close_expires_at_zero_on_the_next_trading_day():
     assert monday.realized_pnl == 180.0
     assert monday.close_date == friday
     assert monday.close_type == ESTIMATE_LABEL
+
+
+def test_pending_spread_is_not_called_a_winner():
+    from app.outcome_units import group_vertical_spreads
+
+    short = {
+        "type": "option",
+        "strategy": "Call Spread",
+        "trade_symbol": "SPXW  261001C07650000",
+        "direction": "Sold",
+        "close_type": PENDING_LABEL,
+        "open_date": "2026-09-30",
+        "close_date": "",
+        "quantity": 10,
+        "pnl": _SHORT_OPEN,
+        "premium_received": _SHORT_OPEN,
+        "tenant_id": "t",
+        "account": "a",
+        "raw_trades": [],
+    }
+    long = {
+        **short,
+        "trade_symbol": "SPXW  261001C07655000",
+        "direction": "Bought",
+        "pnl": _LONG_OPEN,
+        "premium_received": 0,
+        "premium_paid": abs(_LONG_OPEN),
+    }
+    grouped = group_vertical_spreads([short, long])
+    assert len(grouped) == 1
+    assert grouped[0]["outcome"] == PENDING_LABEL
+    assert grouped[0]["is_winner"] is None
 
 
 def test_itm_equity_stays_on_the_option_cash_line():

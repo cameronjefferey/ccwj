@@ -68,9 +68,13 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 
-from app.option_formatting import format_option_symbol as _format_option_symbol
+from app.option_formatting import (
+    compact_contract_label as _compact_contract_label,
+    format_option_symbol as _format_option_symbol,
+)
 
 app.add_template_filter(_format_option_symbol, name="option_symbol")
+app.add_template_filter(_compact_contract_label, name="compact_contract")
 
 
 def _account_label_filter(account_name, tenant_id=None):

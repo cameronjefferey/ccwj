@@ -13,8 +13,10 @@
 
     Without a close, before the next weekday after expiry: stay Open,
     no close date, no booked P&L. Once that weekday has started and the
-    close is still missing, expire at $0 under the estimate label, with
-    close_date on the expiry (realized = net_cash_flow).
+    close is still missing, equity expires at $0 under the estimate
+    label, with close_date on the expiry (realized = net_cash_flow).
+    A cash-settled index does not. It stays 'Settlement pending' with
+    realized and total at $0, never the opening credit.
 
     A broker close (contracts_closed > 0) must not keep the estimate
     label, and its realized P&L must stay net_cash_flow so the intrinsic
@@ -187,6 +189,10 @@ from gated
 where session_over
   and expiry_close is null
   and fallback_due
+  and upper(trim(coalesce(underlying_symbol, ''))) not in (
+      'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+      'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+  )
   and coalesce(close_type, '') not in (
       'Expired', 'ExpiredOTM', 'Assigned', 'Exercised', 'Closed'
   )
@@ -196,6 +202,44 @@ where session_over
       or close_date != option_expiry
       or abs(coalesce(realized_pnl, 0) - coalesce(net_cash_flow, 0)) > 0.05
       or abs(coalesce(total_pnl, 0) - coalesce(net_cash_flow, 0)) > 0.05
+  )
+
+union all
+
+select
+    tenant_id,
+    account,
+    trade_symbol,
+    underlying_symbol,
+    option_expiry,
+    status,
+    close_type,
+    close_date,
+    realized_pnl,
+    total_pnl,
+    net_cash_flow,
+    expiry_close,
+    'index_unpriced_pending' as violation
+from gated
+where session_over
+  and expiry_close is null
+  and fallback_due
+  and upper(trim(coalesce(underlying_symbol, ''))) in (
+      'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+      'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+  )
+  and coalesce(close_type, '') not in (
+      'Expired', 'ExpiredOTM', 'Assigned', 'Exercised'
+  )
+  and (
+      close_type != 'Settlement pending'
+      or close_type = 'Settled at expiry (est.)'
+      or abs(coalesce(realized_pnl, 0)) > 0.05
+      or abs(coalesce(total_pnl, 0)) > 0.05
+      or (
+          abs(coalesce(net_cash_flow, 0)) > 1
+          and abs(coalesce(realized_pnl, 0) - coalesce(net_cash_flow, 0)) < 0.05
+      )
   )
 
 union all

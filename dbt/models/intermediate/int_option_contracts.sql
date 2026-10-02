@@ -306,8 +306,17 @@ snapshot_only_options as (
             else cast(null as date)
         end as close_date,
 
-        0.0 as contracts_sold_to_open,
-        0.0 as contracts_bought_to_open,
+        -- The live snapshot quantity is the position. Leaving both
+        -- open-counts at 0 rendered "QTY 0" on an estimated expiry
+        -- (BE Oct 2 $297.50C) even though the broker still held the contracts.
+        case
+            when coalesce(c.quantity, 0) < 0 then abs(c.quantity)
+            else 0.0
+        end as contracts_sold_to_open,
+        case
+            when coalesce(c.quantity, 0) > 0 then abs(c.quantity)
+            else 0.0
+        end as contracts_bought_to_open,
         0.0 as contracts_closed,
 
         0.0 as premium_received,
@@ -348,6 +357,21 @@ snapshot_only_options as (
                         upper(trim(coalesce(c.trade_symbol, ''))),
                         r'(\d{6}[CP]\d{8})'
                     )
+                    and upper(trim(coalesce(x.underlying_symbol, '')))
+                        = upper(trim(coalesce(c.underlying_symbol, '')))
+                )
+                -- History "BE 10/02/2026 297.50 C" and the snapshot OCC
+                -- "BE   261002C00297500" are one contract. Exact text and
+                -- the OSI core both miss the long form, which minted a
+                -- second row: qty 0, open date = today, no premium.
+                or (
+                    c.option_expiry is not null
+                    and c.option_strike is not null
+                    and nullif(trim(coalesce(c.option_type, '')), '') is not null
+                    and x.option_expiry = c.option_expiry
+                    and abs(coalesce(x.option_strike, 0) - c.option_strike) < 0.001
+                    and upper(trim(coalesce(x.option_type, '')))
+                        = upper(trim(c.option_type))
                     and upper(trim(coalesce(x.underlying_symbol, '')))
                         = upper(trim(coalesce(c.underlying_symbol, '')))
                 )
@@ -454,11 +478,14 @@ split_links as (
 -- for those index roots (a daily bar can print before the index close).
 -- After that New York date, the session is over. No official close stays
 -- Open through that session so the opening credit is not booked as a
--- worthless win. If the close is still missing on the next weekday
--- (Friday → Monday), fall back to the old calendar close: expired at $0,
+-- worthless win. Equity still missing a close on the next weekday
+-- (Friday → Monday) falls back to the old calendar close: expired at $0,
 -- labeled 'Settled at expiry (est.)', close_date = option_expiry. A later
 -- price or broker line replaces that estimate; the date stays the expiry
 -- so the realized dollar does not move to the day the fallback fired.
+-- Cash-settled index roots never take that $0 fallback. With no official
+-- print they are close_type 'Settlement pending', realized and total $0,
+-- so an ITM SPXW spread is not a worthless win when ^GSPC was not loaded.
 --
 -- Price: exact underlying, else the parent (SPXW→SPX, NDXP→NDX, RUTW→RUT)
 -- only when the exact symbol has no row — a join that can match both
@@ -536,8 +563,8 @@ otm_at_expiry as (
             )
         ) as expiry_session_over,
         -- Next weekday after expiry (Friday → Monday). Once that New York
-        -- date has started and the official close is still missing, the
-        -- $0 calendar fallback is due.
+        -- date has started and the official close is still missing, equity
+        -- takes the $0 calendar fallback. Cash index roots stay pending.
         (
             c.option_expiry is not null
             and current_date('America/New_York') >= case extract(dayofweek from c.option_expiry)
@@ -675,11 +702,10 @@ flagged2 as (
          and coalesce(option_expiry >= current_date(), true)
          and not coalesce(inferred_otm_today, false)) as is_partial_open,
         -- No closing activity, session over, official close in hand.
-        -- Replaces the old 'Settlement pending' hold: the close is
-        -- enough to realize, and the label says it is still an estimate.
-        -- A missing close uses the same estimate once the next weekday
-        -- has started, with $0 settlement (est_settlement_cash stays 0
-        -- because expiry_close is null).
+        -- The label says it is still an estimate. Equity with no close
+        -- uses the same estimate once the next weekday has started
+        -- ($0 settlement, because expiry_close is null). Cash index
+        -- roots are excluded from that branch — see settlement_pending.
         (
             coalesce(close_type, '') = ''
             and _activity_flat_close_date is null
@@ -694,9 +720,29 @@ flagged2 as (
                 or (
                     expiry_close is null
                     and coalesce(unpriced_fallback_due, false)
+                    and upper(trim(coalesce(underlying_symbol, ''))) not in (
+                        'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                        'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+                    )
                 )
             )
         ) as expiry_settled_est,
+        -- Cash index, session over, next weekday started, still no
+        -- official close. Do not book the opening credit. Status stays
+        -- Closed so the legs table can show the label; realized is $0.
+        (
+            coalesce(close_type, '') = ''
+            and _activity_flat_close_date is null
+            and coalesce(contracts_closed, 0) < 1e-6
+            and option_expiry is not null
+            and coalesce(expiry_session_over, false)
+            and expiry_close is null
+            and coalesce(unpriced_fallback_due, false)
+            and upper(trim(coalesce(underlying_symbol, ''))) in (
+                'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+            )
+        ) as settlement_pending,
         -- Session over, still no close, and the next weekday has not
         -- started. Stay open. Booking net_cash_flow here is the
         -- worthless-ITM bug.
@@ -769,6 +815,7 @@ select
     -- realized_close_date instead. For fully-closed contracts this is the
     -- same effective close_date as before.
     case
+        when settlement_pending then cast(null as date)
         when expiry_settled_est then option_expiry
         when awaiting_expiry_close or is_partial_open then cast(null as date)
         else eff_close_date
@@ -779,6 +826,7 @@ select
     -- fill date for partial closes; NULL when nothing has closed. Read by
     -- int_option_contract_daily_pnl's realized branch.
     case
+        when settlement_pending then cast(null as date)
         when expiry_settled_est then option_expiry
         when awaiting_expiry_close then cast(null as date)
         else eff_close_date
@@ -800,6 +848,7 @@ select
     -- assigned replaces it (expiry_settled_est is then false, and
     -- net_cash_flow already includes the broker cash).
     case
+        when settlement_pending then 'Settlement pending'
         when expiry_settled_est then 'Settled at expiry (est.)'
         when close_type is not null then close_type
         when _activity_flat_close_date is not null
@@ -830,10 +879,12 @@ select
     -- the contract Open; the realized portion is credited separately.
     --
     -- The estimate realizes on the expiry date once the bell has rung
-    -- and the official close is in. No close stays Open (awaiting)
-    -- until the next weekday, then expires at $0 under the same
-    -- estimate. See the otm_at_expiry header.
+    -- and the official close is in. Equity with no close stays Open
+    -- (awaiting) until the next weekday, then expires at $0 under the
+    -- same estimate. A cash index with no close is Settlement pending:
+    -- Closed so the row stays on the legs table, with realized $0.
     case
+        when settlement_pending                    then 'Closed'
         when expiry_settled_est                    then 'Closed'
         when close_type is not null and not is_partial_open then 'Closed'
         when _activity_flat_close_date is not null
@@ -886,6 +937,8 @@ select
         -- alone is a phantom profit (or a phantom loss on an exercised
         -- split-adjusted symbol).
         when coalesce(opened_before_history, false) then 0.0
+        -- Unpriced cash index: not the opening credit.
+        when settlement_pending then 0.0
         -- Opening fills plus index intrinsic. Equity ITM adds $0
         -- (assignment lives on the stock line). OTM adds $0.
         when expiry_settled_est
@@ -914,6 +967,7 @@ select
     -- intrinsic (== total_pnl). Broker closes add no second cash.
     case
         when coalesce(opened_before_history, false) then 0.0
+        when settlement_pending then 0.0
         when expiry_settled_est
             then net_cash_flow + est_settlement_cash
         when close_type is not null and not is_partial_open then net_cash_flow
@@ -933,6 +987,7 @@ select
     date_diff(
         coalesce(
             case
+                when settlement_pending then null
                 when expiry_settled_est then option_expiry
                 when awaiting_expiry_close or is_partial_open then null
                 else eff_close_date

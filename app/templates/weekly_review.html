@@ -184,15 +184,15 @@
         <table class="tt-table">
             {% for t in _tt.trades %}
             <tr>
-                <td>
-                    <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised','option_settled_est') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                <td class="tt-sticky">
+                    <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised','option_settled_est') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}"><span class="tt-verb-long">{{ t.verb }}</span><span class="tt-verb-short">{{ t.verb_short or t.verb }}</span></span>
                 </td>
                 <td>
                     {% if t.symbol %}<a class="tt-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}
                     {% if t.is_roll %}
                     <div class="tt-muted">{{ t.close_label }} → {{ t.open_label }}</div>
                     {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
-                    <div class="tt-muted">{{ t.trade_symbol }}</div>
+                    <div class="tt-muted" title="{{ t.trade_symbol }}">{{ t.trade_symbol|option_symbol }}</div>
                     {% endif %}
                     {% if t.account and accounts and accounts|length > 1 %}
                     <div class="tt-muted">{{ t.account | account_label(t.tenant_id) }}</div>
@@ -206,12 +206,12 @@
                     {% elif t.successful is sameas false %}
                     <span class="tt-roll-miss">{% if t.strike_dir == 'same' %}Debit roll, strike unchanged{% else %}Did not meet the roll{% endif %}</span>
                     {% endif %}
-                    {% elif t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
+                    {% elif t.price %}<span class="tt-px"> @ ${{ "{:,.2f}".format(t.price) }}</span>{% endif %}
                 </td>
                 <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
                     {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}
                 </td>
-                <td>
+                <td class="tt-tag">
                     {% with symbol=t.symbol, tenant_id=t.tenant_id, open_date=t.leg_open_date, tags=t.tags %}
                     {% include "_leg_tag_cell.html" %}
                     {% endwith %}

@@ -11,7 +11,7 @@ display in the Expiring Soon card / Position Detail / Symbols pages.
 """
 import pytest
 
-from app.option_formatting import format_option_symbol, parse_occ
+from app.option_formatting import compact_contract_label, format_option_symbol, parse_occ
 
 
 class TestParseOcc:
@@ -133,3 +133,17 @@ class TestFormatOptionSymbol:
         # We'd rather show "TBD" than a stack trace.
         assert format_option_symbol("TBD") == "TBD"
         assert format_option_symbol("not an option") == "not an option"
+
+
+class TestCompactContractLabel:
+    def test_single_call_includes_quantity(self):
+        assert (
+            compact_contract_label("BE    261002C00297500", 2)
+            == "2× $297.50C"
+        )
+
+    def test_spread_collapses_to_strikes(self):
+        assert (
+            compact_contract_label("SPXW Oct 1 '26 $7650 / $7655C", 10)
+            == "10× 7650/7655C"
+        )
