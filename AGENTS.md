@@ -1105,9 +1105,10 @@ shared Redis L2 (`ccwj-query-cache` on Render, `QUERY_CACHE_REDIS_URL`, TTL
 24h — default `QUERY_CACHE_REDIS_TTL_SECONDS=86400`). The long L2 TTL is safe
 ONLY because the cache is explicitly flushed when the data actually changes:
 `bigquery_update.yml` and `prices_refresh.yml` end with a
-`curl POST /internal/cache/flush` (`X-Cache-Flush-Token` =
+`curl -fsS POST https://happytrader.me/internal/cache/flush` (`X-Cache-Flush-Token` =
 `CACHE_FLUSH_TOKEN` secret, set both as a GitHub secret and a Render env
-var). The warehouse rebuild also passes `?ready=1` so users whose
+var). A non-2xx fails that job. The old `ccwj.onrender.com` host 301s here,
+and curl does not follow it. The warehouse rebuild also passes `?ready=1` so users whose
 every active tenant now has position or account-balance rows can get the
 `data_ready` email (dedupe `email_sends`; skip tenant-only or partial
 multi-account builds). The evening prices
