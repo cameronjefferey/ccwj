@@ -116,8 +116,9 @@ def get_user_plan_row(user_id):
             return None
     except Exception:
         pass
-    from app.shell_cache import load
-
+    # Plan and Stripe mirror columns are read from Postgres on every
+    # call. The shell cache is per process, so a Stripe webhook handled
+    # on another worker would keep serving the old plan for two minutes.
     def _load():
         try:
             return fetch_one(
@@ -137,7 +138,7 @@ def get_user_plan_row(user_id):
             _log.warning("get_user_plan_row(%s) failed: %s", user_id, exc)
             return None
 
-    return load(user_id, "plan_row", _load)
+    return _load()
 
 
 def _is_exempt_username(username):

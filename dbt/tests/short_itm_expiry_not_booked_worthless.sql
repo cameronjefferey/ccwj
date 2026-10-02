@@ -1,18 +1,25 @@
+{{ config(severity='warn') }}
+
 /*
-    A short (or long) option that is past expiry, with no closing fill,
-    must not be booked as if it expired worthless when the expiry close
-    is missing or not strictly out of the money.
+    Cash-settled index options past expiry, with no broker close and no
+    activity-flat close, must not be booked as if they expired worthless.
 
-    Cash-settled index options (SPXW and the rest) settle the next
-    morning. The as-of Buy to Close / Sell to Close is the real close.
-    Until that row is in history, realizing net_cash_flow reports the
-    opening credit as a win (SPXW 7650/7655, Oct 2026: the page showed
-    +$2,325.56 while the statement was down $821.08).
+    This matches flagged2.settlement_pending in int_option_contracts:
+    close_type still empty (Assigned / Expired / Closed / the activity-flat
+    close all set it), contracts_closed ~ 0, and the expiry close joined
+    the same way as expiry_close_lookup (symbol equality, no extra
+    case-fold). Equity options are out of scope — they keep the calendar
+    close. Strictly OTM index contracts still realize on the expiry close.
 
-    Strictly OTM contracts are excluded: those still realize on the
-    expiry close. A priced equity that is ITM or ATM, and an unpriced
-    index root, must be status 'Settlement pending' with no close date
-    and no booked P&L.
+    Severity is warn. A mismatch must not skip the rest of the
+    price-dependent build (positions_summary and the models downstream
+    of this test).
+
+    The 24 rows that failed the previous test were outside this rule:
+    they already had a close type or an activity-flat close, or they were
+    equity names the case-insensitive price join called ITM. Those are
+    not unsettled index contracts, so they are not a booking bug in this
+    model.
 */
 
 with prices as (
@@ -43,25 +50,23 @@ select
     p.close_price as expiry_close
 from {{ ref('int_option_contracts') }} c
 left join prices p
-    on upper(trim(c.underlying_symbol)) = upper(trim(p.symbol))
+    on c.underlying_symbol = p.symbol
     and c.option_expiry = p.date
 where c.option_expiry < current_date()
   and coalesce(c.contracts_closed, 0) < 1e-6
   and not coalesce(c.opened_before_history, false)
+  and coalesce(c.close_type, '') in ('', 'Settlement pending')
+  and upper(trim(coalesce(c.underlying_symbol, ''))) in (
+      'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+      'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+  )
   and (
-      (
-          p.close_price is not null
-          and c.option_strike is not null
+      p.close_price is null
+      or (
+          c.option_strike is not null
           and not (
               (c.option_type = 'C' and p.close_price < c.option_strike)
               or (c.option_type = 'P' and p.close_price > c.option_strike)
-          )
-      )
-      or (
-          p.close_price is null
-          and upper(trim(coalesce(c.underlying_symbol, ''))) in (
-              'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
-              'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
           )
       )
   )

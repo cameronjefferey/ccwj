@@ -421,6 +421,48 @@ def _as_of_trade_date(value) -> str:
         return ""
 
 
+def _activity_fee(act: Mapping) -> float:
+    """Commission on one activity.
+
+    SnapTrade's documented field is ``fee``. Schwab option opens have
+    arrived with that field 0 or null while the commission sits on
+    ``commission`` / ``fees``, or on a separate ``FEE`` activity that
+    shares ``external_reference_id`` (attached by the caller).
+    """
+    if not isinstance(act, Mapping):
+        return 0.0
+    for key in ("fee", "fees", "commission"):
+        raw = act.get(key)
+        if isinstance(raw, Mapping):
+            raw = raw.get("amount") or raw.get("fee") or raw.get("commission")
+        fee = _safe_float(raw, 0.0)
+        if fee:
+            return abs(fee)
+    return 0.0
+
+
+def _linked_fee_amounts(activities: Iterable[Mapping]) -> dict[str, float]:
+    """FEE activities keyed by the fill they belong to.
+
+    A commission booked as its own activity (type FEE, same
+    ``external_reference_id`` as the option fill) is not a standalone
+    ADR fee. The fill nets it once and the FEE row is not emitted again.
+    """
+    totals: dict[str, float] = {}
+    for act in activities or ():
+        if not isinstance(act, Mapping):
+            continue
+        if str(act.get("type") or "").strip().upper() != "FEE":
+            continue
+        ref = str(act.get("external_reference_id") or "").strip()
+        if not ref:
+            continue
+        amount = abs(_safe_float(act.get("amount"), 0.0)) or _activity_fee(act)
+        if amount:
+            totals[ref] = totals.get(ref, 0.0) + amount
+    return totals
+
+
 def _net_option_cash(amount_signed: float, units: float, price: float, fees: float) -> float:
     """Net a gross option premium by the commission once.
 
@@ -662,8 +704,10 @@ def activities_to_history_df(
     rows: list[dict] = []
     user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
+    activity_list = [act for act in (activities or ()) if isinstance(act, Mapping)]
+    linked_fees = _linked_fee_amounts(activity_list)
 
-    for act in activities or ():
+    for act in activity_list:
         if not isinstance(act, Mapping):
             continue
         atype = str(act.get("type") or "").strip().upper()
@@ -754,7 +798,19 @@ def activities_to_history_df(
             trade_date = as_of
         units = _safe_float(act.get("units"), 0.0)
         price = _safe_float(act.get("price"), 0.0)
-        fees = _safe_float(act.get("fee"), 0.0)
+        fees = _activity_fee(act)
+        fee_ref = str(act.get("external_reference_id") or "").strip()
+        if not fees and fee_ref and fee_ref in linked_fees:
+            fees = linked_fees[fee_ref]
+        # A FEE row that was folded into its option fill is not also an
+        # ADR management fee.
+        if (
+            atype == "FEE"
+            and fee_ref
+            and fee_ref in linked_fees
+            and action_label == "ADR Mgmt Fee"
+        ):
+            continue
         amount = act.get("amount")
         if amount is None or not _is_finite_number(amount):
             # Fallback: derive from units * price; use sign convention

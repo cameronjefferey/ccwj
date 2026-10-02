@@ -840,6 +840,24 @@ def _canonicalize_cross_source_amount(action, amount):
     return _canonicalize_seed_cell(f)
 
 
+def _safe_fee_amount(value) -> float:
+    """Blank fees are 0. A commission cell is a positive dollar amount."""
+    if value is None:
+        return 0.0
+    try:
+        if pd.isna(value):
+            return 0.0
+    except TypeError:
+        pass
+    text = str(value).strip().replace(",", "").replace("$", "")
+    if not text:
+        return 0.0
+    try:
+        return abs(float(text))
+    except ValueError:
+        return 0.0
+
+
 def _dedup_history_rows(df, seed_columns):
     """Collapse byte-different but value-identical history rows.
 
@@ -965,15 +983,30 @@ def _dedup_history_rows(df, seed_columns):
     order = (-desc_lens.to_numpy()).argsort(kind="stable")
 
     seen: set = set()
+    winners: dict = {}
     drop_positions: set = set()
+    fee_col = next((c for c in df.columns if str(c).lower() == "fees_and_comm"), None)
     for pos in order:
         if not bool(eligible.iloc[pos]):
             continue  # non-fill event — never cross-source deduped
         key = tuple(canon2.iloc[pos][c] for c in cross_key_cols)
         if key in seen:
+            # The longer description (the activity) wins, but Schwab's
+            # activity often has fee 0/null and a gross Amount while the
+            # order row carries the commission. Copy that fee onto the
+            # survivor so stg_history can net it. A statement amount that
+            # is already net does not match qty × price × 100, so the
+            # staging guard will not charge the fee twice.
+            keep = winners.get(key)
+            if fee_col and keep is not None:
+                keep_fee = _safe_fee_amount(df.at[keep, fee_col])
+                drop_fee = _safe_fee_amount(df.at[pos, fee_col])
+                if not keep_fee and drop_fee:
+                    df.at[keep, fee_col] = drop_fee
             drop_positions.add(pos)
         else:
             seen.add(key)
+            winners[key] = pos
     if drop_positions:
         keep_mask2 = [i not in drop_positions for i in range(len(df))]
         df = df.loc[keep_mask2].reset_index(drop=True)

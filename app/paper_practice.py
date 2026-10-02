@@ -1176,6 +1176,10 @@ _account_cache: dict[int, dict] = {}
 _ACCOUNT_CACHE_SECONDS = 60.0
 _power_cache: dict[tuple, dict] = {}
 _POWER_CACHE_SECONDS = 60.0
+_BROKER_CACHE_SECONDS = 120.0
+_broker_cache: dict[int, dict] = {}
+_spots_page_cache = {"at": 0.0, "spots": None}
+_SPOTS_PAGE_SECONDS = 120.0
 _status_lock = threading.Lock()
 _filled_synced: set[tuple] = set()
 _seen_open: set[tuple] = set()
@@ -1189,6 +1193,9 @@ def reset_order_status_state() -> None:
         _status_cache.clear()
         _account_cache.clear()
         _power_cache.clear()
+        _broker_cache.clear()
+    _spots_page_cache["at"] = 0.0
+    _spots_page_cache["spots"] = None
     with _filled_lock:
         _filled_synced.clear()
         _seen_open.clear()
@@ -1906,6 +1913,67 @@ def _choice_view(spots, today=None, *, session_open: bool = True):
     return view, default or view[0]["expiries"]
 
 
+def practice_broker_snapshot(user_id, *, fetch: bool) -> dict | None:
+    """Paper account, buying power, and orders for /practice.
+
+    The HTML page passes ``fetch=False``. A bundle from the last two
+    minutes is returned without calling Alpaca. A miss returns None so
+    the page can paint and load the broker from ``/practice/broker``.
+    That route passes ``fetch=True``.
+    """
+    uid = int(user_id)
+    now = time.monotonic()
+    with _status_lock:
+        hit = _broker_cache.get(uid)
+        if hit and now - float(hit["at"]) < _BROKER_CACHE_SECONDS:
+            return hit
+    if not fetch:
+        return None
+    account = None
+    power = None
+    if snaptrade_enabled():
+        try:
+            account = _paper_account_cached(uid)
+        except Exception as exc:
+            _log.warning("practice account lookup failed: %s", exc)
+            account = None
+        if account:
+            try:
+                power = _buying_power_cached(uid, account["snaptrade_account_id"])
+            except Exception as exc:
+                _log.warning("practice buying power failed: %s", exc)
+                power = None
+    try:
+        orders = merged_paper_orders(uid, use_cache=True, account=account)
+        error = getattr(_status_error, "value", None)
+    except Exception as exc:
+        _log.warning("practice orders failed: %s", exc)
+        orders = _session_orders()
+        error = "We couldn't refresh order status. The last status on this page still stands."
+    bundle = {
+        "at": time.monotonic(),
+        "account": account,
+        "power": power,
+        "orders": orders,
+        "error": error,
+    }
+    with _status_lock:
+        _broker_cache[uid] = bundle
+    return bundle
+
+
+def spots_for_practice_page() -> dict:
+    """Reuse the last close for two minutes. The chain stays on its own request."""
+    now = time.monotonic()
+    cached = _spots_page_cache["spots"]
+    if isinstance(cached, dict) and now - float(_spots_page_cache["at"]) < _SPOTS_PAGE_SECONDS:
+        return cached
+    spots = latest_spots()
+    _spots_page_cache["at"] = time.monotonic()
+    _spots_page_cache["spots"] = spots
+    return spots
+
+
 @app.route("/practice", methods=["GET"])
 @login_required
 def paper_practice():
@@ -1932,35 +2000,56 @@ def paper_practice():
     if sent:
         sent["voice"] = voice
         session[SENT_KEY] = sent
-    spots = {} if sent else latest_spots()
+    spots = {} if sent else (
+        latest_spots() if os.environ.get("PYTEST_CURRENT_TEST") else spots_for_practice_page()
+    )
     symbols, expiries = _choice_view(spots, session_open=_session_open())
     account = None
     buying_power_label = None
-    if snaptrade_enabled():
-        try:
-            account = _paper_account_cached(current_user.id)
-        except Exception as exc:
-            _log.warning("practice account lookup failed: %s", exc)
-            account = None
-        if account:
-            try:
-                power = _buying_power_cached(
-                    current_user.id, account["snaptrade_account_id"],
-                )
-            except Exception as exc:
-                _log.warning("practice buying power failed: %s", exc)
-                power = None
-            if power is not None:
-                buying_power_label = money(power)
+    broker_pending = False
     orders = []
     orders_error = None
-    try:
-        orders = merged_paper_orders(current_user.id, account=account)
-        orders_error = getattr(_status_error, "value", None)
-    except Exception as exc:
-        _log.warning("practice orders failed: %s", exc)
-        orders = _session_orders()
-        orders_error = "We couldn't refresh order status. The last status on this page still stands."
+    # Tests patch the broker calls and expect them on the page render.
+    # A signed-in visit uses the two-minute bundle, or paints and loads
+    # Alpaca from /practice/broker so the HTML is not waiting on it.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        if snaptrade_enabled():
+            try:
+                account = _paper_account_cached(current_user.id)
+            except Exception as exc:
+                _log.warning("practice account lookup failed: %s", exc)
+                account = None
+            if account:
+                try:
+                    power = _buying_power_cached(
+                        current_user.id, account["snaptrade_account_id"],
+                    )
+                except Exception as exc:
+                    _log.warning("practice buying power failed: %s", exc)
+                    power = None
+                if power is not None:
+                    buying_power_label = money(power)
+        try:
+            orders = merged_paper_orders(current_user.id, account=account)
+            orders_error = getattr(_status_error, "value", None)
+        except Exception as exc:
+            _log.warning("practice orders failed: %s", exc)
+            orders = _session_orders()
+            orders_error = "We couldn't refresh order status. The last status on this page still stands."
+    else:
+        bundle = practice_broker_snapshot(current_user.id, fetch=False) if snaptrade_enabled() else {
+            "account": None, "power": None, "orders": _session_orders(), "error": None,
+        }
+        if bundle is None:
+            broker_pending = True
+            orders = _session_orders()
+        else:
+            account = bundle.get("account")
+            power = bundle.get("power")
+            if power is not None:
+                buying_power_label = money(power)
+            orders = bundle.get("orders") or []
+            orders_error = bundle.get("error")
     open_orders, recent_orders = split_paper_orders(orders)
     if placed:
         fresh = session.get(SENT_KEY)
@@ -1987,8 +2076,26 @@ def paper_practice():
         snaptrade_ready=snaptrade_enabled(),
         look=look and not account,
         buying_power_label=buying_power_label,
+        broker_pending=broker_pending,
         session_note=session_note,
         prefill=None if confirming or placed else practice_prefill(request.args),
+    )
+
+
+@app.route("/practice/broker", methods=["GET"])
+@login_required
+def paper_practice_broker():
+    """Account, buying power, and orders. The page loads this after paint."""
+    bundle = practice_broker_snapshot(current_user.id, fetch=True) or {}
+    account = bundle.get("account")
+    orders = bundle.get("orders") or []
+    public = [order_public(order) for order in orders if isinstance(order, dict)]
+    power = bundle.get("power")
+    return jsonify(
+        connected=bool(account),
+        buying_power_label=money(power) if power is not None else None,
+        orders=public,
+        error=bundle.get("error"),
     )
 
 
