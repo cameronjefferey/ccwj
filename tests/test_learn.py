@@ -536,6 +536,7 @@ def _assert_public_copy(html):
     for banned in ("no sign-up", "no signup", "live demo", "the only place", "guaranteed"):
         assert banned not in lowered
     assert "Create a free account" in html
+    assert 'data-ht-cta="create-account"' in html
     assert "Learning and paper trading are free." in html
     assert "Your 30-day trial starts when you connect a real brokerage." in html
     assert "Start your free 30-day trial" not in html

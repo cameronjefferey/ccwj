@@ -3,7 +3,7 @@
 {% block meta_tags %}
 <meta name="robots" content="noindex">
 <meta name="description" content="Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. No credit card. Read-only.">
-<meta property="og:description" content="Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. No credit card.">
+<meta property="og:description" content="Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.">
 {% endblock %}
 
 {% block head %}
@@ -493,7 +493,8 @@
         <h1>Your broker shows the number. This shows the trades behind it.</h1>
         <p class="start-lead">First the trades behind one number. Then one name, every day. Then those trades, written out. Then your profile across every symbol.</p>
         {{ campaign_cta('hero', tone='inverse', note=false) }}
-        <p class="start-fine">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. No credit card.</p>
+        <p class="start-fine">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
+        <p class="start-fine">No credit card.</p>
         {% if signup_invite_required %}
         <p class="start-fine">Signup is invite-only right now.</p>
         {% endif %}

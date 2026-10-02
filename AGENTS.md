@@ -570,9 +570,10 @@ There is no separate dashboard page — Overview is the authenticated home.
 **Status: Working. Public Options 101 series. No login.**
 
 Logged-out nav and footer link here. Logged-in users can open the same pages.
-The signup card at the bottom is for logged-out visitors. It says learning
-and paper trading are free, and that the 30-day trial starts when a real
-brokerage connects. A signed-in page replaces it with Practice.
+The signup card at the bottom is for logged-out visitors. The button is
+**Create a free account** (`data-ht-cta="create-account"`). The note is
+“Learning and paper trading are free. Your 30-day trial starts when you
+connect a real brokerage.” A signed-in page replaces it with Practice.
 Copy and video ids live in `app/learn_episodes.json` (loaded by
 `app/learn_catalog.py`). All 10 episodes are published with public YouTube
 ids, in series order (the wheel is episode 7, spreads 8, options risk 9).
