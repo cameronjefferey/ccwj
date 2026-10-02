@@ -306,6 +306,8 @@ def practice_receipt(ticket, body=None, tenant_id=None) -> dict:
         "strike_label": money_strike(ticket["strike"]),
         "expiry_label": f"{ticket['expiry_label']} · {expiry.strftime('%b %-d')}",
         "limit_label": ticket["limit_label"],
+        "quantity_label": "1 contract",
+        "detail": _order_detail("1 contract", ticket.get("limit_label") or ""),
         "cost_label": ticket["cost_label"],
         "cash_settled": bool(ticket.get("cash_settled")),
         "voice": ticket.get("voice") or "beginner",
@@ -581,7 +583,9 @@ def trade_views(
     """Three readings of one paper order. Beginner is the lesson. Brokerage is the ticket."""
     side_name = "Call" if side == "call" else "Put"
     when = expiry.strftime("%b %-d, %Y")
-    if price_note:
+    if price_note == "live bid/ask":
+        price_label = "Live bid/ask"
+    elif price_note:
         price_label = "Last price at close"
     else:
         price_label = "Price per point" if cash_settled else "Price per share"
@@ -828,27 +832,41 @@ def quote_from_chain_row(bid, ask, last=None, previous=None) -> dict:
     return quote
 
 
+def _shown_price_note(token):
+    """Ticket sentence for a fallback limit. A live quote has no sentence."""
+    if token == "last price at close":
+        return "This limit is the last price at close."
+    if token == "live bid/ask":
+        return "Based on the live bid/ask."
+    return None
+
+
 def review_limit(raw_live, quote, symbol, *, session_open: bool):
     """Limit for the review ticket.
 
-    While the session is open, a live quote is required and the limit is
-    the chain mid. After the close, a missing live quote falls back to the
-    last trade, then the previous close, then a leftover bid or ask. That
-    fallback is labelled so the ticket does not pretend it is a live quote.
+    While the session is open, the limit is the chain mid when the
+    per-contract quote is present. If that quote fails or comes back
+    empty, the same chain bid/ask mid is used and labelled as the live
+    bid/ask. After the close, a missing live quote falls back to the
+    last trade, then the previous close, then a leftover bid or ask.
     Returns ``(limit, price_note, error)``.
     """
     quote = quote or {}
     live_ok = limit_from_quote(raw_live, symbol) is not None
-    shown = quote.get("mid") or quote.get("ask") or quote.get("bid")
+    chain_limit = (
+        limit_from_quote(quote.get("mid"), symbol)
+        or limit_from_quote(quote.get("ask"), symbol)
+        or limit_from_quote(quote.get("bid"), symbol)
+    )
     if session_open:
-        if not live_ok:
-            return None, None, (
-                "We couldn't get a price for that contract. Pick it again in a moment."
-            )
-        limit = limit_from_quote(shown, symbol)
-        if not limit:
+        if chain_limit:
+            return chain_limit, None if live_ok else "live bid/ask", None
+        if live_ok:
             return None, None, "No bid and ask for that contract. Pick another strike."
-        return limit, None, None
+        return None, None, (
+            "We couldn't get a price for that contract. Pick it again in a moment."
+        )
+    shown = quote.get("mid") or quote.get("ask") or quote.get("bid")
     if live_ok:
         limit = limit_from_quote(shown, symbol) or limit_from_quote(raw_live, symbol)
         if limit:
@@ -1056,9 +1074,7 @@ def _build_ticket(selection, spots, account, today=None):
             price_note=price_note,
         ),
         "session_note": session_wait_note(expiry),
-        "price_note": (
-            "This limit is the last price at close." if price_note else None
-        ),
+        "price_note": _shown_price_note(price_note),
     }, None
 
 
@@ -1129,7 +1145,7 @@ _PENDING_STATUSES = {
     "PENDING_RISK_REVIEW", "CONTINGENT_ORDER",
 }
 _QUEUED_STATUSES = {"QUEUED"}
-_STATUS_CACHE_SECONDS = 3.0
+_STATUS_CACHE_SECONDS = 15.0
 _status_cache: dict[tuple, dict] = {}
 _account_cache: dict[int, dict] = {}
 _ACCOUNT_CACHE_SECONDS = 60.0
@@ -1335,6 +1351,85 @@ def _underlying_from_order(order) -> str:
     return match.group(0) if match else ""
 
 
+def _positive_decimal(raw):
+    if raw is None or raw == "":
+        return None
+    try:
+        amount = Decimal(str(raw))
+    except Exception:
+        return None
+    if not amount.is_finite() or amount <= 0:
+        return None
+    return amount
+
+
+def _is_option_order(order) -> bool:
+    if order.get("option_symbol"):
+        return True
+    legs = order.get("legs")
+    if not isinstance(legs, list):
+        return False
+    for leg in legs:
+        if not isinstance(leg, dict):
+            continue
+        instrument = leg.get("instrument") or {}
+        if isinstance(instrument, dict) and str(instrument.get("instrument_type") or "").upper() == "OPTION":
+            return True
+    return False
+
+
+def _order_quantity(order):
+    """Contracts or shares. A multi-leg order keeps the count on the leg."""
+    raws = []
+    for key in ("total_quantity", "open_quantity", "filled_quantity"):
+        raws.append(order.get(key))
+    legs = order.get("legs")
+    if isinstance(legs, list):
+        for leg in legs:
+            if isinstance(leg, dict):
+                for key in ("total_quantity", "units", "filled_quantity"):
+                    raws.append(leg.get(key))
+    for raw in raws:
+        qty = _positive_decimal(raw)
+        if qty is not None:
+            return qty
+    return None
+
+
+def _quantity_phrase(amount, option: bool) -> str:
+    shown = amount.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    text = format(shown, "f").rstrip("0").rstrip(".")
+    if option:
+        unit = "contract" if amount == 1 else "contracts"
+    else:
+        unit = "share" if amount == 1 else "shares"
+    return f"{text} {unit}"
+
+
+def _order_detail(quantity_label, limit_label) -> str:
+    bits = []
+    if quantity_label:
+        bits.append(str(quantity_label))
+    if limit_label:
+        text = str(limit_label)
+        if not text.lower().startswith("limit"):
+            text = f"Limit {text}"
+        bits.append(text)
+    return " · ".join(bits)
+
+
+def _order_size(order) -> dict:
+    option = _is_option_order(order)
+    qty = _order_quantity(order)
+    quantity_label = _quantity_phrase(qty, option) if qty is not None else ""
+    limit_label = _price_label(order.get("limit_price")) or ""
+    return {
+        "quantity_label": quantity_label,
+        "limit_label": limit_label,
+        "detail": _order_detail(quantity_label, limit_label),
+    }
+
+
 def normalize_broker_order(order) -> dict | None:
     if not isinstance(order, dict):
         return None
@@ -1343,6 +1438,7 @@ def normalize_broker_order(order) -> dict | None:
     symbol = _underlying_from_order(order)
     price = _execution_price(order)
     reason = _reject_reason(order)
+    size = _order_size(order)
     return {
         "brokerage_order_id": str(order.get("brokerage_order_id") or ""),
         "status": bucket,
@@ -1354,6 +1450,9 @@ def normalize_broker_order(order) -> dict | None:
         "link_symbol": position_link_symbol(symbol),
         "cancelable": bucket == "open" and bool(order.get("brokerage_order_id")),
         "sentence": "",
+        "quantity_label": size["quantity_label"],
+        "limit_label": size["limit_label"],
+        "detail": size["detail"],
         "execution_price": price,
         "reject_reason": reason,
         "source": "broker",
@@ -1377,11 +1476,20 @@ def _remember_order(receipt) -> None:
     session[ORDERS_KEY] = kept[:20]
 
 
-def _cached_recent_orders(user_id, account_id):
-    """One SnapTrade read per account every few seconds.
+def _store_status_cache(user_id, account_id, orders) -> None:
+    key = (int(user_id), str(account_id))
+    with _status_lock:
+        _status_cache[key] = {"at": time.monotonic(), "orders": list(orders or [])}
 
-    A rate limit or a failed read returns the last list plus a sentence
-    the page can show. The exception text stays in the log.
+
+def _cached_recent_orders(user_id, account_id):
+    """One SnapTrade read per account every 15 seconds.
+
+    The practice page polls only while a tab is visible and an order is
+    still open. This cache absorbs a second tab and a poll that lands
+    just after the page itself listed orders. A rate limit or a failed
+    read returns the last list plus a sentence the page can show. The
+    exception text stays in the log.
     """
     key = (int(user_id), str(account_id))
     now = time.monotonic()
@@ -1405,8 +1513,7 @@ def _cached_recent_orders(user_id, account_id):
         return [], friendly
     if not isinstance(raw, list):
         raw = []
-    with _status_lock:
-        _status_cache[key] = {"at": now, "orders": list(raw)}
+    _store_status_cache(user_id, account_id, raw)
     return raw, None
 
 
@@ -1506,6 +1613,9 @@ def merged_paper_orders(user_id, *, use_cache=False, account=None) -> list[dict]
                     user_id, account["snaptrade_account_id"],
                     raise_on_error=True,
                 ) or []
+                _store_status_cache(
+                    user_id, account["snaptrade_account_id"], raw_orders,
+                )
             except Exception as exc:
                 _log.warning("paper order list failed: %s", exc)
                 raw_orders = []
@@ -1523,6 +1633,12 @@ def merged_paper_orders(user_id, *, use_cache=False, account=None) -> list[dict]
             broker = by_id[local_id]
             if not broker.get("sentence"):
                 broker["sentence"] = local.get("sentence") or ""
+            if not broker.get("detail") and (local.get("detail") or local.get("limit_label")):
+                broker["quantity_label"] = local.get("quantity_label") or "1 contract"
+                broker["limit_label"] = local.get("limit_label") or ""
+                broker["detail"] = local.get("detail") or _order_detail(
+                    broker["quantity_label"], broker["limit_label"],
+                )
             if not broker.get("symbol"):
                 broker["symbol"] = local.get("symbol") or ""
                 broker["link_symbol"] = position_link_symbol(broker["symbol"])
@@ -1623,6 +1739,9 @@ def order_public(order) -> dict:
         "symbol": str(order.get("symbol") or ""),
         "link_symbol": link,
         "sentence": str(order.get("sentence") or ""),
+        "quantity_label": str(order.get("quantity_label") or ""),
+        "limit_label": str(order.get("limit_label") or ""),
+        "detail": str(order.get("detail") or ""),
         "cancelable": bool(order.get("cancelable")),
         "position_url": url,
     }
@@ -2026,7 +2145,7 @@ def paper_practice_order_status():
     elif error:
         poll_after = 15000
     elif open_count:
-        poll_after = 3000
+        poll_after = 15000
     else:
         poll_after = 0
     return jsonify(

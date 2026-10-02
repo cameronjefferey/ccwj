@@ -884,7 +884,9 @@ def _share_sentence(run):
         else:
             bits.append(f"{_shares(buy_qty)} bought at {_px(entry)}")
 
-    if run.missing_close:
+    # A flat broker snapshot closes the run. The missing-sale note is only
+    # for a lot that is still open; a closed position does not need it.
+    if run.missing_close and run.status != "closed":
         bits.append("sale or transfer missing from broker history")
     elif run.status == "open":
         if run.sells:

@@ -36,11 +36,20 @@
         });
     }
 
+    function hasOpen() {
+        return !!openList.querySelector(
+            '.pp-order[data-order-status="open"], .pp-order[data-order-status="cancel_requested"]'
+        );
+    }
+
+    function tabVisible() {
+        return document.visibilityState !== "hidden";
+    }
+
     function nextDelay(elapsed) {
         if (elapsed > 8 * 60 * 1000) return 0;
         if (elapsed > 5 * 60 * 1000) return 30000;
-        if (elapsed > 2 * 60 * 1000) return 15000;
-        return 3000;
+        return 15000;
     }
 
     function showError(message) {
@@ -82,6 +91,9 @@
         var id = esc(order.brokerage_order_id);
         var label = esc(order.status_label || "Unknown");
         var text = esc(order.sentence || order.symbol || "Paper order");
+        var detail = order.detail
+            ? '<div class="pp-order-meta">' + esc(order.detail) + '</div>'
+            : "";
         var href = order.position_url || "";
         var link = "";
         if (href.indexOf("/position/") === 0) {
@@ -99,7 +111,7 @@
         var pos = href.indexOf("/position/") === 0 ? ' data-position-url="' + esc(href) + '"' : "";
         return '<div class="pp-order" data-order-id="' + id + '" data-order-status="' + status + '"' + pos + '>' +
             '<div><div class="pp-status is-' + status + ' pp-live-status">' + label + '</div>' +
-            '<div class="pp-order-text">' + text + '</div></div>' +
+            '<div class="pp-order-text">' + text + '</div>' + detail + '</div>' +
             '<div class="d-flex flex-wrap gap-2">' + link + action + '</div></div>';
     }
 
@@ -144,11 +156,13 @@
     }
 
     function schedule(ms) {
-        if (stopped || !ms) return;
+        if (stopped || !ms || !tabVisible() || !hasOpen()) return;
+        if (timer) window.clearTimeout(timer);
         timer = window.setTimeout(tick, ms);
     }
 
     function tick() {
+        if (!tabVisible() || !hasOpen()) return;
         var elapsed = Date.now() - started;
         var delay = nextDelay(elapsed);
         if (!delay) return;
@@ -194,5 +208,14 @@
         if (timer) window.clearTimeout(timer);
     });
 
-    schedule(3000);
+    document.addEventListener("visibilitychange", function () {
+        if (!tabVisible()) {
+            if (timer) window.clearTimeout(timer);
+            timer = null;
+            return;
+        }
+        if (hasOpen()) tick();
+    });
+
+    if (hasOpen()) schedule(15000);
 })();

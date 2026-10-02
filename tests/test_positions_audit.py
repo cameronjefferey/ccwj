@@ -80,8 +80,34 @@ def test_missing_broker_shares_close_the_covered_call_run():
     assert len(runs) == 1
     assert runs[0]["status"] == "closed"
     assert runs[0]["missing_close"] is True
-    assert "sale or transfer missing from broker history" in runs[0]["share_sentence"].lower()
+    assert "sale or transfer missing from broker history" not in runs[0]["share_sentence"].lower()
+    assert "still held" not in runs[0]["share_sentence"].lower()
     assert runs[0]["share_pnl"] == 0.0
+
+    # SCHD closed with a fractional lot and no sale in the fill history.
+    schd = pd.DataFrame([
+        {
+            "trade_date": date(2025, 3, 4), "action": "equity_buy",
+            "instrument_type": "Equity", "trade_symbol": "SCHD",
+            "quantity": 100.89, "price": 27.40, "amount": -2764.39, "fees": 0.0,
+            "account": "Schwab Account", "tenant_id": "snaptrade:schd",
+        },
+        {
+            "trade_date": date(2025, 3, 5), "action": "option_sell_to_open",
+            "instrument_type": "Call", "trade_symbol": "SCHD  250418C00028000",
+            "quantity": 1, "price": 0.40, "amount": 40.0, "fees": 0.0,
+            "account": "Schwab Account", "tenant_id": "snaptrade:schd",
+        },
+    ])
+    flat = pd.DataFrame([{
+        "symbol": "SCHD", "quantity": 0, "current_price": 26.0,
+        "tenant_id": "snaptrade:schd", "account": "Schwab Account",
+    }])
+    closed = build_covered_call_runs(schd, current_df=flat, as_of=date(2026, 5, 1))
+    assert len(closed) == 1
+    assert closed[0]["status"] == "closed"
+    assert "100.89 shares" in closed[0]["share_sentence"]
+    assert "sale or transfer missing from broker history" not in closed[0]["share_sentence"].lower()
 
 
 def test_directional_tile_is_buy_to_open_only_including_expiry():
