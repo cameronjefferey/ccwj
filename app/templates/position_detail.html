@@ -1765,7 +1765,12 @@
     <summary><span class="section-header">Show more</span></summary>
     <div class="disclosure-body">
         {% if chart_read %}
-        <div class="chart-read mt-3">
+        <div class="chart-read mt-3" id="chartRead"
+             data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
+             data-digest="{{ chart_read.digest }}"
+             data-scope="{{ chart_read.scope }}"
+             data-locked="{{ '1' if chart_read.locked else '0' }}"
+             data-pending="{{ '1' if chart_read.pending else '0' }}">
             <div class="chart-read-kicker">On this chart</div>
             <p class="chart-read-lead">{{ chart_read.lead }}</p>
         </div>
@@ -2117,21 +2122,16 @@
 (function () {
     var box = document.getElementById('chartRead');
     if (!box || box.dataset.pending !== '1') return;
-    var csrf = document.querySelector('meta[name="csrf-token"]');
-    var token = csrf ? csrf.getAttribute('content') : '';
-    var fd = new FormData();
-    fd.append('digest', box.dataset.digest || '');
-    fd.append('scope', box.dataset.scope || '');
-    if (token) fd.append('csrf_token', token);
-    fetch(box.dataset.url, {
-        method: 'POST',
-        body: fd,
-        headers: token ? { 'X-CSRFToken': token } : {},
-        credentials: 'same-origin'
-    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-        if (!data) return;
+    var settled = false;
+    function finish(data) {
+        if (settled) return;
+        settled = true;
+        if (!data || data.hide || !data.lead) {
+            box.hidden = true;
+            return;
+        }
         var lead = box.querySelector('.chart-read-lead');
-        if (lead && data.lead) lead.textContent = data.lead;
+        if (lead) lead.textContent = data.lead;
         var rest = document.getElementById('chartReadRest');
         if (rest) rest.textContent = data.body || '';
         var upgrade = box.querySelector('.chart-read-upgrade');
@@ -2139,7 +2139,35 @@
             var withheld = data.locked && data.lead && !data.body;
             upgrade.hidden = !withheld;
         }
-    }).catch(function () {});
+        box.dataset.pending = '0';
+    }
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    var token = csrf ? csrf.getAttribute('content') : '';
+    var fd = new FormData();
+    fd.append('digest', box.dataset.digest || '');
+    fd.append('scope', box.dataset.scope || '');
+    if (token) fd.append('csrf_token', token);
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () {
+        if (ctrl) ctrl.abort();
+        finish(null);
+    }, 10000);
+    var opts = {
+        method: 'POST',
+        body: fd,
+        headers: token ? { 'X-CSRFToken': token } : {},
+        credentials: 'same-origin'
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+    fetch(box.dataset.url, opts).then(function (r) {
+        return r.ok ? r.json() : null;
+    }).then(function (data) {
+        clearTimeout(timer);
+        finish(data);
+    }).catch(function () {
+        clearTimeout(timer);
+        finish(null);
+    });
 })();
 </script>
 <script>

@@ -153,6 +153,16 @@ def _drop_request_connection() -> None:
         pass
 
 
+def release_request_connection() -> None:
+    """Close this request's socket and keep the request binding.
+
+    The next query on this thread opens a new connection. Call this before
+    a wait that can outlive a healthy idle socket (the chart-read model
+    call). ``close_request_connection`` also clears the request binding.
+    """
+    _drop_request_connection()
+
+
 def _connect() -> psycopg.Connection:
     """Open a single fresh Postgres connection.
 

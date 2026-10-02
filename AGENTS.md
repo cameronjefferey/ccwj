@@ -455,7 +455,10 @@ What's working:
 - Position Detail reads as one story: the hero (total return, then a
   compact row of realized, unrealized, dividends, win rate, and average
   days — those three dollars are the headline), then the mirror, then
-  the Cumulative P&amp;L chart, then Position Legs. What worked follows.
+  the Cumulative P&amp;L chart, then Position Legs. The note under the
+  chart fills in within about 10 seconds; if that read is unavailable
+  the note is removed instead of staying on "Reading this chart…".
+  What worked follows.
   Premium collected stays on the review card. Groups and Account are
   small chips under the symbol in that hero (one row on a phone). Total
   return stays on the right. A one-line history hint appears only when

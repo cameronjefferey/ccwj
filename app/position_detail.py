@@ -3762,10 +3762,10 @@ def position_chart_read(symbol):
     screen. The paid remainder never crosses the response boundary for a
     locked user.
     """
-    from app.db import execute
+    from app.db import execute, release_request_connection
     from app.llm_access import user_can_use_paid_llm
     from app.position_chart_read import (
-        generate_chart_body,
+        chart_body_within,
         load_chart_read,
         visible_chart_read,
     )
@@ -3773,30 +3773,60 @@ def position_chart_read(symbol):
     digest = (request.form.get("digest") or "").strip()[:64]
     scope = (request.form.get("scope") or "").strip()[:800]
     if not digest:
-        return jsonify(ok=False), 400
-    row = load_chart_read(current_user.id, symbol, scope, digest)
+        return jsonify(ok=False, hide=True), 400
+    try:
+        row = load_chart_read(current_user.id, symbol, scope, digest)
+    except Exception:
+        app.logger.exception("chart read load failed for %s", symbol)
+        return jsonify(ok=False, hide=True, lead="", body="")
     if not row:
-        return jsonify(ok=False), 404
+        return jsonify(ok=False, hide=True), 404
     body = (row.get("body") or "").strip()
     if not body:
         try:
             facts = json.loads(row.get("brief") or "{}")
         except json.JSONDecodeError:
             facts = {}
-        body = generate_chart_body(facts) or ""
+        # The model call sits between two queries. Drop the request
+        # socket first so a slow vendor response cannot leave the later
+        # UPDATE blocked on a dead connection.
+        release_request_connection()
+        try:
+            body = chart_body_within(facts) or ""
+        except Exception:
+            app.logger.exception("chart read generation failed for %s", symbol)
+            body = ""
         if body:
-            execute(
-                """
-                UPDATE position_chart_reads
-                SET body = %s, generated_at = NOW()
-                WHERE user_id = %s AND symbol = %s AND scope = %s AND brief_hash = %s
-                """,
-                (body, current_user.id, symbol.upper(), scope, digest),
-            )
-    unlocked = user_can_use_paid_llm(current_user.id)
+            try:
+                execute(
+                    """
+                    UPDATE position_chart_reads
+                    SET body = %s, generated_at = NOW()
+                    WHERE user_id = %s AND symbol = %s AND scope = %s AND brief_hash = %s
+                    """,
+                    (body, current_user.id, symbol.upper(), scope, digest),
+                )
+            except Exception:
+                app.logger.exception("chart read cache write failed for %s", symbol)
+    try:
+        unlocked = user_can_use_paid_llm(current_user.id)
+    except Exception:
+        app.logger.exception("chart read unlock check failed for %s", symbol)
+        unlocked = False
     lead, visible_body = visible_chart_read(body, unlocked=unlocked)
+    # An empty lead is a missing key, a rejected draft, or a timeout.
+    # The page hides the section instead of leaving "Reading this chart…".
+    if not lead:
+        return jsonify(
+            ok=True,
+            hide=True,
+            lead="",
+            body="",
+            locked=not unlocked,
+        )
     return jsonify(
         ok=True,
+        hide=False,
         lead=lead,
         body=visible_body,
         locked=not unlocked,
