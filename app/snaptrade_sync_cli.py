@@ -490,7 +490,9 @@ def main():
                 # The broker read is not end-to-end successful until its
                 # deferred frames are durable. Start the reverse-trial clock
                 # here, not in _sync_one_connection, so a failed first batch
-                # cannot consume trial days before any data exists.
+                # cannot consume trial days before any data exists. The
+                # helper itself no-ops unless a real (non-paper) brokerage
+                # is connected, and it never rewrites an existing date.
                 from app.plan import start_trial_clock
                 for synced_user_id in {
                     user_id for user_id, _account_id in durable_batch_account_ids

@@ -58,8 +58,9 @@ Covered calls. Wheels. Spreads. Classified from your own trades. 30 days. No car
 
 ![book 4:5](../app/static/campaign/ads/book-4x5.png)
 
-The landing page says the same thing the ad says. 30 days, no card. The clock
-starts when the first sync or CSV lands. History is whatever the broker still
+The landing page says the same thing the ad says. 30 days, no card.
+Learning and paper trading are free. Your 30-day trial starts when you
+connect a real brokerage. History is whatever the broker still has on file,
 has on file, often a year or two, plus a CSV for older trades. Do not write
 "5 years" or "free" without "30 days, no card." No return claims. No trade ideas.
 

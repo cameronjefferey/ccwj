@@ -97,7 +97,8 @@ def test_pricing_story_for_beta_does_not_quote_day_30():
 
 def test_pricing_story_logged_out_is_the_30_day_trial():
     story = pricing_story(None)
-    assert "30 days" in story["title"]
+    assert "Learning and paper trading are free" in story["title"]
+    assert "connect a real brokerage" in story["title"]
     assert story["show_freeze_explainer"] is True
 
 

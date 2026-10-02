@@ -38,10 +38,13 @@ The dev dataset is a **full mirror for testing**, kept fresh two ways. (1) **App
 **The public demo is a MIRROR of a real tenant, not fabricated data (Aug 2026).** The demo user (username `demo`, no usable password, tenant `demo:demo-account`, label `Demo Account`) used to be fed by hand-written CSV seeds plus a synthetic account-value curve (`int_demo_equity_daily`). Both are **deleted**. The demo is now a relabeled copy of the EarningsFollower trading bot's Alpaca paper account, set by `var('demo_source_tenant_id')` in `dbt/dbt_project.yml`, built by `dbt/models/staging/demo/stg_demo_{history,current,balances}` and unioned into the three base staging models exactly where the seeds used to be. **Two invariants to preserve:** (1) the mirror reads the **per-broker adapters** (`stg_broker_alpaca_*`), NEVER `source('raw_broker', …)` — the adapter drops Alpaca's duplicate partial fills and repairs the missing 100x option multiplier, so mirroring raw would reproduce a phantom ~-$67k unrealized loss and ~+$14.7k cash break in the demo; (2) the mirror stamps `tenant_id='demo:demo-account'` itself, keeping the demo a genuinely separate tenant that renders through the **same tenant scoping as any real user** — do NOT "simplify" this by pointing the demo user at the bot's tenant, which is impossible anyway (`broker_tenants.tenant_id` is a PRIMARY KEY, one tenant = one user). History/marks are mirrored at three layers: staging (above), the balance snapshot (`bal_versions` in `mart_account_equity_daily`), and option marks (`versions` in `int_option_marks_daily`). The `where account != 'Demo Account'` filter in `mart_account_equity_daily.bal_versions` is **load-bearing** — the SCD2 snapshot still holds legacy fabricated demo versions that would otherwise collide with the mirror at the same `tenant_grain`. EarningsFollower deep-links back in at `/earningsfollower/<symbol>`. Public `/demo/start` does not log visitors into the Postgres `demo` row; each visitor gets a `demo-session:` identity that can read only `demo:demo-account` and cannot write.
 
 **Reverse trial is the billing model (Aug 2026).** Every new
-signup is `users.plan='trial'`: full product, no card. The 30-day clock
-starts at FIRST DATA (`trial_started_at`, stamped once at the first
-successful sync in `_sync_one_connection` / first CSV upload), not at
-signup. Day 30 the mirror FREEZES — every page stays readable, but syncs
+signup is `users.plan='trial'`: full product, no card. Learning and Alpaca
+Paper are free and never start the clock. The 30-day clock starts only when
+the first real (non-paper) brokerage account connects (`start_trial_clock`
+no-ops without one, and `WHERE trial_started_at IS NULL` leaves an existing
+date alone). A paper-only or account-less user is not frozen and is not
+disconnected by the lifecycle cron, even if an older sync stored a date.
+Day 30 the mirror FREEZES — every page stays readable, but syncs
 and uploads stop; day 60 the daily `happytrader-plan-lifecycle` cron
 (`app/plan_lifecycle_cli.py`, also sends the day-23/30/53 lifecycle
 emails, dedupe per trial episode via `email_sends`) removes the SnapTrade
@@ -743,7 +746,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 
 Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**.
 
-Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
+Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
 ### Accounts (`/accounts`) — two views
 **Status: Working. One surface for per-account performance AND value/composition.**

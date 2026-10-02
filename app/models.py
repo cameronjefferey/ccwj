@@ -666,8 +666,9 @@ def _migrate_users_plan_columns():
     """Idempotent: reverse-trial plan state (see app/plan.py).
 
     - ``plan`` — 'trial' (default for new signups) | 'beta' | 'active'.
-    - ``trial_started_at`` — stamped at FIRST DATA (first successful sync or
-      CSV upload), not signup; NULL = clock not running.
+    - ``trial_started_at`` — stamped when the first real (non-paper)
+      brokerage is connected, not at signup and not for Alpaca Paper or
+      CSV. NULL = clock not running. An existing value is never rewritten.
     - ``plan_updated_at`` — audit stamp for admin/Stripe plan changes.
 
     GRANDFATHERING: every user that exists when the ``plan`` column first
