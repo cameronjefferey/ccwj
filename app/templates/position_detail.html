@@ -173,7 +173,19 @@
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
     }
-    .pd-legs .pd-num { text-align: right; }
+    .pd-legs .pd-num {
+        text-align: right;
+        /* Money sizes to its text. Never ellipsis a dollar figure. */
+        overflow: visible;
+        text-overflow: clip;
+        max-width: none;
+    }
+    @media (max-width: 420px) {
+        .pd-legs { font-size: .68rem; }
+        .pd-legs > thead > tr > th,
+        .pd-legs > tbody > tr > td,
+        .pd-legs > tfoot > tr > td { padding: .18rem .2rem; }
+    }
     .pd-legs .pd-clip,
     .pd-legs .pd-flex {
         overflow: hidden;
@@ -808,9 +820,24 @@
                 {% set ocost = current_positions | sum(attribute='cost_basis') if current_positions else 0 %}
                 {% set omv = current_positions | sum(attribute='market_value') if current_positions else 0 %}
                 {% set opnl = current_positions | sum(attribute='unrealized_pnl') if current_positions else 0 %}
-                {% set ccost = trade_outcomes | sum(attribute='cost') if trade_outcomes else 0 %}
-                {% set cproc = trade_outcomes | sum(attribute='proceeds') if trade_outcomes else 0 %}
-                {% set cpnl = trade_outcomes | sum(attribute='pnl') if trade_outcomes else 0 %}
+                {# A vertical's Cost cell is a credit or debit, not a summand.
+                   The closed cost/value totals stay dollar costs only when
+                   every closed row is a single leg. P&L always sums. #}
+                {% set ns = namespace(ccost=0.0, cproc=0.0, cpnl=0.0, plain=0, vertical=0) %}
+                {% for o in trade_outcomes or [] %}
+                {% set ns.cpnl = ns.cpnl + (o.pnl or 0) %}
+                {% if o.vertical %}
+                {% set ns.vertical = ns.vertical + 1 %}
+                {% else %}
+                {% set ns.plain = ns.plain + 1 %}
+                {% set ns.ccost = ns.ccost + (o.cost or 0) %}
+                {% set ns.cproc = ns.cproc + (o.proceeds or 0) %}
+                {% endif %}
+                {% endfor %}
+                {% set ccost = ns.ccost %}
+                {% set cproc = ns.cproc %}
+                {% set cpnl = ns.cpnl %}
+                {% set cost_totals = ns.plain and not ns.vertical %}
                 {% set gcost = ocost + ccost %}
                 {% set gval = omv + cproc %}
                 {% set gpnl = opnl + cpnl %}
@@ -921,21 +948,29 @@
                                 <dt>Qty</dt><dd>{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '—') }}</dd>
                                 <dt>Opened</dt><dd>{{ o.open_date|compact_date if o.open_date else '—' }}</dd>
                                 <dt>Closed</dt><dd>{{ o.close_date|compact_date if o.close_date else '—' }}</dd>
+                                {% if o.vertical %}
+                                <dt>{% if (o.net_credit or 0) >= 0 %}Credit{% else %}Debit{% endif %}</dt>
+                                <dd>{{ money((o.net_credit or 0)|abs) }}</dd>
+                                <dt>Width</dt><dd>{{ o.width_label or '—' }}</dd>
+                                <dt>Outcome</dt><dd>{{ o.outcome or '—' }}</dd>
+                                {% else %}
                                 <dt>Cost</dt><dd>{% if o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</dd>
                                 <dt>Value</dt><dd>{{ money(o.proceeds) }}</dd>
+                                {% endif %}
                             </dl>
                         </details>
                     </td>
-                    <td class="text-muted small pd-clip" {% if o.strategy %}title="{{ o.strategy }}"{% endif %}>{{ o.strategy }}</td>
+                    <td class="text-muted small pd-clip" {% if o.strategy %}title="{{ o.strategy }}{% if o.strategy_family and o.strategy_family != o.strategy %}. On Strategies this is {{ o.strategy_family }}{% endif %}"{% endif %}>{{ o.strategy }}</td>
                     <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
                     <td class="pd-num">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
                     <td class="pd-date" {% if o.open_date %}title="{{ o.open_date|human_date }}"{% endif %}>{{ o.open_date|compact_date }}</td>
                     <td class="pd-date" {% if o.close_date %}title="{{ o.close_date|human_date }}"{% endif %}>{{ o.close_date|compact_date }}</td>
                     <td class="pd-num pd-opt text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
-                    <td class="pd-num">{% if o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</td>
-                    <td class="pd-num">{{ money(o.proceeds) }}</td>
+                    <td class="pd-num">{% if o.vertical %}{% if (o.net_credit or 0) >= 0 %}Credit {{ money(o.net_credit) }}{% else %}Debit {{ money((o.net_credit or 0)|abs) }}{% endif %}{% elif o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</td>
+                    <td class="pd-num">{% if o.vertical %}{{ o.width_label }}{% else %}{{ money(o.proceeds) }}{% endif %}</td>
                     <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
                         <div>{{ money(o.pnl) }}</div>
+                        {% if not o.vertical %}
                         <button type="button" class="ht-share-btn"
                                 {% if o.type == 'equity' %}
                                 data-ref="equity"
@@ -949,6 +984,7 @@
                                 data-tenant="{{ o.tenant_id or '' }}"
                                 data-trade-symbol="{{ o.trade_symbol or '' }}"
                                 {% endif %}>Share</button>
+                        {% endif %}
                     </td>
                     <td class="pd-num pd-ifheld">
                         {% if o.held_id %}
@@ -965,9 +1001,32 @@
                         {% else %}—{% endif %}
                     </td>
                 </tr>
-                {% if o.raw_trades %}
+                {% if o.vertical or o.raw_trades %}
                 <tr class="leg-detail-row" id="leg-detail-{{ loop.index0 }}">
                     <td colspan="14" class="leg-detail-cell">
+                        {% if o.vertical and o.legs %}
+                        <table class="table leg-detail-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Leg</th>
+                                    <th class="text-end">Amount</th>
+                                    <th class="text-end">P&amp;L</th>
+                                    <th>Outcome</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for leg in o.legs %}
+                                <tr>
+                                    <td class="text-nowrap">{{ leg.trade_symbol|option_symbol }}</td>
+                                    <td class="text-end text-nowrap pd-num">{{ leg.role_label }} {{ money(leg.role_amount) }}</td>
+                                    <td class="text-end text-nowrap pd-num {{ 'text-positive' if (leg.pnl or 0) >= 0 else 'text-negative' }}">{{ money(leg.pnl) }}</td>
+                                    <td>{{ leg.outcome or '—' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% endif %}
+                        {% if o.raw_trades %}
                         <table class="table leg-detail-table mb-0">
                             <thead>
                                 <tr>
@@ -1000,6 +1059,7 @@
                                 {% endfor %}
                             </tbody>
                         </table>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endif %}
@@ -1018,8 +1078,8 @@
                     <td></td>
                     <td></td>
                     <td class="pd-opt"></td>
-                    <td class="pd-num">{{ money(ccost) }}</td>
-                    <td class="pd-num">{{ money(cproc) }}</td>
+                    <td class="pd-num">{% if cost_totals %}{{ money(ccost) }}{% else %}—{% endif %}</td>
+                    <td class="pd-num">{% if cost_totals %}{{ money(cproc) }}{% else %}—{% endif %}</td>
                     <td class="pd-num {{ 'text-positive' if cpnl >= 0 else 'text-negative' }}">
                         {{ money(cpnl) }}
                     </td>
@@ -1037,8 +1097,8 @@
                     <td></td>
                     <td></td>
                     <td class="pd-opt"></td>
-                    <td class="pd-num">{{ money(gcost) }}</td>
-                    <td class="pd-num">{{ money(gval) }}</td>
+                    <td class="pd-num">{% if cost_totals %}{{ money(gcost) }}{% else %}—{% endif %}</td>
+                    <td class="pd-num">{% if cost_totals %}{{ money(gval) }}{% else %}—{% endif %}</td>
                     <td class="pd-num {{ 'text-positive' if gpnl >= 0 else 'text-negative' }}">
                         {{ money(gpnl) }}
                     </td>
@@ -1078,7 +1138,13 @@
         , from <strong>{{ kpis.first_trade|human_date }}</strong> through <strong>{{ kpis.last_trade|human_date }}</strong>
         {%- endif -%}
         {%- endif -%}
-        {%- if kpis.total_trades > 0 -%}
+        {%- if legs_activity is defined and legs_activity and legs_activity.spreads and legs_activity.fills -%}
+        : <strong>{{ legs_activity.fills }}</strong> fill{{ 's' if legs_activity.fills != 1 else '' }}
+        across <strong>{{ legs_activity.contracts }}</strong> contract{{ 's' if legs_activity.contracts != 1 else '' }}
+        in <strong>{{ legs_activity.spreads }}</strong> spread{{ 's' if legs_activity.spreads != 1 else '' }}
+        {% if legs_activity.partial %}. Some contracts filled in more than one order{% endif %}
+        {% if kpis.num_winners + kpis.num_losers > 0 %}. <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed spreads{% endif %}.
+        {%- elif kpis.total_trades > 0 -%}
         : <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}
         {% if kpis.num_winners + kpis.num_losers > 0 %}
         (closed legs: <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong>)
@@ -1096,7 +1162,11 @@
         (roughly <strong>{{ kpis.first_trade|human_date }}</strong> — <strong>{{ kpis.last_trade|human_date }}</strong>)
         {%- endif -%}
         {%- endif %}
-        {% if kpis.total_trades > 0 -%}
+        {% if legs_activity is defined and legs_activity and legs_activity.spreads and legs_activity.fills -%}
+        with <strong>{{ legs_activity.fills }}</strong> fill{{ 's' if legs_activity.fills != 1 else '' }}
+        across <strong>{{ legs_activity.contracts }}</strong> contract{{ 's' if legs_activity.contracts != 1 else '' }}
+        in <strong>{{ legs_activity.spreads }}</strong> spread{{ 's' if legs_activity.spreads != 1 else '' }}{% if legs_activity.partial %}. Some contracts filled in more than one order{% endif %}{% if kpis.num_winners + kpis.num_losers > 0 %}. <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed spreads{% endif %}.
+        {% elif kpis.total_trades > 0 -%}
         with <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}{% if kpis.num_winners + kpis.num_losers > 0 %} and <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed legs{% endif %}.
         {%- else -%}.
         {%- endif %}
@@ -1564,7 +1634,7 @@
     {% for r in strategy_rows %}
     <details class="pd-row">
         <summary>
-            <span class="badge badge-strategy">{{ r.strategy }}</span>
+            <span class="badge badge-strategy"{% if r.structure_name %} title="{{ r.structure_name }}. On Strategies this is {{ r.strategy }}."{% endif %}>{{ r.structure_name or r.strategy }}</span>
             {% if strategy_rows|length > 1 %}
             <span class="text-muted small">{{ (r.account_display or r.account) | account_label(r.tenant_id) }}</span>
             {% endif %}

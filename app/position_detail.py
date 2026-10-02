@@ -37,7 +37,13 @@ from app.tenant_scope import (
     filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
     tenant_sql_and as _tenant_sql_and,
 )
-from app.outcome_units import closing_without_an_open, net_collected
+from app.outcome_units import (
+    annotate_strategy_structures,
+    closing_without_an_open,
+    group_vertical_spreads,
+    legs_activity_summary,
+    net_collected,
+)
 from app.pnl_charts import (
     CHART_DATA_ALL_QUERY,
     CHART_DATA_QUERY,
@@ -3081,6 +3087,9 @@ def position_detail(symbol):
             "type": "option",
             "tenant_id": leg.get("tenant_id"),
             "account": str(leg.get("account") or "").strip(),
+            "premium_received": leg.get("premium_received"),
+            "premium_paid": leg.get("premium_paid"),
+            "option_expiry": str(leg.get("option_expiry") or "")[:10],
         })
     for leg in closed_equity_list:
         eq_proceeds = float(leg.get("sell_proceeds") or 0)
@@ -3451,6 +3460,13 @@ def position_detail(symbol):
         app.logger.warning("held-to-expiry chart build failed for %s: %s", symbol, exc)
         held_charts = []
     held_summary = held_page_summary(held_charts)
+    # Verticals are one row: net credit, width, and one win/loss. The long
+    # protective leg stays inside the expand, not as its own red loss.
+    trade_outcomes = group_vertical_spreads(trade_outcomes)
+    annotate_strategy_structures(strategy_rows, trade_outcomes)
+    legs_activity = legs_activity_summary(
+        trade_outcomes, (kpis or {}).get("total_trades"),
+    )
 
     # ── Story mode: narrative timeline + chart event markers ─────────
     # Built from the ALREADY tenant- and leg-filtered trades_df; dividends
@@ -3626,6 +3642,7 @@ def position_detail(symbol):
         trades=trades,
         history_before_open=history_before_open,
         trade_outcomes=trade_outcomes,
+        legs_activity=legs_activity,
         current_positions=current_positions,
         option_matrices=option_matrices,
         sessions=sessions_list,
