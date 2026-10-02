@@ -61,6 +61,41 @@ def test_practice_portal_is_alpaca_paper_trade_only():
     assert "reconnect" not in kwargs
 
 
+def test_option_quote_logs_snaptrade_status_and_code(monkeypatch, caplog):
+    import io
+    import json
+    import logging
+    import urllib.error
+    import urllib.request
+
+    from app import snaptrade as snap
+
+    monkeypatch.setattr(snap, "get_snaptrade_user", lambda user_id: {
+        "snaptrade_user_id": "su", "snaptrade_secret": "ss",
+    })
+    monkeypatch.setattr(snap, "_snaptrade_config", lambda: ("cid", "ckey", "redir"))
+    body = json.dumps({"code": 1087, "detail": "too many requests"}).encode()
+    err = urllib.error.HTTPError(
+        "https://api.snaptrade.com/accounts/acct/quotes/options",
+        429, "Too Many Requests", hdrs=None, fp=io.BytesIO(body),
+    )
+
+    def _urlopen(req, timeout=20):
+        raise err
+
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    with caplog.at_level(logging.WARNING, logger="app.snaptrade"):
+        try:
+            snap.quote_option_premium(1, "acct-1", "SPY   261002C00763000")
+        except RuntimeError as exc:
+            assert "429" in str(exc)
+        else:
+            raise AssertionError("quote should raise")
+    assert "status=429" in caplog.text
+    assert "code=1087" in caplog.text
+    assert "acct-1" in caplog.text
+
+
 def test_option_quote_encodes_occ_spaces_as_plus():
     # SnapTrade rejects a signature that encodes those spaces as %20.
     path = option_quote_request_path(
@@ -234,16 +269,76 @@ def test_closed_market_prices_weekly_and_multi_week_from_the_last_trade(monkeypa
             assert ticket["price_note"] == "This limit is the last price at close."
 
 
-def test_open_session_review_still_requires_a_live_quote():
-    from app.paper_practice import quote_from_chain_row, review_limit
+def test_open_session_review_falls_back_to_the_live_chain():
+    """A missing per-contract quote uses the chain bid/ask and says so.
 
-    quote = quote_from_chain_row(1.10, 1.20, last=1.15, previous=1.00)
+    The live SnapTrade quote still wins the label: when it is present the
+    ticket does not call the limit a fallback.
+    """
+    from app.paper_practice import quote_from_chain_row, review_limit, trade_views
+
+    quote = quote_from_chain_row(6.22, 6.23, last=6.20, previous=6.00)
     limit, note, err = review_limit(None, quote, "SPY", session_open=True)
+    assert err is None
+    assert limit == "6.23"
+    assert note == "live bid/ask"
+    views = trade_views(
+        "SPY", "call", 763, "above", date(2026, 10, 2),
+        "$6.23", "$623.00", "SPY   261002C00763000", False,
+        price_note=note,
+    )
+    assert views["beginner"]["rows"][0]["label"] == "Live bid/ask"
+    # Bid and ask both missing still asks the learner to pick again.
+    empty = quote_from_chain_row(0, 0, last=1.15, previous=1.00)
+    limit, note, err = review_limit(None, empty, "SPY", session_open=True)
     assert limit is None and note is None
     assert "Pick it again in a moment" in err
-    limit, note, err = review_limit(1.16, quote, "SPY", session_open=True)
+    # A live quote keeps the chain mid and does not wear the fallback label.
+    priced = quote_from_chain_row(1.10, 1.20, last=1.15, previous=1.00)
+    limit, note, err = review_limit(1.16, priced, "SPY", session_open=True)
     assert err is None and note is None
     assert limit == "1.15"
+
+
+def test_open_session_ticket_uses_the_chain_when_the_quote_fails(monkeypatch):
+    from types import SimpleNamespace
+
+    from app import app
+    from app import paper_practice as practice
+
+    monkeypatch.setattr(practice, "regular_session_open", lambda now=None: True)
+    monkeypatch.setattr(practice, "_chain_from_cache", lambda *_a, **_k: None)
+    monkeypatch.setattr(practice, "current_user", SimpleNamespace(id=1))
+
+    def _fail(*_a, **_k):
+        raise RuntimeError("option quote 429: {\"code\": 1087}")
+
+    monkeypatch.setattr(practice, "quote_option_premium", _fail)
+
+    def fake_chain(_symbol, _expiry, strikes):
+        return [
+            {
+                "strike": strike,
+                "call": practice.quote_from_chain_row(6.22, 6.23),
+                "put": practice.quote_from_chain_row(4.10, 4.12),
+            }
+            for strike in strikes
+        ]
+
+    monkeypatch.setattr(practice, "load_option_chain", fake_chain)
+    account = {"snaptrade_account_id": "learner-acct"}
+    with app.test_request_context("/practice"):
+        for tenor in ("soon", "weekly", "multi"):
+            ticket, err = practice._build_ticket(
+                {"symbol": "SPY", "side": "call", "tenor": tenor, "distance": "at"},
+                {"SPY": 763.0},
+                account,
+                today=date(2026, 10, 2),
+            )
+            assert err is None, (tenor, err)
+            assert ticket["limit_price"] == "6.23"
+            assert ticket["price_note"] == "Based on the live bid/ask."
+            assert ticket["views"]["beginner"]["rows"][0]["label"] == "Live bid/ask"
 
 
 def test_limit_matches_the_quoted_premium_in_cents():

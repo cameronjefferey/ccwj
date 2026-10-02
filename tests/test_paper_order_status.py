@@ -243,9 +243,11 @@ def test_status_poll_is_cached_and_rate_limit_is_friendly(monkeypatch):
         if len(calls) > 1:
             raise RuntimeError("429 Too Many Requests")
         return [{
-            "brokerage_order_id": "ord-1",
+            "brokerage_order_id": "ae608d51-1111-2222-3333-444444444444",
             "status": "ACCEPTED",
             "option_symbol": {"underlying_symbol": "SPY"},
+            "total_quantity": "1.000000000000000000",
+            "limit_price": "6.23",
         }]
 
     monkeypatch.setattr("app.paper_practice.regular_session_open", lambda now=None: True)
@@ -260,7 +262,12 @@ def test_status_poll_is_cached_and_rate_limit_is_friendly(monkeypatch):
     assert len(calls) == 1
     body = first.get_json()
     assert body["orders"][0]["status_label"] == "Accepted"
-    assert body["poll_after_ms"] == 3000
+    assert body["orders"][0]["quantity_label"] == "1 contract"
+    assert body["orders"][0]["limit_label"] == "$6.23"
+    assert body["orders"][0]["detail"] == "1 contract · Limit $6.23"
+    assert body["poll_after_ms"] == 15000
+    from app.paper_practice import _STATUS_CACHE_SECONDS
+    assert _STATUS_CACHE_SECONDS >= 15
     assert "snaptrade_account_id" not in body["orders"][0]
     assert second.get_json()["orders"][0]["status"] == "open"
 
@@ -353,6 +360,7 @@ def test_open_orders_panel_and_poll_script(monkeypatch):
             "symbol": "SPY",
             "link_symbol": "SPY",
             "sentence": "You are buying a call on SPY.",
+            "detail": "1 contract · Limit $6.23",
             "cancelable": True,
         }],
     )
@@ -363,14 +371,19 @@ def test_open_orders_panel_and_poll_script(monkeypatch):
     html = client.get("/practice").get_data(as_text=True)
     assert "Open orders" in html
     assert "Accepted" in html
+    assert "1 contract" in html
+    assert "Limit $6.23" in html
     assert ">Cancel<" in html
     assert "/practice/orders/status" in html
     assert "paper-orders.js" in html
     script = open("app/static/js/paper-orders.js", encoding="utf-8").read()
-    assert "return 3000" in script
+    assert "return 3000;" not in script
     assert "return 15000" in script
     assert "return 30000" in script
     assert "8 * 60 * 1000" in script
+    assert "visibilityState" in script
+    assert 'data-order-status="open"' in script
+    assert "if (hasOpen()) schedule(15000)" in script
 
 
 def test_paper_fill_notice_skips_symbols_already_listed(monkeypatch):

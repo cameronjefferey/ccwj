@@ -117,6 +117,26 @@ def test_list_includes_open_cancelled_filled_and_rejected():
     assert shown[1]["cancelable"] is False
 
 
+def test_accepted_option_shows_quantity_and_limit_from_the_leg():
+    """A multi-leg order keeps the contract count on the leg, not the parent."""
+    shown = normalize_broker_order({
+        "brokerage_order_id": "ae608d51-aaaa-bbbb-cccc-ddddeeeeffff",
+        "status": "ACCEPTED",
+        "limit_price": "6.22",
+        "option_symbol": {"underlying_symbol": "SPY"},
+        "legs": [{
+            "total_quantity": "1",
+            "instrument": {"instrument_type": "OPTION", "symbol": "SPY   261002C00763000"},
+        }],
+    })
+    assert shown["status"] == "open"
+    assert shown["symbol"] == "SPY"
+    assert shown["sentence"] == ""
+    assert shown["quantity_label"] == "1 contract"
+    assert shown["limit_label"] == "$6.22"
+    assert shown["detail"] == "1 contract · Limit $6.22"
+
+
 def test_older_feed_failure_keeps_the_recent_open_order():
     client, _state = _client([_OPEN], [], fail_older=True)
     with patch("app.snaptrade.get_snaptrade_user", return_value=_SNAP), \

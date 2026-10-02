@@ -1377,6 +1377,7 @@ def quote_option_premium(user_id, account_id, occ_symbol):
         _log.warning("snaptrade_client not installed; pip install snaptrade-python-sdk")
         return None
     signature = compute_request_signature(resource, consumer_key, None)
+    import json
     import urllib.error
     import urllib.request
     req = urllib.request.Request(
@@ -1388,22 +1389,61 @@ def quote_option_premium(user_id, account_id, occ_symbol):
             payload = resp.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300]
+        code = _option_quote_error_code(detail)
+        _log.warning(
+            "SnapTrade option quote failed account=%s occ=%s status=%s code=%s body=%s",
+            account_id, occ_symbol, exc.code, code, detail,
+        )
         raise RuntimeError(f"option quote {exc.code}: {detail}") from None
-    import json
+    except urllib.error.URLError as exc:
+        _log.warning(
+            "SnapTrade option quote failed account=%s occ=%s status=none code=none error=%s",
+            account_id, occ_symbol, exc.reason,
+        )
+        raise
     body = json.loads(payload)
     if isinstance(body, list):
         body = body[0] if body else {}
     body = _mapping(body)
     raw = body.get("synthetic_price")
     if raw is None:
+        _log.warning(
+            "SnapTrade option quote empty account=%s occ=%s status=200 code=none keys=%s",
+            account_id, occ_symbol, sorted(body) if isinstance(body, dict) else "",
+        )
         return None
     try:
         price = float(raw)
     except (TypeError, ValueError):
+        _log.warning(
+            "SnapTrade option quote empty account=%s occ=%s status=200 code=none keys=%s",
+            account_id, occ_symbol, sorted(body) if isinstance(body, dict) else "",
+        )
         return None
     if price <= 0:
+        _log.warning(
+            "SnapTrade option quote empty account=%s occ=%s status=200 code=none keys=%s",
+            account_id, occ_symbol, sorted(body) if isinstance(body, dict) else "",
+        )
         return None
     return price
+
+
+def _option_quote_error_code(detail: str):
+    """SnapTrade's error code from a quote response body, when it sent one."""
+    import json
+    try:
+        parsed = json.loads(detail)
+    except Exception:
+        return None
+    if isinstance(parsed, list) and parsed:
+        parsed = parsed[0]
+    if not isinstance(parsed, dict):
+        return None
+    for key in ("code", "error_code", "status_code"):
+        if parsed.get(key) not in (None, ""):
+            return parsed.get(key)
+    return None
 
 
 def single_leg_buy_to_open(occ_symbol, limit_price):

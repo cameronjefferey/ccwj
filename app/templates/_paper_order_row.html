@@ -2,6 +2,9 @@
     <div>
         <div class="pp-status is-{{ order.status }} pp-live-status">{{ order.status_label }}</div>
         <div class="pp-order-text">{{ order.sentence or order.symbol or "Paper order" }}</div>
+        {% if order.detail %}
+        <div class="pp-order-meta">{{ order.detail }}</div>
+        {% endif %}
     </div>
     <div class="d-flex flex-wrap gap-2">
         {% if order.link_symbol or order.symbol %}
