@@ -35,5 +35,7 @@
     This order was sent to the paper account.
     {% endif %}
     {% if sent.status_label %} Status: <span class="pp-live-status">{{ sent.status_label }}</span>.{% endif %}
+    {% if sent.status not in ('rejected', 'cancelled', 'expired') %}
     The position page shows it before the fill syncs.
+    {% endif %}
 </p>

@@ -74,6 +74,28 @@ def sanitize(payload):
     return {"updated": updated, "last": last, "done": done, "replays": replays}
 
 
+def _resume_spot(preferred, other):
+    """Keep a saved spot when the newer copy is the same episode at 0:00.
+
+    Opening a lesson stamps t=0 before the player seeks. That page open
+    is not a rewind, and it must not erase the spot already saved.
+    """
+    if not isinstance(preferred, dict):
+        return other if isinstance(other, dict) else None
+    if not isinstance(other, dict) or preferred.get("slug") != other.get("slug"):
+        return preferred
+    try:
+        preferred_t = int(preferred.get("t") or 0)
+        other_t = int(other.get("t") or 0)
+    except (TypeError, ValueError):
+        return preferred
+    if preferred_t == 0 and other_t > 0:
+        kept = dict(preferred)
+        kept["t"] = other_t
+        return kept
+    return preferred
+
+
 def merge(left, right):
     """Union of finished episodes. The newer timestamp wins the resume point."""
     done = []
@@ -86,7 +108,10 @@ def merge(left, right):
             replays.append(slug)
     left_updated = left.get("updated") or 0
     right_updated = right.get("updated") or 0
-    last = left.get("last") if left_updated >= right_updated else right.get("last")
+    if left_updated >= right_updated:
+        last = _resume_spot(left.get("last"), right.get("last"))
+    else:
+        last = _resume_spot(right.get("last"), left.get("last"))
     if last is None:
         last = left.get("last") or right.get("last")
     return {

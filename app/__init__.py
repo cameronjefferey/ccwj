@@ -40,12 +40,27 @@ def _scrub_sentry_event(event, hint):
     return event
 
 
+def _sentry_traces_sample_rate() -> float:
+    # 100% tracing on every ad click adds latency and burns the Sentry quota.
+    # Set SENTRY_TRACES_SAMPLE_RATE=1 to trace everything.
+    raw = (os.environ.get("SENTRY_TRACES_SAMPLE_RATE") or "0.1").strip()
+    try:
+        rate = float(raw)
+    except ValueError:
+        rate = 1.0
+    if rate < 0:
+        return 0.0
+    if rate > 1:
+        return 1.0
+    return rate
+
+
 if _sentry_dsn:
     sentry_sdk.init(
         dsn=_sentry_dsn,
         integrations=[FlaskIntegration()],
         send_default_pii=False,
-        traces_sample_rate=1.0,
+        traces_sample_rate=_sentry_traces_sample_rate(),
         before_send=_scrub_sentry_event,
     )
 
@@ -617,6 +632,14 @@ def too_many_requests(e):
             429,
         )
 
+    if request.path == "/demo/start":
+        from app.demo_guard import IP_SESSION_CAP, limited_page
+
+        return limited_page(
+            f"This network has started {IP_SESSION_CAP} demos today. "
+            "Create an account to keep going on your own data."
+        )
+
     try:
         return render_template("429.html", title="Slow down"), 429
     except Exception:
@@ -778,6 +801,11 @@ def _after_request_usage_event(response):
         record_page_view(response)
     except Exception:
         pass
+    try:
+        from app.funnel import observe_response
+        observe_response(response)
+    except Exception:
+        pass
     return response
 
 
@@ -899,6 +927,7 @@ if os.environ.get("HAPPYTRADER_SKIP_DB_INIT") != "1":
 
 from app import routes
 from app import marketing  # noqa: F401  registers marketing/static/health routes
+from app import go_landings  # noqa: F401  registers /go/<slug> ad landings
 from app import learn  # noqa: F401  registers /learn
 from app import position_detail  # noqa: F401  registers /position/<symbol> + tag routes
 from app import positions_page  # noqa: F401  registers /positions (also imported by routes facade)
@@ -925,6 +954,8 @@ from app import billing  # noqa: F401  registers /billing/* + /webhooks/stripe
 from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuild-triggered flush + warm)
 from app.privacy import register_privacy_routes
 register_privacy_routes(app)
+from app.funnel import register as register_funnel
+register_funnel(app)
 from app import share_card  # noqa: F401  registers /share/card.png
 
 # After the session-idle before_request so a timed-out session is logged

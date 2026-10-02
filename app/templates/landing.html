@@ -627,7 +627,7 @@
 {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial, no credit card{%- endif -%}
 {% endmacro %}
 
-{% macro video_frame(v, wide=false) %}
+{% macro video_frame(v, wide=false, eager=false) %}
 <div class="ht-frame {% if wide %}ht-frame-wide{% else %}ht-frame-short{% endif %}">
     <button type="button" class="ht-facade"
             data-youtube-id="{{ v.youtube_id }}"
@@ -637,7 +637,8 @@
         {% if v.poster_url %}
         <img class="ht-poster" src="{{ v.poster_url }}"
              {% if v.poster_srcset %}srcset="{{ v.poster_srcset }}" sizes="{{ v.poster_sizes }}"{% endif %}
-             alt="">
+             alt="" width="1280" height="720" decoding="async"
+             {% if eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
         {% else %}
         <span class="ht-art ht-art-{{ v.step }}" aria-hidden="true"></span>
         {% endif %}
@@ -669,19 +670,19 @@
             <h1>Watch the trading mirror</h1>
             <p class="lead">{{ hero_video.caption }}</p>
             <div class="ht-stage">
-                {{ video_frame(hero_video, wide=true) }}
+                {{ video_frame(hero_video, wide=true, eager=true) }}
             </div>
             <div class="ht-hero-cta">
                 {% if signup_enabled %}
-                <a class="ht-hero-primary" href="{{ url_for('signup') }}">
+                <a class="ht-hero-primary" href="{{ url_for('signup') }}" data-ht-cta="start-trial">
                     {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial{%- endif -%}
                 </a>
                 {% if not signup_invite_required %}
                 <p class="ht-hero-sub">No credit card</p>
                 {% endif %}
                 {% endif %}
-                <a class="ht-hero-secondary" href="{{ url_for('demo_start') }}">Try the live demo</a>
-                <a class="ht-hero-secondary" href="{{ url_for('learn_index') }}">New to options? Start learning free</a>
+                <a class="ht-hero-secondary" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Try the live demo</a>
+                <a class="ht-hero-secondary" href="{{ url_for('learn_index') }}" data-ht-cta="start-learning">New to options? Start learning free</a>
                 <p class="ht-hero-signin"><a href="{{ url_for('login') }}">Sign in</a></p>
                 {% if signup_invite_required %}
                 <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
@@ -711,7 +712,7 @@
                 <li>
                     <div class="ht-proof-k">Demo</div>
                     <strong>Paper account</strong>
-                    <p>A live mirror of a trading bot. Simulated money, real market data.</p>
+                    <p>A paper account. Simulated money, real market data.</p>
                 </li>
             </ul>
             <p class="ht-fine">
@@ -766,7 +767,7 @@
         <div class="ht-wrap">
             <div class="ht-kicker">Live demo</div>
             <h2 class="ht-section-title">A mirror of a paper account</h2>
-            <p class="ht-section-lead">The live demo is a mirror of a trading bot's paper account. Simulated money, real market data, including the losing trades. The pages are the same ones a connected brokerage opens.</p>
+            <p class="ht-section-lead">The live demo is a paper account. Simulated money, real market data, including the losing trades. The pages are the same ones a connected brokerage opens.</p>
             <a class="ht-demo-btn" href="{{ url_for('demo_start') }}">See the live demo</a>
         </div>
     </section>
@@ -805,9 +806,9 @@
     <section class="ht-band ht-band-shot-b ht-section" aria-label="If held to expiration">
         <div class="ht-wrap ht-split media-end">
             <figure class="ht-media ht-shot">
-                <img src="{{ url_for('static', filename='marketing/msft-if-held.png') }}"
+                <img src="{{ url_for('static', filename='marketing/msft-if-held.webp') }}"
                      alt="If held to expiration summary for MSFT in the demo account."
-                     width="1400" height="315" loading="lazy">
+                     width="1400" height="315" loading="lazy" decoding="async">
                 <figcaption>Demo account</figcaption>
             </figure>
             <div class="ht-copy">
@@ -893,9 +894,9 @@
     <section class="ht-band ht-band-shot-a ht-section" aria-label="Which strategies actually work">
         <div class="ht-wrap ht-split media-end">
             <figure class="ht-media ht-shot">
-                <img src="{{ url_for('static', filename='marketing/strategies.png') }}"
+                <img src="{{ url_for('static', filename='marketing/strategies.webp') }}"
                      alt="Strategy cards from the demo account, with return, win rate, and a six-month strip."
-                     width="1400" height="748" loading="lazy">
+                     width="1400" height="748" loading="lazy" decoding="async">
                 <figcaption>Demo account</figcaption>
             </figure>
             <div class="ht-copy">
@@ -923,9 +924,9 @@
     <section class="ht-band ht-band-shot-b ht-section" aria-label="Where your edge is">
         <div class="ht-wrap ht-split media-end">
             <figure class="ht-media ht-shot">
-                <img src="{{ url_for('static', filename='marketing/fit-matrix.png') }}"
+                <img src="{{ url_for('static', filename='marketing/fit-matrix.webp') }}"
                      alt="Strategy fit matrix from the demo account, return by strategy and sector."
-                     width="1400" height="641" loading="lazy">
+                     width="1400" height="641" loading="lazy" decoding="async">
                 <figcaption>Demo account</figcaption>
             </figure>
             <div class="ht-copy">
@@ -962,7 +963,7 @@
         <div class="ht-wrap">
             <p class="ht-cta-kicker">30 days · no card</p>
             {% if signup_enabled %}
-            <a class="ht-cta" href="{{ url_for('signup') }}">{{ trial_label() }}</a>
+            <a class="ht-cta" href="{{ url_for('signup') }}" data-ht-cta="start-trial">{{ trial_label() }}</a>
             {% else %}
             <a class="ht-cta" href="{{ url_for('login') }}">Sign in</a>
             {% endif %}

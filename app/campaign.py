@@ -16,7 +16,7 @@ import logging
 import re
 import uuid
 
-from flask import current_app, g, request, session
+from flask import current_app, request, session
 
 _log = logging.getLogger(__name__)
 
@@ -24,7 +24,6 @@ COOKIE = "ht_acq"
 COOKIE_DAYS = 30
 _VISIT_RE = re.compile(r"^[a-f0-9]{32}$")
 _UTM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
-_PIXEL_RE = re.compile(r"^[A-Za-z0-9_\-]{4,80}$")
 _UTM_FIELDS = ("utm_source", "utm_campaign", "utm_content")
 CLICK_EVENTS = {
     "signup": "signup_click",
@@ -34,8 +33,8 @@ CLICK_EVENTS = {
 CTA_PLACES = {
     "hero": {
         "where": "Hero",
-        "primary": "See your trades",
-        "demo": "Look at the demo",
+        "primary": "Start learning free",
+        "demo": "Try the live demo",
     },
     "trades": {
         "where": "The trades",
@@ -215,7 +214,10 @@ def stamp_signup(user_id) -> None:
     click was not theirs. Direct signups from the homepage have no cookie
     and are not written onto the user.
     """
-    session["ht_reddit_signup"] = True
+    # A funnel event id already stored here is the pixel/CAPI dedup key.
+    # Do not replace it with a bare flag.
+    if not isinstance(session.get("ht_reddit_signup"), str):
+        session["ht_reddit_signup"] = True
     attr = decode_cookie(request.cookies.get(COOKIE))
     if not attr or not user_id:
         return
@@ -224,9 +226,9 @@ def stamp_signup(user_id) -> None:
         execute(
             """
             UPDATE users
-               SET acquisition_source = %s,
-                   acquisition_campaign = %s,
-                   acquisition_content = %s
+               SET acquisition_source = COALESCE(acquisition_source, %s),
+                   acquisition_campaign = COALESCE(acquisition_campaign, %s),
+                   acquisition_content = COALESCE(acquisition_content, %s)
              WHERE id = %s
             """,
             (
@@ -242,19 +244,35 @@ def stamp_signup(user_id) -> None:
 
 
 def reddit_pixel_context() -> dict:
-    pixel = (current_app.config.get("REDDIT_PIXEL_ID") or "").strip()
-    pending_signup = bool(session.pop("ht_reddit_signup", None))
-    if not _PIXEL_RE.match(pixel):
-        return {"reddit_pixel_id": "", "reddit_pixel_event": ""}
-    if pending_signup:
-        event = "SignUp"
-    elif getattr(g, "campaign_pixel_event", None) == "PageVisit":
-        event = "PageVisit"
+    """Browser pixel payload. Empty when REDDIT_PIXEL_ID is unset or the
+    browser sent Do Not Track / Global Privacy Control.
+
+    ``reddit_pixel_event`` stays the single legacy name (SignUp wins over
+    PageVisit). ``reddit_pixel_events`` is the full list, each with the
+    conversion id the Conversions API already used.
+    """
+    from app.funnel import _pixel_id, reddit_pixel_events
+
+    events = reddit_pixel_events()
+    pixel = _pixel_id()
+    if not pixel or not events:
+        return {
+            "reddit_pixel_id": "",
+            "reddit_pixel_event": "",
+            "reddit_pixel_events": [],
+        }
+    names = [ev["name"] for ev in events]
+    if "SignUp" in names:
+        primary = "SignUp"
+    elif "PageVisit" in names:
+        primary = "PageVisit"
     else:
-        event = ""
-    if not event:
-        return {"reddit_pixel_id": "", "reddit_pixel_event": ""}
-    return {"reddit_pixel_id": pixel, "reddit_pixel_event": event}
+        primary = names[0]
+    return {
+        "reddit_pixel_id": pixel,
+        "reddit_pixel_event": primary,
+        "reddit_pixel_events": events,
+    }
 
 
 def summarize_funnel(events, connected_user_ids) -> list[dict]:

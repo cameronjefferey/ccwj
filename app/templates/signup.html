@@ -3,7 +3,15 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Sign Up - HappyTrader</title>
+    <meta name="description" content="Create a HappyTrader account. Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.">
+    <meta property="og:title" content="Sign Up - HappyTrader">
+    <meta property="og:description" content="Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.">
+    <meta property="og:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Sign Up - HappyTrader">
+    <meta name="twitter:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
     <link rel="icon" href="{{ url_for('favicon') }}" sizes="32x32">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -17,8 +25,8 @@
         <div class="login-header">
             <h1 class="ht-wordmark"><a class="ht-wordmark-link" href="{{ url_for('index') }}">happy<span style="color:#5b8cff">trader</span></a></h1>
             <p>Create your account</p>
-            <p class="auth-trial">30-day free trial, no credit card.</p>
             <p class="auth-trial">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
+            <p class="auth-trial">No credit card.</p>
         </div>
         <div class="login-body">
             {% with messages = get_flashed_messages(with_categories=true) %}
@@ -34,6 +42,9 @@
 
             <form id="signupForm" method="POST" action="{{ url_for('signup') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if form_route == 'learn' %}
+                <input type="hidden" name="route" value="learn">
+                {% endif %}
                 {% if invite_required %}
                 <div class="mb-3">
                     <label for="invite_code" class="form-label fw-semibold small">Invite Code</label>
@@ -82,7 +93,7 @@
                         </button>
                     </div>
                 </div>
-                <button type="submit" id="signupSubmit" class="btn btn-login w-100 d-flex align-items-center justify-content-center" aria-busy="false">
+                <button type="submit" id="signupSubmit" class="btn btn-login w-100 d-flex align-items-center justify-content-center" aria-busy="false" data-ht-cta="create-account">
                     <span class="signup-btn-label">Create Account</span>
                     <span class="signup-btn-progress d-none align-items-center gap-2" aria-hidden="true" style="min-height: 1.5rem">
                         <span class="spinner-border spinner-border-sm" role="status" aria-label="Loading"></span>
@@ -100,7 +111,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     (function () {
         document.querySelectorAll("[data-password-toggle]").forEach(function (btn) {
@@ -137,5 +148,6 @@
         });
     })();
     </script>
+    <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
 </body>
 </html>

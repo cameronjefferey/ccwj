@@ -230,11 +230,11 @@
                     {% endif %}
                 {% else %}
                     {% if signup_enabled %}
-                    <a href="{{ url_for('signup') }}" class="btn btn-outline-secondary mb-2">
+                    <a href="{{ url_for('signup') }}" class="btn btn-outline-secondary mb-2" data-ht-cta="start-trial">
                         {% if signup_invite_required %}Sign Up (invite required){% else %}Start your 30 days{% endif %}
                     </a>
                     {% endif %}
-                    <a href="{{ url_for('demo_start') }}" class="btn btn-outline-secondary">Try Demo first</a>
+                    <a href="{{ url_for('demo_start') }}" class="btn btn-outline-secondary" data-ht-cta="try-demo">Try Demo first</a>
                 {% endif %}
                 <p class="pricing-footnote">{{ trial_card.note if trial_card else "Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage." }}</p>
             </div>

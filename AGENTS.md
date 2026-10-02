@@ -543,8 +543,7 @@ on load), then a hero CTA block (solid `#5b8cff` button "Start your
 30-day free trial", subline "No credit card", outline button "Try the
 live demo", and a small Sign in link), a tight qualitative proof strip,
 How it works (connect read-only, strategies detected, see what's working),
-then the live demo as its own band — a mirror of a trading bot's paper
-account. Shorts are themed bands
+then the live demo as its own band — a paper account. Shorts are themed bands
 with one or two phones beside the copy (which strategies work, every
 position's story, if held, covered-call income, the fit matrix), not one
 sideways row. Just before that, "Here's what you'd catch with HappyTrader"
@@ -571,8 +570,10 @@ There is no separate dashboard page — Overview is the authenticated home.
 **Status: Working. Public Options 101 series. No login.**
 
 Logged-out nav and footer link here. Logged-in users can open the same pages.
-The trial CTA at the bottom is for logged-out visitors. A signed-in page
-replaces it with Practice.
+The signup card at the bottom is for logged-out visitors. The button is
+**Create a free account** (`data-ht-cta="create-account"`). The note is
+“Learning and paper trading are free. Your 30-day trial starts when you
+connect a real brokerage.” A signed-in page replaces it with Practice.
 Copy and video ids live in `app/learn_episodes.json` (loaded by
 `app/learn_catalog.py`). All 10 episodes are published with public YouTube
 ids, in series order (the wheel is episode 7, spreads 8, options risk 9).
@@ -596,7 +597,9 @@ lesson opens a SPY call). Nothing is placed until the learner confirms.
 Signed-in accounts other than the shared demo user also keep that blob
 in `learn_progress` so it follows them after signup (`/learn/progress`,
 GET and POST are limited separately so a save is not crowded out by
-the page load). The resume line seeks the player; the embed `start`
+the page load). Opening a lesson waits for that saved blob before it
+stamps a resume point, and a 0:00 open does not erase a saved spot on
+the same episode. The resume line seeks the player; the embed `start`
 parameter alone does not.
 
 Replays (`/learn/replay/<slug>`, loader `app/learn_replay.py`, YAML in
@@ -626,7 +629,19 @@ fit, close). The cookie is stamped onto `users.acquisition_*` at signup.
 Admin overview shows the funnel, including who actually connected a broker
 or uploaded a CSV, and which button was clicked.
 `REDDIT_PIXEL_ID` adds PageVisit on `/start` and SignUp after signup.
+`REDDIT_CAPI_TOKEN` posts those events to Conversions API v3; the server
+`metadata.conversion_id` is the pixel `conversionId`.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
+
+Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
+(`app/go_landings.py`). Each is noindex, one headline, one screenshot, and
+one primary button. `?v=` swaps an allow-listed headline. The slug and
+variant stick on `ht_touch` and are copied to `funnel_events` and
+`users.acquisition_landing` at signup, beside the UTMs and `rdt_cid`.
+`/go/learn` sends signup to `/learn`. Logged-out public pages also record
+page views, CTA clicks, scroll depth, and public video plays. Ad pixels
+stay off on DNT/GPC; those first-party rows still write. Admin →
+Acquisition is `/admin/analytics`.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. One story: headline, then right now, then the rest behind disclosures.**

@@ -588,6 +588,7 @@ def init_db():
     _migrate_users_ai_addon_columns()
     _migrate_users_app_view_column()
     _migrate_campaign_attribution()
+    _migrate_funnel_events()
     _migrate_insight_messages_table()
     _migrate_account_group_crytpo_typo()
     _migrate_uploads_tenant_id_column()
@@ -851,6 +852,86 @@ def _migrate_campaign_attribution():
         execute("ALTER TABLE campaign_events ADD COLUMN IF NOT EXISTS place TEXT")
     except Exception as exc:
         _log.warning("campaign attribution migration skipped: %s", exc)
+
+
+def _migrate_funnel_events():
+    """Idempotent: first-party funnel plus first-touch / last-touch columns.
+
+    funnel_events has no email, name, or IP. user_id is the internal id
+    and is nullable so a landing view can be logged before signup.
+    """
+    try:
+        for column, typedef in (
+            ("acquisition_medium", "TEXT"),
+            ("acquisition_term", "TEXT"),
+            ("acquisition_click_id", "TEXT"),
+            ("acquisition_referrer", "TEXT"),
+            ("acquisition_lt_source", "TEXT"),
+            ("acquisition_lt_medium", "TEXT"),
+            ("acquisition_lt_campaign", "TEXT"),
+            ("acquisition_lt_content", "TEXT"),
+            ("acquisition_lt_term", "TEXT"),
+            ("acquisition_lt_click_id", "TEXT"),
+            ("acquisition_lt_referrer", "TEXT"),
+            ("acquisition_captured", "BOOLEAN"),
+            ("acquisition_ads_opt_out", "BOOLEAN"),
+            ("acquisition_landing", "TEXT"),
+            ("acquisition_variant", "TEXT"),
+            ("acquisition_lt_landing", "TEXT"),
+            ("acquisition_lt_variant", "TEXT"),
+        ):
+            execute(
+                f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {column} {typedef}"
+            )
+        execute(
+            """
+            CREATE TABLE IF NOT EXISTS funnel_events (
+                id           BIGSERIAL PRIMARY KEY,
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                event        TEXT NOT NULL,
+                event_id     TEXT,
+                visit_id     TEXT,
+                user_id      INTEGER,
+                path         TEXT,
+                referrer     TEXT,
+                utm_source   TEXT,
+                utm_medium   TEXT,
+                utm_campaign TEXT,
+                utm_content  TEXT,
+                utm_term     TEXT,
+                rdt_cid      TEXT
+            )
+            """
+        )
+        execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_funnel_events_created
+            ON funnel_events (created_at DESC)
+            """
+        )
+        execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_funnel_events_event
+            ON funnel_events (event, created_at DESC)
+            """
+        )
+        execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_funnel_events_utm
+            ON funnel_events (utm_source, utm_campaign, created_at DESC)
+            """
+        )
+        for column, typedef in (
+            ("landing", "TEXT"),
+            ("variant", "TEXT"),
+            ("device", "TEXT"),
+            ("detail", "TEXT"),
+        ):
+            execute(
+                f"ALTER TABLE funnel_events ADD COLUMN IF NOT EXISTS {column} {typedef}"
+            )
+    except Exception as exc:
+        _log.warning("funnel events migration skipped: %s", exc)
 
 
 def _migrate_account_group_crytpo_typo():

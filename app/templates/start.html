@@ -2,8 +2,8 @@
 
 {% block meta_tags %}
 <meta name="robots" content="noindex">
-<meta name="description" content="HappyTrader reconstructs the trades behind the broker number. 30 days of the full product, no credit card. Read-only.">
-<meta property="og:description" content="Your broker shows the number. HappyTrader shows the trades behind it. 30 days, no card.">
+<meta name="description" content="Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. No credit card. Read-only.">
+<meta property="og:description" content="Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.">
 {% endblock %}
 
 {% block head %}
@@ -480,9 +480,9 @@
 <div class="{% if tone == 'card' %}start-cta{% endif %}">
     <div class="start-actions">
         {% if signup_enabled %}
-        <a class="start-btn start-btn-primary" href="{{ url_for('campaign_go', dest='signup', place=place, **utm_query) }}">{{ spec.primary }}</a>
+        <a class="start-btn start-btn-primary" data-ht-cta="signup-{{ place }}" href="{{ url_for('campaign_go', dest='signup', place=place, **utm_query) }}">{{ spec.primary }}</a>
         {% endif %}
-        <a class="start-btn start-btn-ghost" href="{{ url_for('campaign_go', dest='demo', place=place, **utm_query) }}">{{ spec.demo }}</a>
+        <a class="start-btn start-btn-ghost" data-ht-cta="demo-{{ place }}" href="{{ url_for('campaign_go', dest='demo', place=place, **utm_query) }}">{{ spec.demo }}</a>
     </div>
     {% if note %}<p class="start-cta-note">30 days. No card.</p>{% endif %}
 </div>
@@ -493,7 +493,8 @@
         <h1>Your broker shows the number. This shows the trades behind it.</h1>
         <p class="start-lead">First the trades behind one number. Then one name, every day. Then those trades, written out. Then your profile across every symbol.</p>
         {{ campaign_cta('hero', tone='inverse', note=false) }}
-        <p class="start-fine">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. No credit card.</p>
+        <p class="start-fine">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
+        <p class="start-fine">No credit card.</p>
         {% if signup_invite_required %}
         <p class="start-fine">Signup is invite-only right now.</p>
         {% endif %}
@@ -525,7 +526,7 @@
                     <p class="who">HappyTrader<span>The trades behind that number</span></p>
                     <ol class="start-steps">
                         <li><span class="step-n">1</span><span>Sold the cash-secured put</span><span class="step-amt up">+$465</span></li>
-                        <li><span class="step-n">2</span><span>Got assigned</span><span class="step-amt shares">100 shares</span></li>
+                        <li><span class="step-n">2</span><span>Got assigned</span><span class="step-amt shares">The shares</span></li>
                         <li><span class="step-n">3</span><span>Wrote calls</span><span class="step-amt up">+$890</span></li>
                         <li><span class="step-n">4</span><span>Rolled one</span><span class="step-amt down">−$70</span></li>
                         <li><span class="step-n">5</span><span>Closed one early</span><span class="step-amt down">−$45</span></li>
@@ -549,7 +550,7 @@
             </div>
             <div class="start-frame">
                 <div class="start-shot">
-                    <img src="{{ url_for('static', filename='campaign/frame-chart.png') }}?v=5" alt="LUNR cumulative P&amp;L from August 2024 through January 2025. Equity and the stock move day by day. Options step up as the calls close. The position finished up $16,246.29.">
+                    <img src="{{ url_for('static', filename='campaign/frame-chart.webp') }}" width="2200" height="1115" loading="lazy" decoding="async" alt="LUNR cumulative P&amp;L from August 2024 through January 2025. Equity and the stock move day by day. Options step up as the calls close. The position finished up $16,246.29.">
                 </div>
             </div>
             <p class="start-insight"><span>What you learn</span>The shares are marked every day they were held. The calls show up when they close. This one finished +$16,246.29.</p>
@@ -586,14 +587,13 @@
                             <div class="story-lane">
                                 <div class="story-lane-label">Shares</div>
                                 <div class="story-card story-card-shares">
-                                    <div class="story-card-title">Started the position: 1,500 shares at $15.36</div>
-                                    <div class="story-card-metricline"><span class="story-metric story-metric-neutral">$23,040</span></div>
+                                    <div class="story-card-title">Started the position at $15.36</div>
                                 </div>
                             </div>
                             <div class="story-lane">
                                 <div class="story-lane-label">Options</div>
                                 <div class="story-card story-card-options">
-                                    <div class="story-card-title">Sold 15 contracts of the $18 covered call (Nov 29) against your shares</div>
+                                    <div class="story-card-title">Sold the $18 covered call (Nov 29) against the shares</div>
                                     <div class="story-card-metricline"><span class="story-metric story-metric-pos">+$425 collected</span></div>
                                 </div>
                             </div>
@@ -652,29 +652,23 @@
             <div class="start-frame">
                 <div class="start-review start-profile">
                     <h2 class="ts-section-title">Profile summary</h2>
-                    <div class="ts-profile-headline">You’re a directional trader first — most of your options work buys options outright.</div>
+                    <p class="start-example">Example, not a result. One position, not the account.</p>
+                    <div class="ts-profile-headline">Income and the shares stay apart, so a covered-call name is not mixed with a long option.</div>
                     <div class="ts-books">
                         <div class="ts-book income">
-                            <div class="ts-book-kicker">Income book</div>
-                            <div class="ts-book-value">$428,049</div>
-                            <div class="ts-book-lead" title="Premium received.">Collected</div>
-                            <div class="ts-chips">
-                                <span class="ts-chip">192 covered calls</span>
-                                <span class="ts-chip">3 short puts</span>
-                                <span class="ts-chip">68 rolls</span>
-                            </div>
-                            <div class="ts-kept"><span class="ts-kept-value">$101,984</span> kept at expiry</div>
+                            <div class="ts-book-kicker">Calls on this name</div>
+                            <div class="ts-book-value">+$4,786.54</div>
+                            <div class="ts-book-lead" title="Premium received.">Collected on the calls</div>
                         </div>
                         <div class="ts-book directional">
-                            <div class="ts-book-kicker">Directional book</div>
-                            <div class="ts-book-value">$942,367</div>
-                            <div class="ts-book-lead">placed at risk buying options</div>
-                            <div class="ts-chips"><span class="ts-chip">109 purchases</span></div>
+                            <div class="ts-book-kicker">Shares on this name</div>
+                            <div class="ts-book-value">+$11,459.75</div>
+                            <div class="ts-book-lead">Realized on the stock</div>
                         </div>
                     </div>
                 </div>
             </div>
-            <p class="start-insight"><span>What you learn</span>How much of the book is income, and how much is directional.</p>
+            <p class="start-insight"><span>What you learn</span>Income and the shares show up as separate results on one name.</p>
             {{ campaign_cta('profile') }}
             </div>
         </div>
@@ -690,7 +684,7 @@
             </div>
             <div class="start-frame">
                 <div class="start-shot">
-                    <img src="{{ url_for('static', filename='campaign/frame-fit.png') }}?v=5" alt="Where you have edge, and where you lose money, by strategy and sector.">
+                    <img src="{{ url_for('static', filename='campaign/frame-fit.webp') }}" width="2181" height="333" loading="lazy" decoding="async" alt="Where you have edge, and where you lose money, by strategy and sector.">
                 </div>
             </div>
             <p class="start-insight"><span>What you learn</span>Which of those strategies has worked for you, and where.</p>

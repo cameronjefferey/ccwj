@@ -152,10 +152,10 @@
         </div>
     {% elif symbol %}
         <div class="sym-row"><span class="sym">{{ symbol }}</span></div>
-        <div class="efb-meta">The bot hasn't traded {{ symbol }} — here's what it did trade.</div>
+        <div class="efb-meta">This paper account hasn't traded {{ symbol }} — here's what it did trade.</div>
     {% else %}
-        <div class="efb-meta">A bot trades EarningsFollower setups in a paper account.
-        HappyTrader shows how it actually went.</div>
+        <div class="efb-meta">EarningsFollower setups run in a paper account.
+        HappyTrader shows how they actually went.</div>
     {% endif %}
 
     <a href="{{ cta_url }}" class="efb-cta">{{ cta_label }} &rarr;</a>
@@ -234,7 +234,7 @@
 </p>
 
 <p class="efb-foot">
-    Nothing is curated: same numbers the bot's owner sees, losses included.
+    Nothing is curated: same numbers the paper account shows, losses included.
     {% if symbol %}
     <br><a href="{{ ef_url }}" target="_blank" rel="noopener">Back to {{ symbol }} on EarningsFollower &#8599;</a>
     {% endif %}

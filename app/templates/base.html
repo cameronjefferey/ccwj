@@ -15,6 +15,16 @@
     <meta name="description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
     <meta property="og:description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
     {% endblock %}
+    <meta property="og:url" content="{{ request.base_url }}">
+    {% if request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
+    <meta property="og:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
+    <meta property="og:image:alt" content="HappyTrader, the trading mirror">
+    <meta name="twitter:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
+    {% endif %}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ (title ~ ' - HappyTrader') if title else 'HappyTrader' }}">
+    <meta name="twitter:description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
+    <link rel="canonical" href="{{ request.base_url }}">
 
     <link rel="icon" href="{{ url_for('favicon') }}" sizes="32x32">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
@@ -35,6 +45,11 @@
         (function () {
             document.documentElement.setAttribute("data-bs-theme", "dark");
             document.documentElement.style.colorScheme = "dark";
+            try {
+                if (localStorage.getItem("ht-cookie-ok") === "1") {
+                    document.documentElement.classList.add("ht-cookie-ok");
+                }
+            } catch (e) { /* storage blocked */ }
         })();
     </script>
     {% if current_user.is_authenticated %}
@@ -62,6 +77,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {# Public landings do not draw charts. Skipping Chart.js is the
+       largest script on those pages. #}
+    {% if request.endpoint not in ('index', 'campaign_start', 'pricing', 'learn_index', 'learn_episode', 'learn_replay_page', 'faq', 'privacy', 'terms', 'contact', 'feature_detail', 'go_landing') %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Chart.js global theme defaults — must run after chart.js loads
@@ -82,8 +100,25 @@
             });
         })();
     </script>
+    {% endif %}
 
     <style>
+        html.ht-cookie-ok .ht-cookie-notice { display: none; }
+        .ht-cookie-notice {
+            position: fixed; z-index: 1080; left: .75rem; right: .75rem; bottom: .75rem;
+            display: flex; gap: .75rem; align-items: center; justify-content: space-between;
+            height: 5.75rem; box-sizing: border-box; overflow: hidden;
+            font-family: ui-sans-serif, system-ui, sans-serif;
+            background: #121826; color: #e8edf7; border: 1px solid #243049;
+            border-radius: 12px; padding: .7rem .85rem; font-size: .82rem;
+            box-shadow: 0 8px 24px rgba(0,0,0,.35);
+        }
+        .ht-cookie-notice p { margin: 0; line-height: 1.4; }
+        .ht-cookie-notice a { color: #5b8cff; }
+        .ht-cookie-notice button {
+            background: #5b8cff; color: #0a0e17; border: 0; border-radius: 999px;
+            font-weight: 700; padding: .35rem .8rem; flex: none;
+        }
         :root {
             color-scheme: dark;
             --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
@@ -1135,15 +1170,37 @@
         body .sym-tab.active { background: rgba(91,140,255,.15); color: #5b8cff; border-color: #5b8cff; }
     </style>
     {% include "_design_system.html" %}
-    {% if reddit_pixel_id and reddit_pixel_event %}
+    {% if reddit_pixel_id and (reddit_pixel_events or reddit_pixel_event) %}
     <script>
     !function(w,d){if(!w.rdt){var p=w.rdt=function(){p.sendEvent?p.sendEvent.apply(p,arguments):p.callQueue.push(arguments)};p.callQueue=[];var t=d.createElement("script");t.src="https://www.redditstatic.com/ads/pixel.js";t.async=!0;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(t,s)}}(window,document);
     rdt('init', {{ reddit_pixel_id|tojson }});
+    {% for ev in reddit_pixel_events or [] %}
+    rdt('track', {{ ev.name|tojson }}, {conversionId: {{ ev.event_id|tojson }}});
+    {% else %}
     rdt('track', {{ reddit_pixel_event|tojson }});
+    {% endfor %}
     </script>
     {% endif %}
 </head>
 <body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}" data-simple="{{ '1' if simple_view else '0' }}" data-paper="{{ '1' if has_paper_account else '0' }}">
+    {% if not current_user.is_authenticated %}
+    <div id="ht-cookie-notice" class="ht-cookie-notice">
+        <p>We use a first-party cookie to remember how you found HappyTrader. Unless your browser sends Do Not Track or Global Privacy Control, pages reached from ads may also load the Reddit pixel. <a href="{{ url_for('privacy') }}">Privacy</a></p>
+        <button type="button" id="ht-cookie-ok">OK</button>
+    </div>
+    <script>
+    (function () {
+        var n = document.getElementById("ht-cookie-notice");
+        var btn = document.getElementById("ht-cookie-ok");
+        if (!n || !btn) return;
+        btn.addEventListener("click", function () {
+            try { localStorage.setItem("ht-cookie-ok", "1"); } catch (e) {}
+            document.documentElement.classList.add("ht-cookie-ok");
+            n.remove();
+        });
+    })();
+    </script>
+    {% endif %}
     <script>
     window.htColor = function (name) {
         try {
@@ -1234,7 +1291,7 @@
                 {% endif %}
                 {% if simple_view %}
                 <li class="nav-item">
-                    <a class="nav-link {% if ep in ('learn_index', 'learn_episode') %}active{% endif %}"
+                    <a class="nav-link {% if ep in ('learn_index', 'learn_episode', 'learn_replay_page') %}active{% endif %}"
                        href="{{ url_for('learn_index') }}">Learn</a>
                 </li>
                 <li class="nav-item">
@@ -1302,7 +1359,7 @@
                 {% endif %}
                 {% endif %}
                 {% if is_admin_user %}
-                {% set in_admin = ep in ('admin_overview', 'admin_users', 'admin_audit', 'admin_feedback') %}
+                {% set in_admin = ep in ('admin_overview', 'admin_analytics', 'admin_users', 'admin_audit', 'admin_feedback') %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if in_admin %}active{% endif %}" href="#"
                        id="navAdmin" data-bs-toggle="dropdown" aria-expanded="false"
@@ -1311,6 +1368,10 @@
                         <li>
                             <a class="dropdown-item {% if ep == 'admin_overview' %}active{% endif %}"
                                href="{{ url_for('admin_overview') }}">Overview</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if ep == 'admin_analytics' %}active{% endif %}"
+                               href="{{ url_for('admin_analytics') }}">Analytics</a>
                         </li>
                         <li>
                             <a class="dropdown-item {% if ep == 'admin_users' %}active{% endif %}"
@@ -1379,7 +1440,7 @@
             {% else %}
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link{% if request.endpoint in ('learn_index', 'learn_episode') %} active{% endif %}" href="{{ url_for('learn_index') }}">Learn</a>
+                        <a class="nav-link{% if request.endpoint in ('learn_index', 'learn_episode', 'learn_replay_page') %} active{% endif %}" href="{{ url_for('learn_index') }}">Learn</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pricing') }}">Pricing</a>
@@ -1466,9 +1527,7 @@
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
             <span style="min-width:0;flex:1 1 16rem;">
                 <strong>Demo mode.</strong>
-                Read-only paper account from the
-                {% if earnings_follower_enabled %}<a href="{{ earnings_follower_url() }}" target="_blank" rel="noopener">EarningsFollower</a>{% else %}EarningsFollower{% endif %}
-                bot &mdash; simulated money, real fills, including the losses.
+                Read-only paper account &mdash; simulated money, real fills, including the losses.
                 Uploads and profile changes stay off so everyone sees the same mirror.
                 {% if signup_enabled %}<span class="d-block d-md-inline">30-day free trial, no credit card.</span>{% endif %}
             </span>
@@ -1753,13 +1812,14 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
+    <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script defer>
         document.querySelectorAll(".ht-toast-stack .toast").forEach(function (el) {
             if (!window.bootstrap || !bootstrap.Toast) return;
             bootstrap.Toast.getOrCreateInstance(el, { autohide: true, delay: 7000 }).show();
         });
     </script>
+    <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/term-tips.js') }}"></script>
     {% if current_user.is_authenticated %}
@@ -1853,7 +1913,7 @@
             });
         }
     </script>
-    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode') %}
+    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
     {% include "learn/_progress.html" %}
     {% endif %}
     {% block scripts %}{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block meta_tags %}
+<meta name="robots" content="noindex">
+<meta name="description" content="{{ trial_line }}">
+<meta property="og:title" content="{{ headline }}">
+<meta property="og:description" content="{{ trial_line }}">
+{% endblock %}
+
+{% block head %}
+<style>
+    body .go {
+        max-width: 36rem;
+        margin: 0 auto;
+        padding: 1.1rem 0 2.4rem;
+        overflow-x: hidden;
+    }
+    body .go h1 {
+        font-size: clamp(1.65rem, 7.4vw, 2.35rem);
+        font-weight: 700;
+        letter-spacing: 0;
+        line-height: 1.12;
+        color: #fff;
+        margin: 0 0 .7rem;
+    }
+    body .go-fine {
+        color: #8a97b1;
+        font-size: .95rem;
+        line-height: 1.45;
+        margin: 0;
+    }
+    body .go-shot {
+        margin: 1rem 0 1.1rem;
+        border: 1px solid #1c2538;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #121826;
+    }
+    body .go-shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+    body .go-actions {
+        display: flex;
+        flex-direction: column;
+        gap: .6rem;
+    }
+    body .go-cta,
+    body .go-cta-secondary {
+        display: flex;
+        width: 100%;
+        min-height: 3rem;
+        align-items: center;
+        justify-content: center;
+        padding: .75rem 1rem;
+        border-radius: 999px;
+        font-weight: 700;
+        text-decoration: none;
+        text-align: center;
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    body .go-cta {
+        background: #5b8cff;
+        color: #0a0e17;
+        border: 1px solid #5b8cff;
+    }
+    body .go-cta:hover { color: #0a0e17; }
+    body .go-cta-secondary {
+        background: transparent;
+        color: #e8edf7;
+        border: 1px solid #5b8cff;
+    }
+    body .go-cta-secondary:hover { color: #fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<article class="go">
+    <h1>{{ headline }}</h1>
+    <p class="go-fine">{{ trial_line }}</p>
+    <figure class="go-shot">
+        <img src="{{ url_for('static', filename=page.image) }}"
+             alt="{{ page.alt }}"
+             width="{{ page.image_width }}"
+             height="{{ page.image_height }}">
+    </figure>
+    <div class="go-actions">
+        <a class="go-cta"
+           href="{{ url_for(page.primary_endpoint, **page.primary_kwargs) }}"
+           data-ht-cta="{{ page.primary_cta }}">{{ page.primary_label }}</a>
+        {% if page.secondary_label %}
+        <a class="go-cta-secondary"
+           href="{{ url_for(page.secondary_endpoint, **page.secondary_kwargs) }}"
+           data-ht-cta="{{ page.secondary_cta }}">{{ page.secondary_label }}</a>
+        {% endif %}
+    </div>
+</article>
+{% endblock %}

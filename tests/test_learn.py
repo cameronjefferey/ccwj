@@ -87,8 +87,11 @@ def test_seed_is_ten_published_episodes_with_real_ids():
     assert "expires worthless" in rows[2]["recap"].lower()
     series = catalog.series()
     assert series["title"] == "Options 101: options explained in plain English"
-    assert series["cta_button"] == "Start your free 30-day trial"
-    assert series["cta_note"] == "Full access · No credit card"
+    assert series["cta_button"] == "Create a free account"
+    assert series["cta_note"] == (
+        "Learning and paper trading are free. "
+        "Your 30-day trial starts when you connect a real brokerage."
+    )
     assert series["cta_heading"] == "See which option strategies actually work for you"
     assert series["disclaimer"] == "For learning only · not investment advice."
     assert series["playlist_url"] == "https://www.youtube.com/playlist?list=PLcVwygMVS3Ig"
@@ -191,12 +194,31 @@ def test_logged_in_user_can_open_learn(monkeypatch):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Calls and puts" in html
+    assert "Create a free account" not in html
     assert "Start your free 30-day trial" not in html
     assert 'href="/practice"' in html
     assert ">Practice</a>" in html
     index = client.get("/learn").get_data(as_text=True)
-    assert "Start your free 30-day trial" not in index
+    assert "Create a free account" not in index
     assert ">Practice</a>" in index
+    replay = client.get("/learn/replay/long-call").get_data(as_text=True)
+    assert replay.count('src="/static/js/learn-progress.js"') == 1
+
+
+def test_simple_view_marks_learn_active_on_a_replay(monkeypatch):
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: False)
+    monkeypatch.setattr("app.paper_accounts.viewer_flags", lambda user_id: (True, True))
+    monkeypatch.setattr("app.paper_accounts.full_view_offer_open", lambda user_id: False)
+    client = _client()
+    _login(monkeypatch, client, "alice")
+    html = client.get("/learn/replay/covered-call").get_data(as_text=True)
+    assert 'href="/learn"' in html
+    assert "nav-link active" in html
+    assert ">Practice</a>" in html
+    assert ">Overview</a>" in html
+    assert ">Positions</a>" in html
+    assert 'id="navPortfolio"' not in html
+    assert 'id="navReview"' not in html
 
 
 def test_later_episodes_show_a_duration():
@@ -365,6 +387,23 @@ def test_progress_keeps_catalog_titles_and_merges_finished_episodes():
     assert merged["done"] == ["what-is-an-option", "calls-and-puts"]
     assert merged["updated"] == 20
 
+    kept = learn_progress.merge(
+        {
+            "updated": 50,
+            "last": {"slug": "what-is-an-option", "t": 0, "title": "What is an option?", "number": 1},
+            "done": [],
+            "replays": [],
+        },
+        {
+            "updated": 4,
+            "last": {"slug": "what-is-an-option", "t": 90, "title": "What is an option?", "number": 1},
+            "done": [],
+            "replays": [],
+        },
+    )
+    assert kept["last"]["t"] == 90
+    assert kept["updated"] == 50
+
 
 def test_signed_in_progress_fails_open_and_skips_the_demo(monkeypatch):
     saved = {}
@@ -468,6 +507,8 @@ def test_lesson_ends_with_a_try_it_and_a_check():
     assert "Picking up at " in js
     assert "__htLearnMarkDone" in js
     assert "X-CSRF-Token" in js
+    assert "pull(recordEpisodeVisit)" in js
+    assert "if (sync && !synced && keep === 0) return;" in js
 
     with app.test_request_context():
         learn_login = url_for("login", next="/learn")
@@ -494,7 +535,11 @@ def _assert_public_copy(html):
     lowered = html.lower()
     for banned in ("no sign-up", "no signup", "live demo", "the only place", "guaranteed"):
         assert banned not in lowered
-    assert "Start your free 30-day trial" in html
-    assert "Full access · No credit card" in html
+    assert "Create a free account" in html
+    assert 'data-ht-cta="create-account"' in html
+    assert "Learning and paper trading are free." in html
+    assert "Your 30-day trial starts when you connect a real brokerage." in html
+    assert "Start your free 30-day trial" not in html
+    assert "Full access · No credit card" not in html
     assert "For learning only · not investment advice." in html
     assert 'href="/signup"' in html

@@ -7,7 +7,7 @@
 {% else %}
 <aside class="learn-cta">
     <h2>{{ series.cta_heading }}</h2>
-    <a class="btn btn-primary" href="{{ url_for('signup') if signup_enabled else url_for('pricing') }}">{{ series.cta_button }}</a>
+    <a class="btn btn-primary" href="{{ url_for('signup') if signup_enabled else url_for('pricing') }}" data-ht-cta="create-account">{{ series.cta_button }}</a>
     <p>{{ series.cta_note }}</p>
 </aside>
 {% endif %}

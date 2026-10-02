@@ -205,7 +205,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "See what's working" in html
     assert "ht-band-demo" in html
     assert "A mirror of a paper account" in html
-    assert "trading bot" in html
+    assert "The live demo is a paper account" in html
+    assert "trading bot" not in html.lower()
     assert "Every position's full story" in html
     assert "Covered-call income tracked" in html
     assert "Which strategies actually work" in html
@@ -219,9 +220,9 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     root = Path(__file__).resolve().parents[1]
     for name in (
         "marketing/pnl_real.webp",
-        "marketing/msft-if-held.png",
-        "marketing/strategies.png",
-        "marketing/fit-matrix.png",
+        "marketing/msft-if-held.webp",
+        "marketing/strategies.webp",
+        "marketing/fit-matrix.webp",
     ):
         assert name in html
         assert (root / "app" / "static" / name).is_file()

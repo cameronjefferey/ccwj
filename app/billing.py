@@ -562,6 +562,13 @@ def activate_subscription(
             stripe_price_id=stripe_price_id,
             cancel_at_period_end=cancel_at_period_end,
         )
+        was_paying = ((before or {}).get("plan") or "").strip() == PLAN_ACTIVE
+        if not was_paying:
+            try:
+                from app.funnel import note_paid
+                note_paid(user_id, subscription_id=subscription_id)
+            except Exception:
+                _log.warning("funnel paid event skipped for user_id=%s", user_id)
         return True
     except Exception as exc:
         _log.exception("activate_subscription(%s) failed: %s", user_id, exc)

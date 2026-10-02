@@ -62,6 +62,7 @@
     <p>
         Users, plans, broken connections, and what people actually open.
         {% if generated_at %}Snapshot {{ generated_at.strftime('%b %-d, %Y %-I:%M %p') }} UTC.{% endif %}
+        <a href="{{ url_for('admin_analytics') }}" style="color:#fef08a;">Acquisition →</a>
         <a href="{{ url_for('admin_users') }}" style="color:#fef08a;">All users →</a>
     </p>
 </div>
