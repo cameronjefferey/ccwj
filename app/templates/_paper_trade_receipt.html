@@ -28,4 +28,12 @@
     {% endif %}
 </div>
 {% endif %}
-<p class="text-muted mt-3 mb-0">This order was sent to the paper account.{% if sent.status_label %} Status: {{ sent.status_label }}.{% endif %} The position page shows it before the fill syncs.</p>
+<p class="text-muted mt-3 mb-0" {% if sent.brokerage_order_id %}data-order-id="{{ sent.brokerage_order_id }}"{% endif %} {% if sent.status == 'filled' %}data-announce="filled" data-position-url="{{ url_for('position_detail', symbol=sent.link_symbol or sent.symbol) }}"{% endif %}>
+    {% if sent.status == 'rejected' %}
+    The paper account rejected this order.
+    {% else %}
+    This order was sent to the paper account.
+    {% endif %}
+    {% if sent.status_label %} Status: <span class="pp-live-status">{{ sent.status_label }}</span>.{% endif %}
+    The position page shows it before the fill syncs.
+</p>

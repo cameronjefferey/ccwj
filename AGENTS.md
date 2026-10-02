@@ -917,6 +917,14 @@ Execution review, Performance by account, and the trader-profile link.
 The position review does the same with its profile link. After the close,
 Practice review uses the last price at close when a live quote is missing,
 and labels buying power separately from the paper account value on Overview.
+A paper order shows its brokerage status as soon as it is placed (Accepted,
+Pending, Queued for next session, Filled at the price, Rejected with the
+reason, or Canceled). While Practice stays open it polls that status every
+few seconds, then less often, and updates the confirmation in place. Open
+orders sit at the top with Cancel. A fill starts one read of that paper
+account so Positions can name it without waiting for the nightly sync, and
+a Filled toast links to the position. The Positions line is a sentence, not
+a P&L row, until the warehouse catches up.
 No SnapTrade brokerage yet:
 Connect brokerage is the primary CTA (pre-portal interstitial, then
 SnapTrade), "I'll do this later" / skip to Overview is secondary, and

@@ -261,11 +261,43 @@ def money_strike(amount: int) -> str:
     return f"${int(amount):,}"
 
 
-def practice_receipt(ticket, tenant_id=None) -> dict:
-    """What the learner can look at while the mirror catches up to the order."""
+def practice_receipt(ticket, body=None, tenant_id=None) -> dict:
+    """What the learner can look at while the mirror catches up to the order.
+
+    ``body`` is the SnapTrade place response. The status line uses the
+    broker's word (Accepted, Pending, Queued for next session, Filled
+    at the price, Rejected with the reason, Canceled).
+    """
     expiry = date.fromisoformat(ticket["expiry"])
     views = _views_as_placed(ticket.get("views") or {}, ticket)
     symbol = ticket["symbol"]
+    source = _order_body(body)
+    raw = str(source.get("status") or "")
+    price = _execution_price(source)
+    reason = _reject_reason(source)
+    if raw:
+        bucket = order_status_bucket(raw)
+        label = brokerage_status_label(
+            raw, execution_price=price, reject_reason=reason,
+        )
+    else:
+        bucket = "open"
+        label = "Accepted"
+    if views.get("brokerage"):
+        note = views["brokerage"].get("note") or ""
+        views["brokerage"]["note"] = note.replace("Status: sent.", f"Status: {label}.")
+    if bucket == "rejected":
+        for view in views.values():
+            note = view.get("note") or ""
+            view["note"] = (
+                note.replace(
+                    "This order was sent to the paper account.",
+                    "The paper account rejected this order.",
+                ).replace(
+                    "This order was sent on the paper account.",
+                    "The paper account rejected this order.",
+                )
+            )
     return {
         "sentence": ticket["sentence"],
         "symbol": symbol,
@@ -280,11 +312,14 @@ def practice_receipt(ticket, tenant_id=None) -> dict:
         "views": views,
         "chain": ticket.get("chain") or [],
         "strike": ticket.get("strike"),
-        "status": "open",
-        "status_label": "Open",
-        "brokerage_order_id": ticket.get("brokerage_order_id") or "",
+        "status": bucket,
+        "status_label": label,
+        "brokerage_order_id": ticket.get("brokerage_order_id") or _brokerage_order_id(source),
         "occ": ticket.get("occ") or "",
         "tenant_id": tenant_id or ticket.get("tenant_id") or "",
+        "execution_price": price,
+        "reject_reason": reason,
+        "snaptrade_account_id": ticket.get("account_id") or ticket.get("snaptrade_account_id") or "",
     }
 
 
@@ -1067,31 +1102,174 @@ def _order_accepted(body) -> bool:
     return False
 
 
+_ACCEPTED_STATUSES = {"ACCEPTED", "NEW", "SUBMITTED", "TRIGGERED", "ACTIVATED"}
+_PENDING_STATUSES = {
+    "PENDING", "OPEN", "PARTIAL", "PARTIALLY_FILLED", "NONE",
+    "PENDING_RISK_REVIEW", "CONTINGENT_ORDER",
+}
+_QUEUED_STATUSES = {"QUEUED"}
+_STATUS_CACHE_SECONDS = 3.0
+_status_cache: dict[tuple, dict] = {}
+_account_cache: dict[int, dict] = {}
+_ACCOUNT_CACHE_SECONDS = 60.0
+_status_lock = threading.Lock()
+_filled_synced: set[tuple] = set()
+_seen_open: set[tuple] = set()
+_filled_lock = threading.Lock()
+_status_error = threading.local()
+
+
+def reset_order_status_state() -> None:
+    """Clear the short status cache and the once-per-fill sync set. Tests only."""
+    with _status_lock:
+        _status_cache.clear()
+        _account_cache.clear()
+    with _filled_lock:
+        _filled_synced.clear()
+        _seen_open.clear()
+    _status_error.value = None
+
+
+def _status_token(raw) -> str:
+    return str(raw or "").strip().upper().replace(" ", "_").replace("-", "_")
+
+
 def order_status_bucket(raw) -> str:
-    status = str(raw or "").strip().upper().replace(" ", "_").replace("-", "_")
+    status = _status_token(raw)
     if status in {"EXECUTED", "FILLED", "COMPLETE", "COMPLETED"}:
         return "filled"
-    if status in {"CANCELED", "CANCELLED"}:
+    if status in {"CANCELED", "CANCELLED", "PARTIAL_CANCELED", "PARTIAL_CANCELLED"}:
         return "cancelled"
     if status in {"REJECTED", "FAILED"}:
         return "rejected"
     if status == "EXPIRED":
         return "expired"
-    if status in _OPEN_ORDER_STATUSES:
+    if status == "CANCEL_PENDING":
+        return "cancel_requested"
+    if (
+        status in _OPEN_ORDER_STATUSES
+        or status in _ACCEPTED_STATUSES
+        or status in _PENDING_STATUSES
+        or status in _QUEUED_STATUSES
+    ):
         return "open"
     return "unknown"
 
 
+def _price_label(raw) -> str | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        amount = Decimal(str(raw))
+    except Exception:
+        return None
+    if amount <= 0:
+        return None
+    return f"${amount:,.2f}"
+
+
+def _execution_price(order) -> str | None:
+    if not isinstance(order, dict):
+        return None
+    for key in ("execution_price", "filled_price", "average_price", "avg_fill_price"):
+        label = _price_label(order.get(key))
+        if label:
+            return order.get(key)
+    return None
+
+
+def _reject_reason(order) -> str:
+    if not isinstance(order, dict):
+        return ""
+    for key in (
+        "rejection_reason", "reject_reason", "rejected_reason",
+        "message", "error", "detail",
+    ):
+        value = order.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:180]
+    return ""
+
+
+def _order_body(body) -> dict:
+    """Place responses sometimes nest the order under ``orders``."""
+    if not isinstance(body, dict):
+        return {}
+    merged = dict(body)
+    orders = body.get("orders")
+    if isinstance(orders, list):
+        for order in orders:
+            if isinstance(order, dict):
+                for key, value in order.items():
+                    if value not in (None, "") and not merged.get(key):
+                        merged[key] = value
+                break
+    return merged
+
+
+def brokerage_status_label(
+    raw, *, execution_price=None, reject_reason=None, session_open=None,
+) -> str:
+    """Brokerage words for one order status.
+
+    Accepted and Pending are live-session states. QUEUED, and any still-open
+    order while the regular session is closed, is Queued for next session.
+    """
+    bucket = order_status_bucket(raw)
+    token = _status_token(raw)
+    if session_open is None:
+        session_open = regular_session_open()
+    if bucket == "filled":
+        price = _price_label(execution_price)
+        return f"Filled at {price}" if price else "Filled"
+    if bucket == "cancelled":
+        return "Canceled"
+    if bucket == "cancel_requested":
+        return "Cancel requested"
+    if bucket == "rejected":
+        reason = " ".join(str(reject_reason or "").split())
+        return f"Rejected: {reason}" if reason else "Rejected"
+    if bucket == "expired":
+        return "Expired"
+    if bucket == "open":
+        if token in _QUEUED_STATUSES or not session_open:
+            return "Queued for next session"
+        if token in _PENDING_STATUSES:
+            return "Pending"
+        return "Accepted"
+    text = str(raw or "Unknown").replace("_", " ").strip().title()
+    return text or "Unknown"
+
+
 def _status_label(bucket: str, raw: str) -> str:
+    if raw:
+        return brokerage_status_label(raw)
     labels = {
-        "open": "Open",
+        "open": "Accepted",
         "filled": "Filled",
-        "cancelled": "Cancelled",
+        "cancelled": "Canceled",
         "cancel_requested": "Cancel requested",
         "rejected": "Rejected",
         "expired": "Expired",
     }
-    return labels.get(bucket) or (str(raw or "Unknown").replace("_", " ").title() or "Unknown")
+    return labels.get(bucket) or "Unknown"
+
+
+def _is_rate_limit_error(exc) -> bool:
+    status = getattr(exc, "status", None) or getattr(exc, "status_code", None)
+    try:
+        if int(status) in (429, 425):
+            return True
+    except (TypeError, ValueError):
+        pass
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(token in text for token in ("429", "425", "too many", "rate limit", "ratelimit"))
+
+
+def _friendly_order_error(exc) -> str:
+    if _is_rate_limit_error(exc):
+        return "The paper account is busy. This status is the last one we received."
+    return "We couldn't refresh order status. The last status on this page still stands."
 
 
 def _brokerage_order_id(body) -> str:
@@ -1142,15 +1320,21 @@ def normalize_broker_order(order) -> dict | None:
     raw = str(order.get("status") or "")
     bucket = order_status_bucket(raw)
     symbol = _underlying_from_order(order)
+    price = _execution_price(order)
+    reason = _reject_reason(order)
     return {
         "brokerage_order_id": str(order.get("brokerage_order_id") or ""),
         "status": bucket,
-        "status_label": _status_label(bucket, raw),
+        "status_label": brokerage_status_label(
+            raw, execution_price=price, reject_reason=reason,
+        ) if raw else _status_label(bucket, ""),
         "raw_status": raw,
         "symbol": symbol,
         "link_symbol": position_link_symbol(symbol),
         "cancelable": bucket == "open" and bool(order.get("brokerage_order_id")),
         "sentence": "",
+        "execution_price": price,
+        "reject_reason": reason,
         "source": "broker",
     }
 
@@ -1172,27 +1356,144 @@ def _remember_order(receipt) -> None:
     session[ORDERS_KEY] = kept[:20]
 
 
-def merged_paper_orders(user_id) -> list[dict]:
-    """Broker orders plus anything just placed that SnapTrade has not listed yet."""
-    live = []
-    account = None
+def _cached_recent_orders(user_id, account_id):
+    """One SnapTrade read per account every few seconds.
+
+    A rate limit or a failed read returns the last list plus a sentence
+    the page can show. The exception text stays in the log.
+    """
+    key = (int(user_id), str(account_id))
+    now = time.monotonic()
+    with _status_lock:
+        hit = _status_cache.get(key)
+        if hit and now - float(hit["at"]) < _STATUS_CACHE_SECONDS:
+            return list(hit["orders"]), None
+    try:
+        raw = list_account_recent_orders(
+            user_id, account_id, raise_on_error=True,
+        ) or []
+    except Exception as exc:
+        _log.warning("paper order list failed: %s", exc)
+        friendly = _friendly_order_error(exc)
+        with _status_lock:
+            hit = _status_cache.get(key)
+        if hit:
+            return list(hit["orders"]), friendly
+        if _is_rate_limit_error(exc):
+            friendly = "The paper account is busy. Try again in a moment."
+        return [], friendly
+    if not isinstance(raw, list):
+        raw = []
+    with _status_lock:
+        _status_cache[key] = {"at": now, "orders": list(raw)}
+    return raw, None
+
+
+def maybe_sync_filled_order(user_id, account, brokerage_order_id) -> bool:
+    """Read the paper account once when an order first shows as filled.
+
+    Polling does not sync. ``force_refresh`` stays off inside
+    ``queue_account_read_sync`` — same-day fills come from the orders feed.
+    """
+    order_id = str(brokerage_order_id or "").strip()
+    row = (account or {}).get("row") if isinstance(account, dict) else None
+    if not user_id or not order_id or not row:
+        return False
+    key = (int(user_id), order_id)
+    with _filled_lock:
+        if key in _filled_synced:
+            return False
+        _filled_synced.add(key)
+    try:
+        queue_account_read_sync(user_id, row)
+    except Exception as exc:
+        with _filled_lock:
+            _filled_synced.discard(key)
+        _log.warning("paper fill sync failed to start: %s", exc)
+        return False
+    return True
+
+
+def _note_fills(user_id, account, orders) -> None:
+    """Sync a fill this session placed, or an order we already saw still open."""
+    if not account or not account.get("row"):
+        return
+    session_ids = {
+        str(item.get("brokerage_order_id") or "")
+        for item in _session_orders()
+        if item.get("brokerage_order_id")
+    }
+    for order in orders:
+        oid = str(order.get("brokerage_order_id") or "")
+        if not oid:
+            continue
+        key = (int(user_id), oid)
+        status = str(order.get("status") or "")
+        if status in {"open", "cancel_requested"}:
+            with _filled_lock:
+                _seen_open.add(key)
+            continue
+        if status != "filled":
+            continue
+        with _filled_lock:
+            seen_open = key in _seen_open
+        if oid not in session_ids and not seen_open:
+            continue
+        maybe_sync_filled_order(user_id, account, oid)
+
+
+def _paper_account_cached(user_id):
+    """Reuse the paper-account lookup for a minute so status polls don't relist grants."""
+    now = time.monotonic()
+    key = int(user_id)
+    with _status_lock:
+        hit = _account_cache.get(key)
+        if hit and now - float(hit["at"]) < _ACCOUNT_CACHE_SECONDS:
+            return hit["account"]
     try:
         account = alpaca_paper_trade_account(user_id)
     except Exception as exc:
         _log.warning("paper order account lookup failed: %s", exc)
         account = None
-    if account:
+    with _status_lock:
+        _account_cache[key] = {"at": now, "account": account}
+    return account
+
+
+def merged_paper_orders(user_id, *, use_cache=False, account=None) -> list[dict]:
+    """Broker orders plus anything just placed that SnapTrade has not listed yet.
+
+    ``use_cache`` is for the open-page poll. A normal page render reads
+    once. Tests that patch the order list rely on that uncached read.
+    """
+    live = []
+    error = None
+    if account is None:
         try:
-            raw_orders = list_account_recent_orders(
+            account = alpaca_paper_trade_account(user_id)
+        except Exception as exc:
+            _log.warning("paper order account lookup failed: %s", exc)
+            account = None
+    if account:
+        if use_cache:
+            raw_orders, error = _cached_recent_orders(
                 user_id, account["snaptrade_account_id"],
             )
-        except Exception as exc:
-            _log.warning("paper order list failed: %s", exc)
-            raw_orders = []
+        else:
+            try:
+                raw_orders = list_account_recent_orders(
+                    user_id, account["snaptrade_account_id"],
+                    raise_on_error=True,
+                ) or []
+            except Exception as exc:
+                _log.warning("paper order list failed: %s", exc)
+                raw_orders = []
+                error = _friendly_order_error(exc)
         for raw in raw_orders or []:
             item = normalize_broker_order(raw)
             if item:
                 live.append(item)
+    _status_error.value = error
     by_id = {item["brokerage_order_id"]: item for item in live if item.get("brokerage_order_id")}
     merged = list(live)
     for local in _session_orders():
@@ -1204,6 +1505,8 @@ def merged_paper_orders(user_id) -> list[dict]:
             if not broker.get("symbol"):
                 broker["symbol"] = local.get("symbol") or ""
                 broker["link_symbol"] = position_link_symbol(broker["symbol"])
+            if not broker.get("tenant_id") and local.get("tenant_id"):
+                broker["tenant_id"] = local.get("tenant_id")
             # A still-open broker row must not hide a cancel we already sent.
             if (
                 str(local.get("status") or "") == "cancel_requested"
@@ -1215,12 +1518,139 @@ def merged_paper_orders(user_id) -> list[dict]:
             continue
         row = dict(local)
         row["status"] = row.get("status") or "open"
-        row["status_label"] = row.get("status_label") or "Open"
+        row["status_label"] = row.get("status_label") or _status_label(row["status"], "")
         row["cancelable"] = bool(row.get("brokerage_order_id")) and row["status"] == "open"
         row["link_symbol"] = position_link_symbol(row.get("link_symbol") or row.get("symbol"))
         row["source"] = "session"
         merged.insert(0, row)
+    _note_fills(user_id, account, merged)
+    _apply_live_statuses(merged)
     return merged
+
+
+def _apply_live_statuses(merged) -> None:
+    """Keep the session receipt on the broker's latest status."""
+    by_id = {
+        str(item.get("brokerage_order_id") or ""): item
+        for item in merged
+        if item.get("brokerage_order_id")
+    }
+    updated = []
+    for item in _session_orders():
+        item = dict(item)
+        live = by_id.get(str(item.get("brokerage_order_id") or ""))
+        if live and not (
+            str(item.get("status") or "") == "cancel_requested"
+            and live.get("status") == "open"
+        ):
+            item["status"] = live.get("status") or item.get("status")
+            item["status_label"] = live.get("status_label") or item.get("status_label")
+            item["cancelable"] = bool(live.get("cancelable"))
+            if live.get("execution_price") not in (None, ""):
+                item["execution_price"] = live.get("execution_price")
+            if live.get("reject_reason"):
+                item["reject_reason"] = live.get("reject_reason")
+            if live.get("symbol") and not item.get("symbol"):
+                item["symbol"] = live.get("symbol")
+                item["link_symbol"] = live.get("link_symbol") or position_link_symbol(item["symbol"])
+        updated.append(item)
+    session[ORDERS_KEY] = updated[:20]
+    sent = session.get(SENT_KEY)
+    if isinstance(sent, dict):
+        live = by_id.get(str(sent.get("brokerage_order_id") or ""))
+        if live and not (
+            str(sent.get("status") or "") == "cancel_requested"
+            and live.get("status") == "open"
+        ):
+            sent = dict(sent)
+            sent["status"] = live.get("status") or sent.get("status")
+            sent["status_label"] = live.get("status_label") or sent.get("status_label")
+            if live.get("reject_reason"):
+                sent["reject_reason"] = live.get("reject_reason")
+            session[SENT_KEY] = sent
+
+
+def split_paper_orders(orders) -> tuple[list, list]:
+    """Open (including cancel requested) first. Everything else is recent."""
+    open_orders = []
+    recent_orders = []
+    for order in orders or []:
+        if not isinstance(order, dict):
+            continue
+        if order.get("status") in {"open", "cancel_requested"}:
+            open_orders.append(order)
+        else:
+            recent_orders.append(order)
+    return open_orders, recent_orders
+
+
+def order_public(order) -> dict:
+    """Fields the practice page may poll. No account id, no broker payload."""
+    symbol = order.get("link_symbol") or order.get("symbol") or ""
+    link = position_link_symbol(symbol)
+    url = ""
+    if link and re.fullmatch(r"[A-Z0-9.]{1,12}", link):
+        tenant = str(order.get("tenant_id") or "")
+        url = (
+            url_for("position_detail", symbol=link, tenants=tenant)
+            if tenant else url_for("position_detail", symbol=link)
+        )
+    return {
+        "brokerage_order_id": str(order.get("brokerage_order_id") or ""),
+        "status": str(order.get("status") or ""),
+        "status_label": str(order.get("status_label") or ""),
+        "symbol": str(order.get("symbol") or ""),
+        "link_symbol": link,
+        "sentence": str(order.get("sentence") or ""),
+        "cancelable": bool(order.get("cancelable")),
+        "position_url": url,
+    }
+
+
+def paper_fill_notices(user_id, known_symbols) -> list[dict]:
+    """Filled paper orders whose symbol is not in Positions yet.
+
+    The row is a sentence plus a link. It does not invent P&L. The
+    account read runs once per order so the warehouse can catch up
+    without the nightly sync.
+    """
+    known = {position_link_symbol(symbol) for symbol in (known_symbols or [])}
+    notices = []
+    rows = None
+    for order in _session_orders():
+        if str(order.get("status") or "") != "filled":
+            continue
+        symbol = position_link_symbol(order.get("link_symbol") or order.get("symbol"))
+        if not symbol or not re.fullmatch(r"[A-Z0-9.]{1,12}", symbol) or symbol in known:
+            continue
+        account_id = str(order.get("snaptrade_account_id") or "")
+        if account_id:
+            if rows is None:
+                rows = _local_account_rows(user_id)
+            row = rows.get(account_id)
+            if row:
+                maybe_sync_filled_order(
+                    user_id, {"row": row}, order.get("brokerage_order_id"),
+                )
+        notices.append({
+            "symbol": symbol,
+            "sentence": f"{symbol} filled on the paper account. Syncing that account now.",
+        })
+    return notices
+
+
+def _local_account_rows(user_id) -> dict:
+    try:
+        from app.snaptrade import get_snaptrade_accounts
+        found = get_snaptrade_accounts(user_id) or []
+    except Exception as exc:
+        _log.warning("paper fill account lookup failed: %s", exc)
+        return {}
+    return {
+        str(row.get("snaptrade_account_id") or ""): row
+        for row in found
+        if isinstance(row, dict) and row.get("snaptrade_account_id")
+    }
 
 
 def paper_orders_for_page(user_id, symbol=None) -> list[dict]:
@@ -1314,11 +1744,19 @@ def paper_practice():
             if power is not None:
                 buying_power_label = money(power)
     orders = []
+    orders_error = None
     try:
         orders = merged_paper_orders(current_user.id)
+        orders_error = getattr(_status_error, "value", None)
     except Exception as exc:
         _log.warning("practice orders failed: %s", exc)
         orders = _session_orders()
+        orders_error = "We couldn't refresh order status. The last status on this page still stands."
+    open_orders, recent_orders = split_paper_orders(orders)
+    if placed:
+        fresh = session.get(SENT_KEY)
+        if isinstance(fresh, dict):
+            sent = fresh
     session_note = None
     if ticket and ticket.get("session_note"):
         session_note = ticket["session_note"]
@@ -1333,6 +1771,9 @@ def paper_practice():
         ticket=ticket,
         sent=sent,
         orders=orders,
+        open_orders=open_orders,
+        recent_orders=recent_orders,
+        orders_error=orders_error,
         voice=voice,
         snaptrade_ready=snaptrade_enabled(),
         look=look and not account,
@@ -1470,30 +1911,106 @@ def paper_practice_place():
         )
     except Exception as exc:
         _log.exception("Practice option order failed for user_id=%s: %s", current_user.id, exc)
-        flash(
-            "The paper account did not take that order. Nothing was filled here. "
-            "Review it and try again.",
-            "danger",
-        )
+        if _is_rate_limit_error(exc):
+            flash(
+                "The paper account is busy. Wait a moment, then place this trade again. "
+                "Nothing was filled.",
+                "warning",
+            )
+        else:
+            flash(
+                "The paper account did not take that order. Nothing was filled here. "
+                "Review it and try again.",
+                "danger",
+            )
         return redirect(url_for("paper_practice", confirm=1))
     if not _order_accepted(body):
+        source = _order_body(body)
+        if source.get("status") or source.get("brokerage_order_id"):
+            _log.warning(
+                "Practice option order refused for user_id=%s status=%s",
+                current_user.id, source.get("status"),
+            )
+            return _show_order_confirmation(ticket, body, account, sync=False)
         _log.warning(
             "Practice option order refused for user_id=%s status=%s",
-            current_user.id, (body or {}).get("status") if isinstance(body, dict) else None,
+            current_user.id, source.get("status"),
         )
         flash(
             "The paper account refused that option order. Nothing was filled here.",
             "danger",
         )
         return redirect(url_for("paper_practice", confirm=1))
+    return _show_order_confirmation(ticket, body, account, sync=True)
+
+
+def _show_order_confirmation(ticket, body, account, *, sync: bool):
+    """Receipt with the broker status. A rejection does not sync."""
     session.pop(TICKET_KEY, None)
     ticket = dict(ticket)
-    ticket["brokerage_order_id"] = _brokerage_order_id(body if isinstance(body, dict) else {})
-    receipt = practice_receipt(ticket, tenant_id=account.get("tenant_id"))
+    source = _order_body(body)
+    ticket["brokerage_order_id"] = _brokerage_order_id(source)
+    receipt = practice_receipt(
+        ticket,
+        body if isinstance(body, dict) else None,
+        tenant_id=(account or {}).get("tenant_id"),
+    )
+    if not sync and receipt["status"] not in {"rejected", "cancelled", "expired", "filled"}:
+        reason = receipt.get("reject_reason") or ""
+        receipt["status"] = "rejected"
+        receipt["status_label"] = f"Rejected: {reason}" if reason else "Rejected"
     session[SENT_KEY] = receipt
     _remember_order(receipt)
-    queue_account_read_sync(current_user.id, account["row"])
+    if sync and account and account.get("row"):
+        if receipt["status"] == "filled":
+            maybe_sync_filled_order(
+                current_user.id, account, receipt.get("brokerage_order_id"),
+            )
+        else:
+            queue_account_read_sync(current_user.id, account["row"])
     return redirect(url_for("paper_practice", placed=1))
+
+
+@app.route("/practice/orders/status", methods=["GET"])
+@login_required
+def paper_practice_order_status():
+    """Live status for the open practice page. Cached for a few seconds."""
+    account = _paper_account_cached(current_user.id)
+    if not account:
+        return jsonify(orders=[], open_count=0, error=None, poll_after_ms=0)
+    try:
+        orders = merged_paper_orders(
+            current_user.id, use_cache=True, account=account,
+        )
+    except Exception as exc:
+        _log.warning("paper status poll failed: %s", exc)
+        orders = _session_orders()
+        _status_error.value = (
+            "The paper account is busy. Try again in a moment."
+            if _is_rate_limit_error(exc)
+            else "We couldn't refresh order status. The last status on this page still stands."
+        )
+    error = getattr(_status_error, "value", None)
+    public = [order_public(order) for order in orders if isinstance(order, dict)]
+    open_count = sum(1 for order in public if order["status"] in {"open", "cancel_requested"})
+    if error and _is_rate_limit_message(error):
+        poll_after = 15000
+    elif error:
+        poll_after = 15000
+    elif open_count:
+        poll_after = 3000
+    else:
+        poll_after = 0
+    return jsonify(
+        orders=public,
+        open_count=open_count,
+        error=error,
+        poll_after_ms=poll_after,
+    )
+
+
+def _is_rate_limit_message(text) -> bool:
+    return "busy" in str(text or "").lower()
 
 
 @app.route("/practice/orders/cancel", methods=["POST"])

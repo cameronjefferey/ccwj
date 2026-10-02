@@ -1445,14 +1445,19 @@ def place_single_leg_option_order(user_id, account_id, occ_symbol, limit_price):
     return _mapping(body) if not isinstance(body, dict) else body
 
 
-def list_account_recent_orders(user_id, account_id):
+def list_account_recent_orders(user_id, account_id, *, raise_on_error=False):
     """Open, cancelled, filled, and rejected orders for one account.
 
     ``recent_orders`` is the last 24 hours and defaults to executed-only,
     so an open paper order never appears unless ``only_executed`` is false.
     Orders older than that window come from the account orders endpoint
     (``state=all``, 30 days). The recent row wins when both feeds list
-    the same brokerage order id. Empty on failure.
+    the same brokerage order id.
+
+    Practice status polling passes ``raise_on_error`` so a 403 or a rate
+    limit can show a friendly error instead of looking like the order
+    disappeared. The older feed stays best-effort: a failure there is
+    empty and the 24-hour rows still return.
     """
     snap = get_snaptrade_user(user_id)
     client = _get_snaptrade_client()
@@ -1464,6 +1469,7 @@ def list_account_recent_orders(user_id, account_id):
         snap["snaptrade_secret"],
         account_id,
         only_executed=False,
+        raise_on_error=raise_on_error,
     )
     older = _fetch_account_orders(
         client,
@@ -3234,7 +3240,10 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
     return _coerce_list(resp)
 
 
-def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id, only_executed=None):
+def _fetch_recent_orders(
+    client, snap_user_id, snap_secret, account_id,
+    only_executed=None, *, raise_on_error=False,
+):
     """Pull SnapTrade's ``recent_orders`` endpoint for one account.
 
     This is the real-time-ish trade source we use to backfill the
@@ -3285,6 +3294,8 @@ def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id, only_exe
             "best-effort; auth was already proven by _fetch_activities).",
             account_id, exc,
         )
+        if raise_on_error:
+            raise
         return []
     return _order_rows(resp)
 

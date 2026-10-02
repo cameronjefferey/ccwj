@@ -28,6 +28,15 @@
     .pos-hero .hero-chip .dot.mixed  { background: #fbbf24; }
 
     .pos-page { min-width: 0; }
+    .pos-paper-fills {
+        border: 1px solid var(--ht-line);
+        background: var(--ht-surface);
+        border-radius: 12px;
+        padding: .9rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .pos-paper-fills p { margin: 0 0 .4rem; }
+    .pos-paper-fills p:last-child { margin-bottom: 0; }
     .pos-page > .card { margin-bottom: 1rem; box-shadow: none; }
     .pos-pad { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
     .pos-list-head {
@@ -502,6 +511,13 @@
 <div class="pos-page">
 {% if _is_alltime %}
 {% include "_history_window_note.html" %}
+{% endif %}
+{% if paper_fills %}
+<div class="pos-paper-fills" role="status">
+    {% for fill in paper_fills %}
+    <p>{{ fill.sentence }} <a href="{{ url_for('position_detail', symbol=fill.symbol) }}">See {{ fill.symbol }}</a></p>
+    {% endfor %}
+</div>
 {% endif %}
 
 {# Strategy swatches stay data colors. One map for both tables. #}

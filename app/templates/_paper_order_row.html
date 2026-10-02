@@ -1,0 +1,20 @@
+<div class="pp-order" data-order-id="{{ order.brokerage_order_id }}" data-order-status="{{ order.status }}" {% if order.link_symbol or order.symbol %}data-position-url="{{ url_for('position_detail', symbol=order.link_symbol or order.symbol, tenants=order.tenant_id) if order.tenant_id else url_for('position_detail', symbol=order.link_symbol or order.symbol) }}"{% endif %}>
+    <div>
+        <div class="pp-status is-{{ order.status }} pp-live-status">{{ order.status_label }}</div>
+        <div class="pp-order-text">{{ order.sentence or order.symbol or "Paper order" }}</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        {% if order.link_symbol or order.symbol %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('position_detail', symbol=order.link_symbol or order.symbol, tenants=order.tenant_id) if order.tenant_id else url_for('position_detail', symbol=order.link_symbol or order.symbol) }}">See {{ order.link_symbol or order.symbol }}</a>
+        {% endif %}
+        {% if order.cancelable and order.brokerage_order_id %}
+        <form method="POST" action="{{ url_for('paper_practice_cancel') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="brokerage_order_id" value="{{ order.brokerage_order_id }}">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel</button>
+        </form>
+        {% elif order.status == 'cancel_requested' %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ scoped_url('paper_practice') }}">Refresh</a>
+        {% endif %}
+    </div>
+</div>

@@ -85,6 +85,8 @@
     .pp-card { max-width: 100%; }
     .pp-chain-wrap { overflow-x: auto; max-width: 100%; }
     .pp-orders { margin-top: 1rem; }
+    .pp-open-orders { margin-top: 0; margin-bottom: 1.25rem; }
+    .pp-open-orders .pp-order:first-of-type { border-top: 0; padding-top: 0; }
     .pp-order {
         display: flex;
         flex-wrap: wrap;
@@ -124,6 +126,23 @@
             <div class="d-flex justify-content-end mb-2">
                 <span class="pp-paper">Paper</span>
             </div>
+
+            {% if account or open_orders or sent %}
+            <div class="pp-orders pp-open-orders" id="pp-open-orders"
+                 data-poll-url="{{ url_for('paper_practice_order_status') }}"
+                 data-cancel-url="{{ url_for('paper_practice_cancel') }}">
+                <div class="pp-kicker">Open orders</div>
+                <div id="pp-open-list">
+                    {% for order in open_orders %}
+                    {% include "_paper_order_row.html" %}
+                    {% else %}
+                    <p class="pp-note mb-0" data-empty>No open orders.</p>
+                    {% endfor %}
+                </div>
+                <p class="pp-note mt-2 mb-0 {% if not orders_error %}d-none{% endif %}" id="pp-status-error" role="status">{{ orders_error or "" }}</p>
+                <input type="hidden" id="pp-csrf" value="{{ csrf_token() }}">
+            </div>
+            {% endif %}
 
             {% if sent %}
                 {% include "_paper_trade_receipt.html" %}
@@ -424,35 +443,27 @@
                     })();
                 </script>
             {% endif %}
-            {% if orders %}
-            <div class="pp-orders">
-                <div class="pp-kicker">Orders</div>
-                {% for order in orders %}
-                <div class="pp-order">
-                    <div>
-                        <div class="pp-status is-{{ order.status }}">{{ order.status_label }}</div>
-                        <div>{{ order.sentence or order.symbol or "Paper order" }}</div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2">
-                        {% if order.link_symbol or order.symbol %}
-                        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('position_detail', symbol=order.link_symbol or order.symbol, tenants=order.tenant_id) if order.tenant_id else url_for('position_detail', symbol=order.link_symbol or order.symbol) }}">See {{ order.link_symbol or order.symbol }}</a>
-                        {% endif %}
-                        {% if order.cancelable and order.brokerage_order_id %}
-                        <form method="POST" action="{{ url_for('paper_practice_cancel') }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="brokerage_order_id" value="{{ order.brokerage_order_id }}">
-                            <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel</button>
-                        </form>
-                        {% elif order.status == 'cancel_requested' %}
-                        <a class="btn btn-outline-secondary btn-sm" href="{{ scoped_url('paper_practice') }}">Refresh</a>
-                        {% endif %}
-                    </div>
-                </div>
+            {% if recent_orders %}
+            <div class="pp-orders" id="pp-recent-orders">
+                <div class="pp-kicker">Recent orders</div>
+                <div id="pp-recent-list">
+                {% for order in recent_orders %}
+                {% include "_paper_order_row.html" %}
                 {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <div class="pp-orders d-none" id="pp-recent-orders">
+                <div class="pp-kicker">Recent orders</div>
+                <div id="pp-recent-list"></div>
             </div>
             {% endif %}
         </div>
     </div>
 </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/paper-orders.js') }}"></script>
 {% endblock %}
