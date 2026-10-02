@@ -424,8 +424,8 @@ What's working:
   each group collapsed to its badge, count, and net, sorted by that
   net). Opening a group lists that outcome's calls (strike, expiry,
   net — expired / closed / assigned / rolled / open) in date order.
-  The share result and one whole-run net stay on the card. Broker
-  fees are left out of that math and the card says so. Multiple runs, partial sales, and partial coverage stay
+  The share result and one whole-run net stay on the card. The whole-run
+  net includes broker fees; each call's amount is the premium. Multiple runs, partial sales, and partial coverage stay
   on the same lot until the shares are flat. Built in
   `app/covered_call_runs.py` from the fills and inferred opening balances
   the page already loaded (tenant-scoped, before the leg filter so one leg
@@ -433,9 +433,9 @@ What's working:
   today's units back to their opening-date units before split events are
   replayed, so pre-history holdings do not disappear or double-split.
   Pinned by `tests/test_covered_call_runs.py`.
-- Position Detail reads as one story: the review card, then Cumulative
-  P&amp;L, then What worked (strategy rows and If held, details on expand),
-  then Details (Position Legs, Breakdown by Type, Raw Transaction Log).
+- Position Detail reads as one story: the hero, then the mirror, then
+  Position Legs. Cumulative P&amp;L and What worked follow. Breakdown by
+  Type and the raw log sit behind one Details toggle.
   The Win/Loss matrix stays behind a disclosure. Gain and loss on this
   page use one green and one red (`--pd-gain` / `--pd-loss`). The strategy
   column that is premium received is labeled Collected.
@@ -639,14 +639,14 @@ the breakdown (counts and P&amp;L by strategy). Premium received is labeled
 Collected. The symbol-table header sticks under the nav while the page
 scrolls; it is not an inner 75vh scroller. Words wrap on spaces, so
 headers and names such as Trades and Semiconductors stay whole.
-A figure like $287,353.26 stays intact in its money column. Phone rows
-stack with a label on each value, the cell fill matches the card, and
-W/L stays one value (`1 / 1`).
+A figure like $287,353.26 stays intact in its money column. On a phone
+the table stays columns — symbol and account, total return, win rate,
+and fills — and the rest opens from More. Money is never abbreviated.
 
 What's working:
 - Hero uses the same dark bar as Overview (brand and account filters).
   Total return, realized, unrealized, and win rate sit in that bar.
-  "X open / Y closed" chips **and** the "Across N accounts" line honor
+  "X open rows / Y closed rows" chips **and** the "Across N accounts" line honor
   every active filter (account,
   strategy, symbol, status, subsector, sector, date range). Pre-fix the
   chips read off the unfiltered df and lied about the body. "Open" is the

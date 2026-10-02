@@ -37,10 +37,10 @@ monthly as (
         month_start,
         count(*)                              as trades_closed,
         countif(is_winner)                    as num_winners,
-        countif(not is_winner)                as num_losers,
+        countif(is_winner is false)           as num_losers,
         safe_divide(
             countif(is_winner),
-            nullif(count(*), 0)
+            nullif(countif(is_winner is not null), 0)
         )                                     as win_rate,
         sum(total_pnl)                        as total_pnl,
         avg(total_pnl)                        as avg_pnl_per_trade,

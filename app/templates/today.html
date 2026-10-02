@@ -54,7 +54,7 @@
             {% else %}<div class="ov-pct ov-dash">—</div>{% endif %}
         </div>
         <div>
-            <div class="ov-k">Fills</div>
+            <div class="ov-k">{% if _tt.fill_count and _tt.count and _tt.fill_count != _tt.count %}Trades{% else %}Fills{% endif %}</div>
             <div class="ov-big ov-invest">{{ _tt.count or 0 }}</div>
         </div>
     </div>
@@ -83,7 +83,7 @@
         </span>
         {% endif %}
         {% if _tt.count %}
-        <span class="ov-pill">{{ _tt.count }} fill{{ 's' if _tt.count != 1 }} today</span>
+        <span class="ov-pill">{% with count=_tt.count, fill_count=_tt.fill_count %}{% include "_fill_count.html" %}{% endwith %} today</span>
         {% endif %}
         <a class="ov-pill" href="{{ scoped_url('weekly_review') }}">Overview &rarr;</a>
         <span class="ov-quiet">Times in {{ user_timezone|replace('_', ' ') }}</span>
@@ -111,7 +111,7 @@
         </div>
         {% if _tt.count %}
         <div class="ov-pills-lite">
-            <span class="ov-pl">{{ _tt.count }} fill{{ 's' if _tt.count != 1 }}</span>
+            <span class="ov-pl">{% with count=_tt.count, fill_count=_tt.fill_count %}{% include "_fill_count.html" %}{% endwith %}</span>
             {% if _tt.symbols %}<span class="ov-pl">{{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}</span>{% endif %}
             {% if _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' }}">{{ "+" if _tt.net_gl > 0 else "−" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} realized</span>{% endif %}
         </div>
@@ -137,16 +137,14 @@
                     {% endif %}
                 </td>
                 <td class="tt-muted">
+                    {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
                     {% if t.is_roll %}
                     {% if t.successful %}
                     <span class="tt-roll-ok">Met the roll{% if t.success_bits %} · {{ t.success_bits|join(' + ') }}{% endif %}</span>
                     {% elif t.successful is sameas false %}
                     <span class="tt-roll-miss">{% if t.strike_dir == 'same' %}Debit roll, strike unchanged{% else %}Did not meet the roll{% endif %}</span>
                     {% endif %}
-                    {% else %}
-                    {% if t.quantity %}{{ "{:,.0f}".format(t.quantity|abs) }}{{ " ct" if t.is_option else " sh" }}{% endif %}
-                    {% if t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
-                    {% endif %}
+                    {% elif t.price %} @ ${{ "{:,.2f}".format(t.price) }}{% endif %}
                 </td>
                 <td class="tt-money {% if t.amount is not none and t.amount > 0 %}text-positive{% elif t.amount is not none and t.amount < 0 %}text-negative{% endif %}">
                     {% if t.amount is not none %}{{ money(t.amount, 2, true) }}{% else %}&mdash;{% endif %}

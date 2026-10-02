@@ -31,6 +31,52 @@ symbol_meta as (
 ),
 
 ---------------------------------------------------------------------
+-- One win/loss per outcome. A same-day spread (both legs share
+-- open_date and expiry) is one outcome. Standalone contracts and
+-- equity sessions stay one row each (trade_symbol is unique).
+-- $0 rounds to neither.
+---------------------------------------------------------------------
+outcome_units as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        strategy,
+        case
+            when strategy in (
+                'Call Spread', 'Put Spread', 'Iron Condor',
+                'Diagonal Call Spread', 'Diagonal Put Spread',
+                'Straddle', 'Strangle'
+            )
+            then concat(
+                coalesce(cast(open_date as string), ''),
+                '|',
+                coalesce(cast(option_expiry as string), '')
+            )
+            else trade_symbol
+        end as unit_key,
+        logical_and(status = 'Closed') as unit_closed,
+        sum(total_pnl) as unit_pnl
+    from classified
+    group by 1, 2, 3, 4, 5, 6
+),
+
+unit_counts as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        strategy,
+        countif(unit_closed and round(unit_pnl, 2) > 0) as num_winners,
+        countif(unit_closed and round(unit_pnl, 2) < 0) as num_losers,
+        countif(unit_closed and round(unit_pnl, 2) != 0) as num_decided
+    from outcome_units
+    group by 1, 2, 3, 4, 5
+),
+
+---------------------------------------------------------------------
 -- Aggregate by account × symbol × strategy
 ---------------------------------------------------------------------
 strategy_summary as (
@@ -38,59 +84,65 @@ strategy_summary as (
         -- v2 tenant_id is part of the grain (int_strategy_classification
         -- carries it natively from staging) so two physical accounts that
         -- share a display label don't fuse their per-symbol/strategy rows.
-        tenant_id,
-        account,
-        user_id,
+        c.tenant_id,
+        c.account,
+        c.user_id,
 
-        symbol,
-        strategy,
+        c.symbol,
+        c.strategy,
 
         -- Status: treat any symbol/strategy with at least one open trade group as Open.
         -- Mixed (both open and closed) is folded into Open to keep the UX simple.
         case
-            when countif(status = 'Open') > 0 then 'Open'
+            when countif(c.status = 'Open') > 0 then 'Open'
             else 'Closed'
         end as status,
 
         -- P&L (realized/unrealized are pre-split inside int_strategy_classification
         -- so an Open equity session with interim sells correctly attributes the
         -- already-realized portion to realized_pnl rather than unrealized_pnl).
-        sum(total_pnl) as total_pnl,
-        sum(realized_pnl) as realized_pnl,
-        sum(unrealized_pnl) as unrealized_pnl,
+        sum(c.total_pnl) as total_pnl,
+        sum(c.realized_pnl) as realized_pnl,
+        sum(c.unrealized_pnl) as unrealized_pnl,
 
         -- Premium flows (option strategies)
-        sum(premium_received) as total_premium_received,
-        sum(abs(premium_paid)) as total_premium_paid,
+        sum(c.premium_received) as total_premium_received,
+        sum(abs(c.premium_paid)) as total_premium_paid,
 
         -- Trade counts (DRIP reinvestments excluded upstream in
         -- int_equity_sessions.num_trades — they are lots, not placed trades)
         count(*) as num_trade_groups,
-        sum(num_trades) as num_individual_trades,
-        countif(is_winner and status = 'Closed') as num_winners,
-        countif(not is_winner and status = 'Closed') as num_losers,
+        sum(c.num_trades) as num_individual_trades,
+        max(coalesce(uc.num_winners, 0)) as num_winners,
+        max(coalesce(uc.num_losers, 0)) as num_losers,
 
-        -- Win rate (closed trade groups only)
+        -- Win rate over decided outcomes only ($0 is neither).
         safe_divide(
-            countif(is_winner and status = 'Closed'),
-            nullif(countif(status = 'Closed'), 0)
+            max(coalesce(uc.num_winners, 0)),
+            nullif(max(coalesce(uc.num_decided, 0)), 0)
         ) as win_rate,
 
         -- Average P&L per closed trade group
         safe_divide(
-            sum(case when status = 'Closed' then total_pnl else 0 end),
-            nullif(countif(status = 'Closed'), 0)
+            sum(case when c.status = 'Closed' then c.total_pnl else 0 end),
+            nullif(countif(c.status = 'Closed'), 0)
         ) as avg_pnl_per_trade,
 
         -- Duration
-        round(avg(days_in_trade), 1) as avg_days_in_trade,
+        round(avg(c.days_in_trade), 1) as avg_days_in_trade,
 
         -- Date span
-        min(open_date) as first_trade_date,
-        max(coalesce(close_date, current_date())) as last_trade_date
+        min(c.open_date) as first_trade_date,
+        max(coalesce(c.close_date, current_date())) as last_trade_date
 
-    from classified
-    group by tenant_id, account, user_id, symbol, strategy
+    from classified c
+    left join unit_counts uc
+        on (c.tenant_id is not distinct from uc.tenant_id)
+        and c.account = uc.account
+        and (c.user_id is not distinct from uc.user_id)
+        and c.symbol = uc.symbol
+        and c.strategy = uc.strategy
+    group by c.tenant_id, c.account, c.user_id, c.symbol, c.strategy
 ),
 
 ---------------------------------------------------------------------

@@ -129,7 +129,7 @@
                 {% include "_paper_trade_receipt.html" %}
                 <div class="d-flex flex-wrap gap-2 mt-3">
                     <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Practice another</a>
-                    <a class="btn btn-primary" href="{{ url_for('position_detail', symbol=sent.link_symbol or sent.symbol) }}">See {{ sent.link_symbol or sent.symbol }}</a>
+                    <a class="btn btn-primary" href="{{ url_for('position_detail', symbol=sent.link_symbol or sent.symbol, tenants=sent.tenant_id) if sent.tenant_id else url_for('position_detail', symbol=sent.link_symbol or sent.symbol) }}">See {{ sent.link_symbol or sent.symbol }}</a>
                 </div>
             {% elif ticket %}
                 {% if ticket.session_note %}
@@ -432,7 +432,7 @@
                     </div>
                     <div class="d-flex flex-wrap gap-2">
                         {% if order.link_symbol or order.symbol %}
-                        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('position_detail', symbol=order.link_symbol or order.symbol) }}">See {{ order.link_symbol or order.symbol }}</a>
+                        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('position_detail', symbol=order.link_symbol or order.symbol, tenants=order.tenant_id) if order.tenant_id else url_for('position_detail', symbol=order.link_symbol or order.symbol) }}">See {{ order.link_symbol or order.symbol }}</a>
                         {% endif %}
                         {% if order.cancelable and order.brokerage_order_id %}
                         <form method="POST" action="{{ url_for('paper_practice_cancel') }}">

@@ -4,7 +4,8 @@ The position page groups a share lot with the calls written against it.
 These tests use the same shape as the RKLB cycle described for the
 feature: 100 shares bought at $69, five weekly calls that expire for
 $931, then a $63 call assigned for $75 of premium and a $600 share loss.
-Net of the whole run is +$406. Fees stay out of the math.
+Net of the whole run is +$406 when the fills have no fees. The whole-run
+net subtracts broker fees; each call's amount stays the premium.
 """
 
 from datetime import date
@@ -323,6 +324,9 @@ def test_fees_are_not_subtracted_from_premium():
     ]
     runs = build_covered_call_runs(_frame(rows), as_of=date(2026, 1, 4))
     assert runs[0]["calls"][0]["premium"] == 100.0
+    assert runs[0]["fees"] == 2.3
+    assert runs[0]["net"] == round(runs[0]["premium_total"] + runs[0]["share_pnl"] - runs[0]["fees"], 2)
+    assert "after fees" in runs[0]["net_label"]
     # Share result uses the fill price, not the fee-netted cash amount.
     assert runs[0]["share_sentence"].startswith("100 shares bought at $50.")
 
@@ -617,7 +621,7 @@ def test_template_renders_the_run_numbers():
     assert "+$406.00" in html
     assert "Expired" in html
     assert "Assigned" in html
-    assert "Broker fees are not included" in html
+    assert "The whole-run net includes broker fees" in html
     assert "Whole run" in html
     assert "Calls net" in html
     assert ">Net<" in html

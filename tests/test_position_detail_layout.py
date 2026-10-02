@@ -5,24 +5,24 @@ from pathlib import Path
 PAGE = Path("app/templates/position_detail.html").read_text()
 
 
-def test_story_order_is_headline_chart_what_worked_then_details():
+def test_story_order_is_headline_mirror_then_legs():
     story = PAGE.find('{% include "_story_summary.html" %}')
+    mirror_end = PAGE.find("<!-- MIRROR-END -->")
+    legs = PAGE.find('id="pd-legs"')
     chart = PAGE.find('id="position-chart"')
     worked = PAGE.find(">What worked<")
-    runs = PAGE.find('{% include "_covered_call_runs.html" %}')
-    held = PAGE.find('{% include "_held_to_expiry.html" %}')
-    legs = PAGE.rfind("Position Legs")
+    details = PAGE.find('id="pd-details"')
     by_type = PAGE.find('id="pd-by-type"')
     raw = PAGE.find('id="pd-raw"')
     matrix = PAGE.find('id="pd-matrix"')
-    assert story < chart < worked < runs < held < legs
-    assert legs - held < 400
-    assert legs < by_type < raw < matrix
+    assert story < mirror_end < legs < chart < worked
+    assert details < by_type < raw < matrix
+    assert '<details class="pd-fold" id="pd-details">' in PAGE
+    assert "Breakdown by type and the raw log" in PAGE
     assert PAGE.count('{% include "_story_summary.html" %}') == 1
     assert PAGE.count('{% include "_held_to_expiry.html" %}') == 1
-    show_more = PAGE.find('id="pd-show-more"')
-    assert 0 < show_more < worked
     assert PAGE.count('id="pd-matrix"') == 1
+    assert PAGE.count('id="pd-legs"') == 1
 
 
 def test_gain_and_loss_are_one_pair_and_cards_share_one_style():
@@ -59,14 +59,19 @@ def test_strategy_premium_column_says_collected():
     assert "Premium received on this strategy." in PAGE
 
 
-def test_wide_tables_stack_on_a_phone():
+def test_wide_tables_keep_columns_on_a_phone():
     assert "table.pd-legs" in PAGE
     assert "table.pd-stack" in PAGE
     assert "pd-legs-scroll" in PAGE
     assert 'class="pd-openable"' in PAGE
     assert 'data-label="Amount"' in PAGE
     assert 'class="pd-extra"' in PAGE
+    assert 'class="pd-more"' in PAGE
     # The legs table tag stays stable for the cell renderer.
     assert '<table class="table table-sm table-hover align-middle mb-0 pd-legs">' in PAGE
     assert "@media (max-width: 640px)" in PAGE
-    assert "overflow-x: clip" in PAGE
+    phone = PAGE.split("@media (max-width: 640px)", 1)[1].split("</style>", 1)[0]
+    assert "display: table" in phone
+    assert "tbody { display: block" not in phone
+    assert "thead { display: none" not in phone
+    assert "overflow-x: auto" in phone

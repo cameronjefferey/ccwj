@@ -49,6 +49,7 @@ FILTERED_QUERIES = [
     ("app.paper_practice", "PAPER_READOUT_SQL"),
     ("app.positions_page", "POSITIONS_TAG_STRAT_QUERY"),
     ("app.sectors_page", "SECTORS_QUERY"),
+    ("app.strategies", "BOOK_TOTALS_QUERY"),
     ("app.strategies", "STRATEGY_PERFORMANCE_QUERY"),
     ("app.strategies", "STRATEGY_SYMBOL_GRAIN_QUERY"),
     ("app.strategies", "STRATEGY_TREND_QUERY"),

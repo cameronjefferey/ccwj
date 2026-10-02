@@ -42,11 +42,54 @@ direction_lookup as (
         sum(case when action = 'option_sell_to_open' then quantity else 0 end) as total_sto_qty,
         sum(case when action = 'option_buy_to_open'  then quantity else 0 end) as total_bto_qty,
         case
+            -- An opening fill exists. Majority of opening quantity wins.
+            -- sell-to-open >= buy-to-open is NOT safe when both are 0: a
+            -- closing-only contract (buy-to-close / assignment with no STO
+            -- in the broker window) would be labeled Sold, then Naked Call
+            -- or Cash-Secured Put, and the close proceeds would book as a
+            -- 100% win. KLAC 800C, NVO, AMZN, DJT 30P.
             when sum(case when action = 'option_sell_to_open' then quantity else 0 end)
-              >= sum(case when action = 'option_buy_to_open'  then quantity else 0 end)
+               + sum(case when action = 'option_buy_to_open'  then quantity else 0 end)
+               > 1e-9
+            then case
+                when sum(case when action = 'option_sell_to_open' then quantity else 0 end)
+                  >= sum(case when action = 'option_buy_to_open'  then quantity else 0 end)
+                then 'Sold'
+                else 'Bought'
+            end
+            -- No opening fill. Infer the side the close is undoing.
+            -- Buying to close or an assignment closes a short. Selling to
+            -- close closes a long. A lone option_exercised stays Unknown:
+            -- Schwab uses that action for both a long exercise and a short
+            -- assignment, and the split-link below closes the pre-split
+            -- contract from the adjusted symbol.
+            when sum(case when action = 'option_buy_to_close' then quantity else 0 end)
+               + sum(case when action = 'option_assigned' then quantity else 0 end)
+               > sum(case when action = 'option_sell_to_close' then quantity else 0 end)
             then 'Sold'
-            else 'Bought'
-        end as direction
+            when sum(case when action = 'option_sell_to_close' then quantity else 0 end)
+               > sum(case when action = 'option_buy_to_close' then quantity else 0 end)
+               + sum(case when action = 'option_assigned' then quantity else 0 end)
+            then 'Bought'
+            when sum(case when action = 'option_buy_to_close' then quantity else 0 end)
+               + sum(case when action = 'option_assigned' then quantity else 0 end)
+               > 1e-9
+            then 'Sold'
+            else 'Unknown'
+        end as direction,
+        -- Closing activity with no opening fill: the contract was opened
+        -- before the broker history window. Realized P&L is unknown
+        -- (cost basis is not in the file) and must not be booked.
+        (
+            sum(case when action = 'option_sell_to_open' then quantity else 0 end)
+          + sum(case when action = 'option_buy_to_open'  then quantity else 0 end)
+          <= 1e-9
+          and sum(case
+                when action in (
+                    'option_buy_to_close', 'option_sell_to_close',
+                    'option_assigned', 'option_exercised', 'option_expired'
+                ) then quantity else 0 end) > 1e-9
+        ) as opened_before_history
     from option_trades
     group by 1, 2, 3, 4
 ),
@@ -62,6 +105,7 @@ contract_summary as (
         max(o.option_strike)  as option_strike,
         max(o.option_type)    as option_type,
         d.direction,
+        d.opened_before_history,
 
         -- Dates
         --
@@ -221,7 +265,7 @@ contract_summary as (
         and (o.user_id is not distinct from d.user_id)
         and (o.tenant_id is not distinct from d.tenant_id)
         and o.trade_symbol = d.trade_symbol
-    group by o.tenant_id, o.account, o.user_id, o.trade_symbol, o.underlying_symbol, d.direction
+    group by o.tenant_id, o.account, o.user_id, o.trade_symbol, o.underlying_symbol, d.direction, d.opened_before_history
 ),
 
 -- Open options that appear in stg_current (e.g. Schwab snapshot) but have no
@@ -240,6 +284,7 @@ snapshot_only_options as (
         c.option_strike,
         c.option_type,
         case when coalesce(c.quantity, 0) < 0 then 'Sold' else 'Bought' end as direction,
+        false as opened_before_history,
 
         coalesce(c.snapshot_date, current_date()) as open_date,
         -- Snapshot-only contracts have no fills in stg_history, so
@@ -314,6 +359,75 @@ all_contracts as (
     select * from contract_summary
     union all
     select * from snapshot_only_options
+),
+
+-- A split changes the OCC symbol. SCHD's covered 85C became 3x 28.33C
+-- after the 3:1 split, and the broker shipped only an Exercised row on
+-- the adjusted symbol. That row has no opening fill (opened_before_history)
+-- while the original 85C never receives a close, so it stays open and the
+-- adjusted symbol books as a qty-0 loss. When strike and quantity scale
+-- by the split factor between the two dates, copy the adjusted close onto
+-- the original contract. cumulative_split_factor(d) is the product of
+-- split_ratio for splits strictly after d, so a pre-split open of 85
+-- divided by 3 lands on 28.33.
+split_links as (
+    select
+        orig.tenant_id,
+        orig.account,
+        orig.user_id,
+        orig.trade_symbol as orig_trade_symbol,
+        adj.close_date as mapped_close_date,
+        adj.close_type as mapped_close_type
+    from all_contracts adj
+    join all_contracts orig
+        on (adj.tenant_id is not distinct from orig.tenant_id)
+        and adj.account = orig.account
+        and (adj.user_id is not distinct from orig.user_id)
+        and upper(trim(coalesce(adj.underlying_symbol, '')))
+            = upper(trim(coalesce(orig.underlying_symbol, '')))
+        and adj.option_type = orig.option_type
+        and adj.trade_symbol != orig.trade_symbol
+        and coalesce(adj.opened_before_history, false)
+        and not coalesce(orig.opened_before_history, false)
+        and coalesce(orig.contracts_sold_to_open, 0)
+            + coalesce(orig.contracts_bought_to_open, 0) > 1e-9
+        and orig.close_type is null
+        and adj.option_strike is not null
+        and orig.option_strike is not null
+    left join {{ ref('int_split_factors') }} fo
+        on fo.symbol = orig.underlying_symbol
+        and fo.trade_date = orig.open_date
+    left join {{ ref('int_split_factors') }} fa
+        on fa.symbol = adj.underlying_symbol
+        and fa.trade_date = coalesce(adj.close_date, adj.open_date)
+    where coalesce(fo.cumulative_split_factor, 1)
+            > coalesce(fa.cumulative_split_factor, 1) + 1e-9
+      and abs(
+            orig.option_strike
+            / (coalesce(fo.cumulative_split_factor, 1)
+               / coalesce(fa.cumulative_split_factor, 1))
+            - adj.option_strike
+          ) < 0.05
+      and abs(
+            (coalesce(orig.contracts_sold_to_open, 0)
+             + coalesce(orig.contracts_bought_to_open, 0))
+            * (coalesce(fo.cumulative_split_factor, 1)
+               / coalesce(fa.cumulative_split_factor, 1))
+            - greatest(
+                coalesce(adj.contracts_closed, 0),
+                coalesce(adj.contracts_sold_to_open, 0)
+                    + coalesce(adj.contracts_bought_to_open, 0)
+              )
+          ) < 0.05
+    qualify row_number() over (
+        partition by orig.tenant_id, orig.account, orig.user_id, orig.trade_symbol
+        order by abs(
+            orig.option_strike
+            / (coalesce(fo.cumulative_split_factor, 1)
+               / coalesce(fa.cumulative_split_factor, 1))
+            - adj.option_strike
+        )
+    ) = 1
 ),
 
 -- OTM-at-expiry inference (worthless-expiry auto-close).
@@ -414,7 +528,9 @@ joined as (
         iotm.inferred_otm_today,
         cur.trade_symbol   as cur_trade_symbol,
         cur.market_value   as cur_market_value,
-        cur.unrealized_pnl as cur_unrealized_pnl
+        cur.unrealized_pnl as cur_unrealized_pnl,
+        sl.mapped_close_date,
+        sl.mapped_close_type
     from all_contracts c
     left join otm_at_expiry iotm
         on c.account = iotm.account
@@ -444,11 +560,18 @@ joined as (
             )
         )
         and cur.instrument_type in ('Call', 'Put')
+    left join split_links sl
+        on (c.tenant_id is not distinct from sl.tenant_id)
+        and c.account = sl.account
+        and (c.user_id is not distinct from sl.user_id)
+        and c.trade_symbol = sl.orig_trade_symbol
 ),
 
 flagged as (
     select
-        *,
+        * except (close_date, close_type),
+        coalesce(close_date, mapped_close_date) as close_date,
+        coalesce(close_type, mapped_close_type) as close_type,
         -- Contracts still open = everything opened minus everything closed
         -- (BTC/STC/expired/assigned/exercised). > 0 means a live remainder.
         (coalesce(contracts_sold_to_open, 0)
@@ -514,6 +637,7 @@ select
     option_strike,
     option_type,
     direction,
+    coalesce(opened_before_history, false) as opened_before_history,
     open_date,
 
     -- Output close_date: NULL for a partial close (the position is still
@@ -594,8 +718,14 @@ select
     end as status,
 
     -- Current market data for open contracts
-    coalesce(cur_market_value, 0)    as current_market_value,
-    coalesce(cur_unrealized_pnl, 0)  as current_unrealized_pnl,
+    case
+        when coalesce(opened_before_history, false) then 0.0
+        else coalesce(cur_market_value, 0)
+    end as current_market_value,
+    case
+        when coalesce(opened_before_history, false) then 0.0
+        else coalesce(cur_unrealized_pnl, 0)
+    end as current_unrealized_pnl,
 
     -- Total P&L = realized (closed portion) + unrealized (open portion).
     --
@@ -621,6 +751,10 @@ select
     -- FULLY OPEN + NEVER SNAPSHOTTED: contribute $0, not net_cash_flow —
     -- defer the credit to close (AGENTS "Option P&L Attribution" #3).
     case
+        -- Cost basis is not in the file. Booking the close proceeds
+        -- alone is a phantom profit (or a phantom loss on an exercised
+        -- split-adjusted symbol).
+        when coalesce(opened_before_history, false) then 0.0
         when close_type is not null and not is_partial_open then net_cash_flow
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then net_cash_flow
@@ -645,6 +779,7 @@ select
     -- closed contract it equals net_cash_flow (== total_pnl), so those
     -- consumers are byte-for-byte unchanged for the non-partial case.
     case
+        when coalesce(opened_before_history, false) then 0.0
         when close_type is not null and not is_partial_open then net_cash_flow
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then net_cash_flow

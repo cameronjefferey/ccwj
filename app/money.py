@@ -6,6 +6,31 @@ negative prints ``$-1,234.56``. Callers (Jinja ``money()`` and the
 """
 
 
+# Typographic minus (U+2212). Execution review and the trader profile
+# already use this; Insights points go through ``signed_points`` so a
+# loss is not an ASCII hyphen.
+MINUS = "\u2212"
+
+
+def signed_points(value, decimals=1, suffix=""):
+    """``+10.3`` or ``−10.3``. Zero has no sign. Non-numeric is an em dash."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if number != number:
+        return "—"
+    places = int(decimals) if decimals is not None else 1
+    if places < 0:
+        places = 0
+    magnitude = f"{abs(number):.{places}f}"
+    if number < 0:
+        return MINUS + magnitude + suffix
+    if number > 0:
+        return "+" + magnitude + suffix
+    return magnitude + suffix
+
+
 def fmt_money(v, decimals=2, signed=False):
     """Format ``v`` as ``$1,234.56`` or ``-$1,234.56``.
 

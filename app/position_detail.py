@@ -37,6 +37,7 @@ from app.tenant_scope import (
     filter_df_by_tenant_ids as _filter_df_by_tenant_ids,
     tenant_sql_and as _tenant_sql_and,
 )
+from app.outcome_units import closing_without_an_open, net_collected
 from app.pnl_charts import (
     CHART_DATA_ALL_QUERY,
     CHART_DATA_QUERY,
@@ -208,8 +209,7 @@ def _wl_from_closed_frames(closed_legs_df, closed_equity_df):
     """Win/loss at the same grain as positions_summary.
 
     One closed option contract, plus one equity session (partial sells
-    inside a chapter sum to a single win or loss). Breakeven is a loss,
-    matching ``is_winner`` (``total_pnl > 0``).
+    inside a chapter sum to a single win or loss). Rounded $0 is neither.
     """
     opt_wins = opt_losses = 0
     if (
@@ -217,9 +217,9 @@ def _wl_from_closed_frames(closed_legs_df, closed_equity_df):
         and not closed_legs_df.empty
         and "total_pnl" in closed_legs_df.columns
     ):
-        pnl = pd.to_numeric(closed_legs_df["total_pnl"], errors="coerce").fillna(0)
+        pnl = pd.to_numeric(closed_legs_df["total_pnl"], errors="coerce").fillna(0).round(2)
         opt_wins = int((pnl > 0).sum())
-        opt_losses = int((pnl <= 0).sum())
+        opt_losses = int((pnl < 0).sum())
 
     eq_wins = eq_losses = 0
     if (
@@ -238,9 +238,9 @@ def _wl_from_closed_frames(closed_legs_df, closed_equity_df):
             )
         else:
             pnl = pd.to_numeric(frame["realized_pnl"], errors="coerce").fillna(0)
-        pnl = pd.to_numeric(pnl, errors="coerce").fillna(0)
+        pnl = pd.to_numeric(pnl, errors="coerce").fillna(0).round(2)
         eq_wins = int((pnl > 0).sum())
-        eq_losses = int((pnl <= 0).sum())
+        eq_losses = int((pnl < 0).sum())
     return opt_wins + eq_wins, opt_losses + eq_losses
 
 
@@ -1213,9 +1213,12 @@ def _rollup_int_strategy_to_summary_shape(cdf: pd.DataFrame) -> pd.DataFrame:
         if c in cdf.columns:
             cdf[c] = pd.to_numeric(cdf[c], errors="coerce").fillna(0.0)
     if "is_winner" in cdf.columns:
-        cdf["is_winner"] = cdf["is_winner"].fillna(False).astype(bool)
+        # NULL is neither. fillna(False) would book a rounded $0 close as a loss.
+        cdf["_win"] = cdf["is_winner"].eq(True).fillna(False)
+        cdf["_loss"] = cdf["is_winner"].eq(False).fillna(False)
     else:
-        cdf = cdf.assign(is_winner=False)
+        cdf["_win"] = False
+        cdf["_loss"] = False
     if "status" in cdf.columns:
         cdf["_st"] = cdf["status"].astype(str).str.strip().str.lower()
     else:
@@ -1249,15 +1252,8 @@ def _rollup_int_strategy_to_summary_shape(cdf: pd.DataFrame) -> pd.DataFrame:
         n_groups = len(ssub)
         n_indiv = int(ssub["num_trades"].sum()) if "num_trades" in ssub else n_groups
         closed_mask = ~is_open
-        if "is_winner" in ssub.columns:
-            w_m = ssub[closed_mask & ssub["is_winner"]]
-            l_m = ssub[closed_mask & ~ssub["is_winner"]]
-            n_w = int(len(w_m))
-            n_l = int(len(l_m))
-        else:
-            closed_pn = ssub.loc[closed_mask, "total_pnl"]
-            n_w = int((closed_pn > 0).sum())
-            n_l = int((closed_pn <= 0).sum())
+        n_w = int((closed_mask & ssub["_win"]).sum())
+        n_l = int((closed_mask & ssub["_loss"]).sum())
         win_rate = n_w / (n_w + n_l) if (n_w + n_l) else 0.0
         avg_p = c_real / n_closed if n_closed else 0.0
         avg_d = 0.0
@@ -1989,6 +1985,7 @@ def collapse_raw_trade_log(trades):
 
 @app.route("/position/<symbol>")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 @skeleton_page
 def position_detail(symbol):
     bounce = _redirect_if_no_accounts()
@@ -2776,9 +2773,18 @@ def position_detail(symbol):
     # cross-tenant closed rows that carry no tenant_id).
     _tenant_labels = _tenant_label_map_for_user(getattr(current_user, "id", None))
     for _sr in strategy_rows:
+        _sr["total_premium_received"] = round(net_collected(
+            _sr.get("total_premium_received"),
+            _sr.get("total_premium_paid"),
+            _sr.get("strategy"),
+        ), 2)
         _tid = _sr.get("tenant_id")
         _lbl = _tenant_labels.get(_tid) if _tid else None
         _sr["account_display"] = _lbl or _norm_account_label(_sr.get("account"))
+    if kpis and not leg_param and strategy_rows:
+        kpis["premium_collected"] = round(sum(
+            float(r.get("total_premium_received") or 0) for r in strategy_rows
+        ), 2)
 
     # Open equity unrealized follows the close-based snapshot (same number
     # as Position Legs and the hero ledger). See
@@ -2921,12 +2927,30 @@ def position_detail(symbol):
     kp_ref = float(kpis.get("total_return") or 0) if kpis else None
     mart_term = _chart_data_terminal(chart_data)
 
-    ch_stg = (
-        _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df)
-        if not trades_pre_leg.empty else None
-    )
+    if not trades_pre_leg.empty:
+        # Same numbers as a direct call. The walk is pure in its inputs,
+        # so a repeat view of this symbol skips it.
+        _stg_key = (
+            "pos_stg_chart",
+            str(date.today()),
+            frame_fingerprint(trades_pre_leg, current_df),
+        )
+        ch_stg = cached_payload(
+            _stg_key,
+            lambda: _cumulative_pnl_from_stg_trades(trades_pre_leg, current_df),
+        )
+    else:
+        ch_stg = None
     n_stg = len(ch_stg["dates"]) if ch_stg and ch_stg.get("dates") else 0
-    ch_leg = _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg)
+    _leg_key = (
+        "pos_leg_chart",
+        str(date.today()),
+        frame_fingerprint(closed_legs_pre_leg, closed_equity_pre_leg),
+    )
+    ch_leg = cached_payload(
+        _leg_key,
+        lambda: _cumulative_pnl_from_leg_closes(closed_legs_pre_leg, closed_equity_pre_leg),
+    )
     n_leg = len(ch_leg["dates"]) if ch_leg and ch_leg.get("dates") else 0
 
     cands_src = []
@@ -3049,7 +3073,11 @@ def position_detail(symbol):
             "proceeds": round(o_proceeds, 2),
             "pnl": round(o_pnl, 2),
             "return_pct": o_return,
-            "is_winner": o_pnl > 0,
+            "is_winner": (
+                True if round(o_pnl, 2) > 0
+                else False if round(o_pnl, 2) < 0
+                else None
+            ),
             "type": "option",
             "tenant_id": leg.get("tenant_id"),
             "account": str(leg.get("account") or "").strip(),
@@ -3078,7 +3106,11 @@ def position_detail(symbol):
             "proceeds": round(eq_proceeds, 2),
             "pnl": round(eq_pnl, 2),
             "return_pct": eq_return,
-            "is_winner": eq_pnl > 0,
+            "is_winner": (
+                True if round(eq_pnl, 2) > 0
+                else False if round(eq_pnl, 2) < 0
+                else None
+            ),
             "type": "equity",
             "session_id": leg.get("session_id"),
             "tenant_id": leg.get("tenant_id"),
@@ -3498,7 +3530,8 @@ def position_detail(symbol):
     # Covered-call / wheel runs use the tenant-scoped fill stream from
     # before the leg filter, so clicking one leg does not split a cycle
     # into a share piece and a call piece. Inferred opening balances restore
-    # shares acquired before the broker's history window. Fees stay out.
+    # shares acquired before the broker's history window. The whole-run
+    # net subtracts broker fees; each call's amount stays the premium.
     covered_call_runs = []
     try:
         covered_call_runs = build_covered_call_runs(
@@ -3547,10 +3580,28 @@ def position_detail(symbol):
                 "scope": _scope,
                 "pending": not _body,
                 "locked": not _unlocked,
+                # The button is an upsell for a withheld remainder. An
+                # entitled user (paid AI add-on) never sees it. A locked
+                # user does not see it until a read actually exists —
+                # "read the rest" with an empty body is not a remainder.
+                "show_upgrade": (not _unlocked) and bool(_body),
             }
     except Exception as exc:
         app.logger.warning("chart read prep failed for %s: %s", symbol, exc)
         chart_read = None
+    _direction_by_symbol = {}
+    for _leg in closed_legs_list:
+        _tsym = str(_leg.get("trade_symbol") or "").strip()
+        _direction = str(_leg.get("direction") or "").strip()
+        if _tsym and _direction:
+            _direction_by_symbol[_tsym] = _direction
+    for _trade in trades:
+        if str(_trade.get("action") or "") != "option_exercised":
+            continue
+        _tsym = str(_trade.get("trade_symbol") or "").strip()
+        if _tsym in _direction_by_symbol:
+            _trade["direction"] = _direction_by_symbol[_tsym]
+    history_before_open = closing_without_an_open(trades)
     beginner_trades = []
     try:
         from app.paper_practice import beginner_readouts
@@ -3573,6 +3624,7 @@ def position_detail(symbol):
         breakdown_totals=breakdown_totals,
         breakdown_fees_total=round(breakdown_fees_total, 2),
         trades=trades,
+        history_before_open=history_before_open,
         trade_outcomes=trade_outcomes,
         current_positions=current_positions,
         option_matrices=option_matrices,
@@ -3627,7 +3679,10 @@ def position_detail(symbol):
 
 @app.route("/position/<symbol>/chart-read", methods=["POST"])
 @login_required
-@limiter.limit("3 per minute; 10 per hour; 30 per day")
+# A position page posts this on load. 3/minute and 10/hour 429'd the
+# second or third symbol in one sitting (RKLB, then KLAC). Browsing a
+# book of symbols has to fit; the brief is cached after the first write.
+@limiter.limit("30 per minute; 200 per hour")
 def position_chart_read(symbol):
     """Generate the chart read and return only the caller-visible portion.
 
@@ -3884,6 +3939,7 @@ _PEEK_SYMBOL_RE = re.compile(r"^[A-Za-z0-9.\-]{1,16}$")
 
 @app.route("/api/position/<symbol>/peek")
 @login_required
+@limiter.limit("120 per minute; 2000 per hour")
 def position_peek(symbol):
     """Lightweight JSON for the right-side position drawer on Today / Overview.
 

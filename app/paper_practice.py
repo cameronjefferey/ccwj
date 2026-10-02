@@ -261,7 +261,7 @@ def money_strike(amount: int) -> str:
     return f"${int(amount):,}"
 
 
-def practice_receipt(ticket) -> dict:
+def practice_receipt(ticket, tenant_id=None) -> dict:
     """What the learner can look at while the mirror catches up to the order."""
     expiry = date.fromisoformat(ticket["expiry"])
     views = _views_as_placed(ticket.get("views") or {}, ticket)
@@ -284,6 +284,7 @@ def practice_receipt(ticket) -> dict:
         "status_label": "Open",
         "brokerage_order_id": ticket.get("brokerage_order_id") or "",
         "occ": ticket.get("occ") or "",
+        "tenant_id": tenant_id or ticket.get("tenant_id") or "",
     }
 
 
@@ -1431,7 +1432,7 @@ def paper_practice_place():
     session.pop(TICKET_KEY, None)
     ticket = dict(ticket)
     ticket["brokerage_order_id"] = _brokerage_order_id(body if isinstance(body, dict) else {})
-    receipt = practice_receipt(ticket)
+    receipt = practice_receipt(ticket, tenant_id=account.get("tenant_id"))
     session[SENT_KEY] = receipt
     _remember_order(receipt)
     queue_account_read_sync(current_user.id, account["row"])
