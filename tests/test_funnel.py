@@ -1,5 +1,6 @@
 """First-party funnel: cookie, events, pixel gating, admin analytics."""
 
+import hashlib
 import html
 import json
 import os
@@ -216,13 +217,88 @@ def test_capi_is_off_without_a_token_and_posts_when_configured(monkeypatch):
             assert send_capi(
                 "Purchase", "purchaseabc123", click_id="click12345", user_id=9,
             ) is True
-        assert posted["url"].endswith("/t2_testpixel")
-        event = posted["body"]["events"][0]
-        assert event["event_metadata"]["conversion_id"] == "purchaseabc123"
-        assert event["event_type"]["tracking_type"] == "Purchase"
-        assert event["user"]["click_id"] == "click12345"
+        assert posted["url"] == (
+            "https://ads-api.reddit.com/api/v3/pixels/t2_testpixel/conversion_events"
+        )
+        assert "v2.0" not in posted["url"]
+        event = posted["body"]["data"]["events"][0]
+        assert event["metadata"]["conversion_id"] == "purchaseabc123"
+        assert event["type"]["tracking_type"] == "PURCHASE"
+        assert event["click_id"] == "click12345"
         assert "email" not in event["user"]
         assert posted["auth"] == "Bearer token-secret"
+    finally:
+        app.config["REDDIT_PIXEL_ID"] = previous_pixel
+        app.config["REDDIT_CAPI_TOKEN"] = previous_token
+
+
+def test_capi_v3_payload_matches_the_pixel_conversion_id(monkeypatch):
+    """v3 body: data wrapper, WEBSITE, UPPER_SNAKE type, conversion_id = pixel id."""
+    previous_pixel = app.config.get("REDDIT_PIXEL_ID")
+    previous_token = app.config.get("REDDIT_CAPI_TOKEN")
+    posted = []
+
+    class _Resp:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _urlopen(req, timeout=0):
+        posted.append({
+            "url": req.full_url,
+            "body": json.loads(req.data.decode()),
+        })
+        return _Resp()
+
+    monkeypatch.setenv("FUNNEL_CAPI_SYNC", "1")
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    app.config["REDDIT_PIXEL_ID"] = "t2_testpixel"
+    app.config["REDDIT_CAPI_TOKEN"] = "token-secret"
+    pixel_id = "pagevisitabc123"
+    try:
+        with app.test_request_context("/start?rdt_cid=secretclick&utm_source=reddit"):
+            assert send_capi("PageVisit", pixel_id, click_id="click12345") is True
+        with app.test_request_context("/"):
+            assert send_capi("NotARedditEvent", pixel_id) is False
+        body = posted[0]["body"]
+        assert list(body) == ["data"]
+        assert list(body["data"]) == ["events"]
+        event = body["data"]["events"][0]
+        assert event["action_source"] == "WEBSITE"
+        assert event["type"] == {"tracking_type": "PAGE_VISIT"}
+        assert event["metadata"]["conversion_id"] == pixel_id
+        assert "event_type" not in event
+        assert "event_metadata" not in event
+        assert event["click_id"] == "click12345"
+        assert "user" not in event
+        assert isinstance(event["event_at"], int)
+        assert event["event_source_url"] == "http://localhost/start"
+        assert "rdt_cid" not in event["event_source_url"]
+        assert "?" not in event["event_source_url"]
+        assert len(posted) == 1
+
+        signup_id = "signupabc12345"
+        with app.test_request_context("/"):
+            assert send_capi("SignUp", signup_id, user_id=9) is True
+        signup = posted[1]["body"]["data"]["events"][0]
+        assert signup["type"]["tracking_type"] == "SIGN_UP"
+        assert signup["metadata"]["conversion_id"] == signup_id
+        assert signup["user"]["external_id"] == hashlib.sha256(b"9").hexdigest()
+        assert "email" not in signup["user"]
+        assert "ip_address" not in signup["user"]
+        assert "click_id" not in signup["user"]
+
+        with app.test_request_context("/"):
+            assert send_capi("Lead", "leadabc12345") is True
+            assert send_capi("Purchase", "purchaseabc123") is True
+        assert posted[2]["body"]["data"]["events"][0]["type"]["tracking_type"] == "LEAD"
+        assert posted[3]["body"]["data"]["events"][0]["type"]["tracking_type"] == "PURCHASE"
+        assert posted[3]["body"]["data"]["events"][0]["metadata"]["conversion_id"] == "purchaseabc123"
     finally:
         app.config["REDDIT_PIXEL_ID"] = previous_pixel
         app.config["REDDIT_CAPI_TOKEN"] = previous_token

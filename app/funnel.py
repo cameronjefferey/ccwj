@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import threading
+import time
 import uuid
 from urllib.parse import urlparse
 
@@ -871,13 +872,40 @@ def reddit_pixel_events() -> list[dict]:
     return events
 
 
-def send_capi(event_name: str, event_id: str, *, click_id=None, user_id=None) -> bool:
-    """Reddit Conversions API. No-op without REDDIT_CAPI_TOKEN or when opted out.
+# Pixel names stay PascalCase (rdt('track', name)). CAPI v3 wants
+# UPPER_SNAKE tracking_type. https://ads-api.reddit.com/docs/v3/guides/programs/capi/migration
+_CAPI_TRACKING = {
+    "PageVisit": "PAGE_VISIT",
+    "SignUp": "SIGN_UP",
+    "Lead": "LEAD",
+    "Purchase": "PURCHASE",
+}
 
-    ``event_id`` is the pixel ``conversionId`` so Reddit can dedup.
+
+def _capi_event_source_url() -> str:
+    """Scheme, host, and path. The query string can carry click ids and tokens."""
+    if not has_request_context():
+        return ""
+    try:
+        parsed = urlparse(request.url or "")
+    except Exception:
+        return ""
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path or '/'}"
+
+
+def send_capi(event_name: str, event_id: str, *, click_id=None, user_id=None) -> bool:
+    """Reddit Conversions API v3. No-op without REDDIT_CAPI_TOKEN or when opted out.
+
+    ``event_id`` is the pixel ``conversionId``. CAPI sends it as
+    ``metadata.conversion_id`` so Reddit can dedup the two.
     The body has the click id and a hash of the internal user id. No email.
     """
     if tracking_opt_out() or _user_opted_out(user_id):
+        return False
+    tracking = _CAPI_TRACKING.get(event_name or "")
+    if not tracking:
         return False
     try:
         token = (current_app.config.get("REDDIT_CAPI_TOKEN") or "").strip()
@@ -887,21 +915,23 @@ def send_capi(event_name: str, event_id: str, *, click_id=None, user_id=None) ->
         pixel = (os.environ.get("REDDIT_PIXEL_ID") or "").strip()
     if not token or not pixel or not event_id:
         return False
-    user = {}
-    if click_id:
-        user["click_id"] = click_id
-    if user_id:
-        user["external_id"] = hashlib.sha256(str(user_id).encode()).hexdigest()
-    import time
-    body = {
-        "events": [{
-            "event_at": int(time.time() * 1000),
-            "event_type": {"tracking_type": event_name},
-            "event_metadata": {"conversion_id": event_id},
-            "user": user,
-        }]
+    event = {
+        "event_at": int(time.time() * 1000),
+        "action_source": "WEBSITE",
+        "type": {"tracking_type": tracking},
+        "metadata": {"conversion_id": event_id},
     }
-    url = f"https://ads-api.reddit.com/api/v2.0/conversions/events/{pixel}"
+    if click_id:
+        event["click_id"] = click_id
+    source = _capi_event_source_url()
+    if source:
+        event["event_source_url"] = source
+    if user_id:
+        event["user"] = {
+            "external_id": hashlib.sha256(str(user_id).encode()).hexdigest(),
+        }
+    body = {"data": {"events": [event]}}
+    url = f"https://ads-api.reddit.com/api/v3/pixels/{pixel}/conversion_events"
 
     def _post():
         try:

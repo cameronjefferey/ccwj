@@ -18,9 +18,12 @@ on Admin → Overview.
 Optional: set `REDDIT_PIXEL_ID` (Ads Manager pixel id) on the web service.
 Public pages fire PageVisit. The page after signup fires SignUp. The first
 paper account or real brokerage fires Lead. A new Pro payment fires Purchase.
-`REDDIT_CAPI_TOKEN` sends the same events from the server with the same
-event id. Both stay off when the env var is empty, and both stay off when
-the browser sends Do Not Track or Global Privacy Control.
+`REDDIT_CAPI_TOKEN` posts the same events to Conversions API v3
+(`POST /api/v3/pixels/{pixel}/conversion_events`). `metadata.conversion_id`
+is the pixel `conversionId`, and the tracking type is `PAGE_VISIT`,
+`SIGN_UP`, `LEAD`, or `PURCHASE`. Both stay off when the env var is empty,
+and both stay off when the browser sends Do Not Track or Global Privacy
+Control.
 
 First-party counts live at Admin → Acquisition (`/admin/analytics`):
 logged-out visitors and page views, the campaign funnel, utm_source /

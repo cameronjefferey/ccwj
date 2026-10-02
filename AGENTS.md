@@ -625,6 +625,8 @@ fit, close). The cookie is stamped onto `users.acquisition_*` at signup.
 Admin overview shows the funnel, including who actually connected a broker
 or uploaded a CSV, and which button was clicked.
 `REDDIT_PIXEL_ID` adds PageVisit on `/start` and SignUp after signup.
+`REDDIT_CAPI_TOKEN` posts those events to Conversions API v3; the server
+`metadata.conversion_id` is the pixel `conversionId`.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
 Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
