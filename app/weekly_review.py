@@ -5731,6 +5731,7 @@ settlements AS (
         CASE
             WHEN close_type = 'Assigned' THEN 'option_assigned'
             WHEN close_type = 'Exercised' THEN 'option_exercised'
+            WHEN close_type = 'Settled at expiry (est.)' THEN 'option_settled_est'
             ELSE 'option_expired'
         END AS action,
         trade_symbol,
@@ -5755,7 +5756,8 @@ settlements AS (
       AND status = 'Closed'
       AND (
             close_type IN (
-                'Expired', 'ExpiredOTM', 'Assigned', 'Exercised')
+                'Expired', 'ExpiredOTM', 'Assigned', 'Exercised',
+                'Settled at expiry (est.)')
             OR (
                 close_type IS NULL
                 AND option_expiry = realized_close_date
@@ -5896,6 +5898,7 @@ _DAY_ACTION_VERBS = {
     "option_buy_to_close": "Bought to close",
     "option_sell_to_close": "Sold to close",
     "option_expired": "Expired",
+    "option_settled_est": "Settled at expiry (est.)",
     "option_assigned": "Assigned",
     "option_exercised": "Exercised",
     "margin_interest": "Margin interest",
@@ -5909,12 +5912,14 @@ _TRADE_ACTIONS = {
     "option_sell_to_open", "option_buy_to_open",
     "option_buy_to_close", "option_sell_to_close",
     "option_expired", "option_assigned", "option_exercised",
+    "option_settled_est",
 }
 
 _CLOSE_ACTIONS = {
     "equity_sell", "equity_sell_short",
     "option_buy_to_close", "option_sell_to_close",
     "option_expired", "option_assigned", "option_exercised",
+    "option_settled_est",
 }
 
 
@@ -6074,7 +6079,10 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         action = str(r.get("action") or "")
         qty = r.get("quantity")
         price = r.get("price")
-        if action in ("option_expired", "option_assigned", "option_exercised"):
+        if action in (
+            "option_expired", "option_assigned", "option_exercised",
+            "option_settled_est",
+        ):
             price = None
         amount = float(r.get("amount") or 0)
         realized = (

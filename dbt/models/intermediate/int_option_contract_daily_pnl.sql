@@ -385,7 +385,9 @@ open_mtm as (
 -- Uses ``realized_pnl`` (from int_option_contracts). For a fully-closed
 -- contract this equals net_cash_flow (OTM expiry → premium; BTC → premium
 -- − cost-to-close; assignment/exercise → option cash flows only, the
--- underlying stock lives on the equity P&L line) attributed on close_date
+-- underlying stock lives on the equity P&L line) plus, for an ITM
+-- cash-settled index with no broker close yet, the estimated intrinsic.
+-- Attributed on close_date
 -- — identical to the pre-partial-close behavior. For a PARTIAL close the
 -- credit is the realized wedge of the sold portion, attributed on the
 -- closing-fill date (realized_close_date) even though the contract stays

@@ -31,6 +31,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from app.expiry_settlement import ESTIMATE_LABEL
 from app.position_story import _money
 
 # Both queries are tenant-scoped in SQL AND project tenant_id so the
@@ -139,8 +140,13 @@ def held_to_expiry_kept(df):
         return 0, 0.0
     if "direction" not in df.columns:
         return 0, 0.0
+    worthless = df["close_type"].isin(["Expired", "ExpiredOTM"])
+    if "expired_worthless" in df.columns:
+        worthless = worthless | (
+            (df["close_type"] == ESTIMATE_LABEL) & df["expired_worthless"]
+        )
     expired = df[
-        df["close_type"].isin(["Expired", "ExpiredOTM"])
+        worthless
         & (df["direction"] == "Sold")
         & (df["realized_pnl"] > 0)
     ]

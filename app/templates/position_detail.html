@@ -917,7 +917,6 @@
                 <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
                     {% set contract = o.trade_symbol|option_symbol %}
                     {% set acct = (o.account_display or o.account) | account_label(o.tenant_id) %}
-                    {% set pending = o.close_type == 'Settlement pending' or o.outcome == 'Settlement pending' %}
                     <td class="pd-tight">
                         {% if o.is_winner is true %}
                         <span class="leg-arrow" style="color:var(--gain);font-size:.7rem;">&#9654;</span>
@@ -956,7 +955,7 @@
                                 <dt>Outcome</dt><dd>{{ o.outcome or '—' }}</dd>
                                 {% else %}
                                 <dt>Cost</dt><dd>{% if o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</dd>
-                                <dt>Value</dt><dd>{% if pending %}Settlement pending{% else %}{{ money(o.proceeds) }}{% endif %}</dd>
+                                <dt>Value</dt><dd>{{ money(o.proceeds) }}</dd>
                                 {% endif %}
                             </dl>
                         </details>
@@ -968,9 +967,9 @@
                     <td class="pd-date" {% if o.close_date %}title="{{ o.close_date|human_date }}"{% endif %}>{{ o.close_date|compact_date }}</td>
                     <td class="pd-num pd-opt text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
                     <td class="pd-num">{% if o.vertical %}{% if (o.net_credit or 0) >= 0 %}Credit {{ money(o.net_credit) }}{% else %}Debit {{ money((o.net_credit or 0)|abs) }}{% endif %}{% elif o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</td>
-                    <td class="pd-num">{% if o.vertical %}{{ o.width_label }}{% elif pending %}Settlement pending{% else %}{{ money(o.proceeds) }}{% endif %}</td>
-                    <td class="pd-num pd-pnl fw-semibold {{ 'text-muted' if pending else 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
-                        <div>{% if pending %}Settlement pending{% else %}{{ money(o.pnl) }}{% endif %}</div>
+                    <td class="pd-num">{% if o.vertical %}{{ o.width_label }}{% else %}{{ money(o.proceeds) }}{% endif %}</td>
+                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
+                        <div>{{ money(o.pnl) }}</div>
                         {% if not o.vertical %}
                         <button type="button" class="ht-share-btn"
                                 {% if o.type == 'equity' %}
@@ -996,9 +995,8 @@
                         <span class="text-muted" title="Not applicable">—</span>
                         {% endif %}
                     </td>
-                    <td class="pd-num {{ 'text-muted' if pending else 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else 'text-muted' }}">
-                        {% if pending %}—
-                        {% elif o.direction == 'Sold' and o.return_pct is not none %}{{ "{:.0f}% kept".format(o.return_pct) }}
+                    <td class="pd-num {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else 'text-muted' }}">
+                        {% if o.direction == 'Sold' and o.return_pct is not none %}{{ "{:.0f}% kept".format(o.return_pct) }}
                         {% elif o.return_pct is not none %}{{ "{:.1f}%".format(o.return_pct) }}
                         {% else %}—{% endif %}
                     </td>
@@ -1021,7 +1019,7 @@
                                 <tr>
                                     <td class="text-nowrap">{{ leg.trade_symbol|option_symbol }}</td>
                                     <td class="text-end text-nowrap pd-num">{{ leg.role_label }} {{ money(leg.role_amount) }}</td>
-                                    <td class="text-end text-nowrap pd-num {{ 'text-muted' if leg.outcome == 'Settlement pending' else 'text-positive' if (leg.pnl or 0) >= 0 else 'text-negative' }}">{% if leg.outcome == 'Settlement pending' %}Settlement pending{% else %}{{ money(leg.pnl) }}{% endif %}</td>
+                                    <td class="text-end text-nowrap pd-num {{ 'text-positive' if (leg.pnl or 0) >= 0 else 'text-negative' }}">{{ money(leg.pnl) }}</td>
                                     <td>{{ leg.outcome or '—' }}</td>
                                 </tr>
                                 {% endfor %}

@@ -343,5 +343,5 @@ where not (
     -- Equity rows (and option rows with no matching contract) pass
     -- through unchanged because the first conjunct is false.
     p.instrument_type in ('Call', 'Put')
-    and oc.status in ('Closed', 'Settlement pending')
+    and oc.status = 'Closed'
 )

@@ -185,7 +185,7 @@
             {% for t in _tt.trades %}
             <tr>
                 <td>
-                    <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                    <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised','option_settled_est') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
                 </td>
                 <td>
                     {% if t.symbol %}<a class="tt-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}

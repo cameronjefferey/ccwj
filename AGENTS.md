@@ -1327,34 +1327,34 @@ totally wrong shape. Realize-on-close fixes this by attributing the
 single net realized P&L to the actual realization moment.
 
 **Schwab's snapshot lags actual expiry by 1-2 trading days.** The
-`status` and `close_date` columns in `int_option_contracts` use
-calendar truth (`option_expiry < current_date()` overrides
-"snapshot-implies-open"), and the today-row patch in chart helpers
+`status` and `close_date` columns in `int_option_contracts` realize
+a past expiry only when the official close (or a broker fill) is in,
+and the today-row patch in chart helpers
 filters live `current_df` rows by `option_expiry >= today` to avoid
 double-counting an expired contract that the broker hasn't dropped yet.
 Both layers must keep this invariant.
 
-**OTM-at-expiry inference (same-day auto-close).** The calendar-truth
-rule above only fires the DAY AFTER expiry — on expiry day itself
-(`option_expiry = current_date()`) the contract stays Open until BQ's
-`current_date()` advances. That gap matters when a Friday-expiry short
-call closes OTM at 4:00 PM ET: the trader checking the page Friday
-evening or over the weekend would otherwise see the broker snapshot's
-stale cost-to-close baked into the live override, even though the
-bell already settled the contract at $0. The `otm_at_expiry` CTE in
-`int_option_contracts` joins `stg_daily_prices` on the underlying's
-expiry-day close and marks the contract Closed (with
-`close_type='ExpiredOTM'`) when the close is STRICTLY OTM relative to
-the strike (call: `close < strike`; put: `close > strike`). ITM/ATM
-expiries are left as Open because the broker still has discretion
-(auto-exercise threshold) and the realized number differs by
-assignment vs. exercise — wait for the broker action. The Monday sync
-ships explicit `option_expired` and the existing `close_type` branch
-takes over with the same `net_cash_flow`. `int_enriched_current`
-mirrors the decision by filtering out option rows whose
-`int_option_contracts.status='Closed'`, so the chart's live override
-and `_compute_breakdown_by_type` don't double-count the broker's
-stale mark on top of the mart's already-realized credit.
+**Expiry settlement from the official close.** Do not wait for the
+broker's expired / as-of / cash-settlement line, and do not book the
+opening credit just because the calendar date has passed. Once the
+expiry session is over — 4:00 PM ET, or 4:15 PM ET for cash-settled
+index roots, and any time after that New York date — a contract with
+no closing activity realizes from `stg_daily_prices` on the expiry
+date (`otm_at_expiry` in `int_option_contracts`, same rule in
+`app/expiry_settlement.py`). OTM and ATM settlement cash is $0 (short
+keeps the premium, long loses the debit). ITM index options
+(SPX/SPXW/XSP/NDX/RUT, plus the weekly aliases and VIX/DJX/OEX/XEO/RVX)
+add intrinsic, strike vs close × 100 × contracts (short pays, long
+receives). ITM equity stays option-cash only, the same as assignment;
+the shares are the equity line. The row is
+`close_type='Settled at expiry (est.)'` until a broker close arrives,
+and that close replaces the estimate — `net_cash_flow` already
+includes the broker cash, so intrinsic is not added again. Price is
+the exact underlying, else SPXW→SPX / NDXP→NDX / RUTW→RUT when the
+exact symbol has no row. No official close: stay Open, P&L $0 (or the
+live snapshot mark). `int_enriched_current` drops `status='Closed'`,
+so the chart does not keep the broker's stale mark on top of the
+realized credit.
 
 **Reconciliation invariant.** `cumulative_options_pnl(today) +
 open_options_unrealized_pnl(today)`, summed across all (account,
