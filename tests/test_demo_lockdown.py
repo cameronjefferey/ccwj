@@ -34,9 +34,15 @@ def test_demo_start_post_creates_ephemeral_session(app, monkeypatch):
     client = _client(app)
     resp = client.post("/demo/start", follow_redirects=False)
     assert resp.status_code == 302
-    cookie = resp.headers.get("Set-Cookie") or ""
-    assert "604800" not in cookie
-    assert "Max-Age" not in cookie
+    # The demo login stays a browser session. The first-party attribution
+    # cookie is separate and is allowed to carry a Max-Age.
+    session_cookies = [
+        c for c in resp.headers.getlist("Set-Cookie") if c.startswith("session=")
+    ]
+    assert session_cookies
+    for cookie in session_cookies:
+        assert "604800" not in cookie
+        assert "Max-Age" not in cookie
     with client.session_transaction() as sess:
         uid = str(sess.get("_user_id") or "")
         assert uid.startswith("demo-session:")

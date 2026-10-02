@@ -85,10 +85,14 @@ class Config:
         or ""
     ).rstrip("/")
 
-    # Reddit Ads pixel. Empty = no pixel. PageVisit on /start, SignUp on the
-    # page after a successful signup. First-party campaign_events stay the
-    # source of truth when the pixel is blocked.
+    # Reddit Ads pixel. Empty = no pixel. PageVisit on public landings,
+    # SignUp after signup, Lead on the first paper or real-broker connect,
+    # Purchase when a payment lands. Do Not Track and Global Privacy Control
+    # suppress the pixel. First-party funnel_events stay the source of truth.
     REDDIT_PIXEL_ID = (os.environ.get("REDDIT_PIXEL_ID", "") or "").strip()
+    # Conversions API access token from Reddit Events Manager. Empty = no
+    # server-side events. Shares conversion ids with the pixel for dedup.
+    REDDIT_CAPI_TOKEN = (os.environ.get("REDDIT_CAPI_TOKEN", "") or "").strip()
 
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))

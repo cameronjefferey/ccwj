@@ -92,6 +92,21 @@ def admin_overview():
     )
 
 
+@app.route("/admin/analytics")
+@_admin_only
+def admin_analytics():
+    """Signups, funnel, and campaign source for the last 30 days.
+
+    Postgres only. Non-admins get 404, same as the rest of /admin.
+    """
+    from app.funnel import build_admin_analytics
+    return render_template(
+        "admin_analytics.html",
+        title="Admin: analytics",
+        **build_admin_analytics(),
+    )
+
+
 @app.route("/admin/impersonate/<username>", methods=["POST", "GET"])
 @_admin_only
 def admin_impersonate(username):

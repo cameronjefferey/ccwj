@@ -4,6 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sign Up - HappyTrader</title>
+    <meta name="description" content="Create a HappyTrader account. Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.">
+    <meta property="og:title" content="Sign Up - HappyTrader">
+    <meta property="og:description" content="Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.">
+    <meta property="og:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Sign Up - HappyTrader">
+    <meta name="twitter:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
     <link rel="icon" href="{{ url_for('favicon') }}" sizes="32x32">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -17,8 +24,7 @@
         <div class="login-header">
             <h1 class="ht-wordmark"><a class="ht-wordmark-link" href="{{ url_for('index') }}">happy<span style="color:#5b8cff">trader</span></a></h1>
             <p>Create your account</p>
-            <p class="auth-trial">30-day free trial, no credit card.</p>
-            <p class="auth-trial">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
+            <p class="auth-trial">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. No credit card.</p>
         </div>
         <div class="login-body">
             {% with messages = get_flashed_messages(with_categories=true) %}
@@ -100,7 +106,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     (function () {
         document.querySelectorAll("[data-password-toggle]").forEach(function (btn) {

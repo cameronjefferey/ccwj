@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .an-hero {
+        background: #0a0e17;
+        color: #e8edf7;
+        border: 1px solid #1c2538;
+        border-radius: 14px;
+        padding: 1.1rem 1.2rem;
+        margin-bottom: 1rem;
+    }
+    .an-hero h1 { font-size: 1.35rem; font-weight: 700; margin: 0; letter-spacing: 0; }
+    .an-hero p { margin: .35rem 0 0; color: #8a97b1; font-size: .85rem; }
+    .an-hero a { color: #5b8cff; }
+    .an-card {
+        background: #121826;
+        border: 1px solid #1c2538;
+        border-radius: 12px;
+        padding: .9rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .an-card h2 {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #8a97b1;
+        font-weight: 700;
+        margin: 0 0 .6rem;
+    }
+    .an-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .an-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .82rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .an-table th, .an-table td {
+        padding: .35rem .45rem;
+        text-align: left;
+        white-space: nowrap;
+        border-bottom: 1px solid #1c2538;
+    }
+    .an-table th {
+        font-size: .65rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #8a97b1;
+        font-weight: 700;
+    }
+    .an-num { font-family: "JetBrains Mono", ui-monospace, monospace; text-align: right; }
+    .an-note { color: #8a97b1; font-size: .78rem; margin: 0 0 .6rem; }
+    @media (max-width: 640px) {
+        .an-hero, .an-card { padding: .75rem .7rem; }
+        .an-table { font-size: .75rem; }
+        .an-table th, .an-table td { padding: .28rem .32rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="an-hero">
+    <h1>Analytics</h1>
+    <p>Last 30 days. First-party events only — no email or IP in the rows.
+        <a href="{{ url_for('admin_overview') }}">Overview</a>
+    </p>
+</div>
+
+<div class="an-card">
+    <h2>Signups per day</h2>
+    <p class="an-note">Completed account creations. Days with none stay in the table.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr><th>Day</th><th class="an-num">Signups</th></tr>
+            </thead>
+            <tbody>
+                {% for row in days %}
+                <tr>
+                    <td>{{ row.day }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="2">No signups in this window.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Funnel</h2>
+    <p class="an-note">Distinct people, or distinct visits when they have not signed up. Percent is of landing views. Paper and broker are branches, not a single line.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Step</th>
+                    <th class="an-num">Count</th>
+                    <th class="an-num">Of landing</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for step in steps %}
+                <tr>
+                    <td>{{ step.label }}</td>
+                    <td class="an-num">{{ step.count }}</td>
+                    <td class="an-num">{% if step.of_landing is not none %}{{ step.of_landing }}%{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>YouTube referrals</h2>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th class="an-num">Landing views</th>
+                    <th class="an-num">Signups</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>YouTube</td>
+                    <td class="an-num">{{ youtube.visits }}</td>
+                    <td class="an-num">{{ youtube.signups }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>By source and campaign</h2>
+    <p class="an-note">Last-touch UTM on the event. (none) is a direct visit or a link without parameters.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Campaign</th>
+                    <th class="an-num">Visits</th>
+                    <th class="an-num">Signups</th>
+                    <th class="an-num">Brokers</th>
+                    <th class="an-num">Paid</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in sources %}
+                <tr>
+                    <td>{{ row.source }}</td>
+                    <td>{{ row.campaign }}</td>
+                    <td class="an-num">{{ row.visits }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                    <td class="an-num">{{ row.brokers }}</td>
+                    <td class="an-num">{{ row.paid }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6">No campaign traffic in this window.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

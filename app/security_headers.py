@@ -21,13 +21,15 @@ _CSP_REPORT_ONLY = "; ".join([
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com "
-    "https://*.stripe.com",
+    "https://*.stripe.com https://alb.reddit.com https://pixel.reddit.com "
+    "https://www.redditstatic.com",
     "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com "
     "https://challenges.cloudflare.com https://js.stripe.com https://hooks.stripe.com "
     "https://checkout.stripe.com https://billing.stripe.com https://*.snaptrade.com",
     "connect-src 'self' https://challenges.cloudflare.com https://api.stripe.com "
     "https://checkout.stripe.com https://www.youtube-nocookie.com "
-    "https://www.redditstatic.com https://pixel.reddit.com https://alb.reddit.com",
+    "https://www.redditstatic.com https://pixel.reddit.com https://alb.reddit.com "
+    "https://pixel-config.reddit.com",
     "media-src 'self' blob:",
     "worker-src 'self'",
     "manifest-src 'self'",
@@ -62,6 +64,15 @@ def apply_security_headers(response):
     path = request.path or ""
     if path.startswith("/demo/") or path == "/demo" or is_demo_user():
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    # Flask's test client and a None SEND_FILE_MAX_AGE_DEFAULT both emit
+    # no-cache. Public assets should stay cacheable in production too.
+    if path.startswith("/static/"):
+        if path.endswith((".webp", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff2")):
+            response.headers["Cache-Control"] = "public, max-age=604800"
+        elif path.endswith((".js", ".css")):
+            response.headers["Cache-Control"] = "public, max-age=3600"
+    if path == "/favicon.ico" and "Cache-Control" not in response.headers:
+        response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
 

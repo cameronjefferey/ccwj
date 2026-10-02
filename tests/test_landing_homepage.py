@@ -219,9 +219,9 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     root = Path(__file__).resolve().parents[1]
     for name in (
         "marketing/pnl_real.webp",
-        "marketing/msft-if-held.png",
-        "marketing/strategies.png",
-        "marketing/fit-matrix.png",
+        "marketing/msft-if-held.webp",
+        "marketing/strategies.webp",
+        "marketing/fit-matrix.webp",
     ):
         assert name in html
         assert (root / "app" / "static" / name).is_file()

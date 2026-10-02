@@ -260,7 +260,7 @@ def _render_signup_form(
 
 
 @app.route("/signup", methods=["GET", "POST"])
-@limiter.limit("10 per minute; 30 per hour", methods=["POST"])
+@limiter.limit("10 per minute; 120 per hour", methods=["POST"])
 def signup():
     if not app.config.get("SIGNUP_ENABLED", True):
         abort(404)
@@ -336,6 +336,10 @@ def signup():
         login_user(user, remember=False)
         try:
             from app.campaign import stamp_signup
+            from app.funnel import on_signup
+            # Funnel first so first-touch is captured before the /start
+            # cookie fills any still-empty source columns.
+            on_signup(user.id if user else None)
             stamp_signup(user.id if user else None)
         except Exception:
             pass

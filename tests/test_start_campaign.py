@@ -88,11 +88,11 @@ def test_campaign_write_routes_are_rate_limited(monkeypatch):
         client = _client()
         statuses = [
             client.get("/start", environ_base=remote).status_code
-            for _ in range(21)
+            for _ in range(121)
         ]
-        assert statuses[:20] == [200] * 20
-        assert statuses[20] == 429
-        assert len(start_calls) == 20
+        assert statuses[:120] == [200] * 120
+        assert statuses[120] == 429
+        assert len(start_calls) == 120
 
         limiter.reset()
         click_calls = []
@@ -102,13 +102,13 @@ def test_campaign_write_routes_are_rate_limited(monkeypatch):
         )
         responses = [
             client.get("/start/go/demo/hero", environ_base=remote)
-            for _ in range(21)
+            for _ in range(61)
         ]
-        assert all(r.status_code == 302 for r in responses[:20])
-        assert all("/demo/start" in r.location for r in responses[:20])
-        assert responses[20].status_code == 429
-        assert "a little fast" in responses[20].get_data(as_text=True)
-        assert len(click_calls) == 20
+        assert all(r.status_code == 302 for r in responses[:60])
+        assert all("/demo/start" in r.location for r in responses[:60])
+        assert responses[60].status_code == 429
+        assert "a little fast" in responses[60].get_data(as_text=True)
+        assert len(click_calls) == 60
     finally:
         limiter.reset()
 

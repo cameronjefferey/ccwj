@@ -16,8 +16,20 @@ https://<prod>/start?utm_source=reddit&utm_campaign=mirror-v1&utm_content=<creat
 on Admin → Overview.
 
 Optional: set `REDDIT_PIXEL_ID` (Ads Manager pixel id) on the web service.
-`/start` fires PageVisit. The page after signup fires SignUp. The admin
-funnel is the source of truth when the pixel is blocked.
+Public pages fire PageVisit. The page after signup fires SignUp. The first
+paper account or real brokerage fires Lead. A new Pro payment fires Purchase.
+`REDDIT_CAPI_TOKEN` sends the same events from the server with the same
+event id. Both stay off when the env var is empty, and both stay off when
+the browser sends Do Not Track or Global Privacy Control.
+
+First-party counts live at Admin → Analytics (`/admin/analytics`): signups
+per day, funnel steps, utm_source / utm_campaign, and YouTube referrals.
+That page is the source of truth when the pixel is blocked. The older
+Admin → Overview card is still the `/start` button funnel.
+
+The landing says learning and paper trading are free, and that the 30-day
+trial starts when a real brokerage is connected. Ad creative can keep
+"30 days. No card."
 
 ## Who
 
@@ -58,11 +70,12 @@ Covered calls. Wheels. Spreads. Classified from your own trades. 30 days. No car
 
 ![book 4:5](../app/static/campaign/ads/book-4x5.png)
 
-The landing page says the same thing the ad says. 30 days, no card.
-Learning and paper trading are free. Your 30-day trial starts when you
-connect a real brokerage. History is whatever the broker still has on file,
-has on file, often a year or two, plus a CSV for older trades. Do not write
-"5 years" or "free" without "30 days, no card." No return claims. No trade ideas.
+The landing page says learning and paper trading are free, and that the
+30-day trial starts when a real brokerage is connected. No credit card.
+The clock starts when the first sync or CSV lands. History is whatever the
+broker still has on file, often a year or two, plus a CSV for older trades.
+Do not write "5 years" in an ad, or "free" without "30 days, no card."
+No return claims. No trade ideas.
 
 ## Money
 
@@ -78,3 +91,42 @@ Connected, on the admin funnel, is a signup who linked a broker or uploaded
 a CSV. A signup that never links is not a win. The same card lists which
 button was clicked (hero, the trades, the chart, the review, the profile,
 strategy fit, close). A click counts once per landing.
+
+## Render env vars for this launch
+
+Set on the `ccwj` web service. Leave a var unset to keep that feature off.
+
+- `REDDIT_PIXEL_ID` — Ads Manager pixel id
+- `REDDIT_CAPI_TOKEN` — Conversions API access token
+- `SENTRY_DSN` — already supported; errors only
+- `SENTRY_TRACES_SAMPLE_RATE` — optional, default `0.1`
+- `SIGNUP_INVITE_CODE` — must be empty or `/start` cannot create accounts
+- `RATELIMIT_STORAGE_URI` or `QUERY_CACHE_REDIS_URL` — shared rate-limit
+  counters. Without Redis, each Gunicorn worker counts separately.
+
+## Load (report only — no plan change in this repo)
+
+The web service is not in `app/render.yaml`. The documented start command
+is one sync Gunicorn worker:
+
+`gunicorn wsgi:app -b 0.0.0.0:$PORT --timeout 120 --graceful-timeout 30`
+
+In-process comments describe a 2×4 gthread setup on Render. Confirm the
+dashboard start command. For a paid burst, a Starter instance with
+`--workers 2 --threads 4` (or Render's default worker formula on Standard)
+keeps a slow BigQuery page from blocking `/`, `/start`, `/learn`, and
+`/signup`. Those public pages do not query BigQuery.
+
+Postgres opens one connection per query and closes it. There is no app
+pool. Landing and signup reads are a single insert into `funnel_events`
+plus the user row on POST. Render Postgres free/basic `max_connections`
+(usually 97) is enough until the web workers times concurrent authed
+BigQuery pages also hold a connection. Move Postgres off the free instance
+before spending if it is still there. Do not add a client pool back; the
+old one wedged behind Render's idle TCP timeouts.
+
+Rate limits: public GET `/`, `/start`, `/pricing`, `/signup`, `/learn`,
+and `/faq` are outside the 300/hour default so one carrier NAT is not
+429'd for reading. `/start` itself allows 120/minute. The hero click
+redirect allows 60/minute. Signup POST allows 10/minute and 120/hour per
+IP. A bot still hits a ceiling. A shared mobile NAT can finish the form.

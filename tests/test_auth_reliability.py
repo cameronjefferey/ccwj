@@ -61,7 +61,9 @@ def test_signup_keeps_invite_and_trial_line_without_echoing_passwords(monkeypatc
     client = _client()
     page = client.get("/signup")
     assert page.status_code == 200
-    assert "30-day free trial, no credit card" in page.get_data(as_text=True)
+    body = page.get_data(as_text=True)
+    assert "30-day trial starts when you connect a real brokerage" in body
+    assert "No credit card" in body
 
     resp = client.post("/signup", data={
         "username": "ada_trader",

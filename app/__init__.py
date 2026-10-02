@@ -40,12 +40,27 @@ def _scrub_sentry_event(event, hint):
     return event
 
 
+def _sentry_traces_sample_rate() -> float:
+    # 100% tracing on every ad click adds latency and burns the Sentry quota.
+    # Set SENTRY_TRACES_SAMPLE_RATE=1 to trace everything.
+    raw = (os.environ.get("SENTRY_TRACES_SAMPLE_RATE") or "0.1").strip()
+    try:
+        rate = float(raw)
+    except ValueError:
+        rate = 1.0
+    if rate < 0:
+        return 0.0
+    if rate > 1:
+        return 1.0
+    return rate
+
+
 if _sentry_dsn:
     sentry_sdk.init(
         dsn=_sentry_dsn,
         integrations=[FlaskIntegration()],
         send_default_pii=False,
-        traces_sample_rate=1.0,
+        traces_sample_rate=_sentry_traces_sample_rate(),
         before_send=_scrub_sentry_event,
     )
 
@@ -778,6 +793,11 @@ def _after_request_usage_event(response):
         record_page_view(response)
     except Exception:
         pass
+    try:
+        from app.funnel import observe_response
+        observe_response(response)
+    except Exception:
+        pass
     return response
 
 
@@ -925,6 +945,8 @@ from app import billing  # noqa: F401  registers /billing/* + /webhooks/stripe
 from app import cache_ops  # noqa: F401  registers /internal/cache/flush (rebuild-triggered flush + warm)
 from app.privacy import register_privacy_routes
 register_privacy_routes(app)
+from app.funnel import register as register_funnel
+register_funnel(app)
 from app import share_card  # noqa: F401  registers /share/card.png
 
 # After the session-idle before_request so a timed-out session is logged

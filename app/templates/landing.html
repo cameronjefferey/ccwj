@@ -627,7 +627,7 @@
 {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial, no credit card{%- endif -%}
 {% endmacro %}
 
-{% macro video_frame(v, wide=false) %}
+{% macro video_frame(v, wide=false, eager=false) %}
 <div class="ht-frame {% if wide %}ht-frame-wide{% else %}ht-frame-short{% endif %}">
     <button type="button" class="ht-facade"
             data-youtube-id="{{ v.youtube_id }}"
@@ -637,7 +637,8 @@
         {% if v.poster_url %}
         <img class="ht-poster" src="{{ v.poster_url }}"
              {% if v.poster_srcset %}srcset="{{ v.poster_srcset }}" sizes="{{ v.poster_sizes }}"{% endif %}
-             alt="">
+             alt="" width="1280" height="720" decoding="async"
+             {% if eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
         {% else %}
         <span class="ht-art ht-art-{{ v.step }}" aria-hidden="true"></span>
         {% endif %}
@@ -669,7 +670,7 @@
             <h1>Watch the trading mirror</h1>
             <p class="lead">{{ hero_video.caption }}</p>
             <div class="ht-stage">
-                {{ video_frame(hero_video, wide=true) }}
+                {{ video_frame(hero_video, wide=true, eager=true) }}
             </div>
             <div class="ht-hero-cta">
                 {% if signup_enabled %}
@@ -805,9 +806,9 @@
     <section class="ht-band ht-band-shot-b ht-section" aria-label="If held to expiration">
         <div class="ht-wrap ht-split media-end">
             <figure class="ht-media ht-shot">
-                <img src="{{ url_for('static', filename='marketing/msft-if-held.png') }}"
+                <img src="{{ url_for('static', filename='marketing/msft-if-held.webp') }}"
                      alt="If held to expiration summary for MSFT in the demo account."
-                     width="1400" height="315" loading="lazy">
+                     width="1400" height="315" loading="lazy" decoding="async">
                 <figcaption>Demo account</figcaption>
             </figure>
             <div class="ht-copy">
@@ -893,9 +894,9 @@
     <section class="ht-band ht-band-shot-a ht-section" aria-label="Which strategies actually work">
         <div class="ht-wrap ht-split media-end">
             <figure class="ht-media ht-shot">
-                <img src="{{ url_for('static', filename='marketing/strategies.png') }}"
+                <img src="{{ url_for('static', filename='marketing/strategies.webp') }}"
                      alt="Strategy cards from the demo account, with return, win rate, and a six-month strip."
-                     width="1400" height="748" loading="lazy">
+                     width="1400" height="748" loading="lazy" decoding="async">
                 <figcaption>Demo account</figcaption>
             </figure>
             <div class="ht-copy">
@@ -923,9 +924,9 @@
     <section class="ht-band ht-band-shot-b ht-section" aria-label="Where your edge is">
         <div class="ht-wrap ht-split media-end">
             <figure class="ht-media ht-shot">
-                <img src="{{ url_for('static', filename='marketing/fit-matrix.png') }}"
+                <img src="{{ url_for('static', filename='marketing/fit-matrix.webp') }}"
                      alt="Strategy fit matrix from the demo account, return by strategy and sector."
-                     width="1400" height="641" loading="lazy">
+                     width="1400" height="641" loading="lazy" decoding="async">
                 <figcaption>Demo account</figcaption>
             </figure>
             <div class="ht-copy">

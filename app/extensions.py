@@ -63,7 +63,22 @@ def _default_limit_exempt() -> bool:
         return False
     if path.startswith("/static/") or path.startswith("/healthz"):
         return True
-    return path in ("/favicon.ico", "/sw.js")
+    if path in ("/favicon.ico", "/sw.js"):
+        return True
+    # Ad clicks bunch up on one carrier NAT. Public GET landings stay
+    # outside the 300/hour default. POST signup and /start click redirects
+    # keep their own ceilings.
+    if request.method == "GET" and (
+        path in (
+            "/", "/index", "/start", "/pricing", "/signup",
+            "/learn", "/learn/", "/faq", "/privacy", "/terms",
+            "/demo/start",
+        )
+        or path.startswith("/learn/")
+        or path.startswith("/features/")
+    ):
+        return True
+    return False
 
 
 limiter = Limiter(

@@ -18,6 +18,9 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-production")
 _test_db_url = os.environ.get("TEST_DATABASE_URL")
 if _test_db_url:
     os.environ["DATABASE_URL"] = _test_db_url
+    # A shell that imported the app with the skip flag must not keep init_db
+    # off once the suite has a real database.
+    os.environ.pop("HAPPYTRADER_SKIP_DB_INIT", None)
 else:
     # Without a real Postgres, unit-test files that just import small helpers
     # from app.* must still load. Tell app/__init__.py to skip init_db().
