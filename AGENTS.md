@@ -579,6 +579,16 @@ watched” once a video actually finishes. Signed-in accounts other than
 the shared demo user also keep that blob in `learn_progress` so it follows
 them after signup (`/learn/progress`, merged on the next signed-in page).
 
+Replays (`/learn/replay/<slug>`, loader `app/learn_replay.py`, YAML in
+`app/learn_replays/`) walk one path day by day and pause on a decision.
+The starter set is a long call, a long put, and a covered call, linked
+from `/learn` and from the matching episode. Prices are labeled
+illustrative: `stg_daily_prices` holds public closes, but option marks
+are tenant-scoped and are not copied onto this public page. "Premium"
+is only the money a short option collected. Yes on the checkpoint stores
+the slug in `learn_progress.replays` (and localStorage) and paints a
+check on `/learn`. No points.
+
 ### Campaign landing (`/start`, endpoint `campaign_start`)
 **Status: Working. Ad destination. Logged-in visitors redirect to Overview.**
 

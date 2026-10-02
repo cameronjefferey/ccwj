@@ -1,0 +1,56 @@
+slug: long-put
+number: 2
+title: A long put
+strategy: Long put
+ticker: HARBOR
+lesson_slug: calls-and-puts
+summary: Buy one put, then decide what to do after the stock falls and the put is up.
+price_source:
+  kind: illustrative
+  label: Illustrative prices
+  note: Illustrative prices for a sample stock, HARBOR. Not a listed ticker, not a market quote, and not a customer's trade.
+leg:
+  side: long
+  right: put
+  strike: 50
+  contracts: 1
+days:
+  - {day: 1, underlying: 51.00, option: 2.50, left: 18}
+  - {day: 2, underlying: 50.40, option: 2.30, left: 17}
+  - {day: 3, underlying: 49.80, option: 2.55, left: 15}
+  - {day: 4, underlying: 49.00, option: 3.05, left: 12}
+  - {day: 5, underlying: 48.40, option: 3.50, left: 10}
+  - {day: 6, underlying: 47.94, option: 4.00, left: 8}
+  - {day: 7, underlying: 46.40, option: 5.10, left: 6}
+  - {day: 8, underlying: 45.00, option: 6.20, left: 4}
+  - {day: 9, underlying: 46.80, option: 4.40, left: 2}
+  - {day: 10, underlying: 49.20, option: 0.80, left: 0}
+decisions:
+  - id: drop
+    after_day: 6
+    prompt: The stock is down 6%. The put is up 60%. 8 days are left.
+    question: Close it, hold, or let it expire?
+    facts:
+      stock_move_pct: -6
+      option_move_pct: 60
+      days_left: 8
+    choices:
+      - id: close
+        label: Close it
+        result_label: Close it
+        mode: close
+        explanation: Selling at $4.00 keeps the gain and ends at +$150.00. The rest of this path is no longer yours.
+      - id: hold
+        label: Hold
+        result_label: Hold
+        mode: hold
+        exit_day: 8
+        explanation: Selling on the day the put is worth $6.20 ends at +$370.00. The stock is lower that day than on the day you paused.
+      - id: expire
+        label: Let it expire
+        result_label: Let it expire
+        mode: expire
+        explanation: At expiration the stock is $49.20, so the $50.00 put is worth $0.80. This choice ends at -$170.00. The earlier gain is gone.
+recap:
+  - The put is up because the stock fell. Closing keeps that gain. Holding to the lower day makes more in this path. Waiting until expiration gives the gain back.
+  - The prices are illustrative, so the lesson is the shape of the choice, not a forecast.

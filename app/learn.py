@@ -1,13 +1,18 @@
-"""Public Options 101 pages (/learn). No login and no warehouse reads."""
+"""Public Options 101 pages (/learn). No login and no warehouse reads.
+
+Replays live at /learn/replay/<slug>. Their prices are in YAML, not
+BigQuery, so this module still does not query the warehouse.
+"""
 
 import logging
 
-from flask import abort, jsonify, render_template, request, url_for
+from flask import abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app import app
 from app import learn_catalog as catalog
 from app import learn_progress
+from app import learn_replay
 from app.extensions import limiter
 
 logger = logging.getLogger(__name__)
@@ -112,6 +117,7 @@ def learn_index():
         og_alt=series["title"],
         series=series,
         episodes=rows,
+        replays=learn_replay.replays(),
         shorts=[_view_short(short) for short in catalog.series_shorts()],
         first_episode=first,
     )
@@ -147,6 +153,37 @@ def learn_progress_api():
         return jsonify(learn_progress.empty())
 
 
+@app.route("/learn/replay")
+@app.route("/learn/replay/")
+def learn_replay_index():
+    return redirect(url_for("learn_index") + "#replays")
+
+
+@app.route("/learn/replay/<slug>")
+def learn_replay_page(slug):
+    replay = learn_replay.replay_by_slug(slug)
+    if replay is None:
+        abort(404)
+    step = request.args.get("step") or ""
+    if step not in ("decision", "recap"):
+        step = ""
+    series = catalog.series()
+    page_url = url_for("learn_replay_page", slug=slug, _external=True)
+    return render_template(
+        "learn/replay.html",
+        title=f"{replay['title']} · Replay",
+        meta_description=(
+            f"{replay['summary']} Illustrative prices, for learning only."
+        ),
+        canonical=page_url,
+        og_image=_fallback_thumb(),
+        og_alt=replay["title"],
+        series=series,
+        replay=replay,
+        start_step=step,
+    )
+
+
 @app.route("/learn/<slug>")
 def learn_episode(slug):
     episode = catalog.episode_by_slug(slug)
@@ -172,6 +209,7 @@ def learn_episode(slug):
         episode=_view_episode(episode),
         previous=_view_episode(previous) if previous else None,
         next_episode=_view_episode(nxt) if nxt else None,
+        lesson_replays=learn_replay.replays_for_lesson(slug),
         video_ld=_video_ld(episode, page_url, og_image),
         robots="noindex" if not episode["published"] else None,
     )

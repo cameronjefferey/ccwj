@@ -302,6 +302,7 @@ def test_resume_is_local_until_a_signed_in_account_saves_it():
         "updated": 0,
         "last": None,
         "done": [],
+        "replays": [],
     }
     posted = client.post(
         "/learn/progress",

@@ -33,6 +33,13 @@
     </p>
     <h1>{{ episode.title }}</h1>
     <p class="learn-summary">{{ episode.summary }}</p>
+    {% if lesson_replays %}
+    <p class="learn-playlist">
+        {% for replay in lesson_replays %}
+        <a href="{{ url_for('learn_replay_page', slug=replay.slug) }}">Replay · {{ replay.title }}</a>{% if not loop.last %} · {% endif %}
+        {% endfor %}
+    </p>
+    {% endif %}
 
     {% if episode.watchable %}
     <div class="learn-player">

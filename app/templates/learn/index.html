@@ -25,6 +25,7 @@
         {% if first_episode %}
         <a class="btn btn-primary" id="learn-start" href="{{ url_for('learn_episode', slug=first_episode.slug) }}" data-start-href="{{ url_for('learn_episode', slug=first_episode.slug) }}" data-start-label="Start with Episode 1">Start with Episode 1</a>
         <p class="learn-playlist"><a href="{{ series.playlist_url }}" target="_blank" rel="noopener">Watch the series on YouTube</a></p>
+        <p class="learn-playlist"><a href="#replays">Replay a trade</a></p>
         <p class="learn-playlist"><a href="{{ url_for('paper_practice') }}">Practice a trade</a></p>
         <p class="learn-progress-line ht-num" id="learn-progress" hidden></p>
         {% endif %}
@@ -67,6 +68,27 @@
             {% endfor %}
         </div>
     </section>
+
+    {% if replays %}
+    <section class="learn-section" id="replays" aria-labelledby="learn-replays-heading">
+        <h2 id="learn-replays-heading">Replays</h2>
+        <p class="learn-summary">One decision at a time, on an illustrative path with a known ending.</p>
+        <div class="learn-replay-list">
+            {% for replay in replays %}
+            <a class="learn-replay" href="{{ url_for('learn_replay_page', slug=replay.slug) }}" data-slug="{{ replay.slug }}">
+                <span class="learn-replay-title">{{ replay.title }}</span>
+                <span class="learn-replay-meta">Illustrative</span>
+                <span class="learn-replay-state">
+                    <span class="learn-replay-go">Start</span>
+                    <svg class="learn-replay-check" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                        <path d="M3.2 8.4 L6.4 11.4 L12.8 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 
     {% if shorts %}
     <section class="learn-section" aria-labelledby="learn-shorts-heading">

@@ -1,0 +1,64 @@
+slug: long-call
+number: 1
+title: A long call
+strategy: Long call
+ticker: NORTH
+lesson_slug: calls-and-puts
+summary: Buy one call, then decide what to do when the stock drops before expiration.
+price_source:
+  kind: illustrative
+  label: Illustrative prices
+  note: Illustrative prices for a sample stock, NORTH. Not a listed ticker, not a market quote, and not a customer's trade.
+leg:
+  side: long
+  right: call
+  strike: 105
+  contracts: 1
+days:
+  - {day: 1, underlying: 100.00, option: 4.00, left: 20}
+  - {day: 2, underlying: 101.50, option: 4.60, left: 19}
+  - {day: 3, underlying: 99.20, option: 3.70, left: 18}
+  - {day: 4, underlying: 97.40, option: 3.10, left: 17}
+  - {day: 5, underlying: 96.00, option: 2.80, left: 16}
+  - {day: 6, underlying: 95.10, option: 2.65, left: 15}
+  - {day: 7, underlying: 94.80, option: 2.55, left: 14}
+  - {day: 8, underlying: 94.50, option: 2.50, left: 13}
+  - {day: 9, underlying: 94.20, option: 2.45, left: 12}
+  - {day: 10, underlying: 94.10, option: 2.42, left: 11}
+  - {day: 11, underlying: 94.00, option: 2.40, left: 10}
+  - {day: 12, underlying: 97.00, option: 3.10, left: 8}
+  - {day: 13, underlying: 101.00, option: 4.40, left: 7}
+  - {day: 14, underlying: 106.00, option: 6.20, left: 5}
+  - {day: 15, underlying: 108.50, option: 7.40, left: 4}
+  - {day: 16, underlying: 110.00, option: 8.10, left: 3}
+  - {day: 17, underlying: 109.00, option: 6.50, left: 1}
+  - {day: 18, underlying: 112.00, option: 7.00, left: 0}
+decisions:
+  - id: dip
+    after_day: 11
+    prompt: The stock is down 6% from the day you bought. The call is down 40%. 10 days are left.
+    question: Close early, hold, or let it expire?
+    facts:
+      stock_move_pct: -6
+      option_move_pct: -40
+      days_left: 10
+    choices:
+      - id: close
+        label: Close early
+        result_label: Close early
+        mode: close
+        explanation: Selling at $2.40 ends the call at -$160.00. The later rise in this path is no longer yours.
+      - id: hold
+        label: Hold
+        result_label: Hold
+        mode: hold
+        exit_day: 16
+        explanation: Selling on the day the call is worth $8.10 ends at +$410.00. In this path that day is higher than expiration.
+      - id: expire
+        label: Let it expire
+        result_label: Let it expire
+        mode: expire
+        explanation: At expiration the stock is $112.00, so the $105.00 call is worth $7.00. This choice ends at +$300.00.
+recap:
+  - This path drops first. Closing at the pause locks in a loss. Staying in reaches a gain, and the highest day here is before expiration.
+  - The prices are illustrative, so the lesson is the shape of the choice, not a forecast.

@@ -1,4 +1,4 @@
-/* Options 101: remember the episode, and how far into its video.
+/* Options 101: remember the episode, how far into its video, and finished replays.
    localStorage always. Signed-in (non-demo) browsers also POST /learn/progress. */
 (function () {
     var KEY = "ht-learn-progress";
@@ -10,7 +10,11 @@
     var syncTimer = null;
 
     function empty() {
-        return { updated: 0, last: null, done: [] };
+        return { updated: 0, last: null, done: [], replays: [] };
+    }
+
+    function replaySlug(value) {
+        return typeof value === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
     }
 
     function normalize(payload) {
@@ -37,6 +41,15 @@
                 title: typeof last.title === "string" ? last.title.slice(0, 160) : "",
                 number: isFinite(number) ? number : 0
             };
+        }
+        var replays = Array.isArray(payload.replays) ? payload.replays : [];
+        var seenReplay = {};
+        for (var r = 0; r < replays.length && out.replays.length < 50; r++) {
+            var replaySlugValue = replays[r];
+            if (replaySlug(replaySlugValue) && !seenReplay[replaySlugValue]) {
+                seenReplay[replaySlugValue] = true;
+                out.replays.push(replaySlugValue);
+            }
         }
         var updated = parseInt(payload.updated, 10);
         out.updated = isFinite(updated) && updated > 0 ? updated : 0;
@@ -70,12 +83,23 @@
                 }
             });
         });
+        var replaySeen = {};
+        var replays = [];
+        [left.replays, right.replays].forEach(function (list) {
+            (list || []).forEach(function (slug) {
+                if (!replaySeen[slug]) {
+                    replaySeen[slug] = true;
+                    replays.push(slug);
+                }
+            });
+        });
         var last = (left.updated || 0) >= (right.updated || 0) ? left.last : right.last;
         if (!last) last = left.last || right.last;
         return {
             updated: Math.max(left.updated || 0, right.updated || 0),
             last: last,
-            done: done
+            done: done,
+            replays: replays
         };
     }
 
@@ -108,6 +132,26 @@
         document.querySelectorAll(".learn-card[data-slug]").forEach(function (card) {
             card.classList.toggle("is-watched", !!finished[card.getAttribute("data-slug")]);
         });
+
+        var finishedReplay = {};
+        (progress.replays || []).forEach(function (slug) { finishedReplay[slug] = true; });
+        document.querySelectorAll(".learn-replay[data-slug]").forEach(function (row) {
+            var done = !!finishedReplay[row.getAttribute("data-slug")];
+            row.classList.toggle("is-done", done);
+            if (done) {
+                var title = row.querySelector(".learn-replay-title");
+                row.setAttribute("aria-label", (title ? title.textContent : "Replay") + ", done");
+            } else {
+                row.removeAttribute("aria-label");
+            }
+        });
+        var replayPage = document.querySelector(".learn-replay-page");
+        if (replayPage) {
+            replayPage.classList.toggle(
+                "is-done",
+                !!finishedReplay[replayPage.getAttribute("data-slug")]
+            );
+        }
 
         var published = publishedCards();
         var watched = published.filter(function (row) { return finished[row.slug]; }).length;
@@ -172,7 +216,7 @@
     function upload(keepalive) {
         if (!sync) return;
         var progress = read();
-        if (!progress.last && !(progress.done || []).length) return;
+        if (!progress.last && !(progress.done || []).length && !(progress.replays || []).length) return;
         try {
             if (!page && sessionStorage.getItem(SENT) === String(progress.updated)) return;
         } catch (err) {}
@@ -265,6 +309,17 @@
     }
     paint();
     pull();
+
+    window.__htLearnReplayDone = function (slug) {
+        if (!replaySlug(slug)) return;
+        var progress = read();
+        if (progress.replays.indexOf(slug) !== -1) return;
+        progress.replays.push(slug);
+        progress.updated = Date.now();
+        write(progress);
+        paint();
+        scheduleSync(true);
+    };
 
     window.__htLearnNote = function (seconds, duration, ended) {
         if (!page || !page.classList.contains("learn-episode")) return;
