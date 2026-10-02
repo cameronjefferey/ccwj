@@ -41,9 +41,14 @@ The dev dataset is a **full mirror for testing**, kept fresh two ways. (1) **App
 signup is `users.plan='trial'`: full product, no card. Learning and Alpaca
 Paper are free and never start the clock. The 30-day clock starts only when
 the first real (non-paper) brokerage account connects (`start_trial_clock`
-no-ops without one, and `WHERE trial_started_at IS NULL` leaves an existing
-date alone). A paper-only or account-less user is not frozen and is not
-disconnected by the lifecycle cron, even if an older sync stored a date.
+stamps only when `trial_started_at IS NULL` and a real brokerage is already
+connected). A trial date stored before that — Alpaca Paper or no brokerage
+at all — is cleared (`clear_stale_trial_clocks` on startup, and
+`clear_stale_trial_clock` on the next paper sync) so the full 30 days start
+at the first real connection. A user who already has a real brokerage keeps
+their date, including a disconnected row. Beta and active clocks are not
+cleared. A paper-only or account-less user is not frozen and is not
+disconnected by the lifecycle cron.
 Day 30 the mirror FREEZES — every page stays readable, but syncs
 and uploads stop; day 60 the daily `happytrader-plan-lifecycle` cron
 (`app/plan_lifecycle_cli.py`, also sends the day-23/30/53 lifecycle

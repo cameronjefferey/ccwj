@@ -2356,10 +2356,11 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         )
         # Reverse trial: the 30-day clock starts when a real brokerage has
         # data, not on Alpaca Paper and not merely after a broker read.
-        # start_trial_clock no-ops without a non-paper tenant and never
-        # rewrites an existing date. Deferred cron reads have not written
-        # their batch yet, so the caller starts the clock only after that
-        # batch is durable (including a byte-identical no-op).
+        # start_trial_clock no-ops the stamp without a non-paper tenant
+        # (and clears a stale paper-only date). It never rewrites a date
+        # that already belongs to a real brokerage. Deferred cron reads
+        # have not written their batch yet, so the caller starts the clock
+        # only after that batch is durable (including a byte-identical no-op).
         if not result.get("deferred") and seed_write_confirmed:
             try:
                 from app.plan import start_trial_clock

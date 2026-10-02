@@ -209,13 +209,73 @@ def user_sync_allowed(user_id):
     return plan_state(user_id) not in _SYNC_BLOCKED_STATES
 
 
+def _real_brokerage_exists_sql():
+    """Rows that count as a real brokerage. Matches ``user_has_real_brokerage``:
+    active or disconnected, not manual CSV, not demo, not Alpaca Paper."""
+    from app.paper_accounts import _PAPER_MARKERS
+
+    blob = (
+        "lower(coalesce(bt.broker_label, '') || ' ' || "
+        "coalesce(bt.account_name, '') || ' ' || "
+        "coalesce(bt.display_nickname, ''))"
+    )
+    paper_absent = " AND ".join(
+        f"strpos({blob}, %s) = 0" for _marker in _PAPER_MARKERS
+    )
+    return (
+        "SELECT 1 FROM broker_tenants AS bt "
+        "WHERE bt.user_id = u.id "
+        "AND bt.connection_status IN ('active', 'disconnected') "
+        "AND bt.tenant_id NOT LIKE 'manual:%' "
+        "AND bt.tenant_id NOT LIKE 'demo:%' "
+        f"AND {paper_absent}"
+    ), tuple(_PAPER_MARKERS)
+
+
+def clear_stale_trial_clocks():
+    """Null ``trial_started_at`` for trial users with no real brokerage.
+
+    One-time cleanup of clocks that started on Alpaca Paper or on no
+    brokerage at all, and safe to re-run: a user with a real brokerage is
+    excluded. Best-effort — never raises."""
+    try:
+        exists_sql, params = _real_brokerage_exists_sql()
+        execute(
+            "UPDATE users AS u SET trial_started_at = NULL "
+            "WHERE u.plan = %s AND u.trial_started_at IS NOT NULL "
+            f"AND NOT EXISTS ({exists_sql})",
+            (PLAN_TRIAL, *params),
+        )
+    except Exception as exc:
+        _log.warning("clear_stale_trial_clocks failed: %s", exc)
+
+
+def clear_stale_trial_clock(user_id):
+    """Guard: drop one user's trial date when they have no real brokerage.
+
+    A lookup failure does nothing. A real brokerage is left untouched.
+    Best-effort — never raises."""
+    if user_has_real_brokerage(user_id) is not False:
+        return
+    try:
+        execute(
+            "UPDATE users SET trial_started_at = NULL "
+            "WHERE id = %s AND plan = %s AND trial_started_at IS NOT NULL",
+            (user_id, PLAN_TRIAL),
+        )
+    except Exception as exc:
+        _log.warning("clear_stale_trial_clock(%s) failed: %s", user_id, exc)
+
+
 def start_trial_clock(user_id):
     """Stamp ``trial_started_at`` when a real brokerage is already connected.
 
     Once-only (``trial_started_at IS NULL``) and a no-op for beta/active
-    users, for Alpaca Paper, and for someone with no brokerage yet. An
-    existing date is never rewritten. Best-effort — never raises."""
+    users. Without a real brokerage the guard clears a stale date instead,
+    so the full 30 days start on the first real connection. A lookup
+    failure neither stamps nor clears. Best-effort — never raises."""
     if user_has_real_brokerage(user_id) is not True:
+        clear_stale_trial_clock(user_id)
         return
     try:
         row = execute_returning(

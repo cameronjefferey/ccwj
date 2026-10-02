@@ -2468,9 +2468,10 @@ def upload():
         flash("Couldn't save that upload right now. Try again in a moment, or contact support if it keeps happening.", "danger")
         return redirect(url_for("upload"))
 
-    # A CSV does not start the 30-day clock. start_trial_clock no-ops
-    # unless a real brokerage is already connected, and never rewrites
-    # an existing date. Best-effort.
+    # A CSV does not start the 30-day clock. start_trial_clock stamps
+    # only when a real brokerage is already connected. Without one it
+    # clears a stale paper-only date and leaves a real brokerage's date
+    # alone. Best-effort.
     try:
         from app.plan import start_trial_clock
         start_trial_clock(current_user.id)

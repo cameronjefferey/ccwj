@@ -583,6 +583,7 @@ def init_db():
     _migrate_users_email_verified_column()
     _migrate_users_preferred_llm_model_column()
     _migrate_users_plan_columns()
+    _migrate_clear_stale_paper_trial_clocks()
     _migrate_users_stripe_columns()
     _migrate_users_ai_addon_columns()
     _migrate_users_app_view_column()
@@ -668,7 +669,8 @@ def _migrate_users_plan_columns():
     - ``plan`` — 'trial' (default for new signups) | 'beta' | 'active'.
     - ``trial_started_at`` — stamped when the first real (non-paper)
       brokerage is connected, not at signup and not for Alpaca Paper or
-      CSV. NULL = clock not running. An existing value is never rewritten.
+      CSV. NULL = clock not running. A date on a trial user who has never
+      had a real brokerage is cleared; a real brokerage's date is kept.
     - ``plan_updated_at`` — audit stamp for admin/Stripe plan changes.
 
     GRANDFATHERING: every user that exists when the ``plan`` column first
@@ -691,6 +693,19 @@ def _migrate_users_plan_columns():
             execute("UPDATE users SET plan = 'beta', plan_updated_at = NOW()")
     except Exception as exc:
         _log.warning("users plan-columns migration skipped: %s", exc)
+
+
+def _migrate_clear_stale_paper_trial_clocks():
+    """Clear trial clocks for users who never connected a real brokerage.
+
+    Idempotent. Users with a real brokerage row are not updated. See
+    ``app.plan.clear_stale_trial_clocks``.
+    """
+    try:
+        from app.plan import clear_stale_trial_clocks
+        clear_stale_trial_clocks()
+    except Exception as exc:
+        _log.warning("stale paper trial-clock migration skipped: %s", exc)
 
 
 def _migrate_users_stripe_columns():
