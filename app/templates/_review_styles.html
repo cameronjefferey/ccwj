@@ -342,14 +342,20 @@
     .snapshot-table-row.total .acct-name { color: var(--ht-ink); }
     .snapshot-table .snap-cell-val {
         font-weight: 700; font-size: .98rem; line-height: 1.15;
+        font-family: var(--font-mono);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
     }
     /* Same size as other rows so the Total dollars share the column edge. */
     .snapshot-table .snap-cell-pct {
         font-size: .75rem; margin-top: .12rem; font-weight: 650;
+        font-family: var(--font-mono);
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
     }
+    .snap-h-short { display: none; }
+    .acct-share-phone { display: none; }
+    .snapshot-scroll { max-width: 100%; }
     .share-cell { display: flex; align-items: center; justify-content: flex-end; gap: .55rem; }
     .share-track {
         width: 72px; height: 6px; border-radius: 999px; background: #e7ecf2;
@@ -372,55 +378,49 @@
     .snap-bench { font-size: .68rem; color: var(--ht-faint); margin-top: .25rem; font-style: italic; }
     .snap-bench span { font-style: normal; }
     @media (max-width: 720px) {
-        /* Stack every snapshot column. Share of book and 1 month stay
-           on screen; they are labeled from data-label instead of hidden. */
-        .snapshot-section { padding: .9rem .75rem; }
-        .snapshot-table { display: flex; flex-direction: column; gap: .85rem; }
-        .snapshot-table-head { display: none; }
-        .snapshot-table-row {
+        /* One row per account. Share of book sits under the name so
+           Value / Today / 1W / 1M stay columns. The page does not
+           scroll sideways; only this table does, with Account stuck. */
+        .snapshot-section { padding: .7rem .5rem; overflow-x: clip; }
+        .snapshot-scroll { overflow-x: auto; min-width: 0; }
+        .snapshot-table {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: .35rem .75rem;
-            padding-bottom: .75rem;
-            border-bottom: 1px solid var(--ht-line);
+            grid-template-columns: minmax(6.25rem, 1.4fr) max-content repeat(3, max-content);
+            width: max-content;
+            min-width: 100%;
         }
+        .snapshot-table .snap-col-share { display: none; }
+        .snap-h-full { display: none; }
+        .snap-h-short { display: inline; }
+        .acct-share-phone {
+            display: flex;
+            align-items: center;
+            gap: .3rem;
+            margin-top: .15rem;
+        }
+        .acct-share-phone .share-track { width: 2.25rem; flex-basis: 2.25rem; height: 3px; }
+        .acct-share-phone .share-pct { font-size: .62rem; min-width: 0; }
+        .snapshot-table-head > div,
         .snapshot-table-row > div {
-            border-bottom: none;
-            padding: 0;
-            text-align: left;
-            min-width: 0;
+            padding: .4rem .4rem .4rem 0;
         }
-        /* Desktop `.snapshot-table-row > div:not(:first-child)` is
-           (0,2,1) and beats the rule above. Prefixing .snapshot-table
-           makes this (0,3,1), so every row — account, Total, benchmark —
-           left-aligns on a phone. */
-        .snapshot-table .snapshot-table-row > div:not(:first-child) {
-            text-align: left;
+        .snapshot-table-head > div:first-child,
+        .snapshot-table-row > div:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: var(--ht-surface);
+            padding-right: .45rem;
         }
-        .snapshot-table-row > div:first-child { grid-column: 1 / -1; }
-        .snapshot-table-row > div:empty { display: none; }
-        .snapshot-table-row > div[data-label]::before {
-            content: attr(data-label);
-            display: block;
-            font-size: .68rem;
-            font-weight: 600;
-            color: var(--ht-muted);
-            margin-bottom: .1rem;
+        .snapshot-table-row.total > div:first-child {
+            background: var(--ht-surface-2);
         }
-        .snapshot-table-row > div:first-child::before { display: none; }
-        .snapshot-table .share-cell { justify-content: flex-start; }
-        .snapshot-table .acct-name { font-size: .9rem; }
-        .snapshot-table .snap-cell-val { font-size: .95rem; }
-        /* Benchmark rows use the same stack as account rows.
-           Desktop right-align is (0,2,1) via :not(:first-child), and
-           base.html paints these cells #0a0e17 at (0,3,1). The
-           attribute + .snapshot-table prefix is (0,4,1), so it wins
-           only inside this query. */
-        [data-bs-theme="dark"] .snapshot-table .snapshot-table-row.benchmark > div,
-        .snapshot-table .snapshot-table-row.benchmark > div {
-            background: transparent;
-            text-align: left;
-            padding: 0;
+        .snapshot-table .acct-name { font-size: .78rem; }
+        .snapshot-table .snap-cell-val { font-size: .72rem; font-family: var(--font-mono); }
+        .snapshot-table .snap-cell-pct { font-size: .62rem; font-family: var(--font-mono); }
+        .snapshot-table .acct-rename { display: none; }
+        .snapshot-table-row.benchmark > div:first-child {
+            background: var(--ht-surface-2);
         }
     }
 

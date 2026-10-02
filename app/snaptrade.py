@@ -1436,17 +1436,34 @@ def place_single_leg_option_order(user_id, account_id, occ_symbol, limit_price):
 
 
 def list_account_recent_orders(user_id, account_id):
-    """Open and recent orders for one SnapTrade account. Empty on failure."""
+    """Open, cancelled, filled, and rejected orders for one account.
+
+    ``recent_orders`` is the last 24 hours and defaults to executed-only,
+    so an open paper order never appears unless ``only_executed`` is false.
+    Orders older than that window come from the account orders endpoint
+    (``state=all``, 30 days). The recent row wins when both feeds list
+    the same brokerage order id. Empty on failure.
+    """
     snap = get_snaptrade_user(user_id)
     client = _get_snaptrade_client()
     if not snap or not client or not account_id:
         return []
-    return _fetch_recent_orders(
+    recent = _fetch_recent_orders(
         client,
         snap["snaptrade_user_id"],
         snap["snaptrade_secret"],
         account_id,
+        only_executed=False,
     )
+    older = _fetch_account_orders(
+        client,
+        snap["snaptrade_user_id"],
+        snap["snaptrade_secret"],
+        account_id,
+        state="all",
+        days=30,
+    )
+    return _merge_order_rows(recent, older)
 
 
 def cancel_account_order(user_id, account_id, brokerage_order_id):
@@ -3204,7 +3221,7 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
     return _coerce_list(resp)
 
 
-def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id):
+def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id, only_executed=None):
     """Pull SnapTrade's ``recent_orders`` endpoint for one account.
 
     This is the real-time-ish trade source we use to backfill the
@@ -3214,13 +3231,20 @@ def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id):
     ``{"orders": [...]}`` where each order has ``status``, ``action``,
     ``universal_symbol``, ``filled_quantity``, ``execution_price``,
     ``time_executed``.
+
+    The endpoint is the last 24 hours and defaults to executed orders.
+    The sync path leaves ``only_executed`` unset so that default stays.
+    Practice passes ``False`` so an open order is visible.
     """
+    kwargs = {
+        "user_id": snap_user_id,
+        "user_secret": snap_secret,
+        "account_id": account_id,
+    }
+    if only_executed is not None:
+        kwargs["only_executed"] = only_executed
     try:
-        resp = client.account_information.get_user_account_recent_orders(
-            user_id=snap_user_id,
-            user_secret=snap_secret,
-            account_id=account_id,
-        )
+        resp = client.account_information.get_user_account_recent_orders(**kwargs)
     except Exception as exc:
         # Orders endpoint is the real-time fallback for the activities
         # feed (see broker-sync-safety SKILL.md, 2026-05-14 PM entry).
@@ -3249,9 +3273,48 @@ def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id):
             account_id, exc,
         )
         return []
+    return _order_rows(resp)
+
+
+def _fetch_account_orders(client, snap_user_id, snap_secret, account_id, state="all", days=30):
+    """Orders outside the 24-hour recent window.
+
+    ``state=all`` is open, executed, cancelled, and rejected. ``days``
+    is capped at SnapTrade's 90-day maximum. A failure is empty so a
+    missing orders feed cannot blank the recent list.
+    """
+    try:
+        span = int(days)
+    except (TypeError, ValueError):
+        span = 30
+    span = min(90, max(1, span))
+    try:
+        resp = client.account_information.get_user_account_orders(
+            user_id=snap_user_id,
+            user_secret=snap_secret,
+            account_id=account_id,
+            state=state,
+            days=span,
+        )
+    except Exception as exc:
+        app.logger.warning(
+            "SnapTrade _fetch_account_orders failed for account=%s: %s — "
+            "practice will show the 24-hour recent list only.",
+            account_id, exc,
+        )
+        return []
+    return _order_rows(resp)
+
+
+def _order_rows(resp):
+    """Normalize a recent-orders or account-orders payload to dict rows."""
     body = _unwrap_body(resp)
     if isinstance(body, dict):
-        items = body.get("orders") or []
+        items = body.get("orders")
+        if items is None and isinstance(body.get("data"), list):
+            items = body["data"]
+        if items is None:
+            items = []
     elif isinstance(body, list):
         items = body
     else:
@@ -3265,6 +3328,22 @@ def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id):
                 out.append(item.to_dict())
             except Exception:
                 continue
+    return out
+
+
+def _merge_order_rows(primary, secondary):
+    """``primary`` wins when both lists share a brokerage order id."""
+    seen = set()
+    out = []
+    for item in list(primary or []) + list(secondary or []):
+        if not isinstance(item, dict):
+            continue
+        oid = str(item.get("brokerage_order_id") or "")
+        if oid:
+            if oid in seen:
+                continue
+            seen.add(oid)
+        out.append(item)
     return out
 
 

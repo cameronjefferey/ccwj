@@ -143,6 +143,8 @@ def test_ticks_and_spx_link():
     assert option_tick("SPXW", Decimal("3")) == Decimal("0.10")
     assert option_tick("AAPL", Decimal("2.90")) == Decimal("0.05")
     assert option_tick("AAPL", Decimal("3.10")) == Decimal("0.10")
+    assert option_tick("SPY", Decimal("1.17")) == Decimal("0.01")
+    assert option_tick("QQQ", Decimal("4.20")) == Decimal("0.01")
     assert round_to_tick(Decimal("3.14"), "SPX") == Decimal("3.10")
     assert round_to_tick(Decimal("2.97"), "SPX") == Decimal("2.95")
     assert limit_from_quote("1.17", "IWM") == "1.15"
@@ -174,6 +176,9 @@ def test_copy_is_literal():
         "$3.50", "$350.00", "SPXW  261002C05000000", True,
     )
     assert "cash-settled" in spx["brokerage"]["note"]
+    assert "Total cost $350.00" in spx["brokerage"]["note"]
+    assert "per point" in spx["brokerage"]["note"]
+    assert "per share" in note
     placed = views["beginner"]["note"]
     assert "was sent" not in placed
     from app.paper_practice import practice_receipt
@@ -377,6 +382,30 @@ def test_simple_nav_hides_advanced_items():
     assert "Trader Profile" not in html
     assert "AI Insights" not in html
     assert ">Strategies<" not in html
+
+
+def test_buy_receipt_does_not_say_premium():
+    from pathlib import Path
+    text = Path("app/templates/_paper_trade_receipt.html").read_text()
+    assert "Premium per" not in text
+    assert "Price per share" in text
+    assert "Price per point" in text
+
+
+def test_simple_view_hides_advanced_panels():
+    from pathlib import Path
+
+    positions = Path("app/templates/positions.html").read_text()
+    assert "{% if rows and not simple_view %}" in positions
+    overview = Path("app/templates/weekly_review.html").read_text()
+    opened = overview.find('id="ov-show-more"')
+    below = overview.find('{% include "_overview_below.html" %}')
+    after = overview.find("{% if simple_view %}", below)
+    assert 0 < opened < below < after
+    assert "{% if not simple_view %}" in overview
+    page = Path("app/templates/position_detail.html").read_text()
+    assert page.find('id="pd-show-more"') < page.find(">What worked<")
+    assert page.find(">What worked<") < page.find('{% include "_held_to_expiry.html" %}')
 
 
 def test_learn_links_to_practice():

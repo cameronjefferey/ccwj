@@ -479,7 +479,15 @@ def _share_math(limit_label, cost_label, cash_settled) -> str:
 def _order_notes(limit_label, cost_label, cash_settled, placed: bool) -> dict:
     math = _share_math(limit_label, cost_label, cash_settled)
     cash_note = " SPX is cash-settled." if cash_settled else ""
+    unit = "point" if cash_settled else "share"
+    brokerage = (
+        "Paper. Bid is the highest price a buyer is paying "
+        "(what you would get selling now). Ask is the lowest price a seller "
+        "will take (what you would pay buying now). Mid is halfway between them. "
+        f"The limit is per {unit}, rounded to the option's tick. "
+    )
     if placed:
+        brokerage += f"Status: sent. Total cost {cost_label}.{cash_note}"
         return {
             "beginner": (
                 f"This order was sent to the paper account. You pay about {cost_label}. {math}"
@@ -487,14 +495,9 @@ def _order_notes(limit_label, cost_label, cash_settled, placed: bool) -> dict:
             "intermediate": (
                 f"{math} This order was sent on the paper account.{cash_note}"
             ),
-            "brokerage": (
-                "Paper. Bid is the highest price a buyer is paying "
-                "(what you would get selling now). Ask is the lowest price a seller "
-                "will take (what you would pay buying now). Mid is halfway between them. "
-                f"The limit is per share, rounded to the option's tick. Status: sent. "
-                f"Total cost {cost_label}.{cash_note}"
-            ),
+            "brokerage": brokerage,
         }
+    brokerage += f"Total cost {cost_label}.{cash_note}"
     return {
         "beginner": (
             f"This reviews the trade on the paper account. You would pay about {cost_label}. {math}"
@@ -502,13 +505,7 @@ def _order_notes(limit_label, cost_label, cash_settled, placed: bool) -> dict:
         "intermediate": (
             f"{math} Placing it sends this order on the paper account.{cash_note}"
         ),
-        "brokerage": (
-            "Paper. Bid is the highest price a buyer is paying "
-            "(what you would get selling now). Ask is the lowest price a seller "
-            "will take (what you would pay buying now). Mid is halfway between them. "
-            f"The limit is per share, rounded to the option's tick. "
-            f"Total cost {cost_label}.{cash_note}"
-        ),
+        "brokerage": brokerage,
     }
 
 

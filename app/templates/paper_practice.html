@@ -78,6 +78,7 @@
         color: #5b8cff;
     }
     .pp-chain .pp-chain-strike { font-weight: 650; }
+    body { overflow-x: clip; }
     .pp-wrap { max-width: 100%; overflow-x: clip; }
     .pp-wrap > .row { --bs-gutter-x: 0; margin-left: 0; margin-right: 0; }
     .pp-wrap > .row > [class*="col-"] { padding-left: 0; padding-right: 0; max-width: 100%; }
@@ -157,7 +158,7 @@
                 <p class="pp-note">
                     New to the words on the ticket?
                     <a href="/learn">Learn Options 101</a>
-                    walks through a call, a put, a strike, and the premium. You can come back here after.
+                    walks through a call, a put, a strike, and what it costs. You can come back here after.
                 </p>
                 <p class="pp-note">Opening the account is one sign-in. After that, you place the trade on this page.</p>
                 {% if snaptrade_ready %}
@@ -257,7 +258,7 @@
                                 at: "Nearest",
                                 above: "Higher",
                                 button: "Review this trade",
-                                next: "The next step shows the limit premium for one contract."
+                                next: "The next step shows the limit price for one contract."
                             },
                             brokerage: {
                                 side: "Action",

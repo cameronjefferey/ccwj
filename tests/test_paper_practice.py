@@ -368,6 +368,9 @@ def test_intro_is_for_learning_and_links_to_options_101(monkeypatch):
     assert 'href="/learn"' in html
     assert "Learn Options 101" in html
     assert "Alpaca" not in html
+    assert "limit premium" not in html
+    assert "and the premium" not in html
+    assert "what it costs" in html
 
 
 def test_unquoted_ticket_does_not_send_an_order(monkeypatch):

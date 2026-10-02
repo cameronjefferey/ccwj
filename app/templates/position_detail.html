@@ -28,6 +28,34 @@
         box-shadow: none;
     }
     .pos-hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .25rem; }
+    /* The total sits in its own column so the same cqi clamp as the
+       other heroes can shrink +$121,456.75 to the column instead of
+       spilling a few pixels past the box. No ellipsis. */
+    .pos-hero .pos-hero-split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(14rem, 22.5rem);
+        gap: .75rem 1.25rem;
+        align-items: start;
+    }
+    .pos-hero .pos-hero-id { min-width: 0; }
+    .pos-hero .pos-total {
+        min-width: 0;
+        max-width: 100%;
+        container-type: inline-size;
+        text-align: right;
+    }
+    .pos-hero .pos-total .ov-big {
+        display: block;
+        white-space: nowrap;
+        overflow: visible;
+        text-overflow: clip;
+        font-size: clamp(1.05rem, 13.5cqi, 2.75rem);
+        font-weight: 750;
+        letter-spacing: -.02em;
+        line-height: 1.05;
+        font-variant-numeric: tabular-nums;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+    }
     .badge-open, .badge-closed, .badge-mixed, .badge-strategy {
         font-size: .68rem; font-weight: 650;
         padding: .2em .6em; border-radius: 999px;
@@ -233,6 +261,8 @@
     @media (max-width: 640px) {
         .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; margin-bottom: 1rem; }
         .pos-hero h1 { font-size: 1.5rem; }
+        .pos-hero .pos-hero-split { grid-template-columns: minmax(0, 1fr); }
+        .pos-hero .pos-total { text-align: left; }
         .kpi-mini .value { font-size: 1.05rem; }
         .kpi-mini .label { font-size: .58rem; }
         .stat-card .card-body { padding: .9rem; }
@@ -736,8 +766,8 @@
         </form>
         {% endif %}
     </div>
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-        <div>
+    <div class="pos-hero-split">
+        <div class="pos-hero-id">
             <h1>{{ symbol }}</h1>
             {% if symbol_company %}
             <div class="text-white-50" style="font-size: .9rem; margin-top: -.15rem;">{{ symbol_company }}</div>
@@ -792,7 +822,7 @@
             {% endif %}
         </div>
         {% if kpis %}
-        <div class="text-end">
+        <div class="pos-total">
             {% if overall_status == 'Closed' %}
             <button type="button" class="ht-share-btn ht-share-btn-hero mb-2"
                     data-ref="position"
@@ -801,8 +831,8 @@
             {% endif %}
             <div class="small text-white-50">Total return</div>
             <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized{% if kpis.dividend_income and kpis.dividend_income != 0 %} + dividends{% endif %}</div>
-            <div class="h2 mb-0 {% if kpis.total_return >= 0 %}text-success{% else %}text-danger{% endif %}">
-                {{ money(kpis.total_return) }}
+            <div class="ov-big {% if kpis.total_return >= 0 %}pos{% else %}neg{% endif %}">
+                {% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return) }}
             </div>
         </div>
         {% endif %}
@@ -1304,6 +1334,19 @@
 </p>
 {% endif %}
 
+{# Simple view keeps the chart up front. Strategy rows, if-held, legs,
+   and the matrix stay behind one disclosure. #}
+{% if simple_view %}
+<details class="disclosure" id="pd-show-more">
+    <summary><span class="section-header">Show more</span></summary>
+    <div class="disclosure-body">
+        {% if chart_read %}
+        <div class="chart-read mt-3">
+            <div class="chart-read-kicker">On this chart</div>
+            <p class="chart-read-lead">{{ chart_read.lead }}</p>
+        </div>
+        {% endif %}
+{% endif %}
 {# ── What worked: strategy rows. The headline number is total return.
    Realized, unrealized, dividends, and premium received open on the row.
    Collected is premium received — not a net result. #}
@@ -1380,22 +1423,7 @@
 
 {# ── All Legs (Open + Closed). The summary is the only "Position Legs"
    heading, and it stays next to If held. #}
-{% if simple_view %}
-<details class="disclosure" id="pd-show-more">
-    <summary><span class="section-header">Show more</span></summary>
-    <div class="disclosure-body">
-        {% if chart_read %}
-        <div class="chart-read mt-3">
-            <div class="chart-read-kicker">On this chart</div>
-            <p class="chart-read-lead">{{ chart_read.lead }}</p>
-        </div>
-        {% endif %}
-{% endif %}
 {% include "_held_to_expiry.html" %}
-{% if simple_view %}
-    </div>
-</details>
-{% endif %}
 <p class="pd-kicker">Details</p>
 {% if current_positions or trade_outcomes %}
 <details class="pd-fold" id="pd-legs">
@@ -1836,6 +1864,10 @@
 </details>
 {% endif %}
 
+{% if simple_view %}
+    </div>
+</details>
+{% endif %}
 
 <div class="ht-share-modal" id="htShareModal" hidden>
     <div class="ht-share-panel" role="dialog" aria-labelledby="htShareTitle">

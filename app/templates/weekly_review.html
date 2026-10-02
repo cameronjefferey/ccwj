@@ -418,14 +418,15 @@
             <p>Value at the close, and the change versus the prior session, one week, and one month.</p>
         </div>
     </div>
+    <div class="snapshot-scroll">
     <div class="snapshot-table">
         <div class="snapshot-table-head">
             <div>Account</div>
             <div class="snap-col-share">Share of book</div>
             <div>Value</div>
             <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date.strftime('%A, %b %-d') }}{% endif %}">Today</div>
-            <div class="snap-col-week">1 week</div>
-            <div class="snap-col-month">1 month</div>
+            <div class="snap-col-week"><span class="snap-h-full">1 week</span><span class="snap-h-short">1W</span></div>
+            <div class="snap-col-month"><span class="snap-h-full">1 month</span><span class="snap-h-short">1M</span></div>
         </div>
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">
@@ -440,6 +441,13 @@
                 <a class="acct-rename" href="{{ account_rename_urls[snap.tenant_id] }}">rename</a>
                 {% endif %}
                 </div>
+                {% if snap.today_value is not none and _share_total %}
+                {% set share = (snap.today_value / _share_total * 100) %}
+                <div class="acct-share-phone">
+                    <span class="share-track"><span style="width: {{ [share, 100]|min }}%"></span></span>
+                    <span class="share-pct">{{ "%.1f"|format(share) }}%</span>
+                </div>
+                {% endif %}
             </div>
             <div class="snap-col-share" data-label="Share of book">{{ share_cell(snap.today_value, _share_total or snap.today_value) }}</div>
             <div data-label="Value">
@@ -484,6 +492,7 @@
         {% endfor %}
         {% endif %}
     </div>
+    </div>
 </div>
 {% endif %}
 
@@ -499,10 +508,6 @@
 <div id="ht-overview-daily" class="ov-below-slot"></div>
 {% else %}
 {% include "_overview_daily.html" %}
-{% endif %}
-{% if simple_view %}
-    </div>
-</details>
 {% endif %}
 
 {% if building_history %}
@@ -529,9 +534,11 @@
             </div>
             {% endfor %}
         </div>
+        {% if not simple_view %}
         <p class="ov-note">
             <a href="{{ scoped_url('trader_story') }}">See your full trader profile &rarr;</a>
         </p>
+        {% endif %}
         {% endif %}
     </div>
 </details>
@@ -544,10 +551,14 @@
    currently-held symbols, same grain as Positions' symbol chip). Zero extra
    queries on the hottest page.
    ════════════════════════════════════ #}
-{% if today_strip %}
+{% if today_strip and not simple_view %}
 <p class="ov-held">
     {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
     <a href="{{ scoped_url('trader_story', account=selected_account, tenant=selected_tenant, tenants=selected_tenants) }}">See your trader profile &rarr;</a>
+</p>
+{% elif today_strip %}
+<p class="ov-held">
+    {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
 </p>
 {% endif %}
 
@@ -598,8 +609,24 @@ function placeOverviewDaily() {
 {% else %}
 {% include "_overview_below.html" %}
 {% endif %}
+{% if simple_view %}
+    </div>
+</details>
+{% endif %}
 
 <script>
+var more = document.getElementById("ov-show-more");
+if (more) {
+    more.addEventListener("toggle", function () {
+        if (!more.open || !window.Chart || !Chart.getChart) return;
+        requestAnimationFrame(function () {
+            more.querySelectorAll("canvas").forEach(function (canvas) {
+                var chart = Chart.getChart(canvas);
+                if (chart) chart.resize();
+            });
+        });
+    });
+}
 document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest("#cal-toggle-btn");
     if (!btn) return;
