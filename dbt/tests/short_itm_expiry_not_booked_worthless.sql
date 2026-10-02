@@ -11,7 +11,10 @@
       for an ITM cash-settled index (else + $0). SPXW uses the SPX close
       when SPXW itself has no price row.
 
-    Without a close: stay Open, no close date, no booked P&L.
+    Without a close, before the next weekday after expiry: stay Open,
+    no close date, no booked P&L. Once that weekday has started and the
+    close is still missing, expire at $0 under the estimate label, with
+    close_date on the expiry (realized = net_cash_flow).
 
     A broker close (contracts_closed > 0) must not keep the estimate
     label, and its realized P&L must stay net_cash_flow so the intrinsic
@@ -65,6 +68,14 @@ gated as (
                 )
             )
         ) as session_over,
+        (
+            option_expiry is not null
+            and current_date('America/New_York') >= case extract(dayofweek from option_expiry)
+                when 6 then date_add(option_expiry, interval 3 day)
+                when 7 then date_add(option_expiry, interval 2 day)
+                else date_add(option_expiry, interval 1 day)
+            end
+        ) as fallback_due,
         case
             when upper(trim(coalesce(underlying_symbol, ''))) not in (
                 'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
@@ -145,6 +156,7 @@ select
 from gated
 where session_over
   and expiry_close is null
+  and not fallback_due
   and coalesce(close_type, '') not in (
       'Expired', 'ExpiredOTM', 'Assigned', 'Exercised', 'Closed'
   )
@@ -153,6 +165,37 @@ where session_over
       or close_type = 'Settled at expiry (est.)'
       or close_date is not null
       or abs(coalesce(realized_pnl, 0)) > 0.01
+  )
+
+union all
+
+select
+    tenant_id,
+    account,
+    trade_symbol,
+    underlying_symbol,
+    option_expiry,
+    status,
+    close_type,
+    close_date,
+    realized_pnl,
+    total_pnl,
+    net_cash_flow,
+    expiry_close,
+    'unpriced_fallback' as violation
+from gated
+where session_over
+  and expiry_close is null
+  and fallback_due
+  and coalesce(close_type, '') not in (
+      'Expired', 'ExpiredOTM', 'Assigned', 'Exercised', 'Closed'
+  )
+  and (
+      status != 'Closed'
+      or close_type != 'Settled at expiry (est.)'
+      or close_date != option_expiry
+      or abs(coalesce(realized_pnl, 0) - coalesce(net_cash_flow, 0)) > 0.05
+      or abs(coalesce(total_pnl, 0) - coalesce(net_cash_flow, 0)) > 0.05
   )
 
 union all

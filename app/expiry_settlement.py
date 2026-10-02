@@ -21,15 +21,20 @@ The row is labeled ``Settled at expiry (est.)`` until a broker close
 (expired, as-of, assignment, exercise) arrives. That close already carries
 the cash, so the estimate adds nothing on top of it.
 
-A missing official close does not settle and does not book the opening
-credit. SPXW prices often live under SPX; the caller passes that close
-(the model prefers the exact symbol, then SPXW→SPX, NDXP→NDX, RUTW→RUT).
+A missing official close stays open through the expiry session and does
+not book the opening credit. If that close is still missing on the next
+trading day (the symbol never landed in the price file), the contract
+falls back to the old calendar close: expired at $0 value, still labeled
+as an estimate, dated on the expiry so later builds do not move the
+realized dollar. SPXW prices often live under SPX; the caller passes that
+close (the model prefers the exact symbol, then SPXW→SPX, NDXP→NDX,
+RUTW→RUT).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 ESTIMATE_LABEL = "Settled at expiry (est.)"
@@ -78,6 +83,28 @@ def _as_date(value) -> date | None:
         return date.fromisoformat(text)
     except ValueError:
         return None
+
+
+def next_trading_day(expiry: date) -> date:
+    """The next weekday after ``expiry``. Friday lands on Monday."""
+    weekday = expiry.weekday()  # Monday=0 … Sunday=6
+    if weekday == 4:
+        return expiry + timedelta(days=3)
+    if weekday == 5:
+        return expiry + timedelta(days=2)
+    return expiry + timedelta(days=1)
+
+
+def calendar_fallback_due(expiry, now_et: datetime) -> bool:
+    """True once the next trading day after expiry has started in New York.
+
+    That is the deadline for an official close. Past it, a contract with
+    no price row uses the $0 calendar close instead of staying Open.
+    """
+    expiry_d = _as_date(expiry)
+    if expiry_d is None or now_et is None:
+        return False
+    return _as_et(now_et).date() >= next_trading_day(expiry_d)
 
 
 def session_is_over(expiry, now_et: datetime, root: str) -> bool:
@@ -170,12 +197,14 @@ def settle_expired_option(
         realized = 0.0 if opened_before_history else flows
         return ExpirySettlement(False, None, None, 0.0, realized)
     expiry_d = _as_date(expiry)
-    if (
-        close is None
-        or strike is None
-        or expiry_d is None
-        or not session_is_over(expiry_d, now_et, root)
-    ):
+    if expiry_d is None or not session_is_over(expiry_d, now_et, root):
+        return ExpirySettlement(False, None, None, 0.0, 0.0)
+    # No price by the next trading day: expire at $0, still an estimate,
+    # and keep the close on the expiry date.
+    if close is None and calendar_fallback_due(expiry_d, now_et):
+        realized = 0.0 if opened_before_history else flows
+        return ExpirySettlement(True, ESTIMATE_LABEL, expiry_d, 0.0, realized)
+    if close is None or strike is None:
         return ExpirySettlement(False, None, None, 0.0, 0.0)
     cash = settlement_cash(
         root=root,

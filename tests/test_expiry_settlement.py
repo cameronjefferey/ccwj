@@ -124,9 +124,50 @@ def test_broker_as_of_replaces_the_estimate_without_a_second_intrinsic():
 
 
 def test_missing_close_does_not_book_the_opening_credit():
-    missing = _leg(close=None)
+    # Thursday expiry, still Thursday after the index bell. The next
+    # trading day has not started, so a missing price stays open.
+    missing = _leg(close=None, now_et=datetime(2026, 10, 1, 16, 30))
     assert not missing.settled
     assert missing.realized_pnl == 0.0
+    assert missing.close_date is None
+
+
+def test_missing_close_expires_at_zero_on_the_next_trading_day():
+    # Thursday Oct 1. Friday morning, still no official close: the old
+    # calendar close, flagged as an estimate, dated on the expiry.
+    fallback = _leg(close=None, now_et=datetime(2026, 10, 2, 9, 30))
+    assert fallback.settled
+    assert fallback.close_type == ESTIMATE_LABEL
+    assert fallback.close_date == _EXPIRY
+    assert fallback.settlement_cash == 0.0
+    assert fallback.realized_pnl == _SHORT_OPEN
+
+    # Friday expiry waits through the weekend. Monday is the deadline.
+    friday = date(2026, 10, 2)
+    weekend = _leg(
+        close=None,
+        expiry=friday,
+        now_et=datetime(2026, 10, 3, 12, 0),
+        strike=30,
+        root="BE",
+        quantity=1,
+        net_cash_flow=180.0,
+    )
+    assert not weekend.settled
+    monday = _leg(
+        close=None,
+        expiry=friday,
+        now_et=datetime(2026, 10, 5, 9, 30),
+        strike=30,
+        root="BE",
+        quantity=1,
+        net_cash_flow=180.0,
+    )
+    assert monday.settled
+    assert monday.settlement_cash == 0.0
+    assert monday.realized_pnl == 180.0
+    assert monday.close_date == friday
+    assert monday.close_type == ESTIMATE_LABEL
 
 
 def test_itm_equity_stays_on_the_option_cash_line():

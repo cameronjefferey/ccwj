@@ -1373,8 +1373,12 @@ the shares are the equity line. The row is
 and that close replaces the estimate — `net_cash_flow` already
 includes the broker cash, so intrinsic is not added again. Price is
 the exact underlying, else SPXW→SPX / NDXP→NDX / RUTW→RUT when the
-exact symbol has no row. No official close: stay Open, P&L $0 (or the
-live snapshot mark). `int_enriched_current` drops `status='Closed'`,
+exact symbol has no row. No official close stays Open, P&L $0 (or the
+live snapshot mark), until the next weekday after expiry (Friday →
+Monday). Still missing then, the contract expires at $0 value under the
+same estimate label, with `close_date` on the expiry, so a symbol that
+never lands in the price file does not stay Open and the realized dollar
+does not move onto a later day. `int_enriched_current` drops `status='Closed'`,
 so the chart does not keep the broker's stale mark on top of the
 realized credit.
 
