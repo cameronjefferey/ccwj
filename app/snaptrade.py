@@ -1596,7 +1596,7 @@ def queue_account_read_sync(user_id, acc_row):
     def _worker():
         with app.app_context():
             try:
-                _sync_one_connection(
+                result = _sync_one_connection(
                     user_id,
                     acc_row,
                     lookback_days=_routine_lookback_days(),
@@ -1607,6 +1607,19 @@ def queue_account_read_sync(user_id, acc_row):
                     "Practice order sync failed for user_id=%s: %s",
                     user_id, exc,
                 )
+                return
+            if isinstance(result, dict) and result.get("ok"):
+                # Overview is close-based, so the fill itself waits for the
+                # next settled mart. Drop this user's cached Overview queries
+                # now so the next load is not a 24h L2 hit of the pre-sync book.
+                try:
+                    from app.query_cache import bump_user_query_epoch
+                    bump_user_query_epoch(user_id)
+                except Exception as exc:
+                    _log.warning(
+                        "Practice order cache bump failed for user_id=%s: %s",
+                        user_id, exc,
+                    )
     threading.Thread(target=_worker, daemon=True, name="paper-practice-sync").start()
 
 

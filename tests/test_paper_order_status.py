@@ -453,6 +453,36 @@ def test_paper_fill_notice_skips_symbols_already_listed(monkeypatch):
     assert syncs == ["learner-acct"]
 
 
+def test_paper_sync_bumps_the_overview_cache_epoch(monkeypatch):
+    import app.snaptrade as snap
+    from app import query_cache
+    from app.query_cache import bind_user_query_epoch, make_key, user_query_epoch
+    from app.snaptrade import queue_account_read_sync
+
+    query_cache.clear()
+    monkeypatch.setattr(snap, "_sync_one_connection", lambda *a, **k: {"ok": True})
+
+    class _InlineThread:
+        def __init__(self, target=None, **kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr(snap.threading, "Thread", _InlineThread)
+    plain = make_key("SELECT 1")
+    queue_account_read_sync(42, {"snaptrade_account_id": "learner-acct"})
+    assert user_query_epoch(42) not in ("", "0")
+    with bind_user_query_epoch(42):
+        assert make_key("SELECT 1") != plain
+
+    monkeypatch.setattr(snap, "_sync_one_connection", lambda *a, **k: {"ok": False})
+    before = user_query_epoch(42)
+    queue_account_read_sync(42, {"snaptrade_account_id": "learner-acct"})
+    assert user_query_epoch(42) == before
+    query_cache.clear()
+
+
 def test_positions_names_a_filled_paper_trade_without_a_pnl_row():
     from flask import render_template
 

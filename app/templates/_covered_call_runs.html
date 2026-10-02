@@ -19,6 +19,9 @@
                 <div class="ht-run-acct">{{ run.account_label | account_label(run.tenant_id) }}</div>
                 {% endif %}
                 <p class="ht-run-share">{{ run.share_sentence }}</p>
+                {% if run.price_note %}
+                <p class="ht-run-sub">{{ run.price_note }}</p>
+                {% endif %}
             </div>
             <span class="ht-run-status">{{ run.status_label }}</span>
         </header>

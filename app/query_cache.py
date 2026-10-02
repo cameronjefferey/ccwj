@@ -296,15 +296,93 @@ def _serialize_params(job_config) -> str:
     return "|".join(parts)
 
 
+# Per-user cache generation. Empty (the default) leaves ``make_key``
+# unchanged so existing keys stay stable. Overview binds the current
+# generation around its queries; a successful paper sync increments it
+# so the next Overview load misses L1 and L2. Other pages do not bind,
+# so their keys are unaffected.
+_query_epoch: contextvars.ContextVar = contextvars.ContextVar(
+    "qc_query_epoch", default=""
+)
+_local_epochs: dict = {}
+_local_epoch_lock = threading.Lock()
+
+
+def _epoch_redis_key(user_id) -> str:
+    return f"{_REDIS_PREFIX}epoch:{int(user_id)}"
+
+
+def user_query_epoch(user_id) -> str:
+    """Current cache generation for one user. Empty when never bumped."""
+    if user_id is None:
+        return ""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return ""
+    client = _get_redis()
+    if client is not None:
+        try:
+            raw = client.get(_epoch_redis_key(uid))
+            if raw not in (None, b"", ""):
+                return raw.decode() if isinstance(raw, bytes) else str(raw)
+        except Exception:
+            pass
+    with _local_epoch_lock:
+        return str(_local_epochs.get(uid) or "")
+
+
+def bump_user_query_epoch(user_id) -> str:
+    """Advance one user's cache generation. Shared via Redis when present."""
+    if user_id is None:
+        return ""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return ""
+    client = _get_redis()
+    if client is not None:
+        try:
+            value = str(int(client.incr(_epoch_redis_key(uid))))
+            with _local_epoch_lock:
+                _local_epochs[uid] = value
+            return value
+        except Exception as exc:
+            _log.warning("query_cache: epoch bump failed for user %s: %s", uid, exc)
+    with _local_epoch_lock:
+        value = str(int(_local_epochs.get(uid) or 0) + 1)
+        _local_epochs[uid] = value
+        return value
+
+
+@contextlib.contextmanager
+def bind_user_query_epoch(user_id):
+    """Include this user's generation in cache keys on this context.
+
+    ``propagate_context`` copies the ContextVar into ``_bq_parallel``
+    workers, so the bind has to happen on the request thread before
+    those queries are submitted.
+    """
+    token = _query_epoch.set(user_query_epoch(user_id))
+    try:
+        yield
+    finally:
+        _query_epoch.reset(token)
+
+
 def make_key(sql: str, job_config=None) -> str:
     """Build the cache key from the effective SQL + serialized params.
 
     We apply the dataset override so a dev build (``BQ_DATASET=analytics_dev``)
     and prod never collide on the same key, and hash the whole thing to
-    keep keys small and bounded.
+    keep keys small and bounded. A bound user epoch is appended only when
+    it is non-empty, so keys stay stable until a paper sync bumps them.
     """
     effective_sql = _apply_dataset_override(sql or "")
     raw = f"{effective_sql}\x00{_serialize_params(job_config)}"
+    epoch = _query_epoch.get() or ""
+    if epoch:
+        raw = f"{raw}\x00epoch:{epoch}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -372,6 +450,8 @@ _redis_warned = False
 def clear():
     with _lock:
         _cache.clear()
+    with _local_epoch_lock:
+        _local_epochs.clear()
     # Best-effort L2 flush of our namespace (used by tests / admin). TTL
     # expiry covers prod; this just makes an explicit clear immediate.
     client = _get_redis()

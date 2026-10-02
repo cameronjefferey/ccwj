@@ -200,6 +200,11 @@ keeps them. An unscoped admin read (`tenant_ids` None) also drops known
 paper tenants from real totals; a lookup miss leaves that read unscoped.
 Overview shows that paper value beside the real total,
 labeled Paper, with a link that opens just the paper book.
+A filled paper order that is not in the positions frame yet shows the
+same syncing sentence Positions uses, and that read starts the on-demand
+account sync. A successful paper sync bumps that user's Overview
+query-cache epoch so the next load misses the previous entry. The fill
+itself still waits for the next settled close.
 
 The page reads in one order: the headline (session date, account value, the
 close labeled Today, this week), then one **What happened** section (that
@@ -443,6 +448,9 @@ What's working:
   click does not split the cycle). Opening quantities are converted from
   today's units back to their opening-date units before split events are
   replayed, so pre-history holdings do not disappear or double-split.
+  The share sentence shows split-adjusted counts and prices (a pre-split
+  buy and a post-split sale stay in the same units) and says so when a
+  split moved them. P&amp;L is unchanged.
   Pinned by `tests/test_covered_call_runs.py`.
 - Position Detail reads as one story: the hero, then the mirror, then
   Position Legs. Cumulative P&amp;L and What worked follow. Breakdown by

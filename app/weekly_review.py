@@ -18,13 +18,14 @@ merge / re-aggregation. See `.cursor/rules/bigquery-tenant-isolation.mdc`.
 """
 import math
 from datetime import date, datetime, time, timedelta
+from functools import wraps
 from zoneinfo import ZoneInfo
 from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
 from app.extensions import limiter
-from app.query_cache import cached_query_df
+from app.query_cache import bind_user_query_epoch, cached_query_df
 from app.skeleton import skeleton_page
 from app.privacy import shown_account as _privacy_account_label
 from app.models import (
@@ -35,6 +36,36 @@ from google.cloud import bigquery
 from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import re
+
+
+def _with_overview_cache_epoch(view):
+    """Bind this user's Overview cache generation for the view and its workers."""
+    @wraps(view)
+    def _wrapped(*args, **kwargs):
+        uid = None
+        try:
+            if getattr(current_user, "is_authenticated", False):
+                uid = current_user.id
+        except Exception:
+            uid = None
+        with bind_user_query_epoch(uid):
+            return view(*args, **kwargs)
+    return _wrapped
+
+
+def _paper_known_symbols(batch):
+    """Symbols already on the Overview positions frame.
+
+    Same grain Positions uses for the paper-fill notice: a filled order
+    whose underlying is already in the book does not get the syncing line.
+    """
+    pos = (batch or {}).get("positions")
+    if pos is None or getattr(pos, "empty", True):
+        return []
+    columns = getattr(pos, "columns", [])
+    if "symbol" not in columns:
+        return []
+    return [str(symbol) for symbol in pos["symbol"].dropna().unique()]
 
 
 def _bq_parallel(client, queries):
@@ -486,7 +517,11 @@ WHERE date = @as_of {tenant_filter}
 
 
 
-# Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts
+# Today's snapshot: per-account enriched rows; Flask aggregates by date for user's accounts.
+# The hero uses the latest row on or before the settled close. The first-week
+# banner only needs to tell "< 5 distinct dates" from an established book.
+# Twelve rows per tenant cover both, plus a few days of rewind, without
+# shipping every historical snapshot to the app.
 TODAY_SNAPSHOT_ENRICHED_QUERY = """
 SELECT account, tenant_id, date, account_value,
   base_1d_date, base_1d_value, delta_1d, delta_1d_pct,
@@ -494,7 +529,7 @@ SELECT account, tenant_id, date, account_value,
   base_1m_date, base_1m_value, delta_1m, delta_1m_pct
 FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
 WHERE 1=1 {tenant_filter}
-ORDER BY date DESC
+QUALIFY ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY date DESC) <= 12
 """
 
 # Trades this week from dbt mart (replaces TRADES_THIS_WEEK_QUERY + Python cost/value calc)
@@ -1157,13 +1192,25 @@ WHERE c.next_ex_div_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
 """
 
 OPEN_POSITIONS_QUERY = """
-WITH latest_prices AS (
+WITH held_symbols AS (
+    SELECT DISTINCT UPPER(TRIM(underlying_symbol)) AS symbol
+    FROM `ccwj-dbt.analytics.int_enriched_current`
+    WHERE quantity IS NOT NULL AND quantity != 0
+      AND underlying_symbol IS NOT NULL
+      {tenant_filter}
+),
+latest_prices AS (
+    -- Latest close for symbols this scope actually holds. Scanning every
+    -- symbol's full price history was the cold Overview wait: the strip
+    -- only needs a recent print, and a listed name prints inside 60 days.
     SELECT symbol, close_price
     FROM (
-        SELECT symbol, close_price,
-               ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-        FROM `ccwj-dbt.analytics.stg_daily_prices`
-        WHERE close_price IS NOT NULL AND close_price > 0
+        SELECT p.symbol, p.close_price,
+               ROW_NUMBER() OVER (PARTITION BY p.symbol ORDER BY p.date DESC) AS rn
+        FROM `ccwj-dbt.analytics.stg_daily_prices` p
+        JOIN held_symbols h ON UPPER(TRIM(p.symbol)) = h.symbol
+        WHERE p.close_price IS NOT NULL AND p.close_price > 0
+          AND p.date >= DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY)
     )
     WHERE rn = 1
 )
@@ -4574,6 +4621,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
 @login_required
 @limiter.limit("120 per minute; 2000 per hour")
 @skeleton_page
+@_with_overview_cache_epoch
 def weekly_review():
     """Overview — close-based recap of the last completed session.
 
@@ -4671,6 +4719,7 @@ def weekly_review():
     }
 
     daily_changes_map = {}
+    paper_known = []
 
     try:
         client = get_bigquery_client()
@@ -5111,6 +5160,8 @@ def weekly_review():
         except Exception:
             pass
 
+        paper_known = _paper_known_symbols(batch)
+
     except Exception as e:
         context["error"] = str(e)
 
@@ -5158,6 +5209,12 @@ def weekly_review():
     context["hero_account_value"] = _hero_av
     context["paper_only"] = False
     context["paper_aside"] = None
+    context["paper_fills"] = []
+    try:
+        from app.paper_practice import paper_fill_notices
+        context["paper_fills"] = paper_fill_notices(current_user.id, paper_known)
+    except Exception as exc:
+        app.logger.warning("overview paper fill notices failed: %s", exc)
     try:
         context["paper_only"], context["paper_aside"] = _paper_book_aside(
             current_user.id, tenant_ids,
@@ -5188,6 +5245,7 @@ def weekly_review():
 
 @app.route("/overview/below")
 @login_required
+@_with_overview_cache_epoch
 def overview_below():
     """Deferred Overview sections (watch, heatmap, scorecards, week trades).
 

@@ -30,6 +30,13 @@
     Your latest upload is still processing. Data may lag by a few minutes.
 </div>
 {% endif %}
+{% if paper_fills %}
+<div class="ov-paper-fills" role="status">
+    {% for fill in paper_fills %}
+    <p>{{ fill.sentence }} <a href="{{ scoped_url('position_detail', symbol=fill.symbol) }}">See {{ fill.symbol }}</a></p>
+    {% endfor %}
+</div>
+{% endif %}
 
 <div class="ov-page">
 {# ════════════════════════════════════

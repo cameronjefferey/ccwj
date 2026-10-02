@@ -343,7 +343,7 @@ def _stamp_pages_warm(uid, tenant_ids, symbols=()):
 def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
     """Run the hot query sets for one tenant scope through the cache."""
     from app.models import get_user_profile
-    from app.query_cache import cached_query_df
+    from app.query_cache import bind_user_query_epoch, cached_query_df
     from app.tenant_scope import filter_df_by_tenant_ids, tenant_sql_and
     from app.weekly_review import (
         _bq_parallel,
@@ -377,29 +377,32 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
     session_date = _snapshot_as_of_date(today, market_session)
 
     # Overview (close-based landing page) — full batch so /overview/below hits too.
-    batch = build_daily_review_batch(
-        tenant_filter, today, this_week,
-        trades_as_of=session_date, moves_as_of=session_date,
-        attribution_week=_iso_week_start(session_date))
-    overview_dfs = _bq_parallel(client, batch)
-    (
-        _,
-        rewound_trade_query,
-        _,
-        rewound_attribution_query,
-    ) = _review_session_cutoff_and_trade_query(
-        tenant_filter, today, market_session, session_date, overview_dfs)
-    if rewound_trade_query is not None:
-        # Match the view's second, cutoff-bound lookup so the shared cache
-        # contains the exact settled-session trade key it will request.
-        rewound = _bq_parallel(client, {"today_trades": rewound_trade_query})
-        overview_dfs["today_trades"] = rewound.get("today_trades")
-    if rewound_attribution_query is not None:
-        # A cross-week rewind changes the scorecard's "closed since Monday"
-        # query as well as its copy.
-        rewound = _bq_parallel(
-            client, {"attribution": rewound_attribution_query})
-        overview_dfs["attribution"] = rewound.get("attribution")
+    # Same cache epoch the view binds, so a paper-sync bump does not leave
+    # the warmer writing keys the next Overview load will miss.
+    with bind_user_query_epoch(uid):
+        batch = build_daily_review_batch(
+            tenant_filter, today, this_week,
+            trades_as_of=session_date, moves_as_of=session_date,
+            attribution_week=_iso_week_start(session_date))
+        overview_dfs = _bq_parallel(client, batch)
+        (
+            _,
+            rewound_trade_query,
+            _,
+            rewound_attribution_query,
+        ) = _review_session_cutoff_and_trade_query(
+            tenant_filter, today, market_session, session_date, overview_dfs)
+        if rewound_trade_query is not None:
+            # Match the view's second, cutoff-bound lookup so the shared cache
+            # contains the exact settled-session trade key it will request.
+            rewound = _bq_parallel(client, {"today_trades": rewound_trade_query})
+            overview_dfs["today_trades"] = rewound.get("today_trades")
+        if rewound_attribution_query is not None:
+            # A cross-week rewind changes the scorecard's "closed since Monday"
+            # query as well as its copy.
+            rewound = _bq_parallel(
+                client, {"attribution": rewound_attribution_query})
+            overview_dfs["attribution"] = rewound.get("attribution")
 
     # Live /today page (calendar-today last-trade bars).
     _bq_parallel(client, build_today_batch(tenant_filter, today))

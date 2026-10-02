@@ -73,6 +73,20 @@ def test_realized_pill_and_collected_premium_stay_literal():
     assert "collected $" in BELOW
 
 
+def test_overview_shows_the_paper_fill_sync_note():
+    assert 'class="ov-paper-fills"' in PAGE
+    assert "paper_fills" in PAGE
+    assert "See {{ fill.symbol }}" in PAGE
+    assert ".ov-paper-fills" in STYLES
+    source = Path("app/weekly_review.py").read_text()
+    assert "paper_fill_notices" in source
+    assert "_with_overview_cache_epoch" in source
+    assert "DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY)" in source
+    assert "QUALIFY ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY date DESC) <= 12" in source
+    warmer = Path("app/cache_ops.py").read_text()
+    assert "bind_user_query_epoch" in warmer
+
+
 def test_session_trades_stay_columns_on_a_phone():
     """Fills stay a table. Phone width scrolls the wrap; it does not stack cards."""
     assert 'class="breakdown-wrap"' in PAGE

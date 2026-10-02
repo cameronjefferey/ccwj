@@ -108,7 +108,7 @@
         .ht-cookie-notice {
             position: fixed; z-index: 1080; left: .75rem; right: .75rem; bottom: .75rem;
             display: flex; gap: .75rem; align-items: center; justify-content: space-between;
-            height: 5.75rem; box-sizing: border-box; overflow: hidden;
+            height: auto; box-sizing: border-box; overflow: visible;
             font-family: ui-sans-serif, system-ui, sans-serif;
             background: #121826; color: #e8edf7; border: 1px solid #243049;
             border-radius: 12px; padding: .7rem .85rem; font-size: .82rem;
@@ -1186,7 +1186,7 @@
 <body class="{% if not current_user.is_authenticated or public_marketing %}ht-public{% endif %}{% if public_marketing %} ht-campaign{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}" data-simple="{{ '1' if simple_view else '0' }}" data-paper="{{ '1' if has_paper_account else '0' }}">
     {% if not current_user.is_authenticated %}
     <div id="ht-cookie-notice" class="ht-cookie-notice">
-        <p>We use a first-party cookie to remember how you found HappyTrader. Unless your browser sends Do Not Track or Global Privacy Control, pages reached from ads may also load the Reddit pixel. <a href="{{ url_for('privacy') }}">Privacy</a></p>
+        <p>We use a first-party cookie to remember how you found HappyTrader. Home, pricing, signup, Learn, FAQ, and ad landing pages load the Reddit pixel. Login does not. The pixel stays off when your browser sends Do Not Track or Global Privacy Control. <a href="{{ url_for('privacy') }}">Privacy</a></p>
         <button type="button" id="ht-cookie-ok">OK</button>
     </div>
     <script>

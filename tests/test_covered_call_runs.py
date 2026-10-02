@@ -422,6 +422,32 @@ def test_split_adjusts_the_share_lot_before_the_later_sell():
     assert runs[0]["share_pnl"] == 400.0
     assert runs[0]["premium_total"] == 50.0
     assert runs[0]["net"] == 450.0
+    assert runs[0]["share_sentence"] == "200 shares bought at $10. Sold at $12."
+    assert runs[0]["price_note"] == "Prices are adjusted for the stock split."
+
+
+def test_closed_run_states_split_adjusted_prices():
+    """SCHD-shaped: the buy is pre-split, the sale is post-split."""
+    rows = [
+        _row(date(2024, 6, 3), "equity_buy", "Equity", "SCHD", 100, 82.40, -8240.0),
+        _row(
+            date(2024, 6, 10), "option_sell_to_open", "Call",
+            _occ("SCHD", date(2024, 6, 21), "C", 28), 1, 0.40, 40.0,
+        ),
+        _row(date(2024, 11, 4), "equity_sell", "Equity", "SCHD", 300, 28.33, 8499.0),
+    ]
+    splits = pd.DataFrame([{
+        "symbol": "SCHD",
+        "split_date": date(2024, 10, 11),
+        "split_ratio": 3.0,
+    }])
+    runs = build_covered_call_runs(
+        _frame(rows), splits_df=splits, as_of=date(2024, 11, 5),
+    )
+    assert len(runs) == 1
+    assert runs[0]["share_sentence"] == "300 shares bought at $27.47. Sold at $28.33."
+    assert runs[0]["price_note"] == "Prices are adjusted for the stock split."
+    assert "82.40" not in runs[0]["share_sentence"]
 
 
 def test_synthetic_opening_balance_restores_pre_history_covered_call():
