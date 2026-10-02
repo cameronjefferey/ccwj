@@ -1,0 +1,42 @@
+    <section class="ht-band ht-band-catch ht-section" id="ht-catch" aria-label="Here's what you'd catch with HappyTrader">
+        <div class="ht-wrap">
+            <div class="ht-kicker">Real trades</div>
+            <h2 class="ht-section-title">Here's what you'd catch with HappyTrader</h2>
+            <div class="ht-catch-card" data-catch>
+                <div class="ht-catch-tabs" role="tablist" aria-label="Trade stories">
+                    {% for story in catch_stories %}
+                    <button type="button" class="ht-catch-tab" role="tab"
+                            id="catch-tab-{{ story.id }}"
+                            aria-controls="catch-panel-{{ story.id }}"
+                            aria-selected="{{ 'true' if loop.first else 'false' }}"
+                            tabindex="{{ '0' if loop.first else '-1' }}">{{ story.tab }}</button>
+                    {% endfor %}
+                </div>
+                {% for story in catch_stories %}
+                <div class="ht-catch-panel" role="tabpanel"
+                     id="catch-panel-{{ story.id }}"
+                     aria-labelledby="catch-tab-{{ story.id }}"
+                     {% if not loop.first %}hidden{% endif %}>
+                    <img src="{{ url_for('static', filename=story.image) }}"
+                         srcset="{{ url_for('static', filename=story.image_sm) }} 800w, {{ url_for('static', filename=story.image) }} 1280w"
+                         sizes="(min-width: 960px) 920px, 100vw"
+                         width="{{ story.width }}" height="{{ story.height }}"
+                         alt="{{ story.alt }}"
+                         {% if section_eager and loop.first %}fetchpriority="high"{% else %}loading="lazy"{% endif %} decoding="async">
+                    <p class="ht-catch-caption">{{ story.caption }}</p>
+                    {% if story.youtube_id %}
+                    <a class="ht-catch-watch" href="https://www.youtube.com/watch?v={{ story.youtube_id }}">Watch the story</a>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% if campaign %}
+            <a class="ht-catch-cta" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-catch">{{ cta_label }}</a>
+            {% elif signup_enabled and not signup_invite_required %}
+            <a class="ht-catch-cta" href="{{ url_for('signup') }}">30-day free trial, no credit card</a>
+            {% elif signup_enabled %}
+            <a class="ht-catch-cta" href="{{ url_for('signup') }}">Sign Up (invite)</a>
+            {% endif %}
+            <p class="ht-catch-note">For learning only, not investment advice</p>
+        </div>
+    </section>

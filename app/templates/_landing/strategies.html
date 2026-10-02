@@ -1,0 +1,14 @@
+    <section class="ht-band ht-band-shot-a ht-section" aria-label="Which strategies actually work">
+        <div class="ht-wrap ht-split media-end">
+            <figure class="ht-media ht-shot">
+                <img src="{{ url_for('static', filename='marketing/strategies.webp') }}"
+                     alt="Strategy cards from the demo account, with return, win rate, and a six-month strip."
+                     width="1400" height="748" {% if section_eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %} decoding="async">
+                <figcaption>Demo account</figcaption>
+            </figure>
+            <div class="ht-copy">
+                <h2 class="ht-section-title">Which strategies actually work</h2>
+                <p>Each label rolls up from the trades in that account. The dollars are the record, not a suggestion of what to trade next.</p>
+            </div>
+        </div>
+    </section>

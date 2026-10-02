@@ -75,6 +75,9 @@ def test_brand_fonts_and_desk_accent_not_inter_or_bootstrap_purple():
     base = (ROOT / "app/templates/base.html").read_text()
     skeleton = (ROOT / "app/templates/_skeleton.html").read_text()
     landing = (ROOT / "app/templates/landing.html").read_text()
+    # Homepage styles live in the shared partial the /go pages also include.
+    landing_css = (ROOT / "app/templates/_landing_styles.html").read_text()
+    assert '{% include "_landing_styles.html" %}' in landing
 
     assert "family=Inter" not in base
     assert "font-family: \"Inter\"" not in base
@@ -98,9 +101,9 @@ def test_brand_fonts_and_desk_accent_not_inter_or_bootstrap_purple():
     assert "--ht-surface: #121826" in base
     assert "--ht-surface: #fffcf8" not in base
 
-    assert "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" not in landing
-    assert "background: #0c111c" in landing
-    assert "font-weight: 800" not in landing.split(".landing-hero h1")[1].split("}")[0]
+    assert "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" not in landing_css
+    assert "background: #0c111c" in landing_css
+    assert "font-weight: 800" not in landing_css.split(".landing-hero h1")[1].split("}")[0]
 
     # Strategy swatches are data colors. CSP / PMCC still share #6f42c1;
     # that is not the brand accent and must not be "fixed" to copper.

@@ -93,6 +93,10 @@ class Config:
     # Conversions API access token from Reddit Events Manager. Empty = no
     # server-side events. Shares conversion ids with the pixel for dedup.
     REDDIT_CAPI_TOKEN = (os.environ.get("REDDIT_CAPI_TOKEN", "") or "").strip()
+    # Events Manager "Event testing" id. When set, every CAPI body includes
+    # data.test_id so those events show in Event testing. Unset in production
+    # after the check — Reddit tells you to remove test_id before going live.
+    REDDIT_CAPI_TEST_ID = (os.environ.get("REDDIT_CAPI_TEST_ID", "") or "").strip()
 
     # CSV uploads (manual upload page). Prevents accidental huge POSTs.
     _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "32"))

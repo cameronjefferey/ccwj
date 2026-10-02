@@ -1,0 +1,15 @@
+{% from "_landing_macros.html" import phone %}
+    <section class="ht-band ht-band-fit ht-section" aria-label="The fit matrix">
+        <div class="ht-wrap ht-split">
+            {% for step in story_steps if step.step == 5 %}
+            <div class="ht-media ht-phone-single">
+                {{ phone(step, eager=section_eager|default(false)) }}
+            </div>
+            <div class="ht-copy">
+                <div class="ht-kicker">Short</div>
+                <h2 class="ht-section-title">{{ step.title }}</h2>
+                <p>{{ step.caption }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>

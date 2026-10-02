@@ -127,6 +127,11 @@ Set on the `ccwj` web service. Leave a var unset to keep that feature off.
 
 - `REDDIT_PIXEL_ID` — Ads Manager pixel id
 - `REDDIT_CAPI_TOKEN` — Conversions API access token
+- `REDDIT_CAPI_TEST_ID` — optional. The id from Ads Manager → Event testing.
+  When set, every v3 CAPI body includes `data.test_id` (next to `events`)
+  so those events show on Reddit's Event testing page. When unset, the
+  field is omitted. Remove it after testing — Reddit says to take
+  `test_id` off before production, or live events stay in the test tool.
 - `SENTRY_DSN` — already supported; errors only
 - `SENTRY_TRACES_SAMPLE_RATE` — optional, default `0.1`
 - `SIGNUP_INVITE_CODE` — must be empty or `/start` cannot create accounts

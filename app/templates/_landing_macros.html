@@ -1,0 +1,40 @@
+{% macro trial_label() %}
+{%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial, no credit card{%- endif -%}
+{% endmacro %}
+
+{% macro video_frame(v, wide=false, eager=false) %}
+<div class="ht-frame {% if wide %}ht-frame-wide{% else %}ht-frame-short{% endif %}">
+    <button type="button" class="ht-facade"
+            data-youtube-id="{{ v.youtube_id }}"
+            data-mp4-url="{{ v.mp4_url }}"
+            data-title="{{ v.title }}"
+            aria-label="Play {{ v.title }}">
+        {% if v.poster_url %}
+        <img class="ht-poster" src="{{ v.poster_url }}"
+             {% if v.poster_srcset %}srcset="{{ v.poster_srcset }}" sizes="{{ v.poster_sizes }}"{% endif %}
+             alt="" width="1280" height="720" decoding="async"
+             {% if eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
+        {% else %}
+        <span class="ht-art ht-art-{{ v.step }}" aria-hidden="true"></span>
+        {% endif %}
+        <span class="ht-play" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M4.5 2.8a1 1 0 0 1 1.53-.85l8 5.2a1 1 0 0 1 0 1.7l-8 5.2A1 1 0 0 1 4.5 13.2z"/>
+            </svg>
+        </span>
+        {% if v.duration_label %}
+        <span class="ht-duration">{{ v.duration_label }}</span>
+        {% endif %}
+    </button>
+</div>
+{% endmacro %}
+
+{% macro phone(step, eager=false) %}
+<div class="ht-phone-block">
+    <div class="ht-phone">
+        <div class="ht-phone-bar" aria-hidden="true"></div>
+        {{ video_frame(step, eager=eager) }}
+    </div>
+    <h3>{{ step.title }}</h3>
+</div>
+{% endmacro %}

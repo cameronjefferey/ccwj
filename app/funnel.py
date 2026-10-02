@@ -882,6 +882,15 @@ _CAPI_TRACKING = {
 }
 
 
+def _capi_test_id() -> str:
+    """Events Manager test id. Empty means the field is left off the body."""
+    try:
+        raw = current_app.config.get("REDDIT_CAPI_TEST_ID")
+    except Exception:
+        raw = os.environ.get("REDDIT_CAPI_TEST_ID")
+    return (raw or "").strip()
+
+
 def _capi_event_source_url() -> str:
     """Scheme, host, and path. The query string can carry click ids and tokens."""
     if not has_request_context():
@@ -930,7 +939,13 @@ def send_capi(event_name: str, event_id: str, *, click_id=None, user_id=None) ->
         event["user"] = {
             "external_id": hashlib.sha256(str(user_id).encode()).hexdigest(),
         }
-    body = {"data": {"events": [event]}}
+    # test_id sits on data, beside events — Reddit's Event testing field.
+    # Omit the key entirely when unset so production payloads stay clean.
+    data = {"events": [event]}
+    test_id = _capi_test_id()
+    if test_id:
+        data = {"test_id": test_id, "events": [event]}
+    body = {"data": data}
     url = f"https://ads-api.reddit.com/api/v3/pixels/{pixel}/conversion_events"
 
     def _post():

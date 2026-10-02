@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en" data-bs-theme="dark">
+{% set public_marketing = marketing_chrome|default(false) %}
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -52,7 +53,7 @@
             } catch (e) { /* storage blocked */ }
         })();
     </script>
-    {% if current_user.is_authenticated %}
+    {% if current_user.is_authenticated and not public_marketing %}
     {# Capture beforeinstallprompt before nav.js (defer) runs. preventDefault
        only on signed-in pages, which own the Account → Install app button.
        Swallowing the event on logged-out pages would hide the browser's
@@ -1182,7 +1183,7 @@
     </script>
     {% endif %}
 </head>
-<body class="{% if not current_user.is_authenticated %}ht-public{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}" data-simple="{{ '1' if simple_view else '0' }}" data-paper="{{ '1' if has_paper_account else '0' }}">
+<body class="{% if not current_user.is_authenticated or public_marketing %}ht-public{% endif %}{% if public_marketing %} ht-campaign{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}" data-simple="{{ '1' if simple_view else '0' }}" data-paper="{{ '1' if has_paper_account else '0' }}">
     {% if not current_user.is_authenticated %}
     <div id="ht-cookie-notice" class="ht-cookie-notice">
         <p>We use a first-party cookie to remember how you found HappyTrader. Unless your browser sends Do Not Track or Global Privacy Control, pages reached from ads may also load the Reddit pixel. <a href="{{ url_for('privacy') }}">Privacy</a></p>
@@ -1255,9 +1256,9 @@
     {% endif %}
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container-fluid">
-            <a class="navbar-brand ht-wordmark" href="{{ scoped_url('weekly_review') if current_user.is_authenticated else url_for('index') }}">happy<span>trader</span></a>
+            <a class="navbar-brand ht-wordmark" href="{{ scoped_url('weekly_review') if current_user.is_authenticated and not public_marketing else url_for('index') }}">happy<span>trader</span></a>
             <div class="d-flex align-items-center gap-2">
-                {% if current_user.is_authenticated %}
+                {% if current_user.is_authenticated and not public_marketing %}
                 {# Phone-only palette trigger OUTSIDE the collapse: on mobile
                    the quick-switcher is the fastest way between symbols, so
                    it must not hide behind the hamburger. #}
@@ -1274,7 +1275,7 @@
                 </button>
             </div>
             <div class="collapse navbar-collapse" id="navContent">
-            {% if current_user.is_authenticated %}
+            {% if current_user.is_authenticated and not public_marketing %}
             {% set ep = request.endpoint or '' %}
             {# Carry account / tenant / groups across nav. url_for skips
                None-valued params, so unscoped pages get clean URLs. #}
@@ -1450,13 +1451,18 @@
                     </li>
                 </ul>
                 <ul class="navbar-nav align-items-center">
+                    {% if public_marketing and current_user.is_authenticated %}
+                    <li class="nav-item py-1 py-lg-0">
+                        <a class="nav-link ht-dashboard-link" href="{{ url_for('weekly_review') }}">Go to your dashboard</a>
+                    </li>
+                    {% endif %}
                     <li class="nav-item py-1 py-lg-0">
                         <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('login', next=request.path) if request.path.startswith('/learn') else url_for('login') }}">Sign In</a>
                     </li>
                     {% if signup_enabled %}
                     <li class="nav-item ps-lg-1 py-1 py-lg-0">
-                        <a class="btn btn-sm btn-primary btn-auth-nav" href="{{ url_for('signup') }}">
-                            {% if signup_invite_required %}Sign Up (invite){% else %}Sign Up{% endif %}
+                        <a class="btn btn-sm btn-primary btn-auth-nav" href="{{ signup_url|default(url_for('signup')) }}"{% if public_marketing %} data-ht-cta="{{ cta_base }}-nav"{% endif %}>
+                            {% if public_marketing %}{{ cta_label }}{% elif signup_invite_required %}Sign Up (invite){% else %}Sign Up{% endif %}
                         </a>
                     </li>
                     {% endif %}
@@ -1500,7 +1506,7 @@
             {% endif %}
         </div>
     </div>
-    {% elif current_user.is_authenticated and broker_data_as_of %}
+    {% elif current_user.is_authenticated and broker_data_as_of and not public_marketing %}
     {% set _is_stale = broker_data_stale_days is not none and broker_data_stale_days > 3 %}
     <div class="data-freshness-strip{% if _is_stale %} is-stale{% endif %}">
         <div class="container-fluid px-3 px-lg-4 d-flex flex-wrap align-items-center justify-content-center gap-2 text-center">
@@ -1521,7 +1527,7 @@
     </div>
     {% endif %}
 
-    {% if current_user.is_authenticated and current_user.username == 'demo' %}
+    {% if current_user.is_authenticated and current_user.username == 'demo' and not public_marketing %}
     <div class="alert alert-dismissible fade show mb-0 rounded-0 border-0" role="alert"
          style="background:#121826;color:#e8edf7;border-bottom:1px solid #243049;">
         <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
@@ -1566,7 +1572,7 @@
     <div class="container-fluid px-2 px-md-4 ht-page">
         {# Confirm-your-email nudge. Set by `_inject_email_verification_needed`
            in app/auth.py from users.email_verified_at. #}
-        {% if email_unverified %}
+        {% if email_unverified and not public_marketing %}
         <div class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
             <div style="min-width:0;flex:1 1 16rem;">
                 <strong>Confirm your email.</strong>
@@ -1578,7 +1584,7 @@
             </form>
         </div>
         {% endif %}
-        {% if full_view_offer %}
+        {% if full_view_offer and not public_marketing %}
         <div class="alert alert-light border d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 mb-3 py-2" role="status">
             <div class="small" style="min-width:0;flex:1 1 16rem;">
                 <strong>A real brokerage is connected.</strong>
@@ -1607,7 +1613,7 @@
            pending cancellation ever see these. Where a one-click subscribe is
            possible (Stripe configured), the CTA posts straight to Checkout
            rather than bouncing through /pricing. #}
-        {% if plan_status %}
+        {% if plan_status and not public_marketing %}
             {% if plan_status.state == 'active_canceling' %}
             <div class="alert alert-light border d-flex align-items-center justify-content-between gap-3 mt-3 mb-3 py-2" role="alert">
                 <div class="small">
@@ -1665,7 +1671,7 @@
            enriched by `_connection_attention` with `kind`
            ("stale"/"expiring"), `stale_days`, and `expires_in_days` so the
            banner can show a real day count. #}
-        {% if snaptrade_reauth_needed and snaptrade_reauth_needed|length %}
+        {% if snaptrade_reauth_needed and snaptrade_reauth_needed|length and not public_marketing %}
         <div class="alert alert-warning d-flex align-items-start gap-3 mt-3 mb-3" role="alert">
             <div class="flex-grow-1">
                 {% if snaptrade_reauth_needed|length == 1 %}
@@ -1708,15 +1714,15 @@
     </div>
 
     {% block footer %}
-    {% if not current_user.is_authenticated %}
+    {% if not current_user.is_authenticated or public_marketing %}
     <footer class="mt-5 py-4 border-top">
         <div class="container-fluid px-4">
             <div class="d-flex flex-wrap justify-content-center gap-4">
                 <a href="{{ url_for('demo_start') }}">Try Demo</a>
                 <a href="{{ url_for('login', next=request.path) if request.path.startswith('/learn') else url_for('login') }}">Sign In</a>
                 {% if signup_enabled %}
-                <a href="{{ url_for('signup') }}">
-                    {% if signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}
+                <a href="{{ signup_url|default(url_for('signup')) }}"{% if public_marketing %} data-ht-cta="{{ cta_base }}-footer"{% endif %}>
+                    {% if public_marketing %}{{ cta_label }}{% elif signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}
                 </a>
                 {% endif %}
                 <a href="{{ url_for('learn_index') }}">Learn</a>
@@ -1822,7 +1828,7 @@
     <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/term-tips.js') }}"></script>
-    {% if current_user.is_authenticated %}
+    {% if current_user.is_authenticated and not public_marketing %}
     <script defer src="{{ url_for('static', filename='js/nav.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/scope-filters.js') }}"></script>
     {% endif %}
@@ -1913,7 +1919,7 @@
             });
         }
     </script>
-    {% if current_user.is_authenticated and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
+    {% if current_user.is_authenticated and not public_marketing and current_user.username != 'demo' and request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
     {% include "learn/_progress.html" %}
     {% endif %}
     {% block scripts %}{% endblock %}

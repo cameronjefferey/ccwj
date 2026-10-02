@@ -1,0 +1,16 @@
+{% from "_landing_macros.html" import phone %}
+    <section class="ht-band ht-band-story ht-section" aria-label="Every position's full story">
+        <div class="ht-wrap ht-split media-end">
+            <div class="ht-media ht-phone-row">
+                {% for step in story_steps if step.step in [2, 3] %}
+                {{ phone(step, eager=section_eager|default(false) and loop.first) }}
+                {% endfor %}
+            </div>
+            <div class="ht-copy">
+                <div class="ht-kicker">Shorts</div>
+                <h2 class="ht-section-title">Every position's full story</h2>
+                <p>Each symbol opens to the fills, the open lots, and a chart of equity, options, and dividends.</p>
+                <p>An early close also keeps the P&amp;L if that contract had been held to expiration. The line after the close is an estimate.</p>
+            </div>
+        </div>
+    </section>

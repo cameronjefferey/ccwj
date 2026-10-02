@@ -1,0 +1,17 @@
+{% from "_landing_macros.html" import video_frame %}
+    <section class="ht-band ht-band-trades ht-section" aria-label="Real trades">
+        <div class="ht-wrap">
+            <div class="ht-kicker">Real trades</div>
+            <h2 class="ht-section-title">Two closed trades, written out</h2>
+            <p class="ht-section-lead">The same pages, on two positions. One early close, and one covered-call run that ended when the shares were called away.</p>
+            <div class="ht-trade-grid">
+                {% for story in trade_stories %}
+                <div>
+                    {{ video_frame(story, wide=true, eager=section_eager|default(false) and loop.first) }}
+                    <h3>{{ story.title }}</h3>
+                    <p>{{ story.caption }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
