@@ -81,7 +81,7 @@ def _sector_rollups(df: pd.DataFrame) -> dict:
         "realized_pnl": float(df["realized_pnl"].sum()),
         "unrealized_pnl": float(df["unrealized_pnl"].sum()),
         "num_subsectors": subsector_pairs,
-        "num_symbols": int(df.groupby(["account", "symbol"]).ngroups),
+        "num_symbols": int(df["symbol"].nunique()) if "symbol" in df.columns else 0,
         "num_trades": int(df["num_individual_trades"].sum()),
         "win_rate": (overall_winners / overall_closed) if overall_closed else 0.0,
     }
@@ -229,6 +229,10 @@ def industries_legacy():
 @app.route("/sectors")
 @login_required
 def sectors():
+    from app.paper_accounts import simple_view_hold
+    held = simple_view_hold()
+    if held:
+        return held
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce

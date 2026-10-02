@@ -365,6 +365,7 @@ def note_connect_view(user_id, *, had_real, newly_saved, paper_saved) -> str | N
 
 FULL_VIEW_PAGES = {
     "/strategies": "Strategies",
+    "/sectors": "Sectors",
     "/story": "Trader Profile",
     "/insights": "AI Insights",
 }

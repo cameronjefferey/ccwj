@@ -957,7 +957,7 @@ it). Simple nav is Practice, Learn, Overview, and Positions.
 Full view keeps Practice in the top nav when the only connected accounts
 are paper, or there are none. A real brokerage moves Practice and Learn
 into the Account menu. `/practice` stays available either way.
-Direct visits to Strategies, Trader Profile, and AI Insights show a
+Direct visits to Strategies, Sectors, Trader Profile, and AI Insights show a
 switch-to-Full card instead of the page. Overview in Simple hides
 Execution review, Performance by account, and the trader-profile link.
 Daily change stays open under Accounts.

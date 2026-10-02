@@ -84,6 +84,62 @@ def _unit_key(row) -> tuple:
     return ("leg", id(row))
 
 
+def decided_win_loss(status, total_pnl) -> tuple[int, int]:
+    """(winner, loser) for one contract.
+
+    Open and settlement-pending are not results. A closed round that
+    lands on $0 is neither — the same rule as Positions. Booking a
+    missing ITM settlement as a loss (or as the opening credit) is the
+    bug this guards.
+    """
+    if str(status or "") != "Closed":
+        return (0, 0)
+    try:
+        pnl = round(float(total_pnl or 0), 2)
+    except (TypeError, ValueError):
+        return (0, 0)
+    if pnl > 0:
+        return (1, 0)
+    if pnl < 0:
+        return (0, 1)
+    return (0, 0)
+
+
+def annotate_contract_outcomes(df):
+    """Win/loss and realized/unrealized for a per-contract frame.
+
+    Drops rows still waiting on settlement so a $0 pending contract
+    does not dilute expectancy or count as a decided trade. Open marks
+    stay in unrealized and out of the win rate.
+    """
+    if df is None or getattr(df, "empty", True):
+        return df
+    import pandas as pd
+
+    out = df.copy()
+    if "status" in out.columns:
+        pending = out["status"].astype(str) == "Settlement pending"
+        out = out.loc[~pending].copy()
+    if out.empty:
+        return out
+    pnl = pd.to_numeric(out.get("total_pnl"), errors="coerce").fillna(0.0)
+    status = out["status"] if "status" in out.columns else pd.Series("", index=out.index)
+    winners = []
+    losers = []
+    for st, amount in zip(status.tolist(), pnl.tolist()):
+        w, l = decided_win_loss(st, amount)
+        winners.append(w)
+        losers.append(l)
+    out["num_winners"] = winners
+    out["num_losers"] = losers
+    closed = status.astype(str) == "Closed"
+    opened = status.astype(str) == "Open"
+    out["realized_pnl"] = pnl.where(closed, 0.0)
+    out["unrealized_pnl"] = pnl.where(opened, 0.0)
+    out["total_pnl"] = pnl
+    return out
+
+
 def outcome_win_loss(rows) -> tuple[int, int]:
     """(winners, losers) after collapsing a same-day spread to one outcome.
 

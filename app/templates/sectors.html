@@ -64,70 +64,48 @@
         #secTable th:nth-child(7), #secTable td:nth-child(7) { width: 14%; }
         #secTable th:nth-child(8), #secTable td:nth-child(8) { width: 6%; }
     }
+    .sec-subs { overflow-x: auto; }
+    .sec-sub-head {
+        font-size: .66rem;
+        font-weight: 650;
+        color: var(--ht-muted);
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
     @media (max-width: 767px) {
         .sec-page { overflow-x: clip; }
-        .sec-page .table-responsive { overflow: visible; box-shadow: none; }
-        .sec-page table.ht-stack { display: block; width: 100%; max-width: 100%; }
-        .sec-page table.ht-stack > thead { display: none !important; }
-        .sec-page table.ht-stack > tbody { display: block; }
-        .sec-page table.ht-stack > tbody > tr {
-            display: block;
-            border: 1px solid var(--ht-line);
-            border-radius: 10px;
-            margin: 0 0 .6rem;
-            padding: .45rem .7rem .5rem;
+        .sec-page .table-responsive {
+            overflow-x: auto;
+            box-shadow: none;
+            -webkit-overflow-scrolling: touch;
         }
-        .sec-page table.ht-stack > tbody > tr > td {
-            display: flex !important;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: .75rem;
-            width: auto !important;
-            white-space: normal !important;
-            overflow: visible !important;
-            text-align: right;
-            border: 0;
-            padding: .16rem 0;
+        .sec-page table.ht-stack {
+            display: table;
+            width: max-content;
+            min-width: 100%;
+            max-width: none;
         }
-        .sec-page table.ht-stack > tbody > tr > td::before {
-            content: attr(data-label);
-            color: var(--ht-muted);
-            font-size: .66rem;
-            font-weight: 650;
-            text-align: left;
-            flex: 0 0 42%;
+        .sec-page table.ht-stack > thead { display: table-header-group; }
+        .sec-page table.ht-stack th,
+        .sec-page table.ht-stack td {
+            white-space: nowrap;
+            font-size: .78rem;
+            padding: .28rem .4rem;
         }
-        /* Long sector names ("Communication Services") wrap at spaces
-           inside the value column instead of poking past the card. */
-        .sec-page table.ht-stack > tbody > tr > td > .sec-name {
-            min-width: 0;
-            flex: 1 1 0;
-            text-align: right;
+        .sec-page table.ht-stack th:first-child,
+        .sec-page table.ht-stack td:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--ht-surface, #121826);
+            z-index: 1;
+            white-space: normal;
+            max-width: 9.5rem;
+        }
+        .sec-page table.ht-stack td:first-child .sec-name {
             overflow-wrap: break-word;
             word-break: normal;
         }
-        .sec-sub {
-            display: block;
-            border: 1px solid var(--ht-line);
-            border-radius: 10px;
-            padding: .45rem .7rem .5rem;
-            margin: 0 0 .55rem;
-        }
-        .sec-sub .n {
-            display: flex;
-            justify-content: space-between;
-            gap: .75rem;
-            text-align: right;
-            white-space: normal;
-            padding: .12rem 0;
-        }
-        .sec-sub .n::before {
-            content: attr(data-label);
-            color: var(--ht-muted);
-            font-size: .66rem;
-            font-weight: 650;
-            text-align: left;
-        }
+        .sec-sub { min-width: 26rem; }
     }
 </style>
 {% endblock %}
@@ -293,6 +271,14 @@
                 {% endif %}
                 <a href="{{ scoped_url('positions', sector=s.sector) }}">View positions</a>
             </div>
+            <div class="sec-subs">
+            <div class="sec-sub sec-sub-head">
+                <span>Subsector</span>
+                <span class="n">Symbols</span>
+                <span class="n">Trades</span>
+                <span class="n">{{ term('Win rate') }}</span>
+                <span class="n">Total return</span>
+            </div>
             {% for r in subs %}
             <div class="sec-sub">
                 <a href="{{ scoped_url('positions', subsector=r.subsector) }}">{{ r.subsector }}</a>
@@ -302,6 +288,7 @@
                 <span class="n {{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }}" data-label="Total return">{{ money(r.total_pnl, 0, true) }}</span>
             </div>
             {% endfor %}
+            </div>
         </section>
         {% endfor %}
     </div>

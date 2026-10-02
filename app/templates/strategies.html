@@ -107,46 +107,34 @@
         .dte-bar-row { flex-wrap: wrap; }
         .dte-label, .dte-stats { width: auto; text-align: left; }
         .dte-bar-track { flex: 1 1 100%; }
-        .strat-page .table-responsive { overflow: visible; box-shadow: none; }
-        .strat-page table.ht-stack { display: block; width: 100%; max-width: 100%; }
-        .strat-page table.ht-stack > thead { display: none !important; }
-        .strat-page table.ht-stack > tbody,
-        .strat-page table.ht-stack > tfoot { display: block; }
-        .strat-page table.ht-stack > tbody > tr,
-        .strat-page table.ht-stack > tfoot > tr {
-            display: block;
-            border: 1px solid var(--ht-line);
-            border-radius: 10px;
-            margin: 0 0 .6rem;
-            padding: .45rem .7rem .5rem;
+        .strat-page .table-responsive {
+            overflow-x: auto;
+            box-shadow: none;
+            -webkit-overflow-scrolling: touch;
         }
-        .strat-page table.ht-stack > tbody > tr > td,
-        .strat-page table.ht-stack > tfoot > tr > th {
-            display: flex !important;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: .75rem;
-            width: auto !important;
-            white-space: normal !important;
-            overflow: visible !important;
-            text-align: right;
-            border: 0;
-            padding: .16rem 0;
+        .strat-page table.ht-stack {
+            display: table;
+            width: max-content;
+            min-width: 100%;
+            max-width: none;
         }
-        .strat-page table.ht-stack > tbody > tr > td::before,
-        .strat-page table.ht-stack > tfoot > tr > th::before {
-            content: attr(data-label);
-            color: var(--ht-muted);
-            font-size: .66rem;
-            font-weight: 650;
-            text-align: left;
-            flex: 0 0 42%;
+        .strat-page table.ht-stack > thead { display: table-header-group; }
+        .strat-page table.ht-stack th,
+        .strat-page table.ht-stack td {
+            white-space: nowrap;
+            font-size: .78rem;
+            padding: .28rem .4rem;
         }
-        .strat-page table.ht-stack > tbody > tr > td > .strat-figure {
-            min-width: 0;
-            flex: 1 1 0;
-            text-align: right;
+        .strat-page table.ht-stack th:first-child,
+        .strat-page table.ht-stack td:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--ht-surface, #121826);
+            z-index: 1;
+            white-space: normal;
+            max-width: 9rem;
         }
+        .strat-page #stratType .strat-detail { display: none; }
     }
     @media (min-width: 768px) {
         #stratType, #stratAcct { table-layout: fixed; width: 100%; min-width: 0; }
@@ -173,21 +161,13 @@
 
 {% block content %}
 
-<div class="btn-group btn-group-sm mb-3" role="group" aria-label="Strategies view">
-    <a class="btn btn-primary" aria-current="page"
-       href="{{ scoped_url('strategies') }}">Performance</a>
-    <a class="btn btn-outline-secondary"
-       href="{{ scoped_url('strategies', view='fit') }}">Fit matrix</a>
-</div>
-
-{% include "_history_window_note.html" %}
-
 {% if error %}<div class="alert alert-danger small">We're having trouble loading your strategies right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
 <div class="strat-page">
 {% if not strategies %}
 <div class="review-hero strat-hero" id="strat-hero">
-    <div class="ov-bar">
+    <div class="ov-bar ov-bar-keep">
+        {% include "_strategies_view_switch.html" %}
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% include "_account_scope_filters.html" %}
@@ -201,6 +181,7 @@
     <p class="ov-line">How each strategy has done across the whole record.</p>
 </div>
 <!-- /strat-hero -->
+{% include "_history_window_note.html" %}
 <div class="card">
 <div class="strat-pad text-center">
     {% if auth_accounts and auth_accounts|length > 0 %}
@@ -222,7 +203,8 @@
 {% set book_wr = focus_strategy.win_rate if selected_strategy and focus_strategy else (summary.overall_win_rate if summary else none) %}
 
 <div class="review-hero strat-hero" id="strat-hero">
-    <div class="ov-bar">
+    <div class="ov-bar ov-bar-keep">
+        {% include "_strategies_view_switch.html" %}
         {% if scope_account_choices|length > 1 or account_groups %}
         <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
             {% if selected_strategy %}<input type="hidden" name="strategy" value="{{ selected_strategy }}">{% endif %}
@@ -295,6 +277,7 @@
     {% endif %}
 </div>
 <!-- /strat-hero -->
+{% include "_history_window_note.html" %}
 
 <div class="card" id="strat-list">
 <div class="strat-pad">
@@ -409,7 +392,7 @@
                         <th class="text-end">Total return</th>
                         <th class="text-end">{{ term('Realized') }}</th>
                         <th class="text-end">{{ term('Unrealized') }}</th>
-                        <th>Detail</th>
+                        <th class="strat-detail">Detail</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -428,7 +411,7 @@
                         <td data-label="Unrealized" class="text-end strat-money {% if r.unrealized is none %}text-muted{% elif r.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
                             {% if r.unrealized is none %}&mdash;{% else %}{{ money(r.unrealized, 2, true) }}{% endif %}
                         </td>
-                        <td data-label="Detail" class="small text-muted">
+                        <td data-label="Detail" class="small text-muted strat-detail">
                             {% if r.type == 'Dividends' %}
                             Cash dividends linked to holdings for this strategy
                             {% elif r.type == 'Other' %}
@@ -447,7 +430,7 @@
                         <th data-label="Total return" class="text-end strat-money {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ money(_bd_tot, 2, true) }}</th>
                         <th data-label="Realized"></th>
                         <th data-label="Unrealized"></th>
-                        <th data-label="Detail"></th>
+                        <th data-label="Detail" class="strat-detail"></th>
                     </tr>
                 </tfoot>
             </table>

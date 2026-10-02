@@ -12,7 +12,19 @@
         padding-bottom: 1rem; margin-bottom: 1rem;
         border-bottom: 1px solid #2a2f48;
     }
-    .ov-bar:not(:has(form)) { display: none; }
+    .ov-bar:not(:has(form)):not(.ov-bar-keep) { display: none; }
+    .ov-bar.ov-bar-keep { justify-content: space-between; }
+    .ov-bar .strat-view .btn {
+        color: #e8edf7;
+        border-color: #3a4160;
+        background: transparent;
+    }
+    .ov-bar .strat-view .btn.btn-primary,
+    .ov-bar .strat-view .btn[aria-current="page"] {
+        background: #5b8cff;
+        color: #0a0e17;
+        border-color: #5b8cff;
+    }
     .review-hero:not(:has(:not(.ov-bar))) { display: none; }
     .ov-date { margin: 0 0 .65rem; font-size: .82rem; font-weight: 600; color: #aeb8cc; }
     .filter-bar-hero { margin: 0; gap: .65rem; }

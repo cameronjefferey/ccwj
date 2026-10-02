@@ -1,0 +1,9 @@
+<div class="btn-group btn-group-sm strat-view" role="group" aria-label="Strategies view">
+    {% if request.args.get('view') == 'fit' %}
+    <a class="btn btn-outline-secondary" href="{{ scoped_url('strategies') }}">Performance</a>
+    <a class="btn btn-primary" aria-current="page" href="{{ scoped_url('strategies', view='fit') }}">Fit matrix</a>
+    {% else %}
+    <a class="btn btn-primary" aria-current="page" href="{{ scoped_url('strategies') }}">Performance</a>
+    <a class="btn btn-outline-secondary" href="{{ scoped_url('strategies', view='fit') }}">Fit matrix</a>
+    {% endif %}
+</div>
