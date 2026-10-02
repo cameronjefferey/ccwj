@@ -208,15 +208,20 @@ def _protection_paid(row) -> float:
 
 
 def leg_outcome(row, expiry) -> str:
-    """Expired, Closed, or Assigned.
+    """Expired, Closed, Assigned, or Settlement pending.
 
     A same-day expiry with no buy-to-close (short) and no sell-to-close
     (long) is Expired even when the broker close type says Closed.
     A buy-to-close on expiry day stays Closed. Assignment wins.
+    Settlement pending wins over that zero-cash expiry heuristic: a
+    short that finished in the money has no closing fill yet, and
+    treating the missing close as a $0 expiry books the opening credit.
     """
     close_type = str(row.get("close_type") or "").strip()
     folded = close_type.lower()
     direction = str(row.get("direction") or "")
+    if close_type == "Settlement pending":
+        return "Settlement pending"
     if close_type == "Exercised" and direction == "Sold":
         return "Assigned"
     if close_type in ("Assigned", "Exercised"):
@@ -303,6 +308,8 @@ def _spread_label(short_meta, long_meta) -> str:
 
 
 def _spread_outcome(short_outcome, long_outcome) -> str:
+    if "Settlement pending" in (short_outcome, long_outcome):
+        return "Settlement pending"
     if short_outcome == "Expired" and long_outcome == "Expired":
         return "Expired"
     if "Assigned" in (short_outcome, long_outcome):
@@ -333,7 +340,12 @@ def _make_vertical(short, long, short_meta, long_meta):
     else:
         basis = protection
         direction = "Bought"
-    return_pct = round(pnl / basis * 100, 1) if basis >= 0.01 else None
+    if outcome == "Settlement pending":
+        return_pct = None
+        is_winner = None
+    else:
+        return_pct = round(pnl / basis * 100, 1) if basis >= 0.01 else None
+        is_winner = True if pnl > 0 else False if pnl < 0 else None
     child_short = dict(short)
     child_long = dict(long)
     child_short["outcome"] = short_outcome
@@ -365,7 +377,7 @@ def _make_vertical(short, long, short_meta, long_meta):
         "collected": collected,
         "protection": protection,
         "pnl": pnl,
-        "is_winner": True if pnl > 0 else False if pnl < 0 else None,
+        "is_winner": is_winner,
         "outcome": outcome,
         "close_type": outcome if outcome != "Closed" else "Closed",
         "open_date": short.get("open_date") or long.get("open_date") or "",

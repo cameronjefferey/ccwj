@@ -31,6 +31,7 @@ def test_parse_seed_date_covers_four_and_two_digit_mdy():
     sql = _MACRO.read_text()
     assert r"r'(\d{1,2}/\d{1,2}/\d{4})$'" not in sql
     assert r"r'(\d{1,2}/\d{1,2}/\d{4})'" in sql
+    assert r"\bas of\s+" in sql
     assert r"%m/%d/%y" in sql
     assert r"^(\d{1,2}/\d{1,2}/\d{2})(?:\s|$)" in sql
 
@@ -42,3 +43,14 @@ def test_mdy_extract_reads_schwab_as_of_clock_and_two_digit_year():
     assert _MDY_YY.search("1/20/23").group(1) == "1/20/23"
     assert _MDY_YY.search("11/18/22 as of 08:30 PM").group(1) == "11/18/22"
     assert _MDY_YY.search("04/21/2025") is None
+    # The warehouse macro takes the date AFTER "as of" when that token
+    # is a calendar date. A clock suffix still uses the leading date.
+    as_of = re.search(
+        r"(?i)\bas of\s+(\d{1,2}/\d{1,2}/\d{4})",
+        "10/02/2026 as of 10/01/2026",
+    )
+    assert as_of.group(1) == "10/01/2026"
+    assert re.search(
+        r"(?i)\bas of\s+(\d{1,2}/\d{1,2}/\d{4})",
+        "05/14/2024 as of 08:30 PM",
+    ) is None

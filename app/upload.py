@@ -626,6 +626,12 @@ def _canonicalize_seed_cell(value):
 # a CSV upload onto a SnapTrade tenant grew stg_history 6.9k → 10.0k and
 # failed the test with 153 groups.
 _DATE_MDY_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+# Cash-settled index options post the next day: "10/02/2026 as of 10/01/2026".
+# The date after "as of" is the trade date. A clock suffix
+# ("as of 08:30 PM") does not match.
+_DATE_AS_OF_MDY_RE = re.compile(
+    r"\bas of\s+(\d{1,2})/(\d{1,2})/(\d{4})\b", re.IGNORECASE,
+)
 _DATE_ISO_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 _DATE_ISO_SLASH_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})")
 _DATE_MDY_YY_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2})(?:\s|$)")
@@ -648,6 +654,13 @@ def _canonicalize_date_mdy(value):
     s = str(value).strip()
     if not s or s.lower() in ("nan", "none", "<na>"):
         return ""
+    as_of = _DATE_AS_OF_MDY_RE.search(s)
+    if as_of:
+        month, day, year = int(as_of.group(1)), int(as_of.group(2)), int(as_of.group(3))
+        try:
+            return date(year, month, day).strftime("%m/%d/%Y")
+        except ValueError:
+            return s
     m = _DATE_MDY_RE.search(s)
     if m:
         month, day, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -891,11 +904,11 @@ def _dedup_history_rows(df, seed_columns):
     # disagree on.
     #
     # Risk analysis for omitting Amount: two trades with identical
-    # Date+Action+Symbol+Quantity+Price MUST have identical Amount
-    # modulo rounding (Amount = ±qty × price). Any case where
-    # Amount differs but the other five agree is a rounding artifact,
-    # not a different trade. Keeping both rows would double-count the
-    # same money.
+    # Date+Action+Symbol+Quantity+Price are the same fill. Amount can
+    # still differ by the commission (order gross 7,770 vs activity
+    # net 7,757.78 on the Oct 1 SPXW short). That is one fill. The
+    # longer activity description wins, so the statement net replaces
+    # the gross. Putting Amount back on this key would keep both.
     #
     # On collision, prefer the row with the LONGER non-empty
     # Description (heuristic: activities-source has the broker's

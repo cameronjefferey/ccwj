@@ -704,7 +704,7 @@ POSITION_CLOSED_LEGS_QUERY = """
      AND sc.account = oc.account
      AND sc.trade_symbol = oc.trade_symbol
      AND sc.user_id IS NOT DISTINCT FROM oc.user_id
-    WHERE sc.status = 'Closed'
+    WHERE sc.status in ('Closed', 'Settlement pending')
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{symbol}'))
     {sc_tenant_filter}
@@ -1189,7 +1189,7 @@ def _fetch_closed_option_legs_from_classification(
         sc.close_type,
         sc.days_in_trade
     FROM `ccwj-dbt.analytics.int_strategy_classification` sc
-    WHERE sc.status = 'Closed'
+    WHERE sc.status in ('Closed', 'Settlement pending')
       AND sc.trade_group_type = 'option_contract'
       AND UPPER(TRIM(COALESCE(sc.symbol, ''))) = UPPER(TRIM('{safe_symbol}'))
     {acct}
@@ -3065,7 +3065,8 @@ def position_detail(symbol):
     for leg in closed_legs_list:
         direction = str(leg.get("direction") or "")
         o_cost, o_proceeds, o_pnl = _option_leg_cost_proceeds(leg)
-        o_return = _option_return_pct(leg, o_pnl)
+        pending = str(leg.get("close_type") or "") == "Settlement pending"
+        o_return = None if pending else _option_return_pct(leg, o_pnl)
         trade_outcomes.append({
             "trade_symbol": leg.get("trade_symbol"),
             "strategy": leg.get("strategy") or "",
@@ -3080,7 +3081,8 @@ def position_detail(symbol):
             "pnl": round(o_pnl, 2),
             "return_pct": o_return,
             "is_winner": (
-                True if round(o_pnl, 2) > 0
+                None if pending
+                else True if round(o_pnl, 2) > 0
                 else False if round(o_pnl, 2) < 0
                 else None
             ),
