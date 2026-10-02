@@ -73,14 +73,14 @@
     {% if _book_value is not none or _book or equity_snapshot %}
     <div class="ov-top">
         <div>
-            <div class="ov-k">{% if paper_only %}Paper · {% endif %}Total value{% if _book_n %} across {{ _book_n }} account{{ 's' if _book_n != 1 }}{% endif %}</div>
+            <div class="ov-k">{% if paper_only %}Paper account value{% else %}Total value{% endif %}{% if _book_n %} across {{ _book_n }} account{{ 's' if _book_n != 1 }}{% endif %}</div>
             {% if _book_value is not none %}
             <div class="ov-big">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(_book_value) }}{% endif %}</div>
             {% else %}
             <div class="ov-big ov-dash">—</div>
             {% endif %}
             {% if paper_aside %}
-            <div class="ov-bench">Paper{% if paper_aside.value is not none %} ${{ "{:,.0f}".format(paper_aside.value) }}{% endif %}
+            <div class="ov-bench">Paper account value{% if paper_aside.value is not none %} ${{ "{:,.0f}".format(paper_aside.value) }}{% endif %}
                 · not in this total ·
                 <a href="{{ url_for('weekly_review', tenants=paper_aside.tenants) }}">Open paper</a>
             </div>
@@ -552,7 +552,9 @@
 {% if today_strip and not simple_view %}
 <p class="ov-held">
     {{ today_strip|length }} symbol{{ 's are' if today_strip|length != 1 else ' is' }} currently held.
+    {% if not simple_view %}
     <a href="{{ scoped_url('trader_story', account=selected_account, tenant=selected_tenant, tenants=selected_tenants) }}">See your trader profile &rarr;</a>
+    {% endif %}
 </p>
 {% elif today_strip %}
 <p class="ov-held">

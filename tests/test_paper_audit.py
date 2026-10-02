@@ -408,6 +408,50 @@ def test_simple_view_hides_advanced_panels():
     assert page.find(">What worked<") < page.find('{% include "_held_to_expiry.html" %}')
 
 
+def test_simple_view_holds_full_pages():
+    from app import app
+    from app.models import User
+    from app.paper_accounts import safe_full_view_next
+
+    assert safe_full_view_next("/strategies?view=fit") == "/strategies?view=fit"
+    assert safe_full_view_next("/story") == "/story"
+    assert safe_full_view_next("https://evil.example/strategies") is None
+    assert safe_full_view_next("//evil.example/story") is None
+    assert safe_full_view_next("/overview") is None
+
+    class _SessionUser:
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "ada"
+
+        @property
+        def is_authenticated(self):
+            return True
+
+        def get_id(self):
+            return "7"
+
+    user = _SessionUser()
+    client = app.test_client()
+    with patch.object(User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "7" else None)), \
+         patch("app.paper_accounts.get_app_view", return_value="simple"), \
+         patch("app.paper_accounts.viewer_flags", return_value=(True, True)):
+        with client.session_transaction() as sess:
+            sess["_user_id"] = "7"
+            sess["_fresh"] = True
+        for path, title in (
+            ("/strategies", "Strategies"),
+            ("/story", "Trader Profile"),
+            ("/insights", "AI Insights"),
+        ):
+            html = client.get(path).get_data(as_text=True)
+            assert "Switch to Full view" in html
+            assert f"{title} is in Full view" in html
+            assert f'name="next" value="{path}"' in html
+            assert 'name="app_view" value="full"' in html
+
+
 def test_learn_links_to_practice():
     from app import app
 

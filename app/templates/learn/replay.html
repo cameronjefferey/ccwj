@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block meta_tags %}
+<meta name="description" content="{{ meta_description }}">
+<meta property="og:description" content="{{ meta_description }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ og_image }}">
+<meta property="og:image:alt" content="{{ og_alt }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ title }} - HappyTrader">
+<meta name="twitter:description" content="{{ meta_description }}">
+<meta name="twitter:image" content="{{ og_image }}">
+<link rel="canonical" href="{{ canonical }}">
+{% endblock %}
+
+{% block head %}
+{% include "learn/_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<article class="learn-page learn-replay-page" data-slug="{{ replay.slug }}" data-start="{{ start_step }}" data-title="{{ replay.title }}">
+    <p class="learn-back"><a href="{{ url_for('learn_index') }}#replays">Options 101</a></p>
+    <p class="learn-kicker">Replay · {{ replay.strategy }}</p>
+    <h1>
+        {{ replay.title }}
+        <svg class="learn-replay-check" viewBox="0 0 16 16" width="16" height="16" aria-label="Done">
+            <path d="M3.2 8.4 L6.4 11.4 L12.8 4.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+    </h1>
+    <p class="replay-source">{{ replay.price_source.note }}</p>
+
+    <div class="replay-card" id="replay-card">
+        <div class="replay-entry">
+            {% for fact in replay.entry_facts %}
+            <div class="replay-fact">
+                <span class="replay-fact-l">{{ fact.label }}</span>
+                <span class="replay-fact-v ht-num">{{ fact.value }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="replay-caption">One contract is 100 shares.</p>
+        <p class="replay-caption">Solid line: option result. Dashed line: stock price.</p>
+        <div class="replay-chart">
+            <canvas id="replay-chart" role="img" aria-label="{{ replay.chart_label }}"></canvas>
+        </div>
+
+        <div class="replay-readout" id="replay-readout" aria-live="polite">
+            <div class="replay-fact">
+                <span class="replay-fact-l">Day</span>
+                <span class="replay-fact-v ht-num" id="replay-day">{{ replay.days[0].day_label }}</span>
+            </div>
+            <div class="replay-fact">
+                <span class="replay-fact-l">Stock</span>
+                <span class="replay-fact-v ht-num" id="replay-stock">{{ replay.days[0].underlying_text }}</span>
+            </div>
+            <div class="replay-fact">
+                <span class="replay-fact-l">Option</span>
+                <span class="replay-fact-v ht-num" id="replay-option">{{ replay.days[0].option_text }}</span>
+            </div>
+            <div class="replay-fact">
+                <span class="replay-fact-l">Option result</span>
+                <span class="replay-fact-v ht-num" id="replay-pnl">{{ replay.days[0].pnl_text }}</span>
+            </div>
+            {% if replay.show_shares %}
+            <div class="replay-fact">
+                <span class="replay-fact-l">Shares</span>
+                <span class="replay-fact-v ht-num" id="replay-shares">{{ replay.days[0].share_text }}</span>
+            </div>
+            {% endif %}
+        </div>
+        <p class="replay-left ht-num" id="replay-left">{{ replay.days[0].left_text }}</p>
+
+        {% for decision in replay.decisions %}
+        {% set decision_index = loop.index0 %}
+        <section class="replay-decision" data-decision="{{ decision_index }}" data-after="{{ decision.after_index }}" hidden>
+            <p class="replay-prompt">{{ decision.prompt }}</p>
+            <p class="replay-question">{{ decision.question }}</p>
+            <div class="replay-choices" role="group" aria-label="{{ decision.question }}">
+                {% for choice in decision.choices %}
+                <button type="button" class="replay-choice" data-decision="{{ decision_index }}" data-choice="{{ choice.id }}">{{ choice.label }}</button>
+                {% endfor %}
+            </div>
+        </section>
+        <section class="replay-outcomes" data-decision="{{ decision_index }}" hidden>
+            <div class="replay-compare">
+                {% for choice in decision.choices %}
+                <div class="replay-outcome-row" data-choice="{{ choice.id }}">
+                    <span class="replay-outcome-label">{{ choice.result_label }}</span>
+                    <span class="ht-num replay-money{% if choice.sign == 'gain' %} is-gain{% elif choice.sign == 'loss' %} is-loss{% endif %}">{{ choice.result_text }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% for choice in decision.choices %}
+            <div class="replay-picked" data-choice="{{ choice.id }}" hidden>
+                {% if choice.detail %}
+                <div class="replay-detail">
+                    {% for line in choice.detail %}
+                    <div class="replay-outcome-row">
+                        <span class="replay-outcome-label">{{ line.label }}</span>
+                        <span class="ht-num replay-money{% if line.sign == 'gain' %} is-gain{% elif line.sign == 'loss' %} is-loss{% endif %}">{{ line.text }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <p class="replay-explain">{{ choice.explanation }}</p>
+                {% if choice.assumption %}
+                <p class="replay-assumption">{{ choice.assumption }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+            <button type="button" class="btn btn-primary replay-continue" data-decision="{{ decision_index }}">{% if decision.after_index == replay.last_index %}Recap{% else %}Show the rest{% endif %}</button>
+        </section>
+        {% endfor %}
+
+        <section id="replay-recap" class="replay-recap" hidden>
+            <h2>Recap</h2>
+            {% for paragraph in replay.recap %}
+            <p>{{ paragraph }}</p>
+            {% endfor %}
+        </section>
+        <section id="replay-checkpoint" hidden>
+            {% if try_it %}
+            <div class="learn-try">
+                <h2>Try it</h2>
+                <p>{{ try_it.sentence }}</p>
+                <a class="btn btn-primary" href="{{ try_it.href }}">{{ try_it.button }}</a>
+            </div>
+            {% endif %}
+            <h2>Did that make sense?</h2>
+            <div class="replay-checkpoint-actions">
+                <button type="button" class="btn btn-primary" id="replay-yes">Yes</button>
+                <a class="replay-deeper" id="replay-deeper" href="{{ replay.deeper_href }}" title="{{ replay.lesson_title }}">Go deeper</a>
+            </div>
+            <p class="replay-saved" id="replay-saved" hidden>Marked done. It shows a check on Options 101.</p>
+        </section>
+    </div>
+    <p class="learn-disclaimer">{{ series.disclaimer }}</p>
+</article>
+<script type="application/json" id="replay-data">{{ replay|tojson }}</script>
+{% include "learn/_progress.html" %}
+<script src="{{ url_for('static', filename='js/learn-replay.js') }}"></script>
+{% endblock %}

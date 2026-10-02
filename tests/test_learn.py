@@ -189,7 +189,35 @@ def test_logged_in_user_can_open_learn(monkeypatch):
         sess["_fresh"] = True
     response = client.get("/learn/calls-and-puts")
     assert response.status_code == 200
-    assert "Calls and puts" in response.get_data(as_text=True)
+    html = response.get_data(as_text=True)
+    assert "Calls and puts" in html
+    assert "Start your free 30-day trial" not in html
+    assert 'href="/practice"' in html
+    assert ">Practice</a>" in html
+    index = client.get("/learn").get_data(as_text=True)
+    assert "Start your free 30-day trial" not in index
+    assert ">Practice</a>" in index
+
+
+def test_later_episodes_show_a_duration():
+    expected = {
+        "buying-and-selling": "5:37",
+        "covered-calls": "4:37",
+        "cash-secured-puts": "4:41",
+        "the-wheel": "4:19",
+        "spreads": "4:45",
+        "options-risk": "4:41",
+        "reading-a-position": "3:42",
+    }
+    html = _html("/learn")
+    for episode in catalog.episodes():
+        if episode["number"] < 4:
+            continue
+        assert episode["duration"] == expected[episode["slug"]]
+        assert catalog.duration_iso(episode["duration"])
+        assert episode["duration"] in html
+    assert 'aria-label="Next shorts"' in html
+    assert "learn-shorts-nav" in html
 
 
 def test_youtube_id_turns_on_nocookie_embed_and_video_metadata(monkeypatch):
@@ -302,6 +330,7 @@ def test_resume_is_local_until_a_signed_in_account_saves_it():
         "updated": 0,
         "last": None,
         "done": [],
+        "replays": [],
     }
     posted = client.post(
         "/learn/progress",
@@ -401,6 +430,64 @@ def test_empty_progress_does_not_wipe_a_saved_resume(monkeypatch):
 
     monkeypatch.setattr(learn_progress, "execute", fail_write)
     assert learn_progress.save_for_user(7, {})["last"]["slug"] == "what-is-an-option"
+
+
+def test_lesson_ends_with_a_try_it_and_a_check():
+    from flask import url_for
+
+    from app import learn_try
+
+    for episode in catalog.published_episodes():
+        ticket = learn_try.for_lesson(episode["slug"])
+        assert ticket["href"].startswith("/practice?")
+        assert "symbol=SPY" in ticket["href"]
+        assert len(learn_try.checks_for_lesson(episode["slug"])) == 2
+        assert learn_try.deeper_for_lesson(episode["slug"])["label"] == "Go deeper"
+
+    calls = _html("/learn/calls-and-puts")
+    assert "Try it" in calls
+    assert "Try a SPY call" in calls
+    assert "side=call" in calls
+    assert "Try a SPY put" in calls
+    assert "Did that make sense?" in calls
+    assert 'id="learn-mark-done"' in calls
+    assert ">Mark as done<" in calls
+    assert ">Go deeper<" in calls
+    assert 'href="/learn/replay/long-call"' in calls
+
+    covered = _html("/learn/covered-calls")
+    assert "This ticket buys a call" in covered
+    assert "side=call" in covered
+
+    index = _html("/learn")
+    assert "M3.2 8.4" in index
+    assert 'class="learn-watched"' in index
+
+    js = open("app/static/js/learn-progress.js", encoding="utf-8").read()
+    assert "func: \"seekTo\"" in js
+    assert "Picking up at " in js
+    assert "__htLearnMarkDone" in js
+    assert "X-CSRF-Token" in js
+
+    with app.test_request_context():
+        learn_login = url_for("login", next="/learn")
+        episode_login = url_for("login", next="/learn/calls-and-puts")
+    assert f'href="{learn_login}"' in index
+    assert f'href="{episode_login}"' in calls
+    login = _client().get("/login?next=/learn").get_data(as_text=True)
+    assert 'name="next" value="/learn"' in login
+
+
+def test_progress_save_rejects_a_missing_csrf_token(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
+    posted = _client().post(
+        "/learn/progress",
+        json={"done": ["what-is-an-option"]},
+        headers={"Accept": "application/json"},
+    )
+    assert posted.status_code == 400
+    assert posted.is_json
+    assert "Refresh" in posted.get_json()["error"]
 
 
 def _assert_public_copy(html):

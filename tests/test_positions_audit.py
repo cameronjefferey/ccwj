@@ -255,5 +255,6 @@ def test_paper_receipt_carries_tenant_for_the_link():
     }, tenant_id="snaptrade:paper")
     assert receipt["tenant_id"] == "snaptrade:paper"
     page = Path("app/templates/paper_practice.html").read_text()
+    row = Path("app/templates/_paper_order_row.html").read_text()
     assert "tenants=sent.tenant_id" in page
-    assert "tenants=order.tenant_id" in page
+    assert "tenants=order.tenant_id" in row

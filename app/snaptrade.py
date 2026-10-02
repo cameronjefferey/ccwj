@@ -816,6 +816,9 @@ def snaptrade_callback():
     saved = 0
     newly_saved = 0
     paper_saved = 0
+    # Before any new tenant is written, so "first connection" is still true.
+    from app.plan import user_has_real_brokerage
+    had_real = user_has_real_brokerage(user_id)
     identity_conflicts = 0
     remote_account_ids = {
         str(acc.get("id") or "").strip()
@@ -958,6 +961,13 @@ def snaptrade_callback():
             "warning",
         )
     if saved and (reconnect_label or newly_saved or recovery_existing):
+        from app.paper_accounts import note_connect_view
+        note_connect_view(
+            user_id,
+            had_real=had_real,
+            newly_saved=newly_saved,
+            paper_saved=paper_saved,
+        )
         _kick_post_connect_sync(user_id)
         if practice_return:
             flash("Paper account connected. Pick a call or a put.", "success")
@@ -1435,14 +1445,19 @@ def place_single_leg_option_order(user_id, account_id, occ_symbol, limit_price):
     return _mapping(body) if not isinstance(body, dict) else body
 
 
-def list_account_recent_orders(user_id, account_id):
+def list_account_recent_orders(user_id, account_id, *, raise_on_error=False):
     """Open, cancelled, filled, and rejected orders for one account.
 
     ``recent_orders`` is the last 24 hours and defaults to executed-only,
     so an open paper order never appears unless ``only_executed`` is false.
     Orders older than that window come from the account orders endpoint
     (``state=all``, 30 days). The recent row wins when both feeds list
-    the same brokerage order id. Empty on failure.
+    the same brokerage order id.
+
+    Practice status polling passes ``raise_on_error`` so a 403 or a rate
+    limit can show a friendly error instead of looking like the order
+    disappeared. The older feed stays best-effort: a failure there is
+    empty and the 24-hour rows still return.
     """
     snap = get_snaptrade_user(user_id)
     client = _get_snaptrade_client()
@@ -1454,6 +1469,7 @@ def list_account_recent_orders(user_id, account_id):
         snap["snaptrade_secret"],
         account_id,
         only_executed=False,
+        raise_on_error=raise_on_error,
     )
     older = _fetch_account_orders(
         client,
@@ -2354,10 +2370,13 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             user_id, snaptrade_account_id, error=None,
             snapshot_generation=snapshot_generation,
         )
-        # Reverse trial: the 30-day clock starts at FIRST DATA, not merely
-        # after a successful broker read. Deferred cron reads have not written
-        # their batch yet, so the caller starts the clock only after that
-        # batch is durable (including a byte-identical no-op).
+        # Reverse trial: the 30-day clock starts when a real brokerage has
+        # data, not on Alpaca Paper and not merely after a broker read.
+        # start_trial_clock no-ops the stamp without a non-paper tenant
+        # (and clears a stale paper-only date). It never rewrites a date
+        # that already belongs to a real brokerage. Deferred cron reads
+        # have not written their batch yet, so the caller starts the clock
+        # only after that batch is durable (including a byte-identical no-op).
         if not result.get("deferred") and seed_write_confirmed:
             try:
                 from app.plan import start_trial_clock
@@ -3221,7 +3240,10 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
     return _coerce_list(resp)
 
 
-def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id, only_executed=None):
+def _fetch_recent_orders(
+    client, snap_user_id, snap_secret, account_id,
+    only_executed=None, *, raise_on_error=False,
+):
     """Pull SnapTrade's ``recent_orders`` endpoint for one account.
 
     This is the real-time-ish trade source we use to backfill the
@@ -3272,6 +3294,8 @@ def _fetch_recent_orders(client, snap_user_id, snap_secret, account_id, only_exe
             "best-effort; auth was already proven by _fetch_activities).",
             account_id, exc,
         )
+        if raise_on_error:
+            raise
         return []
     return _order_rows(resp)
 

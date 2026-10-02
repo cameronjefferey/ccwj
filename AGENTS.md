@@ -38,10 +38,18 @@ The dev dataset is a **full mirror for testing**, kept fresh two ways. (1) **App
 **The public demo is a MIRROR of a real tenant, not fabricated data (Aug 2026).** The demo user (username `demo`, no usable password, tenant `demo:demo-account`, label `Demo Account`) used to be fed by hand-written CSV seeds plus a synthetic account-value curve (`int_demo_equity_daily`). Both are **deleted**. The demo is now a relabeled copy of the EarningsFollower trading bot's Alpaca paper account, set by `var('demo_source_tenant_id')` in `dbt/dbt_project.yml`, built by `dbt/models/staging/demo/stg_demo_{history,current,balances}` and unioned into the three base staging models exactly where the seeds used to be. **Two invariants to preserve:** (1) the mirror reads the **per-broker adapters** (`stg_broker_alpaca_*`), NEVER `source('raw_broker', …)` — the adapter drops Alpaca's duplicate partial fills and repairs the missing 100x option multiplier, so mirroring raw would reproduce a phantom ~-$67k unrealized loss and ~+$14.7k cash break in the demo; (2) the mirror stamps `tenant_id='demo:demo-account'` itself, keeping the demo a genuinely separate tenant that renders through the **same tenant scoping as any real user** — do NOT "simplify" this by pointing the demo user at the bot's tenant, which is impossible anyway (`broker_tenants.tenant_id` is a PRIMARY KEY, one tenant = one user). History/marks are mirrored at three layers: staging (above), the balance snapshot (`bal_versions` in `mart_account_equity_daily`), and option marks (`versions` in `int_option_marks_daily`). The `where account != 'Demo Account'` filter in `mart_account_equity_daily.bal_versions` is **load-bearing** — the SCD2 snapshot still holds legacy fabricated demo versions that would otherwise collide with the mirror at the same `tenant_grain`. EarningsFollower deep-links back in at `/earningsfollower/<symbol>`. Public `/demo/start` does not log visitors into the Postgres `demo` row; each visitor gets a `demo-session:` identity that can read only `demo:demo-account` and cannot write.
 
 **Reverse trial is the billing model (Aug 2026).** Every new
-signup is `users.plan='trial'`: full product, no card. The 30-day clock
-starts at FIRST DATA (`trial_started_at`, stamped once at the first
-successful sync in `_sync_one_connection` / first CSV upload), not at
-signup. Day 30 the mirror FREEZES — every page stays readable, but syncs
+signup is `users.plan='trial'`: full product, no card. Learning and Alpaca
+Paper are free and never start the clock. The 30-day clock starts only when
+the first real (non-paper) brokerage account connects (`start_trial_clock`
+stamps only when `trial_started_at IS NULL` and a real brokerage is already
+connected). A trial date stored before that — Alpaca Paper or no brokerage
+at all — is cleared (`clear_stale_trial_clocks` on startup, and
+`clear_stale_trial_clock` on the next paper sync) so the full 30 days start
+at the first real connection. A user who already has a real brokerage keeps
+their date, including a disconnected row. Beta and active clocks are not
+cleared. A paper-only or account-less user is not frozen and is not
+disconnected by the lifecycle cron.
+Day 30 the mirror FREEZES — every page stays readable, but syncs
 and uploads stop; day 60 the daily `happytrader-plan-lifecycle` cron
 (`app/plan_lifecycle_cli.py`, also sends the day-23/30/53 lifecycle
 emails, dedupe per trial episode via `email_sends`) removes the SnapTrade
@@ -563,9 +571,13 @@ There is no separate dashboard page — Overview is the authenticated home.
 **Status: Working. Public Options 101 series. No login.**
 
 Logged-out nav and footer link here. Logged-in users can open the same pages.
+The trial CTA at the bottom is for logged-out visitors. A signed-in page
+replaces it with Practice.
 Copy and video ids live in `app/learn_episodes.json` (loaded by
 `app/learn_catalog.py`). All 10 episodes are published with public YouTube
 ids, in series order (the wheel is episode 7, spreads 8, options risk 9).
+Each episode shows its length. The Shorts row on `/learn` fades and has
+arrows when more cards sit off to the side.
 The series page links the playlist
 `https://www.youtube.com/playlist?list=PLcVwygMVS3Ig`. Each episode page
 is a click-to-play nocookie embed (no iframe until click), with that
@@ -575,9 +587,27 @@ A published id turns on the Watch link, the nocookie lite embed, chapter
 seek, and VideoObject JSON-LD. `published: false` stays out of the
 sitemap and is `noindex`. The series page remembers the last episode in this browser
 (`ht-learn-progress` in localStorage) and says Continue plus “N of M
-watched” once a video actually finishes. Signed-in accounts other than
-the shared demo user also keep that blob in `learn_progress` so it follows
-them after signup (`/learn/progress`, merged on the next signed-in page).
+watched” once a lesson is done. A lesson is done when the video reaches
+90%, when both checkpoint questions are answered, or when Mark as done
+is clicked. Finished cards show a check, not only the word Watched.
+Signing in from `/learn` returns there (`next=`). Each lesson ends with
+a Try it link into `/practice` with the radios already set (a calls
+lesson opens a SPY call). Nothing is placed until the learner confirms.
+Signed-in accounts other than the shared demo user also keep that blob
+in `learn_progress` so it follows them after signup (`/learn/progress`,
+GET and POST are limited separately so a save is not crowded out by
+the page load). The resume line seeks the player; the embed `start`
+parameter alone does not.
+
+Replays (`/learn/replay/<slug>`, loader `app/learn_replay.py`, YAML in
+`app/learn_replays/`) walk one path day by day and pause on a decision.
+The starter set is a long call, a long put, and a covered call, linked
+from `/learn` and from the matching episode. Prices are labeled
+illustrative: `stg_daily_prices` holds public closes, but option marks
+are tenant-scoped and are not copied onto this public page. "Premium"
+is only the money a short option collected. Yes on the checkpoint stores
+the slug in `learn_progress.replays` (and localStorage) and paints a
+check on `/learn`. No points.
 
 ### Campaign landing (`/start`, endpoint `campaign_start`)
 **Status: Working. Ad destination. Logged-in visitors redirect to Overview.**
@@ -733,7 +763,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 
 Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**.
 
-Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
+Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
 ### Accounts (`/accounts`) — two views
 **Status: Working. One surface for per-account performance AND value/composition.**
@@ -880,9 +910,29 @@ logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path
-(`POST /get-started/paper`) stores `users.app_view='simple'` (default
-`full` for everyone else) and opens Practice. Settings can switch Simple
-and Full. Simple nav is Practice, Learn, Overview, and Positions.
+(`POST /get-started/paper`) stores `users.app_view='simple'` and opens
+Practice. Signup itself has no view picker, so it leaves the default
+`full`. A first SnapTrade connection that is only Alpaca Paper does the
+same write. Both skip the write when `app_view_chosen` is true — Settings,
+the Simple hold card, and the Full-view prompt set that flag, and a later
+paper path must not replace the click. The first real brokerage does not
+change the view; if the user is on Simple it sets `full_view_offer` and
+the shell shows a one-click "Switch to Full view" (Keep Simple dismisses
+it). Simple nav is Practice, Learn, Overview, and Positions.
+Direct visits to Strategies, Trader Profile, and AI Insights show a
+switch-to-Full card instead of the page. Overview in Simple hides
+Execution review, Performance by account, and the trader-profile link.
+The position review does the same with its profile link. After the close,
+Practice review uses the last price at close when a live quote is missing,
+and labels buying power separately from the paper account value on Overview.
+A paper order shows its brokerage status as soon as it is placed (Accepted,
+Pending, Queued for next session, Filled at the price, Rejected with the
+reason, or Canceled). While Practice stays open it polls that status every
+few seconds, then less often, and updates the confirmation in place. Open
+orders sit at the top with Cancel. A fill starts one read of that paper
+account so Positions can name it without waiting for the nightly sync, and
+a Filled toast links to the position. The Positions line is a sentence, not
+a P&L row, until the warehouse catches up.
 No SnapTrade brokerage yet:
 Connect brokerage is the primary CTA (pre-portal interstitial, then
 SnapTrade), "I'll do this later" / skip to Overview is secondary, and
@@ -1055,9 +1105,10 @@ shared Redis L2 (`ccwj-query-cache` on Render, `QUERY_CACHE_REDIS_URL`, TTL
 24h — default `QUERY_CACHE_REDIS_TTL_SECONDS=86400`). The long L2 TTL is safe
 ONLY because the cache is explicitly flushed when the data actually changes:
 `bigquery_update.yml` and `prices_refresh.yml` end with a
-`curl POST /internal/cache/flush` (`X-Cache-Flush-Token` =
+`curl -fsS POST https://happytrader.me/internal/cache/flush` (`X-Cache-Flush-Token` =
 `CACHE_FLUSH_TOKEN` secret, set both as a GitHub secret and a Render env
-var). The warehouse rebuild also passes `?ready=1` so users whose
+var). A non-2xx fails that job. The old `ccwj.onrender.com` host 301s here,
+and curl does not follow it. The warehouse rebuild also passes `?ready=1` so users whose
 every active tenant now has position or account-balance rows can get the
 `data_ready` email (dedupe `email_sends`; skip tenant-only or partial
 multi-account builds). The evening prices

@@ -77,11 +77,13 @@ jobs:
       # Same hook as bigquery_update.yml: prices just changed, so the app's
       # query cache must be flushed (and re-warmed) or evening pages would
       # keep serving pre-close numbers until the cache TTL expires.
+      # happytrader.me is the host that answers. -fsS fails this job if the
+      # flush does not return 2xx.
       - name: Flush + warm app query cache
         if: always()
         run: |
-          curl -fsS -m 20 -X POST "https://ccwj.onrender.com/internal/cache/flush" \
-            -H "X-Cache-Flush-Token: ${{ secrets.CACHE_FLUSH_TOKEN }}" || true
+          curl -fsS -m 20 -X POST "https://happytrader.me/internal/cache/flush" \
+            -H "X-Cache-Flush-Token: ${{ secrets.CACHE_FLUSH_TOKEN }}"
 
   # Evening close-snap also rewrites marts; keep analytics_dev in lockstep.
   # Failure here must not fail the prices job.

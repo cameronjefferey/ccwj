@@ -41,6 +41,7 @@ def _list_running_trials():
     """Every trial user whose clock is running, minus demo/admins."""
     from app.db import fetch_all
     from app.models import is_admin
+    from app.plan import user_has_real_brokerage
     from app.utils import DEMO_USERNAME
 
     rows = fetch_all(
@@ -53,6 +54,11 @@ def _list_running_trials():
     for r in rows or []:
         uname = (r.get("username") or "").strip().lower()
         if uname == DEMO_USERNAME or is_admin(uname):
+            continue
+        # Paper-only and account-less trials are free. A stored date from
+        # an older paper sync stays put, but this cron must not email them
+        # or disconnect the paper account.
+        if user_has_real_brokerage(r.get("user_id")) is False:
             continue
         out.append(r)
     return out

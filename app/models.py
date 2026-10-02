@@ -583,6 +583,7 @@ def init_db():
     _migrate_users_email_verified_column()
     _migrate_users_preferred_llm_model_column()
     _migrate_users_plan_columns()
+    _migrate_clear_stale_paper_trial_clocks()
     _migrate_users_stripe_columns()
     _migrate_users_ai_addon_columns()
     _migrate_users_app_view_column()
@@ -666,8 +667,10 @@ def _migrate_users_plan_columns():
     """Idempotent: reverse-trial plan state (see app/plan.py).
 
     - ``plan`` — 'trial' (default for new signups) | 'beta' | 'active'.
-    - ``trial_started_at`` — stamped at FIRST DATA (first successful sync or
-      CSV upload), not signup; NULL = clock not running.
+    - ``trial_started_at`` — stamped when the first real (non-paper)
+      brokerage is connected, not at signup and not for Alpaca Paper or
+      CSV. NULL = clock not running. A date on a trial user who has never
+      had a real brokerage is cleared; a real brokerage's date is kept.
     - ``plan_updated_at`` — audit stamp for admin/Stripe plan changes.
 
     GRANDFATHERING: every user that exists when the ``plan`` column first
@@ -690,6 +693,19 @@ def _migrate_users_plan_columns():
             execute("UPDATE users SET plan = 'beta', plan_updated_at = NOW()")
     except Exception as exc:
         _log.warning("users plan-columns migration skipped: %s", exc)
+
+
+def _migrate_clear_stale_paper_trial_clocks():
+    """Clear trial clocks for users who never connected a real brokerage.
+
+    Idempotent. Users with a real brokerage row are not updated. See
+    ``app.plan.clear_stale_trial_clocks``.
+    """
+    try:
+        from app.plan import clear_stale_trial_clocks
+        clear_stale_trial_clocks()
+    except Exception as exc:
+        _log.warning("stale paper trial-clock migration skipped: %s", exc)
 
 
 def _migrate_users_stripe_columns():
@@ -764,11 +780,25 @@ def _migrate_users_ai_addon_columns():
 
 
 def _migrate_users_app_view_column():
-    """Idempotent: Simple vs Full. Existing users stay on the full app."""
+    """Idempotent: Simple vs Full. Existing users stay on the full app.
+
+    ``app_view_chosen`` is set only when the person clicks Simple or Full.
+    A paper path may set Simple while that flag is false, and must not
+    replace a click. ``full_view_offer`` is the one-click prompt after the
+    first real brokerage; it does not change the view by itself.
+    """
     try:
         execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "app_view TEXT NOT NULL DEFAULT 'full'"
+        )
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "app_view_chosen BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "full_view_offer BOOLEAN NOT NULL DEFAULT FALSE"
         )
     except Exception as exc:
         _log.warning("users app_view migration skipped: %s", exc)

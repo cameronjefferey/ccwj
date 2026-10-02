@@ -20,6 +20,7 @@ from app.extensions import limiter
 from app.bigquery_client import get_bigquery_client
 from app.models import get_tenant_ids_for_user
 from app.learn_catalog import sitemap_paths as _learn_sitemap_paths
+from app.learn_replay import sitemap_paths as _replay_sitemap_paths
 from app.tenant_scope import tenant_sql_filter as _tenant_sql_filter
 
 
@@ -495,6 +496,7 @@ def sitemap():
             continue
         pages.append((f"/features/{slug}", "monthly", "0.7"))
     pages.extend(_learn_sitemap_paths())
+    pages.extend(_replay_sitemap_paths())
     xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     for path, freq, prio in pages:
         xml += f"  <url><loc>{base}{path}</loc><changefreq>{freq}</changefreq><priority>{prio}</priority></url>\n"
@@ -674,11 +676,14 @@ def healthz_db():
 @app.route("/get-started/paper", methods=["POST"])
 @login_required
 def get_started_paper():
-    """Choosing the paper route stores Simple view, then opens Practice."""
-    from app.paper_accounts import set_app_view
+    """Choosing the paper route stores Simple view, then opens Practice.
+
+    A Simple or Full click in Settings is left as the user set it.
+    """
+    from app.paper_accounts import apply_learning_view
 
     try:
-        set_app_view(current_user.id, "simple")
+        apply_learning_view(current_user.id)
     except Exception as exc:
         app.logger.warning("paper route did not store simple view: %s", exc)
     return redirect(url_for("paper_practice"))

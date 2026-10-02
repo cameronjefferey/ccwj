@@ -681,6 +681,7 @@
                 {% endif %}
                 {% endif %}
                 <a class="ht-hero-secondary" href="{{ url_for('demo_start') }}">Try the live demo</a>
+                <a class="ht-hero-secondary" href="{{ url_for('learn_index') }}">New to options? Start learning free</a>
                 <p class="ht-hero-signin"><a href="{{ url_for('login') }}">Sign in</a></p>
                 {% if signup_invite_required %}
                 <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
@@ -705,7 +706,7 @@
                 <li>
                     <div class="ht-proof-k">30</div>
                     <strong>Days, no card</strong>
-                    <p>The clock starts when the first sync or CSV upload lands.</p>
+                    <p>Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
                 </li>
                 <li>
                     <div class="ht-proof-k">Demo</div>
@@ -965,7 +966,7 @@
             {% else %}
             <a class="ht-cta" href="{{ url_for('login') }}">Sign in</a>
             {% endif %}
-            <p class="ht-cta-note">Full product. The 30 days start when the first sync or CSV upload lands.</p>
+            <p class="ht-cta-note">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
         </div>
     </section>
 </div>

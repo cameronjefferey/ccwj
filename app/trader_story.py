@@ -734,6 +734,10 @@ def story_query_batch(tenant_ids):
 @skeleton_page
 def trader_story():
     """The trader novel: every position's story, folded into one book."""
+    from app.paper_accounts import simple_view_hold
+    held = simple_view_hold()
+    if held:
+        return held
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce

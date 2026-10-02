@@ -163,27 +163,83 @@ def position_link_symbol(symbol: str) -> str:
     return text
 
 
-def get_app_view(user_id) -> str:
-    """``simple`` or ``full``. Missing column, missing user, or a DB error is full."""
+def _view_state(user_id) -> dict:
+    """``view`` is simple or full. ``offer`` is the Full-view prompt.
+
+    A missing column, a missing user, or a DB error is the full app with
+    no prompt. The row is reused for the rest of this request.
+    """
+    empty = {"user_id": user_id, "view": "full", "offer": False}
     if not user_id:
-        return "full"
+        return empty
+    try:
+        from flask import g, has_request_context
+
+        in_req = has_request_context()
+    except Exception:
+        g = None
+        in_req = False
+    if in_req:
+        cached = getattr(g, "_ht_app_view_state", None)
+        if isinstance(cached, dict) and cached.get("user_id") == user_id:
+            return cached
     try:
         from app.models import _postgres_user_id
         from app.db import fetch_one
 
         uid = _postgres_user_id(user_id)
         if uid is None:
-            return "full"
-        row = fetch_one("SELECT app_view FROM users WHERE id = %s", (uid,))
+            return empty
+        row = fetch_one(
+            "SELECT app_view, full_view_offer FROM users WHERE id = %s",
+            (uid,),
+        )
     except Exception as exc:
         _log.warning("app_view read failed: %s", exc)
-        return "full"
+        return empty
     view = str((row or {}).get("app_view") or "full").strip().lower()
-    return view if view in {"simple", "full"} else "full"
+    if view not in {"simple", "full"}:
+        view = "full"
+    state = {
+        "user_id": user_id,
+        "view": view,
+        "offer": bool((row or {}).get("full_view_offer")) and view == "simple",
+    }
+    if in_req:
+        setattr(g, "_ht_app_view_state", state)
+    return state
 
 
-def set_app_view(user_id, view: str) -> bool:
+def _clear_view_cache() -> None:
+    try:
+        from flask import g, has_request_context
+
+        if has_request_context() and hasattr(g, "_ht_app_view_state"):
+            delattr(g, "_ht_app_view_state")
+    except Exception:
+        return
+
+
+def get_app_view(user_id) -> str:
+    """``simple`` or ``full``. Missing column, missing user, or a DB error is full."""
+    return _view_state(user_id)["view"]
+
+
+def full_view_offer_open(user_id) -> bool:
+    """True when Simple should show the one-click switch to Full."""
+    return bool(_view_state(user_id)["offer"])
+
+
+def set_app_view(user_id, view: str, *, chosen: bool = False) -> bool:
+    """Store Simple or Full.
+
+    ``chosen=True`` is a click in Settings or on the Full-view prompt.
+    That sticks: a later paper path will not replace it. ``chosen=False``
+    only writes Simple, and only while the user has not picked a view.
+    """
     if view not in {"simple", "full"} or not user_id:
+        return False
+    if not chosen and view != "simple":
         return False
     try:
         from app.models import _postgres_user_id
@@ -192,11 +248,145 @@ def set_app_view(user_id, view: str) -> bool:
         uid = _postgres_user_id(user_id)
         if uid is None:
             return False
-        execute("UPDATE users SET app_view = %s WHERE id = %s", (view, uid))
+        if chosen:
+            execute(
+                "UPDATE users SET app_view = %s, app_view_chosen = TRUE, "
+                "full_view_offer = FALSE WHERE id = %s",
+                (view, uid),
+            )
+        else:
+            execute(
+                "UPDATE users SET app_view = 'simple' "
+                "WHERE id = %s AND app_view_chosen = FALSE",
+                (uid,),
+            )
+        _clear_view_cache()
         return True
     except Exception as exc:
         _log.warning("app_view write failed: %s", exc)
         return False
+
+
+def apply_learning_view(user_id) -> bool:
+    """Simple view for a learning or paper path the user has not overridden."""
+    return set_app_view(user_id, "simple", chosen=False)
+
+
+def offer_full_view_prompt(user_id) -> bool:
+    """Ask a Simple user to switch. Does not change ``app_view``."""
+    if not user_id:
+        return False
+    try:
+        from app.models import _postgres_user_id
+        from app.db import execute
+
+        uid = _postgres_user_id(user_id)
+        if uid is None:
+            return False
+        execute(
+            "UPDATE users SET full_view_offer = TRUE "
+            "WHERE id = %s AND app_view = 'simple'",
+            (uid,),
+        )
+        _clear_view_cache()
+        return True
+    except Exception as exc:
+        _log.warning("full view offer failed: %s", exc)
+        return False
+
+
+def dismiss_full_view_offer(user_id) -> bool:
+    """Hide the prompt and leave the current view in place."""
+    if not user_id:
+        return False
+    try:
+        from app.models import _postgres_user_id
+        from app.db import execute
+
+        uid = _postgres_user_id(user_id)
+        if uid is None:
+            return False
+        execute(
+            "UPDATE users SET full_view_offer = FALSE WHERE id = %s",
+            (uid,),
+        )
+        _clear_view_cache()
+        return True
+    except Exception as exc:
+        _log.warning("full view offer dismiss failed: %s", exc)
+        return False
+
+
+def connect_view_action(*, had_real, newly_saved, paper_saved) -> str | None:
+    """What a portal return should do to the view.
+
+    ``simple`` — the new accounts are only Alpaca Paper, and the user had
+    no real brokerage yet. ``offer_full`` — the first real brokerage just
+    landed; the view stays put and Simple gets a switch prompt. Anything
+    else, including a lookup failure, leaves the view alone.
+    """
+    if had_real is not False or not newly_saved:
+        return None
+    if paper_saved == newly_saved and paper_saved > 0:
+        return "simple"
+    if newly_saved > paper_saved:
+        return "offer_full"
+    return None
+
+
+def note_connect_view(user_id, *, had_real, newly_saved, paper_saved) -> str | None:
+    """Apply the portal-return view rule. Never raises."""
+    action = connect_view_action(
+        had_real=had_real, newly_saved=newly_saved, paper_saved=paper_saved,
+    )
+    try:
+        if action == "simple":
+            apply_learning_view(user_id)
+        elif action == "offer_full":
+            offer_full_view_prompt(user_id)
+    except Exception as exc:
+        _log.warning("connect view update failed: %s", exc)
+    return action
+
+
+FULL_VIEW_PAGES = {
+    "/strategies": "Strategies",
+    "/story": "Trader Profile",
+    "/insights": "AI Insights",
+}
+
+
+def safe_full_view_next(raw) -> str | None:
+    """A same-site Full-view path. Anything else is dropped."""
+    text = (raw or "").strip()
+    if not text.startswith("/") or text.startswith("//") or "\\" in text:
+        return None
+    path, _, query = text.partition("?")
+    if path not in FULL_VIEW_PAGES:
+        return None
+    if any(ch in query for ch in " <>\"'#"):
+        return None
+    return path if not query else f"{path}?{query}"
+
+
+def simple_view_hold():
+    """The switch-to-Full card, or None when this request should load the page."""
+    from flask import render_template, request
+    from flask_login import current_user
+
+    if not getattr(current_user, "is_authenticated", False):
+        return None
+    path = request.path.rstrip("/") or "/"
+    title = FULL_VIEW_PAGES.get(path)
+    if not title or get_app_view(current_user.id) != "simple":
+        return None
+    nxt = request.full_path[:-1] if request.full_path.endswith("?") else request.full_path
+    return render_template(
+        "simple_hold.html",
+        title=title,
+        page_title=title,
+        next_path=nxt,
+    )
 
 
 def viewer_flags(user_id) -> tuple[bool, bool]:

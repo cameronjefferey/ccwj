@@ -509,19 +509,22 @@ def _inject_feature_flags():
     privacy_mode = False
     simple_view = False
     has_paper_account = False
+    full_view_offer = False
     try:
         if current_user.is_authenticated:
             _prof = _viewer_profile() or {}
             compact_tables = bool(_prof.get("compact_tables"))
             from app.privacy import privacy_mode_on
             privacy_mode = privacy_mode_on()
-            from app.paper_accounts import viewer_flags
+            from app.paper_accounts import full_view_offer_open, viewer_flags
             simple_view, has_paper_account = viewer_flags(current_user.id)
+            full_view_offer = full_view_offer_open(current_user.id)
     except Exception:
         compact_tables = False
         privacy_mode = False
         simple_view = False
         has_paper_account = False
+        full_view_offer = False
 
     return {
         "insights_enabled": current_app.config.get("INSIGHTS_ENABLED", True),
@@ -554,6 +557,7 @@ def _inject_feature_flags():
         "privacy_mode": privacy_mode,
         "simple_view": simple_view,
         "has_paper_account": has_paper_account,
+        "full_view_offer": full_view_offer,
     }
 
 

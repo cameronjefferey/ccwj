@@ -1,9 +1,11 @@
 """Reverse-trial plan state — derivation, gating, and UI banner data.
 
 The billing model (Aug 2026): every new signup is ``plan='trial'`` and gets
-the FULL product, no card. The trial clock starts at FIRST DATA (first
-successful broker sync or first CSV upload), not at signup — the 30 days
-exist to let the trader live through a monthly options cycle with real data.
+the FULL product, no card. Learning and paper trading are free. The trial
+clock starts only when the first real (non-paper) brokerage account is
+connected — not at signup, not on an Alpaca Paper sync, and not on a CSV
+upload. The 30 days exist to let the trader live through a monthly options
+cycle with real data. A stored ``trial_started_at`` is never rewritten.
 At day 30 the account FREEZES (syncs stop; every page stays readable). For
 the next 30 days the SnapTrade connection stays alive so subscribing resumes
 instantly; at day 60 the daily lifecycle cron (``app/plan_lifecycle_cli.py``)
@@ -53,6 +55,13 @@ STATE_BETA = "beta"
 STATE_ACTIVE_CANCELING = "active_canceling"
 
 _SYNC_BLOCKED_STATES = (STATE_FROZEN, STATE_GRACE_EXPIRED)
+
+# Logged-out pricing, the no-data plan card, and the pages that explain
+# when the clock starts. Keep this sentence identical everywhere.
+PAPER_IS_FREE = (
+    "Learning and paper trading are free. "
+    "Your 30-day trial starts when you connect a real brokerage."
+)
 
 
 def _as_date(ts):
@@ -139,6 +148,46 @@ def _is_exempt_username(username):
         return False
 
 
+def user_has_real_brokerage(user_id):
+    """Whether this user has a non-paper brokerage tenant.
+
+    Alpaca Paper and manual CSV tenants do not count. ``True`` means a real
+    brokerage is on the account (active or the disconnected row a lapsed
+    trial keeps). ``False`` means the lookup succeeded and none is there.
+    ``None`` means the lookup failed — callers must not start a clock, and
+    must not pretend a stored trial date belongs to a paper-only user.
+    """
+    try:
+        from app.models import get_broker_tenants_for_user
+        from app.paper_accounts import is_paper_row
+
+        rows = get_broker_tenants_for_user(user_id) or []
+    except Exception as exc:
+        _log.warning("user_has_real_brokerage(%s) failed: %s", user_id, exc)
+        return None
+    for row in rows:
+        tid = str((row or {}).get("tenant_id") or "")
+        if not tid or tid.startswith("manual:") or tid.startswith("demo:"):
+            continue
+        if is_paper_row(row):
+            continue
+        return True
+    return False
+
+
+def _trial_clock(user_id, plan, trial_started_at):
+    """The clock the product should use. Paper-only and account-less trials
+    stay unstarted even when an older sync already stored a date. A lookup
+    failure leaves the stored date alone. Beta and active ignore this."""
+    plan_name = (plan or PLAN_TRIAL).strip().lower()
+    if plan_name != PLAN_TRIAL:
+        return trial_started_at
+    has_real = user_has_real_brokerage(user_id)
+    if has_real is False:
+        return None
+    return trial_started_at
+
+
 def plan_state(user_id, now=None):
     """Derived plan state for a user id. FAILS OPEN to beta (exempt) when the
     row can't be read — a DB hiccup must never freeze a legitimate user."""
@@ -147,7 +196,7 @@ def plan_state(user_id, now=None):
         return STATE_BETA
     return derive_plan_state(
         row.get("plan"),
-        row.get("trial_started_at"),
+        _trial_clock(user_id, row.get("plan"), row.get("trial_started_at")),
         exempt=_is_exempt_username(row.get("username")),
         now=now,
     )
@@ -160,10 +209,74 @@ def user_sync_allowed(user_id):
     return plan_state(user_id) not in _SYNC_BLOCKED_STATES
 
 
+def _real_brokerage_exists_sql():
+    """Rows that count as a real brokerage. Matches ``user_has_real_brokerage``:
+    active or disconnected, not manual CSV, not demo, not Alpaca Paper."""
+    from app.paper_accounts import _PAPER_MARKERS
+
+    blob = (
+        "lower(coalesce(bt.broker_label, '') || ' ' || "
+        "coalesce(bt.account_name, '') || ' ' || "
+        "coalesce(bt.display_nickname, ''))"
+    )
+    paper_absent = " AND ".join(
+        f"strpos({blob}, %s) = 0" for _marker in _PAPER_MARKERS
+    )
+    return (
+        "SELECT 1 FROM broker_tenants AS bt "
+        "WHERE bt.user_id = u.id "
+        "AND bt.connection_status IN ('active', 'disconnected') "
+        "AND bt.tenant_id NOT LIKE 'manual:%' "
+        "AND bt.tenant_id NOT LIKE 'demo:%' "
+        f"AND {paper_absent}"
+    ), tuple(_PAPER_MARKERS)
+
+
+def clear_stale_trial_clocks():
+    """Null ``trial_started_at`` for trial users with no real brokerage.
+
+    One-time cleanup of clocks that started on Alpaca Paper or on no
+    brokerage at all, and safe to re-run: a user with a real brokerage is
+    excluded. Best-effort — never raises."""
+    try:
+        exists_sql, params = _real_brokerage_exists_sql()
+        execute(
+            "UPDATE users AS u SET trial_started_at = NULL "
+            "WHERE u.plan = %s AND u.trial_started_at IS NOT NULL "
+            f"AND NOT EXISTS ({exists_sql})",
+            (PLAN_TRIAL, *params),
+        )
+    except Exception as exc:
+        _log.warning("clear_stale_trial_clocks failed: %s", exc)
+
+
+def clear_stale_trial_clock(user_id):
+    """Guard: drop one user's trial date when they have no real brokerage.
+
+    A lookup failure does nothing. A real brokerage is left untouched.
+    Best-effort — never raises."""
+    if user_has_real_brokerage(user_id) is not False:
+        return
+    try:
+        execute(
+            "UPDATE users SET trial_started_at = NULL "
+            "WHERE id = %s AND plan = %s AND trial_started_at IS NOT NULL",
+            (user_id, PLAN_TRIAL),
+        )
+    except Exception as exc:
+        _log.warning("clear_stale_trial_clock(%s) failed: %s", user_id, exc)
+
+
 def start_trial_clock(user_id):
-    """Stamp ``trial_started_at`` at the first-data moment (first successful
-    sync or first CSV upload). Once-only by construction (WHERE ... IS NULL)
-    and a no-op for beta/active users. Best-effort — never raises."""
+    """Stamp ``trial_started_at`` when a real brokerage is already connected.
+
+    Once-only (``trial_started_at IS NULL``) and a no-op for beta/active
+    users. Without a real brokerage the guard clears a stale date instead,
+    so the full 30 days start on the first real connection. A lookup
+    failure neither stamps nor clears. Best-effort — never raises."""
+    if user_has_real_brokerage(user_id) is not True:
+        clear_stale_trial_clock(user_id)
+        return
     try:
         row = execute_returning(
             "UPDATE users SET trial_started_at = NOW() "
@@ -218,9 +331,10 @@ def plan_status_for_banner(user_id, now=None):
     row = get_user_plan_row(user_id)
     if not row:
         return None
+    started = _trial_clock(user_id, row.get("plan"), row.get("trial_started_at"))
     state = derive_plan_state(
         row.get("plan"),
-        row.get("trial_started_at"),
+        started,
         exempt=_is_exempt_username(row.get("username")),
         now=now,
     )
@@ -241,8 +355,7 @@ def plan_status_for_banner(user_id, now=None):
         }
     if state not in (STATE_TRIALING, STATE_FROZEN, STATE_GRACE_EXPIRED):
         return None
-    days = _days_since(row.get("trial_started_at"), now=now) or 0
-    started = row.get("trial_started_at")
+    days = _days_since(started, now=now) or 0
     from datetime import timedelta
 
     frozen_on = (started + timedelta(days=TRIAL_DAYS)).date() if started else None
@@ -261,7 +374,7 @@ def plan_status_for_banner(user_id, now=None):
 
 _TRIAL_CARD_DEFAULT = {
     "badge": "Start here",
-    "note": "30 days from your first data \u2014 no card required",
+    "note": PAPER_IS_FREE,
     "cta_label": "Connect your data",
     "cta_endpoint": "get_started",
 }
@@ -285,9 +398,10 @@ def trial_card_context(user_id, now=None):
         row = get_user_plan_row(user_id)
         if not row:
             return dict(_TRIAL_CARD_DEFAULT)
+        started = _trial_clock(user_id, row.get("plan"), row.get("trial_started_at"))
         state = derive_plan_state(
             row.get("plan"),
-            row.get("trial_started_at"),
+            started,
             exempt=_is_exempt_username(row.get("username")),
             now=now,
         )
@@ -295,8 +409,6 @@ def trial_card_context(user_id, now=None):
             return dict(_TRIAL_CARD_DEFAULT)
 
         from datetime import timedelta
-
-        started = row.get("trial_started_at")
 
         if state == STATE_TRIALING:
             days = _days_since(started, now=now) or 0
@@ -393,12 +505,12 @@ def pricing_story(trial_card):
             "show_freeze_explainer": True,
         }
     return {
-        "title": "Every feature, free for 30 days. No credit card.",
+        "title": PAPER_IS_FREE,
         "lead": (
-            "Connect a broker to start your mirror. Positions and balances "
-            "usually show up within minutes; trade history often takes a few "
-            "hours, and sometimes up to a day. Your data stays readable "
-            "forever \u2014 the subscription is for keeping the mirror live."
+            "Positions and balances usually show up within minutes; trade "
+            "history often takes a few hours, and sometimes up to a day. "
+            "Your data stays readable forever \u2014 the subscription is for "
+            "keeping the mirror live."
         ),
         "freeze_bullet": freeze_bullet,
         "show_freeze_explainer": True,

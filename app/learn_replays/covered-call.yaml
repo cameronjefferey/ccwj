@@ -1,0 +1,60 @@
+slug: covered-call
+number: 3
+title: A covered call
+strategy: Covered call
+ticker: CEDAR
+lesson_slug: covered-calls
+summary: Sell one call against 100 shares, then decide when the stock rises through the strike.
+price_source:
+  kind: illustrative
+  label: Illustrative prices
+  note: Illustrative prices for a sample stock, CEDAR. Not a listed ticker, not a market quote, and not a customer's trade.
+leg:
+  side: short
+  right: call
+  strike: 82
+  contracts: 1
+shares:
+  quantity: 100
+  cost: 80
+days:
+  - {day: 1, underlying: 80.00, option: 1.40, left: 24}
+  - {day: 2, underlying: 80.80, option: 1.60, left: 22}
+  - {day: 3, underlying: 81.60, option: 2.00, left: 20}
+  - {day: 4, underlying: 82.40, option: 2.40, left: 17}
+  - {day: 5, underlying: 83.20, option: 2.90, left: 14}
+  - {day: 6, underlying: 84.00, option: 3.30, left: 12}
+  - {day: 7, underlying: 84.80, option: 3.60, left: 10}
+  - {day: 8, underlying: 85.60, option: 4.20, left: 7}
+  - {day: 9, underlying: 86.40, option: 4.80, left: 5}
+  - {day: 10, underlying: 87.20, option: 5.40, left: 2}
+  - {day: 11, underlying: 88.00, option: 6.00, left: 0}
+decisions:
+  - id: through
+    after_day: 7
+    prompt: The stock is up 6% and above the strike. Buying the call back would cost more than the premium you collected. 10 days are left.
+    question: Close the call, let the shares be called away, or roll?
+    facts:
+      stock_move_pct: 6
+      days_left: 10
+    choices:
+      - id: close
+        label: Close the call
+        result_label: Close the call, shares still held
+        mode: close
+        explanation: Buying the call back costs more than the premium collected, so the option result is -$220.00. The shares are still held. The combined mark on this day is +$260.00.
+      - id: assigned
+        label: Called away
+        result_label: Called away at the strike
+        mode: assigned
+        explanation: The shares are sold at the $82.00 strike and the premium collected stays. This choice ends at +$340.00. The stock finishes higher than the strike, and that extra rise is not yours.
+      - id: roll
+        label: Roll
+        result_label: Roll, assumed new price
+        mode: roll
+        new_credit: 1.80
+        assumption: The new call's price is an assumption for this lesson, not a quote.
+        explanation: The new call's $1.80 price is an assumption, not a quote. If that call expires worthless and the shares are still held, this choice ends at +$760.00.
+recap:
+  - The premium is collected at the start. When the stock rises through the strike, buying the call back can cost more than that premium. Letting the shares be called away keeps the premium and the gain up to the strike, and gives up the rest.
+  - The roll uses an assumed price. The other two results use only the prices in this path.

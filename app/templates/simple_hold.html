@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card p-4">
+            <h1 class="h4 mb-2">{{ page_title }} is in Full view</h1>
+            <p class="mb-3">Simple view keeps Practice, Learn, Overview, and Positions. Switch to Full view to open {{ page_title }}.</p>
+            <form method="POST" action="{{ url_for('profile', tab='preferences') }}" class="d-flex flex-wrap gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="set_app_view">
+                <input type="hidden" name="app_view" value="full">
+                <input type="hidden" name="next" value="{{ next_path }}">
+                <button class="btn btn-primary" type="submit">Switch to Full view</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('weekly_review') }}">Back to Overview</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

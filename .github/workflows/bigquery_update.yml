@@ -168,12 +168,14 @@ jobs:
       # visit is fast. if: always() because a partially failed build may
       # still have mutated tables (dbt is not transactional across models) —
       # serving a coherent-but-stale cache over changed tables is worse.
-      # `|| true` so a flush hiccup can never fail the build.
+      # POST the canonical host. ccwj.onrender.com 301s to happytrader.me,
+      # curl does not follow that, and a swallowed failure left pages on a
+      # stale cache for the 24h TTL. -fsS fails the job on a non-2xx.
       - name: Flush + warm app query cache
         if: always()
         run: |
-          curl -fsS -m 20 -X POST "https://ccwj.onrender.com/internal/cache/flush?ready=1" \
-            -H "X-Cache-Flush-Token: ${{ secrets.CACHE_FLUSH_TOKEN }}" || true
+          curl -fsS -m 20 -X POST "https://happytrader.me/internal/cache/flush?ready=1" \
+            -H "X-Cache-Flush-Token: ${{ secrets.CACHE_FLUSH_TOKEN }}"
 
   # Keep the local-dev mirror within one build of prod. Failure here must
   # NOT fail the prod warehouse job — clone is a convenience for local

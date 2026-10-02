@@ -2468,8 +2468,10 @@ def upload():
         flash("Couldn't save that upload right now. Try again in a moment, or contact support if it keeps happening.", "danger")
         return redirect(url_for("upload"))
 
-    # Reverse trial: first data starts the 30-day clock (once-only,
-    # trial-plan-only inside the helper; best-effort).
+    # A CSV does not start the 30-day clock. start_trial_clock stamps
+    # only when a real brokerage is already connected. Without one it
+    # clears a stale paper-only date and leaves a real brokerage's date
+    # alone. Best-effort.
     try:
         from app.plan import start_trial_clock
         start_trial_clock(current_user.id)

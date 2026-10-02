@@ -124,12 +124,187 @@ def test_start_trial_clock_sql_guard(monkeypatch):
         captured["params"] = params
         return None
 
+    monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid: True)
     monkeypatch.setattr(plan_mod, "execute_returning", fake_returning)
     plan_mod.start_trial_clock(42)
     assert "trial_started_at IS NULL" in captured["sql"]
     assert "plan = %s" in captured["sql"]
     assert "RETURNING username" in captured["sql"]
     assert captured["params"] == (42, "trial")
+    assert "trial_started_at =" not in captured["sql"].split("WHERE", 1)[-1]
+
+
+def test_paper_only_and_no_brokerage_never_start_the_clock(monkeypatch):
+    stamps = []
+    monkeypatch.setattr(
+        plan_mod, "execute_returning",
+        lambda *args, **kwargs: stamps.append(args),
+    )
+    monkeypatch.setattr(plan_mod, "execute", lambda *args, **kwargs: None)
+    for has_real in (False, None):
+        stamps.clear()
+        monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid, flag=has_real: flag)
+        plan_mod.start_trial_clock(7)
+        assert stamps == []
+
+
+def test_paper_only_guard_clears_stale_clock(monkeypatch):
+    """No real brokerage: drop the stored date so the next real connect is day 1."""
+    cleared = {}
+
+    def fake_execute(sql, params=None):
+        cleared["sql"] = sql
+        cleared["params"] = params
+
+    monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid: False)
+    monkeypatch.setattr(plan_mod, "execute", fake_execute)
+    monkeypatch.setattr(
+        plan_mod, "execute_returning",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not stamp")),
+    )
+    plan_mod.start_trial_clock(7)
+    assert "SET trial_started_at = NULL" in cleared["sql"]
+    assert "plan = %s" in cleared["sql"]
+    assert "trial_started_at IS NOT NULL" in cleared["sql"]
+    assert cleared["params"] == (7, "trial")
+
+
+def test_lookup_failure_neither_stamps_nor_clears(monkeypatch):
+    monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid: None)
+    monkeypatch.setattr(
+        plan_mod, "execute",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not clear")),
+    )
+    monkeypatch.setattr(
+        plan_mod, "execute_returning",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not stamp")),
+    )
+    plan_mod.start_trial_clock(7)
+
+
+def test_clear_stale_trial_clocks_spares_real_brokerages(monkeypatch):
+    captured = {}
+
+    def fake_execute(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+
+    monkeypatch.setattr(plan_mod, "execute", fake_execute)
+    plan_mod.clear_stale_trial_clocks()
+    sql = captured["sql"]
+    assert "SET trial_started_at = NULL" in sql
+    assert "u.plan = %s" in sql
+    assert "NOT EXISTS" in sql
+    assert "connection_status IN ('active', 'disconnected')" in sql
+    assert "manual:%" in sql
+    assert "demo:%" in sql
+    assert "alpaca paper" in captured["params"]
+    assert "alpaca-paper" in captured["params"]
+    assert captured["params"][0] == "trial"
+    assert "plan = 'beta'" not in sql
+    assert "plan = 'active'" not in sql
+
+
+def test_migrate_clear_stale_paper_trial_clocks(monkeypatch):
+    called = []
+    monkeypatch.setattr(
+        plan_mod, "clear_stale_trial_clocks",
+        lambda: called.append("cleared"),
+    )
+    from app.models import _migrate_clear_stale_paper_trial_clocks
+    _migrate_clear_stale_paper_trial_clocks()
+    assert called == ["cleared"]
+
+
+def test_paper_only_user_is_never_gated(monkeypatch):
+    """Gating ignores a stored paper date. The guard clears it on the next sync."""
+    stored = _started(400)
+    monkeypatch.setattr(plan_mod, "_is_exempt_username", lambda u: False)
+    monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid: False)
+    monkeypatch.setattr(
+        plan_mod, "get_user_plan_row",
+        lambda uid: {"plan": "trial", "trial_started_at": stored, "username": "paper"},
+    )
+    assert plan_mod.plan_state(7, now=NOW) == STATE_NO_DATA
+    assert plan_mod.user_sync_allowed(7) is True
+    assert plan_mod.plan_status_for_banner(7, now=NOW) is None
+    card = plan_mod.trial_card_context(7, now=NOW)
+    assert card["badge"] == "Start here"
+    assert "connect a real brokerage" in card["note"]
+    assert stored == _started(400)
+
+
+def test_real_connection_keeps_an_existing_trial_date(monkeypatch):
+    started = _started(35)
+    monkeypatch.setattr(plan_mod, "_is_exempt_username", lambda u: False)
+    monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid: True)
+    monkeypatch.setattr(
+        plan_mod, "get_user_plan_row",
+        lambda uid: {"plan": "trial", "trial_started_at": started, "username": "real"},
+    )
+    assert plan_mod.plan_state(7, now=NOW) == STATE_FROZEN
+    captured = {}
+
+    def fake_returning(sql, params=None):
+        captured["sql"] = sql
+        return None
+
+    monkeypatch.setattr(plan_mod, "execute_returning", fake_returning)
+    plan_mod.start_trial_clock(7)
+    assert "trial_started_at IS NULL" in captured["sql"]
+    assert "SET trial_started_at = NULL" not in captured["sql"]
+
+
+def test_real_brokerage_is_not_paper_or_csv(monkeypatch):
+    rows = {
+        1: [
+            {
+                "tenant_id": "snaptrade:paper",
+                "account_name": "Alpaca Paper Account",
+                "broker_label": "Alpaca Paper",
+            },
+            {
+                "tenant_id": "manual:manual:1:IRA",
+                "account_name": "IRA",
+                "broker_label": "",
+            },
+        ],
+        2: [
+            {
+                "tenant_id": "snaptrade:paper",
+                "account_name": "Alpaca Paper Account",
+                "broker_label": "Alpaca Paper",
+            },
+            {
+                "tenant_id": "snaptrade:schwab",
+                "account_name": "Schwab Account",
+                "broker_label": "Schwab",
+            },
+        ],
+    }
+    monkeypatch.setattr(
+        "app.models.get_broker_tenants_for_user",
+        lambda uid: rows.get(uid, []),
+    )
+    assert plan_mod.user_has_real_brokerage(1) is False
+    assert plan_mod.user_has_real_brokerage(2) is True
+    assert plan_mod.user_has_real_brokerage(3) is False
+
+
+def test_lifecycle_skips_paper_only_trials(monkeypatch):
+    monkeypatch.setattr(
+        "app.db.fetch_all",
+        lambda *args, **kwargs: [
+            {"user_id": 1, "username": "paper", "email": "p@x", "trial_started_at": NOW},
+            {"user_id": 2, "username": "real", "email": "r@x", "trial_started_at": NOW},
+        ],
+    )
+    monkeypatch.setattr("app.models.is_admin", lambda username: False)
+    monkeypatch.setattr(
+        "app.plan.user_has_real_brokerage",
+        lambda uid: uid == 2,
+    )
+    assert [row["user_id"] for row in cli_mod._list_running_trials()] == [2]
 
 
 def test_set_user_plan_rejects_unknown(monkeypatch):
@@ -155,6 +330,7 @@ def test_banner_none_for_beta_active_no_data(monkeypatch):
 
 def test_banner_shapes(monkeypatch):
     monkeypatch.setattr(plan_mod, "_is_exempt_username", lambda u: False)
+    monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid: True)
 
     monkeypatch.setattr(
         plan_mod, "get_user_plan_row",
@@ -182,6 +358,7 @@ def test_banner_shapes(monkeypatch):
 
 def _mock_plan_row(monkeypatch, plan, started, username="u"):
     monkeypatch.setattr(plan_mod, "_is_exempt_username", lambda u: False)
+    monkeypatch.setattr(plan_mod, "user_has_real_brokerage", lambda uid: True)
     monkeypatch.setattr(
         plan_mod, "get_user_plan_row",
         lambda uid: {"plan": plan, "trial_started_at": started, "username": username},

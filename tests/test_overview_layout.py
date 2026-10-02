@@ -25,6 +25,17 @@ def test_overview_story_order_is_headline_then_what_happened_then_accounts():
     assert "border:1px solid #5b8cff" not in PAGE
 
 
+def test_simple_view_tucks_execution_and_performance():
+    exec_at = BELOW.index('id="ov-execution"')
+    perf_at = BELOW.index('id="ov-performance"')
+    week_at = BELOW.index('id="ov-week"')
+    assert BELOW.rfind("{% if not simple_view %}", 0, exec_at) != -1
+    assert BELOW.rfind("{% if not simple_view %}", 0, perf_at) > exec_at
+    assert "simple-view-full execution" in BELOW[exec_at:perf_at]
+    assert "simple-view-full performance" in BELOW[perf_at:week_at]
+    assert PAGE.index("{% if not simple_view %}") < PAGE.index("See your trader profile")
+
+
 def test_secondary_overview_sections_are_collapsed_in_order():
     assert BELOW.index('id="ov-radar"') < BELOW.index('id="ov-execution"')
     assert BELOW.index('id="ov-execution"') < BELOW.index('{% include "_overview_daily.html" %}')

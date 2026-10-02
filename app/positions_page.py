@@ -482,6 +482,7 @@ ERROR_DEFAULTS = dict(
     today=date.today(),
     timedelta=timedelta,
     view_accounts=[],
+    paper_fills=[],
 )
 
 
@@ -1104,10 +1105,22 @@ def positions():
         app.logger.warning("beginner readout on positions failed: %s", exc)
         beginner_trades = []
 
+    paper_fills = []
+    try:
+        from app.paper_practice import paper_fill_notices
+        known_symbols = []
+        if "symbol" in df.columns:
+            known_symbols = [str(symbol) for symbol in df["symbol"].dropna().unique()]
+        paper_fills = paper_fill_notices(current_user.id, known_symbols)
+    except Exception as exc:
+        app.logger.warning("paper fill notices failed: %s", exc)
+        paper_fills = []
+
     return render_template(
         "positions.html",
         title="Positions",
         beginner_trades=beginner_trades,
+        paper_fills=paper_fills,
         rows=rows,
         symbol_rows=symbol_rows,
         kpis=kpis,

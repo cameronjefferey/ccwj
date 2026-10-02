@@ -1,8 +1,10 @@
-"""Where someone left off in Options 101.
+"""Where someone left off in Options 101, and which replays they finished.
 
 The browser keeps this in localStorage so it works logged out. Signed-in
 accounts (except the shared demo user) also store one small JSON blob so
-the same spot is there on the next device. No points, streaks, or badges.
+the same spot is there on the next device. ``done`` is episodes. ``replays``
+is replay slugs. A finished replay is a check on /learn, not a score.
+No points, streaks, or badges.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import logging
 import time
 
 from app import learn_catalog as catalog
+from app import learn_replay
 from app.db import execute, fetch_one
 
 logger = logging.getLogger(__name__)
@@ -21,7 +24,7 @@ _MAX_UPDATED = 9_000_000_000_000
 
 
 def empty():
-    return {"updated": 0, "last": None, "done": []}
+    return {"updated": 0, "last": None, "done": [], "replays": []}
 
 
 def sanitize(payload):
@@ -35,6 +38,14 @@ def sanitize(payload):
         if slug in by_slug and slug not in done:
             done.append(slug)
         if len(done) >= 50:
+            break
+
+    replay_slugs = {replay["slug"] for replay in learn_replay.replays()}
+    replays = []
+    for slug in payload.get("replays") or []:
+        if slug in replay_slugs and slug not in replays:
+            replays.append(slug)
+        if len(replays) >= 50:
             break
 
     last = None
@@ -58,9 +69,9 @@ def sanitize(payload):
     except (TypeError, ValueError):
         updated = 0
     updated = max(0, min(updated, _MAX_UPDATED))
-    if (last or done) and updated == 0:
+    if (last or done or replays) and updated == 0:
         updated = int(time.time() * 1000)
-    return {"updated": updated, "last": last, "done": done}
+    return {"updated": updated, "last": last, "done": done, "replays": replays}
 
 
 def merge(left, right):
@@ -69,6 +80,10 @@ def merge(left, right):
     for slug in list(left.get("done") or []) + list(right.get("done") or []):
         if slug not in done:
             done.append(slug)
+    replays = []
+    for slug in list(left.get("replays") or []) + list(right.get("replays") or []):
+        if slug not in replays:
+            replays.append(slug)
     left_updated = left.get("updated") or 0
     right_updated = right.get("updated") or 0
     last = left.get("last") if left_updated >= right_updated else right.get("last")
@@ -78,6 +93,7 @@ def merge(left, right):
         "updated": max(left_updated, right_updated),
         "last": last,
         "done": done,
+        "replays": replays,
     }
 
 
@@ -100,7 +116,7 @@ def load_for_user(user_id):
 
 def save_for_user(user_id, payload):
     incoming = sanitize(payload)
-    if not incoming["last"] and not incoming["done"]:
+    if not incoming["last"] and not incoming["done"] and not incoming["replays"]:
         return load_for_user(user_id)
     merged = merge(incoming, load_for_user(user_id))
     execute(

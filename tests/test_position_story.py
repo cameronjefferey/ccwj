@@ -676,6 +676,11 @@ def test_story_summary_template_with_and_without_early_exits():
     assert "Early exits cost you" in html
     assert "story-callout-amt" in html and "$9,387" in html
     assert "See your full trader profile" in html
+    simple = env.get_template("_story_summary.html").render(
+        symbol="BE", story_header=header, story_summary=summary,
+        story_callout=callout, simple_view=True,
+    )
+    assert "See your full trader profile" not in simple
     assert "story-mirror" not in html
     assert "Early exits" not in quiet
     assert "story-callout" not in quiet
