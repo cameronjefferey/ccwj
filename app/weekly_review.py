@@ -867,35 +867,55 @@ WHERE h.shares > 0
 # the same trading day.
 # Symbol-grain aggregate (like TODAY_MOVES_QUERY): tenant-scoped in SQL,
 # no account column → not DataFrame-filtered (nothing leakable to merge).
-TODAY_OPTIONS_MOVES_QUERY = """
-WITH opt AS (
+def _option_moves_sql(as_of_name, *, on_exact_day=False):
+    """Per-contract option day move, capped at ``as_of_name``.
+
+    The dollar is the same attribution as the position chart
+    (``int_option_contract_daily_pnl``): open marks while the contract
+    is open, and on the close date the full ``realized_pnl``. That
+    realized figure already includes an expiry estimate, so an ITM
+    index spread that expires the day it opens is the net (credit minus
+    intrinsic), not the gross credit a zero mark would show.
+
+    A full close has no open row on the close date. Python folds
+    yesterday's mark into the closed number, so the row reads as one
+    close instead of a mark disappearing plus a lifetime total.
+    """
+    exact = f"AND cur.date = {as_of_name}" if on_exact_day else ""
+    return f"""
+WITH legs AS (
     SELECT
-        m.tenant_id, m.account, m.user_id, m.symbol, m.date,
-        COALESCE(m.cumulative_options_pnl, 0)
-          + COALESCE(m.open_options_unrealized_pnl, 0) AS opt_total,
-        COALESCE(m.open_options_unrealized_pnl, 0) AS open_mtm
-    FROM `ccwj-dbt.analytics.mart_daily_pnl` m
-    WHERE m.date >= DATE_SUB(@as_of, INTERVAL 10 DAY)
-      AND m.date <= @as_of
-      {tenant_filter}
-      AND (
-        COALESCE(m.open_options_unrealized_pnl, 0) != 0
-        OR COALESCE(m.cumulative_options_pnl, 0) != 0
-      )
+        d.tenant_id,
+        d.account,
+        d.user_id,
+        d.symbol,
+        d.trade_symbol,
+        d.date,
+        SUM(IF(d.is_realized_close, COALESCE(d.pnl_today, 0), 0)) AS realized_today,
+        SUM(IF(NOT d.is_realized_close, COALESCE(d.pnl_today, 0), 0)) AS open_mtm
+    FROM `ccwj-dbt.analytics.int_option_contract_daily_pnl` d
+    WHERE d.date >= DATE_SUB({as_of_name}, INTERVAL 10 DAY)
+      AND d.date <= {as_of_name}
+      {{tenant_filter}}
+    GROUP BY 1, 2, 3, 4, 5, 6
 ),
 ranked AS (
     SELECT *,
         ROW_NUMBER() OVER (
-            PARTITION BY tenant_id, account, user_id, symbol
+            PARTITION BY tenant_id, account, user_id, symbol, trade_symbol
             ORDER BY date DESC
         ) AS rn
-    FROM opt
+    FROM legs
 ),
 delta AS (
     SELECT
+        cur.tenant_id,
+        cur.account,
+        cur.user_id,
         cur.symbol,
+        cur.trade_symbol,
         cur.date AS today_date,
-        cur.opt_total - COALESCE(prev.opt_total, 0) AS day_change,
+        cur.realized_today,
         cur.open_mtm,
         COALESCE(prev.open_mtm, 0) AS prev_open_mtm
     FROM ranked cur
@@ -904,21 +924,58 @@ delta AS (
         AND cur.account = prev.account
         AND (cur.user_id IS NOT DISTINCT FROM prev.user_id)
         AND cur.symbol = prev.symbol
+        AND cur.trade_symbol = prev.trade_symbol
         AND prev.rn = 2
     WHERE cur.rn = 1
+      {exact}
+      AND (
+        ABS(cur.realized_today) >= 0.01
+        OR ABS(cur.open_mtm - COALESCE(prev.open_mtm, 0)) >= 0.01
+      )
 )
 SELECT
-    symbol,
-    MAX(today_date) AS today_date,
-    ROUND(SUM(day_change), 2) AS dollar_impact
-FROM delta
--- Only symbols with a live option footprint: an open MTM on either day,
--- or a realization today. Skips long-closed positions where both days
--- carry the same frozen cumulative value (delta 0 rows are noise).
-WHERE open_mtm != 0 OR prev_open_mtm != 0 OR day_change != 0
-GROUP BY symbol
-HAVING ABS(SUM(day_change)) >= 0.01
+    d.tenant_id,
+    d.account,
+    d.symbol,
+    d.trade_symbol,
+    d.today_date,
+    c.option_strike,
+    c.option_type,
+    c.option_expiry,
+    c.direction,
+    GREATEST(
+        COALESCE(c.contracts_sold_to_open, 0),
+        COALESCE(c.contracts_bought_to_open, 0)
+    ) AS quantity,
+    ROUND(d.realized_today, 2) AS realized_today,
+    ROUND(d.open_mtm, 2) AS open_mtm,
+    ROUND(d.prev_open_mtm, 2) AS prev_open_mtm
+FROM delta d
+LEFT JOIN (
+    SELECT
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        ANY_VALUE(option_strike) AS option_strike,
+        ANY_VALUE(option_type) AS option_type,
+        ANY_VALUE(option_expiry) AS option_expiry,
+        ANY_VALUE(direction) AS direction,
+        ANY_VALUE(contracts_sold_to_open) AS contracts_sold_to_open,
+        ANY_VALUE(contracts_bought_to_open) AS contracts_bought_to_open
+    FROM `ccwj-dbt.analytics.int_option_contracts`
+    GROUP BY 1, 2, 3, 4
+) c
+    ON (d.tenant_id IS NOT DISTINCT FROM c.tenant_id)
+    AND d.account = c.account
+    AND (d.user_id IS NOT DISTINCT FROM c.user_id)
+    AND d.trade_symbol = c.trade_symbol
 """
+
+
+# Latest contract rows at or before @as_of. Python keeps only the equity
+# session's date so a stale option row is not added to a newer close.
+TODAY_OPTIONS_MOVES_QUERY = _option_moves_sql("@as_of")
 
 # Dividends actually PAID today (cash landing, not the projected ex-div
 # watch list). int_dividend_events is per-event; we take the last few
@@ -3356,6 +3413,184 @@ def _rank_today_mover_tiles(items):
     return winners, losers
 
 
+def _option_num(value, default=0.0):
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def split_option_day(open_today, prev_open, realized):
+    """Day's open-mark change and day's close, as two dollars.
+
+    A full close (including an expiry estimate) has no open mark on the
+    close date. Yesterday's mark is part of that close, so a spread that
+    expires in the money is one closed number — the net — and not the
+    gross credit a zero mark would have shown while the contract was
+    still treated as open.
+    """
+    live = _option_num(open_today)
+    prev = _option_num(prev_open)
+    booked = _option_num(realized)
+    if abs(booked) < 0.005:
+        return round(live - prev, 2), 0.0
+    if abs(live) < 0.005:
+        return 0.0, round(booked - prev, 2)
+    return round(live - prev, 2), round(booked, 2)
+
+
+def option_mover_caption(open_impact, closed_impact):
+    """Plain label for one option mover row.
+
+    Only a mark change: ``Open contracts, change in value``.
+    Only a close: ``Closed today``.
+    Both: ``+$X open · −$Y closed``.
+    """
+    open_v = _option_num(open_impact)
+    closed_v = _option_num(closed_impact)
+    has_open = abs(open_v) >= 0.5
+    has_closed = abs(closed_v) >= 0.5
+    if has_open and has_closed:
+        return (
+            f"{_signed_option_dollars(open_v)} open · "
+            f"{_signed_option_dollars(closed_v)} closed"
+        )
+    if has_closed:
+        return "Closed today"
+    if has_open:
+        return "Open contracts, change in value"
+    return ""
+
+
+def _signed_option_dollars(value):
+    n = int(round(abs(float(value))))
+    if float(value) < 0:
+        return f"−${n:,}"
+    return f"+${n:,}"
+
+
+def _option_cp(value):
+    text = str(value or "").strip().upper()
+    if text in ("C", "CALL"):
+        return "C"
+    if text in ("P", "PUT"):
+        return "P"
+    return ""
+
+
+def _option_strike_text(value):
+    try:
+        strike = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if strike != strike:
+        return ""
+    if abs(strike - round(strike)) < 1e-6:
+        return str(int(round(strike)))
+    return f"{strike:.2f}".rstrip("0").rstrip(".")
+
+
+def _option_qty_text(value):
+    try:
+        qty = abs(float(value))
+    except (TypeError, ValueError):
+        return ""
+    if qty < 1e-6 or qty != qty:
+        return ""
+    if abs(qty - round(qty)) < 1e-6:
+        return str(int(round(qty)))
+    return f"{qty:g}"
+
+
+def _option_leg_from_row(row):
+    """One contract's identity for a mover chip, or None."""
+    root = str(row.get("symbol") or "").strip().upper()
+    cp = _option_cp(row.get("option_type"))
+    strike_text = _option_strike_text(row.get("option_strike"))
+    qty_text = _option_qty_text(row.get("quantity"))
+    if not cp or not strike_text:
+        parsed = _parse_occ(row.get("trade_symbol"))
+        if parsed:
+            cp = cp or ("C" if parsed["option_type"] == "Call" else "P")
+            strike_text = strike_text or _option_strike_text(parsed["strike"])
+    if not root or not cp or not strike_text or not qty_text:
+        return None
+    direction = str(row.get("direction") or "").strip()
+    if direction == "Sold":
+        side = "short"
+    elif direction == "Bought":
+        side = "long"
+    else:
+        side = ""
+    expiry = _iso_day(row.get("option_expiry")) or ""
+    return {
+        "root": root,
+        "cp": cp,
+        "strike": float(strike_text) if "." in strike_text else float(int(strike_text)),
+        "qty": qty_text,
+        "qty_n": float(qty_text),
+        "side": side,
+        "expiry": expiry,
+        "tenant": str(row.get("tenant_id") or ""),
+    }
+
+
+def option_contract_detail(rows):
+    """``10× 7650/7655C spread`` or ``2× MU 120C``.
+
+    A short and a long of the same type, expiry, and size in one account
+    are one spread. The short strike is written first.
+    """
+    legs = []
+    for row in rows or []:
+        leg = _option_leg_from_row(row)
+        if leg:
+            legs.append(leg)
+    if not legs:
+        return ""
+    chips = []
+    used = set()
+    groups = {}
+    for i, leg in enumerate(legs):
+        key = (leg["tenant"], leg["expiry"], leg["cp"])
+        groups.setdefault(key, []).append(i)
+    for indexes in groups.values():
+        shorts = [i for i in indexes if legs[i]["side"] == "short"]
+        longs = [i for i in indexes if legs[i]["side"] == "long"]
+        unused = set(longs)
+        for short_i in shorts:
+            short = legs[short_i]
+            matches = [
+                j for j in unused
+                if abs(legs[j]["qty_n"] - short["qty_n"]) < 0.01
+            ]
+            if not matches:
+                continue
+            match = min(matches, key=lambda j: abs(legs[j]["strike"] - short["strike"]))
+            unused.remove(match)
+            used.add(short_i)
+            used.add(match)
+            long = legs[match]
+            chips.append(
+                f"{short['qty']}× {_option_strike_text(short['strike'])}/"
+                f"{_option_strike_text(long['strike'])}{short['cp']} spread"
+            )
+    for i, leg in enumerate(legs):
+        if i in used:
+            continue
+        chips.append(f"{leg['qty']}× {leg['root']} {_option_strike_text(leg['strike'])}{leg['cp']}")
+    # Same structure in two accounts is still one description.
+    seen = []
+    for chip in chips:
+        if chip not in seen:
+            seen.append(chip)
+    if len(seen) > 2:
+        return f"{seen[0]} · {seen[1]} · +{len(seen) - 2}"
+    return " · ".join(seen)
+
+
 def _option_mover_tile(opt):
     return {
         "symbol": opt["symbol"],
@@ -3366,6 +3601,8 @@ def _option_mover_tile(opt):
         "price_change": None,
         "price_change_pct": None,
         "today_close": None,
+        "contract_detail": opt.get("contract_detail") or "",
+        "option_caption": opt.get("option_caption") or "",
     }
 
 
@@ -3495,6 +3732,68 @@ def _close_sleeve_from_frame(df):
         return None
 
 
+def _rollup_option_moves(df):
+    """Symbol rows from contract-grain mover rows, or symbol rows as-is.
+
+    Contract rows carry ``realized_today`` / ``open_mtm`` /
+    ``prev_open_mtm``. A symbol-grain frame that only has
+    ``dollar_impact`` (tests, and any caller that already summed) passes
+    through with an empty caption.
+    """
+    contract_grain = (
+        "realized_today" in df.columns or "trade_symbol" in df.columns
+    )
+    buckets = {}
+    opt_as_of = None
+    for _, r in df.iterrows():
+        iso = _iso_day(r.get("today_date"))
+        if iso and (opt_as_of is None or iso > opt_as_of):
+            opt_as_of = iso
+        symbol = str(r.get("symbol") or "")
+        key = (symbol, iso)
+        slot = buckets.setdefault(key, {
+            "symbol": symbol,
+            "_iso": iso,
+            "open_impact": 0.0,
+            "closed_impact": 0.0,
+            "dollar_impact": 0.0,
+            "rows": [],
+            "split": False,
+        })
+        if contract_grain and (
+            "realized_today" in df.columns or "open_mtm" in df.columns
+        ):
+            open_i, closed_i = split_option_day(
+                r.get("open_mtm"), r.get("prev_open_mtm"), r.get("realized_today"),
+            )
+            slot["open_impact"] += open_i
+            slot["closed_impact"] += closed_i
+            slot["dollar_impact"] += open_i + closed_i
+            slot["split"] = True
+            slot["rows"].append(r)
+        else:
+            slot["dollar_impact"] += _option_num(r.get("dollar_impact"))
+    opts = []
+    for slot in buckets.values():
+        dollar = round(slot["dollar_impact"], 2)
+        if abs(dollar) < 0.01:
+            continue
+        open_i = round(slot["open_impact"], 2)
+        closed_i = round(slot["closed_impact"], 2)
+        opts.append({
+            "symbol": slot["symbol"],
+            "dollar_impact": dollar,
+            "open_impact": open_i if slot["split"] else None,
+            "closed_impact": closed_i if slot["split"] else None,
+            "contract_detail": option_contract_detail(slot["rows"]),
+            "option_caption": (
+                option_mover_caption(open_i, closed_i) if slot["split"] else ""
+            ),
+            "_iso": slot["_iso"],
+        })
+    return opts, opt_as_of
+
+
 def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
     """Option day-moves + dividends-paid-today sub-blocks for the movers card.
 
@@ -3518,20 +3817,11 @@ def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
     opt_as_of = None
     if options_moves_df is not None and not options_moves_df.empty:
         df = options_moves_df.copy()
-        df["dollar_impact"] = pd.to_numeric(df["dollar_impact"], errors="coerce").fillna(0)
-        opts = []
-        for _, r in df.iterrows():
-            iso = _iso_day(r.get("today_date"))
-            if iso and (opt_as_of is None or iso > opt_as_of):
-                opt_as_of = iso
-            opts.append({
-                "symbol": str(r.get("symbol") or ""),
-                "dollar_impact": round(float(r.get("dollar_impact") or 0), 2),
-                "_iso": iso,
-            })
+        rolled, opt_as_of = _rollup_option_moves(df)
         # Dividends still anchor on the newest option date when there is
         # no equity bar. The tiles themselves keep only one session.
         anchor = equity_as_of or opt_as_of
+        opts = rolled
         if anchor:
             opts = [o for o in opts if o.get("_iso") == anchor]
         for o in opts:
@@ -4776,8 +5066,8 @@ def weekly_review():
         # filter before we touch it. The SQL also carries the predicate,
         # but the rule (and 2026 incident history) says "both layers".
         for k in ("account_value", "snapshots", "positions", "calendar",
-                 "today_moves", "weekly_trades", "today_trades", "attribution",
-                 "exit_verdicts"):
+                 "today_moves", "today_options_moves", "weekly_trades",
+                 "today_trades", "attribution", "exit_verdicts"):
             df = batch.get(k)
             if df is not None and not df.empty and "account" in df.columns:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -5486,7 +5776,8 @@ def today_view():
 
         batch = _bq_parallel(client, batch_queries)
 
-        for k in ("today_trades", "open_options", "cc_unwritten", "positions"):
+        for k in ("today_trades", "open_options", "cc_unwritten", "positions",
+                  "today_options_moves"):
             df = batch.get(k)
             if df is not None and not df.empty:
                 batch[k] = _filter_df_by_tenant_ids(df, tenant_ids)
@@ -5731,6 +6022,7 @@ settlements AS (
         CASE
             WHEN close_type = 'Assigned' THEN 'option_assigned'
             WHEN close_type = 'Exercised' THEN 'option_exercised'
+            WHEN close_type = 'Settled at expiry (est.)' THEN 'option_settled_est'
             ELSE 'option_expired'
         END AS action,
         trade_symbol,
@@ -5755,7 +6047,8 @@ settlements AS (
       AND status = 'Closed'
       AND (
             close_type IN (
-                'Expired', 'ExpiredOTM', 'Assigned', 'Exercised')
+                'Expired', 'ExpiredOTM', 'Assigned', 'Exercised',
+                'Settled at expiry (est.)')
             OR (
                 close_type IS NULL
                 AND option_expiry = realized_close_date
@@ -5799,54 +6092,9 @@ LEFT JOIN legs l
 ORDER BY c.underlying_symbol, ABS(c.amount) DESC
 """
 
-# Same shape as TODAY_OPTIONS_MOVES_QUERY but anchored on @day: option day
-# move = delta of (cumulative_options_pnl + open_options_unrealized_pnl)
-# between @day and the previous mart date. cur.date must equal @day exactly
-# so a stale last-row before a gap is never attributed to this day.
-# Symbol-grain aggregate: tenant-scoped in SQL, nothing leakable to merge.
-DAY_OPTIONS_MOVES_QUERY = """
-WITH opt AS (
-    SELECT
-        tenant_id, account, user_id, symbol, date,
-        COALESCE(cumulative_options_pnl, 0)
-          + COALESCE(open_options_unrealized_pnl, 0) AS opt_total,
-        COALESCE(open_options_unrealized_pnl, 0) AS open_mtm
-    FROM `ccwj-dbt.analytics.mart_daily_pnl`
-    WHERE date BETWEEN DATE_SUB(@day, INTERVAL 10 DAY) AND @day
-      {tenant_filter}
-),
-ranked AS (
-    SELECT *,
-        ROW_NUMBER() OVER (
-            PARTITION BY tenant_id, account, user_id, symbol
-            ORDER BY date DESC
-        ) AS rn
-    FROM opt
-),
-delta AS (
-    SELECT
-        cur.symbol,
-        cur.opt_total - COALESCE(prev.opt_total, 0) AS day_change,
-        cur.open_mtm,
-        COALESCE(prev.open_mtm, 0) AS prev_open_mtm
-    FROM ranked cur
-    LEFT JOIN ranked prev
-        ON (cur.tenant_id IS NOT DISTINCT FROM prev.tenant_id)
-        AND cur.account = prev.account
-        AND (cur.user_id IS NOT DISTINCT FROM prev.user_id)
-        AND cur.symbol = prev.symbol
-        AND prev.rn = 2
-    WHERE cur.rn = 1 AND cur.date = @day
-)
-SELECT
-    symbol,
-    ROUND(SUM(day_change), 2) AS dollar_impact
-FROM delta
-WHERE open_mtm != 0 OR prev_open_mtm != 0 OR day_change != 0
-GROUP BY symbol
-HAVING ABS(dollar_impact) >= 0.01
-ORDER BY dollar_impact DESC
-"""
+# Same contract grain as TODAY_OPTIONS_MOVES_QUERY, but only rows whose
+# latest date IS @day. A stale last row before a gap is not this day.
+DAY_OPTIONS_MOVES_QUERY = _option_moves_sql("@day", on_exact_day=True)
 
 DAY_DIVIDENDS_QUERY = """
 SELECT
@@ -5896,6 +6144,7 @@ _DAY_ACTION_VERBS = {
     "option_buy_to_close": "Bought to close",
     "option_sell_to_close": "Sold to close",
     "option_expired": "Expired",
+    "option_settled_est": "Settled at expiry (est.)",
     "option_assigned": "Assigned",
     "option_exercised": "Exercised",
     "margin_interest": "Margin interest",
@@ -5909,12 +6158,14 @@ _TRADE_ACTIONS = {
     "option_sell_to_open", "option_buy_to_open",
     "option_buy_to_close", "option_sell_to_close",
     "option_expired", "option_assigned", "option_exercised",
+    "option_settled_est",
 }
 
 _CLOSE_ACTIONS = {
     "equity_sell", "equity_sell_short",
     "option_buy_to_close", "option_sell_to_close",
     "option_expired", "option_assigned", "option_exercised",
+    "option_settled_est",
 }
 
 
@@ -6074,7 +6325,10 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         action = str(r.get("action") or "")
         qty = r.get("quantity")
         price = r.get("price")
-        if action in ("option_expired", "option_assigned", "option_exercised"):
+        if action in (
+            "option_expired", "option_assigned", "option_exercised",
+            "option_settled_est",
+        ):
             price = None
         amount = float(r.get("amount") or 0)
         realized = (
@@ -6230,12 +6484,22 @@ def day_detail(day_str):
     trade_rows = fills["trades"]
     cash_rows = fills["cash"]
 
-    # ── Option day moves / dividends (symbol-grain SQL aggregates) ────
-    options_df = batch["options"]
-    option_rows = [
-        {"symbol": str(r.get("symbol") or ""), "impact": float(r.get("dollar_impact") or 0)}
-        for _, r in options_df.iterrows()
-    ] if not options_df.empty else []
+    # ── Option day moves / dividends ──────────────────────────────────
+    # Contract grain, same settlement as Overview movers. SQL is already
+    # tenant-scoped; the frame filter is the second layer.
+    options_df = _filter_df_by_tenant_ids(batch["options"], tenant_ids)
+    option_rows = []
+    if options_df is not None and not options_df.empty:
+        rolled, _opt_as_of = _rollup_option_moves(options_df)
+        option_rows = [
+            {
+                "symbol": o["symbol"],
+                "impact": o["dollar_impact"],
+                "detail": o.get("contract_detail") or "",
+            }
+            for o in rolled
+            if o.get("_iso") == day.isoformat()
+        ]
 
     dividends_df = batch["dividends"]
     dividend_rows = [

@@ -1,9 +1,9 @@
-{% from "_landing_macros.html" import phone %}
+{% from "_landing_macros.html" import feature_poster %}
     <section class="ht-band ht-band-story ht-section" aria-label="Every position's full story">
         <div class="ht-wrap ht-split media-end">
-            <div class="ht-media ht-phone-row">
+            <div class="ht-media ht-feature-stack">
                 {% for step in story_steps if step.step in [2, 3] %}
-                {{ phone(step, eager=section_eager|default(false) and loop.first) }}
+                {{ feature_poster(step, eager=section_eager|default(false) and loop.first, show_title=true) }}
                 {% endfor %}
             </div>
             <div class="ht-copy">

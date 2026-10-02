@@ -149,7 +149,7 @@
                     {% for t in trade_rows %}
                     <tr>
                         <td>
-                            <span class="dd-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                            <span class="dd-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised','option_settled_est') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
                         </td>
                         <td>
                             {% if t.symbol %}<a class="dd-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}
@@ -190,12 +190,15 @@
                 <table class="dd-table">
                     {% for o in option_rows %}
                     <tr>
-                        <td><a class="dd-sym" href="{{ scoped_url('position_detail', symbol=o.symbol) }}">{{ o.symbol }}</a></td>
+                        <td>
+                            <a class="dd-sym" href="{{ scoped_url('position_detail', symbol=o.symbol) }}">{{ o.symbol }}</a>
+                            {% if o.detail %}<div class="dd-muted">{{ o.detail }}</div>{% endif %}
+                        </td>
                         <td class="dd-money {{ 'pos' if o.impact > 0 else 'neg' }}">{{ money(o.impact, 2, true) }}</td>
                     </tr>
                     {% endfor %}
                 </table>
-                <div class="dd-muted mt-2">Mark-to-market drift plus anything realized that day.</div>
+                <div class="dd-muted mt-2">Change in open contracts, plus anything that closed. An expiry is the settlement, not the opening credit.</div>
                 {% else %}
                 <div class="dd-empty">No option P&amp;L movement recorded.</div>
                 {% endif %}

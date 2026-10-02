@@ -12,11 +12,8 @@
                     {% endif %}
                 </p>
             </div>
-            <div class="ht-learn-phone">
-                <div class="ht-phone">
-                    <div class="ht-phone-bar" aria-hidden="true"></div>
-                    {{ video_frame(step, eager=section_eager|default(false)) }}
-                </div>
+            <div class="ht-learn-still">
+                {{ video_frame(step, lightbox=true, eager=section_eager|default(false)) }}
             </div>
         </div>
     </section>

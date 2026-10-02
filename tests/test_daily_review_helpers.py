@@ -15,6 +15,7 @@ import pandas as pd
 
 from app.weekly_review import (
     ANNUALIZED_DENOMINATOR_FLOOR,
+    DAY_OPTIONS_MOVES_QUERY,
     ANNUALIZED_MIN_DAYS,
     DAY_TRADES_QUERY,
     CLOSE_SLEEVE_QUERY,
@@ -372,8 +373,11 @@ class TestBuildTodayMovers:
         full-symbol stg_daily_prices scan. UTC-tomorrow mart rows are
         excluded by ``m.date <= @as_of``."""
         normalized = " ".join(TODAY_OPTIONS_MOVES_QUERY.lower().split())
-        assert "m.date <= @as_of" in normalized
+        assert "d.date <= @as_of" in normalized
         assert "date_sub(@as_of, interval 10 day)" in normalized
+        assert "int_option_contract_daily_pnl" in normalized
+        assert "is_realized_close" in normalized
+        assert "mart_daily_pnl" not in normalized
         assert "stg_daily_prices" not in normalized
 
     def test_empty_input(self):
@@ -551,6 +555,7 @@ class TestBuildTodayMovers:
             "symbol": "SMTC", "kind": "option", "dollar_impact": -250.0,
             "shares": None, "current_value": None, "price_change": None,
             "price_change_pct": None, "today_close": None,
+            "contract_detail": "", "option_caption": "",
         }]
         # Header still totals every row, not just the displayed 5.
         assert result["options_impact"] == 750.0
@@ -570,6 +575,181 @@ class TestBuildTodayMovers:
         assert [l["symbol"] for l in result["losers"]] == ["FN"]
         # Full-book header still includes the dust.
         assert result["total_impact"] == -5.4
+
+    def test_expired_itm_spread_is_the_settlement_not_the_credit(self):
+        # SPXW Oct 1 7650/7655 bear call. A zero mark on still-open
+        # contracts would show the gross credit (+$1,450). The close
+        # books the estimate instead: net about −$3,574, no open mark left.
+        opt = pd.DataFrame([
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261001C07650000",
+                "today_date": date(2026, 10, 1), "tenant_id": "t1",
+                "option_strike": 7650, "option_type": "C",
+                "option_expiry": date(2026, 10, 1), "direction": "Sold",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -2242.22,
+            },
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261001C07655000",
+                "today_date": date(2026, 10, 1), "tenant_id": "t1",
+                "option_strike": 7655, "option_type": "C",
+                "option_expiry": date(2026, 10, 1), "direction": "Bought",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -1332.22,
+            },
+        ])
+        result = _build_today_movers(None, options_moves_df=opt)
+        row = result["losers"][0]
+        assert result["winners"] == []
+        assert row["symbol"] == "SPXW"
+        assert row["dollar_impact"] == -3574.44
+        assert row["contract_detail"] == "10× 7650/7655C spread"
+        assert row["option_caption"] == "Closed today"
+        assert result["options_impact"] == -3574.44
+
+    def test_option_caption_matches_what_the_row_contains(self):
+        opt = pd.DataFrame([
+            {
+                "symbol": "MU", "trade_symbol": "MU    261016C00120000",
+                "today_date": date(2026, 10, 1), "tenant_id": "t1",
+                "option_strike": 120, "option_type": "Call",
+                "option_expiry": date(2026, 10, 16), "direction": "Sold",
+                "quantity": 2, "open_mtm": -40, "prev_open_mtm": 0,
+                "realized_today": 0,
+            },
+            {
+                "symbol": "AAPL", "trade_symbol": "AAPL  261016C00200000",
+                "today_date": date(2026, 10, 1), "tenant_id": "t1",
+                "option_strike": 200, "option_type": "C",
+                "option_expiry": date(2026, 10, 16), "direction": "Bought",
+                "quantity": 1, "open_mtm": 450, "prev_open_mtm": 0,
+                "realized_today": -120,
+            },
+        ])
+        result = _build_today_movers(None, options_moves_df=opt)
+        by_sym = {r["symbol"]: r for r in result["winners"] + result["losers"]}
+        assert by_sym["MU"]["contract_detail"] == "2× MU 120C"
+        assert by_sym["MU"]["option_caption"] == "Open contracts, change in value"
+        assert by_sym["MU"]["dollar_impact"] == -40
+        assert by_sym["AAPL"]["option_caption"] == "+$450 open · −$120 closed"
+        assert by_sym["AAPL"]["dollar_impact"] == 330
+        assert by_sym["AAPL"]["contract_detail"] == "1× AAPL 200C"
+
+    def test_day_option_query_uses_the_same_close(self):
+        normalized = " ".join(DAY_OPTIONS_MOVES_QUERY.lower().split())
+        assert "int_option_contract_daily_pnl" in normalized
+        assert "is_realized_close" in normalized
+        assert "cur.date = @day" in normalized
+        assert "mart_daily_pnl" not in normalized
+
+    def test_mover_templates_use_the_plain_option_line(self):
+        from app import app
+
+        movers = _build_today_movers(None, options_moves_df=pd.DataFrame([
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261001C07650000",
+                "today_date": date(2026, 10, 1), "tenant_id": "t1",
+                "option_strike": 7650, "option_type": "C",
+                "option_expiry": date(2026, 10, 1), "direction": "Sold",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -2242.22,
+            },
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261001C07655000",
+                "today_date": date(2026, 10, 1), "tenant_id": "t1",
+                "option_strike": 7655, "option_type": "C",
+                "option_expiry": date(2026, 10, 1), "direction": "Bought",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -1332.22,
+            },
+            {
+                "symbol": "MU", "trade_symbol": "MU    261016C00120000",
+                "today_date": date(2026, 10, 1), "tenant_id": "t1",
+                "option_strike": 120, "option_type": "C",
+                "option_expiry": date(2026, 10, 16), "direction": "Sold",
+                "quantity": 2, "open_mtm": 80, "prev_open_mtm": 0,
+                "realized_today": 0,
+            },
+        ]))
+        overview = {
+            "current_user": __import__("types").SimpleNamespace(is_authenticated=False),
+            "title": "Overview",
+            "mode": "daily",
+            "week_start": date(2026, 9, 28),
+            "week_end": date(2026, 10, 2),
+            "user_timezone": "UTC",
+            "today": date(2026, 10, 2),
+            "review_date": date(2026, 10, 1),
+            "review_is_today": False,
+            "accounts": [],
+            "selected_account": "",
+            "selected_tenant": None,
+            "selected_tenants": None,
+            "error": None,
+            "equity_snapshot": None,
+            "today_snapshots_by_account": [],
+            "today_strip": [],
+            "expiring_options": [],
+            "upcoming_earnings_this_week": [],
+            "upcoming_earnings_next_week": [],
+            "upcoming_ex_dividends": [],
+            "today_movers": movers,
+            "after_hours_movers": None,
+            "today_pulse": None,
+            "today_snapshots_total": None,
+            "today_headline": None,
+            "from_upload": False,
+            "market": None,
+            "market_session": {"state": "closed", "label": "Closed"},
+            "market_open_today": False,
+            "market_neutral_line": None,
+            "since_last_looked": None,
+            "calendar_grid": [],
+            "calendar_weeks_back": 1,
+            "calendar_default_weeks": 1,
+            "calendar_extra_weeks": 0,
+            "daily_calendar_no_query_rows": True,
+            "trades_this_week": {
+                "trades": [], "count": 0, "opened_count": 0,
+                "closed_count": 0, "realized_pnl": 0.0,
+                "unrealized_pnl": 0.0, "has_any": False,
+            },
+            "trades_today": {
+                "trades": [], "cash": [], "count": 0, "net_cash": 0.0,
+                "net_gl": 0.0, "symbols": [], "has_any": False,
+            },
+            "all_user_tags": [],
+            "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
+            "benchmark_snapshot": [],
+            "overview_below_deferred": False,
+            "overview_below_url": "/overview/below",
+            "building_history": None,
+        }
+        with app.test_request_context("/overview"):
+            html = app.jinja_env.get_template("weekly_review.html").render(**overview)
+        assert "10× 7650/7655C spread" in html
+        assert "Closed today" in html
+        assert "2× MU 120C" in html
+        assert "Open contracts, change in value" in html
+        assert "P&amp;L on contracts" not in html
+        assert "Marks + closes" not in html
+        assert "$3,574" in html
+        today_ctx = {
+            **overview,
+            "session_is_live": True,
+            "delay": {"shared": "These numbers can lag your broker.", "extra": ""},
+            "last_close_date": date(2026, 10, 1),
+            "trades_today": {
+                "trades": [], "cash": [], "count": 0, "fill_count": 0,
+                "net_cash": 0.0, "net_gl": 0.0, "symbols": [], "has_any": False,
+            },
+        }
+        with app.test_request_context("/today"):
+            today_html = app.jinja_env.get_template("today.html").render(**today_ctx)
+        assert "10× 7650/7655C spread" in today_html
+        assert "Closed today" in today_html
+        assert "Open contracts, change in value" in today_html
+        assert "Marks + closes" not in today_html
 
 
 class TestBuildAfterHoursMovers:

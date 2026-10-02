@@ -18,26 +18,126 @@
         --pd-gap: 1rem;
         color: var(--pd-ink);
     }
-    .pos-hero {
+    .review-hero.pos-hero {
         background: var(--pd-surface, #121826);
         border: 1px solid var(--pd-line, #243049);
         border-radius: var(--pd-radius, 12px);
-        padding: 1.35rem 1.5rem 1.2rem;
+        padding: .6rem 1.15rem .65rem;
         color: var(--pd-ink, #e8edf7);
-        margin-bottom: var(--pd-gap, 1rem);
+        margin-bottom: .65rem;
         box-shadow: none;
     }
-    .pos-hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .25rem; }
+    .pos-hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .05rem; line-height: 1.1; }
     /* The total sits in its own column so the same cqi clamp as the
        other heroes can shrink +$121,456.75 to the column instead of
-       spilling a few pixels past the box. No ellipsis. */
+       spilling a few pixels past the box. No ellipsis.
+       Groups and Account are chips under the symbol, not a full-width
+       bar. The total stays on the right and spans both rows. */
     .pos-hero .pos-hero-split {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(14rem, 22.5rem);
-        gap: .75rem 1.25rem;
+        grid-template-columns: minmax(0, 1fr) minmax(12rem, 22.5rem);
+        gap: .15rem 1.15rem;
         align-items: start;
     }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) {
+        grid-template-areas: "id total" "scope total" "stats stats";
+    }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope):has(.pd-window-hint) {
+        grid-template-areas: "id total" "scope total" "stats stats" "hint hint";
+    }
+    .pos-hero .pos-hero-split:has(.pos-hero-stats):not(:has(.pd-hero-scope)) {
+        grid-template-areas: "id total" "stats stats";
+    }
+    .pos-hero .pos-hero-split:has(.pos-hero-stats):not(:has(.pd-hero-scope)):has(.pd-window-hint) {
+        grid-template-areas: "id total" "stats stats" "hint hint";
+    }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) > .pos-hero-id { grid-area: id; }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) > .pos-total { grid-area: total; }
+    .pos-hero .pos-hero-split > .pos-hero-stats { grid-area: stats; }
+    .pos-hero .pos-hero-split > .pd-window-hint { grid-area: hint; }
     .pos-hero .pos-hero-id { min-width: 0; }
+    .pos-hero-meta {
+        display: flex; flex-wrap: wrap; align-items: center;
+        gap: .3rem .65rem; margin-top: .3rem;
+    }
+    /* Chip-sized Groups / Account. The shared filter bar is a column
+       of wide selects; this page overrides that to a short pill row. */
+    .pd-page .pd-hero-scope {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: .35rem;
+        margin: .1rem 0 0;
+    }
+    .pos-hero .pos-hero-split:has(.pd-hero-scope) > .pd-hero-scope { grid-area: scope; }
+    .pd-page .pd-hero-scope .ht-ms-dd,
+    .pd-page .pd-hero-scope .ht-page-acct {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: .28rem;
+        min-width: 0;
+        position: relative;
+    }
+    .pd-page .pd-hero-scope .dropdown { width: auto; }
+    .pd-page .pd-hero-scope .lblh {
+        margin: 0;
+        font-size: .58rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: #8a97b1;
+    }
+    .pd-page .pd-hero-scope .ht-ms-btn.form-select {
+        display: inline-block;
+        width: auto;
+        min-width: 0;
+        max-width: 9.5rem;
+        min-height: 0;
+        height: auto;
+        font-size: .72rem;
+        line-height: 1.25;
+        padding: .08rem 1.25rem .08rem .5rem;
+        border-radius: 999px;
+        background-color: #0a0e17;
+        background-image: none;
+        color: #e8edf7;
+        border-color: #243049;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+    .pd-page .pd-hero-scope .ht-ms-btn.form-select:hover,
+    .pd-page .pd-hero-scope .ht-ms-btn.form-select:focus {
+        background-color: #1a2233;
+        color: #fff;
+        border-color: #5b8cff;
+    }
+    .pd-page .pd-hero-scope .dropdown-menu {
+        background: #121826;
+        border: 1px solid #243049;
+        z-index: 1050;
+    }
+    .pd-page .pd-hero-scope .ht-ms-item { color: #e8edf7; }
+    .pd-page .pd-hero-scope .ht-ms-item:hover,
+    .pd-page .pd-hero-scope .ht-ms-item:focus { background: #1a2233; color: #fff; }
+    .pd-page .pd-hero-scope .ht-ms-apply-row {
+        background: #121826;
+        border-top-color: #243049;
+    }
+    .pd-page .pd-hero-scope .ht-ms-hint {
+        display: inline-flex;
+        align-items: center;
+        min-height: 0;
+        font-size: .72rem;
+        line-height: 1.25;
+        padding: .08rem .55rem;
+        border: 1px solid #243049;
+        border-radius: 999px;
+        color: #c3cbdb;
+        background: #0a0e17;
+    }
     .pos-hero .pos-total {
         min-width: 0;
         max-width: 100%;
@@ -56,6 +156,58 @@
         font-variant-numeric: tabular-nums;
         font-family: "JetBrains Mono", ui-monospace, monospace;
     }
+    /* The parts of the headline total, on one row under it. */
+    .pos-hero-stats {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: .3rem 1rem;
+        margin-top: .35rem;
+        padding-top: .4rem;
+        border-top: 1px solid rgba(255,255,255,.08);
+    }
+    .pos-hero-stat {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        min-width: 0;
+    }
+    .pos-hero-stat-l {
+        font-size: .58rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: #8a97b1;
+    }
+    .pos-hero-stat-v {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .82rem;
+        font-weight: 650;
+        line-height: 1.2;
+        color: #e8edf7;
+    }
+    .pd-window-hint {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        margin: .35rem 0 0;
+        font-size: .72rem;
+        line-height: 1.35;
+        color: #8a97b1;
+    }
+    .pd-window-hint[hidden] { display: none !important; }
+    .pd-window-hint a { color: #5b8cff; }
+    .pd-window-hint-x {
+        margin-left: auto;
+        border: 0;
+        background: transparent;
+        color: #8a97b1;
+        font-size: 1rem;
+        line-height: 1;
+        padding: 0 .15rem;
+        cursor: pointer;
+    }
     .badge-open, .badge-closed, .badge-mixed, .badge-strategy {
         font-size: .68rem; font-weight: 650;
         padding: .2em .6em; border-radius: 999px;
@@ -68,8 +220,9 @@
         border-radius: var(--pd-radius, 12px);
         box-shadow: none;
     }
-    .chart-wrapper { padding: 1.15rem 1.25rem 1.2rem; }
-    .pnl-chart-box { position: relative; height: 520px; }
+    .chart-wrapper { padding: 1.15rem 1.25rem 1.2rem; max-width: 100%; }
+    .pnl-chart-box { position: relative; height: 520px; max-width: 100%; }
+    .pnl-chart-box canvas { max-width: 100%; }
     .ht-pnl-tip {
         position: absolute;
         z-index: 6;
@@ -271,10 +424,48 @@
     .account-toggle .pill-dot.closed { background: var(--pd-muted, #8a97b1); }
 
 @media (max-width: 640px) {
-        .pos-hero { padding: 1.25rem 1.1rem; border-radius: 12px; margin-bottom: 1rem; }
-        .pos-hero h1 { font-size: 1.5rem; }
-        .pos-hero .pos-hero-split { grid-template-columns: minmax(0, 1fr); }
-        .pos-hero .pos-total { text-align: left; }
+        .review-hero.pos-hero { padding: .45rem .65rem .5rem; margin-bottom: .45rem; }
+        .pos-hero h1 { font-size: 1.35rem; }
+        .pos-hero .pos-hero-split {
+            /* Definite total column. `auto` collapses to 0 because the
+               total is a size container (cqi), and the number then stacks
+               one character per line. */
+            grid-template-columns: minmax(0, 1fr) minmax(8.75rem, 11.5rem);
+            gap: .1rem .5rem;
+        }
+        .pos-hero .pos-hero-split:has(.pd-hero-scope) {
+            grid-template-areas: "id total" "scope scope" "stats stats";
+        }
+        .pos-hero .pos-hero-split:has(.pd-hero-scope):has(.pd-window-hint) {
+            grid-template-areas: "id total" "scope scope" "stats stats" "hint hint";
+        }
+        .pos-hero .pos-hero-split:has(.pos-hero-stats):not(:has(.pd-hero-scope)) {
+            grid-template-areas: "id total" "stats stats";
+        }
+        .pos-hero .pos-total { text-align: right; max-width: none; }
+        .pos-hero-stats {
+            justify-content: flex-start;
+            gap: .2rem .55rem;
+        }
+        .pos-hero-stat { align-items: flex-start; flex: 1 1 30%; }
+        .pos-hero-stat-v { font-size: .72rem; }
+        .pos-hero .pos-total .small,
+        .pos-hero .pos-total .text-white-50 { font-size: .62rem; line-height: 1.2; }
+        .pd-page .pd-hero-scope {
+            flex-wrap: nowrap;
+            width: 100%;
+            margin-top: .15rem;
+            gap: .3rem;
+        }
+        .pd-page .pd-hero-scope .ht-ms-dd,
+        .pd-page .pd-hero-scope .ht-page-acct { flex: 0 1 auto; min-width: 0; }
+        .pd-page .pd-hero-scope .lblh {
+            position: absolute;
+            width: 1px; height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+        }
+        .pd-page .pd-hero-scope .ht-ms-btn.form-select { max-width: 9rem; }
         .kpi-mini .value { font-size: 1.05rem; }
         .kpi-mini .label { font-size: .58rem; }
         .stat-card .card-body { padding: .9rem; }
@@ -553,10 +744,32 @@
             max-width: 100%;
         }
         .pd-page table.pd-legs,
-        .pd-page table.pd-stack {
+        .pd-page table.pd-stack,
+        .pd-page table.wl-matrix {
             display: table;
+        }
+        .pd-page table.pd-legs,
+        .pd-page table.pd-stack {
             width: 100%;
             max-width: 100%;
+        }
+        /* Win/Loss matrix stays a column table. Scroll sideways; never cards. */
+        .pd-page .wl-scroll {
+            overflow-x: auto;
+            max-width: 100%;
+            -webkit-overflow-scrolling: touch;
+        }
+        .pd-page table.wl-matrix {
+            width: max-content;
+            min-width: 100%;
+        }
+        .pd-page table.wl-matrix thead { display: table-header-group; }
+        .pd-page table.wl-matrix tbody { display: table-row-group; }
+        .pd-page table.wl-matrix tr { display: table-row; }
+        .pd-page table.wl-matrix th,
+        .pd-page table.wl-matrix td {
+            display: table-cell;
+            padding: .28rem .35rem;
         }
         .pd-page table.pd-legs .pd-num,
         .pd-page table.pd-stack td[data-label="Amount"] {
@@ -565,6 +778,21 @@
         }
         .pd-more { display: block; margin-top: .2rem; }
         .pd-dl { grid-template-columns: 1fr 1fr; padding-left: .15rem; }
+        .pd-page .chart-wrapper {
+            padding: .85rem .7rem .9rem;
+            max-width: 100%;
+        }
+        .pd-page .pnl-chart-box {
+            height: 280px;
+            max-width: 100%;
+        }
+        .pd-page #position-chart .d-flex {
+            align-items: flex-start;
+        }
+        .pd-page #position-chart .form-check {
+            margin-left: 0;
+            padding-left: 2.4em;
+        }
     }
 </style>
 {% endblock %}
@@ -677,18 +905,9 @@
 </div>
 {% endif %}
 
-{# ── Hero ── #}
+{# ── Hero ──
+   Groups and Account are chips in the hero, not a full-width bar. #}
 <div class="review-hero pos-hero">
-    <div class="ov-bar">
-        {% if scope_account_choices|length > 1 or (accounts|length > 1) or account_groups %}
-        <form method="get" class="filter-bar filter-bar-hero" data-ht-preserve-query="1" data-ht-persist-tenants="1">
-            {% for _leg in request.args.getlist('leg') %}
-            <input type="hidden" name="leg" value="{{ _leg }}">
-            {% endfor %}
-            {% include "_account_scope_filters.html" %}
-        </form>
-        {% endif %}
-    </div>
     <div class="pos-hero-split">
         <div class="pos-hero-id">
             <h1>{{ symbol }}</h1>
@@ -720,7 +939,7 @@
             </div>
             {% endif %}
             {% if kpis %}
-            <div class="d-flex gap-3 flex-wrap mt-2">
+            <div class="pos-hero-meta">
                 {% if overall_status == 'Open' %}
                     <span class="badge badge-open">Open</span>
                 {% else %}
@@ -753,11 +972,63 @@
                     {% if share_tenants %}data-tenants="{{ share_tenants }}"{% endif %}>Share</button>
             {% endif %}
             <div class="small text-white-50">Total return, incl. dividends</div>
-            <div class="text-white-50" style="font-size:.65rem; opacity:.85;">Realized + unrealized + dividends</div>
             <div class="ov-big {% if kpis.total_return >= 0 %}pos{% else %}neg{% endif %}">
                 {% if kpis.total_return > 0 %}+{% endif %}{{ money(kpis.total_return) }}
             </div>
         </div>
+        {% endif %}
+        {% if scope_account_choices|length > 1 or (accounts|length > 1) or account_groups %}
+        <form method="get" class="pd-hero-scope" data-ht-preserve-query="1" data-ht-persist-tenants="1">
+            {% for _leg in request.args.getlist('leg') %}
+            <input type="hidden" name="leg" value="{{ _leg }}">
+            {% endfor %}
+            {% include "_account_scope_filters.html" %}
+        </form>
+        {% endif %}
+        {% if kpis %}
+        <div class="pos-hero-stats">
+            <div class="pos-hero-stat">
+                <span class="pos-hero-stat-l">Realized</span>
+                <span class="pos-hero-stat-v {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{% if kpis.realized_pnl > 0 %}+{% endif %}{{ money(kpis.realized_pnl) }}</span>
+            </div>
+            <div class="pos-hero-stat">
+                <span class="pos-hero-stat-l">Unrealized</span>
+                <span class="pos-hero-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{% if kpis.unrealized_pnl > 0 %}+{% endif %}{{ money(kpis.unrealized_pnl) }}</span>
+            </div>
+            <div class="pos-hero-stat">
+                <span class="pos-hero-stat-l">Dividends</span>
+                <span class="pos-hero-stat-v {% if kpis.dividend_income > 0 %}text-positive{% elif kpis.dividend_income < 0 %}text-negative{% endif %}">{% if kpis.dividend_income > 0 %}+{% endif %}{{ money(kpis.dividend_income) }}</span>
+            </div>
+            <div class="pos-hero-stat">
+                <span class="pos-hero-stat-l">Win rate</span>
+                <span class="pos-hero-stat-v">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</span>
+            </div>
+            <div class="pos-hero-stat">
+                <span class="pos-hero-stat-l">Avg days</span>
+                <span class="pos-hero-stat-v">{% if (kpis.total_trades or 0) == 0 %}—{% else %}{{ "{:.0f}".format(kpis.avg_days) }}{% endif %}</span>
+            </div>
+        </div>
+        {% if history_hint %}
+        <p class="pd-window-hint" id="pd-window-hint" hidden>
+            <span>From {{ history_hint }}, when you connected. <a href="{{ url_for('upload') }}">Earlier years?</a></span>
+            <button type="button" class="pd-window-hint-x" aria-label="Dismiss this note">&times;</button>
+        </p>
+        <script>
+        (function () {
+            var KEY = "ht-pd-window-hint-dismissed";
+            var el = document.getElementById("pd-window-hint");
+            if (!el) return;
+            try { if (localStorage.getItem(KEY)) return; } catch (e) {}
+            el.removeAttribute("hidden");
+            var btn = el.querySelector(".pd-window-hint-x");
+            if (!btn) return;
+            btn.addEventListener("click", function () {
+                el.setAttribute("hidden", "");
+                try { localStorage.setItem(KEY, "1"); } catch (e) {}
+            });
+        })();
+        </script>
+        {% endif %}
         {% endif %}
     </div>
 
@@ -772,6 +1043,117 @@
 </div>
 {% endif %}
 <!-- MIRROR-END -->
+{# Chart, then the Win/Loss matrix (open), then Position Legs. #}
+<div class="chart-wrapper mb-4" id="position-chart">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+        <div>
+            <h6 class="pd-h mb-1">Cumulative P&amp;L</h6>
+            {% if prices_through_date and has_underlying_price %}
+            <p class="text-muted small mb-0" id="pnlChartPriceCaption" style="display:none;">Stock prices through {{ prices_through_date }}.</p>
+            {% endif %}
+        </div>
+        {% if has_underlying_price %}
+        <div class="form-check form-switch mb-0" style="padding-left:2.4em;">
+            <input class="form-check-input" type="checkbox" id="togglePriceLine">
+            <label class="form-check-label small text-muted" for="togglePriceLine">Show {{ symbol }} price</label>
+        </div>
+        {% endif %}
+    </div>
+    <div class="pnl-chart-box">
+        <canvas id="pnlChart"></canvas>
+    </div>
+    {% if story_days %}
+    <p class="text-muted small mb-0 mt-2">
+        Dots mark your trade days &mdash; click one to jump to that day in the review. Click a day in the review to highlight its dot here.
+    </p>
+    {% endif %}
+    {% if chart_read and not simple_view %}
+    <div class="chart-read mt-3" id="chartRead"
+         data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
+         data-digest="{{ chart_read.digest }}"
+         data-scope="{{ chart_read.scope }}"
+         data-locked="{{ '1' if chart_read.locked else '0' }}"
+         data-pending="{{ '1' if chart_read.pending else '0' }}">
+        <div class="chart-read-kicker">On this chart</div>
+        <p class="chart-read-lead">{{ chart_read.lead }}</p>
+        <div class="chart-read-more {% if chart_read.locked %}is-locked{% endif %}">
+            <p class="chart-read-rest" id="chartReadRest">{{ chart_read.rest }}</p>
+            <form class="chart-read-upgrade" method="post" action="{{ url_for('billing_checkout_ai') }}"{% if not chart_read.show_upgrade %} hidden{% endif %}>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-primary">Upgrade to HappyTrader AI to read the rest</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{# Win/Loss matrix sits open under the chart. It can still be folded. #}
+{% if option_matrices %}
+<details class="pd-fold" id="pd-matrix" open>
+    <summary class="pd-fold-sum">
+        <span class="pd-h">Win/Loss matrix</span>
+        <span class="pd-fold-note">DTE versus strike distance. Avg P&amp;L, contracts, and win rate.</span>
+    </summary>
+    <div class="pd-fold-body">
+        {% for mat in option_matrices %}
+        <div class="{% if not loop.first %}mt-3{% endif %}">
+            <h3 class="pd-h mb-1">
+                {{ mat.strategy }}
+                <span class="pd-fold-note">({{ mat.trade_count }} contracts)</span>
+            </h3>
+            <div class="wl-scroll">
+                <table class="table table-sm table-bordered align-middle mb-0 wl-matrix">
+                    <thead>
+                        <tr>
+                            <th class="wl-axis">{{ term('DTE') }} \ {{ term('Strike Distance', 'strike-price') }}</th>
+                            {% for col in mat.col_headers %}
+                            <th class="text-center wl-axis">{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in mat.rows %}
+                        <tr>
+                            <td class="fw-semibold wl-axis text-nowrap">{{ row.dte_label }}</td>
+                            {% for cell in row.cells %}
+                            {% if cell.count == 0 %}
+                            <td class="text-center wl-empty">&mdash;</td>
+                            {% else %}
+                            {% set wr = cell.win_rate %}
+                            {% if wr >= 75 %}
+                                {% set tone = "wl-win" %}
+                            {% elif wr >= 50 %}
+                                {% set tone = "wl-win-soft" %}
+                            {% elif wr >= 25 %}
+                                {% set tone = "wl-loss-soft" %}
+                            {% else %}
+                                {% set tone = "wl-loss" %}
+                            {% endif %}
+                            <td class="text-center {{ tone }}">
+                                <div class="wl-pnl">
+                                    {% if cell.avg_pnl is not none %}{{ money(cell.avg_pnl, 0) }}{% else %}&mdash;{% endif %}
+                                </div>
+                                <div class="wl-meta">
+                                    {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
+                                </div>
+                            </td>
+                            {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+        <div class="pd-legend">
+            <span><span class="wl-swatch wl-loss"></span> 0–24% wins</span>
+            <span><span class="wl-swatch wl-loss-soft"></span> 25–49%</span>
+            <span><span class="wl-swatch wl-win-soft"></span> 50–74%</span>
+            <span><span class="wl-swatch wl-win"></span> 75–100%</span>
+        </div>
+    </div>
+</details>
+{% endif %}
 {% if history_before_open %}
 <p class="pd-lede">Opened before your history — cost basis before your history. These closing fills are not counted as realized profit.</p>
 {% endif %}
@@ -917,7 +1299,6 @@
                 <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
                     {% set contract = o.trade_symbol|option_symbol %}
                     {% set acct = (o.account_display or o.account) | account_label(o.tenant_id) %}
-                    {% set pending = o.close_type == 'Settlement pending' or o.outcome == 'Settlement pending' %}
                     <td class="pd-tight">
                         {% if o.is_winner is true %}
                         <span class="leg-arrow" style="color:var(--gain);font-size:.7rem;">&#9654;</span>
@@ -956,7 +1337,7 @@
                                 <dt>Outcome</dt><dd>{{ o.outcome or '—' }}</dd>
                                 {% else %}
                                 <dt>Cost</dt><dd>{% if o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</dd>
-                                <dt>Value</dt><dd>{% if pending %}Settlement pending{% else %}{{ money(o.proceeds) }}{% endif %}</dd>
+                                <dt>Value</dt><dd>{{ money(o.proceeds) }}</dd>
                                 {% endif %}
                             </dl>
                         </details>
@@ -968,9 +1349,9 @@
                     <td class="pd-date" {% if o.close_date %}title="{{ o.close_date|human_date }}"{% endif %}>{{ o.close_date|compact_date }}</td>
                     <td class="pd-num pd-opt text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
                     <td class="pd-num">{% if o.vertical %}{% if (o.net_credit or 0) >= 0 %}Credit {{ money(o.net_credit) }}{% else %}Debit {{ money((o.net_credit or 0)|abs) }}{% endif %}{% elif o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</td>
-                    <td class="pd-num">{% if o.vertical %}{{ o.width_label }}{% elif pending %}Settlement pending{% else %}{{ money(o.proceeds) }}{% endif %}</td>
-                    <td class="pd-num pd-pnl fw-semibold {{ 'text-muted' if pending else 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
-                        <div>{% if pending %}Settlement pending{% else %}{{ money(o.pnl) }}{% endif %}</div>
+                    <td class="pd-num">{% if o.vertical %}{{ o.width_label }}{% else %}{{ money(o.proceeds) }}{% endif %}</td>
+                    <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">
+                        <div>{{ money(o.pnl) }}</div>
                         {% if not o.vertical %}
                         <button type="button" class="ht-share-btn"
                                 {% if o.type == 'equity' %}
@@ -996,9 +1377,8 @@
                         <span class="text-muted" title="Not applicable">—</span>
                         {% endif %}
                     </td>
-                    <td class="pd-num {{ 'text-muted' if pending else 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else 'text-muted' }}">
-                        {% if pending %}—
-                        {% elif o.direction == 'Sold' and o.return_pct is not none %}{{ "{:.0f}% kept".format(o.return_pct) }}
+                    <td class="pd-num {{ 'text-positive' if o.return_pct is not none and o.return_pct >= 0 else 'text-negative' if o.return_pct is not none else 'text-muted' }}">
+                        {% if o.direction == 'Sold' and o.return_pct is not none %}{{ "{:.0f}% kept".format(o.return_pct) }}
                         {% elif o.return_pct is not none %}{{ "{:.1f}%".format(o.return_pct) }}
                         {% else %}—{% endif %}
                     </td>
@@ -1021,7 +1401,7 @@
                                 <tr>
                                     <td class="text-nowrap">{{ leg.trade_symbol|option_symbol }}</td>
                                     <td class="text-end text-nowrap pd-num">{{ leg.role_label }} {{ money(leg.role_amount) }}</td>
-                                    <td class="text-end text-nowrap pd-num {{ 'text-muted' if leg.outcome == 'Settlement pending' else 'text-positive' if (leg.pnl or 0) >= 0 else 'text-negative' }}">{% if leg.outcome == 'Settlement pending' %}Settlement pending{% else %}{{ money(leg.pnl) }}{% endif %}</td>
+                                    <td class="text-end text-nowrap pd-num {{ 'text-positive' if (leg.pnl or 0) >= 0 else 'text-negative' }}">{{ money(leg.pnl) }}</td>
                                     <td>{{ leg.outcome or '—' }}</td>
                                 </tr>
                                 {% endfor %}
@@ -1117,67 +1497,6 @@
 {% endif %}
 
 
-{# ── Position Narrative (open = snapshot; history = all trades) ── #}
-{% if kpis %}
-<div class="pd-lede">
-    {% if overall_status == 'Open' %}
-    <p class="narrative mb-2">
-        Your current <strong>{{ symbol }}</strong> book
-        {% if open_strategy_names|length == 1 %}
-        is <strong>{{ open_strategy_names[0] }}</strong>.
-        {% elif open_strategy_names|length > 1 %}
-        is split across {% for name in open_strategy_names %}<strong>{{ name }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}.
-        {% else %}
-        is open.
-        {% endif %}
-    </p>
-    <p class="narrative mb-0">
-        Across everything you’ve done in <strong>{{ symbol }}</strong>
-        {%- if kpis.first_trade and kpis.last_trade -%}
-        {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
-        , with activity on <strong>{{ kpis.first_trade|human_date }}</strong>
-        {%- else -%}
-        , from <strong>{{ kpis.first_trade|human_date }}</strong> through <strong>{{ kpis.last_trade|human_date }}</strong>
-        {%- endif -%}
-        {%- endif -%}
-        {%- if legs_activity is defined and legs_activity and legs_activity.spreads and legs_activity.fills -%}
-        : <strong>{{ legs_activity.fills }}</strong> fill{{ 's' if legs_activity.fills != 1 else '' }}
-        across <strong>{{ legs_activity.contracts }}</strong> contract{{ 's' if legs_activity.contracts != 1 else '' }}
-        in <strong>{{ legs_activity.spreads }}</strong> spread{{ 's' if legs_activity.spreads != 1 else '' }}
-        {% if legs_activity.partial %}. Some contracts filled in more than one order{% endif %}
-        {% if kpis.num_winners + kpis.num_losers > 0 %}. <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed spreads{% endif %}.
-        {%- elif kpis.total_trades > 0 -%}
-        : <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}
-        {% if kpis.num_winners + kpis.num_losers > 0 %}
-        (closed legs: <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong>)
-        {% endif %}.
-        {%- else -%}.
-        {%- endif %}
-    </p>
-    {% else %}
-    <p class="narrative mb-0">
-        Your work in <strong>{{ symbol }}</strong> is fully closed
-        {% if kpis.first_trade and kpis.last_trade -%}
-        {%- if kpis.first_trade[:10] == kpis.last_trade[:10] -%}
-        (activity on <strong>{{ kpis.first_trade|human_date }}</strong>)
-        {%- else -%}
-        (roughly <strong>{{ kpis.first_trade|human_date }}</strong> — <strong>{{ kpis.last_trade|human_date }}</strong>)
-        {%- endif -%}
-        {%- endif %}
-        {% if legs_activity is defined and legs_activity and legs_activity.spreads and legs_activity.fills -%}
-        with <strong>{{ legs_activity.fills }}</strong> fill{{ 's' if legs_activity.fills != 1 else '' }}
-        across <strong>{{ legs_activity.contracts }}</strong> contract{{ 's' if legs_activity.contracts != 1 else '' }}
-        in <strong>{{ legs_activity.spreads }}</strong> spread{{ 's' if legs_activity.spreads != 1 else '' }}{% if legs_activity.partial %}. Some contracts filled in more than one order{% endif %}{% if kpis.num_winners + kpis.num_losers > 0 %}. <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed spreads{% endif %}.
-        {% elif kpis.total_trades > 0 -%}
-        with <strong>{{ kpis.total_trades }}</strong> individual fill{{ 's' if kpis.total_trades != 1 else '' }}{% if kpis.num_winners + kpis.num_losers > 0 %} and <strong>{{ kpis.num_winners }}W</strong> / <strong>{{ kpis.num_losers }}L</strong> on closed legs{% endif %}.
-        {%- else -%}.
-        {%- endif %}
-    </p>
-    {% endif %}
-</div>
-{% endif %}
-
-
 {% set practice = session.get('paper_practice_sent') %}
 {% set _pending = paper_orders if paper_orders is defined else [] %}
 {% if _pending or (practice and (practice.link_symbol or practice.symbol) == symbol) %}
@@ -1215,43 +1534,6 @@
     <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.
 </div>
 {% elif kpis %}
-
-{% include "_history_window_note.html" %}
-
-{# ── KPI Row ──
-   Realized / unrealized decompose the hero total. Premium and dividends
-   stay here only when the review card above did not already state them. #}
-{% set _tile_labels = story_summary.tiles | map(attribute='label') | list if story_summary and story_summary.tiles else [] %}
-<div class="ht-statbar mb-3">
-    <div class="ht-stat">
-        <span class="ht-stat-l">{{ term('Realized P&L') }}</span>
-        <span class="ht-stat-v {% if kpis.realized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.realized_pnl) }}</span>
-    </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">{{ term('Unrealized P&L') }}</span>
-        <span class="ht-stat-v {% if kpis.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ money(kpis.unrealized_pnl) }}</span>
-    </div>
-    {% if (kpis.premium_collected or 0) > 0 %}
-    <div class="ht-stat">
-        <span class="ht-stat-l">{{ term('Premium Collected') }}</span>
-        <span class="ht-stat-v text-positive">{{ money(kpis.premium_collected) }}</span>
-    </div>
-    {% endif %}
-    <div class="ht-stat">
-        <span class="ht-stat-l">{{ term('Win Rate') }}</span>
-        <span class="ht-stat-v">{{ win_rate_label(kpis.win_rate, kpis.num_winners, kpis.num_losers) }}</span>
-    </div>
-    <div class="ht-stat">
-        <span class="ht-stat-l">Avg Days</span>
-        <span class="ht-stat-v">{% if (kpis.total_trades or 0) == 0 %}—{% else %}{{ "{:.0f}".format(kpis.avg_days) }}{% endif %}</span>
-    </div>
-    {% if 'Dividends' not in _tile_labels %}
-    <div class="ht-stat">
-        <span class="ht-stat-l">Dividends</span>
-        <span class="ht-stat-v text-positive">{{ money(kpis.dividend_income) }}</span>
-    </div>
-    {% endif %}
-</div>
 
 {# ── Account Toggle Bar (turn entire accounts on/off) ── #}
 {% if account_toggles and account_toggles|length > 1 %}
@@ -1447,50 +1729,6 @@
 </script>
 {% endif %}
 
-{# ── Cumulative P&L Chart ── #}
-<div class="chart-wrapper mb-4" id="position-chart">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-        <div>
-            <h6 class="pd-h mb-1">Cumulative P&amp;L</h6>
-            {% if prices_through_date and has_underlying_price %}
-            <p class="text-muted small mb-0" id="pnlChartPriceCaption" style="display:none;">Stock prices through {{ prices_through_date }}.</p>
-            {% endif %}
-        </div>
-        {% if has_underlying_price %}
-        <div class="form-check form-switch mb-0" style="padding-left:2.4em;">
-            <input class="form-check-input" type="checkbox" id="togglePriceLine">
-            <label class="form-check-label small text-muted" for="togglePriceLine">Show {{ symbol }} price</label>
-        </div>
-        {% endif %}
-    </div>
-    <div class="pnl-chart-box">
-        <canvas id="pnlChart"></canvas>
-    </div>
-    {% if story_days %}
-    <p class="text-muted small mb-0 mt-2">
-        Dots mark your trade days &mdash; click one to jump to that day in the review below. Click a day in the review to highlight its dot here.
-    </p>
-    {% endif %}
-    {% if chart_read and not simple_view %}
-    <div class="chart-read mt-3" id="chartRead"
-         data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
-         data-digest="{{ chart_read.digest }}"
-         data-scope="{{ chart_read.scope }}"
-         data-locked="{{ '1' if chart_read.locked else '0' }}"
-         data-pending="{{ '1' if chart_read.pending else '0' }}">
-        <div class="chart-read-kicker">On this chart</div>
-        <p class="chart-read-lead">{{ chart_read.lead }}</p>
-        <div class="chart-read-more {% if chart_read.locked %}is-locked{% endif %}">
-            <p class="chart-read-rest" id="chartReadRest">{{ chart_read.rest }}</p>
-            <form class="chart-read-upgrade" method="post" action="{{ url_for('billing_checkout_ai') }}"{% if not chart_read.show_upgrade %} hidden{% endif %}>
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-sm btn-primary">Upgrade to HappyTrader AI to read the rest</button>
-            </form>
-        </div>
-    </div>
-    {% endif %}
-</div>
-
 {# ── Position story: day-by-day review in Options / Shares / Cash ── #}
 {% if story_days %}
 {% set _day_count = story_days | selectattr('type', 'equalto', 'day') | list | length %}
@@ -1610,14 +1848,19 @@
 </p>
 {% endif %}
 
-{# Simple view keeps the chart and the legs up front. Strategy rows,
-   if-held, the breakdown, and the matrix stay behind one disclosure. #}
+{# Simple view keeps the chart, the matrix, and the legs up front.
+   Strategy rows, if-held, and the breakdown stay behind one disclosure. #}
 {% if simple_view %}
 <details class="disclosure" id="pd-show-more">
     <summary><span class="section-header">Show more</span></summary>
     <div class="disclosure-body">
         {% if chart_read %}
-        <div class="chart-read mt-3">
+        <div class="chart-read mt-3" id="chartRead"
+             data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
+             data-digest="{{ chart_read.digest }}"
+             data-scope="{{ chart_read.scope }}"
+             data-locked="{{ '1' if chart_read.locked else '0' }}"
+             data-pending="{{ '1' if chart_read.pending else '0' }}">
             <div class="chart-read-kicker">On this chart</div>
             <p class="chart-read-lead">{{ chart_read.lead }}</p>
         </div>
@@ -1833,76 +2076,6 @@
     </div>
 </details>
 
-{# ── Win/Loss matrix. Secondary, so it stays behind this disclosure.
-   Cell color is the page gain/loss pair, not a second palette. #}
-{% if option_matrices %}
-<details class="pd-fold" id="pd-matrix">
-    <summary class="pd-fold-sum">
-        <span class="pd-h">Win/Loss matrix</span>
-        <span class="pd-fold-note">DTE versus strike distance. Avg P&amp;L, contracts, and win rate.</span>
-    </summary>
-    <div class="pd-fold-body">
-        {% for mat in option_matrices %}
-        <div class="{% if not loop.first %}mt-3{% endif %}">
-            <h3 class="pd-h mb-1">
-                {{ mat.strategy }}
-                <span class="pd-fold-note">({{ mat.trade_count }} contracts)</span>
-            </h3>
-            <div class="wl-scroll">
-                <table class="table table-sm table-bordered align-middle mb-0 wl-matrix">
-                    <thead>
-                        <tr>
-                            <th class="wl-axis">{{ term('DTE') }} \ {{ term('Strike Distance', 'strike-price') }}</th>
-                            {% for col in mat.col_headers %}
-                            <th class="text-center wl-axis">{{ col }}</th>
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in mat.rows %}
-                        <tr>
-                            <td class="fw-semibold wl-axis text-nowrap">{{ row.dte_label }}</td>
-                            {% for cell in row.cells %}
-                            {% if cell.count == 0 %}
-                            <td class="text-center wl-empty">&mdash;</td>
-                            {% else %}
-                            {% set wr = cell.win_rate %}
-                            {% if wr >= 75 %}
-                                {% set tone = "wl-win" %}
-                            {% elif wr >= 50 %}
-                                {% set tone = "wl-win-soft" %}
-                            {% elif wr >= 25 %}
-                                {% set tone = "wl-loss-soft" %}
-                            {% else %}
-                                {% set tone = "wl-loss" %}
-                            {% endif %}
-                            <td class="text-center {{ tone }}">
-                                <div class="wl-pnl">
-                                    {% if cell.avg_pnl is not none %}{{ money(cell.avg_pnl, 0) }}{% else %}&mdash;{% endif %}
-                                </div>
-                                <div class="wl-meta">
-                                    {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
-                                </div>
-                            </td>
-                            {% endif %}
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endfor %}
-        <div class="pd-legend">
-            <span><span class="wl-swatch wl-loss"></span> 0–24% wins</span>
-            <span><span class="wl-swatch wl-loss-soft"></span> 25–49%</span>
-            <span><span class="wl-swatch wl-win-soft"></span> 50–74%</span>
-            <span><span class="wl-swatch wl-win"></span> 75–100%</span>
-        </div>
-    </div>
-</details>
-{% endif %}
-
 {% if simple_view %}
     </div>
 </details>
@@ -1969,21 +2142,16 @@
 (function () {
     var box = document.getElementById('chartRead');
     if (!box || box.dataset.pending !== '1') return;
-    var csrf = document.querySelector('meta[name="csrf-token"]');
-    var token = csrf ? csrf.getAttribute('content') : '';
-    var fd = new FormData();
-    fd.append('digest', box.dataset.digest || '');
-    fd.append('scope', box.dataset.scope || '');
-    if (token) fd.append('csrf_token', token);
-    fetch(box.dataset.url, {
-        method: 'POST',
-        body: fd,
-        headers: token ? { 'X-CSRFToken': token } : {},
-        credentials: 'same-origin'
-    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-        if (!data) return;
+    var settled = false;
+    function finish(data) {
+        if (settled) return;
+        settled = true;
+        if (!data || data.hide || !data.lead) {
+            box.hidden = true;
+            return;
+        }
         var lead = box.querySelector('.chart-read-lead');
-        if (lead && data.lead) lead.textContent = data.lead;
+        if (lead) lead.textContent = data.lead;
         var rest = document.getElementById('chartReadRest');
         if (rest) rest.textContent = data.body || '';
         var upgrade = box.querySelector('.chart-read-upgrade');
@@ -1991,7 +2159,35 @@
             var withheld = data.locked && data.lead && !data.body;
             upgrade.hidden = !withheld;
         }
-    }).catch(function () {});
+        box.dataset.pending = '0';
+    }
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    var token = csrf ? csrf.getAttribute('content') : '';
+    var fd = new FormData();
+    fd.append('digest', box.dataset.digest || '');
+    fd.append('scope', box.dataset.scope || '');
+    if (token) fd.append('csrf_token', token);
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () {
+        if (ctrl) ctrl.abort();
+        finish(null);
+    }, 10000);
+    var opts = {
+        method: 'POST',
+        body: fd,
+        headers: token ? { 'X-CSRFToken': token } : {},
+        credentials: 'same-origin'
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+    fetch(box.dataset.url, opts).then(function (r) {
+        return r.ok ? r.json() : null;
+    }).then(function (data) {
+        clearTimeout(timer);
+        finish(data);
+    }).catch(function () {
+        clearTimeout(timer);
+        finish(null);
+    });
 })();
 </script>
 <script>

@@ -5,7 +5,8 @@ from pathlib import Path
 PAGE = Path("app/templates/position_detail.html").read_text()
 
 
-def test_story_order_is_headline_mirror_then_legs():
+def test_story_order_is_headline_mirror_chart_matrix_then_legs():
+    stats = PAGE.find('class="pos-hero-stats"')
     story = PAGE.find('{% include "_story_summary.html" %}')
     mirror_end = PAGE.find("<!-- MIRROR-END -->")
     legs = PAGE.find('id="pd-legs"')
@@ -15,9 +16,19 @@ def test_story_order_is_headline_mirror_then_legs():
     by_type = PAGE.find('id="pd-by-type"')
     raw = PAGE.find('id="pd-raw"')
     matrix = PAGE.find('id="pd-matrix"')
-    assert story < mirror_end < legs < chart < worked
-    assert details < by_type < raw < matrix
+    assert stats < story < mirror_end < chart < matrix < legs < worked < details
+    assert "Across everything" not in PAGE
+    assert "individual fill" not in PAGE
+    assert '_history_window_note.html' not in PAGE
+    assert "Premium Collected" not in PAGE
+    assert "ht-pd-window-hint-dismissed" in PAGE
+    assert ">Realized<" in PAGE and ">Unrealized<" in PAGE and ">Dividends<" in PAGE
+    assert PAGE.count('id="position-chart"') == 1
+    assert PAGE.count('id="pnlChart"') == 1
+    assert details < by_type < raw
+    assert matrix < details
     assert '<details class="pd-fold" id="pd-details">' in PAGE
+    assert '<details class="pd-fold" id="pd-matrix" open>' in PAGE
     assert "Breakdown by type and the raw log" in PAGE
     assert PAGE.count('{% include "_story_summary.html" %}') == 1
     assert PAGE.count('{% include "_held_to_expiry.html" %}') == 1
@@ -38,7 +49,24 @@ def test_gain_and_loss_are_one_pair_and_cards_share_one_style():
         assert old not in PAGE
     assert 'class="wl-win"' in PAGE or 'tone = "wl-win"' in PAGE
     assert 'tone = "wl-loss"' in PAGE
-    assert '<details class="pd-fold" id="pd-matrix">' in PAGE
+    assert '<details class="pd-fold" id="pd-matrix" open>' in PAGE
+
+
+def test_hero_scope_chips_sit_in_the_hero_not_a_full_width_bar():
+    assert 'class="ov-bar"' not in PAGE
+    assert 'class="filter-bar filter-bar-hero"' not in PAGE
+    assert 'class="pd-hero-scope"' in PAGE
+    assert "data-ht-persist-tenants" in PAGE
+    assert "scope_account_choices|length > 1" in PAGE
+    hero = PAGE.split('class="review-hero pos-hero"', 1)[1].split("<!-- MIRROR-END -->", 1)[0]
+    assert hero.find("pos-hero-id") < hero.find("pos-total") < hero.find("pd-hero-scope")
+    assert 'grid-template-areas: "id total" "scope total" "stats stats"' in PAGE
+    phone = PAGE.split("@media (max-width: 640px)", 1)[1].split("</style>", 1)[0]
+    assert 'grid-template-areas: "id total" "scope scope" "stats stats"' in phone
+    assert "minmax(8.75rem, 11.5rem)" in phone
+    assert "flex-wrap: nowrap" in phone
+    assert "padding: .6rem 1.15rem .65rem" in PAGE
+    assert "padding: .45rem .65rem .5rem" in phone
 
 
 def test_headline_total_uses_cqi_and_does_not_truncate():
@@ -75,3 +103,9 @@ def test_wide_tables_keep_columns_on_a_phone():
     assert "tbody { display: block" not in phone
     assert "thead { display: none" not in phone
     assert "overflow-x: auto" in phone
+    assert "table.wl-matrix thead { display: table-header-group; }" in phone
+    assert "table.wl-matrix tr { display: table-row; }" in phone
+    assert "table.wl-matrix td" in phone
+    assert "display: table-cell" in phone
+    assert "height: 280px" in phone
+    assert "height: 520px" in PAGE.split("@media (max-width: 640px)", 1)[0]

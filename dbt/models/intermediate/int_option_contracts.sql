@@ -430,49 +430,41 @@ split_links as (
     ) = 1
 ),
 
--- OTM-at-expiry inference (worthless-expiry auto-close).
+-- Expiry settlement from the official close (app/expiry_settlement.py).
 --
--- The existing calendar-truth rule (``option_expiry < current_date()``
--- below) realizes a contract the FIRST DAY AFTER expiry — but on
--- expiry day itself it still reads as Open until BigQuery's
--- ``current_date()`` advances past expiry. That gap matters: a trader
--- whose Friday-expiry short call closes OTM at 4:00 PM ET sees the
--- broker snapshot's stale cost-to-close (e.g. -$183) all evening and
--- weekend long — even though the contract is unambiguously worthless
--- and the premium is fully realized. The Monday broker sync ships an
--- explicit ``option_expired`` action and the existing close_type
--- precedence then fires, but we shouldn't have to wait two calendar
--- days for the page to be honest about something Friday's closing
--- print already determined.
+-- Do not wait for the broker's expired / as-of / cash-settlement line.
+-- Once the expiry session is over and stg_daily_prices has the
+-- underlying's close on the expiry date, a contract with no closing
+-- activity realizes immediately:
 --
--- The fix: when the underlying's daily close on the expiry date is
--- strictly OTM relative to the strike, infer that the contract
--- expired worthless and realize at ``net_cash_flow`` immediately.
--- Strict OTM only (close < strike for calls; close > strike for
--- puts) — at-the-money or ITM expiries are left as Open because the
--- broker still has discretion (auto-exercise threshold) and the
--- realized number would differ between assignment vs. exercise.
--- For ITM, wait for the broker's explicit action.
+--   * OTM or ATM — settlement cash $0, so realized P&L is the opening
+--     fills (short keeps the premium, long loses the debit).
+--   * ITM cash-settled index (SPX/SPXW/XSP/NDX/RUT, plus NDXP/RUTW and
+--     VIX/DJX/OEX/XEO/RVX so those are not treated as a share
+--     assignment) — add intrinsic, strike vs close × 100 × opened
+--     contracts. A short pays it; a long receives it.
+--   * ITM equity — option P&L stays the fill cash. The shares are the
+--     equity line, same as an option_assigned row. No synthetic share fill.
 --
--- The yfinance daily close for the expiry day lives in
--- ``stg_daily_prices`` and lands via the price loader after market
--- close (Render cron at ~21:30 UTC weekdays). The CI dbt build then
--- picks it up. Anyone hitting the page over the weekend sees the
--- realized credit; the Monday broker sync still ships
--- ``option_expired`` and the existing close_type precedence
--- harmlessly takes over with the same ``net_cash_flow``.
+-- The row is close_type 'Settled at expiry (est.)' until a broker close
+-- exists (contracts_closed > 0 or an action close_type). That close's
+-- cash is already in net_cash_flow, so the estimate adds nothing.
 --
--- Why this is safe to do BEFORE the broker confirms:
---   net_cash_flow is the sum of explicit fills only. For an OTM
---   expiry there is no closing fill (the option just dies), so
---   net_cash_flow = premium received (or paid). That's exactly
---   what the broker's ``option_expired`` event with amount=$0 will
---   crystallize too. No double-counting, no risk of disagreement.
--- The expiry-day close is universal market data (same for every tenant),
--- and stg_daily_prices carries no tenant_id. Dedup to one row per
--- (underlying_symbol, expiry_date) and join on symbol+date only — joining
--- on the (account, user_id) label would fan out across physical accounts
--- that share a display label and duplicate every option contract.
+-- On the expiry date itself the session is over at 16:00 ET, or 16:15 ET
+-- for those index roots (a daily bar can print before the index close).
+-- After that New York date, the session is over. No official close stays
+-- Open through that session so the opening credit is not booked as a
+-- worthless win. If the close is still missing on the next weekday
+-- (Friday → Monday), fall back to the old calendar close: expired at $0,
+-- labeled 'Settled at expiry (est.)', close_date = option_expiry. A later
+-- price or broker line replaces that estimate; the date stays the expiry
+-- so the realized dollar does not move to the day the fallback fired.
+--
+-- Price: exact underlying, else the parent (SPXW→SPX, NDXP→NDX, RUTW→RUT)
+-- only when the exact symbol has no row — a join that can match both
+-- would fan out. One close per (symbol, date); stg_daily_prices has no
+-- tenant grain. Joining on (account, user_id) would duplicate contracts
+-- that share a display label.
 expiry_close_lookup as (
     select
         symbol     as underlying_symbol,
@@ -490,40 +482,82 @@ otm_at_expiry as (
         c.account,
         c.user_id,
         c.trade_symbol,
-        e.close_price as expiry_close,
-        -- Strictly OTM on the expiry close, any day. ATM and ITM are
-        -- not worthless: a short ITM index option cash-settles the next
-        -- morning, and booking the opening credit before that fill
-        -- arrives reports a phantom win (SPXW 7650C, Oct 2026).
+        coalesce(exact.close_price, parent.close_price) as expiry_close,
         (
             c.option_strike is not null
-            and e.close_price is not null
+            and coalesce(exact.close_price, parent.close_price) is not null
             and (
-                (c.option_type = 'C' and e.close_price < c.option_strike)
-                or (c.option_type = 'P' and e.close_price > c.option_strike)
+                (c.option_type = 'C'
+                    and coalesce(exact.close_price, parent.close_price) < c.option_strike)
+                or (c.option_type = 'P'
+                    and coalesce(exact.close_price, parent.close_price) > c.option_strike)
             )
         ) as strictly_otm,
-        case
-            -- Strict OTM call: underlying closed BELOW the strike.
-            when c.option_expiry = current_date()
-                 and c.option_strike is not null
-                 and c.option_type   = 'C'
-                 and e.close_price is not null
-                 and e.close_price < c.option_strike
-            then true
-            -- Strict OTM put: underlying closed ABOVE the strike.
-            when c.option_expiry = current_date()
-                 and c.option_strike is not null
-                 and c.option_type   = 'P'
-                 and e.close_price is not null
-                 and e.close_price > c.option_strike
-            then true
-            else false
-        end as inferred_otm_today
+        -- Same-day worthless expiry, only after the bell. Keeps a partial
+        -- close from staying "open" once the remainder is strictly OTM.
+        (
+            c.option_expiry = current_date('America/New_York')
+            and c.option_strike is not null
+            and coalesce(exact.close_price, parent.close_price) is not null
+            and (
+                (c.option_type = 'C'
+                    and coalesce(exact.close_price, parent.close_price) < c.option_strike)
+                or (c.option_type = 'P'
+                    and coalesce(exact.close_price, parent.close_price) > c.option_strike)
+            )
+            and time(current_datetime('America/New_York')) >= (
+                case
+                    when upper(trim(coalesce(c.underlying_symbol, ''))) in (
+                        'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                        'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+                    )
+                    then time '16:15:00'
+                    else time '16:00:00'
+                end
+            )
+        ) as inferred_otm_today,
+        (
+            c.option_expiry is not null
+            and (
+                c.option_expiry < current_date('America/New_York')
+                or (
+                    c.option_expiry = current_date('America/New_York')
+                    and time(current_datetime('America/New_York')) >= (
+                        case
+                            when upper(trim(coalesce(c.underlying_symbol, ''))) in (
+                                'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                                'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+                            )
+                            then time '16:15:00'
+                            else time '16:00:00'
+                        end
+                    )
+                )
+            )
+        ) as expiry_session_over,
+        -- Next weekday after expiry (Friday → Monday). Once that New York
+        -- date has started and the official close is still missing, the
+        -- $0 calendar fallback is due.
+        (
+            c.option_expiry is not null
+            and current_date('America/New_York') >= case extract(dayofweek from c.option_expiry)
+                when 6 then date_add(c.option_expiry, interval 3 day)
+                when 7 then date_add(c.option_expiry, interval 2 day)
+                else date_add(c.option_expiry, interval 1 day)
+            end
+        ) as unpriced_fallback_due
     from all_contracts c
-    left join expiry_close_lookup e
-        on c.underlying_symbol = e.underlying_symbol
-        and c.option_expiry     = e.expiry_date
+    left join expiry_close_lookup exact
+        on upper(trim(c.underlying_symbol)) = upper(trim(exact.underlying_symbol))
+        and c.option_expiry = exact.expiry_date
+    left join expiry_close_lookup parent
+        on exact.close_price is null
+        and c.option_expiry = parent.expiry_date
+        and upper(trim(parent.underlying_symbol)) = case upper(trim(c.underlying_symbol))
+            when 'SPXW' then 'SPX'
+            when 'NDXP' then 'NDX'
+            when 'RUTW' then 'RUT'
+        end
 ),
 
 -- Join the live snapshot + OTM-at-expiry inference once, then derive the
@@ -541,6 +575,8 @@ joined as (
         iotm.inferred_otm_today,
         iotm.expiry_close,
         iotm.strictly_otm,
+        iotm.expiry_session_over,
+        iotm.unpriced_fallback_due,
         cur.trade_symbol   as cur_trade_symbol,
         cur.market_value   as cur_market_value,
         cur.unrealized_pnl as cur_unrealized_pnl,
@@ -638,27 +674,77 @@ flagged2 as (
          and coalesce(contracts_closed, 0) > 1e-6
          and coalesce(option_expiry >= current_date(), true)
          and not coalesce(inferred_otm_today, false)) as is_partial_open,
-        -- Past expiry, no closing fill, and not a proven worthless
-        -- expiry. Equity options keep the calendar close (net_cash_flow
-        -- on the expiry date, including a strictly-OTM worthless expiry).
-        -- Assignment for those contracts is a later change. Cash-settled
-        -- index roots (SPXW and the rest) stay pending even when the
-        -- underlying close is missing — yfinance often has SPX, not
-        -- SPXW — until the as-of settlement row arrives. A strictly OTM
-        -- index still expires worthless.
+        -- No closing activity, session over, official close in hand.
+        -- Replaces the old 'Settlement pending' hold: the close is
+        -- enough to realize, and the label says it is still an estimate.
+        -- A missing close uses the same estimate once the next weekday
+        -- has started, with $0 settlement (est_settlement_cash stays 0
+        -- because expiry_close is null).
         (
             coalesce(close_type, '') = ''
             and _activity_flat_close_date is null
             and coalesce(contracts_closed, 0) < 1e-6
             and option_expiry is not null
-            and option_expiry < current_date()
-            and not coalesce(inferred_otm_today, false)
-            and not coalesce(strictly_otm, false)
-            and upper(trim(coalesce(underlying_symbol, ''))) in (
-                'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
-                'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+            and coalesce(expiry_session_over, false)
+            and (
+                (
+                    option_strike is not null
+                    and expiry_close is not null
+                )
+                or (
+                    expiry_close is null
+                    and coalesce(unpriced_fallback_due, false)
+                )
             )
-        ) as settlement_pending
+        ) as expiry_settled_est,
+        -- Session over, still no close, and the next weekday has not
+        -- started. Stay open. Booking net_cash_flow here is the
+        -- worthless-ITM bug.
+        (
+            coalesce(close_type, '') = ''
+            and _activity_flat_close_date is null
+            and coalesce(contracts_closed, 0) < 1e-6
+            and option_expiry is not null
+            and coalesce(expiry_session_over, false)
+            and expiry_close is null
+            and not coalesce(unpriced_fallback_due, false)
+        ) as awaiting_expiry_close,
+        -- Intrinsic for an ITM cash-settled index. Equity and OTM/ATM
+        -- contribute 0; a later broker close contributes 0 because
+        -- expiry_settled_est is false once contracts_closed > 0.
+        case
+            when coalesce(close_type, '') != ''
+              or _activity_flat_close_date is not null
+              or coalesce(contracts_closed, 0) >= 1e-6
+              or not coalesce(expiry_session_over, false)
+              or expiry_close is null
+              or option_strike is null
+              or upper(trim(coalesce(underlying_symbol, ''))) not in (
+                    'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+                    'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+                )
+            then 0.0
+            else round(
+                (case when direction = 'Sold' then -1.0 else 1.0 end)
+                * greatest(
+                    case
+                        when option_type = 'C' then expiry_close - option_strike
+                        when option_type = 'P' then option_strike - expiry_close
+                        else 0.0
+                    end,
+                    0.0
+                )
+                * 100.0
+                * coalesce(
+                    case
+                        when direction = 'Sold' then contracts_sold_to_open
+                        else contracts_bought_to_open
+                    end,
+                    0.0
+                ),
+                2
+            )
+        end as est_settlement_cash
     from flagged
 )
 
@@ -683,8 +769,8 @@ select
     -- realized_close_date instead. For fully-closed contracts this is the
     -- same effective close_date as before.
     case
-        when settlement_pending then cast(null as date)
-        when is_partial_open then null
+        when expiry_settled_est then option_expiry
+        when awaiting_expiry_close or is_partial_open then cast(null as date)
         else eff_close_date
     end as close_date,
 
@@ -693,7 +779,8 @@ select
     -- fill date for partial closes; NULL when nothing has closed. Read by
     -- int_option_contract_daily_pnl's realized branch.
     case
-        when settlement_pending then cast(null as date)
+        when expiry_settled_est then option_expiry
+        when awaiting_expiry_close then cast(null as date)
         else eff_close_date
     end as realized_close_date,
 
@@ -707,15 +794,13 @@ select
     net_cash_flow,
     total_fees,
 
-    -- close_type: preserve broker-confirmed values when present.
-    -- ``ExpiredOTM`` is reserved for the inferred-from-yfinance branch
-    -- so admin debugging can distinguish "we deduced this" from
-    -- "broker confirmed this." When the Monday sync ships an explicit
-    -- ``option_expired`` event, ``close_type`` becomes 'Expired'
-    -- and overrides this value in the next build (same realized
-    -- credit either way — net_cash_flow doesn't change).
+    -- close_type: a broker action wins. The estimate label is only for
+    -- a session that is over, with an official close, and no closing
+    -- fill yet. The next build that sees option_expired / as-of /
+    -- assigned replaces it (expiry_settled_est is then false, and
+    -- net_cash_flow already includes the broker cash).
     case
-        when settlement_pending then 'Settlement pending'
+        when expiry_settled_est then 'Settled at expiry (est.)'
         when close_type is not null then close_type
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null then 'Closed'
@@ -744,15 +829,16 @@ select
     -- opened quantity was closed (is_partial_open). A partial close keeps
     -- the contract Open; the realized portion is credited separately.
     --
-    -- The ``inferred_otm_today`` branch handles expiry day itself:
-    -- when the underlying closed strictly OTM, realize before the
-    -- broker confirms on Monday. See ``otm_at_expiry`` CTE header.
+    -- The estimate realizes on the expiry date once the bell has rung
+    -- and the official close is in. No close stays Open (awaiting)
+    -- until the next weekday, then expires at $0 under the same
+    -- estimate. See the otm_at_expiry header.
     case
-        when settlement_pending                    then 'Settlement pending'
+        when expiry_settled_est                    then 'Closed'
         when close_type is not null and not is_partial_open then 'Closed'
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then 'Closed'
-        when option_expiry < current_date()   then 'Closed'
+        when awaiting_expiry_close            then 'Open'
         when inferred_otm_today               then 'Closed'
         when cur_trade_symbol is not null      then 'Open'
         -- Opened before today and the live snapshot no longer carries
@@ -800,13 +886,13 @@ select
         -- alone is a phantom profit (or a phantom loss on an exercised
         -- split-adjusted symbol).
         when coalesce(opened_before_history, false) then 0.0
-        -- No settlement fill yet. Do not book the opening credit as if
-        -- the short expired at $0.
-        when settlement_pending then 0.0
+        -- Opening fills plus index intrinsic. Equity ITM adds $0
+        -- (assignment lives on the stock line). OTM adds $0.
+        when expiry_settled_est
+            then net_cash_flow + est_settlement_cash
         when close_type is not null and not is_partial_open then net_cash_flow
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then net_cash_flow
-        when option_expiry < current_date()   then net_cash_flow
         when inferred_otm_today               then net_cash_flow
         when is_partial_open
             then net_cash_flow + coalesce(cur_market_value, 0)
@@ -824,15 +910,15 @@ select
     -- a partial close lands consistently in int_option_contract_daily_pnl
     -- (realized branch), int_position_legs (closed-options P&L) and
     -- int_strategy_classification (realized/unrealized split). For a fully-
-    -- closed contract it equals net_cash_flow (== total_pnl), so those
-    -- consumers are byte-for-byte unchanged for the non-partial case.
+    -- closed contract it equals net_cash_flow plus any estimated index
+    -- intrinsic (== total_pnl). Broker closes add no second cash.
     case
         when coalesce(opened_before_history, false) then 0.0
-        when settlement_pending then 0.0
+        when expiry_settled_est
+            then net_cash_flow + est_settlement_cash
         when close_type is not null and not is_partial_open then net_cash_flow
         when _activity_flat_close_date is not null
              and cur_trade_symbol is null     then net_cash_flow
-        when option_expiry < current_date()   then net_cash_flow
         when inferred_otm_today               then net_cash_flow
         when is_partial_open
             then net_cash_flow
@@ -847,7 +933,8 @@ select
     date_diff(
         coalesce(
             case
-                when settlement_pending or is_partial_open then null
+                when expiry_settled_est then option_expiry
+                when awaiting_expiry_close or is_partial_open then null
                 else eff_close_date
             end,
             current_date()

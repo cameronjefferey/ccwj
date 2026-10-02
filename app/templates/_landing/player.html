@@ -23,7 +23,7 @@
         }
     }
 
-    function mount(btn) {
+    function createPlayer(btn) {
         var title = btn.getAttribute("data-title") || "Video";
         var id = youtubeId(btn.getAttribute("data-youtube-id"));
         var mp4 = mediaUrl(btn.getAttribute("data-mp4-url"));
@@ -50,14 +50,72 @@
             player.setAttribute("role", "status");
             player.textContent = "This video is not public yet.";
         }
-        btn.replaceWith(player);
+        return player;
+    }
+
+    function focusPlayer(player) {
         var focusTarget = player.querySelector("iframe, video") || player;
         if (focusTarget.tabIndex < 0 && focusTarget === player) player.tabIndex = -1;
         try { focusTarget.focus(); } catch (err) { /* focus is optional */ }
     }
 
+    function mount(btn) {
+        var player = createPlayer(btn);
+        btn.replaceWith(player);
+        focusPlayer(player);
+    }
+
+    function openLightbox(btn) {
+        if (document.querySelector(".ht-lightbox")) return;
+        var title = btn.getAttribute("data-title") || "Video";
+        var root = document.createElement("div");
+        root.className = "ht-lightbox";
+        root.setAttribute("role", "dialog");
+        root.setAttribute("aria-modal", "true");
+        root.setAttribute("aria-label", title);
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "ht-lightbox-close";
+        close.setAttribute("aria-label", "Close");
+        close.textContent = "Close";
+        var stage = document.createElement("div");
+        stage.className = "ht-lightbox-stage";
+        stage.appendChild(createPlayer(btn));
+        root.appendChild(close);
+        root.appendChild(stage);
+        var previous = document.activeElement;
+        function dismiss() {
+            document.removeEventListener("keydown", onKey);
+            root.remove();
+            document.body.classList.remove("ht-lightbox-open");
+            if (previous && previous.focus) {
+                try { previous.focus(); } catch (err) { /* focus is optional */ }
+            }
+        }
+        function onKey(event) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                dismiss();
+            }
+        }
+        close.addEventListener("click", function (event) {
+            event.stopPropagation();
+            dismiss();
+        });
+        root.addEventListener("click", function (event) {
+            if (event.target === root) dismiss();
+        });
+        document.addEventListener("keydown", onKey);
+        document.body.classList.add("ht-lightbox-open");
+        document.body.appendChild(root);
+        try { close.focus(); } catch (err) { /* focus is optional */ }
+    }
+
     document.querySelectorAll(".ht-facade").forEach(function (btn) {
-        btn.addEventListener("click", function () { mount(btn); });
+        btn.addEventListener("click", function () {
+            if (btn.getAttribute("data-lightbox") === "short") openLightbox(btn);
+            else mount(btn);
+        });
     });
 
     document.querySelectorAll("[data-catch]").forEach(function (root) {

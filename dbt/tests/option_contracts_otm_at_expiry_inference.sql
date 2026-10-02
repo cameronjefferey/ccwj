@@ -51,10 +51,20 @@ join prices p
     and (c.user_id is not distinct from p.user_id)
     and c.underlying_symbol = p.symbol
     and c.option_expiry     = p.date
-where c.option_expiry = current_date()
+where c.option_expiry = current_date('America/New_York')
   and c.option_strike is not null
   and p.close_price is not null
   and c.status = 'Open'
+  and time(current_datetime('America/New_York')) >= (
+      case
+          when upper(trim(coalesce(c.underlying_symbol, ''))) in (
+              'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
+              'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
+          )
+          then time '16:15:00'
+          else time '16:00:00'
+      end
+  )
   and (
       (c.option_type = 'C' and p.close_price < c.option_strike)
       or (c.option_type = 'P' and p.close_price > c.option_strike)

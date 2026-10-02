@@ -524,17 +524,11 @@ def _account_created_label(tenant_rows):
     return _fmt_as_of(min(dates))
 
 
-def _account_created_for_scope(tenant_ids):
-    """Connect date for the current scope (broker_tenants.created_at).
-
-    This is when the account was linked here, not the brokerage open
-    date — the history note must say "connected".
-    """
+def _scoped_broker_tenant_rows(tenant_ids):
+    """Broker-tenant rows in the current scope. None when the scope is unusable."""
     from app.models import get_broker_tenant, get_broker_tenants_for_user
 
-    if tenant_ids is None:
-        return None
-    if tenant_ids == []:
+    if tenant_ids is None or tenant_ids == []:
         return None
     try:
         rows = get_broker_tenants_for_user(current_user.id) or []
@@ -552,7 +546,36 @@ def _account_created_for_scope(tenant_ids):
             extra = None
         if extra:
             scoped.append(extra)
-    return _account_created_label(scoped)
+    return scoped
+
+
+def _account_created_for_scope(tenant_ids):
+    """Connect date for the current scope (broker_tenants.created_at).
+
+    This is when the account was linked here, not the brokerage open
+    date — the history note must say "connected".
+    """
+    rows = _scoped_broker_tenant_rows(tenant_ids)
+    if rows is None:
+        return None
+    return _account_created_label(rows)
+
+
+def _account_connected_on(tenant_ids):
+    """Earliest connect date in the scope, as a ``date``. None when unknown."""
+    rows = _scoped_broker_tenant_rows(tenant_ids)
+    if not rows:
+        return None
+    dates = []
+    for row in rows:
+        val = row.get("created_at") if isinstance(row, dict) else None
+        if isinstance(val, datetime):
+            dates.append(val.date())
+        elif isinstance(val, date):
+            dates.append(val)
+    if not dates:
+        return None
+    return min(dates)
 
 
 @app.route("/accounts")

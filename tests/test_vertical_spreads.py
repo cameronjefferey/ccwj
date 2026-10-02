@@ -293,7 +293,6 @@ def test_spxw_legs_table_counts_spreads_and_hides_the_long_loss():
     assert "text-overflow: clip" in page
     assert "max-width: 420px" in page
     assert "min-width: max-content" in page
-    assert "(closed legs:" in page
     source = (
         "{% set current_positions = current_positions %}"
         "{% set trade_outcomes = trade_outcomes %}"
@@ -328,34 +327,11 @@ def test_spxw_legs_table_counts_spreads_and_hides_the_long_loss():
     assert "SPXW Oct 1 &#39;26 $7650 / $7655C" in html or "SPXW Oct 1 '26 $7650 / $7655C" in html
 
 
-def test_fill_sentence_explains_eight_fills_across_six_contracts():
-    from app import app
-
+def test_position_page_does_not_repeat_the_fill_sentence():
+    """The hero already names the trade count, dates, and open status."""
     html_src = Path("app/templates/position_detail.html").read_text()
-    start = html_src.index("{# ── Position Narrative")
-    end = html_src.index("{% set practice", start)
-    grouped = group_vertical_spreads(_spxw_six())
-    note = legs_activity_summary(grouped, 8)
-    with app.app_context(), app.test_request_context("/"):
-        html = app.jinja_env.from_string(html_src[start:end]).render(
-            symbol="SPXW",
-            overall_status="Closed",
-            kpis={
-                "total_trades": 8,
-                "num_winners": 3,
-                "num_losers": 0,
-                "first_trade": "2026-09-29",
-                "last_trade": "2026-10-01",
-            },
-            legs_activity=note,
-        )
-    text = re.sub(r"\s+", " ", html)
-    assert "8" in text and "6" in text and "3" in text
-    assert "fills across" in text
-    assert "contracts" in text
-    assert "spreads" in text
-    assert "Some contracts filled in more than one order" in text
-    assert "3W" in text and "0L" in text
-    assert "on closed spreads" in text
-    assert "individual fill" not in text
-    assert "on closed legs" not in text
+    assert "{# ── Position Narrative" not in html_src
+    assert "fills across" not in html_src
+    assert "individual fill" not in html_src
+    assert "on closed legs" not in html_src
+    assert 'class="pos-hero-stats"' in html_src

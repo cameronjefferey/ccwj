@@ -168,9 +168,9 @@ def test_open_strategies_are_unique_and_template_keeps_spacing():
     rows.append({"status": "Closed", "strategy": "Covered Call"})
     assert unique_open_strategy_names(rows) == ["Buy and Hold"]
     html = Path("app/templates/position_detail.html").read_text()
-    assert "is <strong>{{ open_strategy_names[0] }}</strong>." in html
-    assert "{%- if kpis.num_winners" not in html
-    assert "(closed legs:" in html
+    assert "is <strong>{{ open_strategy_names[0] }}</strong>." not in html
+    assert "individual fill" not in html
+    assert 'class="pos-hero-stats"' in html
 
 
 def test_pages_name_themselves_and_install_is_not_a_dead_link():

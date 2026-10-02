@@ -123,7 +123,7 @@
             {% for t in _tt.trades %}
             <tr>
                 <td>
-                    <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
+                    <span class="tt-verb {{ 'lifecycle' if t.is_roll or t.action in ('option_expired','option_assigned','option_exercised','option_settled_est') else 'buy' if 'buy' in t.action or t.action == 'equity_buy' else 'sell' }}">{{ t.verb }}</span>
                 </td>
                 <td>
                     {% if t.symbol %}<a class="tt-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}
@@ -217,11 +217,10 @@
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-kind">Option</div>
                     </div>
                     <div>
-                        <div class="mover-meta">P&amp;L on contracts</div>
-                        <div class="mover-meta">Marks + closes</div>
+                        {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
+                        {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
                     </div>
                     {% else %}
                     <div>
@@ -249,11 +248,10 @@
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-kind">Option</div>
                     </div>
                     <div>
-                        <div class="mover-meta">P&amp;L on contracts</div>
-                        <div class="mover-meta">Marks + closes</div>
+                        {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
+                        {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
                     </div>
                     {% else %}
                     <div>

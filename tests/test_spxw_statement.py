@@ -425,19 +425,21 @@ def test_statement_spreads_group_and_the_oct1_credit_is_a_loss():
     assert closed_twenty["is_winner"] is True
 
 
-def test_pending_itm_short_is_not_an_expiry_win():
+def test_estimated_itm_spread_is_a_loss_not_a_worthless_win():
+    from app.expiry_settlement import ESTIMATE_LABEL
+
     short = {
         "type": "option",
         "strategy": "Call Spread",
         "trade_symbol": "SPXW  261001C07650000",
         "direction": "Sold",
-        "close_type": "Settlement pending",
+        "close_type": ESTIMATE_LABEL,
         "open_date": "2026-10-01",
         "close_date": "2026-10-01",
         "quantity": 10,
         "cost": 0,
         "proceeds": 7757.78,
-        "pnl": 0,
+        "pnl": 7757.78 - 50000,
         "premium_received": 7757.78,
         "tenant_id": TENANT,
         "account": ACCOUNT,
@@ -449,15 +451,17 @@ def test_pending_itm_short_is_not_an_expiry_win():
         "direction": "Bought",
         "proceeds": 0,
         "cost": 6332.22,
+        "pnl": -6332.22 + 45000,
         "premium_received": 0,
         "premium_paid": 6332.22,
     }
-    assert leg_outcome(short, "2026-10-01") == "Settlement pending"
+    assert leg_outcome(short, "2026-10-01") == ESTIMATE_LABEL
     grouped = group_vertical_spreads([short, long])
     assert len(grouped) == 1
-    assert grouped[0]["outcome"] == "Settlement pending"
-    assert grouped[0]["is_winner"] is None
-    assert grouped[0]["close_type"] == "Settlement pending"
+    assert grouped[0]["outcome"] == ESTIMATE_LABEL
+    assert grouped[0]["is_winner"] is False
+    assert round(grouped[0]["pnl"], 2) == -3574.44
+    assert grouped[0]["close_type"] == ESTIMATE_LABEL
 
     from pathlib import Path
 
@@ -494,8 +498,9 @@ def test_pending_itm_short_is_not_an_expiry_win():
             trade_outcomes=[row],
             symbol="SPXW",
         )
-    assert html.count("Settlement pending") >= 2
+    assert "Settlement pending" not in html
+    assert "Settled at expiry (est.)" in html
     assert "100% kept" not in html
     pnl_cell = html.split("pd-pnl", 1)[1].split("</td>", 1)[0]
-    assert "Settlement pending" in pnl_cell
-    assert "$0.00" not in pnl_cell
+    assert "-$3,574.44" in pnl_cell
+    assert "Settlement pending" not in pnl_cell
