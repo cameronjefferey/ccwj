@@ -1519,6 +1519,29 @@
             </form>
         </div>
         {% endif %}
+        {% if full_view_offer %}
+        <div class="alert alert-light border d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 mb-3 py-2" role="status">
+            <div class="small" style="min-width:0;flex:1 1 16rem;">
+                <strong>A real brokerage is connected.</strong>
+                <span class="text-muted">Switch to Full view to open Strategies, Trader Profile, and Insights.</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2 flex-shrink-0">
+                <form method="post" action="{{ url_for('profile') }}" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="set_app_view">
+                    <input type="hidden" name="app_view" value="full">
+                    <input type="hidden" name="from" value="offer">
+                    <button type="submit" class="btn btn-sm btn-primary">Switch to Full view</button>
+                </form>
+                <form method="post" action="{{ url_for('profile') }}" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="dismiss_full_view_offer">
+                    <input type="hidden" name="next" value="{{ request.full_path }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Keep Simple</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
         {# Reverse-trial state (app/plan.py via `plan_status` in the
            feature-flag context processor). None for beta / active / no-data,
            so only running trials, lapsed trials, and subscribers with a

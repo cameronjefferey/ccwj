@@ -816,6 +816,9 @@ def snaptrade_callback():
     saved = 0
     newly_saved = 0
     paper_saved = 0
+    # Before any new tenant is written, so "first connection" is still true.
+    from app.plan import user_has_real_brokerage
+    had_real = user_has_real_brokerage(user_id)
     identity_conflicts = 0
     remote_account_ids = {
         str(acc.get("id") or "").strip()
@@ -958,6 +961,13 @@ def snaptrade_callback():
             "warning",
         )
     if saved and (reconnect_label or newly_saved or recovery_existing):
+        from app.paper_accounts import note_connect_view
+        note_connect_view(
+            user_id,
+            had_real=had_real,
+            newly_saved=newly_saved,
+            paper_saved=paper_saved,
+        )
         _kick_post_connect_sync(user_id)
         if practice_return:
             flash("Paper account connected. Pick a call or a put.", "success")

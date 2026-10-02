@@ -902,9 +902,15 @@ logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path
-(`POST /get-started/paper`) stores `users.app_view='simple'` (default
-`full` for everyone else) and opens Practice. Settings can switch Simple
-and Full. Simple nav is Practice, Learn, Overview, and Positions.
+(`POST /get-started/paper`) stores `users.app_view='simple'` and opens
+Practice. Signup itself has no view picker, so it leaves the default
+`full`. A first SnapTrade connection that is only Alpaca Paper does the
+same write. Both skip the write when `app_view_chosen` is true — Settings,
+the Simple hold card, and the Full-view prompt set that flag, and a later
+paper path must not replace the click. The first real brokerage does not
+change the view; if the user is on Simple it sets `full_view_offer` and
+the shell shows a one-click "Switch to Full view" (Keep Simple dismisses
+it). Simple nav is Practice, Learn, Overview, and Positions.
 Direct visits to Strategies, Trader Profile, and AI Insights show a
 switch-to-Full card instead of the page. Overview in Simple hides
 Execution review, Performance by account, and the trader-profile link.

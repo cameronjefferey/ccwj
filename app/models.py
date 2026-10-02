@@ -780,11 +780,25 @@ def _migrate_users_ai_addon_columns():
 
 
 def _migrate_users_app_view_column():
-    """Idempotent: Simple vs Full. Existing users stay on the full app."""
+    """Idempotent: Simple vs Full. Existing users stay on the full app.
+
+    ``app_view_chosen`` is set only when the person clicks Simple or Full.
+    A paper path may set Simple while that flag is false, and must not
+    replace a click. ``full_view_offer`` is the one-click prompt after the
+    first real brokerage; it does not change the view by itself.
+    """
     try:
         execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "app_view TEXT NOT NULL DEFAULT 'full'"
+        )
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "app_view_chosen BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "full_view_offer BOOLEAN NOT NULL DEFAULT FALSE"
         )
     except Exception as exc:
         _log.warning("users app_view migration skipped: %s", exc)

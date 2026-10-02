@@ -207,6 +207,14 @@ def profile():
                 flash("That group isn't on your account.", "danger")
             return redirect(url_for("profile", tab="account") + "#account-groups")
 
+        if action == "dismiss_full_view_offer":
+            from app.paper_accounts import dismiss_full_view_offer
+            from app.utils import safe_internal_next
+
+            dismiss_full_view_offer(current_user.id)
+            nxt = safe_internal_next(request.form.get("next"))
+            return redirect(nxt or url_for("weekly_review"))
+
         if action == "set_app_view":
             from app.paper_accounts import safe_full_view_next, set_app_view
 
@@ -214,10 +222,12 @@ def profile():
             if view not in ("simple", "full"):
                 flash("Pick Simple or Full.", "danger")
                 return redirect(url_for("profile", tab="preferences"))
-            if not set_app_view(current_user.id, view):
+            if not set_app_view(current_user.id, view, chosen=True):
                 flash("Could not save that view. Check server logs.", "danger")
                 return redirect(url_for("profile", tab="preferences"))
             flash("Simple view is on." if view == "simple" else "Full view is on.", "success")
+            if view == "full" and (request.form.get("from") or "") == "offer":
+                return redirect(url_for("weekly_review"))
             nxt = safe_full_view_next(request.form.get("next")) if view == "full" else None
             return redirect(nxt or url_for("profile", tab="preferences"))
 
