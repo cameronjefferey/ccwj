@@ -744,10 +744,32 @@
             max-width: 100%;
         }
         .pd-page table.pd-legs,
-        .pd-page table.pd-stack {
+        .pd-page table.pd-stack,
+        .pd-page table.wl-matrix {
             display: table;
+        }
+        .pd-page table.pd-legs,
+        .pd-page table.pd-stack {
             width: 100%;
             max-width: 100%;
+        }
+        /* Win/Loss matrix stays a column table. Scroll sideways; never cards. */
+        .pd-page .wl-scroll {
+            overflow-x: auto;
+            max-width: 100%;
+            -webkit-overflow-scrolling: touch;
+        }
+        .pd-page table.wl-matrix {
+            width: max-content;
+            min-width: 100%;
+        }
+        .pd-page table.wl-matrix thead { display: table-header-group; }
+        .pd-page table.wl-matrix tbody { display: table-row-group; }
+        .pd-page table.wl-matrix tr { display: table-row; }
+        .pd-page table.wl-matrix th,
+        .pd-page table.wl-matrix td {
+            display: table-cell;
+            padding: .28rem .35rem;
         }
         .pd-page table.pd-legs .pd-num,
         .pd-page table.pd-stack td[data-label="Amount"] {
@@ -1021,7 +1043,7 @@
 </div>
 {% endif %}
 <!-- MIRROR-END -->
-{# Chart is the next thing after the summary. Position Legs follows it. #}
+{# Chart, then the Win/Loss matrix (open), then Position Legs. #}
 <div class="chart-wrapper mb-4" id="position-chart">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
         <div>
@@ -1064,6 +1086,74 @@
     </div>
     {% endif %}
 </div>
+{# Win/Loss matrix sits open under the chart. It can still be folded. #}
+{% if option_matrices %}
+<details class="pd-fold" id="pd-matrix" open>
+    <summary class="pd-fold-sum">
+        <span class="pd-h">Win/Loss matrix</span>
+        <span class="pd-fold-note">DTE versus strike distance. Avg P&amp;L, contracts, and win rate.</span>
+    </summary>
+    <div class="pd-fold-body">
+        {% for mat in option_matrices %}
+        <div class="{% if not loop.first %}mt-3{% endif %}">
+            <h3 class="pd-h mb-1">
+                {{ mat.strategy }}
+                <span class="pd-fold-note">({{ mat.trade_count }} contracts)</span>
+            </h3>
+            <div class="wl-scroll">
+                <table class="table table-sm table-bordered align-middle mb-0 wl-matrix">
+                    <thead>
+                        <tr>
+                            <th class="wl-axis">{{ term('DTE') }} \ {{ term('Strike Distance', 'strike-price') }}</th>
+                            {% for col in mat.col_headers %}
+                            <th class="text-center wl-axis">{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in mat.rows %}
+                        <tr>
+                            <td class="fw-semibold wl-axis text-nowrap">{{ row.dte_label }}</td>
+                            {% for cell in row.cells %}
+                            {% if cell.count == 0 %}
+                            <td class="text-center wl-empty">&mdash;</td>
+                            {% else %}
+                            {% set wr = cell.win_rate %}
+                            {% if wr >= 75 %}
+                                {% set tone = "wl-win" %}
+                            {% elif wr >= 50 %}
+                                {% set tone = "wl-win-soft" %}
+                            {% elif wr >= 25 %}
+                                {% set tone = "wl-loss-soft" %}
+                            {% else %}
+                                {% set tone = "wl-loss" %}
+                            {% endif %}
+                            <td class="text-center {{ tone }}">
+                                <div class="wl-pnl">
+                                    {% if cell.avg_pnl is not none %}{{ money(cell.avg_pnl, 0) }}{% else %}&mdash;{% endif %}
+                                </div>
+                                <div class="wl-meta">
+                                    {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
+                                </div>
+                            </td>
+                            {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+        <div class="pd-legend">
+            <span><span class="wl-swatch wl-loss"></span> 0–24% wins</span>
+            <span><span class="wl-swatch wl-loss-soft"></span> 25–49%</span>
+            <span><span class="wl-swatch wl-win-soft"></span> 50–74%</span>
+            <span><span class="wl-swatch wl-win"></span> 75–100%</span>
+        </div>
+    </div>
+</details>
+{% endif %}
 {% if history_before_open %}
 <p class="pd-lede">Opened before your history — cost basis before your history. These closing fills are not counted as realized profit.</p>
 {% endif %}
@@ -1758,8 +1848,8 @@
 </p>
 {% endif %}
 
-{# Simple view keeps the chart and the legs up front. Strategy rows,
-   if-held, the breakdown, and the matrix stay behind one disclosure. #}
+{# Simple view keeps the chart, the matrix, and the legs up front.
+   Strategy rows, if-held, and the breakdown stay behind one disclosure. #}
 {% if simple_view %}
 <details class="disclosure" id="pd-show-more">
     <summary><span class="section-header">Show more</span></summary>
@@ -1985,76 +2075,6 @@
 
     </div>
 </details>
-
-{# ── Win/Loss matrix. Secondary, so it stays behind this disclosure.
-   Cell color is the page gain/loss pair, not a second palette. #}
-{% if option_matrices %}
-<details class="pd-fold" id="pd-matrix">
-    <summary class="pd-fold-sum">
-        <span class="pd-h">Win/Loss matrix</span>
-        <span class="pd-fold-note">DTE versus strike distance. Avg P&amp;L, contracts, and win rate.</span>
-    </summary>
-    <div class="pd-fold-body">
-        {% for mat in option_matrices %}
-        <div class="{% if not loop.first %}mt-3{% endif %}">
-            <h3 class="pd-h mb-1">
-                {{ mat.strategy }}
-                <span class="pd-fold-note">({{ mat.trade_count }} contracts)</span>
-            </h3>
-            <div class="wl-scroll">
-                <table class="table table-sm table-bordered align-middle mb-0 wl-matrix">
-                    <thead>
-                        <tr>
-                            <th class="wl-axis">{{ term('DTE') }} \ {{ term('Strike Distance', 'strike-price') }}</th>
-                            {% for col in mat.col_headers %}
-                            <th class="text-center wl-axis">{{ col }}</th>
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in mat.rows %}
-                        <tr>
-                            <td class="fw-semibold wl-axis text-nowrap">{{ row.dte_label }}</td>
-                            {% for cell in row.cells %}
-                            {% if cell.count == 0 %}
-                            <td class="text-center wl-empty">&mdash;</td>
-                            {% else %}
-                            {% set wr = cell.win_rate %}
-                            {% if wr >= 75 %}
-                                {% set tone = "wl-win" %}
-                            {% elif wr >= 50 %}
-                                {% set tone = "wl-win-soft" %}
-                            {% elif wr >= 25 %}
-                                {% set tone = "wl-loss-soft" %}
-                            {% else %}
-                                {% set tone = "wl-loss" %}
-                            {% endif %}
-                            <td class="text-center {{ tone }}">
-                                <div class="wl-pnl">
-                                    {% if cell.avg_pnl is not none %}{{ money(cell.avg_pnl, 0) }}{% else %}&mdash;{% endif %}
-                                </div>
-                                <div class="wl-meta">
-                                    {{ cell.wins }}W/{{ cell.count - cell.wins }}L &middot; {{ cell.win_rate|int }}%
-                                </div>
-                            </td>
-                            {% endif %}
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endfor %}
-        <div class="pd-legend">
-            <span><span class="wl-swatch wl-loss"></span> 0–24% wins</span>
-            <span><span class="wl-swatch wl-loss-soft"></span> 25–49%</span>
-            <span><span class="wl-swatch wl-win-soft"></span> 50–74%</span>
-            <span><span class="wl-swatch wl-win"></span> 75–100%</span>
-        </div>
-    </div>
-</details>
-{% endif %}
 
 {% if simple_view %}
     </div>

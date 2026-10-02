@@ -455,7 +455,9 @@ What's working:
 - Position Detail reads as one story: the hero (total return, then a
   compact row of realized, unrealized, dividends, win rate, and average
   days — those three dollars are the headline), then the mirror, then
-  the Cumulative P&amp;L chart, then Position Legs. The note under the
+  the Cumulative P&amp;L chart, then the Win/Loss matrix (open, DTE versus
+  strike distance), then Position Legs. On a phone the matrix stays a
+  column table and scrolls sideways. The note under the
   chart fills in within about 10 seconds; if that read is unavailable
   the note is removed instead of staying on "Reading this chart…".
   What worked follows.
@@ -466,7 +468,7 @@ What's working:
   sticks (`ht-pd-window-hint-dismissed`). The shared history banner
   stays on the other all-time pages.
   Breakdown by Type and the raw log sit behind one Details toggle.
-  The Win/Loss matrix stays behind a disclosure. Gain and loss on this
+  Gain and loss on this
   page use one green and one red (`--pd-gain` / `--pd-loss`). The strategy
   column that is premium received is labeled Collected.
 - Strategy Breakdown re-aggregates per leg under a leg filter. The leg
