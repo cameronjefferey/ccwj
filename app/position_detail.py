@@ -191,6 +191,162 @@ def _option_return_pct(leg, pnl):
     return round(float(pnl) / basis * 100, 1)
 
 
+def _option_identity(symbol):
+    """OCC identity so a long-form fill matches a snapshot OCC symbol.
+
+    ``BE 10/02/2026 297.50 C`` and ``BE   261002C00297500`` are one contract.
+    """
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(symbol)
+    if not parsed:
+        return None
+    return (
+        parsed["root"],
+        parsed["yy"],
+        int(parsed["mm"]),
+        int(parsed["dd"]),
+        parsed["cp"],
+        round(float(parsed["strike"]), 4),
+    )
+
+
+def _same_option_scope(outcome, trade) -> bool:
+    ot = str(outcome.get("tenant_id") or "")
+    tt = str(trade.get("tenant_id") or "")
+    if ot and tt:
+        return ot == tt
+    oa = str(outcome.get("account") or "").strip()
+    ta = str(trade.get("account") or "").strip()
+    if oa and ta:
+        return oa == ta
+    return True
+
+
+def _outcome_qty(outcome) -> float:
+    try:
+        return abs(float(outcome.get("quantity") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def repair_snapshot_option_outcomes(outcomes, trades):
+    """Fix an estimated expiry row that came from a snapshot-only contract.
+
+    That row has quantity 0, no premium (kept % is an em dash), and an
+    open date equal to the expiry (the snapshot day) while the fills
+    that opened it are earlier. Recover quantity, the open date, and
+    premium from those fills. Drop the empty row when a history row
+    for the same contract is already in the list.
+    """
+    rows = list(outcomes or [])
+    fills_by_id = {}
+    for trade in trades or []:
+        ident = _option_identity(trade.get("trade_symbol"))
+        if ident:
+            fills_by_id.setdefault(ident, []).append(trade)
+
+    real = set()
+    for outcome in rows:
+        if outcome.get("type") not in (None, "option"):
+            continue
+        ident = _option_identity(outcome.get("trade_symbol"))
+        if ident and _outcome_qty(outcome) >= 1e-6:
+            real.add((str(outcome.get("tenant_id") or ""), ident))
+
+    kept = []
+    for outcome in rows:
+        if outcome.get("type") not in (None, "option"):
+            kept.append(outcome)
+            continue
+        ident = _option_identity(outcome.get("trade_symbol"))
+        key = (str(outcome.get("tenant_id") or ""), ident)
+        if ident and _outcome_qty(outcome) < 1e-6 and key in real:
+            continue
+        if ident:
+            _fill_option_outcome_from_opens(outcome, fills_by_id.get(ident) or [])
+        kept.append(outcome)
+    return kept
+
+
+def _opening_fills(outcome, fills):
+    direction = str(outcome.get("direction") or "")
+    if direction == "Sold":
+        actions = {"option_sell_to_open"}
+    elif direction == "Bought":
+        actions = {"option_buy_to_open"}
+    else:
+        actions = {"option_sell_to_open", "option_buy_to_open"}
+    return [
+        trade for trade in fills
+        if str(trade.get("action") or "") in actions
+        and _same_option_scope(outcome, trade)
+    ]
+
+
+def _fill_option_open_date(outcome, fills):
+    """Replace an open date that is the expiry with the real opening fill."""
+    opens = _opening_fills(outcome, fills)
+    if not opens:
+        return
+    open_s = str(outcome.get("open_date") or "")[:10]
+    expiry_s = str(outcome.get("option_expiry") or "")[:10]
+    close_s = str(outcome.get("close_date") or "")[:10]
+    if open_s and open_s not in {expiry_s, close_s}:
+        return
+    dates = [str(trade.get("trade_date") or "")[:10] for trade in opens]
+    dates = [d for d in dates if len(d) == 10]
+    if not dates:
+        return
+    opened = min(dates)
+    if open_s == opened:
+        return
+    outcome["open_date"] = opened
+    if close_s:
+        try:
+            outcome["days_held"] = (
+                pd.to_datetime(close_s) - pd.to_datetime(opened)
+            ).days
+        except Exception:
+            pass
+
+
+def _fill_option_outcome_from_opens(outcome, fills):
+    opens = _opening_fills(outcome, fills)
+    if not opens:
+        _fill_option_open_date(outcome, fills)
+        return
+    filled_premium = False
+    qty = sum(abs(float(trade.get("quantity") or 0)) for trade in opens)
+    if _outcome_qty(outcome) < 1e-9 and qty >= 1e-9:
+        outcome["quantity"] = qty
+        outcome["quantity_display"] = _format_share_qty(qty)
+    direction = str(outcome.get("direction") or "")
+    cash = round(sum(abs(float(trade.get("amount") or 0)) for trade in opens), 2)
+    premium_missing = (
+        abs(float(outcome.get("premium_received") or 0)) < 0.01
+        and abs(float(outcome.get("premium_paid") or 0)) < 0.01
+    )
+    if premium_missing and cash >= 0.01:
+        if direction == "Sold":
+            outcome["premium_received"] = cash
+        else:
+            outcome["premium_paid"] = cash
+        filled_premium = True
+    _fill_option_open_date(outcome, fills)
+    if filled_premium:
+        pnl = float(outcome.get("pnl") or 0)
+        cost, proceeds, _pnl = _option_leg_cost_proceeds({
+            **outcome,
+            "total_pnl": pnl,
+        })
+        outcome["cost"] = cost
+        outcome["proceeds"] = proceeds
+        outcome["return_pct"] = _option_return_pct(outcome, pnl)
+    if str(outcome.get("close_type") or "") == "Settlement pending":
+        outcome["is_winner"] = None
+
+
 def _equity_session_keys(closed_equity_df):
     """One key per equity chapter, not per partial sell."""
     if closed_equity_df is None or closed_equity_df.empty:
@@ -3211,6 +3367,8 @@ def position_detail(symbol):
                 close_milestone=o.get("close_date"),
             )
         o["raw_trades"] = matching
+
+    trade_outcomes = repair_snapshot_option_outcomes(trade_outcomes, trades)
 
     # Assign leg numbers to trade outcomes and open positions
     def _date_to_leg(d_str):

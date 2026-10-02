@@ -22,12 +22,14 @@ The row is labeled ``Settled at expiry (est.)`` until a broker close
 the cash, so the estimate adds nothing on top of it.
 
 A missing official close stays open through the expiry session and does
-not book the opening credit. If that close is still missing on the next
-trading day (the symbol never landed in the price file), the contract
-falls back to the old calendar close: expired at $0 value, still labeled
-as an estimate, dated on the expiry so later builds do not move the
-realized dollar. SPXW prices often live under SPX; the caller passes that
-close (the model prefers the exact symbol, then SPXW→SPX, NDXP→NDX,
+not book the opening credit. Equity with no close by the next trading
+day (Friday → Monday) falls back to the old calendar close: expired at
+$0 value, still an estimate, dated on the expiry. Cash-settled index
+options never take that $0 fallback. With no official print they stay
+``Settlement pending`` and realized P&L stays $0 — an ITM index spread
+must not be booked as a worthless win just because ^GSPC was missing.
+SPXW prices live under SPX or SPXW (the loader fetches ^GSPC for both);
+the caller passes that close (exact symbol, then SPXW→SPX, NDXP→NDX,
 RUTW→RUT).
 """
 
@@ -38,6 +40,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 ESTIMATE_LABEL = "Settled at expiry (est.)"
+PENDING_LABEL = "Settlement pending"
 
 # Cash-settled underlyings. The parenthetical in the product note is
 # SPX/SPXW/XSP/NDX/RUT; the weekly aliases and the other cash roots stay
@@ -98,8 +101,8 @@ def next_trading_day(expiry: date) -> date:
 def calendar_fallback_due(expiry, now_et: datetime) -> bool:
     """True once the next trading day after expiry has started in New York.
 
-    That is the deadline for an official close. Past it, a contract with
-    no price row uses the $0 calendar close instead of staying Open.
+    That is the deadline for an official close. Past it, an equity with
+    no price row uses the $0 calendar close. A cash index does not.
     """
     expiry_d = _as_date(expiry)
     if expiry_d is None or now_et is None:
@@ -199,9 +202,12 @@ def settle_expired_option(
     expiry_d = _as_date(expiry)
     if expiry_d is None or not session_is_over(expiry_d, now_et, root):
         return ExpirySettlement(False, None, None, 0.0, 0.0)
-    # No price by the next trading day: expire at $0, still an estimate,
-    # and keep the close on the expiry date.
+    # No price by the next trading day. Equity expires at $0, still an
+    # estimate, close dated on the expiry. A cash index stays pending:
+    # booking the opening credit is the worthless-ITM win.
     if close is None and calendar_fallback_due(expiry_d, now_et):
+        if _root(root) in CASH_INDEX_ROOTS:
+            return ExpirySettlement(False, PENDING_LABEL, None, 0.0, 0.0)
         realized = 0.0 if opened_before_history else flows
         return ExpirySettlement(True, ESTIMATE_LABEL, expiry_d, 0.0, realized)
     if close is None or strike is None:

@@ -359,9 +359,32 @@
         white-space: nowrap;
         min-width: 0;
     }
-    .pd-legs .pd-contract-line .badge { flex: none; }
+    .pd-legs .pd-contract-line .badge {
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 6.5rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
     .pd-legs .pd-pnl .ht-share-btn { display: table; margin-left: auto; }
     .pd-legs .pd-ifheld { text-align: right; }
+    /* P&L stays on screen when the legs table is wider than the card. */
+    .pd-legs-scroll { overflow-x: auto; }
+    .pd-legs th.pd-pnl,
+    .pd-legs td.pd-pnl {
+        position: sticky;
+        right: 0;
+        z-index: 1;
+        background: #121826;
+    }
+    .pd-legs thead th.pd-pnl { z-index: 3; background: #1a2233; }
+    @media (max-width: 1400px) {
+        /* 1280 was scrolling the P&L off-screen. Drop the low-value
+           columns; the contract cell carries qty × strike. */
+        .pd-legs .pd-desk { display: none; }
+        .pd-legs .pd-flex { max-width: 10rem; }
+        .pd-legs { font-size: .68rem; }
+    }
     .pd-legs .held-pill { max-width: none; white-space: nowrap; }
     @media (max-width: 1100px) {
         /* Account and days are the first columns to give back once the
@@ -1183,14 +1206,14 @@
                        the money columns need the width. If held has no
                        data-m so a dash or counterfactual is not dropped. #}
                     <th class="pd-tight"></th>
-                    <th class="pd-tight text-center" data-m="hide">Leg</th>
+                    <th class="pd-tight text-center pd-desk" data-m="hide">Leg</th>
                     <th class="pd-flex" title="Contract or leg">Contract</th>
-                    <th class="pd-clip" data-m="hide">Strategy</th>
-                    <th class="pd-clip pd-opt" data-m="hide">Account</th>
-                    <th class="pd-num" data-m="hide">Qty</th>
+                    <th class="pd-clip pd-desk" data-m="hide">Strategy</th>
+                    <th class="pd-clip pd-opt pd-desk" data-m="hide">Account</th>
+                    <th class="pd-num pd-desk" data-m="hide">Qty</th>
                     <th class="pd-date" data-m="hide">Opened</th>
                     <th class="pd-date" data-m="hide">Closed</th>
-                    <th class="pd-num pd-opt" data-m="hide">Days</th>
+                    <th class="pd-num pd-opt pd-desk" data-m="hide">Days</th>
                     <th class="pd-num" data-m="hide">Cost</th>
                     <th class="pd-num" data-m="hide" title="Market value, or proceeds if closed">Value</th>
                     <th class="pd-num">P&amp;L</th>
@@ -1227,13 +1250,14 @@
                 {% if current_positions %}
                 {% for p in current_positions %}
                 <tr class="pd-openable">
-                    {% set contract = (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else (p.description or '') %}
+                    {% set contract_full = (p.trade_symbol|option_symbol) if p.trade_symbol is defined and p.trade_symbol else (p.description or '') %}
+                    {% set contract = (p.trade_symbol|compact_contract(p.quantity)) if p.trade_symbol is defined and p.trade_symbol else contract_full %}
                     {% set strat = p.leg_kind or p.instrument_type or '' %}
                     {% set acct = (p.account_display or p.account) | account_label(p.tenant_id) %}
                     <td class="pd-tight"><span class="badge badge-open">Open</span></td>
-                    <td class="pd-tight text-center text-muted small">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
+                    <td class="pd-tight text-center text-muted small pd-desk">{{ p.leg_num if p.leg_num is defined and p.leg_num else '' }}</td>
                     <td class="fw-semibold small pd-flex">
-                        <div class="pd-contract-line"><span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span></div>
+                        <div class="pd-contract-line"><span class="name" {% if contract_full %}title="{{ contract_full }}"{% endif %}>{{ contract }}</span></div>
                         <details class="pd-more">
                             <summary>More</summary>
                             <dl>
@@ -1246,12 +1270,12 @@
                             </dl>
                         </details>
                     </td>
-                    <td class="text-muted small pd-clip" {% if strat %}title="{{ strat }}"{% endif %}>{{ strat }}</td>
-                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
-                    <td class="pd-num">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
+                    <td class="text-muted small pd-clip pd-desk" {% if strat %}title="{{ strat }}"{% endif %}>{{ strat }}</td>
+                    <td class="text-muted small pd-clip pd-opt pd-desk" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
+                    <td class="pd-num pd-desk">{{ p.quantity_display if p.quantity_display is defined else (p.quantity if p.quantity else '') }}</td>
                     <td class="pd-date" {% if p.open_date %}title="{{ p.open_date|human_date }}"{% endif %}>{{ p.open_date|compact_date if p.open_date else '—' }}</td>
                     <td class="pd-date text-muted">—</td>
-                    <td class="pd-num pd-opt text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
+                    <td class="pd-num pd-opt pd-desk text-muted">{{ p.days_held if p.days_held is not none else '—' }}</td>
                     <td class="pd-num">{{ money(p.cost_basis) }}</td>
                     <td class="pd-num">{{ money(p.market_value) }}</td>
                     <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if p.unrealized_pnl >= 0 else 'text-negative' }}">
@@ -1266,14 +1290,14 @@
                 {# ── Open totals (Cost / MV / unrealized — mirrors Closed Total) ── #}
                 <tr class="fw-semibold table-light pd-open" style="font-size:.8rem;">
                     <td class="pd-tight"></td>
-                    <td></td>
+                    <td class="pd-desk"></td>
                     <td class="text-nowrap">Open Total</td>
+                    <td class="pd-desk"></td>
+                    <td class="pd-opt pd-desk"></td>
+                    <td class="pd-desk"></td>
                     <td></td>
-                    <td class="pd-opt"></td>
                     <td></td>
-                    <td></td>
-                    <td></td>
-                    <td class="pd-opt"></td>
+                    <td class="pd-opt pd-desk"></td>
                     <td class="pd-num">{{ money(ocost) }}</td>
                     <td class="pd-num">{{ money(omv) }}</td>
                     <td class="pd-num {{ 'text-positive' if opnl >= 0 else 'text-negative' }}">
@@ -1297,7 +1321,8 @@
                 {% if trade_outcomes %}
                 {% for o in trade_outcomes %}
                 <tr class="leg-toggle" data-target="leg-detail-{{ loop.index0 }}">
-                    {% set contract = o.trade_symbol|option_symbol %}
+                    {% set contract_full = o.trade_symbol|option_symbol %}
+                    {% set contract = o.trade_symbol|compact_contract(o.quantity) %}
                     {% set acct = (o.account_display or o.account) | account_label(o.tenant_id) %}
                     <td class="pd-tight">
                         {% if o.is_winner is true %}
@@ -1308,7 +1333,7 @@
                         <span class="leg-arrow" style="color:var(--ht-muted);font-size:.7rem;">&#9654;</span>
                         {% endif %}
                     </td>
-                    <td class="pd-tight text-center text-muted small">
+                    <td class="pd-tight text-center text-muted small pd-desk">
                         {{ o.leg_num if o.leg_num is defined and o.leg_num else '' }}
                         {% if o.equity_partial_n is defined and o.equity_partial_n > 1 %}
                         <span class="d-block lh-sm" style="font-size:.6rem;">partial {{ o.equity_partial_ix }}/{{ o.equity_partial_n }}</span>
@@ -1316,10 +1341,11 @@
                     </td>
                     <td class="fw-semibold small pd-flex">
                         <div class="pd-contract-line">
-                            <span class="name" {% if contract %}title="{{ contract }}"{% endif %}>{{ contract }}</span>
+                            <span class="name" {% if contract_full %}title="{{ contract_full }}"{% endif %}>{{ contract }}</span>
                             {% if o.close_type and o.close_type not in ('Closed', 'Sold') %}
-                            {% set _badge = 'Assigned' if o.close_type == 'Exercised' and o.direction == 'Sold' else o.close_type %}
-                            <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;">{{ _badge }}</span>
+                            {% set _full = 'Assigned' if o.close_type == 'Exercised' and o.direction == 'Sold' else o.close_type %}
+                            {% set _badge = 'Settled' if _full == 'Settled at expiry (est.)' else ('Pending' if _full == 'Settlement pending' else _full) %}
+                            <span class="badge bg-warning bg-opacity-25 text-dark" style="font-size:.6rem;" title="{{ _full }}">{{ _badge }}</span>
                             {% endif %}
                         </div>
                         <details class="pd-more">
@@ -1342,12 +1368,12 @@
                             </dl>
                         </details>
                     </td>
-                    <td class="text-muted small pd-clip" {% if o.strategy %}title="{{ o.strategy }}{% if o.strategy_family and o.strategy_family != o.strategy %}. On Strategies this is {{ o.strategy_family }}{% endif %}"{% endif %}>{{ o.strategy }}</td>
-                    <td class="text-muted small pd-clip pd-opt" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
-                    <td class="pd-num">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
+                    <td class="text-muted small pd-clip pd-desk" {% if o.strategy %}title="{{ o.strategy }}{% if o.strategy_family and o.strategy_family != o.strategy %}. On Strategies this is {{ o.strategy_family }}{% endif %}"{% endif %}>{{ o.strategy }}</td>
+                    <td class="text-muted small pd-clip pd-opt pd-desk" data-val="{{ acct }}" {% if acct %}title="{{ acct }}"{% endif %}>{{ acct }}</td>
+                    <td class="pd-num pd-desk">{{ o.quantity_display if o.quantity_display is defined else (o.quantity | int if o.quantity else '') }}</td>
                     <td class="pd-date" {% if o.open_date %}title="{{ o.open_date|human_date }}"{% endif %}>{{ o.open_date|compact_date }}</td>
                     <td class="pd-date" {% if o.close_date %}title="{{ o.close_date|human_date }}"{% endif %}>{{ o.close_date|compact_date }}</td>
-                    <td class="pd-num pd-opt text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
+                    <td class="pd-num pd-opt pd-desk text-muted">{{ o.days_held if o.days_held is not none else '—' }}</td>
                     <td class="pd-num">{% if o.vertical %}{% if (o.net_credit or 0) >= 0 %}Credit {{ money(o.net_credit) }}{% else %}Debit {{ money((o.net_credit or 0)|abs) }}{% endif %}{% elif o.direction == 'Sold' and (o.cost or 0)|abs < 0.01 %}—{% else %}{{ money(o.cost) }}{% endif %}</td>
                     <td class="pd-num">{% if o.vertical %}{{ o.width_label }}{% else %}{{ money(o.proceeds) }}{% endif %}</td>
                     <td class="pd-num pd-pnl fw-semibold {{ 'text-positive' if o.pnl >= 0 else 'text-negative' }}">

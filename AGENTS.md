@@ -1373,14 +1373,18 @@ the shares are the equity line. The row is
 and that close replaces the estimate — `net_cash_flow` already
 includes the broker cash, so intrinsic is not added again. Price is
 the exact underlying, else SPXW→SPX / NDXP→NDX / RUTW→RUT when the
-exact symbol has no row. No official close stays Open, P&L $0 (or the
-live snapshot mark), until the next weekday after expiry (Friday →
-Monday). Still missing then, the contract expires at $0 value under the
-same estimate label, with `close_date` on the expiry, so a symbol that
-never lands in the price file does not stay Open and the realized dollar
-does not move onto a later day. `int_enriched_current` drops `status='Closed'`,
-so the chart does not keep the broker's stale mark on top of the
-realized credit.
+exact symbol has no row. The price loader fetches those index closes
+from Yahoo (`^GSPC`/`^SPX` for SPX and SPXW, `^GSPC`/10 for XSP,
+`^NDX`, `^RUT`, `^VIX`) and writes them under the broker root.
+No official close stays Open, P&L $0 (or the live snapshot mark),
+until the next weekday after expiry (Friday → Monday). Equity still
+missing then expires at $0 under the same estimate label, with
+`close_date` on the expiry. A cash-settled index (SPX/SPXW/XSP/NDX/
+NDXP/RUT/RUTW/VIX/DJX/OEX/XEO/RVX) never takes that $0 fallback: it
+stays `Settlement pending` with realized $0, so a missing ^GSPC print
+cannot book an ITM spread as a worthless win. `int_enriched_current`
+drops `status='Closed'`, so the chart does not keep the broker's
+stale mark on top of a realized credit.
 
 **Reconciliation invariant.** `cumulative_options_pnl(today) +
 open_options_unrealized_pnl(today)`, summed across all (account,

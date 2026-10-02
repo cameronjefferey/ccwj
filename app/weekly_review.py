@@ -4185,6 +4185,7 @@ def _group_day_rolls(trade_rows):
             "kind": "roll",
             "is_roll": True,
             "verb": "Rolled",
+            "verb_short": "Roll",
             "action": "option_roll",
             "symbol": row.get("symbol") or "",
             "trade_symbol": "",
@@ -6153,6 +6154,24 @@ _DAY_ACTION_VERBS = {
     "cash_transfer": "Cash transfer",
 }
 
+_DAY_ACTION_SHORT = {
+    "equity_buy": "Buy",
+    "equity_sell": "Sell",
+    "equity_sell_short": "Short",
+    "option_sell_to_open": "STO",
+    "option_buy_to_open": "BTO",
+    "option_buy_to_close": "BTC",
+    "option_sell_to_close": "STC",
+    "option_expired": "Expired",
+    "option_settled_est": "Settled",
+    "option_assigned": "Assigned",
+    "option_exercised": "Exercised",
+    "margin_interest": "Interest",
+    "credit_interest": "Interest",
+    "adr_fee": "Fee",
+    "cash_transfer": "Cash",
+}
+
 _TRADE_ACTIONS = {
     "equity_buy", "equity_sell", "equity_sell_short",
     "option_sell_to_open", "option_buy_to_open",
@@ -6356,6 +6375,9 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
                 seen_option_close_gl.add(option_close_key)
         row = {
             "verb": _DAY_ACTION_VERBS.get(action, "Activity"),
+            "verb_short": _DAY_ACTION_SHORT.get(
+                action, _DAY_ACTION_VERBS.get(action, "Activity")
+            ),
             "action": action,
             "symbol": symbol,
             "trade_symbol": trade_symbol,

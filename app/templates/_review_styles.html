@@ -711,6 +711,7 @@
     /* Trades today — fill-level rows (not weekly groups) */
     .tt-table { width: 100%; font-size: .9rem; border-collapse: collapse; }
     .tt-table td { padding: .45rem .4rem; border-bottom: 1px solid #243049; vertical-align: middle; }
+    .tt-verb-short { display: none; }
     .tt-table tr:last-child td { border-bottom: 0; }
     .tt-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
     .tt-muted { color: var(--ht-muted); font-size: .8rem; }
@@ -749,7 +750,39 @@
     [data-bs-theme="dark"] .tw-tag-chip { background:rgba(224,181,106,.16); color:var(--color-mirror-ink); }
     [data-bs-theme="dark"] .tw-tag-x { color:var(--color-mirror-ink); }
     @media (max-width: 640px) {
-        .tt-muted { overflow-wrap: anywhere; }
+        /* A 390px card was squeezing every column to one character and
+           letting dollars overflow. Size to the text, scroll sideways,
+           keep the action pinned, and drop the tag field. */
+        .breakdown-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .tt-table { width: max-content; min-width: 100%; }
+        .tt-table td { white-space: nowrap; }
+        .tt-verb-long { display: none; }
+        .tt-verb-short { display: inline; }
+        .tt-tag { display: none; }
+        .tt-sticky {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: #121826;
+        }
+        /* The contract line is a nested .tt-muted. The quantity cell is
+           itself a td.tt-muted — display:block on that td drops it out
+           of the row. Ellipsize only the nested line. */
+        .tt-table td .tt-muted {
+            display: block;
+            max-width: 8rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .tt-px { display: none; }
+        .tt-money {
+            min-width: 4.75rem;
+            position: sticky;
+            right: 0;
+            z-index: 1;
+            background: #121826;
+        }
     }
     [data-bs-theme="dark"] .tt-table td { border-bottom-color: #2e313a; }
     [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }

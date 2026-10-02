@@ -217,11 +217,13 @@ def leg_outcome(row, expiry) -> str:
     heuristic: an ITM short has no closing fill and cost ≈ $0, which
     would otherwise read as a worthless expiry.
     """
-    from app.expiry_settlement import ESTIMATE_LABEL
+    from app.expiry_settlement import ESTIMATE_LABEL, PENDING_LABEL
 
     close_type = str(row.get("close_type") or "").strip()
     folded = close_type.lower()
     direction = str(row.get("direction") or "")
+    if close_type == PENDING_LABEL:
+        return PENDING_LABEL
     if close_type == ESTIMATE_LABEL:
         return ESTIMATE_LABEL
     if close_type == "Exercised" and direction == "Sold":
@@ -310,8 +312,10 @@ def _spread_label(short_meta, long_meta) -> str:
 
 
 def _spread_outcome(short_outcome, long_outcome) -> str:
-    from app.expiry_settlement import ESTIMATE_LABEL
+    from app.expiry_settlement import ESTIMATE_LABEL, PENDING_LABEL
 
+    if PENDING_LABEL in (short_outcome, long_outcome):
+        return PENDING_LABEL
     if ESTIMATE_LABEL in (short_outcome, long_outcome):
         return ESTIMATE_LABEL
     if short_outcome == "Expired" and long_outcome == "Expired":
@@ -346,6 +350,10 @@ def _make_vertical(short, long, short_meta, long_meta):
         direction = "Bought"
     return_pct = round(pnl / basis * 100, 1) if basis >= 0.01 else None
     is_winner = True if pnl > 0 else False if pnl < 0 else None
+    if outcome == "Settlement pending":
+        # An unpriced index spread is not a win, even if a child row
+        # still carries the opening credit.
+        is_winner = None
     child_short = dict(short)
     child_long = dict(long)
     child_short["outcome"] = short_outcome

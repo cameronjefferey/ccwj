@@ -103,6 +103,12 @@ def test_wide_tables_keep_columns_on_a_phone():
     assert "tbody { display: block" not in phone
     assert "thead { display: none" not in phone
     assert "overflow-x: auto" in phone
+    assert "compact_contract" in PAGE
+    assert "pd-desk" in PAGE
+    assert "position: sticky" in PAGE
+    assert "right: 0" in PAGE
+    wide = PAGE.split("@media (max-width: 1400px)", 1)[1].split("@media", 1)[0]
+    assert ".pd-legs .pd-desk { display: none" in wide
     assert "table.wl-matrix thead { display: table-header-group; }" in phone
     assert "table.wl-matrix tr { display: table-row; }" in phone
     assert "table.wl-matrix td" in phone
