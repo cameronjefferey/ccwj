@@ -93,14 +93,30 @@
                 }
             });
         });
-        var last = (left.updated || 0) >= (right.updated || 0) ? left.last : right.last;
-        if (!last) last = left.last || right.last;
+        var newer = (left.updated || 0) >= (right.updated || 0) ? left : right;
+        var older = newer === left ? right : left;
+        var last = resumeSpot(newer.last, older.last);
+        if (!last) last = left.last || right.last || null;
         return {
             updated: Math.max(left.updated || 0, right.updated || 0),
             last: last,
             done: done,
             replays: replays
         };
+    }
+
+    function resumeSpot(preferred, other) {
+        if (!preferred) return other || null;
+        if (!other || preferred.slug !== other.slug) return preferred;
+        if ((preferred.t || 0) === 0 && (other.t || 0) > 0) {
+            return {
+                slug: preferred.slug,
+                t: other.t,
+                title: preferred.title || other.title || "",
+                number: preferred.number || other.number || 0
+            };
+        }
+        return preferred;
     }
 
     function clock(seconds) {
@@ -287,28 +303,12 @@
         scheduleSync(!!markDone);
     }
 
-    function pull() {
-        if (!sync || !page) return;
-        fetch("/learn/progress", { credentials: "same-origin" })
-            .then(function (response) { return response.ok ? response.json() : null; })
-            .then(function (server) {
-                if (!server) return;
-                var local = read();
-                var merged = merge(local, normalize(server));
-                write(merged);
-                paint();
-                if ((local.updated || 0) > (server.updated || 0)) scheduleSync(true);
-                else {
-                    try { sessionStorage.setItem(SENT, String(merged.updated)); } catch (err) {}
-                }
-            })
-            .catch(function () {});
-    }
-
-    if (page && page.classList.contains("learn-episode")) {
+    function recordEpisodeVisit(synced) {
+        if (!page || !page.classList.contains("learn-episode")) return;
         var existing = read();
         var slug = page.getAttribute("data-slug");
         var keep = existing.last && existing.last.slug === slug ? existing.last.t : 0;
+        if (sync && !synced && keep === 0) return;
         touch(
             slug,
             page.getAttribute("data-title") || "",
@@ -317,8 +317,38 @@
             false
         );
     }
+
+    function pull(done) {
+        if (!sync || !page) {
+            if (done) done(false);
+            return;
+        }
+        fetch("/learn/progress", { credentials: "same-origin" })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .then(function (server) {
+                if (!server) {
+                    if (done) done(false);
+                    return;
+                }
+                var local = read();
+                var localWasNewer = (local.updated || 0) > (server.updated || 0);
+                var merged = merge(local, normalize(server));
+                write(merged);
+                paint();
+                if (done) done(true);
+                if (localWasNewer || (read().updated || 0) > (server.updated || 0)) scheduleSync(true);
+                else {
+                    try { sessionStorage.setItem(SENT, String(read().updated)); } catch (err) {}
+                }
+            })
+            .catch(function () {
+                if (done) done(false);
+            });
+    }
+
     paint();
-    pull();
+    if (sync) pull(recordEpisodeVisit);
+    else recordEpisodeVisit(true);
 
     window.__htLearnReplayDone = function (slug) {
         if (!replaySlug(slug)) return;

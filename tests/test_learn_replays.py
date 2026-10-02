@@ -150,7 +150,9 @@ def test_replay_routes_and_links():
 def test_step_query_only_accepts_decision_and_recap():
     assert 'data-start="decision"' in _html("/learn/replay/long-put?step=decision")
     assert 'data-start="recap"' in _html("/learn/replay/covered-call?step=recap")
-    assert 'data-start=""' in _html("/learn/replay/long-call?step=skip")
+    page = _html("/learn/replay/long-call?step=skip")
+    assert 'data-start=""' in page
+    assert 'class="nav-link active" href="/learn"' in page
 
 
 def test_progress_stores_replay_slugs_without_dropping_episodes():

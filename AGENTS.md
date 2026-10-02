@@ -570,8 +570,9 @@ There is no separate dashboard page — Overview is the authenticated home.
 **Status: Working. Public Options 101 series. No login.**
 
 Logged-out nav and footer link here. Logged-in users can open the same pages.
-The trial CTA at the bottom is for logged-out visitors. A signed-in page
-replaces it with Practice.
+The signup card at the bottom is for logged-out visitors. It says learning
+and paper trading are free, and that the 30-day trial starts when a real
+brokerage connects. A signed-in page replaces it with Practice.
 Copy and video ids live in `app/learn_episodes.json` (loaded by
 `app/learn_catalog.py`). All 10 episodes are published with public YouTube
 ids, in series order (the wheel is episode 7, spreads 8, options risk 9).
@@ -595,7 +596,9 @@ lesson opens a SPY call). Nothing is placed until the learner confirms.
 Signed-in accounts other than the shared demo user also keep that blob
 in `learn_progress` so it follows them after signup (`/learn/progress`,
 GET and POST are limited separately so a save is not crowded out by
-the page load). The resume line seeks the player; the embed `start`
+the page load). Opening a lesson waits for that saved blob before it
+stamps a resume point, and a 0:00 open does not erase a saved spot on
+the same episode. The resume line seeks the player; the embed `start`
 parameter alone does not.
 
 Replays (`/learn/replay/<slug>`, loader `app/learn_replay.py`, YAML in
