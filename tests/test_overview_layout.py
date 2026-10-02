@@ -78,9 +78,9 @@ def test_session_trades_stay_columns_on_a_phone():
     assert 'class="breakdown-wrap"' in PAGE
     assert 'class="tt-table"' in PAGE
     assert "tbody { display: block" not in STYLES
-    phone = STYLES.split("@media (max-width: 640px)", 1)[1].split("@media", 1)[0]
-    assert "display: grid" not in phone
-    assert "grid-column: 1 / -1" not in phone
+    assert ".ov-page .tt-table tbody" not in STYLES
+    assert ".tt-table td:nth-child(3)" not in STYLES
+    assert ".tt-table td:nth-child(5)" not in STYLES
 
 
 def test_heatmap_dollars_shrink_instead_of_clipping():
