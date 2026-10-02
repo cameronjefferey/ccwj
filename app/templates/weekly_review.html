@@ -293,11 +293,10 @@
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-kind">Option</div>
                     </div>
                     <div>
-                        <div class="mover-meta">P&amp;L on contracts</div>
-                        <div class="mover-meta">Marks + closes</div>
+                        {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
+                        {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
                     </div>
                     {% else %}
                     <div>
@@ -325,11 +324,10 @@
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-kind">Option</div>
                     </div>
                     <div>
-                        <div class="mover-meta">P&amp;L on contracts</div>
-                        <div class="mover-meta">Marks + closes</div>
+                        {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
+                        {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
                     </div>
                     {% else %}
                     <div>
@@ -352,7 +350,7 @@
     </div>
     <details class="section-fine" style="margin:.8rem 0 0;">
         <summary>How this is computed</summary>
-        <p>Dollar impact is the price move on shares you held, plus option marks and closes, for {{ tm_day }}.</p>
+        <p>Dollar impact is the price move on shares you held, plus the change in open option value and anything that closed, for {{ tm_day }}. An option that expired is the settlement, not the opening credit.</p>
     </details>
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">

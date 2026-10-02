@@ -217,11 +217,10 @@
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-kind">Option</div>
                     </div>
                     <div>
-                        <div class="mover-meta">P&amp;L on contracts</div>
-                        <div class="mover-meta">Marks + closes</div>
+                        {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
+                        {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
                     </div>
                     {% else %}
                     <div>
@@ -249,11 +248,10 @@
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-kind">Option</div>
                     </div>
                     <div>
-                        <div class="mover-meta">P&amp;L on contracts</div>
-                        <div class="mover-meta">Marks + closes</div>
+                        {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
+                        {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
                     </div>
                     {% else %}
                     <div>

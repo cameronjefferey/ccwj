@@ -271,6 +271,11 @@ What's working:
 - Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). On a phone this stays a table — Account (share of book under the name), Value, Today, 1W, 1M — and only the table scrolls, with Account sticky. The unfinished session is named in the nav strip, not as a blank extra column.
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
+  Option rows read `int_option_contract_daily_pnl` (the same realize-on-close
+  plus expiry estimate as the position chart), not a zero mark's opening
+  credit. The line under the symbol is the contracts (`10× 7650/7655C spread`,
+  `2× MU 120C`). The other line is `Open contracts, change in value`,
+  `Closed today`, or both dollars when the day mixed a mark change and a close.
   Clicking a mover opens the same right-side position drawer as Today.
 - Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the current New York market date. It must not start on the older settled close: doing so shortens the forward window every weekend / pre-market and hides day-14 events whenever any earlier chip makes the radar replace the legacy list. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
@@ -361,9 +366,9 @@ Implementation notes:
 
 What could be better:
 - ~~"Today's $ impact" only covers equity price-moves~~ — closed Aug 2026: the movers
- card now folds in per-symbol option P&L day-moves (`TODAY_OPTIONS_MOVES_QUERY`, the
- day delta of `cumulative_options_pnl + open_options_unrealized_pnl` from
- `mart_daily_pnl` — captures MTM drift AND same-day realizations) and dividends paid
+ card now folds in per-symbol option P&L day-moves (`TODAY_OPTIONS_MOVES_QUERY`,
+ the day change from `int_option_contract_daily_pnl`: open-mark change, plus
+ realized on the close date including an expiry estimate) and dividends paid
  today (`TODAY_DIVIDENDS_QUERY` on `int_dividend_events`, anchored to the equity
  movers' as-of date). Header shows combined "Today's $ impact" with a
  stocks/options/dividends split. Both queries live inside `build_daily_review_batch`
