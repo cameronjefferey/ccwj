@@ -24,7 +24,6 @@ TRIAL_LINE = (
 # The first one is the ad's promise.
 _AFTER = (
     "fit",
-    "fitshot",
     "profile",
     "how",
     "proof",

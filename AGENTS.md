@@ -568,20 +568,24 @@ on load), then a hero CTA block (solid `#5b8cff` button "Start your
 live demo", and a small Sign in link), a tight qualitative proof strip,
 How it works (connect read-only, strategies detected, see what's working),
 then the live demo as its own band — a paper account. Shorts are themed bands
-with one or two phones beside the copy (which strategies work, every
-position's story, if held, covered-call income, the fit matrix), not one
-sideways row. Just before that, "Here's what you'd catch with HappyTrader"
+with a large screenshot of the feature beside the copy (which strategies work,
+every position's story, if held, covered-call income, the fit matrix).
+Clicking the screenshot opens that Short in a lightbox, at least 360px wide
+on a desktop and the full width of a phone. Options 101 uses the same
+lightbox; its poster is the Short, at least 360px wide on desktop and full
+width on a phone. Just before the real-trades band, "Here's what you'd catch with HappyTrader"
 is one still at a time (ONON, RKLB, the BE buyback, the BE swing, win
 rate versus return) from `CATCH_STORIES` in `app/marketing_videos.py`.
 Each still's YouTube id lives in `CATCH_STORY_VIDEOS`. "Watch the story" renders only when `CATCH_STORY_VIDEOS_LIVE=1`; unset hides the links and leaves the band complete. A Real
 trades band plays the ONON and RKLB stories wide.
 Privacy mode and share cards stay a sentence on the proof strip (there is
-no matching upload). Still frames from the demo account sit in their own
-bands: the cumulative P&amp;L on BE trades (`app/static/marketing/pnl_real.webp`,
-caption "Real account · BE"), the if-held summary, strategy cards, and
-the fit matrix (`app/static/marketing/`). The day-by-day chart is that
-still of BE trades from April to September 2026, with trade-day markers,
-not the demo AMD crop. Those crops do not show
+no matching upload). The short-section posters are those stills: the
+cumulative P&amp;L on BE trades (`app/static/marketing/pnl_real.webp`,
+caption "Real account · BE"), the if-held summary, and the fit matrix
+(`app/static/marketing/`). Covered-call income uses the masked win-rate
+still (`marketing/catch/win-rate.webp`). Strategy cards stay their own
+band. The day-by-day chart is that still of BE trades from April to
+September 2026, with trade-day markers, not the demo AMD crop. Those crops do not show
 ORCL, CFLT, or the Earnings or Admin tabs. Options 101 and the full-width
 trial close stay. The Options 101 step links to `/learn` only when that
 exact route exists. Hero primary CTA: "Start your 30-day free trial"
