@@ -112,6 +112,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert 'class="ht-hero-sub">No credit card</p>' in html
     assert 'class="ht-hero-secondary"' in html
     assert ">Try the live demo</a>" in html
+    assert ">New to options? Start learning free</a>" in html
+    assert 'href="/learn"' in html
     assert 'class="ht-hero-signin"' in html
     assert "ht-text-cta" not in html
     # Closing band keeps the combined line. The hero splits it across button + subline.

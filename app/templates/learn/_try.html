@@ -1,0 +1,40 @@
+{% if try_it or checks %}
+<section class="learn-try" id="learn-try">
+    {% if try_it %}
+    <h2>Try it</h2>
+    <p>{{ try_it.sentence }}</p>
+    <a class="btn btn-primary" href="{{ try_it.href }}">{{ try_it.button }}</a>
+    {% if try_it.also %}
+    <p class="learn-playlist"><a href="{{ try_it.also.href }}">{{ try_it.also.button }}</a></p>
+    {% endif %}
+    {% endif %}
+    {% if checks %}
+    <h2>Did that make sense?</h2>
+    <div class="learn-check" data-questions="{{ checks|length }}">
+        {% for question in checks %}
+        {% set question_index = loop.index0 %}
+        <fieldset>
+            <legend>{{ question.prompt }}</legend>
+            <div class="learn-check-choices">
+                {% for choice in question.choices %}
+                <button type="button" class="learn-check-choice" data-question="{{ question_index }}" data-choice="{{ choice.id }}">{{ choice.label }}</button>
+                {% endfor %}
+            </div>
+            {% for choice in question.choices %}
+            <p class="learn-check-explain" data-question="{{ question_index }}" data-choice="{{ choice.id }}" hidden>{{ choice.explain }}</p>
+            {% endfor %}
+        </fieldset>
+        {% endfor %}
+    </div>
+    <div class="learn-check-actions">
+        <button type="button" class="btn btn-primary" id="learn-mark-done">Mark as done</button>
+        {% if deeper %}
+        <a class="replay-deeper" href="{{ deeper.href }}">Go deeper</a>
+        {% endif %}
+    </div>
+    <p class="learn-marked" id="learn-marked" hidden>Marked done. It shows a check on Options 101.</p>
+    {% elif deeper %}
+    <p class="learn-playlist"><a href="{{ deeper.href }}">Go deeper</a></p>
+    {% endif %}
+</section>
+{% endif %}

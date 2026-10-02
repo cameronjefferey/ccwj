@@ -432,6 +432,64 @@ def test_empty_progress_does_not_wipe_a_saved_resume(monkeypatch):
     assert learn_progress.save_for_user(7, {})["last"]["slug"] == "what-is-an-option"
 
 
+def test_lesson_ends_with_a_try_it_and_a_check():
+    from flask import url_for
+
+    from app import learn_try
+
+    for episode in catalog.published_episodes():
+        ticket = learn_try.for_lesson(episode["slug"])
+        assert ticket["href"].startswith("/practice?")
+        assert "symbol=SPY" in ticket["href"]
+        assert len(learn_try.checks_for_lesson(episode["slug"])) == 2
+        assert learn_try.deeper_for_lesson(episode["slug"])["label"] == "Go deeper"
+
+    calls = _html("/learn/calls-and-puts")
+    assert "Try it" in calls
+    assert "Try a SPY call" in calls
+    assert "side=call" in calls
+    assert "Try a SPY put" in calls
+    assert "Did that make sense?" in calls
+    assert 'id="learn-mark-done"' in calls
+    assert ">Mark as done<" in calls
+    assert ">Go deeper<" in calls
+    assert 'href="/learn/replay/long-call"' in calls
+
+    covered = _html("/learn/covered-calls")
+    assert "This ticket buys a call" in covered
+    assert "side=call" in covered
+
+    index = _html("/learn")
+    assert "M3.2 8.4" in index
+    assert 'class="learn-watched"' in index
+
+    js = open("app/static/js/learn-progress.js", encoding="utf-8").read()
+    assert "func: \"seekTo\"" in js
+    assert "Picking up at " in js
+    assert "__htLearnMarkDone" in js
+    assert "X-CSRF-Token" in js
+
+    with app.test_request_context():
+        learn_login = url_for("login", next="/learn")
+        episode_login = url_for("login", next="/learn/calls-and-puts")
+    assert f'href="{learn_login}"' in index
+    assert f'href="{episode_login}"' in calls
+    login = _client().get("/login?next=/learn").get_data(as_text=True)
+    assert 'name="next" value="/learn"' in login
+
+
+def test_progress_save_rejects_a_missing_csrf_token(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
+    posted = _client().post(
+        "/learn/progress",
+        json={"done": ["what-is-an-option"]},
+        headers={"Accept": "application/json"},
+    )
+    assert posted.status_code == 400
+    assert posted.is_json
+    assert "Refresh" in posted.get_json()["error"]
+
+
 def _assert_public_copy(html):
     lowered = html.lower()
     for banned in ("no sign-up", "no signup", "live demo", "the only place", "guaranteed"):

@@ -193,6 +193,47 @@ def test_closed_market_review_uses_the_last_price():
     assert "Pick it again in a moment" not in err
 
 
+def test_closed_market_prices_weekly_and_multi_week_from_the_last_trade(monkeypatch):
+    """After the close, bid and ask are 0 and yfinance has no previousClose.
+
+    That shape still prices the daily, the weekly, and the multi-week ticket.
+    """
+    from types import SimpleNamespace
+
+    from app import app
+    from app import paper_practice as practice
+
+    monkeypatch.setattr(practice, "regular_session_open", lambda now=None: False)
+    monkeypatch.setattr(practice, "_chain_from_cache", lambda *_a, **_k: None)
+    monkeypatch.setattr(practice, "current_user", SimpleNamespace(id=1))
+    monkeypatch.setattr(practice, "quote_option_premium", lambda *_a, **_k: None)
+
+    def fake_chain(_symbol, _expiry, strikes):
+        return [
+            {
+                "strike": strike,
+                "call": practice.quote_from_chain_row(0, 0, last=6.57),
+                "put": practice.quote_from_chain_row(0, 0, last=4.2),
+            }
+            for strike in strikes
+        ]
+
+    monkeypatch.setattr(practice, "load_option_chain", fake_chain)
+    account = {"snaptrade_account_id": "learner-acct"}
+    with app.test_request_context("/practice"):
+        for tenor in ("soon", "weekly", "multi"):
+            ticket, err = practice._build_ticket(
+                {"symbol": "SPY", "side": "call", "tenor": tenor, "distance": "at"},
+                {"SPY": 760.0},
+                account,
+                today=date(2026, 10, 2),
+            )
+            assert err is None, (tenor, err)
+            assert ticket["tenor"] == tenor
+            assert ticket["limit_price"] == "6.57"
+            assert ticket["price_note"] == "This limit is the last price at close."
+
+
 def test_open_session_review_still_requires_a_live_quote():
     from app.paper_practice import quote_from_chain_row, review_limit
 
@@ -276,6 +317,14 @@ def test_pick_page_uses_lesson_words(monkeypatch):
     assert "Put · right to sell" in html
     assert "One contract is 100 shares" in html
     assert "Review this paper trade" in html
+    filled = client.get(
+        "/practice?symbol=SPY&side=put&tenor=weekly&distance=above"
+    ).get_data(as_text=True)
+    assert "Filled in from the lesson" in filled
+    assert 'name="side" value="put" checked' in filled
+    assert 'name="tenor" value="weekly" checked' in filled
+    assert 'name="distance" value="above" checked' in filled
+    assert 'name="tenor" value="soon" checked' not in filled
     assert "BUY_TO_OPEN" not in html
     assert "ALPACA-PAPER" not in html
     assert "SPY" in html and "QQQ" in html and "SPX" in html

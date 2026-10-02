@@ -922,6 +922,27 @@ def _side_quote(chain, strike, side) -> dict:
     return {}
 
 
+def practice_prefill(args) -> dict | None:
+    """Lesson deep-link. Selects the radios. Does not build or place a ticket."""
+    symbol = (args.get("symbol") or "").strip().upper()
+    side = (args.get("side") or "").strip().lower()
+    tenor = (args.get("tenor") or "").strip().lower()
+    distance = (args.get("distance") or "").strip().lower()
+    if (
+        symbol not in SYMBOLS
+        or side not in SIDES
+        or tenor not in TENORS
+        or distance not in DISTANCES
+    ):
+        return None
+    return {
+        "symbol": symbol,
+        "side": side,
+        "tenor": tenor,
+        "distance": distance,
+    }
+
+
 def _selection_from_form():
     symbol = (request.form.get("symbol") or "").strip().upper()
     side = (request.form.get("side") or "").strip().lower()
@@ -1779,6 +1800,7 @@ def paper_practice():
         look=look and not account,
         buying_power_label=buying_power_label,
         session_note=session_note,
+        prefill=None if confirming or placed else practice_prefill(request.args),
     )
 
 
@@ -1841,11 +1863,17 @@ def paper_practice_chain():
         rows = cached or load_option_chain(symbol, expiry, strikes)
     except Exception:
         return jsonify(error="Couldn't load bid and ask. Try again in a moment."), 400
+    closed = not regular_session_open()
     return jsonify(
         symbol=symbol,
         expiry=expiry.isoformat(),
         expiry_label=expiry.strftime("%-d %b %y").upper(),
         strikes=rows,
+        price_note=(
+            "The market is closed. Where bid and ask are blank, "
+            "the middle cell is the last price at close."
+            if closed else None
+        ),
     )
 
 

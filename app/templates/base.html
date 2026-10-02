@@ -1390,7 +1390,7 @@
                 </ul>
                 <ul class="navbar-nav align-items-center">
                     <li class="nav-item py-1 py-lg-0">
-                        <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('login') }}">Sign In</a>
+                        <a class="btn btn-sm btn-outline-light btn-auth-nav" href="{{ url_for('login', next=request.path) if request.path.startswith('/learn') else url_for('login') }}">Sign In</a>
                     </li>
                     {% if signup_enabled %}
                     <li class="nav-item ps-lg-1 py-1 py-lg-0">
@@ -1654,7 +1654,7 @@
         <div class="container-fluid px-4">
             <div class="d-flex flex-wrap justify-content-center gap-4">
                 <a href="{{ url_for('demo_start') }}">Try Demo</a>
-                <a href="{{ url_for('login') }}">Sign In</a>
+                <a href="{{ url_for('login', next=request.path) if request.path.startswith('/learn') else url_for('login') }}">Sign In</a>
                 {% if signup_enabled %}
                 <a href="{{ url_for('signup') }}">
                     {% if signup_invite_required %}Sign Up (invite){% else %}Create Account{% endif %}

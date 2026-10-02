@@ -587,9 +587,17 @@ A published id turns on the Watch link, the nocookie lite embed, chapter
 seek, and VideoObject JSON-LD. `published: false` stays out of the
 sitemap and is `noindex`. The series page remembers the last episode in this browser
 (`ht-learn-progress` in localStorage) and says Continue plus “N of M
-watched” once a video actually finishes. Signed-in accounts other than
-the shared demo user also keep that blob in `learn_progress` so it follows
-them after signup (`/learn/progress`, merged on the next signed-in page).
+watched” once a lesson is done. A lesson is done when the video reaches
+90%, when both checkpoint questions are answered, or when Mark as done
+is clicked. Finished cards show a check, not only the word Watched.
+Signing in from `/learn` returns there (`next=`). Each lesson ends with
+a Try it link into `/practice` with the radios already set (a calls
+lesson opens a SPY call). Nothing is placed until the learner confirms.
+Signed-in accounts other than the shared demo user also keep that blob
+in `learn_progress` so it follows them after signup (`/learn/progress`,
+GET and POST are limited separately so a save is not crowded out by
+the page load). The resume line seeks the player; the embed `start`
+parameter alone does not.
 
 Replays (`/learn/replay/<slug>`, loader `app/learn_replay.py`, YAML in
 `app/learn_replays/`) walk one path day by day and pause on a decision.

@@ -119,13 +119,19 @@
             {% endfor %}
         </section>
         <section id="replay-checkpoint" hidden>
+            {% if try_it %}
+            <div class="learn-try">
+                <h2>Try it</h2>
+                <p>{{ try_it.sentence }}</p>
+                <a class="btn btn-primary" href="{{ try_it.href }}">{{ try_it.button }}</a>
+            </div>
+            {% endif %}
             <h2>Did that make sense?</h2>
             <div class="replay-checkpoint-actions">
                 <button type="button" class="btn btn-primary" id="replay-yes">Yes</button>
                 <a class="replay-deeper" id="replay-deeper" href="{{ replay.deeper_href }}" title="{{ replay.lesson_title }}">Go deeper</a>
             </div>
             <p class="replay-saved" id="replay-saved" hidden>Marked done. It shows a check on Options 101.</p>
-            <p class="learn-playlist"><a href="{{ url_for('paper_practice') }}">Practice a trade</a></p>
         </section>
     </div>
     <p class="learn-disclaimer">{{ series.disclaimer }}</p>

@@ -92,6 +92,9 @@ def test_replay_pages_render_the_decision_and_the_checkpoint():
     assert "+$410.00" in html
     assert "+$300.00" in html
     assert "Did that make sense?" in html
+    assert "Try it" in html
+    assert "Try a SPY call" in html
+    assert "side=call" in html
     assert ">Go deeper</a>" in html
     assert 'href="/learn/calls-and-puts"' in html
     assert "For learning only · not investment advice." in html

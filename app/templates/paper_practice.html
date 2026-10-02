@@ -201,6 +201,9 @@
                 <form method="POST" action="{{ url_for('paper_practice_review') }}" data-voice="{{ voice }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="strike" id="pp-strike" value="">
+                    {% if prefill %}
+                    <p class="pp-note">Filled in from the lesson. Review it before anything is placed.</p>
+                    {% endif %}
 
                     <div class="pp-kicker">Show this as</div>
                     <div class="pp-choices" id="pp-voice">
@@ -223,7 +226,7 @@
                             data-weekly="{{ row.expiries.weekly.pill }}"
                             data-multi="{{ row.expiries.multi.pill }}"
                             data-contract="{{ row.contract_blurb }}">
-                            <input type="radio" name="symbol" value="{{ row.symbol }}" {% if row.spot and not ns.picked %}checked{% set ns.picked = true %}{% set ns.blurb = row.contract_blurb %}{% endif %} {% if not row.spot %}disabled{% endif %}>
+                            <input type="radio" name="symbol" value="{{ row.symbol }}" {% if prefill and prefill.symbol == row.symbol and row.spot %}checked{% set ns.picked = true %}{% set ns.blurb = row.contract_blurb %}{% elif not prefill and row.spot and not ns.picked %}checked{% set ns.picked = true %}{% set ns.blurb = row.contract_blurb %}{% endif %} {% if not row.spot %}disabled{% endif %}>
                             {{ row.symbol }}{% if row.spot_label %} · {{ row.spot_label }}{% else %} · price unavailable{% endif %}
                         </label>
                         {% endfor %}
@@ -231,22 +234,22 @@
 
                     <div class="pp-kicker" id="pp-when-kicker">When it expires</div>
                     <div class="pp-choices">
-                        <label class="pp-choice"><input type="radio" name="tenor" value="soon" checked> <span data-tenor="soon">{{ expiries.soon.pill }}</span></label>
-                        <label class="pp-choice"><input type="radio" name="tenor" value="weekly"> <span data-tenor="weekly">{{ expiries.weekly.pill }}</span></label>
-                        <label class="pp-choice"><input type="radio" name="tenor" value="multi"> <span data-tenor="multi">{{ expiries.multi.pill }}</span></label>
+                        <label class="pp-choice"><input type="radio" name="tenor" value="soon" {% if not prefill or prefill.tenor == 'soon' %}checked{% endif %}> <span data-tenor="soon">{{ expiries.soon.pill }}</span></label>
+                        <label class="pp-choice"><input type="radio" name="tenor" value="weekly" {% if prefill and prefill.tenor == 'weekly' %}checked{% endif %}> <span data-tenor="weekly">{{ expiries.weekly.pill }}</span></label>
+                        <label class="pp-choice"><input type="radio" name="tenor" value="multi" {% if prefill and prefill.tenor == 'multi' %}checked{% endif %}> <span data-tenor="multi">{{ expiries.multi.pill }}</span></label>
                     </div>
 
                     <div class="pp-lesson">
                     <div class="pp-kicker" id="pp-side-kicker">Buy a call or a put</div>
                     <div class="pp-choices">
-                        <label class="pp-choice"><input type="radio" name="side" value="call" checked> <span id="pp-call">Call · right to buy</span></label>
-                        <label class="pp-choice"><input type="radio" name="side" value="put"> <span id="pp-put">Put · right to sell</span></label>
+                        <label class="pp-choice"><input type="radio" name="side" value="call" {% if not prefill or prefill.side == 'call' %}checked{% endif %}> <span id="pp-call">Call · right to buy</span></label>
+                        <label class="pp-choice"><input type="radio" name="side" value="put" {% if prefill and prefill.side == 'put' %}checked{% endif %}> <span id="pp-put">Put · right to sell</span></label>
                     </div>
                     <div class="pp-kicker" id="pp-strike-kicker">Strike</div>
                     <div class="pp-choices" id="pp-strikes">
-                        <label class="pp-choice"><input type="radio" name="distance" value="below"> <span data-strike="below">Below</span></label>
-                        <label class="pp-choice"><input type="radio" name="distance" value="at" checked> <span data-strike="at">At the price</span></label>
-                        <label class="pp-choice"><input type="radio" name="distance" value="above"> <span data-strike="above">Above</span></label>
+                        <label class="pp-choice"><input type="radio" name="distance" value="below" {% if prefill and prefill.distance == 'below' %}checked{% endif %}> <span data-strike="below">Below</span></label>
+                        <label class="pp-choice"><input type="radio" name="distance" value="at" {% if not prefill or prefill.distance == 'at' %}checked{% endif %}> <span data-strike="at">At the price</span></label>
+                        <label class="pp-choice"><input type="radio" name="distance" value="above" {% if prefill and prefill.distance == 'above' %}checked{% endif %}> <span data-strike="above">Above</span></label>
                     </div>
                     </div>
                     <div id="pp-chain" class="pp-chain-wrap" aria-live="polite"></div>
@@ -320,6 +323,12 @@
                         }
                         function renderChain(box, data) {
                             box.textContent = "";
+                            if (data.price_note) {
+                                var note = document.createElement("p");
+                                note.className = "pp-note";
+                                note.textContent = data.price_note;
+                                box.appendChild(note);
+                            }
                             var table = document.createElement("table");
                             table.className = "pp-chain";
                             var head = document.createElement("thead");
@@ -364,7 +373,12 @@
                             btn.type = "button";
                             btn.dataset.side = side;
                             btn.dataset.strike = String(strike);
-                            btn.textContent = (quote && quote[field]) || "—";
+                            var text = (quote && quote[field]) || "";
+                            if (!text && field === "mid" && quote && quote.last) text = quote.last;
+                            btn.textContent = text || "—";
+                            if (field === "mid" && quote && quote.last && !quote.mid) {
+                                btn.title = "Last price at close";
+                            }
                             btn.addEventListener("click", function () {
                                 document.getElementById("pp-strike").value = String(strike);
                                 var radio = document.querySelector('input[name="side"][value="' + side + '"]');

@@ -8,14 +8,28 @@ import logging
 
 from flask import abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
+from flask_wtf.csrf import CSRFError
 
 from app import app
 from app import learn_catalog as catalog
 from app import learn_progress
 from app import learn_replay
+from app import learn_try
 from app.extensions import limiter
 
 logger = logging.getLogger(__name__)
+
+
+@app.errorhandler(CSRFError)
+def _learn_progress_csrf(err):
+    """A missing token on the progress save should be JSON, not an HTML 400.
+
+    The browser posts localStorage here. An HTML error page looks like a
+    blocked request and the checkmarks never leave this browser.
+    """
+    if request.path == "/learn/progress":
+        return jsonify(error="Refresh the page, then try again."), 400
+    return err.get_response()
 
 _FALLBACK_THUMB = "learn/options-101.png"
 
@@ -130,7 +144,8 @@ def _can_sync_progress():
 
 
 @app.route("/learn/progress", methods=["GET", "POST"])
-@limiter.limit("60 per minute")
+@limiter.limit("120 per minute", methods=["GET"])
+@limiter.limit("120 per minute", methods=["POST"])
 def learn_progress_api():
     """Resume point for the signed-in account. Logged-out and demo stay local."""
     if not _can_sync_progress():
@@ -181,6 +196,7 @@ def learn_replay_page(slug):
         series=series,
         replay=replay,
         start_step=step,
+        try_it=learn_try.for_replay(slug),
     )
 
 
@@ -210,6 +226,9 @@ def learn_episode(slug):
         previous=_view_episode(previous) if previous else None,
         next_episode=_view_episode(nxt) if nxt else None,
         lesson_replays=learn_replay.replays_for_lesson(slug),
+        try_it=learn_try.for_lesson(slug) if episode["published"] else None,
+        checks=learn_try.checks_for_lesson(slug) if episode["published"] else [],
+        deeper=learn_try.deeper_for_lesson(slug) if episode["published"] else None,
         video_ld=_video_ld(episode, page_url, og_image),
         robots="noindex" if not episode["published"] else None,
     )
