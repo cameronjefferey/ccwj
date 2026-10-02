@@ -5,7 +5,7 @@ from pathlib import Path
 PAGE = Path("app/templates/position_detail.html").read_text()
 
 
-def test_story_order_is_headline_mirror_then_legs():
+def test_story_order_is_headline_mirror_then_chart_then_legs():
     story = PAGE.find('{% include "_story_summary.html" %}')
     mirror_end = PAGE.find("<!-- MIRROR-END -->")
     legs = PAGE.find('id="pd-legs"')
@@ -15,7 +15,9 @@ def test_story_order_is_headline_mirror_then_legs():
     by_type = PAGE.find('id="pd-by-type"')
     raw = PAGE.find('id="pd-raw"')
     matrix = PAGE.find('id="pd-matrix"')
-    assert story < mirror_end < legs < chart < worked
+    assert story < mirror_end < chart < legs < worked
+    assert PAGE.count('id="position-chart"') == 1
+    assert PAGE.count('id="pnlChart"') == 1
     assert details < by_type < raw < matrix
     assert '<details class="pd-fold" id="pd-details">' in PAGE
     assert "Breakdown by type and the raw log" in PAGE
@@ -75,3 +77,5 @@ def test_wide_tables_keep_columns_on_a_phone():
     assert "tbody { display: block" not in phone
     assert "thead { display: none" not in phone
     assert "overflow-x: auto" in phone
+    assert "height: 280px" in phone
+    assert "height: 520px" in PAGE.split("@media (max-width: 640px)", 1)[0]

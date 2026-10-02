@@ -453,8 +453,8 @@ What's working:
   split moved them. P&amp;L is unchanged.
   Pinned by `tests/test_covered_call_runs.py`.
 - Position Detail reads as one story: the hero, then the mirror, then
-  Position Legs. Cumulative P&amp;L and What worked follow. Breakdown by
-  Type and the raw log sit behind one Details toggle.
+  the Cumulative P&amp;L chart, then Position Legs. What worked follows.
+  Breakdown by Type and the raw log sit behind one Details toggle.
   The Win/Loss matrix stays behind a disclosure. Gain and loss on this
   page use one green and one red (`--pd-gain` / `--pd-loss`). The strategy
   column that is premium received is labeled Collected.

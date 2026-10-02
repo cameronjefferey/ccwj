@@ -68,8 +68,9 @@
         border-radius: var(--pd-radius, 12px);
         box-shadow: none;
     }
-    .chart-wrapper { padding: 1.15rem 1.25rem 1.2rem; }
-    .pnl-chart-box { position: relative; height: 520px; }
+    .chart-wrapper { padding: 1.15rem 1.25rem 1.2rem; max-width: 100%; }
+    .pnl-chart-box { position: relative; height: 520px; max-width: 100%; }
+    .pnl-chart-box canvas { max-width: 100%; }
     .ht-pnl-tip {
         position: absolute;
         z-index: 6;
@@ -565,6 +566,21 @@
         }
         .pd-more { display: block; margin-top: .2rem; }
         .pd-dl { grid-template-columns: 1fr 1fr; padding-left: .15rem; }
+        .pd-page .chart-wrapper {
+            padding: .85rem .7rem .9rem;
+            max-width: 100%;
+        }
+        .pd-page .pnl-chart-box {
+            height: 280px;
+            max-width: 100%;
+        }
+        .pd-page #position-chart .d-flex {
+            align-items: flex-start;
+        }
+        .pd-page #position-chart .form-check {
+            margin-left: 0;
+            padding-left: 2.4em;
+        }
     }
 </style>
 {% endblock %}
@@ -772,6 +788,49 @@
 </div>
 {% endif %}
 <!-- MIRROR-END -->
+{# Chart is the next thing after the summary. Position Legs follows it. #}
+<div class="chart-wrapper mb-4" id="position-chart">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+        <div>
+            <h6 class="pd-h mb-1">Cumulative P&amp;L</h6>
+            {% if prices_through_date and has_underlying_price %}
+            <p class="text-muted small mb-0" id="pnlChartPriceCaption" style="display:none;">Stock prices through {{ prices_through_date }}.</p>
+            {% endif %}
+        </div>
+        {% if has_underlying_price %}
+        <div class="form-check form-switch mb-0" style="padding-left:2.4em;">
+            <input class="form-check-input" type="checkbox" id="togglePriceLine">
+            <label class="form-check-label small text-muted" for="togglePriceLine">Show {{ symbol }} price</label>
+        </div>
+        {% endif %}
+    </div>
+    <div class="pnl-chart-box">
+        <canvas id="pnlChart"></canvas>
+    </div>
+    {% if story_days %}
+    <p class="text-muted small mb-0 mt-2">
+        Dots mark your trade days &mdash; click one to jump to that day in the review. Click a day in the review to highlight its dot here.
+    </p>
+    {% endif %}
+    {% if chart_read and not simple_view %}
+    <div class="chart-read mt-3" id="chartRead"
+         data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
+         data-digest="{{ chart_read.digest }}"
+         data-scope="{{ chart_read.scope }}"
+         data-locked="{{ '1' if chart_read.locked else '0' }}"
+         data-pending="{{ '1' if chart_read.pending else '0' }}">
+        <div class="chart-read-kicker">On this chart</div>
+        <p class="chart-read-lead">{{ chart_read.lead }}</p>
+        <div class="chart-read-more {% if chart_read.locked %}is-locked{% endif %}">
+            <p class="chart-read-rest" id="chartReadRest">{{ chart_read.rest }}</p>
+            <form class="chart-read-upgrade" method="post" action="{{ url_for('billing_checkout_ai') }}"{% if not chart_read.show_upgrade %} hidden{% endif %}>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-primary">Upgrade to HappyTrader AI to read the rest</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
 {% if history_before_open %}
 <p class="pd-lede">Opened before your history — cost basis before your history. These closing fills are not counted as realized profit.</p>
 {% endif %}
@@ -1444,50 +1503,6 @@
 })();
 </script>
 {% endif %}
-
-{# ── Cumulative P&L Chart ── #}
-<div class="chart-wrapper mb-4" id="position-chart">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-        <div>
-            <h6 class="pd-h mb-1">Cumulative P&amp;L</h6>
-            {% if prices_through_date and has_underlying_price %}
-            <p class="text-muted small mb-0" id="pnlChartPriceCaption" style="display:none;">Stock prices through {{ prices_through_date }}.</p>
-            {% endif %}
-        </div>
-        {% if has_underlying_price %}
-        <div class="form-check form-switch mb-0" style="padding-left:2.4em;">
-            <input class="form-check-input" type="checkbox" id="togglePriceLine">
-            <label class="form-check-label small text-muted" for="togglePriceLine">Show {{ symbol }} price</label>
-        </div>
-        {% endif %}
-    </div>
-    <div class="pnl-chart-box">
-        <canvas id="pnlChart"></canvas>
-    </div>
-    {% if story_days %}
-    <p class="text-muted small mb-0 mt-2">
-        Dots mark your trade days &mdash; click one to jump to that day in the review below. Click a day in the review to highlight its dot here.
-    </p>
-    {% endif %}
-    {% if chart_read and not simple_view %}
-    <div class="chart-read mt-3" id="chartRead"
-         data-url="{{ url_for('position_chart_read', symbol=symbol) }}"
-         data-digest="{{ chart_read.digest }}"
-         data-scope="{{ chart_read.scope }}"
-         data-locked="{{ '1' if chart_read.locked else '0' }}"
-         data-pending="{{ '1' if chart_read.pending else '0' }}">
-        <div class="chart-read-kicker">On this chart</div>
-        <p class="chart-read-lead">{{ chart_read.lead }}</p>
-        <div class="chart-read-more {% if chart_read.locked %}is-locked{% endif %}">
-            <p class="chart-read-rest" id="chartReadRest">{{ chart_read.rest }}</p>
-            <form class="chart-read-upgrade" method="post" action="{{ url_for('billing_checkout_ai') }}"{% if not chart_read.show_upgrade %} hidden{% endif %}>
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-sm btn-primary">Upgrade to HappyTrader AI to read the rest</button>
-            </form>
-        </div>
-    </div>
-    {% endif %}
-</div>
 
 {# ── Position story: day-by-day review in Options / Shares / Cash ── #}
 {% if story_days %}
