@@ -560,6 +560,10 @@ class TestBuildTodayMovers:
             "contract_detail": "", "option_caption": "",
             "lot_split_reason": "no_fills",
             "lot_split_detail": "anchor=2026-05-18 fills=0",
+            "lot_split_line": (
+                "no_fills lot_sum=— gap=— budget=— "
+                "fills=0 dates=— roots=— accts=—"
+            ),
         }]
         # Header still totals every row, not just the displayed 5.
         assert result["options_impact"] == 750.0
@@ -1011,6 +1015,16 @@ class TestBuildTodayMovers:
         assert result["options_impact"] == 1877.80
         assert result["as_of"] == "2026-10-02"
         assert all(r["lot_split_reason"] == "split" for r in spxw)
+        for row in spxw:
+            line = row["lot_split_line"]
+            assert line.startswith("split ")
+            assert "lot_sum=1877.80" in line
+            assert "gap=" in line
+            assert "budget=" in line
+            assert "fills=" in line
+            assert "dates=" in line
+            assert "roots=SPXW" in line
+            assert "accts=" in line
         details = " ".join(r.get("contract_detail") or "" for r in result["winners"] + result["losers"])
         assert "30×" not in details
         assert all(r["symbol"] != "SPX" for r in result["winners"] + result["losers"])
@@ -1133,6 +1147,21 @@ class TestBuildTodayMovers:
         assert 'data-lot-split="split"' in admin_html
         assert "Lot split split:" in admin_html
         assert "30×" not in admin_html
+        assert 'class="mover-meta lot-split-debug"' not in admin_html
+        with app.test_request_context("/weekly-review?debug=lots"):
+            owner_html = app.jinja_env.get_template("weekly_review.html").render(
+                **overview, debug_lots=True,
+            )
+        assert 'class="mover-meta lot-split-debug"' in owner_html
+        assert "lot_sum=" in owner_html
+        assert "gap=" in owner_html
+        assert "budget=" in owner_html
+        assert "fills=" in owner_html
+        assert "dates=" in owner_html
+        assert "roots=SPXW" in owner_html
+        assert "accts=" in owner_html
+        assert "data-lot-split" not in owner_html
+        assert "30×" not in owner_html
         today_ctx = {
             **overview,
             "session_is_live": True,
@@ -1157,6 +1186,14 @@ class TestBuildTodayMovers:
             )
         assert 'data-lot-split="split"' in admin_today
         assert "Lot split split:" in admin_today
+        assert 'class="mover-meta lot-split-debug"' not in admin_today
+        with app.test_request_context("/today?debug=lots"):
+            owner_today = app.jinja_env.get_template("today.html").render(
+                **today_ctx, debug_lots=True,
+            )
+        assert 'class="mover-meta lot-split-debug"' in owner_today
+        assert "roots=SPXW" in owner_today
+        assert "data-lot-split" not in owner_today
 
     def test_posting_day_opens_of_a_friday_expiry_split(self, caplog):
         """The 10× expired with no close, so nothing caps its open back to Friday.
@@ -1236,6 +1273,15 @@ class TestBuildTodayMovers:
         assert spxw[0]["lot_split_reason"] == "no_session_fills"
         assert "anchor=2026-10-02" in spxw[0]["lot_split_detail"]
         assert "2026-10-03" in spxw[0]["lot_split_detail"]
+        line = spxw[0]["lot_split_line"]
+        assert line.startswith("no_session_fills ")
+        assert "lot_sum=—" in line
+        assert "gap=—" in line
+        assert "budget=—" in line
+        assert "fills=0/" in line
+        assert "dates=2026-10-03" in line
+        assert "roots=SPXW" in line
+        assert "accts=" in line
 
         with caplog.at_level(logging.INFO):
             _build_today_movers(
@@ -2712,6 +2758,10 @@ class TestDailyReviewBatchIncludesTodayTrades:
         opt_sql, opt_cfg = batch["today_options_moves"]
         assert "date <= @as_of" in opt_sql
         assert {p.name: p.value for p in opt_cfg.query_parameters}["as_of"] == thursday
+        from app.query_cache import make_key
+        # Fills and option day-moves are different SQL and different
+        # parameter names, so a Redis hit cannot swap the two frames.
+        assert make_key(*batch["today_trades"]) != make_key(*batch["today_options_moves"])
 
     def test_market_context_is_capped_to_the_displayed_close(self):
         friday = date(2026, 8, 28)
