@@ -853,6 +853,238 @@ class TestBuildTodayMovers:
     def test_day_trades_query_carries_fees_for_mover_lots(self):
         assert "f.fees" in DAY_TRADES_QUERY
         assert "c.fees" in DAY_TRADES_QUERY
+        # Contract realized P&L joins on the fill's account and user.
+        # Tenant + OCC alone repeats each fill once per contract row.
+        assert "f.account = o.account" in DAY_TRADES_QUERY
+        assert "f.user_id IS NOT DISTINCT FROM o.user_id" in DAY_TRADES_QUERY
+
+    def _oct2_statement_fills(self, *, copies=1, trade_date=None):
+        """Oct 2 statement amounts, already net of the broker fee."""
+        day = date(2026, 10, 2) if trade_date is None else trade_date
+        short = "SPXW  261002C07730000"
+        long = "SPXW  261002C07735000"
+        legs = [
+            ("option_sell_to_open", short, 20, 6.85, 13675.56, 24.44),
+            ("option_buy_to_open", long, 20, 5.35, -10724.44, 24.44),
+            ("option_sell_to_close", long, 20, 1.824, 3623.56, 24.44),
+            ("option_buy_to_close", short, 20, 2.824, -5672.44, 24.44),
+            ("option_sell_to_open", short, 10, 2.79, 2777.78, 12.22),
+            ("option_buy_to_open", long, 10, 1.79, -1802.22, 12.22),
+        ]
+        rows = []
+        for _copy in range(copies):
+            for action, occ, qty, price, amount, fee in legs:
+                rows.append({
+                    "tenant_id": "snaptrade:sara",
+                    "account": "Sara Investment",
+                    "user_id": 9,
+                    "trade_date": day,
+                    "action": action,
+                    "trade_symbol": occ,
+                    "underlying_symbol": "SPXW",
+                    "quantity": qty,
+                    "price": price,
+                    "amount": amount,
+                    "fees": fee,
+                    "instrument_type": "Call",
+                })
+        rows.append({
+            "tenant_id": "snaptrade:sara",
+            "account": "Sara Investment",
+            "user_id": 9,
+            "trade_date": day,
+            "action": "option_expired",
+            "trade_symbol": short,
+            "quantity": 30, "price": 0, "amount": 0, "fees": 0,
+        })
+        return pd.DataFrame(rows)
+
+    def _oct2_production_options(self, symbol="SPXW"):
+        """Friday ``today_options_moves`` after fees land in the amount.
+
+        Quantity is the fused open (GREATEST of the two lots). The
+        dollars are the statement nets: short +10,780.90, long −8,903.10.
+        """
+        day = date(2026, 10, 2)
+        short = "SPXW  261002C07730000"
+        long = "SPXW  261002C07735000"
+        return pd.DataFrame([
+            {
+                "symbol": symbol, "trade_symbol": short,
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment", "user_id": 9,
+                "option_strike": 7730, "option_type": "C",
+                "option_expiry": day, "direction": "Sold",
+                "quantity": 30, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": 10780.90,
+            },
+            {
+                "symbol": symbol, "trade_symbol": long,
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment", "user_id": 9,
+                "option_strike": 7735, "option_type": "C",
+                "option_expiry": day, "direction": "Bought",
+                "quantity": 30, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -8903.10,
+            },
+        ])
+
+    def _friday_equity(self):
+        """Overview's anchor is the equity close, not the option mart date."""
+        return pd.DataFrame([{
+            "symbol": "GEV",
+            "today_date": date(2026, 10, 2),
+            "shares": 10,
+            "today_close": 500.0,
+            "prev_close": 499.0,
+            "price_change": 1.0,
+            "price_change_pct": 0.2,
+            "dollar_impact": 10.0,
+            "current_value": 5000.0,
+        }])
+
+    def _assert_oct2_lots(self, result):
+        spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
+        by_detail = {r["contract_detail"]: r for r in spxw}
+        assert set(by_detail) == {
+            "20× 7730/7735C spread",
+            "10× 7730/7735C spread",
+        }
+        assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
+        assert by_detail["20× 7730/7735C spread"]["option_caption"] == "Closed today"
+        assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
+        assert by_detail["10× 7730/7735C spread"]["option_caption"] == "Expired"
+        assert result["options_impact"] == 1877.80
+        assert result["as_of"] == "2026-10-02"
+        details = " ".join(r.get("contract_detail") or "" for r in result["winners"] + result["losers"])
+        assert "30×" not in details
+        assert all(r["symbol"] != "SPX" for r in result["winners"] + result["losers"])
+
+    def test_production_friday_row_splits_on_the_weekly_review_path(self):
+        """The live Friday tile is one 30× line at +$1,878.
+
+        Overview passes the equity close as the anchor and the net
+        ``today_options_moves`` row (fees already in the amount). A
+        second copy of each fill, the shape ``option_gl`` produced
+        when it joined only on tenant + OCC, must still split.
+        """
+        from app import app
+
+        equity = self._friday_equity()
+        options = self._oct2_production_options()
+        for copies, when in ((1, date(2026, 10, 2)), (2, date(2026, 10, 2))):
+            result = _build_today_movers(
+                equity,
+                options_moves_df=options,
+                option_fills_df=self._oct2_statement_fills(copies=copies, trade_date=when),
+            )
+            self._assert_oct2_lots(result)
+
+        # Schwab MDY strings must match the ISO session anchor.
+        for raw in ("10/02/2026", "10/02/26"):
+            result = _build_today_movers(
+                equity,
+                options_moves_df=options,
+                option_fills_df=self._oct2_statement_fills(trade_date=raw),
+            )
+            self._assert_oct2_lots(result)
+
+        # Parent root SPX on the mart row is the same position as SPXW.
+        spx = _build_today_movers(
+            equity,
+            options_moves_df=self._oct2_production_options(symbol="SPX"),
+            option_fills_df=self._oct2_statement_fills(copies=2),
+        )
+        self._assert_oct2_lots(spx)
+        assert spx["options_impact"] != 3755.60
+
+        movers = _build_today_movers(
+            equity,
+            options_moves_df=options,
+            option_fills_df=self._oct2_statement_fills(copies=2),
+        )
+        overview = {
+            "current_user": __import__("types").SimpleNamespace(is_authenticated=False),
+            "title": "Overview",
+            "mode": "daily",
+            "week_start": date(2026, 9, 28),
+            "week_end": date(2026, 10, 2),
+            "user_timezone": "UTC",
+            "today": date(2026, 10, 3),
+            "review_date": date(2026, 10, 2),
+            "review_is_today": False,
+            "accounts": [],
+            "selected_account": "",
+            "selected_tenant": None,
+            "selected_tenants": None,
+            "error": None,
+            "equity_snapshot": None,
+            "today_snapshots_by_account": [],
+            "today_strip": [],
+            "expiring_options": [],
+            "upcoming_earnings_this_week": [],
+            "upcoming_earnings_next_week": [],
+            "upcoming_ex_dividends": [],
+            "today_movers": movers,
+            "after_hours_movers": None,
+            "today_pulse": None,
+            "today_snapshots_total": None,
+            "today_headline": None,
+            "from_upload": False,
+            "market": None,
+            "market_session": {"state": "weekend", "label": "Weekend"},
+            "market_open_today": False,
+            "market_neutral_line": None,
+            "since_last_looked": None,
+            "calendar_grid": [],
+            "calendar_weeks_back": 1,
+            "calendar_default_weeks": 1,
+            "calendar_extra_weeks": 0,
+            "daily_calendar_no_query_rows": True,
+            "trades_this_week": {
+                "trades": [], "count": 0, "opened_count": 0,
+                "closed_count": 0, "realized_pnl": 0.0,
+                "unrealized_pnl": 0.0, "has_any": False,
+            },
+            "trades_today": {
+                "trades": [], "cash": [], "count": 0, "net_cash": 0.0,
+                "net_gl": 0.0, "symbols": [], "has_any": False,
+            },
+            "all_user_tags": [],
+            "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
+            "benchmark_snapshot": [],
+            "overview_below_deferred": False,
+            "overview_below_url": "/overview/below",
+            "building_history": None,
+        }
+        with app.test_request_context("/weekly-review"):
+            html = app.jinja_env.get_template("weekly_review.html").render(**overview)
+        assert "20× 7730/7735C spread" in html
+        assert "10× 7730/7735C spread" in html
+        assert "Closed today" in html
+        assert "Expired" in html
+        assert "+$902" in html
+        assert "+$976" in html
+        assert "30×" not in html
+        assert 'data-peek-symbol="SPXW"' in html
+        assert 'data-peek-symbol="SPX"' not in html
+        today_ctx = {
+            **overview,
+            "session_is_live": True,
+            "delay": {"shared": "These numbers can lag your broker.", "extra": ""},
+            "last_close_date": date(2026, 10, 2),
+            "trades_today": {
+                "trades": [], "cash": [], "count": 0, "fill_count": 0,
+                "net_cash": 0.0, "net_gl": 0.0, "symbols": [], "has_any": False,
+            },
+        }
+        with app.test_request_context("/today"):
+            today_html = app.jinja_env.get_template("today.html").render(**today_ctx)
+        assert "20× 7730/7735C spread" in today_html
+        assert "10× 7730/7735C spread" in today_html
+        assert "30×" not in today_html
+        assert "+$902" in today_html
+        assert "+$976" in today_html
 
     def test_option_caption_matches_what_the_row_contains(self):
         opt = pd.DataFrame([
