@@ -4025,9 +4025,6 @@ def _same_day_option_lot_tiles(fills_df, anchor):
         except (TypeError, ValueError):
             continue
         net = _net_option_cash(amount, qty, price, fee)
-        symbol = _option_root_match_key(parsed["root"])
-        fees_by_symbol[symbol] = round(fees_by_symbol.get(symbol, 0.0) + fee, 2)
-        qty_by_symbol[symbol] = round(qty_by_symbol.get(symbol, 0.0) + qty, 4)
         tenant = str(_fill_field(row, "tenant_id", default="") or "")
         account = str(_fill_field(row, "account", default="") or "")
         trade_symbol = str(_fill_field(row, "trade_symbol", default="") or "")
@@ -4042,6 +4039,7 @@ def _same_day_option_lot_tiles(fills_df, anchor):
             "quantity": qty,
             "price": price,
             "amount": net,
+            "fees": fee,
             "trade_date": use_date,
             "trade_symbol": trade_symbol,
             "tenant_id": tenant,
@@ -4064,12 +4062,30 @@ def _same_day_option_lot_tiles(fills_df, anchor):
         direction = "Sold" if sto >= bto else "Bought"
         cp = parsed.get("cp") or ""
         expiry = f"20{parsed['yy']}-{int(parsed['mm']):02d}-{int(parsed['dd']):02d}"
+        has_close = any(t["action"] in _LOT_CLOSE_ACTIONS for t in raw)
+        # Opening cash is not P&L for an option that remains at risk.
+        # Only same-session closes and same-day expiries can be rebuilt
+        # from fills. A newly-opened later expiry must stay on the mart's
+        # mark-to-market row (or at $0 until its first snapshot).
+        if not has_close and expiry != session:
+            continue
+        symbol = _option_root_match_key(parsed["root"])
+        fees_by_symbol[symbol] = round(
+            fees_by_symbol.get(symbol, 0.0)
+            + sum(float(t.get("fees") or 0) for t in raw),
+            2,
+        )
+        qty_by_symbol[symbol] = round(
+            qty_by_symbol.get(symbol, 0.0)
+            + sum(float(t.get("quantity") or 0) for t in raw),
+            4,
+        )
         outcomes.append({
             "type": "option",
             "strategy": "Call Spread" if cp == "C" else "Put Spread",
             "trade_symbol": trade_symbol,
             "direction": direction,
-            "close_type": "Closed" if any(t["action"] in _LOT_CLOSE_ACTIONS for t in raw) else "Expired",
+            "close_type": "Closed" if has_close else "Expired",
             "open_date": open_date,
             "close_date": session or open_date,
             "quantity": sum(t["quantity"] for t in opens),

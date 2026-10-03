@@ -856,6 +856,32 @@ class TestBuildTodayMovers:
         assert row["dollar_impact"] == 975.56
         assert result["options_impact"] == 975.56
 
+    def test_future_expiry_open_is_not_treated_as_expired_pnl(self):
+        """Opening premium is not a mover result while the contract is open.
+
+        A just-opened contract can have no mart row yet (or a $0 first
+        mark). The fill splitter must not append its cash flow as an
+        ``Expired`` gain or loss merely because no mart tile matched it.
+        """
+        day = date(2026, 10, 2)
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Main", "trade_date": day,
+                "action": "option_buy_to_open",
+                "trade_symbol": "SPY   261120C00600000",
+                "underlying_symbol": "SPY",
+                "option_expiry": date(2026, 11, 20),
+                "quantity": 10, "price": 5.0, "amount": -5000.0, "fees": 6.50,
+            },
+        ])
+        result = _build_today_movers(
+            None, options_moves_df=pd.DataFrame(), option_fills_df=fills,
+        )
+        assert result["winners"] == []
+        assert result["losers"] == []
+        assert result["options"] == []
+        assert result["options_impact"] == 0.0
+
     def test_day_trades_query_carries_fees_for_mover_lots(self):
         assert "f.fees" in DAY_TRADES_QUERY
         assert "c.fees" in DAY_TRADES_QUERY
