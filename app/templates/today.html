@@ -221,6 +221,7 @@
                     <div>
                         {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
                         {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
+                        {% if debug_lots and m.lot_split_line %}<div class="mover-meta lot-split-debug">{{ m.lot_split_line }}</div>{% endif %}
                         {% if is_admin_user and m.lot_split_reason %}<span class="visually-hidden">Lot split {{ m.lot_split_reason }}: {{ m.lot_split_detail }}</span>{% endif %}
                     </div>
                     {% else %}
@@ -253,6 +254,7 @@
                     <div>
                         {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
                         {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
+                        {% if debug_lots and m.lot_split_line %}<div class="mover-meta lot-split-debug">{{ m.lot_split_line }}</div>{% endif %}
                         {% if is_admin_user and m.lot_split_reason %}<span class="visually-hidden">Lot split {{ m.lot_split_reason }}: {{ m.lot_split_detail }}</span>{% endif %}
                     </div>
                     {% else %}
