@@ -2853,36 +2853,44 @@ def position_detail(symbol):
     legs_by_account = sort_masked_account_choices(legs_by_account)
 
     # ── Account toggle bar (turn entire accounts on/off) ──
-    # Built from the FULL owned-tenant set (accounts_all_df), so an account
-    # that's currently toggled off still appears and can be turned back on.
+    # Built from the FULL owned-tenant set (accounts_all_df), so a real
+    # account that's currently toggled off still appears and can be turned
+    # back on. Alpaca Paper is omitted unless this scope explicitly includes
+    # that paper tenant — the default real book must not count it in
+    # "traded in N accounts".
     accounts_all_df = _filter_df_by_tenant_ids(accounts_all_df, all_owned_scope)
-    selected_tenant_set = set(tenant_scope) if tenant_scope is not None else None
     from app.account_scope import nickname_map as _nickname_map
     from app.models import get_broker_tenants_for_user as _tenants_for_picker
+    from app.paper_accounts import symbol_account_chips
+    _broker_rows = []
     try:
-        _picker_labels = _nickname_map(_tenants_for_picker(_viewer_id) or [])
+        _broker_rows = list(_tenants_for_picker(_viewer_id) or [])
+        _picker_labels = _nickname_map(_broker_rows)
     except Exception as exc:
         app.logger.warning("position account nicknames failed: %s", exc)
         _picker_labels = {}
-    account_toggles = []
+    _traded_ids = []
     if (
         accounts_all_df is not None
         and not accounts_all_df.empty
         and "tenant_id" in accounts_all_df.columns
     ):
-        _seen_tids = set()
+        _traded_ids = accounts_all_df["tenant_id"].tolist()
+        # A broker-row miss still classifies "Alpaca Paper Account" from
+        # the warehouse label, so the chip cannot sneak into the count.
+        _known = {str(r.get("tenant_id") or "") for r in _broker_rows}
         for _, _r in accounts_all_df.iterrows():
             _tid = str(_r.get("tenant_id") or "")
-            if not _tid or _tid in _seen_tids:
-                continue
-            _seen_tids.add(_tid)
-            account_toggles.append({
-                "tenant_id": _tid,
-                "label": _picker_labels.get(_tid) or "Unnamed account",
-                "selected": True if selected_tenant_set is None else (_tid in selected_tenant_set),
-            })
-        account_toggles.sort(key=lambda a: (a.get("label") or "").lower())
-        account_toggles = sort_masked_account_choices(account_toggles)
+            if _tid and _tid not in _known:
+                _broker_rows.append({
+                    "tenant_id": _tid,
+                    "account_name": _r.get("account"),
+                })
+                _known.add(_tid)
+    account_toggles = symbol_account_chips(
+        _traded_ids, tenant_scope, _broker_rows, _picker_labels,
+    )
+    account_toggles = sort_masked_account_choices(account_toggles)
     # Preserve the current account subset on leg "Show All" / navigation.
     tenants_param = request.args.get("tenants", "").strip()
     if isinstance(tenant_scope, list):
@@ -3925,6 +3933,10 @@ def position_detail(symbol):
     # rollup. One row per (symbol) — when the user spans multiple accounts we
     # collapse so each ticker shows up once in the strip with combined P&L
     # and trade count, and "open" wins over "closed" for the dot.
+    # Paper rows stay out unless this scope named that paper account, so a
+    # symbol held in both books lands on the real account.
+    from app.paper_accounts import drop_unselected_paper_rows
+    tabs_df = drop_unselected_paper_rows(tabs_df, tenant_scope, _broker_rows)
     tabs = []
     if not tabs_df.empty:
         tdf = tabs_df.copy()

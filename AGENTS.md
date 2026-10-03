@@ -196,7 +196,14 @@ callers don't break.
 
 Alpaca Paper accounts stay out of the real total, allocation, and
 account count. A mixed book drops them; a paper-only `?tenants=` scope
-keeps them. An unscoped admin read (`tenant_ids` None) also drops known
+keeps them. An explicit paper selection, including a mixed `?tenants=`
+that names the paper account, keeps paper on that page. Position chips,
+the "traded in N accounts" count, and the symbol strip follow the same
+rule and default to the real account when a symbol exists in both.
+Positions, Strategies, Sectors, and Overview/Today movers use that scope.
+Labels say Paper (privacy mode: `Account N · Paper`) on the chip, the
+account picker, and position legs. Practice (`/practice`) still shows
+the paper book. An unscoped admin read (`tenant_ids` None) also drops known
 paper tenants from real totals; a lookup miss leaves that read unscoped.
 Overview shows that paper value beside the real total,
 labeled Paper, with a link that opens just the paper book.

@@ -808,6 +808,11 @@ def _tenants_for_scope(selected_account=None):
     An explicit ``?tenant=`` / ``?tenants=`` that matches nothing the
     user owns is empty, not the full book.
 
+    Alpaca Paper stays out of the default book (no selection, or an
+    unknown ``?account=`` label that falls back to every account). Naming
+    the paper tenant with ``?tenant=``, ``?tenants=`` (including a mix of
+    real and paper), or a matched ``?account=`` label keeps it.
+
     ``?groups=<id>,<id>`` is an additive label filter (union of members)
     applied after the account/tenant resolution above. Unknown group ids
     are ignored; a valid group with no members scopes to an empty list
@@ -827,13 +832,13 @@ def _tenants_for_scope(selected_account=None):
         requested_tenant = ""
     if requested_tenant:
         if admin:
-            return _apply_group_scope([requested_tenant], uid)
+            return _apply_group_scope([requested_tenant], uid, keep_paper=True)
         owned = [
             row["tenant_id"]
             for row in (get_broker_tenants_for_user(current_user.id) or [])
         ]
         if requested_tenant in owned:
-            return _apply_group_scope([requested_tenant], uid)
+            return _apply_group_scope([requested_tenant], uid, keep_paper=True)
         return _unknown_scope_result()
 
     # 1b. Multi-tenant addressing (?tenants=) — account on/off toggles
@@ -843,14 +848,18 @@ def _tenants_for_scope(selected_account=None):
     requested = _requested_csv_values(None, "tenants")
     if requested:
         if admin:
-            return _apply_group_scope(list(dict.fromkeys(requested)), uid)
+            return _apply_group_scope(
+                list(dict.fromkeys(requested)), uid, keep_paper=True,
+            )
         owned = [
             row["tenant_id"]
             for row in (get_broker_tenants_for_user(current_user.id) or [])
         ]
         allowed = [t for t in requested if t in owned]
         if allowed:
-            return _apply_group_scope(list(dict.fromkeys(allowed)), uid)
+            return _apply_group_scope(
+                list(dict.fromkeys(allowed)), uid, keep_paper=True,
+            )
         return _unknown_scope_result()
 
     if admin and not selected:
@@ -875,7 +884,7 @@ def _tenants_for_scope(selected_account=None):
             for row in rows
             if _match_label(row, want)
         ]
-        return _apply_group_scope(sorted(set(matched)), uid)
+        return _apply_group_scope(sorted(set(matched)), uid, keep_paper=True)
 
     tenants = get_broker_tenants_for_user(current_user.id) or []
     all_ids = [row["tenant_id"] for row in tenants]
@@ -894,41 +903,46 @@ def _tenants_for_scope(selected_account=None):
         if dis and _norm_account_label(dis).lower() == want:
             matched.append(tid)
     base = matched if matched else all_ids
-    return _apply_group_scope(base, uid)
+    # An unknown label falls back to the whole book and still drops paper.
+    # A label that actually matched keeps paper when that match is paper.
+    return _apply_group_scope(base, uid, keep_paper=bool(matched))
 
 
-def _apply_group_scope(base_ids, user_id):
+def _apply_group_scope(base_ids, user_id, *, keep_paper=False):
     """Intersect resolved tenant ids with the union of selected groups.
 
     No ``?groups=`` (or only unknown ids) → ``base_ids`` unchanged.
     Admin unscoped (``base_ids is None``) becomes the group union so a
     group filter never widens past the operator's own memberships.
+    ``keep_paper`` is set only when the URL named the account. The
+    default book still drops Alpaca Paper.
     """
     group_ids = _requested_group_ids()
     if not group_ids:
-        return _real_book_scope(base_ids, user_id)
+        return _real_book_scope(base_ids, user_id, keep_paper=keep_paper)
     from app.models import tenant_ids_for_groups
 
     matched, group_tids = tenant_ids_for_groups(user_id, group_ids)
     if not matched:
-        return _real_book_scope(base_ids, user_id)
+        return _real_book_scope(base_ids, user_id, keep_paper=keep_paper)
     allowed = set(group_tids)
     if base_ids is None:
         resolved = list(dict.fromkeys(group_tids))
     else:
         resolved = [t for t in base_ids if t in allowed]
-    return _real_book_scope(resolved, user_id)
+    return _real_book_scope(resolved, user_id, keep_paper=keep_paper)
 
 
-def _real_book_scope(ids, user_id):
+def _real_book_scope(ids, user_id, *, keep_paper=False):
     """Keep paper out of a mixed or all-accounts book. Paper-only stays.
 
-    Admin unscoped (``None``) stays ``None`` here. ``tenant_sql_and(None)``
-    and ``filter_df_by_tenant_ids(..., None)`` drop known paper tenants
-    on that path. A DB miss leaves the ids alone so a Postgres hiccup
-    cannot blank every page.
+    ``keep_paper`` leaves an explicit selection alone, including a mix of
+    real and paper tenants. Admin unscoped (``None``) stays ``None``
+    here. ``tenant_sql_and(None)`` and ``filter_df_by_tenant_ids(..., None)``
+    drop known paper tenants on that path. A DB miss leaves the ids alone
+    so a Postgres hiccup cannot blank every page.
     """
-    if ids is None or not user_id:
+    if keep_paper or ids is None or not user_id:
         return ids
     try:
         rows = get_broker_tenants_for_user(user_id) or []

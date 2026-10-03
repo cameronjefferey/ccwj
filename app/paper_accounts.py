@@ -49,14 +49,98 @@ def _generic_paper_name(text) -> bool:
 
 
 def paper_display_label(row) -> str | None:
-    """``Paper``, or a nickname the user actually typed. None when not paper."""
+    """``Paper``, or ``Nickname · Paper``. None when the row is not paper.
+
+    A custom nickname stays visible, and the word Paper stays on the label
+    so a privacy mask can put it back after ``Account N``.
+    """
     if not is_paper_row(row):
         return None
     nick = " ".join(str((row or {}).get("display_nickname") or "").split())
     name = " ".join(str((row or {}).get("account_name") or "").split())
     if nick and nick != name and not _generic_paper_name(nick):
-        return nick
+        if "paper" in nick.casefold():
+            return nick
+        return f"{nick} · {PAPER_LABEL}"
     return PAPER_LABEL
+
+
+def symbol_account_chips(traded_ids, scope_ids, rows, labels=None):
+    """Accounts that traded a symbol, for the position-page toggle bar.
+
+    Real accounts stay listed even when toggled off, so they can be turned
+    back on. Paper is listed only when this scope explicitly includes that
+    paper tenant. ``scope_ids is None`` is the unscoped real book, so paper
+    stays off the bar. ``selected`` is true when the scope is unscoped or
+    the tenant is in it.
+    """
+    rows_by_id = {}
+    for row in rows or []:
+        tid = str((row or {}).get("tenant_id") or "").strip()
+        if tid:
+            rows_by_id[tid] = row
+    scope = None if scope_ids is None else {str(tid) for tid in scope_ids}
+    labels = labels or {}
+    chips = []
+    seen = set()
+    for raw in traded_ids or []:
+        tid = str(raw or "").strip()
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        row = rows_by_id.get(tid)
+        if is_paper_row(row) and (scope is None or tid not in scope):
+            continue
+        label = labels.get(tid)
+        if not label and row is not None:
+            label = paper_display_label(row)
+        chips.append({
+            "tenant_id": tid,
+            "label": label or "Unnamed account",
+            "selected": scope is None or tid in scope,
+        })
+    chips.sort(key=lambda chip: (chip.get("label") or "").lower())
+    return chips
+
+
+def drop_unselected_paper_rows(frame, scope_ids, rows):
+    """Drop paper rows the current scope did not ask for.
+
+    The symbol strip is built from this frame. A symbol held in both a
+    real account and Alpaca Paper then lands on the real account. An
+    explicit paper scope keeps those rows. ``scope_ids is None`` is the
+    unscoped real book and drops paper.
+    """
+    if frame is None or getattr(frame, "empty", True):
+        return frame
+    if "tenant_id" not in getattr(frame, "columns", []):
+        return frame
+    rows_by_id = {}
+    for row in rows or []:
+        tid = str((row or {}).get("tenant_id") or "").strip()
+        if tid:
+            rows_by_id[tid] = row
+    scope = set() if scope_ids is None else {str(tid) for tid in scope_ids}
+    paper = set()
+    for raw in frame["tenant_id"].dropna().unique():
+        tid = str(raw or "").strip()
+        if not tid:
+            continue
+        known = rows_by_id.get(tid)
+        if known is not None:
+            if is_paper_row(known):
+                paper.add(tid)
+            continue
+        if "account" not in frame.columns:
+            continue
+        names = frame.loc[frame["tenant_id"].astype(str) == tid, "account"]
+        if any(is_paper_row({"tenant_id": tid, "account_name": name}) for name in names):
+            paper.add(tid)
+    drop = paper - scope
+    if not drop:
+        return frame
+    keep = ~frame["tenant_id"].astype(str).isin(drop)
+    return frame.loc[keep].copy()
 
 
 def all_paper_tenant_ids() -> list[str]:
