@@ -1,0 +1,47 @@
+    <section class="ht-band ht-band-shot-a ht-section ht-faq" aria-label="FAQ">
+        <div class="ht-wrap">
+            <div class="ht-kicker">FAQ</div>
+            <h2 class="ht-section-title">Questions</h2>
+            <div class="accordion" id="faqAccordion">
+                <div class="faq-item">
+                    <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#go-faq-cost" aria-expanded="false" aria-controls="go-faq-cost">
+                        What does it cost?
+                    </h3>
+                    <div id="go-faq-cost" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="faq-answer">
+                            Lessons, replays, and paper trading are free, with no card.
+                            The 30-day trial starts only when you connect a real brokerage.
+                            After that the mirror stays readable and daily syncing pauses until you subscribe.
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#go-faq-brokers" aria-expanded="false" aria-controls="go-faq-brokers">
+                        What brokers are supported?
+                    </h3>
+                    <div id="go-faq-brokers" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="faq-answer">
+                            Schwab, Fidelity, Vanguard, Robinhood, Interactive Brokers, and others, through SnapTrade.
+                            Access is read-only. HappyTrader never stores your broker password.
+                            Older history can be added from a CSV after you connect.
+                        </div>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <h3 class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#go-faq-advice" aria-expanded="false" aria-controls="go-faq-advice">
+                        Is this investment advice?
+                    </h3>
+                    <div id="go-faq-advice" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="faq-answer">
+                            No. HappyTrader is an educational record of trades you already made.
+                            It does not tell you what to trade next.
+                            {% include "_landing/disclaimer.html" %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>

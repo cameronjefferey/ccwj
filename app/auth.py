@@ -241,9 +241,24 @@ def register_redirect():
     return redirect(url_for("signup"))
 
 
+_SIGNUP_ROUTES = {
+    "learn": "Lessons, replays, and paper trading are free. No card.",
+    "real-pnl": "See your real P&L across every broker you connect. Read-only.",
+    "mistakes": "See what an early close cost, on the trades you already made.",
+}
+
+
 def _signup_route(raw) -> str:
-    """The learn ad preselects the learning path. Anything else is blank."""
-    return "learn" if (raw or "").strip() == "learn" else ""
+    """Ad landings preselect a path. Anything else is blank."""
+    text = (raw or "").strip()
+    return text if text in _SIGNUP_ROUTES else ""
+
+
+def _signup_subhead(route: str) -> str:
+    return _SIGNUP_ROUTES.get(route) or (
+        "Learning and paper trading are free. "
+        "Your 30-day trial starts when you connect a real brokerage."
+    )
 
 
 def _render_signup_form(
@@ -259,6 +274,8 @@ def _render_signup_form(
     Username, email, and an invite code the visitor just typed come back
     so a mismatched password does not wipe the form. Passwords never do.
     """
+    chosen = _signup_route(route)
+    site_key, _secret = turnstile_keys()
     return render_template(
         "signup.html",
         title="Sign Up",
@@ -266,7 +283,9 @@ def _render_signup_form(
         form_username=username,
         form_email=email,
         form_invite=invite,
-        form_route=_signup_route(route),
+        form_route=chosen,
+        signup_subhead=_signup_subhead(chosen),
+        turnstile_site_key=site_key,
     )
 
 
@@ -284,7 +303,6 @@ def signup():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        confirm = request.form.get("confirm", "")
         invite = (request.form.get("invite_code", "") or "").strip()
         email_raw = request.form.get("email", "")
 
@@ -323,11 +341,10 @@ def signup():
                 "forget your password.",
             )
         if User.get_by_email(email):
-            # Generic message: don't confirm to a stranger which addresses
-            # are signed up. They can recover via /forgot-password.
+            # Do not confirm that this address already has an account.
             return _retry(
-                "That email is already in use. If it's yours, sign in or "
-                "use 'Forgot password' to recover.",
+                "We couldn't create that account. If you already have one, "
+                "sign in or reset your password.",
             )
 
         if len(username) < 3:
@@ -339,11 +356,12 @@ def signup():
         if not valid:
             return _retry(err)
 
-        if password != confirm:
-            return _retry("Passwords do not match.")
-
         if User.get_by_username(username):
             return _retry("That username is already taken.")
+
+        token = (request.form.get("cf-turnstile-response") or "").strip()
+        if not verify_turnstile(token, real_client_ip()):
+            return _retry("Confirm you're a person and try again.")
 
         User.create(username, password, email=email)
         user = User.get_by_username(username)

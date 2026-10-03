@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en" data-bs-theme="dark">
 {% set public_marketing = marketing_chrome|default(false) %}
+{% set _public_page = public_marketing or request.endpoint in ('index', 'go_landing', 'pricing', 'faq', 'campaign_start', 'learn_index', 'learn_episode', 'learn_replay_page', 'privacy', 'terms', 'contact', 'demo_start', 'feature_detail') %}
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +11,7 @@
     {% else %}
         <title>HappyTrader</title>
     {% endif %}
-    <meta property="og:title" content="{{ (title ~ ' - HappyTrader') if title else 'HappyTrader' }}">
+    <meta property="og:title" content="{{ og_title or ((title ~ ' - HappyTrader') if title else 'HappyTrader') }}">
     <meta property="og:type" content="website">
     {% block meta_tags %}
     <meta name="description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
@@ -19,12 +20,14 @@
     <meta property="og:url" content="{{ request.base_url }}">
     {% if request.endpoint not in ('learn_index', 'learn_episode', 'learn_replay_page') %}
     <meta property="og:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
+    <meta property="og:image:width" content="1920">
+    <meta property="og:image:height" content="1080">
     <meta property="og:image:alt" content="HappyTrader, the trading mirror">
     <meta name="twitter:image" content="{{ url_for('static', filename='marketing/walkthrough_poster.webp', _external=True) }}">
     {% endif %}
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ (title ~ ' - HappyTrader') if title else 'HappyTrader' }}">
-    <meta name="twitter:description" content="Your Trading Mirror. Reflect on your process, not just your P&L.">
+    <meta name="twitter:title" content="{{ og_title or ((title ~ ' - HappyTrader') if title else 'HappyTrader') }}">
+    <meta name="twitter:description" content="{{ og_description or 'Your Trading Mirror. Reflect on your process, not just your P&L.' }}">
     <link rel="canonical" href="{{ request.base_url }}">
 
     <link rel="icon" href="{{ url_for('favicon') }}" sizes="32x32">
@@ -74,10 +77,16 @@
     </script>
     {% endif %}
 
+    {% if _public_page %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"></noscript>
+    {% else %}
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% endif %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"></noscript>
     {# Public landings do not draw charts. Skipping Chart.js is the
        largest script on those pages. #}
     {% if request.endpoint not in ('index', 'campaign_start', 'pricing', 'learn_index', 'learn_episode', 'learn_replay_page', 'faq', 'privacy', 'terms', 'contact', 'feature_detail', 'go_landing') %}
@@ -118,7 +127,15 @@
         .ht-cookie-notice a { color: #5b8cff; }
         .ht-cookie-notice button {
             background: #5b8cff; color: #0a0e17; border: 0; border-radius: 999px;
-            font-weight: 700; padding: .35rem .8rem; flex: none;
+            font-weight: 700; min-height: 44px; padding: .5rem 1rem; flex: none;
+        }
+        .ht-public-links a {
+            display: inline-flex; align-items: center; min-height: 44px;
+            padding: .35rem .4rem;
+        }
+        footer .ht-disclaimer {
+            color: #c5d0e4; font-size: .95rem; line-height: 1.5;
+            max-width: 40rem; margin: 1rem auto 0; text-align: center;
         }
         :root {
             color-scheme: dark;
@@ -1186,7 +1203,7 @@
 <body class="{% if not current_user.is_authenticated or public_marketing %}ht-public{% endif %}{% if public_marketing %} ht-campaign{% endif %}{% if compact_tables %} ht-compact{% endif %}{% set _ep = request.endpoint or '' %}{% if _ep.startswith('admin') or _ep in ('earnings_watch', 'earnings_follower_bridge') %} ht-exempt{% endif %}" data-simple="{{ '1' if simple_view else '0' }}" data-paper="{{ '1' if has_paper_account else '0' }}" data-learner-nav="{{ '1' if (simple_view or not has_real_brokerage) else '0' }}">
     {% if not current_user.is_authenticated %}
     <div id="ht-cookie-notice" class="ht-cookie-notice">
-        <p>We use a first-party cookie to remember how you found HappyTrader. Home, pricing, signup, Learn, FAQ, and ad landing pages load the Reddit pixel. Login does not. The pixel stays off when your browser sends Do Not Track or Global Privacy Control. <a href="{{ url_for('privacy') }}">Privacy</a></p>
+        <p>We use a cookie to remember how you found us. <a href="{{ url_for('privacy') }}">Details</a></p>
         <button type="button" id="ht-cookie-ok">OK</button>
     </div>
     <script>
@@ -1544,7 +1561,7 @@
                 <strong>Demo mode.</strong>
                 Read-only paper account &mdash; simulated money, real fills, including the losses.
                 Uploads and profile changes stay off so everyone sees the same mirror.
-                {% if signup_enabled %}<span class="d-block d-md-inline">30-day free trial, no credit card.</span>{% endif %}
+                {% if signup_enabled %}<span class="d-block d-md-inline">Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</span>{% endif %}
             </span>
             {% if signup_enabled %}
             <a href="{{ url_for('signup') }}" class="btn btn-primary btn-sm flex-shrink-0">
@@ -1726,7 +1743,7 @@
     {% if not current_user.is_authenticated or public_marketing %}
     <footer class="mt-5 py-4 border-top">
         <div class="container-fluid px-4">
-            <div class="d-flex flex-wrap justify-content-center gap-4">
+            <div class="d-flex flex-wrap justify-content-center gap-3 ht-public-links">
                 <a href="{{ url_for('demo_start') }}">Try Demo</a>
                 <a href="{{ url_for('login', next=request.path) if request.path.startswith('/learn') else url_for('login') }}">Sign In</a>
                 {% if signup_enabled %}
@@ -1738,18 +1755,19 @@
                 <a href="{{ url_for('pricing') }}">Pricing</a>
                 <a href="{{ url_for('faq') }}">FAQ</a>
             </div>
-            <div class="d-flex flex-wrap justify-content-center gap-4 mt-2 small">
+            <div class="d-flex flex-wrap justify-content-center gap-3 mt-2 ht-public-links">
                 <a href="{{ url_for('privacy') }}" class="text-muted">Privacy</a>
                 <a href="{{ url_for('terms') }}" class="text-muted">Terms</a>
                 <a href="{{ url_for('contact') }}" class="text-muted">Contact</a>
             </div>
             <p class="text-center text-muted small mt-3 mb-0">&copy; {{ current_year() }} HappyTrader. All rights reserved. Your trading mirror.</p>
+            <p class="ht-disclaimer">Educational tool, not investment advice. Options involve risk and are not suitable for all investors. Examples are from the founder's real account; results are not typical.</p>
         </div>
     </footer>
     {% else %}
     <footer class="mt-5 py-3 border-top">
         <div class="container-fluid px-4">
-            <div class="d-flex flex-wrap justify-content-center gap-4 small text-muted">
+            <div class="d-flex flex-wrap justify-content-center gap-3 small text-muted ht-public-links">
                 <a href="{{ url_for('faq') }}" class="text-muted">FAQ</a>
                 <a href="{{ url_for('privacy') }}" class="text-muted">Privacy</a>
                 <a href="{{ url_for('terms') }}" class="text-muted">Terms</a>
@@ -1835,8 +1853,10 @@
         });
     </script>
     <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
+    {% if not _public_page %}
     <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/term-tips.js') }}"></script>
+    {% endif %}
     {% if current_user.is_authenticated and not public_marketing %}
     <script defer src="{{ url_for('static', filename='js/nav.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/scope-filters.js') }}"></script>

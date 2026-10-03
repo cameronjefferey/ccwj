@@ -83,16 +83,15 @@ def test_signup_explains_snaptrade_next_without_reflecting_passwords(monkeypatch
     resp = client.post("/signup", data={
         "username": "ada_trader",
         "email": "ada@example.com",
-        "password": "Secret1pass",
-        "confirm": "Secret2pass",
+        "password": "longpassword",
     })
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "Passwords do not match." in html
+    assert "Password must contain at least one number." in html
     assert 'value="ada_trader"' in html
     assert 'value="ada@example.com"' in html
-    assert "Secret1pass" not in html
-    assert "Secret2pass" not in html
+    assert "longpassword" not in html
+    assert 'name="confirm"' not in html
 
 
 def test_get_started_without_broker_asks_where_to_start(monkeypatch):

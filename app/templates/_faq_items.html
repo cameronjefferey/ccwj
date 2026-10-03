@@ -16,7 +16,7 @@
                         Schwab's web export can fill years SnapTrade never sent:
                         Accounts → History → Transactions, filter All Transactions, Export CSV.
                         Current positions: Accounts → Positions → Export.
-                        Upload that from <a href="{{ url_for('upload') }}">Upload</a> after you connect.
+                        Upload that from {% if current_user.is_authenticated %}<a href="{{ url_for('upload') }}">Upload</a>{% else %}Upload{% endif %} after you connect.
                         We parse schwab.com's export, not thinkorswim.
                     </div>
                 </div>
@@ -40,7 +40,7 @@
                         chart only cover the window we actually received. To fill in older trades
                         and cost basis, export from schwab.com
                         (Accounts → History → Transactions, date range as far back as you can)
-                        and <a href="{{ url_for('upload') }}">upload the CSV</a>. A CSV cannot
+                        and {% if current_user.is_authenticated %}<a href="{{ url_for('upload') }}">upload the CSV</a>{% else %}upload the CSV{% endif %}. A CSV cannot
                         recreate daily balances before we started snapshotting.
                     </div>
                 </div>
@@ -75,7 +75,7 @@
                         <br><br>
                         CSV upload is the fallback for older history, and today it
                         parses Charles Schwab's web export (schwab.com, not thinkorswim).
-                        Steps live on <a href="{{ url_for('upload') }}">Upload</a>.
+                        Steps live on {% if current_user.is_authenticated %}<a href="{{ url_for('upload') }}">Upload</a>{% else %}Upload{% endif %}.
                         Request any other brokerage's CSV from that page.
                     </div>
                 </div>
@@ -93,7 +93,7 @@
                         <br><br>
                         Broker sync is not a lifetime archive. If the aggregator didn't send years
                         you still have in schwab.com, export those and
-                        <a href="{{ url_for('upload') }}">upload the CSV</a> once, after connecting.
+                        {% if current_user.is_authenticated %}<a href="{{ url_for('upload') }}">upload the CSV</a>{% else %}upload the CSV{% endif %} once, after connecting.
                         We never see your broker password.
                     </div>
                 </div>
@@ -130,7 +130,7 @@
                 </h3>
                 <div id="faq-insights" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        AI Insights reads the same numbers we compute from your trades &mdash; especially exit timing and giveback vs daily option marks, DTE buckets, and strategy-level performance &mdash; and writes a plain-English read of what's working and where you've left money on the table. It surfaces patterns; it does not give financial advice.
+                        AI Insights reads the same numbers we compute from your trades &mdash; especially exit timing and giveback vs daily option marks, DTE buckets, and strategy-level performance &mdash; and writes a plain-English read of those results. It surfaces patterns; it does not give financial advice.
                         <br><br>
                         You can also ask follow-up questions about your own trading patterns. Every answer is grounded in your data &mdash; observations only, not recommendations.
                         <br><br>
@@ -148,7 +148,7 @@
                     <div class="faq-answer">
                         A heatmap of every strategy you've used crossed against every sector you've traded. Each cell shows how your real trades performed &mdash; expectancy, win rate, and number of trades.
                         <br><br>
-                        It surfaces sweet spots ("Covered Calls in Tech are paying off") and soft spots ("Cash-Secured Puts in Energy are bleeding"), so you can lean into what works and avoid the corners that don't.
+                        Each cell is the record for that pair: expectancy, win rate, and how many trades. Empty cells had no trades.
                     </div>
                 </div>
             </div>
@@ -160,7 +160,7 @@
                 </h3>
                 <div id="faq-sectors" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Every ticker you trade is automatically tagged with its sector and subsector using public market data &mdash; no manual entry. Your performance rolls up by sector on the <strong>Sectors</strong> page so you can see at a glance where your edge actually lives.
+                        Every ticker you trade is automatically tagged with its sector and subsector using public market data &mdash; no manual entry. Results roll up by sector on the <strong>Sectors</strong> page.
                     </div>
                 </div>
             </div>

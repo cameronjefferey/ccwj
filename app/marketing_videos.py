@@ -81,7 +81,7 @@ STORY_STEPS = [
             "Cumulative P&L on BE trades, April to September 2026, "
             "with trade-day markers"
         ),
-        "feature_caption": "Real account · BE",
+        "feature_caption": "Founder's account · BE",
         "feature_note": (
             "Every trade day on one line. The run-up, the drawdown and "
             "the recovery, with options and shares split out."
@@ -113,7 +113,7 @@ STORY_STEPS = [
         "caption": (
             "A share lot and the calls written on it, from the buy through "
             "the sale, the assignment, or today. Premium, the share result, "
-            "and one net. Broker fees stay out of that math."
+            "and one net. Realized P&L is already net of broker fees."
         ),
         "duration_label": "Short",
         "youtube_id": "u_YWl5fKEjo",
@@ -264,6 +264,14 @@ def present_video(item):
     out["poster_url"] = _poster_url(out)
     out["poster_srcset"] = _poster_srcset(out)
     out["poster_sizes"] = (item.get("poster_sizes") or "").strip()
+    youtube_id = out["youtube_id"]
+    # Phones get a smaller YouTube still. Desktop keeps maxres as the src.
+    if youtube_id and not out["poster_srcset"] and not out["poster"]:
+        out["poster_srcset"] = (
+            f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg 480w, "
+            f"https://i.ytimg.com/vi/{youtube_id}/maxresdefault.jpg 1280w"
+        )
+        out["poster_sizes"] = "(max-width: 640px) 100vw, 720px"
     out["links_learn"] = bool(item.get("links_learn"))
     out["feature_image"] = (item.get("feature_image") or "").strip()
     out["feature_image_url"] = (
@@ -334,7 +342,7 @@ CATCH_STORIES = [
         "tab": "RKLB",
         "caption": (
             "Five RKLB covered calls expired for +$931, but call six had a "
-            "strike below my $69 cost, so assignment locked in −$600 on the "
+            "strike below the founder's $69 cost, so assignment locked in −$600 on the "
             "shares. Two weeks later the stock was at $84.80."
         ),
         "alt": (
@@ -353,7 +361,7 @@ CATCH_STORIES = [
         "id": "be-close",
         "tab": "BE close",
         "caption": (
-            "I bought back this BE covered call for a −$2,357 loss. It "
+            "The founder bought back this BE covered call for a −$2,357 loss. It "
             "expired worthless two days later, and the early close gave up "
             "$6,265 versus holding."
         ),
@@ -389,8 +397,7 @@ CATCH_STORIES = [
         "id": "win-rate",
         "tab": "Win rate",
         "caption": (
-            "Covered calls win 74% of the time, but long calls, at a 44% "
-            "win rate, made about nine times as much per trade."
+            "Covered calls won 74% of 662 trades. Long calls won 44% of 218 trades."
         ),
         "alt": (
             "Strategy cards for covered calls, a 74% win rate across 662 "

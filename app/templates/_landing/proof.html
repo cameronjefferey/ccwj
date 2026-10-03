@@ -12,8 +12,13 @@
                     <p>HappyTrader never stores your broker password.</p>
                 </li>
                 <li>
+                    {% if page is defined and page.kicker == 'Free forever · no card' %}
+                    <div class="ht-proof-k">Free</div>
+                    <strong>Forever, no card</strong>
+                    {% else %}
                     <div class="ht-proof-k">30</div>
                     <strong>Days, no card</strong>
+                    {% endif %}
                     <p>Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
                 </li>
                 <li>

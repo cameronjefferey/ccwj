@@ -692,20 +692,27 @@ or uploaded a CSV, and which button was clicked.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
 Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
-(`app/go_landings.py`). Each is noindex and reuses the homepage sections
-(proof, positions, covered-call runs, strategies, if-held, fit, Learn,
-Practice, pricing, FAQ). The hero is the ad, and that page's section
-comes first. Primary button is **Create free account** (Learn:
-**Start learning free**) to `/signup`, repeated mid-page, at the bottom,
-and as a sticky bar on phones. The live demo is a text link. `?v=`
-swaps an allow-listed headline. The slug and variant stick on `ht_touch`
-and are copied to `funnel_events` and `users.acquisition_landing` at
-signup, beside the UTMs and `rdt_cid`. `/go/learn` sends signup to
-`/learn`. These pages keep the marketing header (logo, Sign in, sign-up)
-even when a session exists; signed-in visitors get **Go to your
-dashboard** and do not see the app nav or the broker-data bar.
+(`app/go_landings.py`). Each is noindex. The page is a hero, three
+angle sections, proof, a short FAQ, and a close. Learn leads with
+Options 101, paper trading, and replays, and its close says **Free
+forever · no card**. Real P&L leads with a privacy-masked multi-account
+Overview (no account totals, no share counts) and the headline names
+the brokers plus read-only. Mistakes leads with the founder's BE
+covered-call buyback, then the ONON early close. Primary button is
+**Create free account** (Learn: **Start learning free**) to
+`/signup?route=learn|real-pnl|mistakes`, repeated at the bottom and as
+a sticky bar on phones only after the hero button scrolls away. The
+live demo is a text link. `?v=` swaps an allow-listed headline. The
+slug and variant stick on `ht_touch` and are copied to `funnel_events`
+and `users.acquisition_landing` at signup, beside the UTMs and
+`rdt_cid`. `/go/learn` sends signup to `/learn`. These pages keep the
+marketing header (logo, Sign in, sign-up) even when a session exists;
+signed-in visitors get **Go to your dashboard** and do not see the app
+nav or the broker-data bar.
 Logged-out public pages also record page views, CTA clicks, scroll
-depth, and public video plays. Ad pixels stay off on DNT/GPC; those
+depth, and public video plays. Ad pixels and Conversions API stay off
+on DNT/GPC, on internal traffic (`?ht_internal=1`, the `ht_internal`
+cookie, internal IPs, owner accounts), and on bot user agents; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
 `data.test_id` to every v3 CAPI body for Event testing and must be
 removed after. Admin → Acquisition is `/admin/analytics`. That page

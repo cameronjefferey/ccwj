@@ -1,11 +1,20 @@
+{% from "_landing_macros.html" import video_frame %}
     <section class="ht-band ht-band-shot-a ht-section" aria-label="Position P and L">
         <div class="ht-wrap ht-split">
-            <figure class="ht-media ht-shot">
+            <div class="ht-media">
+            <figure class="ht-shot ht-desk-shot">
                 <img src="{{ url_for('static', filename='marketing/pnl_real.webp') }}"
-                     alt="Cumulative P&amp;L on BE trades, April to September 2026, with trade-day markers"
+                     alt="Cumulative P&amp;L on the founder's BE trades, April to September 2026, with trade-day markers"
                      width="1600" height="804" {% if section_eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
-                <figcaption>Real account · BE</figcaption>
+                <figcaption>Founder's account · BE</figcaption>
             </figure>
+            {% for step in story_steps if step.step == 2 %}
+            <div class="ht-phone-shot">
+                {{ video_frame(step, lightbox=true, eager=section_eager|default(false)) }}
+            </div>
+            {% endfor %}
+            {% include "_landing/disclaimer.html" %}
+            </div>
             <div class="ht-copy">
                 <h2 class="ht-section-title">The result, day by day</h2>
                 <p>Every trade day on one line. The run-up, the drawdown and the recovery, with options and shares split out.</p>

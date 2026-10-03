@@ -1,0 +1,15 @@
+{% from "_landing_macros.html" import video_frame %}
+    <section class="ht-band ht-band-learn ht-section" aria-label="Holding to expiration">
+        <div class="ht-wrap ht-learn">
+            <div>
+                <div class="ht-kicker">Short</div>
+                <h2 class="ht-section-title">The close, next to holding</h2>
+                <p>On an early close, the P&amp;L you took sits next to an estimate of holding that contract to expiration. The gap is the difference. It is a record of the trade, not a suggestion to hold next time.</p>
+            </div>
+            {% for step in story_steps if step.step == 3 %}
+            <div class="ht-learn-still">
+                {{ video_frame(step, lightbox=true, eager=section_eager|default(false)) }}
+            </div>
+            {% endfor %}
+        </div>
+    </section>

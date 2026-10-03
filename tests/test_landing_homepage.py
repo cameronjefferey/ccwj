@@ -88,7 +88,7 @@ def test_video_catalog_uses_public_ids():
         "marketing/fit-matrix.webp",
         "",
     ]
-    assert STORY_STEPS[1]["feature_caption"] == "Real account · BE"
+    assert STORY_STEPS[1]["feature_caption"] == "Founder's account · BE"
     assert STORY_STEPS[4]["feature_caption"] == "Where your edge is"
     assert STORY_STEPS[-1]["links_learn"] is True
     assert "Options 101" in STORY_STEPS[-1]["caption"]
@@ -133,8 +133,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     proof = html.find('class="ht-band ht-band-proof"')
     how = html.find('class="ht-band ht-band-how')
     assert 0 <= stage < cta < proof < how
-    assert html.count('class="ht-facade"') == 9
-    assert html.count('data-lightbox="short"') == 6
+    assert html.count('class="ht-facade"') == 16
+    assert html.count('data-lightbox="short"') == 13
     assert "ht-phone" not in html
     assert "ht-lightbox-stage" in html
     assert "min-width: 360px" in html
@@ -144,7 +144,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert "/static/marketing/walkthrough_poster.webp 1920w" in html
     assert 'srcset="/static/marketing/walkthrough_poster_1280.webp 1280w, /static/marketing/walkthrough_poster.webp 1920w"' in html
     assert 'sizes="(min-width: 960px) 920px, 100vw"' in html
-    assert html.count("srcset=") == 6
+    assert html.count("srcset=") >= 6
+    assert "hqdefault.jpg 480w" in html
     root = Path(__file__).resolve().parents[1]
     for name, width in (
         ("marketing/walkthrough_poster.webp", 1920),
@@ -193,11 +194,12 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         "74%",
         "44%",
         "collecting premium",
-        "nine times as much per trade",
+        "662 trades",
         "+$75.34",
     ):
         assert needle in html
     assert "three times as much" not in html
+    assert "nine times as much per trade" not in html
     assert "+$45,487" not in html
     assert "+$14,677" not in html
     assert "net premium" not in html.lower()
@@ -242,7 +244,7 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert name in html
         assert (root / "app" / "static" / name).is_file()
     assert "marketing/amd-pnl.png" not in html
-    assert "Real account · BE" in html
+    assert "Founder's account · BE" in html
     assert "Cumulative P&amp;L on BE trades, April to September 2026, with trade-day markers" in html
     assert "account BE" not in html
     assert (

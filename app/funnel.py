@@ -1084,15 +1084,33 @@ def _pop_pixel_event(session_key, name) -> dict | None:
     return {"name": name, "event_id": _event_id_from_flag(raw)}
 
 
+def ads_tracking_blocked() -> bool:
+    """Internal visitors and bots never fire the pixel or Conversions API.
+
+    Covers ``?ht_internal=1``, the ``ht_internal`` cookie, internal IPs,
+    signed-in owner accounts, and crawler user agents.
+    """
+    if not has_request_context():
+        return False
+    if request_is_internal():
+        return True
+    return is_bot_user_agent(request.headers.get("User-Agent") or "")
+
+
+def _consume_pixel_flags() -> None:
+    """Drop one-shot events so a later page cannot fire them."""
+    if not has_request_context():
+        return
+    for key in ("ht_reddit_signup", "ht_reddit_lead", "ht_reddit_purchase"):
+        session.pop(key, None)
+
+
 def reddit_pixel_events() -> list[dict]:
     """Events the browser pixel should fire on this response. Empty when
-    the pixel id is unset or the browser sent DNT / GPC."""
-    if tracking_opt_out():
-        # Still consume one-shot flags so they cannot fire on a later page
-        # after the header disappears.
-        if has_request_context():
-            for key in ("ht_reddit_signup", "ht_reddit_lead", "ht_reddit_purchase"):
-                session.pop(key, None)
+    the pixel id is unset, the browser sent DNT / GPC, or the visit is
+    internal or a bot."""
+    if tracking_opt_out() or ads_tracking_blocked():
+        _consume_pixel_flags()
         return []
     if not _pixel_id():
         return []
@@ -1165,7 +1183,7 @@ def send_capi(event_name: str, event_id: str, *, click_id=None, user_id=None) ->
     ``metadata.conversion_id`` so Reddit can dedup the two.
     The body has the click id and a hash of the internal user id. No email.
     """
-    if tracking_opt_out() or _user_opted_out(user_id):
+    if tracking_opt_out() or ads_tracking_blocked() or _user_opted_out(user_id):
         return False
     tracking = _CAPI_TRACKING.get(event_name or "")
     if not tracking:

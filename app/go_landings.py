@@ -20,17 +20,8 @@ TRIAL_LINE = (
     "Your 30-day trial starts when you connect a real brokerage."
 )
 
-# Shared product sections. The slug's tuple is the order under the hero.
-# The first one is the ad's promise.
-_AFTER = (
-    "fit",
-    "profile",
-    "how",
-    "proof",
-    "pricing",
-    "faq",
-    "close",
-)
+# Hero, three angle sections, then proof, a short FAQ, and the close.
+_TAIL = ("proof", "faq_short", "close")
 
 LANDINGS = {
     "learn": {
@@ -44,74 +35,42 @@ LANDINGS = {
         "cta_label": "Start learning free",
         "cta_base": "start-learning",
         "signup_route": "learn",
-        "sections": (
-            "learn",
-            "practice",
-            "replays",
-            "mid",
-            "ifheld",
-            "covered",
-            "story",
-            "strategies",
-            "catch",
-            "trades",
-            "pnl",
-            *_AFTER,
-        ),
+        "kicker": "Free forever · no card",
+        "hero_short_step": 6,
+        "sections": ("learn", "practice", "replays", *_TAIL),
     },
     "real-pnl": {
-        "title": "What the trades really made",
-        "headline": (
-            "Do you know what your covered calls really made after all the rolls?"
-        ),
-        "lead": "Rolls, covered-call runs, and early exits, on the trades themselves.",
+        "title": "Real P&L across brokers",
+        "headline": "See your real P&L across every broker",
+        "lead": "Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only.",
         "variants": {
-            "rolls": "What did the rolls add, after every covered-call run?",
-            "runs": "What the covered-call run actually made",
+            "rolls": "One P&L for every account you connect",
+            "runs": "Your trades, marked across every brokerage",
         },
         "cta_label": "Create free account",
         "cta_base": "create-account",
-        "signup_route": "",
-        "sections": (
-            "covered",
-            "pnl",
-            "trades",
-            "mid",
-            "strategies",
-            "ifheld",
-            "catch",
-            "story",
-            "learn",
-            "practice",
-            "replays",
-            *_AFTER,
-        ),
+        "signup_route": "real-pnl",
+        "kicker": "30 days · no card",
+        "hero_short_step": 2,
+        "sections": ("overview", "pnl", "trades", *_TAIL),
     },
     "mistakes": {
         "title": "Bought back too early",
         "headline": "Bought it back early. Then it expired worthless.",
-        "lead": "The broker shows the close. The page keeps what holding would have made.",
+        "lead": (
+            "The founder's covered call was bought back at a loss. "
+            "It expired worthless two days later."
+        ),
         "variants": {
-            "early": "Early exits your broker never grades",
-            "premium": "The premium you kept, and the premium you gave back",
+            "early": "An early close, and what holding would have made",
+            "premium": "The close you took, next to holding through expiration",
         },
         "cta_label": "Create free account",
         "cta_base": "create-account",
-        "signup_route": "",
-        "sections": (
-            "ifheld",
-            "catch",
-            "trades",
-            "mid",
-            "covered",
-            "pnl",
-            "strategies",
-            "story",
-            "learn",
-            "practice",
-            "replays",
-            *_AFTER,
-        ),
+        "signup_route": "mistakes",
+        "kicker": "30 days · no card",
+        "hero_short_step": 3,
+        "sections": ("mistake", "early", "counterfactual", *_TAIL),
     },
 }
 
@@ -151,21 +110,30 @@ def go_landing(slug):
     )
 
     variant = allowed_variant(slug, request.args.get("v"))
+    headline = headline_for(slug, variant)
+    steps = story_steps()
+    hero_short = next(
+        (step for step in steps if step["step"] == page.get("hero_short_step")),
+        None,
+    )
     return render_template(
         "go_landing.html",
         title=page["title"],
         slug=slug,
         page=page,
-        headline=headline_for(slug, variant),
+        headline=headline,
         variant=variant,
         trial_line=TRIAL_LINE,
+        og_title=headline,
+        og_description=page["lead"],
+        hero_short=hero_short,
         sections=page["sections"],
         signup_url=_signup_url(page),
         cta_label=page["cta_label"],
         cta_base=page["cta_base"],
         campaign=True,
         marketing_chrome=True,
-        story_steps=story_steps(),
+        story_steps=steps,
         trade_stories=trade_stories(),
         catch_stories=catch_stories(),
         learn_url=resolve_learn_url(),

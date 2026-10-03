@@ -599,6 +599,51 @@ def _go_body(client, path):
     return resp, html.unescape(resp.get_data(as_text=True))
 
 
+def test_pixel_skips_internal_and_bot_traffic(monkeypatch):
+    previous = app.config.get("REDDIT_PIXEL_ID")
+    previous_token = app.config.get("REDDIT_CAPI_TOKEN")
+    posted = {}
+
+    class _Resp:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _urlopen(req, timeout=0):
+        posted["url"] = req.full_url
+        return _Resp()
+
+    monkeypatch.setenv("FUNNEL_CAPI_SYNC", "1")
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    app.config["REDDIT_PIXEL_ID"] = "t2_testpixel"
+    app.config["REDDIT_CAPI_TOKEN"] = "token-secret"
+    try:
+        cases = (
+            {"query_string": {"ht_internal": "1"}},
+            {"headers": {"Cookie": "ht_internal=1"}},
+            {"headers": {"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)"}},
+        )
+        for kwargs in cases:
+            posted.clear()
+            with app.test_request_context("/start", **kwargs):
+                session["ht_reddit_signup"] = "abc12345signup"
+                assert reddit_pixel_events() == []
+                assert session.get("ht_reddit_signup") is None
+                assert send_capi("PageVisit", "abc12345event") is False
+            assert posted == {}
+        with app.test_request_context("/start"):
+            events = reddit_pixel_events()
+            assert [ev["name"] for ev in events] == ["PageVisit"]
+    finally:
+        app.config["REDDIT_PIXEL_ID"] = previous
+        app.config["REDDIT_CAPI_TOKEN"] = previous_token
+
+
 def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
     monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
     monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
@@ -608,32 +653,43 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             "Learn options free, then practice with paper money",
             "Start learning free",
             "start-learning",
-            "Replay a trade, free",
+            "route=learn",
+            ("Learn options", "Practice with paper money", "Replay a trade, free"),
         ),
         "real-pnl": (
-            "Do you know what your covered calls really made after all the rolls?",
+            "See your real P&L across every broker",
             "Create free account",
             "create-account",
-            "Covered-call income tracked",
+            "route=real-pnl",
+            ("Every account, one close", "The result, day by day", "Two closed trades, written out"),
         ),
         "mistakes": (
             "Bought it back early. Then it expired worthless.",
             "Create free account",
             "create-account",
-            "If held to expiration",
+            "route=mistakes",
+            (
+                "Bought back, then it expired worthless",
+                "Closed the morning after results",
+                "The close, next to holding",
+            ),
         ),
     }
     trial = (
         "Learning and paper trading are free. "
         "Your 30-day trial starts when you connect a real brokerage."
     )
-    for slug, (headline, label, cta, first_section) in pages.items():
+    disclaimer = "Educational tool, not investment advice."
+    for slug, (headline, label, cta, route, bands) in pages.items():
         resp, body = _go_body(client, f"/go/{slug}")
         assert headline in body
         assert label in body
         assert trial in body
+        assert disclaimer in body
+        assert route in body
         assert 'name="robots" content="noindex"' in body
         assert "noindex" in (resp.headers.get("X-Robots-Tag") or "")
+        assert body.count('property="og:title"') == 1
         assert "ORCL" not in body
         assert "CFLT" not in body
         assert "1,500" not in body
@@ -641,7 +697,8 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert "Broker data as of" not in body
         assert 'id="userMenu"' not in body
         assert 'id="navReview"' not in body
-        # Signup is the prominent button. Demo is a text link, not a button.
+        assert "tables.js" not in body
+        assert "term-tips.js" not in body
         hero = body.split('class="ht-hero-cta"', 1)[1].split("</header>", 1)[0]
         assert f'class="ht-hero-primary" href="/signup' in hero
         assert f'data-ht-cta="{cta}"' in hero
@@ -649,22 +706,31 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert 'class="ht-hero-secondary"' not in hero
         assert 'class="ht-demo-btn"' not in body
         assert 'class="ht-hero-signin"' in hero
+        assert 'class="ht-hero-short"' in hero
         assert 'data-ht-cta="try-demo"' in hero
         assert "Try the live demo" in hero
-        for place in ("mid", "close", "sticky", "nav", "footer"):
+        assert 'Play Short:' in hero
+        for place in ("close", "sticky", "nav", "footer"):
             assert f'data-ht-cta="{cta}-{place}"' in body
+        assert f'data-ht-cta="{cta}-mid"' not in body
         assert 'data-youtube-id="' in body
         assert 'loading="lazy"' in body
         assert 'fetchpriority="high"' in body
-        # The ad's section is the first product band under the hero.
-        assert body.index(first_section) < body.index("How it works")
+        positions = [body.index(band) for band in bands]
+        assert positions == sorted(positions)
         assert "Read-only" in body
         assert "SnapTrade" in body
-        assert "What it costs" in body
-        assert "How do I connect a brokerage?" in body
-        assert "Trader Profile" in body
-        assert "Practice with paper money" in body
-        assert "Replay a trade, free" in body
+        assert "What does it cost?" in body
+        assert "How it works" not in body
+        assert "Trader Profile" not in body
+        assert "msft-if-held.webp" not in body
+        assert "strategies.webp" not in body
+        assert "win-rate.webp" not in body
+    _, learn = _go_body(client, "/go/learn")
+    assert "Free forever · no card" in learn
+    assert "pnl_real.webp" not in learn
+    assert "Practice with paper money" in learn
+    assert "Replay a trade, free" in learn
     varied = client.get("/go/learn?v=past")
     varied_body = varied.get_data(as_text=True)
     assert "Learn from real past trades, then practice with paper money" in varied_body
@@ -674,10 +740,16 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
     assert "Learn options free, then practice with paper money" in unknown.get_data(as_text=True)
     assert client.get("/go/nope").status_code == 404
     _, mistakes = _go_body(client, "/go/mistakes")
-    assert "be-swing.webp" in mistakes
-    assert mistakes.index("If held to expiration") < mistakes.index("Covered-call income tracked")
+    assert "be-close.webp" in mistakes
+    assert "onon.webp" in mistakes
+    assert mistakes.index("be-close.webp") < mistakes.index("onon.webp")
+    assert "Closing early saved you" not in mistakes
+    assert "be-swing.webp" not in mistakes
     _, real = _go_body(client, "/go/real-pnl")
-    assert real.index("Covered-call income tracked") < real.index("If held to expiration")
+    assert "Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only." in real
+    assert real.count("pnl_real.webp") == 1
+    assert "Covered-call income tracked" not in real
+    assert 'class="ht-overview-mock"' in real
 
 
 def test_go_pages_keep_marketing_chrome_when_signed_in(monkeypatch):

@@ -9,7 +9,7 @@
             data-youtube-id="{{ v.youtube_id }}"
             data-mp4-url="{{ v.mp4_url }}"
             data-title="{{ v.title }}"
-            aria-label="Play {{ v.title }}">
+            aria-label="{% if lightbox or v.duration_label == 'Short' %}Play Short: {{ v.title }}{% else %}Play {{ v.title }}{% endif %}">
         {% if v.poster_url %}
         <img class="ht-poster" src="{{ v.poster_url }}"
              {% if v.poster_srcset %}srcset="{{ v.poster_srcset }}" sizes="{{ v.poster_sizes }}"{% endif %}
@@ -36,7 +36,7 @@
             data-youtube-id="{{ step.youtube_id }}"
             data-mp4-url="{{ step.mp4_url }}"
             data-title="{{ step.title }}"
-            aria-label="Play {{ step.title }}">
+            aria-label="Play Short: {{ step.title }}">
         <img class="ht-feature-img" src="{{ step.feature_image_url }}"
              alt="{{ step.feature_alt }}"
              width="{{ step.feature_width }}" height="{{ step.feature_height }}"
@@ -51,6 +51,11 @@
         <span class="ht-duration">{{ step.duration_label }}</span>
         {% endif %}
     </button>
+    {% if step.youtube_id %}
+    <div class="ht-feature-phone">
+        {{ video_frame(step, lightbox=true, eager=eager) }}
+    </div>
+    {% endif %}
     {% if show_title %}
     <h3 class="ht-feature-title">{{ step.title }}</h3>
     {% endif %}
