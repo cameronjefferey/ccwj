@@ -1455,7 +1455,16 @@ class User(UserMixin):
     @staticmethod
     def update_email(user_id, email):
         clean = (email or "").strip() or None
-        execute("UPDATE users SET email = %s WHERE id = %s", (clean, user_id))
+        execute(
+            "UPDATE users SET email = %s, "
+            "email_verified_at = CASE "
+            "WHEN LOWER(COALESCE(email, '')) IS DISTINCT FROM "
+            "LOWER(COALESCE(%s, '')) THEN NULL "
+            "ELSE email_verified_at END "
+            "WHERE id = %s",
+            (clean, clean, user_id),
+        )
+        _forget_shell(user_id)
 
 
 def delete_user(user_id):
@@ -1963,7 +1972,10 @@ def get_tenant_ids_for_user(user_id):
         )
         return [r["tenant_id"] for r in rows]
 
-    return _shell_load(uid, "tenant_ids", _load)
+    # Tenant ownership is the BigQuery authorization boundary. Never serve
+    # it from the process-local shell cache: an unclaim on another worker
+    # must revoke warehouse reads on the next request.
+    return _load()
 
 
 def get_broker_tenants_for_user(user_id, include_inactive=False):
@@ -1993,8 +2005,10 @@ def get_broker_tenants_for_user(user_id, include_inactive=False):
     if not include_inactive:
         sql += " AND connection_status IN ('active', 'disconnected')"
     sql += " ORDER BY created_at"
-    key = "broker_tenants_all" if include_inactive else "broker_tenants"
-    return _shell_load(uid, key, lambda: fetch_all(sql, (uid,)))
+    # Full rows also drive `_tenants_for_scope`, so these are authorization
+    # data rather than display-only shell metadata. Keep them fresh across
+    # workers after disconnect/unclaim operations.
+    return fetch_all(sql, (uid,))
 
 
 ACCOUNT_GROUP_NAME_MAX = 40
@@ -4146,7 +4160,10 @@ def email_needs_verification(user_id: int) -> bool:
         has_email = bool((row.get("email") or "").strip())
         return has_email and row.get("email_verified_at") is None
 
-    return _shell_load(user_id, "email_unverified", _load)
+    # This value is an authorization gate, not display-only shell data.
+    # A process-local cache can outlive an email write on another worker
+    # and let an unverified user connect/sync for the TTL.
+    return _load()
 
 
 # ------------------------------------------------------------------

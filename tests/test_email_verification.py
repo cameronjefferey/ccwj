@@ -95,6 +95,29 @@ def test_email_block_writes_ignores_anonymous(monkeypatch):
         assert auth_mod.email_block_writes("testing") is None
 
 
+def test_changing_email_resets_verification_and_invalidates_shell(monkeypatch):
+    from app.models import User
+
+    writes = []
+    forgotten = []
+    monkeypatch.setattr(
+        "app.models.execute",
+        lambda sql, params=None: writes.append((sql, params)),
+    )
+    monkeypatch.setattr(
+        "app.models._forget_shell",
+        lambda user_id: forgotten.append(user_id),
+    )
+
+    User.update_email(9, "new@example.com")
+
+    sql, params = writes[0]
+    assert "email_verified_at = CASE" in sql
+    assert "IS DISTINCT FROM" in sql
+    assert params == ("new@example.com", "new@example.com", 9)
+    assert forgotten == [9]
+
+
 # ---------------------------------------------------------------------------
 # verify_email redirect target — requires a real Postgres user + login
 # session, so these are DB-gated (skipped without TEST_DATABASE_URL).
