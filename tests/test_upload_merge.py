@@ -1310,12 +1310,12 @@ def test_dedup_collapses_orders_vs_activities_under_price_precision_drift():
     assert str(out.iloc[0]["Description"]) == "Applied Optoelectronics, Inc."
 
 
-def test_dedup_collapses_option_close_posted_after_expiry():
+def test_dedup_keeps_option_close_posted_after_expiry():
     """Run 37090194526. The same BE buy-to-close landed on the expiry
-    and again on the next session, amounts −42.12 and −42.92. stg_history
-    caps the later date at 2026-03-06, so CHECK 2 sees one fill twice.
-    The cross-source key uses that cap. The stored Date stays the
-    posting day (rewriting it made the next sync insert another twin).
+    and again on the next session, amounts −42.12 and −42.92, identical
+    descriptions. The seed key is the raw posting date, so both rows
+    stay. stg_history drops the late twin after the cap. Capping the
+    key here would also delete a second real fill.
     """
     symbol = "BE    260306C00165000"
     desc = "CALL BLOOM ENERGY CORP $165 EXP 03/06/26"
@@ -1323,12 +1323,11 @@ def test_dedup_collapses_option_close_posted_after_expiry():
         _row("Schwab Account", 9, "03/06/2026", "Buy to Close", symbol,
              10, 0.042, -42.12, desc=desc),
         _row("Schwab Account", 9, "03/09/2026", "Buy to Close", symbol,
-             10, 0.042, -42.92, desc=desc + " posted"),
+             10, 0.042, -42.92, desc=desc),
     ])
     out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
-    assert len(out) == 1
-    assert str(out.iloc[0]["Date"]) == "03/09/2026"
-    assert "posted" in str(out.iloc[0]["Description"])
+    assert len(out) == 2
+    assert set(out["Date"].astype(str)) == {"03/06/2026", "03/09/2026"}
 
 
 def test_dedup_keeps_option_closes_on_different_days_before_expiry():

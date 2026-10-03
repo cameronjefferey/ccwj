@@ -305,100 +305,72 @@ crypto_norm as (
        and ct.symbol != ''
 ),
 
--- A cash-settlement fill is often dated the broker's posting day
--- (SPXW Oct 1 expiry arrived as Oct 2). "as of MM/DD/YY(YY)" is the
--- trade date. Otherwise a close after the contract's own expiry is
--- the posting date — cap it at expiry. An earlier close keeps its
--- trade date. Opens are untouched.
--- ``_cross_source_fill_date`` in app/upload.py and
--- scripts/repair_history_fill_dedup.py must use this same cap. The
--- seed keeps the posting date; only the key and this column move.
--- Run 37090194526: BE 260306C00165000 landed twice (−42.92 / −42.12)
--- once both dates became the 2026-03-06 expiry.
+-- "as of MM/DD/YY(YY)" is the trade date inside a posting-day
+-- description. ``trade_date`` here is still the raw posting date.
+-- Dedup runs on that date BEFORE the expiry cap, so the cap cannot
+-- invent a check-2 collision. Upload's cross-source key is the same
+-- raw date (``as of`` still aliases); it does not cap at expiry.
 dated as (
     select
-        * except (trade_date),
-        case
-            when action in (
-                'option_buy_to_close', 'option_sell_to_close',
-                'option_expired', 'option_assigned', 'option_exercised'
-            )
-            then least(
-                coalesce(as_of_date, trade_date),
-                coalesce(option_expiry, as_of_date, trade_date)
-            )
-            else trade_date
-        end as trade_date
-    from (
-        select
-            c.*,
-            safe.parse_date(
-                '%m/%d/%Y',
-                case
-                    when regexp_extract(
+        c.*,
+        safe.parse_date(
+            '%m/%d/%Y',
+            case
+                when regexp_extract(
+                    c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{4})\b'
+                ) is not null
+                then concat(
+                    lpad(regexp_extract(
+                        c.description, r'(?i)\bas of\s+(\d{1,2})/\d{1,2}/\d{4}\b'
+                    ), 2, '0'),
+                    '/',
+                    lpad(regexp_extract(
+                        c.description, r'(?i)\bas of\s+\d{1,2}/(\d{1,2})/\d{4}\b'
+                    ), 2, '0'),
+                    '/',
+                    regexp_extract(
                         c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{4})\b'
-                    ) is not null
-                    then concat(
-                        lpad(regexp_extract(
-                            c.description, r'(?i)\bas of\s+(\d{1,2})/\d{1,2}/\d{4}\b'
-                        ), 2, '0'),
-                        '/',
-                        lpad(regexp_extract(
-                            c.description, r'(?i)\bas of\s+\d{1,2}/(\d{1,2})/\d{4}\b'
-                        ), 2, '0'),
-                        '/',
-                        regexp_extract(
-                            c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{4})\b'
-                        )
                     )
-                    when regexp_extract(
-                        c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
-                    ) is not null
-                    then concat(
-                        lpad(regexp_extract(
-                            c.description, r'(?i)\bas of\s+(\d{1,2})/\d{1,2}/\d{2}\b'
-                        ), 2, '0'),
-                        '/',
-                        lpad(regexp_extract(
-                            c.description, r'(?i)\bas of\s+\d{1,2}/(\d{1,2})/\d{2}\b'
-                        ), 2, '0'),
-                        '/',
-                        case
-                            when cast(regexp_extract(
-                                c.description,
-                                r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
-                            ) as int64) < 80
-                            then concat('20', regexp_extract(
-                                c.description,
-                                r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
-                            ))
-                            else concat('19', regexp_extract(
-                                c.description,
-                                r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
-                            ))
-                        end
-                    )
-                end
-            ) as as_of_date
-        from crypto_norm c
-    )
+                )
+                when regexp_extract(
+                    c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                ) is not null
+                then concat(
+                    lpad(regexp_extract(
+                        c.description, r'(?i)\bas of\s+(\d{1,2})/\d{1,2}/\d{2}\b'
+                    ), 2, '0'),
+                    '/',
+                    lpad(regexp_extract(
+                        c.description, r'(?i)\bas of\s+\d{1,2}/(\d{1,2})/\d{2}\b'
+                    ), 2, '0'),
+                    '/',
+                    case
+                        when cast(regexp_extract(
+                            c.description,
+                            r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                        ) as int64) < 80
+                        then concat('20', regexp_extract(
+                            c.description,
+                            r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                        ))
+                        else concat('19', regexp_extract(
+                            c.description,
+                            r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                        ))
+                    end
+                )
+            end
+        ) as as_of_date
+    from crypto_norm c
 ),
 
--- Capping a posting date at expiry (or reading "as of") can land an
--- order fill and its later activity on the same check-2 grain:
--- (tenant, trade_date, action, trade_symbol, quantity, price@4dp).
--- Run 37090194526: BE 03/06/26 165C buy-to-close, 10 @ 0.042, amounts
--- -42.92 and -42.12. The raw dates still differ, so upload dedup keeps
--- both (rewriting the seed date is what inserted the twin). Collapse
--- here, after the date rewrite. Blank-price rows stay put — distinct
--- expiries share an empty Symbol and must not fuse.
+-- Same-day true duplicates, on the raw posting date. Blank-price rows
+-- stay out — distinct expiries share an empty Symbol and must not fuse.
+-- FLOAT64 cannot be a window PARTITION BY (run 37091190523).
 fill_ranked as (
     select
         d.*,
         row_number() over (
-            -- BigQuery rejects FLOAT64 in a window PARTITION BY
-            -- (run 37091190523: "Partitioning by expressions of type
-            -- FLOAT64 is not allowed"). Cast the check-2 grain.
             partition by
                 d.tenant_id,
                 d.trade_date,
@@ -417,7 +389,7 @@ fill_ranked as (
       and d.price is not null
 ),
 
-history_rows as (
+raw_deduped as (
     select * except (_fill_rank)
     from fill_ranked
     where _fill_rank = 1
@@ -428,11 +400,90 @@ history_rows as (
     from dated
     where trade_symbol is null
        or price is null
+),
+
+-- Cap AFTER the raw-date dedup. ``trade_date`` becomes the economic
+-- close (as-of, then expiry). ``trade_date_raw`` stays the posting day
+-- and is what the duplicate-fill test groups on, so two real closes
+-- whose posting dates differ cannot fail that test when the cap
+-- lands them on one expiry. Opens are untouched.
+capped as (
+    select
+        * except (trade_date),
+        trade_date as trade_date_raw,
+        case
+            when action in (
+                'option_buy_to_close', 'option_sell_to_close',
+                'option_expired', 'option_assigned', 'option_exercised'
+            )
+            then least(
+                coalesce(as_of_date, trade_date),
+                coalesce(option_expiry, as_of_date, trade_date)
+            )
+            else trade_date
+        end as trade_date
+    from raw_deduped
+),
+
+-- One fill posted twice (run 37090194526). BE 260306C00165000
+-- buy-to-close, 10 @ 0.042, amounts -42.92 and -42.12, both described
+-- ``CALL BLOOM ENERGY CORP $165 EXP 03/06/26``. The cap only moves a
+-- date that is already after expiry, so the later row cannot be a new
+-- execution. Gross is 10 × 0.042 × 100 = 42.00; the cash differs by
+-- the fee embedded in the amount ($0.92 vs $0.12). Drop the late row
+-- when an anchor of the same contract is already on the capped day
+-- and the description matches, or when the late row says ``as of``
+-- that day. A late row with a different description and no ``as of``
+-- stays — that is a second fill. Two closes on or before expiry are
+-- not in this set; the cap did not move them onto each other.
+late_posting as (
+    select distinct
+        late.tenant_id,
+        late.trade_date_raw,
+        late.action,
+        late.trade_symbol,
+        late.quantity,
+        late.price,
+        late.amount
+    from capped late
+    inner join capped anchor
+        on anchor.tenant_id = late.tenant_id
+       and anchor.action = late.action
+       and anchor.trade_symbol = late.trade_symbol
+       and cast(anchor.quantity as string) = cast(late.quantity as string)
+       and cast(round(anchor.price, 4) as string) = cast(round(late.price, 4) as string)
+       and anchor.trade_date = late.trade_date
+       and anchor.trade_date_raw <= anchor.trade_date
+       and late.trade_date_raw > late.trade_date
+       and late.action in (
+            'option_buy_to_close', 'option_sell_to_close',
+            'option_expired', 'option_assigned', 'option_exercised'
+       )
+       and (
+            coalesce(late.description, '') = coalesce(anchor.description, '')
+            or late.as_of_date = late.trade_date
+       )
+    where late.trade_symbol is not null
+      and late.price is not null
+),
+
+history_rows as (
+    select c.*
+    from capped c
+    left join late_posting lp
+        on lp.tenant_id = c.tenant_id
+       and lp.trade_date_raw = c.trade_date_raw
+       and lp.action = c.action
+       and lp.trade_symbol = c.trade_symbol
+       and cast(lp.quantity as string) = cast(c.quantity as string)
+       and cast(round(lp.price, 4) as string) = cast(round(c.price, 4) as string)
+       and lp.amount is not distinct from c.amount
+    where lp.trade_symbol is null
 )
 
 select
     account, user_id, tenant_id,
-    trade_date, action_raw, action, trade_symbol, underlying_symbol,
+    trade_date, trade_date_raw, action_raw, action, trade_symbol, underlying_symbol,
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
 from history_rows

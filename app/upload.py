@@ -840,8 +840,10 @@ def _canonicalize_cross_source_amount(action, amount):
     return _canonicalize_seed_cell(f)
 
 
-# Close-like actions whose warehouse trade_date is capped at the
-# contract expiry (stg_history ``dated``). Opens stay on the fill date.
+# Close-like actions. The seed dedup key uses the raw posting date.
+# ``as of`` in the description is that trade's date. The expiry cap
+# lives in stg_history, after this dedup, so it cannot fuse two fills
+# in the seed. Opens stay on the fill date.
 _CROSS_SOURCE_CLOSE_ACTIONS = frozenset({
     "option_buy_to_close", "option_sell_to_close",
     "option_expired", "option_assigned", "option_exercised",
@@ -902,34 +904,25 @@ def _option_expiry_from_symbol(symbol):
     return _parse_mdy_date(match.group(2), match.group(3), match.group(4))
 
 
-def _cross_source_fill_date(action, symbol, raw_date, description=""):
-    """Date half of the cross-source key, matching stg_history ``dated``.
+def _cross_source_fill_date(action, _symbol, raw_date, description=""):
+    """Date half of the cross-source key.
 
-    A close posted after expiry (or carrying ``as of MM/DD/YYYY``) is
-    dated on that earlier day in the warehouse. The seed keeps the
-    broker posting date — rewriting it made the next sync insert a
-    twin — so the key has to cap the same way or CHECK 2 sees one fill
-    twice (run 37090194526: BE 260306C00165000, −42.92 and −42.12).
+    Dedup uses the raw posting date. ``as of MM/DD/YYYY`` in the
+    description is that posting's trade date, so it shares a key with
+    the row already dated that day. The expiry cap is applied later in
+    stg_history and is not part of this key: capping here collapsed two
+    rows just because one was posted after expiry (run 37090194526).
     Opens and equities keep the posted date. The stored Date cell is
-    not rewritten.
+    not rewritten. The symbol is unused here; the OCC expiry is read
+    only when the warehouse caps.
     """
     posted = _canonicalize_date_mdy(raw_date)
     if _normalize_history_action(action) not in _CROSS_SOURCE_CLOSE_ACTIONS:
         return posted
-    posted_d = None
-    if posted:
-        try:
-            posted_d = datetime.strptime(posted, "%m/%d/%Y").date()
-        except ValueError:
-            posted_d = None
-    candidate = _as_of_date_from_text(description) or posted_d
-    if candidate is None:
+    as_of = _as_of_date_from_text(description)
+    if as_of is None:
         return posted
-    expiry = _option_expiry_from_symbol(symbol)
-    chosen = candidate
-    if expiry is not None and candidate > expiry:
-        chosen = expiry
-    return chosen.strftime("%m/%d/%Y")
+    return as_of.strftime("%m/%d/%Y")
 
 
 # Keep in lockstep with app.snaptrade_normalize.ESTIMATED_FEE_MARK.
@@ -1121,7 +1114,7 @@ def _dedup_history_rows(df, seed_columns):
             # after stg_history parse — key them that way here too.
             canon2[c] = df[c].map(_normalize_history_action)
         elif str(c).lower() == "date":
-            # Posting-day closes cap at OCC expiry, matching stg_history.
+            # Raw posting date. ``as of`` aliases; expiry cap is later.
             action_name = next(
                 (k for k in cross_key_cols if str(k).lower() == "action"),
                 None,

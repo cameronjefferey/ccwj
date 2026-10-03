@@ -236,9 +236,9 @@ def _canonicalize_cross_source_amount(action, amount):
     return _canonicalize_seed_cell(f)
 
 
-# Keep in lockstep with app.upload._cross_source_fill_date. stg_history
-# caps a close at the contract expiry; the seed date stays the posting
-# day. Run 37090194526 failed CHECK 2 on that cap (BE 03/06/26).
+# Keep in lockstep with app.upload._cross_source_fill_date. The seed
+# key is the raw posting date (``as of`` aliases). stg_history caps
+# after that dedup. Run 37090194526 failed when the cap itself was the key.
 _CROSS_SOURCE_CLOSE_ACTIONS = frozenset({
     "option_buy_to_close", "option_sell_to_close",
     "option_expired", "option_assigned", "option_exercised",
@@ -248,15 +248,6 @@ _AS_OF_MDY4_RE = re.compile(
 )
 _AS_OF_MDY2_RE = re.compile(
     r"(?i)\bas of\s+(\d{1,2})/(\d{1,2})/(\d{2})\b"
-)
-_OCC_EXPIRY_RE = re.compile(
-    r"([A-Z][A-Z0-9.\-]{0,5})\s*(\d{2})(\d{2})(\d{2})[CP]\d{8}",
-    re.IGNORECASE,
-)
-_LONG_EXPIRY_RE = re.compile(
-    r"([A-Z][A-Z0-9.\-]{0,5})\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+"
-    r"\d+(?:\.\d+)?\s+[CP]\b",
-    re.IGNORECASE,
 )
 
 
@@ -282,39 +273,15 @@ def _as_of_date_from_text(text):
     return _parse_mdy_date(match.group(1), match.group(2), year)
 
 
-def _option_expiry_from_symbol(symbol):
-    if symbol is None:
-        return None
-    text = str(symbol).upper()
-    match = _OCC_EXPIRY_RE.search(text)
-    if match:
-        return _parse_mdy_date(
-            match.group(3), match.group(4), 2000 + int(match.group(2)),
-        )
-    match = _LONG_EXPIRY_RE.search(text)
-    if not match:
-        return None
-    return _parse_mdy_date(match.group(2), match.group(3), match.group(4))
-
-
-def _cross_source_fill_date(action, symbol, raw_date, description=""):
+def _cross_source_fill_date(action, _symbol, raw_date, description=""):
+    """Raw posting date. ``as of`` aliases. Expiry cap is warehouse-only."""
     posted = _canonicalize_date_mdy(raw_date)
     if _normalize_history_action(action) not in _CROSS_SOURCE_CLOSE_ACTIONS:
         return posted
-    posted_d = None
-    if posted:
-        try:
-            posted_d = datetime.strptime(posted, "%m/%d/%Y").date()
-        except ValueError:
-            posted_d = None
-    candidate = _as_of_date_from_text(description) or posted_d
-    if candidate is None:
+    as_of = _as_of_date_from_text(description)
+    if as_of is None:
         return posted
-    expiry = _option_expiry_from_symbol(symbol)
-    chosen = candidate
-    if expiry is not None and candidate > expiry:
-        chosen = expiry
-    return chosen.strftime("%m/%d/%Y")
+    return as_of.strftime("%m/%d/%Y")
 
 
 def _dedup_history_rows(df, seed_columns):

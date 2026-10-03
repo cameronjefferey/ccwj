@@ -26,12 +26,15 @@
 
     TWO grains are checked (UNION ALL — any row = failure):
 
-    CHECK 1 — full grain (tenant_id, trade_date, action, trade_symbol,
+    CHECK 1 — full grain (tenant_id, trade_date_raw, action, trade_symbol,
     quantity, price, amount). Catches byte-identical re-lands and
     ≤6-decimal float-serialization drift (26.99 vs 26.990000000000002).
     fees/description excluded (fees drift; description mirrors symbol).
+    The date is the raw posting day. ``trade_date`` is the expiry cap
+    applied after dedup, and grouping on it made one fill look like two
+    once a later posting moved onto expiry (run 37090194526).
 
-    CHECK 2 — cross-source fill grain (tenant_id, trade_date, action,
+    CHECK 2 — cross-source fill grain (tenant_id, trade_date_raw, action,
     trade_symbol, round(price,4)) with amount OMITTED, scoped to real
     fills (trade_symbol AND price non-null). SnapTrade's two feeds report
     the SAME fill at different precision — orders derives Price at full
@@ -39,13 +42,14 @@
     broker's 4-decimal Price (131.9606, 0.4867) — and Amount also drifts
     (activities is net of fees; orders is gross). CHECK 1 (raw price +
     amount) let both survive → doubled shares (AAOI Aug 2026: 225-share
-    fill counted twice → +$29.7k phantom equity).     Rounding Price to 4dp
+    fill counted twice → +$29.7k phantom equity). Rounding Price to 4dp
     and dropping Amount mirrors the cross-source dedup key in
     app/upload._dedup_history_rows so a feed-precision regression that
-    sneaks past the merge helper fails the build here. That key dates a
-    close on the warehouse trade_date (posting day capped at the OCC
-    expiry; ``as of`` in the description wins) so a settlement twin does
-    not survive as a second fill (run 37090194526). 4dp is coarse
+    sneaks past the merge helper fails the build here. The key is the
+    raw posting date (``as of`` in the description still aliases). The
+    expiry cap is not part of this grain: a close posted after expiry
+    is dropped in stg_history only when it matches an anchor already on
+    that day (run 37090194526, BE 10 × $165C @ 0.042). 4dp is coarse
     enough to fuse the two feeds, fine enough to keep genuinely distinct
     sub-penny option fills apart. Non-fill events (dividends/fees/interest,
     blank Symbol/Price) are excluded here — CHECK 1's Amount grain covers
@@ -57,7 +61,7 @@
 
 select
     tenant_id,
-    trade_date,
+    trade_date_raw as trade_date,
     action,
     trade_symbol,
     quantity,
@@ -66,7 +70,7 @@ select
     count(*) as n_dupes
 from {{ ref('stg_history') }}
 where tenant_id is not null
-group by tenant_id, trade_date, action, trade_symbol,
+group by tenant_id, trade_date_raw, action, trade_symbol,
          quantity, price, amount
 having count(*) > 1
 
@@ -74,7 +78,7 @@ union all
 
 select
     tenant_id,
-    trade_date,
+    trade_date_raw as trade_date,
     action,
     trade_symbol,
     quantity,
@@ -85,6 +89,6 @@ from {{ ref('stg_history') }}
 where tenant_id is not null
   and trade_symbol is not null
   and price is not null
-group by tenant_id, trade_date, action, trade_symbol,
+group by tenant_id, trade_date_raw, action, trade_symbol,
          quantity, round(price, 4)
 having count(*) > 1

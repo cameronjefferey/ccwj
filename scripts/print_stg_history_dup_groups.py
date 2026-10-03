@@ -53,23 +53,24 @@ def main() -> int:
     groups_sql = f"""
     with check1 as (
       select
-        tenant_id, trade_date, action, trade_symbol, quantity, price, amount,
+        tenant_id, trade_date_raw as trade_date, action, trade_symbol,
+        quantity, price, amount,
         count(*) as n_dupes, 'check1' as which
       from `{TABLE}`
       where tenant_id is not null
-      group by tenant_id, trade_date, action, trade_symbol, quantity, price, amount
+      group by tenant_id, trade_date_raw, action, trade_symbol, quantity, price, amount
       having count(*) > 1
     ),
     check2 as (
       select
-        tenant_id, trade_date, action, trade_symbol, quantity,
+        tenant_id, trade_date_raw as trade_date, action, trade_symbol, quantity,
         round(price, 4) as price, cast(null as float64) as amount,
         count(*) as n_dupes, 'check2' as which
       from `{TABLE}`
       where tenant_id is not null
         and trade_symbol is not null
         and price is not null
-      group by tenant_id, trade_date, action, trade_symbol, quantity, round(price, 4)
+      group by tenant_id, trade_date_raw, action, trade_symbol, quantity, round(price, 4)
       having count(*) > 1
     )
     select * from check1
@@ -109,12 +110,12 @@ def main() -> int:
     print("--- member rows (first 5 groups) ---")
     for _, g in groups.head(5).iterrows():
         members_sql = f"""
-        select tenant_id, trade_date, action_raw, action, trade_symbol,
-               quantity, price, amount, description
+        select tenant_id, trade_date, trade_date_raw, action_raw, action,
+               trade_symbol, quantity, price, amount, description
         from `{TABLE}`
         where tenant_id = @tid
           and action = @action
-          and (trade_date = @dte or (trade_date is null and @dte is null))
+          and (trade_date_raw = @dte or (trade_date_raw is null and @dte is null))
           and (trade_symbol = @sym or (trade_symbol is null and @sym is null))
         order by description, amount, price
         limit 8

@@ -39,16 +39,17 @@ def test_settlement_dated_cte_is_comma_joined():
     )
 
 
-def test_expiry_date_cap_collapses_the_check2_fill_grain():
-    """Capping a posting date onto expiry must not leave two fills.
+def test_expiry_date_cap_dedups_raw_dates_before_the_cap():
+    """The cap must not be what makes two fills share a test grain.
 
-    Run 37090194526: the same BE buy-to-close survived upload dedup
-    (raw dates differ) and then shared a trade_date, so
-    stg_history_no_duplicate_fills_per_tenant check 2 failed. Blank
-    prices stay out of this collapse — distinct expiries have no Symbol.
+    Run 37090194526: BE buy-to-close 10 @ 0.042 survived upload dedup
+    because the raw dates differed, then the cap moved the later date
+    onto 2026-03-06 and check 2 failed. Dedup the raw posting date
+    first. The duplicate-fill test groups on ``trade_date_raw``.
     """
     sql = _STG.read_text()
     assert "fill_ranked as (" in sql
+    assert sql.index("fill_ranked as (") < sql.index("trade_date as trade_date_raw")
     assert "round(d.price, 4)" in sql
     # Window PARTITION BY cannot be FLOAT64 (run 37091190523).
     assert "cast(d.quantity as string)" in sql
@@ -56,7 +57,14 @@ def test_expiry_date_cap_collapses_the_check2_fill_grain():
     assert "fee_adjusted asc" in sql
     assert "where d.trade_symbol is not null" in sql
     assert "and d.price is not null" in sql
-    assert "from history_rows" in sql
+    assert "late.trade_date_raw > late.trade_date" in sql
+    assert "anchor.trade_date_raw <= anchor.trade_date" in sql
+    test_sql = (
+        Path(__file__).resolve().parents[1]
+        / "dbt" / "tests" / "stg_history_no_duplicate_fills_per_tenant.sql"
+    ).read_text()
+    assert "trade_date_raw" in test_sql
+    assert "group by tenant_id, trade_date_raw" in test_sql
 
 
 def test_parse_seed_date_covers_four_and_two_digit_mdy():
