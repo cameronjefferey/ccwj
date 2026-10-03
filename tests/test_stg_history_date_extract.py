@@ -50,6 +50,9 @@ def test_expiry_date_cap_collapses_the_check2_fill_grain():
     sql = _STG.read_text()
     assert "fill_ranked as (" in sql
     assert "round(d.price, 4)" in sql
+    # Window PARTITION BY cannot be FLOAT64 (run 37091190523).
+    assert "cast(d.quantity as string)" in sql
+    assert "cast(round(d.price, 4) as string)" in sql
     assert "fee_adjusted asc" in sql
     assert "where d.trade_symbol is not null" in sql
     assert "and d.price is not null" in sql
