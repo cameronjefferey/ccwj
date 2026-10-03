@@ -285,6 +285,28 @@ def present_video(item):
     return out
 
 
+def compact_phone_poster(item):
+    """Phone hero still: hqdefault and sddefault, never maxresdefault.
+
+    maxresdefault is a 1280px thumbnail. On the ad landings it was the
+    LCP image. hqdefault is 480px and sddefault is 640px, which covers
+    the phone frame.
+    """
+    if not item:
+        return item
+    out = dict(item)
+    youtube_id = (out.get("youtube_id") or "").strip()
+    if (out.get("poster") or "").strip() or not youtube_id:
+        return out
+    base = f"https://i.ytimg.com/vi/{youtube_id}"
+    out["poster_url"] = f"{base}/hqdefault.jpg"
+    out["poster_srcset"] = (
+        f"{base}/hqdefault.jpg 480w, {base}/sddefault.jpg 640w"
+    )
+    out["poster_sizes"] = "(max-width: 640px) 92vw, 280px"
+    return out
+
+
 def hero_video():
     return present_video(HERO_VIDEO)
 

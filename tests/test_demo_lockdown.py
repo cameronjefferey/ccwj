@@ -114,6 +114,53 @@ def test_turnstile_success_and_failure(app, monkeypatch):
     assert missing.status_code == 400
 
 
+def test_turnstile_signup_fails_open_when_cloudflare_errors(app, monkeypatch):
+    """Keys are set. A missing script or a Cloudflare error still signs up.
+
+    A completed challenge with success=false still rejects. Demo start
+    stays fail-closed.
+    """
+    from app.demo_guard import verify_turnstile
+
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "secret-key")
+
+    def _boom(req, timeout=5):
+        raise OSError("cloudflare down")
+
+    monkeypatch.setattr("app.demo_guard.urllib.request.urlopen", _boom)
+    assert verify_turnstile("", "1.2.3.4", fail_open=True) is True
+    assert verify_turnstile("tok", "1.2.3.4", fail_open=True) is True
+    assert verify_turnstile("", "1.2.3.4") is False
+    assert verify_turnstile("tok", "1.2.3.4") is False
+
+    class _Resp:
+        def read(self):
+            return json.dumps({"success": False, "error-codes": ["invalid-input-response"]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "app.demo_guard.urllib.request.urlopen",
+        lambda req, timeout=5: _Resp(),
+    )
+    assert verify_turnstile("tok", "1.2.3.4", fail_open=True) is False
+
+    class _Infra(_Resp):
+        def read(self):
+            return json.dumps({"success": False, "error-codes": ["internal-error"]}).encode()
+
+    monkeypatch.setattr(
+        "app.demo_guard.urllib.request.urlopen",
+        lambda req, timeout=5: _Infra(),
+    )
+    assert verify_turnstile("tok", "1.2.3.4", fail_open=True) is True
+
+
 def test_turnstile_unset_skips_and_warns(app, monkeypatch, caplog):
     _csrf_off(monkeypatch, app)
     from app.demo_guard import reset_demo_caps

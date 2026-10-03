@@ -232,12 +232,17 @@ def turnstile_keys() -> tuple[str, str]:
     return site, secret
 
 
-def verify_turnstile(token: str, remote_ip: str) -> bool:
+def verify_turnstile(token: str, remote_ip: str, *, fail_open: bool = False) -> bool:
     """True when the widget passed, or when Turnstile is not configured.
 
     Unset keys skip the check and log once so the demo keeps working on a
     deploy that has not created a Cloudflare widget yet. When keys are set,
     a missing token, a network error, or ``success: false`` fails closed.
+
+    Signup passes ``fail_open=True``. A script that never loads (no token)
+    or a Cloudflare/network error must not reject the account. A completed
+    challenge with ``success: false`` still rejects. The signup rate limit
+    stays in front of this check.
     """
     global _turnstile_warned
     site, secret = turnstile_keys()
@@ -250,6 +255,12 @@ def verify_turnstile(token: str, remote_ip: str) -> bool:
             )
         return True
     if not (token or "").strip():
+        if fail_open:
+            log.warning(
+                "Turnstile token missing; continuing because the widget "
+                "script did not load"
+            )
+            return True
         return False
     payload = urllib.parse.urlencode({
         "secret": secret,
@@ -261,9 +272,20 @@ def verify_turnstile(token: str, remote_ip: str) -> bool:
         with urllib.request.urlopen(req, timeout=5) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
+        if fail_open:
+            log.warning("Turnstile verify failed open: %s", exc)
+            return True
         log.warning("Turnstile verify failed closed: %s", exc)
         return False
-    return bool(isinstance(body, dict) and body.get("success"))
+    if isinstance(body, dict) and body.get("success"):
+        return True
+    if fail_open and isinstance(body, dict):
+        errors = body.get("error-codes") or []
+        infra = {"internal-error"}
+        if errors and set(errors) <= infra:
+            log.warning("Turnstile verify failed open: %s", errors)
+            return True
+    return False
 
 
 def _redis():

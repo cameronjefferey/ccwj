@@ -104,6 +104,7 @@ def go_landing(slug):
         abort(404)
     from app.marketing_videos import (
         catch_stories,
+        compact_phone_poster,
         resolve_learn_url,
         story_steps,
         trade_stories,
@@ -116,6 +117,7 @@ def go_landing(slug):
         (step for step in steps if step["step"] == page.get("hero_short_step")),
         None,
     )
+    hero_short = compact_phone_poster(hero_short)
     return render_template(
         "go_landing.html",
         title=page["title"],

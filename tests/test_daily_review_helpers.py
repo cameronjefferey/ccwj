@@ -1334,6 +1334,164 @@ class TestBuildTodayMovers:
         assert "lot_roots=SPXW" in qqq[0]["lot_split_detail"]
         assert qqq[0]["dollar_impact"] == 1877.80
 
+    def test_other_roots_cannot_take_the_spxw_longs(self):
+        """ASTS and BE are earlier in the day frame and match the lot qty.
+
+        Pairing used to give them the SPXW longs. The SPXW tile then
+        summed only the short legs (10,780.90) and the gap was the
+        missing 7735C long (−8,903.10). The fused realized_pnl on the
+        close rows must not be the lot cash either.
+        """
+        day = date(2026, 10, 2)
+        short = "SPXW  261002C07730000"
+        long = "SPXW  261002C07735000"
+
+        def fill(action, occ, qty, price, amount, fee, realized=None):
+            return {
+                "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment",
+                "trade_date": day,
+                "action": action,
+                "trade_symbol": occ,
+                "underlying_symbol": occ.split()[0],
+                "quantity": qty,
+                "price": price,
+                "amount": amount,
+                "fees": fee,
+                "realized_pnl": realized,
+            }
+
+        rows = [
+            fill("option_sell_to_open", "ASTS  261002C00025000", 20, 2.0, 4000.0, 0),
+            fill("option_buy_to_open", "ASTS  261002C00026000", 4, 1.0, -400.0, 0),
+            fill("option_sell_to_open", "BE    261002C00297500", 10, 1.0, 1000.0, 0),
+            fill("option_buy_to_open", "BE    261002C00300000", 3, 0.5, -150.0, 0),
+            fill("option_sell_to_open", "GEV   261002C00500000", 1, 0.5, 50.0, 0),
+            fill("option_sell_to_open", "IRD   261002C00010000", 1, 0.5, 50.0, 0),
+            fill("option_sell_to_open", "MSOS  261002C00005000", 1, 0.5, 50.0, 0),
+            fill("option_sell_to_open", short, 20, 6.85, 13675.56, 24.44),
+            fill("option_buy_to_open", long, 20, 5.35, -10724.44, 24.44),
+            fill("option_sell_to_close", long, 20, 1.824, 3623.56, 24.44, -8903.10),
+            fill("option_buy_to_close", short, 20, 2.824, -5672.44, 24.44, 10780.90),
+            fill("option_sell_to_open", short, 10, 2.79, 2777.78, 12.22),
+            fill("option_buy_to_open", long, 10, 1.79, -1802.22, 12.22),
+        ]
+        options = pd.DataFrame([
+            {
+                "symbol": "SPXW", "trade_symbol": short,
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "option_strike": 7730, "option_type": "C",
+                "option_expiry": day, "direction": "Sold",
+                "quantity": 30, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": 10780.90,
+            },
+            {
+                "symbol": "SPXW", "trade_symbol": long,
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "option_strike": 7735, "option_type": "C",
+                "option_expiry": day, "direction": "Bought",
+                "quantity": 30, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -8903.10,
+            },
+            {
+                "symbol": "BE", "trade_symbol": "BE    261002C00297500",
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "option_strike": 297.5, "option_type": "C",
+                "option_expiry": day, "direction": "Sold",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": 850.0,
+            },
+            {
+                "symbol": "ASTS", "trade_symbol": "ASTS  261002C00025000",
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "option_strike": 25, "option_type": "C",
+                "option_expiry": day, "direction": "Sold",
+                "quantity": 20, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": 3600.0,
+            },
+        ])
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=options,
+            option_fills_df=pd.DataFrame(rows),
+        )
+        spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
+        by_detail = {r["contract_detail"]: r for r in spxw}
+        assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
+        assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
+        assert all(r["lot_split_reason"] == "split" for r in spxw)
+        for row in spxw:
+            assert "roots=SPXW" in row["lot_split_line"]
+            assert "ASTS" not in row["lot_split_line"]
+            assert "10780.90" not in row["lot_split_line"]
+            assert "8903.10" not in row["lot_split_line"]
+        be = [r for r in result["winners"] if r["symbol"] == "BE"]
+        asts = [r for r in result["winners"] if r["symbol"] == "ASTS"]
+        assert len(be) == 1 and be[0]["dollar_impact"] == 850.0
+        assert len(asts) == 1 and asts[0]["dollar_impact"] == 3600.0
+        assert "roots=BE" in be[0]["lot_split_line"]
+        assert "roots=ASTS" in asts[0]["lot_split_line"]
+
+    def test_expiry_credit_is_settlement_cash_not_realized_pnl(self):
+        day = date(2026, 10, 2)
+        short = "SPXW  261002C07730000"
+        long = "SPXW  261002C07735000"
+        fills = self._oct2_statement_fills()
+        extra = {
+            "tenant_id": "snaptrade:sara",
+            "account": "Sara Investment",
+            "user_id": 9,
+            "trade_date": day,
+            "action": "option_expired",
+            "trade_symbol": long,
+            "underlying_symbol": "SPXW",
+            "quantity": 10,
+            "price": 0,
+            "amount": 50.0,
+            "fees": 0,
+            "realized_pnl": -8903.10,
+        }
+        fills = pd.concat([fills, pd.DataFrame([extra])], ignore_index=True)
+        options = self._oct2_production_options()
+        options.loc[options["direction"] == "Sold", "realized_today"] = 1927.80
+        options.loc[options["direction"] == "Bought", "realized_today"] = 0.0
+        # The fused mart dollar is the two lots after the $50 credit.
+        both = options["realized_today"].sum()
+        assert both == 1927.80
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=options,
+            option_fills_df=fills,
+        )
+        spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
+        by_detail = {r["contract_detail"]: r for r in spxw}
+        assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
+        assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 1025.56
+
+    def test_debug_line_masks_names_and_amounts(self, monkeypatch):
+        monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+        monkeypatch.setattr(
+            "app.privacy.shown_account",
+            lambda name, tenant_id=None: "Account 2",
+        )
+        from app.weekly_review import _lot_fill_census, _lot_split_line
+
+        day = date(2026, 10, 2)
+        fills = self._oct2_statement_fills()
+        census = _lot_fill_census(fills, day)
+        line = _lot_split_line(
+            "total_mismatch", census,
+            lot_sum=10780.90, gap=8903.10, budget=122.20,
+        )
+        assert "Account 2" in line
+        assert "Sara" not in line
+        assert "10780.90" not in line
+        assert "8903.10" not in line
+        assert "122.20" not in line
+        assert "lot_sum=••••" in line
+        assert "gap=••••" in line
+        assert "budget=••••" in line
+
     def test_option_caption_matches_what_the_row_contains(self):
         opt = pd.DataFrame([
             {

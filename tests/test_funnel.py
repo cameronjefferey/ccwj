@@ -699,6 +699,8 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert 'id="navReview"' not in body
         assert "tables.js" not in body
         assert "term-tips.js" not in body
+        assert 'bootstrap.min.css" media="print"' not in body
+        assert "bootstrap.min.css" in body
         hero = body.split('class="ht-hero-cta"', 1)[1].split("</header>", 1)[0]
         assert f'class="ht-hero-primary" href="/signup' in hero
         assert f'data-ht-cta="{cta}"' in hero
@@ -707,6 +709,10 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert 'class="ht-demo-btn"' not in body
         assert 'class="ht-hero-signin"' in hero
         assert 'class="ht-hero-short"' in hero
+        assert "hqdefault.jpg" in hero
+        assert "sddefault.jpg" in hero
+        assert "maxresdefault" not in hero
+        assert 'fetchpriority="high"' in hero
         assert 'data-ht-cta="try-demo"' in hero
         assert "Try the live demo" in hero
         assert 'Play Short:' in hero
@@ -730,6 +736,11 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert "win-rate.webp" not in body
     _, learn = _go_body(client, "/go/learn")
     assert "Free forever · no card" in learn
+    assert 'class="ht-inline-tap"' in learn
+    assert "Open the series" in learn
+    assert "Replay a trade" in learn
+    assert "a.ht-inline-tap" in learn
+    assert "list-style: none" in learn
     assert "pnl_real.webp" not in learn
     assert "Practice with paper money" in learn
     assert "Replay a trade, free" in learn
@@ -926,7 +937,10 @@ def test_learn_route_signup_opens_learn(monkeypatch):
 
     client = app.test_client()
     page = client.get("/signup?route=learn")
-    assert 'name="route" value="learn"' in page.get_data(as_text=True)
+    signup_html = page.get_data(as_text=True)
+    assert 'name="route" value="learn"' in signup_html
+    assert signup_html.count("No credit card") == 1
+    assert "No card." not in signup_html
     resp = client.post("/signup", data={
         "username": "learnrouteuser",
         "email": "learnroute@example.com",

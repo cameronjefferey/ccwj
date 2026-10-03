@@ -303,6 +303,24 @@ def leg_outcome(row, expiry) -> str:
     return close_type
 
 
+# Weekly index series share a book with the parent root. A same-day
+# SPXW spread must not pair with an ASTS or BE leg just because the
+# contract counts match. XSP stays its own root.
+_VERTICAL_ROOT = {
+    "SPX": "SPXW",
+    "SPXW": "SPXW",
+    "NDX": "NDXP",
+    "NDXP": "NDXP",
+    "RUT": "RUTW",
+    "RUTW": "RUTW",
+}
+
+
+def _vertical_root(root) -> str:
+    text = str(root or "").strip().upper()
+    return _VERTICAL_ROOT.get(text, text)
+
+
 def _vertical_meta(row):
     if str(row.get("type") or "") not in ("", "option"):
         if row.get("type") and row.get("type") != "option":
@@ -331,6 +349,7 @@ def _vertical_meta(row):
             expiry,
             parsed["cp"],
             strategy,
+            _vertical_root(parsed["root"]),
         ),
         "expiry": expiry,
         "cp": parsed["cp"],
@@ -738,8 +757,8 @@ def _lot_slice(parent, lot, *, qty, open_cash, pnl, close_type, close_date, raw,
 def group_vertical_spreads(rows):
     """One row per vertical. Other legs pass through in the same order.
 
-    A vertical is the same account, open date, and expiry, one short and
-    one long of a Call Spread or Put Spread. A contract that was opened
+    A vertical is the same account, root, open date, and expiry, one short
+    and one long of a Call Spread or Put Spread. A contract that was opened
     in two lots (different price, or a close between them) is two
     verticals, each with its own status and win. Several verticals on
     the same day pair by contract count, then nearest strike. The long
