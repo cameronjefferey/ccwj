@@ -3919,7 +3919,9 @@ def _same_day_option_lot_tiles(fills_df, anchor):
         iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
         if iso:
             dates.append(iso)
-    session = anchor or (max(dates) if dates else None)
+    # Production passes a datetime.date. Fill dates are ISO strings.
+    # A date object is truthy, so `anchor or …` kept it and no lot matched.
+    session = _iso_day(anchor) or (max(dates) if dates else None)
     groups = {}
     fees_by_symbol = {}
     for row in records:
@@ -4096,7 +4098,7 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
             kept.extend(lots)
     kept.sort(key=lambda o: abs(float(o.get("dollar_impact") or 0)), reverse=True)
     impact = round(sum(float(o.get("dollar_impact") or 0) for o in kept), 2)
-    lot_as_of = anchor
+    lot_as_of = _iso_day(anchor)
     if not lot_as_of and fills_df is not None and not getattr(fills_df, "empty", True):
         dates = [
             _iso_day(v) for v in fills_df.get("trade_date", [])

@@ -54,6 +54,9 @@ def test_expiry_date_cap_collapses_the_check2_fill_grain():
     assert "cast(d.quantity as string)" in sql
     assert "cast(round(d.price, 4) as string)" in sql
     assert "fee_adjusted asc" in sql
+    assert "drop_estimated_fee" in sql
+    assert "est\\. fee" in sql or r"est\. fee" in sql
+    assert "option_expiry < c.trade_date" in sql
     assert "where d.trade_symbol is not null" in sql
     assert "and d.price is not null" in sql
     assert "from history_rows" in sql

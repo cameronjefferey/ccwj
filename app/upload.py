@@ -981,6 +981,35 @@ def _net_gross_option_amount(amount, qty, price, fee, action):
     return round(gross - fee_f, 2)
 
 
+_NO_ESTIMATE_ACTIONS = frozenset({
+    "expired", "assigned", "exchange or exercise", "exercised",
+    "option_expired", "option_assigned", "option_exercised",
+})
+
+
+def _statement_keeps_its_fee(action, description, symbol, raw_date) -> bool:
+    """A settlement, expiry, or assignment fee — including 0 — is real.
+
+    Do not copy an ``est. fee`` order row onto that statement. A blank
+    fee on an ordinary open is still filled from a real commission.
+    """
+    action_l = str(action or "").strip().lower()
+    if action_l in _NO_ESTIMATE_ACTIONS:
+        return True
+    blob = f"{description or ''} {symbol or ''}".lower()
+    if "as of" in blob or "cash settlement" in blob:
+        return True
+    if re.search(r"\b(expired|assigned|exercised)\b", blob):
+        return True
+    expiry = _option_expiry_from_symbol(symbol) or _option_expiry_from_symbol(description)
+    posted_text = _canonicalize_date_mdy(raw_date)
+    try:
+        posted = datetime.strptime(posted_text, "%m/%d/%Y").date()
+    except (TypeError, ValueError):
+        posted = None
+    return bool(expiry and posted and expiry < posted)
+
+
 def _safe_fee_amount(value) -> float:
     """Blank fees are 0. A commission cell is a positive dollar amount."""
     if value is None:
@@ -1153,6 +1182,7 @@ def _dedup_history_rows(df, seed_columns):
     amount_col = next((c for c in df.columns if str(c).lower() == "amount"), None)
     qty_col = next((c for c in df.columns if str(c).lower() == "quantity"), None)
     action_col = next((c for c in df.columns if str(c).lower() == "action"), None)
+    date_col = next((c for c in df.columns if str(c).lower() == "date"), None)
     for pos in order:
         if not bool(eligible.iloc[pos]):
             continue  # non-fill event — never cross-source deduped
@@ -1168,7 +1198,21 @@ def _dedup_history_rows(df, seed_columns):
             if fee_col and keep is not None:
                 keep_fee = _safe_fee_amount(df.at[keep, fee_col])
                 drop_fee = _safe_fee_amount(df.at[pos, fee_col])
-                if not keep_fee and drop_fee:
+                drop_desc = str(df.at[pos, "Description"] or "")
+                keep_desc = str(df.at[keep, "Description"] or "")
+                drop_is_estimate = _ESTIMATED_FEE_MARK in drop_desc.lower()
+                # The statement fee wins, including 0 on a cash settlement.
+                # Copying the estimate onto that row netted 16.45 / 11.45
+                # into −$3,598.88 instead of −$3,574.44. A bare order symbol
+                # with a blank fee still takes the estimate so the gross
+                # open becomes the net.
+                statement_fee_wins = drop_is_estimate and _statement_keeps_its_fee(
+                    df.at[keep, action_col] if action_col else "",
+                    keep_desc,
+                    df.at[keep, sym_col] if sym_col else "",
+                    df.at[keep, date_col] if date_col else "",
+                )
+                if not keep_fee and drop_fee and not statement_fee_wins:
                     df.at[keep, fee_col] = drop_fee
                     # The survivor is often a stored order row whose
                     # Amount is still gross. Net it once. A later activity
@@ -1182,13 +1226,10 @@ def _dedup_history_rows(df, seed_columns):
                             drop_fee,
                             df.at[keep, action_col],
                         )
-                    drop_desc = str(df.at[pos, "Description"] or "")
-                    if _ESTIMATED_FEE_MARK in drop_desc.lower():
-                        keep_desc = str(df.at[keep, "Description"] or "")
-                        if _ESTIMATED_FEE_MARK not in keep_desc.lower():
-                            df.at[keep, "Description"] = (
-                                f"{keep_desc} {_ESTIMATED_FEE_MARK}"
-                            ).strip()
+                    if drop_is_estimate and _ESTIMATED_FEE_MARK not in keep_desc.lower():
+                        df.at[keep, "Description"] = (
+                            f"{keep_desc} {_ESTIMATED_FEE_MARK}"
+                        ).strip()
             drop_positions.add(pos)
         else:
             seen.add(key)

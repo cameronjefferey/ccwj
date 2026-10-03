@@ -28,6 +28,7 @@ from app.weekly_review import (
     _build_after_hours_movers,
     _build_breakdown_totals,
     _build_position_breakdown,
+    _apply_same_day_option_lots,
     _build_today_movers,
     _invested_from_close_sleeve,
     _build_trades_this_week,
@@ -703,6 +704,58 @@ class TestBuildTodayMovers:
             assert result["options_impact"] == 1877.80
             assert all("30×" not in (r.get("contract_detail") or "") for r in spxw)
             assert result["combined_impact"] == 1877.80
+
+    def test_date_anchor_still_splits_the_oct2_lots(self):
+        """A datetime.date anchor must match ISO fill dates.
+
+        `session = anchor or …` kept the date object, so no lot matched
+        and Today stayed on the fused 30× line.
+        """
+        day = date(2026, 10, 2)
+        short = "SPXW  261002C07730000"
+        long = "SPXW  261002C07735000"
+        legs = [
+            ("option_sell_to_open", short, 20, 6.85, 13700.00, 24.44),
+            ("option_buy_to_open", long, 20, 5.35, -10700.00, 24.44),
+            ("option_sell_to_close", long, 20, 1.824, 3648.00, 24.44),
+            ("option_buy_to_close", short, 20, 2.824, -5648.00, 24.44),
+            ("option_sell_to_open", short, 10, 2.79, 2790.00, 12.22),
+            ("option_buy_to_open", long, 10, 1.79, -1790.00, 12.22),
+        ]
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment",
+                "trade_date": day,
+                "action": action,
+                "trade_symbol": occ,
+                "quantity": qty,
+                "price": price,
+                "amount": gross,
+                "fees": fee,
+            }
+            for action, occ, qty, price, gross, fee in legs
+        ])
+        fused = [{
+            "symbol": "SPXW",
+            "dollar_impact": 2000.0,
+            "open_impact": 0.0,
+            "closed_impact": 2000.0,
+            "contract_detail": "30× 7730/7735C spread",
+            "option_caption": "Closed today",
+        }]
+        kept, impact, _as_of = _apply_same_day_option_lots(fused, fills, day)
+        by_detail = {row["contract_detail"]: row for row in kept}
+        assert set(by_detail) == {
+            "20× 7730/7735C spread",
+            "10× 7730/7735C spread",
+        }
+        assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
+        assert by_detail["20× 7730/7735C spread"]["option_caption"] == "Closed today"
+        assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
+        assert by_detail["10× 7730/7735C spread"]["option_caption"] == "Expired"
+        assert impact == 1877.80
+        assert "30×" not in " ".join(by_detail)
 
     def test_itm_settlement_stays_one_line_when_fills_omit_the_width(self):
         """Oct 1's estimate is the width, not the opening credit.
