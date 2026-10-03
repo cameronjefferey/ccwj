@@ -224,6 +224,22 @@ cleaned as (
 amount_signed as (
     select
         c.* except (amount_raw),
+        -- 1 when this row's Amount was still the gross premium and we
+        -- netted ``fees`` here. The broker statement is already net, so
+        -- it stays 0. After the expiry-date cap below, an order row and
+        -- its later activity can share a fill key; prefer the statement.
+        (
+            c.action in (
+                'option_buy_to_open', 'option_buy_to_close',
+                'option_sell_to_open', 'option_sell_to_close'
+            )
+            and abs(coalesce(c.fees, 0)) > 0.005
+            and c.quantity is not null
+            and c.price is not null
+            and abs(
+                   abs(c.amount_raw) - abs(c.quantity) * c.price * 100
+                ) <= 0.05
+        ) as fee_adjusted,
         case
             -- Option order rows store gross premium (qty × price × 100)
             -- and the commission in ``fees``. The broker statement Amount
@@ -361,6 +377,49 @@ dated as (
             ) as as_of_date
         from crypto_norm c
     )
+),
+
+-- Capping a posting date at expiry (or reading "as of") can land an
+-- order fill and its later activity on the same check-2 grain:
+-- (tenant, trade_date, action, trade_symbol, quantity, price@4dp).
+-- Run 37090194526: BE 03/06/26 165C buy-to-close, 10 @ 0.042, amounts
+-- -42.92 and -42.12. The raw dates still differ, so upload dedup keeps
+-- both (rewriting the seed date is what inserted the twin). Collapse
+-- here, after the date rewrite. Blank-price rows stay put — distinct
+-- expiries share an empty Symbol and must not fuse.
+fill_ranked as (
+    select
+        d.*,
+        row_number() over (
+            partition by
+                d.tenant_id,
+                d.trade_date,
+                d.action,
+                d.trade_symbol,
+                d.quantity,
+                round(d.price, 4)
+            order by
+                d.fee_adjusted asc,
+                length(coalesce(d.description, '')) desc,
+                abs(d.amount) asc,
+                d.amount asc
+        ) as _fill_rank
+    from dated d
+    where d.trade_symbol is not null
+      and d.price is not null
+),
+
+history_rows as (
+    select * except (_fill_rank)
+    from fill_ranked
+    where _fill_rank = 1
+
+    union all
+
+    select *
+    from dated
+    where trade_symbol is null
+       or price is null
 )
 
 select
@@ -368,7 +427,7 @@ select
     trade_date, action_raw, action, trade_symbol, underlying_symbol,
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
-from dated
+from history_rows
 -- CURRENCY_USD / CUSIP-shaped tickers are FX conversion noise, not trades.
 -- Deposits and withdrawals ship with a NULL Symbol. ``NULL !=
 -- 'CURRENCY_USD'`` is UNKNOWN in SQL, so the old predicate silently

@@ -39,6 +39,23 @@ def test_settlement_dated_cte_is_comma_joined():
     )
 
 
+def test_expiry_date_cap_collapses_the_check2_fill_grain():
+    """Capping a posting date onto expiry must not leave two fills.
+
+    Run 37090194526: the same BE buy-to-close survived upload dedup
+    (raw dates differ) and then shared a trade_date, so
+    stg_history_no_duplicate_fills_per_tenant check 2 failed. Blank
+    prices stay out of this collapse — distinct expiries have no Symbol.
+    """
+    sql = _STG.read_text()
+    assert "fill_ranked as (" in sql
+    assert "round(d.price, 4)" in sql
+    assert "fee_adjusted asc" in sql
+    assert "where d.trade_symbol is not null" in sql
+    assert "and d.price is not null" in sql
+    assert "from history_rows" in sql
+
+
 def test_parse_seed_date_covers_four_and_two_digit_mdy():
     sql = _MACRO.read_text()
     assert r"r'(\d{1,2}/\d{1,2}/\d{4})$'" not in sql
