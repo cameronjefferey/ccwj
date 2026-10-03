@@ -882,6 +882,47 @@ class TestBuildTodayMovers:
         assert result["options"] == []
         assert result["options_impact"] == 0.0
 
+    def test_distinct_parent_and_weekly_index_moves_both_survive(self):
+        """SPX and SPXW are aliases for matching, not duplicate movers."""
+        day = date(2026, 10, 2)
+        expiry = date(2026, 11, 20)
+        options = [
+            {
+                "symbol": "SPX", "dollar_impact": 100.0,
+                "open_impact": 0.0, "closed_impact": 100.0,
+                "contract_detail": "1× SPX 6000C",
+                "option_caption": "Closed today",
+            },
+            {
+                "symbol": "SPXW", "dollar_impact": 200.0,
+                "open_impact": 0.0, "closed_impact": 200.0,
+                "contract_detail": "1× SPXW 6010C",
+                "option_caption": "Closed today",
+            },
+        ]
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Main", "trade_date": day,
+                "action": action, "trade_symbol": symbol,
+                "underlying_symbol": root, "option_expiry": expiry,
+                "quantity": 1, "price": price, "amount": amount, "fees": 0,
+            }
+            for root, symbol, action, price, amount in (
+                ("SPX", "SPX   261120C06000000", "option_sell_to_open", 2.0, 200.0),
+                ("SPX", "SPX   261120C06000000", "option_buy_to_close", 1.0, -100.0),
+                ("SPXW", "SPXW  261120C06010000", "option_sell_to_open", 3.0, 300.0),
+                ("SPXW", "SPXW  261120C06010000", "option_buy_to_close", 1.0, -100.0),
+            )
+        ])
+        kept, impact, _as_of = _apply_same_day_option_lots(
+            options, fills, day,
+        )
+        assert impact == 300.0
+        assert {(row["symbol"], row["dollar_impact"]) for row in kept} == {
+            ("SPX", 100.0),
+            ("SPXW", 200.0),
+        }
+
     def test_day_trades_query_carries_fees_for_mover_lots(self):
         assert "f.fees" in DAY_TRADES_QUERY
         assert "c.fees" in DAY_TRADES_QUERY

@@ -4319,6 +4319,33 @@ def _closer_mart_value(opt, lot_sum):
     return min(values, key=lambda value: abs(round(value, 2) - lot_sum))
 
 
+def _option_rows_by_match_key(options):
+    """Mart rows grouped only for matching against weekly-index OCC roots."""
+    grouped = {}
+    for opt in options or []:
+        grouped.setdefault(_option_root_match_key(opt.get("symbol")), []).append(opt)
+    return grouped
+
+
+def _option_group_totals(options):
+    """Combined mart dollars for rows sharing an index-root match key."""
+    rows = list(options or [])
+
+    def summed(field):
+        values = [
+            float(row.get(field) or 0)
+            for row in rows
+            if row.get(field) is not None
+        ]
+        return round(sum(values), 2) if values else None
+
+    return {
+        "dollar_impact": summed("dollar_impact"),
+        "open_impact": summed("open_impact"),
+        "closed_impact": summed("closed_impact"),
+    }
+
+
 def _gross_fee_rates(options, tiles, fees_by_symbol, qty_by_symbol):
     """Per-contract rate when the premium is gross and fees are blank.
 
@@ -4330,11 +4357,11 @@ def _gross_fee_rates(options, tiles, fees_by_symbol, qty_by_symbol):
     for tile in tiles or []:
         grouped.setdefault(_option_root_match_key(tile["symbol"]), []).append(tile)
     rates = {}
-    for opt in options or []:
-        symbol = _option_root_match_key(opt.get("symbol"))
+    for symbol, option_rows in _option_rows_by_match_key(options).items():
         lots = grouped.get(symbol)
-        if not lots or symbol in rates:
+        if not lots:
             continue
+        opt = _option_group_totals(option_rows)
         lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
         gap = _option_tile_gap(opt, lot_sum)
         budget = float(fees_by_symbol.get(symbol) or 0)
@@ -4406,50 +4433,47 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
         grouped.setdefault(_option_root_match_key(tile["symbol"]), []).append(tile)
     kept = []
     used = set()
-    for opt in options:
-        symbol = _option_root_match_key(opt.get("symbol"))
+    for symbol, option_rows in _option_rows_by_match_key(options).items():
         lots = grouped.get(symbol)
         if not lots:
             lot_keys = ",".join(sorted(grouped))
-            if _roots_look_like_one_index(opt.get("symbol"), grouped):
-                reason = "root_mismatch"
-            else:
-                reason = "no_lots"
-            kept.append(_note_lot_split(
-                opt, reason, f"mart={opt.get('symbol')} lot_roots={lot_keys}",
-            ))
-            continue
-        # A second mart row for the same root (SPX beside SPXW) must
-        # not keep the fused tile or append the lots twice.
-        if symbol in used:
-            _lot_log.info(
-                "lot_split symbol=%s reason=already_split detail=dropped duplicate mart row",
-                opt.get("symbol"),
-            )
+            for opt in option_rows:
+                if _roots_look_like_one_index(opt.get("symbol"), grouped):
+                    reason = "root_mismatch"
+                else:
+                    reason = "no_lots"
+                kept.append(_note_lot_split(
+                    opt, reason, f"mart={opt.get('symbol')} lot_roots={lot_keys}",
+                ))
             continue
         used.add(symbol)
+        totals = _option_group_totals(option_rows)
         lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
-        gap = _option_tile_gap(opt, lot_sum)
+        gap = _option_tile_gap(totals, lot_sum)
         budget = float(fees_by_symbol.get(symbol) or 0)
-        closed = opt.get("closed_impact")
-        dollar = opt.get("dollar_impact")
+        closed = totals.get("closed_impact")
+        dollar = totals.get("dollar_impact")
         detail = (
             f"lot_sum={lot_sum:.2f} gap={gap:.2f} budget={budget:.2f} "
             f"dollar={dollar} closed={closed} lots={len(lots)} "
-            f"anchor={_iso_day(anchor) or 'none'}"
+            f"mart_rows={len(option_rows)} anchor={_iso_day(anchor) or 'none'}"
         )
         if gap > max(1.0, budget + 1.0):
-            kept.append(_note_lot_split(opt, "total_mismatch", detail))
+            kept.extend(
+                _note_lot_split(opt, "total_mismatch", detail)
+                for opt in option_rows
+            )
             continue
-        open_i = opt.get("open_impact")
-        open_v = float(open_i or 0) if open_i is not None else 0.0
-        if abs(open_v) >= 0.5:
-            kept.append(_note_lot_split({
-                **opt,
-                "dollar_impact": round(open_v, 2),
-                "closed_impact": 0.0,
-                "option_caption": option_mover_caption(open_v, 0),
-            }, "split", f"open mark kept {detail}"))
+        for opt in option_rows:
+            open_i = opt.get("open_impact")
+            open_v = float(open_i or 0) if open_i is not None else 0.0
+            if abs(open_v) >= 0.5:
+                kept.append(_note_lot_split({
+                    **opt,
+                    "dollar_impact": round(open_v, 2),
+                    "closed_impact": 0.0,
+                    "option_caption": option_mover_caption(open_v, 0),
+                }, "split", f"open mark kept {detail}"))
         kept.extend(_note_lot_tiles(lots, "split", detail))
     for symbol, lots in grouped.items():
         if symbol not in used:
