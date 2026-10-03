@@ -136,20 +136,25 @@ if (document.readyState === "loading") {
 """.replace("FILE", tables.as_uri()),
         encoding="utf-8",
     )
+    proc = None
     try:
         # Headless Chrome prints the DOM and then lingers on DBus, so bound
-        # the process. stdout is complete before the timeout.
-        proc = subprocess.run(
-            ["timeout", "20", chrome, "--headless=new", "--disable-gpu",
-             "--no-sandbox", "--disable-dev-shm-usage",
-             f"--user-data-dir={tmp_path / 'chrome'}",
-             "--virtual-time-budget=8000", "--dump-dom", html_path.as_uri()],
-            capture_output=True, text=True, timeout=30,
-        )
+        # the process. stdout is complete before the timeout. A cold CI
+        # runner sometimes exits before dump-dom prints; try once more.
+        for attempt in range(2):
+            proc = subprocess.run(
+                ["timeout", "40", chrome, "--headless=new", "--disable-gpu",
+                 "--no-sandbox", "--disable-dev-shm-usage",
+                 f"--user-data-dir={tmp_path / f'chrome-{attempt}'}",
+                 "--virtual-time-budget=8000", "--dump-dom", html_path.as_uri()],
+                capture_output=True, text=True, timeout=50,
+            )
+            if 'id="empty-case"' in (proc.stdout or ""):
+                break
     finally:
         html_path.unlink(missing_ok=True)
-    dom = proc.stdout
-    assert proc.returncode in (0, 124), proc.stderr[-500:]
+    dom = proc.stdout or ""
+    assert proc.returncode in (0, 124), (proc.stderr or "")[-500:]
     assert 'id="empty-case">Showing 0|empty-shown|pager-hidden|visible-0' in dom
     assert 'id="partial-case">Showing 1 of 2 on this page|empty-hidden|pager-shown|visible-1' in dom
     assert 'id="cleared-case">Showing 1-2 of 26|empty-hidden|pager-shown|visible-2' in dom
