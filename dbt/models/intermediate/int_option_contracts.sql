@@ -479,16 +479,18 @@ split_links as (
 --
 --   * OTM or ATM — settlement cash $0, so realized P&L is the opening
 --     fills (short keeps the premium, long loses the debit).
---   * ITM cash-settled index (SPX/SPXW/XSP/NDX/RUT, plus NDXP/RUTW and
---     VIX/DJX/OEX/XEO/RVX so those are not treated as a share
---     assignment) — add intrinsic, strike vs close × 100 × opened
+--   * ITM PM-settled cash index (SPXW/XSP/NDXP/RUTW, plus
+--     DJX/OEX/XEO/RVX) — add intrinsic, strike vs close × 100 × opened
 --     contracts. A short pays it; a long receives it.
+--   * Standard SPX/NDX/RUT and VIX are AM-settled against SET/VRO. Those
+--     special opening prints are not in stg_daily_prices, so these roots
+--     stay Settlement pending until the broker line arrives.
 --   * ITM equity — option P&L stays the fill cash. The shares are the
 --     equity line, same as an option_assigned row. No synthetic share fill.
 --
--- The row is close_type 'Settled at expiry (est.)' until a broker close
--- exists (contracts_closed > 0 or an action close_type). That close's
--- cash is already in net_cash_flow, so the estimate adds nothing.
+-- The row is close_type 'Settled at expiry (est.)' until broker activity
+-- accounts for the full opened quantity. A partial close's cash is already
+-- in net_cash_flow; the estimate adds settlement only for the remainder.
 --
 -- On the expiry date itself the session is over at 16:00 ET, or 16:15 ET
 -- for those index roots (a daily bar can print before the index close).
@@ -519,21 +521,49 @@ expiry_close_lookup as (
     group by 1, 2
 ),
 
+expiry_inputs as (
+    select
+        c.*,
+        -- Standard SPX/NDX/RUT and VIX contracts are AM-settled against
+        -- SET/VRO, not the daily close. stg_daily_prices does not carry
+        -- those special opening prints, so leave them unpriced until the
+        -- broker settlement arrives. PM-settled weekly aliases can use the
+        -- official close.
+        case
+            when upper(trim(coalesce(c.underlying_symbol, ''))) in (
+                'SPX', 'NDX', 'RUT', 'VIX'
+            ) then cast(null as float64)
+            else coalesce(exact.close_price, parent.close_price)
+        end as expiry_close
+    from all_contracts c
+    left join expiry_close_lookup exact
+        on upper(trim(c.underlying_symbol)) = upper(trim(exact.underlying_symbol))
+        and c.option_expiry = exact.expiry_date
+    left join expiry_close_lookup parent
+        on exact.close_price is null
+        and c.option_expiry = parent.expiry_date
+        and upper(trim(parent.underlying_symbol)) = case upper(trim(c.underlying_symbol))
+            when 'SPXW' then 'SPX'
+            when 'NDXP' then 'NDX'
+            when 'RUTW' then 'RUT'
+        end
+),
+
 otm_at_expiry as (
     select
         c.tenant_id,
         c.account,
         c.user_id,
         c.trade_symbol,
-        coalesce(exact.close_price, parent.close_price) as expiry_close,
+        c.expiry_close,
         (
             c.option_strike is not null
-            and coalesce(exact.close_price, parent.close_price) is not null
+            and c.expiry_close is not null
             and (
                 (c.option_type = 'C'
-                    and coalesce(exact.close_price, parent.close_price) < c.option_strike)
+                    and c.expiry_close < c.option_strike)
                 or (c.option_type = 'P'
-                    and coalesce(exact.close_price, parent.close_price) > c.option_strike)
+                    and c.expiry_close > c.option_strike)
             )
         ) as strictly_otm,
         -- Same-day worthless expiry, only after the bell. Keeps a partial
@@ -541,12 +571,12 @@ otm_at_expiry as (
         (
             c.option_expiry = current_date('America/New_York')
             and c.option_strike is not null
-            and coalesce(exact.close_price, parent.close_price) is not null
+            and c.expiry_close is not null
             and (
                 (c.option_type = 'C'
-                    and coalesce(exact.close_price, parent.close_price) < c.option_strike)
+                    and c.expiry_close < c.option_strike)
                 or (c.option_type = 'P'
-                    and coalesce(exact.close_price, parent.close_price) > c.option_strike)
+                    and c.expiry_close > c.option_strike)
             )
             and time(current_datetime('America/New_York')) >= (
                 case
@@ -589,18 +619,7 @@ otm_at_expiry as (
                 else date_add(c.option_expiry, interval 1 day)
             end
         ) as unpriced_fallback_due
-    from all_contracts c
-    left join expiry_close_lookup exact
-        on upper(trim(c.underlying_symbol)) = upper(trim(exact.underlying_symbol))
-        and c.option_expiry = exact.expiry_date
-    left join expiry_close_lookup parent
-        on exact.close_price is null
-        and c.option_expiry = parent.expiry_date
-        and upper(trim(parent.underlying_symbol)) = case upper(trim(c.underlying_symbol))
-            when 'SPXW' then 'SPX'
-            when 'NDXP' then 'NDX'
-            when 'RUTW' then 'RUT'
-        end
+    from expiry_inputs c
 ),
 
 -- Join the live snapshot + OTM-at-expiry inference once, then derive the
@@ -717,15 +736,15 @@ flagged2 as (
          and coalesce(contracts_closed, 0) > 1e-6
          and coalesce(option_expiry >= current_date(), true)
          and not coalesce(inferred_otm_today, false)) as is_partial_open,
-        -- No closing activity, session over, official close in hand.
-        -- The label says it is still an estimate. Equity with no close
-        -- uses the same estimate once the next weekday has started
-        -- ($0 settlement, because expiry_close is null). Cash index
-        -- roots are excluded from that branch — see settlement_pending.
+        -- An open remainder, session over, official close in hand.
+        -- This includes a partially-closed contract: the earlier close cash
+        -- is already in net_cash_flow and only the remaining quantity gets
+        -- estimated at expiry. Equity with no close uses the same estimate
+        -- once the next weekday has started ($0 settlement, because
+        -- expiry_close is null). Cash index roots are excluded from that
+        -- branch — see settlement_pending.
         (
-            coalesce(close_type, '') = ''
-            and _activity_flat_close_date is null
-            and coalesce(contracts_closed, 0) < 1e-6
+            remaining_open_qty > 1e-6
             and option_expiry is not null
             and coalesce(expiry_session_over, false)
             and (
@@ -747,13 +766,16 @@ flagged2 as (
         -- official close. Do not book the opening credit. Status stays
         -- Closed so the legs table can show the label; realized is $0.
         (
-            coalesce(close_type, '') = ''
-            and _activity_flat_close_date is null
-            and coalesce(contracts_closed, 0) < 1e-6
+            remaining_open_qty > 1e-6
             and option_expiry is not null
             and coalesce(expiry_session_over, false)
             and expiry_close is null
-            and coalesce(unpriced_fallback_due, false)
+            and (
+                coalesce(unpriced_fallback_due, false)
+                or upper(trim(coalesce(underlying_symbol, ''))) in (
+                    'SPX', 'NDX', 'RUT', 'VIX'
+                )
+            )
             and upper(trim(coalesce(underlying_symbol, ''))) in (
                 'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
                 'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
@@ -763,21 +785,20 @@ flagged2 as (
         -- started. Stay open. Booking net_cash_flow here is the
         -- worthless-ITM bug.
         (
-            coalesce(close_type, '') = ''
-            and _activity_flat_close_date is null
-            and coalesce(contracts_closed, 0) < 1e-6
+            remaining_open_qty > 1e-6
             and option_expiry is not null
             and coalesce(expiry_session_over, false)
             and expiry_close is null
             and not coalesce(unpriced_fallback_due, false)
+            and upper(trim(coalesce(underlying_symbol, ''))) not in (
+                'SPX', 'NDX', 'RUT', 'VIX'
+            )
         ) as awaiting_expiry_close,
         -- Intrinsic for an ITM cash-settled index. Equity and OTM/ATM
-        -- contribute 0; a later broker close contributes 0 because
-        -- expiry_settled_est is false once contracts_closed > 0.
+        -- contribute 0. A partial close contributes intrinsic only for
+        -- remaining_open_qty; a full broker close leaves no remainder.
         case
-            when coalesce(close_type, '') != ''
-              or _activity_flat_close_date is not null
-              or coalesce(contracts_closed, 0) >= 1e-6
+            when remaining_open_qty <= 1e-6
               or not coalesce(expiry_session_over, false)
               or expiry_close is null
               or option_strike is null
@@ -797,13 +818,7 @@ flagged2 as (
                     0.0
                 )
                 * 100.0
-                * coalesce(
-                    case
-                        when direction = 'Sold' then contracts_sold_to_open
-                        else contracts_bought_to_open
-                    end,
-                    0.0
-                ),
+                * remaining_open_qty,
                 2
             )
         end as est_settlement_cash

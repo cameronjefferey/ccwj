@@ -18,9 +18,12 @@
     A cash-settled index does not. It stays 'Settlement pending' with
     realized and total at $0, never the opening credit.
 
-    A broker close (contracts_closed > 0) must not keep the estimate
-    label, and its realized P&L must stay net_cash_flow so the intrinsic
-    is not added a second time.
+    A full broker close must not keep the estimate label, and its realized
+    P&L must stay net_cash_flow so intrinsic is not added a second time.
+    A partial close still estimates settlement for only the open remainder.
+
+    Standard SPX/NDX/RUT and VIX expiries use SET/VRO, not the daily close.
+    Until that dedicated settlement print exists, they stay pending.
 */
 
 with prices as (
@@ -36,7 +39,12 @@ with prices as (
 resolved as (
     select
         c.*,
-        coalesce(exact.close_price, parent.close_price) as expiry_close
+        case
+            when upper(trim(coalesce(c.underlying_symbol, ''))) in (
+                'SPX', 'NDX', 'RUT', 'VIX'
+            ) then cast(null as float64)
+            else coalesce(exact.close_price, parent.close_price)
+        end as expiry_close
     from {{ ref('int_option_contracts') }} c
     left join prices exact
         on upper(trim(c.underlying_symbol)) = upper(trim(exact.symbol))
@@ -54,6 +62,11 @@ resolved as (
 gated as (
     select
         *,
+        (
+            coalesce(contracts_sold_to_open, 0)
+            + coalesce(contracts_bought_to_open, 0)
+            - coalesce(contracts_closed, 0)
+        ) as remaining_open_qty,
         (
             option_expiry < current_date('America/New_York')
             or (
@@ -94,11 +107,10 @@ gated as (
                     0.0
                 )
                 * 100.0
-                * coalesce(
-                    case
-                        when direction = 'Sold' then contracts_sold_to_open
-                        else contracts_bought_to_open
-                    end,
+                * greatest(
+                    coalesce(contracts_sold_to_open, 0)
+                    + coalesce(contracts_bought_to_open, 0)
+                    - coalesce(contracts_closed, 0),
                     0.0
                 ),
                 2
@@ -107,7 +119,11 @@ gated as (
     from resolved
     where not coalesce(opened_before_history, false)
       and option_expiry is not null
-      and coalesce(contracts_closed, 0) < 1e-6
+      and (
+          coalesce(contracts_sold_to_open, 0)
+          + coalesce(contracts_bought_to_open, 0)
+          - coalesce(contracts_closed, 0)
+      ) > 1e-6
 )
 
 select
@@ -159,6 +175,9 @@ from gated
 where session_over
   and expiry_close is null
   and not fallback_due
+  and upper(trim(coalesce(underlying_symbol, ''))) not in (
+      'SPX', 'NDX', 'RUT', 'VIX'
+  )
   and coalesce(close_type, '') not in (
       'Expired', 'ExpiredOTM', 'Assigned', 'Exercised', 'Closed'
   )
@@ -223,7 +242,12 @@ select
 from gated
 where session_over
   and expiry_close is null
-  and fallback_due
+  and (
+      fallback_due
+      or upper(trim(coalesce(underlying_symbol, ''))) in (
+          'SPX', 'NDX', 'RUT', 'VIX'
+      )
+  )
   and upper(trim(coalesce(underlying_symbol, ''))) in (
       'SPX', 'SPXW', 'XSP', 'NDX', 'NDXP', 'RUT', 'RUTW',
       'VIX', 'DJX', 'OEX', 'XEO', 'RVX'
@@ -260,7 +284,11 @@ select
     'broker_dedupe' as violation
 from {{ ref('int_option_contracts') }} c
 where not coalesce(c.opened_before_history, false)
-  and coalesce(c.contracts_closed, 0) >= 1e-6
+  and coalesce(c.contracts_closed, 0) >= (
+      coalesce(c.contracts_sold_to_open, 0)
+      + coalesce(c.contracts_bought_to_open, 0)
+      - 1e-6
+  )
   and c.status = 'Closed'
   and (
       c.close_type = 'Settled at expiry (est.)'

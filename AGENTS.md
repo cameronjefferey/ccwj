@@ -1384,7 +1384,7 @@ filters live `current_df` rows by `option_expiry >= today` to avoid
 double-counting an expired contract that the broker hasn't dropped yet.
 Both layers must keep this invariant.
 
-**Expiry settlement from the official close.** Do not wait for the
+**Expiry settlement from the official close.** For PM-settled contracts, do not wait for the
 broker's expired / as-of / cash-settlement line, and do not book the
 opening credit just because the calendar date has passed. Once the
 expiry session is over — 4:00 PM ET, or 4:15 PM ET for cash-settled
@@ -1392,8 +1392,8 @@ index roots, and any time after that New York date — a contract with
 no closing activity realizes from `stg_daily_prices` on the expiry
 date (`otm_at_expiry` in `int_option_contracts`, same rule in
 `app/expiry_settlement.py`). OTM and ATM settlement cash is $0 (short
-keeps the premium, long loses the debit). ITM index options
-(SPX/SPXW/XSP/NDX/RUT, plus the weekly aliases and VIX/DJX/OEX/XEO/RVX)
+keeps the premium, long loses the debit). ITM PM-settled index options
+(SPXW/XSP/NDXP/RUTW and the supported cash-index roots)
 add intrinsic, strike vs close × 100 × contracts (short pays, long
 receives). ITM equity stays option-cash only, the same as assignment;
 the shares are the equity line. The row is
@@ -1404,6 +1404,11 @@ the exact underlying, else SPXW→SPX / NDXP→NDX / RUTW→RUT when the
 exact symbol has no row. The price loader fetches those index closes
 from Yahoo (`^GSPC`/`^SPX` for SPX and SPXW, `^GSPC`/10 for XSP,
 `^NDX`, `^RUT`, `^VIX`) and writes them under the broker root.
+**Standard SPX/NDX/RUT and VIX expiries are AM-settled against special
+opening quotations (SET/VRO), not those Yahoo daily closes.** Until a
+dedicated settlement-print source exists, those roots stay
+`Settlement pending` with realized $0 until the broker line arrives;
+substituting the close can misstate P&L by thousands per contract.
 No official close stays Open, P&L $0 (or the live snapshot mark),
 until the next weekday after expiry (Friday → Monday). Equity still
 missing then expires at $0 under the same estimate label, with

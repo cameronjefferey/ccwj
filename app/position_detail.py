@@ -664,21 +664,43 @@ def _position_is_short_option(position, trades) -> bool:
 
 
 def _broker_closed_option(position, trades) -> bool:
+    """True only when closing fills account for the whole contract.
+
+    A live snapshot can carry the remainder of a partially-closed position.
+    Treating any BTC/STC as terminal removes that remainder at expiry and
+    books the opening premium without the partial-close cash.
+    """
     ident = _contract_key(position)
+    opens = {
+        "option_sell_to_open", "option_buy_to_open",
+        "Sell to Open", "Buy to Open",
+    }
     closes = {
         "option_buy_to_close", "option_sell_to_close", "option_expired",
         "option_assigned", "option_exercised",
         "Buy to Close", "Sell to Close", "Expired", "Assigned",
     }
+    opened = 0.0
+    closed = 0.0
     for trade in trades or []:
         if _contract_key(trade) != ident:
             continue
-        if str(trade.get("action") or "") in closes:
-            return True
-    return False
+        action = str(trade.get("action") or "")
+        try:
+            quantity = abs(float(trade.get("quantity") or 0))
+        except (TypeError, ValueError):
+            quantity = 0.0
+        if action in opens:
+            opened += quantity
+        elif action in closes:
+            closed += quantity
+    if closed <= 1e-9:
+        return False
+    return opened <= 1e-9 or closed >= opened - 1e-9
 
 
 def _opening_cash_for_option(position, trades) -> float:
+    """Absolute premium paid or collected on the opening fills."""
     ident = _contract_key(position)
     short = _position_is_short_option(position, trades)
     want = {"option_sell_to_open", "Sell to Open"} if short else {
@@ -703,6 +725,50 @@ def _opening_cash_for_option(position, trades) -> float:
                 )
             except (TypeError, ValueError):
                 amount = 0.0
+        cash += amount
+    return round(cash, 2)
+
+
+def _option_net_cash_for_option(position, trades) -> float:
+    """Signed cash from every known fill on one option contract."""
+    ident = _contract_key(position)
+    option_actions = {
+        "option_sell_to_open", "option_buy_to_open",
+        "option_buy_to_close", "option_sell_to_close",
+        "option_expired", "option_assigned", "option_exercised",
+        "Sell to Open", "Buy to Open", "Buy to Close", "Sell to Close",
+        "Expired", "Assigned", "Exercised",
+    }
+    cash = 0.0
+    for trade in trades or []:
+        if _contract_key(trade) != ident:
+            continue
+        action = str(trade.get("action") or "")
+        if action not in option_actions:
+            continue
+        try:
+            amount = float(trade.get("amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if abs(amount) < 0.01:
+            try:
+                gross = (
+                    abs(float(trade.get("quantity") or 0))
+                    * abs(float(trade.get("price") or 0))
+                    * 100
+                )
+            except (TypeError, ValueError):
+                gross = 0.0
+            if action in (
+                "option_sell_to_open", "option_sell_to_close",
+                "Sell to Open", "Sell to Close",
+            ):
+                amount = gross
+            elif action in (
+                "option_buy_to_open", "option_buy_to_close",
+                "Buy to Open", "Buy to Close",
+            ):
+                amount = -gross
         cash += amount
     return round(cash, 2)
 
@@ -764,7 +830,7 @@ def promote_expired_snapshot_options(current_positions, trades, *, symbol, now_e
         short = _position_is_short_option(position, trades)
         direction = "Sold" if short else "Bought"
         cash = _opening_cash_for_option(position, trades)
-        signed = cash if short else -cash
+        signed = _option_net_cash_for_option(position, trades)
         root = str(parsed.get("root") or symbol or "").strip().upper()
         close = underlying.get(str(position.get("symbol") or symbol or "").strip().upper())
         if close is None:
@@ -782,7 +848,11 @@ def promote_expired_snapshot_options(current_positions, trades, *, symbol, now_e
             now_et=now,
             broker_closed=broker_closed,
         )
-        if not settlement.settled and not broker_closed:
+        if (
+            not settlement.settled
+            and not broker_closed
+            and not settlement.close_type
+        ):
             kept.append(position)
             continue
         shares = 0.0
@@ -799,6 +869,10 @@ def promote_expired_snapshot_options(current_positions, trades, *, symbol, now_e
             close_type = settlement.close_type
             pnl = round(float(settlement.realized_pnl or 0), 2)
             close_date = settlement.close_date.isoformat() if settlement.close_date else expiry.isoformat()
+        elif settlement.close_type:
+            close_type = settlement.close_type
+            pnl = round(float(settlement.realized_pnl or 0), 2)
+            close_date = ""
         else:
             close_type = "Expired"
             pnl = round(signed, 2)

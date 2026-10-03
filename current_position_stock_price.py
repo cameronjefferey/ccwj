@@ -120,13 +120,18 @@ def _get_crypto_symbols():
 _YAHOO_BARE_IS_THE_STOCK = frozenset({"SNX", "SEI", "COMP"})
 
 
-# Cash-settled index options. Yahoo has no equity named SPXW (or SPX).
-# The official close is the index. Confirmed 2026-10-02 against yfinance:
+# Cash-index context prices. Yahoo has no equity named SPXW (or SPX).
+# Confirmed 2026-10-02 against yfinance:
 # ^GSPC and ^SPX both printed 7666.45 on 2026-10-01 (above the 7655
 # long strike of that day's SPXW call spread). ^NDX, ^RUT, and ^VIX
 # also return a daily close. XSP is the mini SPX, one tenth of ^GSPC.
 # The loader writes the scaled close back under the broker root so
 # SPXW joins on SPXW and the parent SPX row is the same print.
+#
+# Important: standard SPX/NDX/RUT and VIX options are AM-settled against
+# special opening quotations (SET/VRO), not these daily closes. The dbt
+# settlement model deliberately ignores these rows for those roots while
+# retaining them as underlying chart context.
 _INDEX_YAHOO = {
     "SPX": (("^GSPC", "^SPX"), 1.0),
     "SPXW": (("^GSPC", "^SPX"), 1.0),
