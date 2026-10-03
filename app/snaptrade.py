@@ -27,10 +27,12 @@ templates, and tests can pattern-match between the two:
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
 import threading
 import time
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from typing import Optional
 from urllib.parse import quote
@@ -310,8 +312,35 @@ def snaptrade_enabled() -> bool:
 # forever", and the SDK's request() default is None — a stalled broker
 # call then holds a gunicorn worker until the worker kill. A single
 # number is both the connect and the read budget. Three seconds is the
-# cap so one slow broker cannot pin a worker for the whole site.
+# cap for page loads (quotes, practice polls) so one slow broker cannot
+# pin a worker for the whole site.
 _SNAPTRADE_HTTP_TIMEOUT = 3
+# Sync reads a multi-year activities archive. The page-load cap above
+# aborts that pull (urllib3 then retries, and Sync now dies around 27s
+# with no SnapTrade status). Sync uses this longer budget instead.
+_SNAPTRADE_SYNC_HTTP_TIMEOUT = int(
+    os.environ.get("SNAPTRADE_SYNC_HTTP_TIMEOUT", "60") or "60"
+)
+_snaptrade_http_timeout: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "snaptrade_http_timeout", default=None,
+)
+
+
+def _current_snaptrade_timeout() -> int:
+    override = _snaptrade_http_timeout.get()
+    if override is not None:
+        return override
+    return _SNAPTRADE_HTTP_TIMEOUT
+
+
+@contextmanager
+def snaptrade_sync_timeout():
+    """Use the long sync budget for the enclosed SnapTrade calls."""
+    token = _snaptrade_http_timeout.set(_SNAPTRADE_SYNC_HTTP_TIMEOUT)
+    try:
+        yield
+    finally:
+        _snaptrade_http_timeout.reset(token)
 
 
 def _apply_snaptrade_timeout(client):
@@ -346,7 +375,7 @@ def _apply_snaptrade_timeout(client):
 
         def _request(*args, _orig=original, **kwargs):
             if kwargs.get("timeout") is None:
-                kwargs["timeout"] = _SNAPTRADE_HTTP_TIMEOUT
+                kwargs["timeout"] = _current_snaptrade_timeout()
             from app.request_timing import add_outbound
             started = time.perf_counter()
             try:
@@ -2002,6 +2031,13 @@ def _force_refresh_brokerage(user_id, snaptrade_account_id, *, throttle_seconds=
     )
 
 
+def _public_sync_label(label, tenant_id=None):
+    """Account nickname, or ``Account N`` when privacy mode is on."""
+    from app.privacy import shown_account
+    shown = shown_account(label, tenant_id)
+    return shown if shown else (label or "Account")
+
+
 def _flash_and_redirect_after_sync(res, *, first_done, refreshed=False):
     """Shared post-sync UX for the single-account sync routes.
 
@@ -2019,7 +2055,8 @@ def _flash_and_redirect_after_sync(res, *, first_done, refreshed=False):
     """
     if not res["ok"]:
         flash(
-            "SnapTrade sync didn't finish. Try again in a minute, or reconnect "
+            res.get("user_message")
+            or "SnapTrade sync didn't finish. Try again in a minute, or reconnect "
             "the broker if it keeps happening.",
             "danger",
         )
@@ -2029,8 +2066,9 @@ def _flash_and_redirect_after_sync(res, *, first_done, refreshed=False):
     trade_word = "trade" if hr == 1 else "trades"
     pos_word = "position" if cr == 1 else "positions"
     verb = "Refresh + sync" if refreshed else "Sync"
+    label = _public_sync_label(res.get("label"), res.get("tenant_id"))
     summary = (
-        f"{verb} complete for {res['label']}. Pulled {hr:,} {trade_word} "
+        f"{verb} complete for {label}. Pulled {hr:,} {trade_word} "
         f"and {cr} open {pos_word}."
     )
 
@@ -2269,6 +2307,8 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         "github_no_changes": False,
         "transactions_initial_sync_completed": False,
         "error": None,
+        "user_message": None,
+        "tenant_id": acc_row.get("tenant_id"),
     }
 
     # MANDATORY plan gate (reverse trial, see app/plan.py): a lapsed trial
@@ -2331,7 +2371,8 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
     # on rapid clicks.
     if force_refresh:
         try:
-            ok_r, msg_r, _rem = _force_refresh_brokerage(user_id, snaptrade_account_id)
+            with snaptrade_sync_timeout():
+                ok_r, msg_r, _rem = _force_refresh_brokerage(user_id, snaptrade_account_id)
             app.logger.info(
                 "SnapTrade force-refresh before sync user_id=%s account=%s: ok=%s (%s)",
                 user_id, snaptrade_account_id, ok_r, msg_r,
@@ -2346,17 +2387,18 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             )
 
     try:
-        result = _run_sync(
-            user_id,
-            client,
-            snap=snap,
-            acc_row=acc_row,
-            lookback_days=lookback_days,
-            defer_push=defer_push,
-            skip_activities=skip_activities,
-            history_only=history_only,
-            snapshot_generation=snapshot_generation,
-        )
+        with snaptrade_sync_timeout():
+            result = _run_sync(
+                user_id,
+                client,
+                snap=snap,
+                acc_row=acc_row,
+                lookback_days=lookback_days,
+                defer_push=defer_push,
+                skip_activities=skip_activities,
+                history_only=history_only,
+                snapshot_generation=snapshot_generation,
+            )
         # A successful SnapTrade read is not yet a completed first sync:
         # SnapTrade's authoritative transaction-status flag must confirm that
         # its historical archive is fully indexed, and the resulting seed write
@@ -2580,6 +2622,17 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             broker_slug=acc_row.get("broker_slug"), ok=False,
         )
         out["error"] = "connection_broken"
+    except _SnapTradeStepError as step_exc:
+        out["error"] = f"{step_exc.step}:{step_exc.status}"
+        out["user_message"] = step_exc.user_message
+        record_snaptrade_sync_attempt(
+            user_id, snaptrade_account_id, error=str(step_exc)[:500],
+            snapshot_generation=snapshot_generation,
+        )
+        record_snaptrade_sync_observation(
+            user_id, snaptrade_account_id,
+            broker_slug=acc_row.get("broker_slug"), ok=False,
+        )
     except Exception as exc:
         from app import app as _app
         _app.logger.exception(
@@ -2627,9 +2680,10 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
     refreshed_any = False
     for acc_row in rows:
         try:
-            ok_r, _msg_r, _rem = _force_refresh_brokerage(
-                user_id, acc_row["snaptrade_account_id"],
-            )
+            with snaptrade_sync_timeout():
+                ok_r, _msg_r, _rem = _force_refresh_brokerage(
+                    user_id, acc_row["snaptrade_account_id"],
+                )
             refreshed_any = refreshed_any or bool(ok_r)
         except Exception as _exc:
             app.logger.warning(
@@ -2657,13 +2711,17 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
             if res["github_pushed"] and res["github_head_sha"]:
                 last_pushed_sha = res["github_head_sha"]
         else:
-            failures.append({"label": res["label"], "reason": res["error"] or "unknown"})
+            failures.append({
+                "label": _public_sync_label(res.get("label"), res.get("tenant_id")),
+                "reason": res.get("user_message") or res["error"] or "unknown",
+            })
 
     parts = []
     history_pending_accounts = []  # accounts where positions came through but trades didn't
     if successes:
         per_account = ", ".join(
-            f"{s['label']}: {s['history_rows']:,} {'trade' if s['history_rows'] == 1 else 'trades'}, "
+            f"{_public_sync_label(s.get('label'), s.get('tenant_id'))}: "
+            f"{s['history_rows']:,} {'trade' if s['history_rows'] == 1 else 'trades'}, "
             f"{s['current_rows']} open {'position' if s['current_rows'] == 1 else 'positions'}"
             for s in successes
         )
@@ -2676,7 +2734,8 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
         # genuinely has zero recent trades. Tell the user honestly
         # rather than letting them stare at an empty positions page.
         history_pending_accounts = [
-            s["label"] for s in successes
+            _public_sync_label(s.get("label"), s.get("tenant_id"))
+            for s in successes
             if int(s.get("history_rows") or 0) == 0
             and int(s.get("current_rows") or 0) > 0
         ]
@@ -2750,6 +2809,72 @@ class _SnapTradeAuthError(RuntimeError):
         self.endpoint = endpoint
         self.original = exc
         super().__init__(f"{endpoint}: {exc}")
+
+
+class _SnapTradeStepError(RuntimeError):
+    """A sync read failed. ``step`` is accounts, holdings, activities, or orders."""
+
+    def __init__(self, step: str, endpoint: str, status, exc: Exception):
+        self.step = step
+        self.endpoint = endpoint
+        self.status = status
+        self.original = exc
+        self.user_message = _sync_user_reason(step, status)
+        super().__init__(f"{step} {endpoint} status={status}: {exc}")
+
+
+def _snaptrade_http_status(exc) -> str:
+    """HTTP status, or ``timeout``, from a SnapTrade SDK / urllib3 error."""
+    status = getattr(exc, "status", None)
+    if status not in (None, ""):
+        return str(status)
+    name = type(exc).__name__.lower()
+    text = str(exc).lower()
+    if "timeout" in name or "timed out" in text or "timeout" in text:
+        return "timeout"
+    import re
+    match = re.search(r"\((\d{3})\)", str(exc))
+    if match:
+        return match.group(1)
+    return "none"
+
+
+def _log_snaptrade_sync_error(step: str, endpoint: str, account_id, exc) -> str:
+    """One grep-able line: step, endpoint, and status. Returns the status."""
+    status = _snaptrade_http_status(exc)
+    app.logger.warning(
+        "SnapTrade sync error step=%s endpoint=%s status=%s account=%s error=%s: %s",
+        step, endpoint, status, account_id, type(exc).__name__, str(exc)[:500],
+    )
+    return status
+
+
+def _sync_user_reason(step: str, status) -> str:
+    """Short sentence for the sync flash. No account name, no response body."""
+    what = {
+        "accounts": "your accounts",
+        "holdings": "your holdings",
+        "activities": "your trade history",
+        "orders": "today's orders",
+    }.get(step, "SnapTrade")
+    code = str(status or "")
+    if code == "timeout":
+        return f"SnapTrade timed out while reading {what}. Try again in a minute."
+    if code in ("429", "425"):
+        return "Your broker is rate-limiting this sync. Wait a few minutes and try again."
+    if code in ("401", "403"):
+        return "SnapTrade refused this sync. Reconnect the broker if it keeps happening."
+    if code.isdigit():
+        return f"SnapTrade couldn't read {what} (HTTP {code}). Try again in a minute."
+    return f"SnapTrade couldn't read {what}. Try again in a minute."
+
+
+def _raise_snaptrade_step(step, endpoint, account_id, exc):
+    """Log the SnapTrade failure, then raise a step error (or auth error)."""
+    status = _log_snaptrade_sync_error(step, endpoint, account_id, exc)
+    if _looks_like_auth_error(exc):
+        raise _SnapTradeAuthError(endpoint, exc)
+    raise _SnapTradeStepError(step, endpoint, status, exc)
 
 
 def _brokerage_authorization_disabled(client, snap, acc_row, *, user_id):
@@ -2930,7 +3055,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         activities = []
     else:
         activities = _fetch_activities(client, snap_user_id, snap_secret, snaptrade_account_id, start_date, end_date)
-    orders = _fetch_recent_orders(client, snap_user_id, snap_secret, snaptrade_account_id)
+    orders = _fetch_sync_orders(client, snap_user_id, snap_secret, snaptrade_account_id)
     positions = _fetch_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     option_holdings = _fetch_option_holdings(client, snap_user_id, snap_secret, snaptrade_account_id)
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
@@ -3217,9 +3342,9 @@ def _fetch_activities(client, snap_user_id, snap_secret, account_id, start_date,
                 limit=page_size,
             )
         except Exception as exc:
-            if _looks_like_auth_error(exc):
-                raise _SnapTradeAuthError("get_account_activities", exc)
-            raise
+            _raise_snaptrade_step(
+                "activities", "get_account_activities", account_id, exc,
+            )
         page = _coerce_paginated_data(resp)
         if not page:
             break
@@ -3268,9 +3393,9 @@ def _fetch_positions(client, snap_user_id, snap_secret, account_id):
             account_id=account_id,
         )
     except Exception as exc:
-        if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError("get_user_account_positions", exc)
-        raise
+        _raise_snaptrade_step(
+            "holdings", "get_user_account_positions", account_id, exc,
+        )
     return _coerce_list(resp)
 
 
@@ -3294,13 +3419,11 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
             account_id=account_id,
         )
     except Exception as exc:
+        _log_snaptrade_sync_error(
+            "holdings", "list_option_holdings", account_id, exc,
+        )
         if _looks_like_auth_error(exc):
             raise _SnapTradeAuthError("list_option_holdings", exc)
-        app.logger.warning(
-            "SnapTrade list_option_holdings failed for account=%s: %s "
-            "— continuing without open-option snapshot (best-effort).",
-            account_id, exc,
-        )
         return []
     return _coerce_list(resp)
 
@@ -3353,11 +3476,8 @@ def _fetch_recent_orders(
         # connection_broken, locking the user out of their fresh
         # connection. Log loudly and continue — the canonical
         # activities path is the auth signal that matters.
-        app.logger.warning(
-            "SnapTrade _fetch_recent_orders failed for account=%s: %s — "
-            "falling back to activities-only history (orders endpoint is "
-            "best-effort; auth was already proven by _fetch_activities).",
-            account_id, exc,
+        _log_snaptrade_sync_error(
+            "orders", "get_user_account_recent_orders", account_id, exc,
         )
         if raise_on_error:
             raise
@@ -3386,10 +3506,8 @@ def _fetch_account_orders(client, snap_user_id, snap_secret, account_id, state="
             days=span,
         )
     except Exception as exc:
-        app.logger.warning(
-            "SnapTrade _fetch_account_orders failed for account=%s: %s — "
-            "practice will show the 24-hour recent list only.",
-            account_id, exc,
+        _log_snaptrade_sync_error(
+            "orders", "get_user_account_orders", account_id, exc,
         )
         return []
     return _order_rows(resp)
@@ -3420,6 +3538,32 @@ def _order_rows(resp):
     return out
 
 
+def _fetch_sync_orders(client, snap_user_id, snap_secret, account_id):
+    """Same-day fills from recent orders and the account orders endpoint.
+
+    ``recent_orders`` is the last 24 hours and, on Schwab, has come back
+    empty for option fills that the account orders endpoint already has.
+    ``state=executed`` and ``days=1`` is that endpoint's real-time window.
+    Recent rows win when both list the same brokerage order id. A failure
+    on either call is logged and skipped so one orders 403 cannot fail
+    the sync (activities remain the authoritative history).
+    """
+    recent = _fetch_recent_orders(
+        client, snap_user_id, snap_secret, account_id,
+    )
+    executed = _fetch_account_orders(
+        client, snap_user_id, snap_secret, account_id,
+        state="executed", days=1,
+    )
+    if not recent and executed:
+        app.logger.info(
+            "SnapTrade sync: recent_orders empty; account orders "
+            "state=executed days=1 returned %d for account=%s",
+            len(executed), account_id,
+        )
+    return _merge_order_rows(recent, executed)
+
+
 def _merge_order_rows(primary, secondary):
     """``primary`` wins when both lists share a brokerage order id."""
     seen = set()
@@ -3444,9 +3588,9 @@ def _fetch_balances(client, snap_user_id, snap_secret, account_id):
             account_id=account_id,
         )
     except Exception as exc:
-        if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError("get_user_account_balance", exc)
-        raise
+        _raise_snaptrade_step(
+            "accounts", "get_user_account_balance", account_id, exc,
+        )
     return _coerce_list(resp)
 
 
@@ -3458,9 +3602,9 @@ def _fetch_account_summary(client, snap_user_id, snap_secret, account_id):
             account_id=account_id,
         )
     except Exception as exc:
-        if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError("get_user_account_details", exc)
-        raise
+        _raise_snaptrade_step(
+            "accounts", "get_user_account_details", account_id, exc,
+        )
     data = _unwrap_body(resp)
     if isinstance(data, dict):
         return data

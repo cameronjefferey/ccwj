@@ -1238,6 +1238,7 @@ def _patch_run_sync_fetches(monkeypatch, *, account_summary):
     monkeypatch.setattr(_snap, "_brokerage_authorization_disabled", lambda *a, **k: False)
     monkeypatch.setattr(_snap, "_fetch_activities", lambda *a, **k: [])
     monkeypatch.setattr(_snap, "_fetch_recent_orders", lambda *a, **k: [])
+    monkeypatch.setattr(_snap, "_fetch_account_orders", lambda *a, **k: [])
     monkeypatch.setattr(_snap, "_fetch_positions", lambda *a, **k: [])
     monkeypatch.setattr(_snap, "_fetch_option_holdings", lambda *a, **k: [])
     monkeypatch.setattr(_snap, "_fetch_balances", lambda *a, **k: [])
@@ -1542,6 +1543,81 @@ def test_fetch_positions_still_raises_auth_error_on_403():
     with pytest.raises(_snap._SnapTradeAuthError) as exc_info:
         _snap._fetch_positions(_Boom, "u", "s", "acc")
     assert exc_info.value.endpoint == "get_user_account_positions"
+
+
+def test_activities_timeout_logs_step_endpoint_and_status(caplog):
+    """A long-history activities pull that times out must name the step,
+    the endpoint, and the status. The user-facing reason stays short."""
+    import logging
+    from datetime import date
+
+    class _Boom:
+        class account_information:
+            @staticmethod
+            def get_account_activities(**_):
+                raise TimeoutError("The read operation timed out")
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(_snap._SnapTradeStepError) as exc_info:
+            _snap._fetch_activities(
+                _Boom, "u", "s", "48086b12-acct",
+                date(2024, 1, 1), date(2026, 10, 2),
+            )
+    err = exc_info.value
+    assert err.step == "activities"
+    assert err.endpoint == "get_account_activities"
+    assert err.status == "timeout"
+    assert "trade history" in err.user_message
+    assert "48086b12" not in err.user_message
+    text = caplog.text
+    assert "SnapTrade sync error step=activities" in text
+    assert "endpoint=get_account_activities" in text
+    assert "status=timeout" in text
+    assert "account=48086b12-acct" in text
+
+
+def test_sync_flash_masks_the_account_and_shows_the_reason(monkeypatch):
+    from app import app
+    from flask import get_flashed_messages
+
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr(
+        "app.privacy.viewer_slots",
+        lambda: (
+            {"snaptrade:48086b12": "Account 1"},
+            {"Schwab Account": "Account 1"},
+        ),
+    )
+    with app.test_request_context("/snaptrade/accounts"):
+        _snap._flash_and_redirect_after_sync({
+            "ok": True,
+            "label": "Schwab Account",
+            "tenant_id": "snaptrade:48086b12",
+            "history_rows": 2,
+            "current_rows": 1,
+            "github_pushed": False,
+            "github_head_sha": None,
+            "github_error": None,
+            "github_seed_push_skipped": False,
+            "github_no_changes": True,
+        }, first_done=True)
+        success = " ".join(get_flashed_messages())
+    assert "Schwab Account" not in success
+    assert "Account 1" in success
+
+    with app.test_request_context("/snaptrade/accounts"):
+        _snap._flash_and_redirect_after_sync({
+            "ok": False,
+            "label": "Schwab Account",
+            "tenant_id": "snaptrade:48086b12",
+            "user_message": (
+                "SnapTrade timed out while reading your trade history. "
+                "Try again in a minute."
+            ),
+        }, first_done=True)
+        failure = " ".join(get_flashed_messages())
+    assert "Schwab Account" not in failure
+    assert "timed out while reading your trade history" in failure
 
 
 # ---------------------------------------------------------------------------

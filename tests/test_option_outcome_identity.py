@@ -1,5 +1,7 @@
 """Snapshot-only expiry rows recover quantity, open date, and kept %."""
 
+from datetime import date
+
 from app.position_detail import repair_snapshot_option_outcomes
 
 
@@ -193,3 +195,29 @@ def test_empty_snapshot_row_is_dropped_when_history_is_present():
     assert len(repaired) == 1
     assert repaired[0]["trade_symbol"] == "BE 10/02/2026 297.50 C"
     assert repaired[0]["open_date"] == "2026-09-28"
+
+
+def test_utc_snapshot_open_cannot_be_after_the_expiry(monkeypatch):
+    # Warehouse current_date() is UTC. After 8pm ET on Oct 2 the snapshot
+    # date is Oct 3 while the contract closed on the expiry, Oct 2.
+    monkeypatch.setattr(
+        "app.position_detail._market_today", lambda: date(2026, 10, 3),
+    )
+    outcome = {
+        "type": "option",
+        "trade_symbol": "BE    261002C00297500",
+        "direction": "Sold",
+        "close_type": "Settled at expiry (est.)",
+        "open_date": "2026-10-03",
+        "close_date": "2026-10-02",
+        "option_expiry": "2026-10-02",
+        "quantity": 2,
+        "premium_received": 430.0,
+        "premium_paid": 0,
+        "pnl": 430.0,
+        "return_pct": 100.0,
+        "tenant_id": "snaptrade:be",
+    }
+    repaired = repair_snapshot_option_outcomes([outcome], [])
+    assert repaired[0]["open_date"] == "2026-10-02"
+    assert repaired[0]["days_held"] == 0

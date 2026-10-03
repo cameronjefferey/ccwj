@@ -316,8 +316,43 @@ def repair_snapshot_option_outcomes(outcomes, trades):
             continue
         if ident:
             _fill_option_outcome_from_opens(outcome, fills_by_id.get(ident) or [])
+        _clamp_open_to_market_date(outcome)
         kept.append(outcome)
     return kept
+
+
+def _market_today():
+    """New York market date. BigQuery current_date() is UTC."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _clamp_open_to_market_date(outcome):
+    """A UTC snapshot cannot open a settled contract on the next calendar day.
+
+    The warehouse stamps snapshot_date with current_date(), which rolls
+    at 20:00 ET. An expiry settled that evening then reads opened the
+    next day and closed on the expiry. Pull the open back to the New
+    York date, and never later than the close.
+    """
+    open_s = str(outcome.get("open_date") or "")[:10]
+    if len(open_s) != 10:
+        return
+    close_s = str(outcome.get("close_date") or "")[:10]
+    today = _market_today().isoformat()
+    cap = today if open_s > today else open_s
+    if len(close_s) == 10 and open_s > close_s:
+        cap = close_s if cap > close_s else cap
+    if cap == open_s:
+        return
+    outcome["open_date"] = cap
+    if len(close_s) == 10:
+        try:
+            outcome["days_held"] = (
+                pd.to_datetime(close_s) - pd.to_datetime(cap)
+            ).days
+        except Exception:
+            pass
 
 
 def _opening_fills(outcome, fills):

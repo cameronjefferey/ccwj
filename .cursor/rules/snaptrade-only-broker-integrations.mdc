@@ -52,8 +52,13 @@ Load `~/.cursor/skills/broker-sync-safety/SKILL.md` and walk its pre-flight chec
   needed. But `activities` (the settled transaction / trade-history feed) is **T+1 for
   all brokerages**: SnapTrade can only return a transaction once the broker POSTS it,
   the night after market close. **So same-day trades must come from the real-time
-  ORDERS feed** (`recent_orders` → `orders_to_history_df` in `app/snaptrade_normalize.py`),
-  NOT from `activities`; full transaction detail backfills the next day. (Our own
+  ORDERS feed** (`_fetch_sync_orders`: `recent_orders` plus
+  `get_user_account_orders(state=executed, days=1)`, then
+  `orders_to_history_df` in `app/snaptrade_normalize.py`),
+  NOT from `activities`; full transaction detail backfills the next day.
+  Multi-leg option orders live on `legs[]` (OCC text, no top-level
+  `option_symbol`) and must be flattened into provisional fills. A 403 on
+  either orders call is best-effort and must not mark the connection broken. (Our own
   `snaptrade_sync_observations` showed Schwab holdings *detection* lagging ~1–2h
   intraday some days — treat that as detection jitter, not a plan limitation; do NOT
   design around it with billed refresh calls.)
