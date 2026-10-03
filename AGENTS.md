@@ -196,7 +196,14 @@ callers don't break.
 
 Alpaca Paper accounts stay out of the real total, allocation, and
 account count. A mixed book drops them; a paper-only `?tenants=` scope
-keeps them. An unscoped admin read (`tenant_ids` None) also drops known
+keeps them. An explicit paper selection, including a mixed `?tenants=`
+that names the paper account, keeps paper on that page. Position chips,
+the "traded in N accounts" count, and the symbol strip follow the same
+rule and default to the real account when a symbol exists in both.
+Positions, Strategies, Sectors, and Overview/Today movers use that scope.
+Labels say Paper (privacy mode: `Account N · Paper`) on the chip, the
+account picker, and position legs. Practice (`/practice`) still shows
+the paper book. An unscoped admin read (`tenant_ids` None) also drops known
 paper tenants from real totals; a lookup miss leaves that read unscoped.
 Overview shows that paper value beside the real total,
 labeled Paper, with a link that opens just the paper book.
@@ -273,9 +280,16 @@ What's working:
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Option rows read `int_option_contract_daily_pnl` (the same realize-on-close
   plus expiry estimate as the position chart), not a zero mark's opening
-  credit. The line under the symbol is the contracts (`10× 7650/7655C spread`,
-  `2× MU 120C`). The other line is `Open contracts, change in value`,
-  `Closed today`, or both dollars when the day mixed a mark change and a close.
+  credit. A same-day structure is split with the position-page lot grouping
+  (`split_option_lots` / `group_vertical_spreads` on that session's fills),
+  so two SPXW trades at the same strikes are two lines (20× closed, 10×
+  expired) and the dollar is the fill cash after broker fees. A gross
+  order amount is netted once, the same way `stg_history` does; a statement
+  amount that is already net is not charged again. Multi-day mark changes
+  stay on the mart day-delta. The line under the symbol is the contracts
+  (`10× 7650/7655C spread`, `20× 7730/7735C spread`, `2× MU 120C`). The
+  other line is `Open contracts, change in value`, `Closed today`,
+  `Expired`, or both dollars when the day mixed a mark change and a close.
   Clicking a mover opens the same right-side position drawer as Today.
 - Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the current New York market date. It must not start on the older settled close: doing so shortens the forward window every weekend / pre-market and hides day-14 events whenever any earlier chip makes the radar replace the legacy list. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
@@ -307,7 +321,8 @@ open contracts as disclosures.
 - Movers (only while `_session_is_live`: open or after-hours) use the two
   newest `stg_daily_prices` rows with `date <=` calendar today — includes
   in-session last-trade bars. Header is holdings price impact, not full
-  account value. Clicking a mover (or an open-contract row) opens the
+  account value. Option rows are the same lot split as Overview: one line
+  per same-day vertical, and the dollar includes broker fees. Clicking a mover (or an open-contract row) opens the
   right-side position drawer (same motion as Strategy Fit's cell panel)
   with lifetime P&amp;L, open lots, and a link to the full position page;
   cmd/ctrl-click still goes straight there. Covered Call names that
@@ -683,7 +698,15 @@ Logged-out public pages also record page views, CTA clicks, scroll
 depth, and public video plays. Ad pixels stay off on DNT/GPC; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
 `data.test_id` to every v3 CAPI body for Event testing and must be
-removed after. Admin → Acquisition is `/admin/analytics`.
+removed after. Admin → Acquisition is `/admin/analytics`. That page
+drops bots and crawlers (user agent), visits with no JavaScript beacon
+(older rows with no beacon flag still count), and internal traffic:
+signed-in admins, `testingcameron`, any visitor cookie that ever logged
+in as one of those, `INTERNAL_IPS`, and `?ht_internal=1` (sets the
+`ht_internal` cookie). Where they came from is utm source and campaign,
+otherwise the referrer host, otherwise Direct, plus how many visits were
+filtered out. A stored user agent is backfilled; rows that never saved
+one stay in the count.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. One story: headline, then right now, then the rest behind disclosures.**

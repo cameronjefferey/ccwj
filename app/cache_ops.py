@@ -205,8 +205,8 @@ def _send_data_ready_after_rebuild():
 
 
 def _warm_scopes():
-    """(user_id, tenant_id list) pairs to warm: every user with linked
-    tenants, plus one unscoped pass (admin view / shared queries).
+    """(user_id, scope ids, owned ids) triples to warm, plus one unscoped
+    admin pass. Scope ids are the real book (paper-only books stay paper).
     Filters are rendered per-query inside ``_warm_one_scope`` because
     different queries need different column prefixes (e.g. the trader
     story's ``h.tenant_id``)."""
@@ -222,14 +222,22 @@ def _warm_scopes():
     except Exception as exc:
         _log.warning("cache warm: could not list users: %s", exc)
         rows = []
+    from app.paper_accounts import drop_paper_from_mixed_book
+
     for row in rows:
         uid = row.get("user_id")
         tenants = get_broker_tenants_for_user(uid) or []
         ids = [t["tenant_id"] for t in tenants if t.get("tenant_id")]
-        if ids:
-            scopes.append((uid, ids))
+        by_id = {t.get("tenant_id"): t for t in tenants if t.get("tenant_id")}
+        # Default pages drop paper from a mixed book. Warm that same scope
+        # so the cache key matches. A paper-only book stays paper. The
+        # third element is every owned id, which the position chip query
+        # still reads before Python drops unselected paper.
+        scoped = drop_paper_from_mixed_book(ids, by_id)
+        if scoped:
+            scopes.append((uid, scoped, ids))
     # Admin sees the unscoped variant (tenant_ids=None -> "" filter).
-    scopes.append((None, None))
+    scopes.append((None, None, None))
     return scopes
 
 
@@ -340,7 +348,7 @@ def _stamp_pages_warm(uid, tenant_ids, symbols=()):
             mark_page_warm(uid, "position_detail", str(sym).strip())
 
 
-def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
+def _warm_one_scope(client, uid, tenant_ids, *, heavy=True, owned_ids=None):
     """Run the hot query sets for one tenant scope through the cache."""
     from app.models import get_user_profile
     from app.query_cache import bind_user_query_epoch, cached_query_df
@@ -366,6 +374,11 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
     from app.position_detail import position_detail_query_batch
 
     tenant_filter = tenant_sql_and(tenant_ids)
+    # /accounts keeps the full owned set in SQL (one cache key) and slices
+    # to the visible book in pandas. Overview, Today, and Positions use
+    # the visible book in SQL, which is ``tenant_ids``.
+    sql_ids = tenant_ids if owned_ids is None else owned_ids
+    sql_filter = tenant_sql_and(sql_ids)
 
     tz = "America/New_York"
     if uid is not None:
@@ -422,7 +435,7 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
 
     # Accounts performance + the Python chart payload (the 4s walk).
     acct_dfs = _bq_parallel(
-        client, accounts_query_batch(tenant_filter, include_trades=False))
+        client, accounts_query_batch(sql_filter, include_trades=False))
     try:
         current_df = filter_df_by_tenant_ids(
             acct_dfs.get("current"), tenant_ids)
@@ -433,7 +446,10 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
         strat_class_df = _apply_dividend_strategy_labels(
             strat_class_df, strat_summary_df)
         strategy_map = _primary_strategy_map(strat_summary_df, strat_class_df)
-        accounts_chart_payload(client, tenant_ids, current_df, strategy_map)
+        accounts_chart_payload(
+            client, sql_ids, current_df, strategy_map,
+            display_tenant_ids=tenant_ids,
+        )
     except Exception as exc:
         _log.warning("cache warm: accounts chart user=%r failed: %s", uid, exc)
 
@@ -441,7 +457,7 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True):
 
     if heavy:
         _bq_parallel(client, story_query_batch(tenant_ids))
-        owned = tenant_ids
+        owned = tenant_ids if owned_ids is None else owned_ids
         for sym in symbols:
             try:
                 _bq_parallel(
@@ -464,16 +480,20 @@ def _warm_worker():
     ok = failed = 0
     try:
         client = get_bigquery_client()
-        for uid, tenant_ids in _warm_scopes():
+        for uid, tenant_ids, owned_ids in _warm_scopes():
             try:
-                _warm_one_scope(client, uid, tenant_ids, heavy=True)
+                _warm_one_scope(
+                    client, uid, tenant_ids, heavy=True, owned_ids=owned_ids,
+                )
                 ok += 1
                 ids = list(tenant_ids or [])
                 if uid is not None and 1 < len(ids) <= _PER_TENANT_WARM_CAP:
                     for tid in ids:
                         try:
                             _warm_one_scope(
-                                client, uid, [tid], heavy=False)
+                                client, uid, [tid], heavy=False,
+                                owned_ids=owned_ids,
+                            )
                             ok += 1
                         except Exception as exc:
                             failed += 1

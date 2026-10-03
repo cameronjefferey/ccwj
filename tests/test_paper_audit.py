@@ -11,10 +11,12 @@ os.environ.setdefault("HAPPYTRADER_SKIP_DB_INIT", "1")
 
 from app.paper_accounts import (
     drop_paper_from_mixed_book,
+    drop_unselected_paper_rows,
     is_paper_row,
     paper_display_label,
     paper_scope_note,
     position_link_symbol,
+    symbol_account_chips,
 )
 from app.paper_practice import (
     _readout_symbol,
@@ -47,6 +49,85 @@ def test_alpaca_paper_row_is_paper_and_live_alpaca_is_not():
     assert not is_paper_row(schwab)
     assert paper_display_label(paper) == "Paper"
     assert paper_display_label(live) is None
+    nick = dict(paper)
+    nick["display_nickname"] = "Testing"
+    assert paper_display_label(nick) == "Testing · Paper"
+    already = dict(paper)
+    already["display_nickname"] = "My Paper"
+    assert paper_display_label(already) == "My Paper"
+
+
+def test_position_chips_and_strip_default_to_the_real_account():
+    import pandas as pd
+
+    rows = [
+        {"tenant_id": "snaptrade:real", "account_name": "Schwab Account",
+         "display_nickname": "Account 1"},
+        {"tenant_id": "snaptrade:paper", "account_name": "Alpaca Paper Account",
+         "display_nickname": None},
+        {"tenant_id": "snaptrade:other", "account_name": "Fidelity Account",
+         "display_nickname": "Roth"},
+    ]
+    labels = {
+        "snaptrade:real": "Account 1",
+        "snaptrade:paper": "Paper",
+        "snaptrade:other": "Roth",
+    }
+    traded = ["snaptrade:real", "snaptrade:paper", "snaptrade:other"]
+    real_book = symbol_account_chips(traded, ["snaptrade:real", "snaptrade:other"], rows, labels)
+    assert [c["tenant_id"] for c in real_book] == ["snaptrade:real", "snaptrade:other"]
+    assert all(c["selected"] for c in real_book)
+    paper_only = symbol_account_chips(traded, ["snaptrade:paper"], rows, labels)
+    assert [c["tenant_id"] for c in paper_only] == [
+        "snaptrade:real", "snaptrade:paper", "snaptrade:other",
+    ]
+    by_id = {c["tenant_id"]: c for c in paper_only}
+    assert by_id["snaptrade:paper"]["selected"] is True
+    assert by_id["snaptrade:paper"]["label"] == "Paper"
+    assert by_id["snaptrade:real"]["selected"] is False
+    unscoped = symbol_account_chips(traded, None, rows, labels)
+    assert "snaptrade:paper" not in {c["tenant_id"] for c in unscoped}
+
+    frame = pd.DataFrame({
+        "tenant_id": ["snaptrade:real", "snaptrade:paper", "snaptrade:other"],
+        "symbol": ["SPXW", "SPXW", "AAPL"],
+        "account": ["Schwab Account", "Alpaca Paper Account", "Fidelity Account"],
+    })
+    kept = drop_unselected_paper_rows(frame, ["snaptrade:real", "snaptrade:other"], rows)
+    assert list(kept["tenant_id"]) == ["snaptrade:real", "snaptrade:other"]
+    both = drop_unselected_paper_rows(
+        frame, ["snaptrade:real", "snaptrade:paper"], rows,
+    )
+    assert list(both["tenant_id"]) == [
+        "snaptrade:real", "snaptrade:paper", "snaptrade:other",
+    ]
+    # Warehouse label is enough when the broker row is missing.
+    leaked = drop_unselected_paper_rows(frame, ["snaptrade:real"], [])
+    assert list(leaked["symbol"]) == ["SPXW", "AAPL"]
+    assert "snaptrade:paper" not in set(leaked["tenant_id"])
+
+
+def test_warm_default_scope_drops_paper_from_a_mixed_book():
+    from app.cache_ops import _warm_scopes
+
+    tenants = [
+        {"tenant_id": "snaptrade:real", "account_name": "Schwab Account"},
+        {"tenant_id": "snaptrade:paper", "account_name": "Alpaca Paper Account"},
+    ]
+    with patch("app.db.fetch_all", return_value=[{"user_id": 9}]), \
+         patch("app.models.get_broker_tenants_for_user", return_value=tenants):
+        scopes = _warm_scopes()
+    user = [row for row in scopes if row[0] == 9]
+    assert user == [(9, ["snaptrade:real"], ["snaptrade:real", "snaptrade:paper"])]
+    assert scopes[-1] == (None, None, None)
+
+    paper_only = [tenants[1]]
+    with patch("app.db.fetch_all", return_value=[{"user_id": 4}]), \
+         patch("app.models.get_broker_tenants_for_user", return_value=paper_only):
+        scopes = _warm_scopes()
+    assert [row for row in scopes if row[0] == 4] == [
+        (4, ["snaptrade:paper"], ["snaptrade:paper"]),
+    ]
 
 
 def test_share_card_scope_drops_paper_unless_the_request_is_paper():
@@ -65,6 +146,12 @@ def test_share_card_scope_drops_paper_unless_the_request_is_paper():
         with patch("app.share_card._owned_tenant_ids", return_value=["snaptrade:real", "snaptrade:paper"]), \
              patch("app.models.get_broker_tenants_for_user", return_value=rows):
             assert share_card._share_scope_ids(9) == ["snaptrade:paper"]
+    with app.test_request_context(
+        "/share/card.png?tenants=snaptrade:real,snaptrade:paper"
+    ):
+        with patch("app.share_card._owned_tenant_ids", return_value=["snaptrade:real", "snaptrade:paper"]), \
+             patch("app.models.get_broker_tenants_for_user", return_value=rows):
+            assert share_card._share_scope_ids(9) == ["snaptrade:real"]
 
 
 def test_mixed_book_drops_paper_and_paper_only_stays():
@@ -134,6 +221,22 @@ def test_scope_excludes_paper_unless_the_scope_is_paper():
              patch.object(routes, "is_admin", lambda u: False), \
              patch.object(routes, "get_broker_tenants_for_user", lambda uid: owned):
             assert routes._tenants_for_scope("") == ["snaptrade:paper"]
+
+    with app.test_request_context(
+        "/position/SPXW?tenants=snaptrade:real,snaptrade:paper"
+    ):
+        with patch.object(routes, "current_user", user), \
+             patch.object(routes, "is_admin", lambda u: False), \
+             patch.object(routes, "get_broker_tenants_for_user", lambda uid: owned):
+            assert routes._tenants_for_scope("") == [
+                "snaptrade:real", "snaptrade:paper",
+            ]
+
+    with app.test_request_context("/overview?account=not-a-real-label"):
+        with patch.object(routes, "current_user", user), \
+             patch.object(routes, "is_admin", lambda u: False), \
+             patch.object(routes, "get_broker_tenants_for_user", lambda uid: owned):
+            assert routes._tenants_for_scope("not-a-real-label") == ["snaptrade:real"]
 
 
 def test_ticks_and_spx_link():

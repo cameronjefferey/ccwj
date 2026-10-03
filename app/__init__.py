@@ -91,10 +91,9 @@ def _account_label_filter(account_name, tenant_id=None):
     if not account_name and not tenant_id:
         return account_name
     try:
-        from app.privacy import mask_account_label
-        masked = mask_account_label(account_name, tenant_id)
-        if masked is not None:
-            return masked
+        from app.privacy import privacy_mode_on, shown_account
+        if privacy_mode_on():
+            return shown_account(account_name, tenant_id)
     except Exception:
         pass
     try:
@@ -159,9 +158,8 @@ def _privacy_account_filter(name, tenant_id=None):
     them through ``account_label`` would swap that for the disambiguated
     broker label. This filter only applies Account N.
     """
-    from app.privacy import mask_account_label
-    masked = mask_account_label(name, tenant_id)
-    return masked if masked is not None else name
+    from app.privacy import shown_account
+    return shown_account(name, tenant_id)
 
 
 app.add_template_filter(_privacy_balance_filter, name="privacy_balance")

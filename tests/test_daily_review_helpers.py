@@ -607,6 +607,200 @@ class TestBuildTodayMovers:
         assert row["option_caption"] == "Closed today"
         assert result["options_impact"] == -3574.44
 
+    def test_two_oct2_spxw_lots_split_and_include_fees(self):
+        """20× closed and 10× expired, not one 30× line at the gross +$2,000.
+
+        Order amounts are the gross premium. Fees sit beside them. The
+        card uses the position-page lot split and nets each fee once.
+        """
+        day = date(2026, 10, 2)
+        short = "SPXW  261002C07730000"
+        long = "SPXW  261002C07735000"
+        opt = pd.DataFrame([
+            {
+                "symbol": "SPXW", "trade_symbol": short,
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment",
+                "option_strike": 7730, "option_type": "C",
+                "option_expiry": day, "direction": "Sold",
+                "quantity": 30, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": 10842.00,
+            },
+            {
+                "symbol": "SPXW", "trade_symbol": long,
+                "today_date": day, "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment",
+                "option_strike": 7735, "option_type": "C",
+                "option_expiry": day, "direction": "Bought",
+                "quantity": 30, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -8842.00,
+            },
+        ])
+
+        def fills(net_already):
+            # (action, occ, qty, price, gross, fee)
+            legs = [
+                ("option_sell_to_open", short, 20, 6.85, 13700.00, 24.44),
+                ("option_buy_to_open", long, 20, 5.35, -10700.00, 24.44),
+                ("option_sell_to_close", long, 20, 1.824, 3648.00, 24.44),
+                ("option_buy_to_close", short, 20, 2.824, -5648.00, 24.44),
+                ("option_sell_to_open", short, 10, 2.79, 2790.00, 12.22),
+                ("option_buy_to_open", long, 10, 1.79, -1790.00, 12.22),
+            ]
+            rows = []
+            for action, occ, qty, price, gross, fee in legs:
+                amount = gross
+                if net_already:
+                    amount = round(gross - fee, 2) if gross > 0 else round(gross - fee, 2)
+                rows.append({
+                    "tenant_id": "snaptrade:sara",
+                    "account": "Sara Investment",
+                    "trade_date": day,
+                    "action": action,
+                    "trade_symbol": occ,
+                    "underlying_symbol": "SPXW",
+                    "quantity": qty,
+                    "price": price,
+                    "amount": amount,
+                    "fees": fee,
+                    "instrument_type": "Call",
+                })
+            rows.append({
+                "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment",
+                "trade_date": day,
+                "action": "equity_buy",
+                "trade_symbol": "SPXW",
+                "underlying_symbol": "SPXW",
+                "quantity": 100, "price": 10, "amount": -1000, "fees": 0,
+            })
+            rows.append({
+                "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment",
+                "trade_date": day,
+                "action": "option_expired",
+                "trade_symbol": short,
+                "quantity": 30, "price": 0, "amount": 0, "fees": 0,
+            })
+            return pd.DataFrame(rows)
+
+        for net_already in (False, True):
+            result = _build_today_movers(
+                None, options_moves_df=opt, option_fills_df=fills(net_already),
+            )
+            spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
+            assert result["losers"] == []
+            assert len(spxw) == 2
+            by_detail = {r["contract_detail"]: r for r in spxw}
+            assert set(by_detail) == {
+                "20× 7730/7735C spread",
+                "10× 7730/7735C spread",
+            }
+            assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
+            assert by_detail["20× 7730/7735C spread"]["option_caption"] == "Closed today"
+            assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
+            assert by_detail["10× 7730/7735C spread"]["option_caption"] == "Expired"
+            assert result["options_impact"] == 1877.80
+            assert all("30×" not in (r.get("contract_detail") or "") for r in spxw)
+            assert result["combined_impact"] == 1877.80
+
+    def test_itm_settlement_stays_one_line_when_fills_omit_the_width(self):
+        """Oct 1's estimate is the width, not the opening credit.
+
+        Same-day opens without the settlement cash must not replace the
+        mart dollar.
+        """
+        day = date(2026, 10, 1)
+        opt = pd.DataFrame([
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261001C07650000",
+                "today_date": day, "tenant_id": "t1",
+                "option_strike": 7650, "option_type": "C",
+                "option_expiry": day, "direction": "Sold",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -2242.22,
+            },
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261001C07655000",
+                "today_date": day, "tenant_id": "t1",
+                "option_strike": 7655, "option_type": "C",
+                "option_expiry": day, "direction": "Bought",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -1332.22,
+            },
+        ])
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Sara", "trade_date": day,
+                "action": "option_sell_to_open",
+                "trade_symbol": "SPXW  261001C07650000",
+                "quantity": 10, "price": 7.77, "amount": 7757.78, "fees": 12.22,
+            },
+            {
+                "tenant_id": "t1", "account": "Sara", "trade_date": day,
+                "action": "option_buy_to_open",
+                "trade_symbol": "SPXW  261001C07655000",
+                "quantity": 10, "price": 6.32, "amount": -6332.22, "fees": 12.22,
+            },
+        ])
+        result = _build_today_movers(
+            None, options_moves_df=opt, option_fills_df=fills,
+        )
+        row = result["losers"][0]
+        assert len(result["losers"]) == 1
+        assert result["winners"] == []
+        assert row["dollar_impact"] == -3574.44
+        assert row["contract_detail"] == "10× 7650/7655C spread"
+        assert row["option_caption"] == "Closed today"
+
+    def test_single_spread_mover_nets_a_gross_order_fee(self):
+        day = date(2026, 10, 2)
+        opt = pd.DataFrame([
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261002C07730000",
+                "today_date": day, "tenant_id": "t1",
+                "option_strike": 7730, "option_type": "C",
+                "option_expiry": day, "direction": "Sold",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": 2790.00,
+            },
+            {
+                "symbol": "SPXW", "trade_symbol": "SPXW  261002C07735000",
+                "today_date": day, "tenant_id": "t1",
+                "option_strike": 7735, "option_type": "C",
+                "option_expiry": day, "direction": "Bought",
+                "quantity": 10, "open_mtm": 0, "prev_open_mtm": 0,
+                "realized_today": -1790.00,
+            },
+        ])
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Sara", "trade_date": day,
+                "action": "option_sell_to_open",
+                "trade_symbol": "SPXW  261002C07730000",
+                "quantity": 10, "price": 2.79, "amount": 2790.00, "fees": 12.22,
+            },
+            {
+                "tenant_id": "t1", "account": "Sara", "trade_date": day,
+                "action": "option_buy_to_open",
+                "trade_symbol": "SPXW  261002C07735000",
+                "quantity": 10, "price": 1.79, "amount": -1790.00, "fees": 12.22,
+            },
+        ])
+        result = _build_today_movers(
+            None, options_moves_df=opt, option_fills_df=fills,
+        )
+        row = result["winners"][0]
+        assert len(result["winners"]) == 1
+        assert row["contract_detail"] == "10× 7730/7735C spread"
+        assert row["option_caption"] == "Expired"
+        assert row["dollar_impact"] == 975.56
+        assert result["options_impact"] == 975.56
+
+    def test_day_trades_query_carries_fees_for_mover_lots(self):
+        assert "f.fees" in DAY_TRADES_QUERY
+        assert "c.fees" in DAY_TRADES_QUERY
+
     def test_option_caption_matches_what_the_row_contains(self):
         opt = pd.DataFrame([
             {

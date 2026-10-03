@@ -29,6 +29,24 @@ def test_slots_are_stable_by_tenant_id():
     assert by_name["Schwab Account"] == "Account 1"
 
 
+def test_privacy_mask_keeps_the_word_paper(monkeypatch):
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr(
+        "app.privacy.viewer_slots",
+        lambda: (
+            {"snaptrade:real": "Account 1", "snaptrade:paper": "Account 5"},
+            {"Schwab Account": "Account 1", "Paper": "Account 5", "Testing": "Account 5"},
+        ),
+    )
+    monkeypatch.setattr("app.privacy.viewer_paper_tenant_ids", lambda: {"snaptrade:paper"})
+    assert shown_account("Schwab Account", "snaptrade:real") == "Account 1"
+    assert shown_account("Paper", "snaptrade:paper") == "Account 5 · Paper"
+    assert shown_account("Testing · Paper", "snaptrade:paper") == "Account 5 · Paper"
+    # Nickname without the word still picks it up from the tenant.
+    assert shown_account("Testing", "snaptrade:paper") == "Account 5 · Paper"
+    assert shown_account("Paper", "snaptrade:paper") != "Account 5"
+
+
 def test_mask_is_a_noop_when_privacy_is_off():
     by_tid = {"snaptrade:aaa": "Account 1"}
     by_name = {"Roth": "Account 1"}

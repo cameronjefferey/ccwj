@@ -34,7 +34,7 @@ def test_unique_account_name_labels_drops_colliding_schwab():
     tmap = _disambiguated_tenant_labels(rows)
     umap = _unique_account_name_labels(rows, tmap)
     assert "Schwab Account" not in umap
-    assert umap["Alpaca Paper Account"] == "Testing"
+    assert umap["Alpaca Paper Account"] == "Testing · Paper"
 
 
 def test_unique_account_name_labels_maps_a_single_schwab():

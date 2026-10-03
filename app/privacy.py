@@ -77,9 +77,83 @@ def mask_account_label(name, tenant_id=None, *, enabled=None, by_tid=None, by_na
 
 
 def shown_account(name, tenant_id=None):
-    """Nickname when privacy is off, ``Account N`` when it is on."""
+    """Nickname when privacy is off, ``Account N`` when it is on.
+
+    A paper account keeps the word Paper after the mask (``Account N · Paper``)
+    so privacy mode does not hide which chip is Alpaca Paper.
+    """
     masked = mask_account_label(name, tenant_id)
-    return masked if masked is not None else name
+    label = masked if masked is not None else name
+    return _ensure_paper_word(label, name, tenant_id)
+
+
+def _ensure_paper_word(label, source, tenant_id):
+    text = "" if label is None else str(label)
+    if "paper" in text.casefold():
+        return label
+    source_text = "" if source is None else str(source)
+    if "paper" in source_text.casefold() or _tenant_is_paper(tenant_id):
+        stripped = text.strip()
+        if not stripped:
+            return "Paper"
+        return f"{stripped} · Paper"
+    return label
+
+
+def viewer_paper_tenant_ids():
+    """Paper tenant ids for the signed-in user. Empty when unknown.
+
+    Cached on ``g`` for the request. A lookup failure is not paper, so a
+    real account is never labeled Paper by accident.
+    """
+    try:
+        from flask import g, has_request_context
+
+        if not has_request_context():
+            return set()
+        cached = getattr(g, "_viewer_paper_tenant_ids", None)
+        if cached is not None:
+            return cached
+    except Exception:
+        return set()
+    ids = set()
+    try:
+        import os
+
+        if os.environ.get("HAPPYTRADER_SKIP_DB_INIT") == "1":
+            ids = set()
+        else:
+            from flask_login import current_user
+
+            if getattr(current_user, "is_authenticated", False):
+                from app.models import get_broker_tenants_for_user
+                from app.paper_accounts import is_paper_row
+
+                rows = get_broker_tenants_for_user(current_user.id) or []
+                ids = {
+                    str(row.get("tenant_id"))
+                    for row in rows
+                    if row.get("tenant_id") and is_paper_row(row)
+                }
+    except Exception:
+        ids = set()
+    try:
+        from flask import g
+
+        g._viewer_paper_tenant_ids = ids
+    except Exception:
+        pass
+    return ids
+
+
+def _tenant_is_paper(tenant_id) -> bool:
+    tid = str(tenant_id or "").strip()
+    if not tid:
+        return False
+    try:
+        return tid in viewer_paper_tenant_ids()
+    except Exception:
+        return False
 
 
 def mask_secret(value, *, enabled=None):
