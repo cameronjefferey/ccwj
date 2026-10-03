@@ -873,7 +873,10 @@ def _option_moves_sql(as_of_name, *, on_exact_day=False):
     The dollar is the same attribution as the position chart
     (``int_option_contract_daily_pnl``): open marks while the contract
     is open, and on the close date the full ``realized_pnl``. That
-    realized figure already includes an expiry estimate, so an ITM
+    close date is the warehouse expiry cap (``stg_history`` dated step
+    and ``int_option_contracts``), not the seed's posting date, so a
+    cash settlement posted the next morning does not move this day.
+    The realized figure already includes an expiry estimate, so an ITM
     index spread that expires the day it opens is the net (credit minus
     intrinsic), not the gross credit a zero mark would show.
 
@@ -5966,6 +5969,10 @@ WHERE s.symbol IS NULL
 # day page AND Daily Review (`today_trades` in build_daily_review_batch)
 # so today's fills and a past day's page can never drift.
 #
+# ``trade_date`` here is ``stg_history.trade_date`` after the dated
+# step, which caps a close at the contract expiry. A cash settlement
+# posted the next morning (seed Date 10/02, expiry 10/01) is the Oct 1
+# session on Today, the day page, and the story — not the raw post.
 # Option expiry / assignment / exercise date to option_expiry
 # (int_option_contracts.realized_close_date = least(broker fill, expiry),
 # plus OTM-at-expiry inference on Friday). Schwab posts the matching

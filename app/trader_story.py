@@ -60,6 +60,8 @@ STORY_TRADES_QUERY = """
         h.account,
         h.tenant_id,
         h.underlying_symbol AS symbol,
+        -- Capped at expiry in stg_history. A posting-dated settlement
+        -- is not narrated on the post date.
         h.trade_date,
         CASE WHEN d.matched_ex_div_date IS NOT NULL
              THEN 'dividend_reinvest'

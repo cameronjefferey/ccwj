@@ -254,14 +254,10 @@ _CASH_SETTLEMENT_TYPES = frozenset({
 })
 
 _AS_OF_MDY_RE = re.compile(
-    r"\bas of\s+(\d{1,2})/(\d{1,2})/(\d{2,4})\b", re.IGNORECASE,
+    r"\bas of\s+(\d{1,2})/(\d{1,2})/(\d{4})\b", re.IGNORECASE,
 )
 # Provisional order rows with no commission. Activities replace them.
 ESTIMATED_FEE_MARK = "est. fee"
-_CLOSING_OPTION_ACTIONS = frozenset({
-    "Buy to Close", "Sell to Close", "Expired", "Assigned",
-    "Exchange or Exercise",
-})
 _SCHWAB_OPTION_TEXT_RE = re.compile(
     r"\b([A-Z]{1,6})\s+(\d{1,2}/\d{1,2}/\d{2,4})\s+([\d.]+)\s+([CP])\b",
     re.IGNORECASE,
@@ -421,8 +417,6 @@ def _as_of_trade_date(value) -> str:
     if not match:
         return ""
     month, day, year = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-    if year < 100:
-        year += 2000 if year < 80 else 1900
     try:
         return date(year, month, day).strftime("%m/%d/%Y")
     except ValueError:
@@ -440,28 +434,6 @@ def _mdy_date(value):
         except ValueError:
             continue
     return None
-
-
-def _option_expiry_mdy(*texts) -> str:
-    """Expiry from an OSI symbol or a Schwab ``EXP MM/DD/YY`` description."""
-    from app.option_formatting import parse_occ
-
-    for text in texts:
-        if not text:
-            continue
-        parsed = parse_occ(text)
-        if not parsed:
-            osi = _osi_from_broker_text(str(text))
-            parsed = parse_occ(osi) if osi else None
-        if not parsed:
-            continue
-        try:
-            yy = int(parsed["yy"])
-            year = 2000 + yy if yy < 80 else 1900 + yy
-            return date(year, int(parsed["mm"]), int(parsed["dd"])).strftime("%m/%d/%Y")
-        except (TypeError, ValueError, KeyError):
-            continue
-    return ""
 
 
 def _activity_fee(act: Mapping) -> float:
@@ -839,17 +811,11 @@ def activities_to_history_df(
         )
         if as_of:
             trade_date = as_of
-        # A cash settlement often arrives on the broker's posting date
-        # with no "as of" phrase — the contract text is the only expiry.
-        # Never book a close after the option expired.
-        if action_label in _CLOSING_OPTION_ACTIONS:
-            expiry_mdy = _option_expiry_mdy(sym_str, description, broker_description)
-            expiry_d = _mdy_date(expiry_mdy)
-            posted_d = _mdy_date(trade_date)
-            if expiry_d and posted_d and expiry_d < posted_d:
-                trade_date = expiry_mdy
-                if not _as_of_trade_date(description):
-                    description = f"{description} as of {expiry_mdy}".strip()
+        # Do not rewrite Date or Description from the contract expiry.
+        # Rows already in the seed are keyed on the broker's posting
+        # date. Moving them to the expiry (and appending "as of") makes
+        # the next sync insert a twin. stg_history caps the warehouse
+        # trade_date at expiry; pages read that column.
         units = _safe_float(act.get("units"), 0.0)
         price = _safe_float(act.get("price"), 0.0)
         fees = _activity_fee(act)

@@ -488,9 +488,14 @@ def test_oct2_lots_split_into_a_closed_20_and_an_expired_10():
     assert len(losers) == 1
 
 
-def test_posting_date_close_is_dated_on_expiry():
-    """Oct 1 settlement arrived Oct 2 with no 'as of' phrase."""
-    df = activities_to_history_df(
+def test_resync_of_a_posted_settlement_does_not_twin_the_stored_row():
+    """The seed keeps the broker's posting date. The warehouse caps it.
+
+    A stored Oct 1 SPXW close is dated 10/02. Rewriting the re-sync to
+    10/01 and appending "as of" used to fail dedup and insert a second
+    fill. Both rows must collapse to the stored posting date.
+    """
+    resynced = activities_to_history_df(
         [_act(
             "2026-10-02",
             "Buy to Close",
@@ -502,22 +507,20 @@ def test_posting_date_close_is_dated_on_expiry():
         user_id=9,
         tenant_id=TENANT,
     )
-    assert df.iloc[0]["Date"] == "10/01/2026"
-    assert "as of 10/01/2026" in str(df.iloc[0]["Description"])
-
-    short_year = activities_to_history_df(
-        [_act(
-            "2026-10-02",
-            "Sell to Close",
-            "SPXW 10/01/2026 7655.00 C",
-            10, 11.45, 11450.0, 0,
-            "CALL S & P 500 INDEX $7655 EXP 10/01/26 as of 10/01/26",
-        )],
-        account_name=ACCOUNT,
-        user_id=9,
-        tenant_id=TENANT,
+    assert resynced.iloc[0]["Date"] == "10/02/2026"
+    assert "as of" not in str(resynced.iloc[0]["Description"]).lower()
+    stored = resynced.copy()
+    stored.loc[stored.index[0], "Date"] = "10/02/2026"
+    stored.loc[stored.index[0], "Description"] = (
+        "CALL S & P 500 INDEX $7650 EXP 10/01/26"
     )
-    assert short_year.iloc[0]["Date"] == "10/01/2026"
+    merged = _dedup_history_rows(
+        pd.concat([stored, resynced], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(merged) == 1
+    assert merged.iloc[0]["Date"] == "10/02/2026"
+    assert "as of 10/01" not in str(merged.iloc[0]["Description"]).lower()
 
 
 def test_blank_order_fee_uses_the_recent_spxw_rate_and_splits_a_parent_fee():
@@ -606,6 +609,77 @@ def test_blank_order_fee_uses_the_recent_spxw_rate_and_splits_a_parent_fee():
     assert len(merged) == 1
     assert str(merged.iloc[0]["Description"]) == "INDEX"
     assert float(merged.iloc[0]["Amount"]) == pytest.approx(2777.78)
+
+
+def test_copied_estimate_nets_the_gross_amount_and_the_activity_replaces_it():
+    """A stored no-fee order row stays one fill, net of the estimate.
+
+    The 20× 6.85 / 5.35 open and 2.824 / 1.824 close is +902.24 after
+    $24.44 per leg. A later activity with that same net and fee must
+    not charge the estimate again.
+    """
+    from app.snaptrade_normalize import recent_option_fee_rates
+
+    rates = recent_option_fee_rates(_history())
+    legs = [
+        ("SELL_TO_OPEN", "Sell to Open", 7730, "20", "6.85", 13675.56, 24.44),
+        ("BUY_TO_OPEN", "Buy to Open", 7735, "20", "5.35", -10724.44, 24.44),
+        ("BUY_TO_CLOSE", "Buy to Close", 7730, "20", "2.824", -5672.44, 24.44),
+        ("SELL_TO_CLOSE", "Sell to Close", 7735, "20", "1.824", 3623.56, 24.44),
+    ]
+    estimated = orders_to_history_df(
+        [{
+            "brokerage_order_id": f"leg-{i}",
+            "status": "EXECUTED",
+            "time_executed": "2026-10-02T14:00:00Z",
+            "action": action,
+            "filled_quantity": qty,
+            "execution_price": price,
+            "option_symbol": {
+                "underlying_symbol": "SPXW",
+                "expiration_date": "2026-10-02",
+                "strike_price": strike,
+                "option_type": "CALL",
+            },
+        } for i, (action, _label, strike, qty, price, _net, _fee) in enumerate(legs)],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+        fee_rates=rates,
+    )
+    stored = estimated.copy()
+    stored["fees_and_comm"] = ""
+    stored["Description"] = stored["Description"].map(
+        lambda text: str(text).replace(" est. fee", "").replace("est. fee", "").strip()
+    )
+    for i, row in stored.iterrows():
+        gross = round(abs(float(row["Quantity"])) * float(row["Price"]) * 100, 2)
+        stored.at[i, "Amount"] = -gross if str(row["Action"]).startswith("Buy") else gross
+    with_estimate = _dedup_history_rows(
+        pd.concat([stored, estimated], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(with_estimate) == 4
+    assert float(with_estimate["Amount"].sum()) == pytest.approx(902.24)
+    assert float(with_estimate["fees_and_comm"].astype(float).sum()) == pytest.approx(97.76)
+
+    activities = []
+    for _action, label, strike, qty, price, net, fee in legs:
+        activities.append(_act(
+            "2026-10-02", label, f"SPXW 10/02/2026 {strike:.2f} C",
+            float(qty), float(price), net, fee, f"INDEX {strike}",
+        ))
+    activity_df = activities_to_history_df(
+        activities, account_name=ACCOUNT, user_id=9, tenant_id=TENANT,
+    )
+    replaced = _dedup_history_rows(
+        pd.concat([with_estimate, activity_df], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(replaced) == 4
+    assert float(replaced["Amount"].sum()) == pytest.approx(902.24)
+    assert float(replaced["fees_and_comm"].astype(float).sum()) == pytest.approx(97.76)
+    assert not replaced["Description"].astype(str).str.contains("est. fee").any()
 
 
 def test_statement_spreads_group_and_the_oct1_credit_is_a_loss():
