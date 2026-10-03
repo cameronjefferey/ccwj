@@ -396,13 +396,16 @@ fill_ranked as (
     select
         d.*,
         row_number() over (
+            -- BigQuery rejects FLOAT64 in a window PARTITION BY
+            -- (run 37091190523: "Partitioning by expressions of type
+            -- FLOAT64 is not allowed"). Cast the check-2 grain.
             partition by
                 d.tenant_id,
                 d.trade_date,
                 d.action,
                 d.trade_symbol,
-                d.quantity,
-                round(d.price, 4)
+                cast(d.quantity as string),
+                cast(round(d.price, 4) as string)
             order by
                 d.fee_adjusted asc,
                 length(coalesce(d.description, '')) desc,
