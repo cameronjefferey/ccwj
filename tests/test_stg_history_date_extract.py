@@ -49,8 +49,9 @@ def test_expiry_date_cap_collapses_the_check2_fill_grain():
     """
     sql = _STG.read_text()
     assert "fill_ranked as (" in sql
-    assert "round(d.price, 4)" in sql
-    assert "fee_adjusted asc" in sql
+    assert "cast(round(d.price, 4) as numeric)" in sql
+    assert "cast(round(d.quantity, 6) as numeric)" in sql
+    assert "if(d.fee_adjusted, 1, 0) asc" in sql
     assert "where d.trade_symbol is not null" in sql
     assert "and d.price is not null" in sql
     assert "from history_rows" in sql

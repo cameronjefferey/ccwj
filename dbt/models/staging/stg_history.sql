@@ -396,18 +396,20 @@ fill_ranked as (
     select
         d.*,
         row_number() over (
+            -- BigQuery rejects FLOAT64 in PARTITION BY (run 37091190523).
+            -- NUMERIC matches the test grain: exact quantity, price at 4dp.
             partition by
                 d.tenant_id,
                 d.trade_date,
                 d.action,
                 d.trade_symbol,
-                d.quantity,
-                round(d.price, 4)
+                cast(round(d.quantity, 6) as numeric),
+                cast(round(d.price, 4) as numeric)
             order by
-                d.fee_adjusted asc,
+                if(d.fee_adjusted, 1, 0) asc,
                 length(coalesce(d.description, '')) desc,
-                abs(d.amount) asc,
-                d.amount asc
+                cast(round(abs(d.amount), 2) as numeric) asc,
+                cast(round(d.amount, 2) as numeric) asc
         ) as _fill_rank
     from dated d
     where d.trade_symbol is not null
