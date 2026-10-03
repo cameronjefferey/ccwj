@@ -22,7 +22,6 @@ def _blob(row) -> str:
     parts = (
         row.get("broker_label"),
         row.get("account_name"),
-        row.get("display_nickname"),
         row.get("institution_name"),
     )
     return " ".join(str(part or "") for part in parts).casefold()
