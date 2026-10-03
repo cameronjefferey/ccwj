@@ -1310,6 +1310,70 @@ def test_dedup_collapses_orders_vs_activities_under_price_precision_drift():
     assert str(out.iloc[0]["Description"]) == "Applied Optoelectronics, Inc."
 
 
+def test_dedup_collapses_option_close_posted_after_expiry():
+    """Run 37090194526. The same BE buy-to-close landed on the expiry
+    and again on the next session, amounts −42.12 and −42.92. stg_history
+    caps the later date at 2026-03-06, so CHECK 2 sees one fill twice.
+    The cross-source key uses that cap. The stored Date stays the
+    posting day (rewriting it made the next sync insert another twin).
+    """
+    symbol = "BE    260306C00165000"
+    desc = "CALL BLOOM ENERGY CORP $165 EXP 03/06/26"
+    df = pd.DataFrame([
+        _row("Schwab Account", 9, "03/06/2026", "Buy to Close", symbol,
+             10, 0.042, -42.12, desc=desc),
+        _row("Schwab Account", 9, "03/09/2026", "Buy to Close", symbol,
+             10, 0.042, -42.92, desc=desc + " posted"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1
+    assert str(out.iloc[0]["Date"]) == "03/09/2026"
+    assert "posted" in str(out.iloc[0]["Description"])
+
+
+def test_dedup_keeps_option_closes_on_different_days_before_expiry():
+    """A close before expiry keeps its own date. Two real buy-to-closes
+    of the same contract, a few days apart, must stay two rows."""
+    symbol = "BE    260320C00165000"
+    df = pd.DataFrame([
+        _row("Schwab Account", 9, "03/04/2026", "Buy to Close", symbol,
+             10, 0.042, -42.12, desc="early"),
+        _row("Schwab Account", 9, "03/06/2026", "Buy to Close", symbol,
+             10, 0.042, -42.92, desc="later"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 2
+
+
+def test_dedup_collapses_close_on_as_of_date_in_the_description():
+    """Warehouse trade_date prefers ``as of`` over the posting day, then
+    caps at expiry. A 03/09 post marked as of 03/06 is the 03/06 fill."""
+    symbol = "BE    260320C00165000"
+    df = pd.DataFrame([
+        _row("Schwab Account", 9, "03/06/2026", "Buy to Close", symbol,
+             10, 0.042, -42.12, desc="CALL BLOOM ENERGY CORP $165 EXP 03/20/26"),
+        _row("Schwab Account", 9, "03/09/2026", "Buy to Close", symbol,
+             10, 0.042, -42.92,
+             desc="CALL BLOOM ENERGY CORP $165 EXP 03/20/26 as of 03/06/2026"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 1
+    assert str(out.iloc[0]["Date"]) == "03/09/2026"
+
+
+def test_dedup_does_not_cap_option_opens_at_expiry():
+    """Opens are untouched by the warehouse date cap."""
+    symbol = "BE    260306C00165000"
+    df = pd.DataFrame([
+        _row("Schwab Account", 9, "03/06/2026", "Buy to Open", symbol,
+             10, 0.042, -42.12, desc="open on expiry"),
+        _row("Schwab Account", 9, "03/09/2026", "Buy to Open", symbol,
+             10, 0.042, -42.92, desc="open after"),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 2
+
+
 def test_dedup_keeps_distinct_option_fills_priced_sub_penny():
     """Guard against the 4dp Price rounding over-collapsing. Two GENUINELY
     distinct option fills (same day/action/symbol/qty) priced a few tenths of
