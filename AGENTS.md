@@ -690,7 +690,15 @@ Logged-out public pages also record page views, CTA clicks, scroll
 depth, and public video plays. Ad pixels stay off on DNT/GPC; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
 `data.test_id` to every v3 CAPI body for Event testing and must be
-removed after. Admin → Acquisition is `/admin/analytics`.
+removed after. Admin → Acquisition is `/admin/analytics`. That page
+drops bots and crawlers (user agent), visits with no JavaScript beacon
+(older rows with no beacon flag still count), and internal traffic:
+signed-in admins, `testingcameron`, any visitor cookie that ever logged
+in as one of those, `INTERNAL_IPS`, and `?ht_internal=1` (sets the
+`ht_internal` cookie). Where they came from is utm source and campaign,
+otherwise the referrer host, otherwise Direct, plus how many visits were
+filtered out. A stored user agent is backfilled; rows that never saved
+one stay in the count.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. One story: headline, then right now, then the rest behind disclosures.**

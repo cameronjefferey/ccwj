@@ -26,11 +26,15 @@ and both stay off when the browser sends Do Not Track or Global Privacy
 Control.
 
 First-party counts live at Admin → Acquisition (`/admin/analytics`):
-logged-out visitors and page views, the campaign funnel, utm_source /
-utm_campaign / utm_content, device, and referrers (YouTube and Reddit
-stay on the list). The window is today, 7 days, or 30 days. That page
-is the source of truth when the pixel is blocked. The older Admin →
-Overview card is still the `/start` button funnel.
+logged-out visitors and page views, the campaign funnel, where they
+came from (utm source and campaign, otherwise the referrer host,
+otherwise Direct), utm_source / utm_campaign / utm_content, device, and
+referrers (YouTube and Reddit stay on the list). Bots, headless
+browsers, unsigned JavaScript beacons, and internal traffic (admins,
+testingcameron, `INTERNAL_IPS`, `?ht_internal=1`) are left out, and the
+page shows how many were filtered. The window is today, 7 days, or 30
+days. That page is the source of truth when the pixel is blocked. The
+older Admin → Overview card is still the `/start` button funnel.
 
 ## Message tests
 

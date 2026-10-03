@@ -1,7 +1,8 @@
 """First-party funnel analytics.
 
-Events carry a path, a referrer host+path, UTM fields, and the Reddit click
-id. They do not carry email, name, IP, or a raw query string. ``user_id``
+Events carry a path, a referrer host+path, UTM fields, the Reddit click
+id, and the user agent (bot filtering only — it is not shown in admin).
+They do not carry email, name, IP, or a raw query string. ``user_id``
 is the internal account id, written only after signup.
 
 ``ht_touch`` is the first-party cookie. First-touch is whatever arrived on
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -27,6 +29,11 @@ _log = logging.getLogger(__name__)
 
 COOKIE = "ht_touch"
 COOKIE_DAYS = 90
+INTERNAL_COOKIE = "ht_internal"
+INTERNAL_COOKIE_DAYS = 365
+# Screenshot and dev-login accounts. Admins come from ADMIN_USERS.
+# There is no separate owner column — owner accounts are those admins.
+_TESTING_USERNAMES = frozenset({"testingcameron", "testingcameron1"})
 _VISIT_RE = re.compile(r"^[a-f0-9]{32}$")
 _UTM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 _CLICK_RE = re.compile(r"^[A-Za-z0-9._\-]{4,200}$")
@@ -64,6 +71,7 @@ EVENTS = {
     "video_play": {"first": False, "reddit": None},
 }
 # The browser beacon may only name these. Paid and signup stay server-side.
+# client_seen is not a countable row — it marks the visit's rows as a browser.
 BEACON_EVENTS = frozenset({
     "lesson_started",
     "lesson_completed",
@@ -71,7 +79,18 @@ BEACON_EVENTS = frozenset({
     "cta_click",
     "scroll_depth",
     "video_play",
+    "client_seen",
 })
+# Case-insensitive. ``bot`` already covers Slackbot, Twitterbot, and
+# redditbot; those names stay in the pattern so a shorter UA still matches.
+# ``curl`` is the whole token or a curl/version string, not a substring of
+# an unrelated word.
+_BOT_UA_PATTERN = (
+    r"bot|crawler|spider|headlesschrome|python-requests|curl/|"
+    r"(^|[^A-Za-z])curl([^A-Za-z]|$)|"
+    r"playwright|puppeteer|slackbot|twitterbot|facebookexternalhit|redditbot"
+)
+_BOT_UA_RE = re.compile(_BOT_UA_PATTERN, re.IGNORECASE)
 ACQ_STEPS = (
     ("visitors", "Visitors"),
     ("cta", "CTA clicks"),
@@ -315,7 +334,8 @@ def _apply_landing(ft: dict, lt: dict, incoming: dict) -> bool:
 
 
 def device_type(user_agent=None) -> str:
-    """Coarse device class. The raw user agent is not stored."""
+    """Coarse device class. The raw user agent is stored for bot filtering
+    and is not shown in the admin tables."""
     if user_agent is None and has_request_context():
         user_agent = request.headers.get("User-Agent") or ""
     ua = (user_agent or "").lower()
@@ -324,6 +344,198 @@ def device_type(user_agent=None) -> str:
     if any(tok in ua for tok in ("mobi", "iphone", "android", "phone")):
         return "phone"
     return "desktop"
+
+
+def is_bot_user_agent(user_agent) -> bool:
+    """True for crawlers, headless browsers, HTTP clients, and link unfurlers."""
+    if not user_agent:
+        return False
+    return _BOT_UA_RE.search(str(user_agent)) is not None
+
+
+def internal_usernames() -> set[str]:
+    """Accounts whose traffic stays out of Acquisition.
+
+    Testing logins, ``INTERNAL_USERS``, and ``ADMIN_USERS``. ``demo`` is
+    never internal — that username is the public demo.
+    """
+    names = set(_TESTING_USERNAMES)
+    for env_name in ("INTERNAL_USERS", "ADMIN_USERS"):
+        for part in (os.environ.get(env_name) or "").split(","):
+            part = part.strip().lower()
+            if part and part != "demo" and re.fullmatch(r"[a-z0-9_]+", part):
+                names.add(part)
+    return names
+
+
+def ip_is_internal(ip: str) -> bool:
+    """True when ``ip`` is listed in ``INTERNAL_IPS`` (exact or CIDR)."""
+    raw = (os.environ.get("INTERNAL_IPS") or "").strip()
+    if not raw or not ip or ip == "unknown":
+        return False
+    try:
+        addr = ipaddress.ip_address(ip.strip())
+    except ValueError:
+        return False
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            if "/" in part:
+                if addr in ipaddress.ip_network(part, strict=False):
+                    return True
+            elif addr == ipaddress.ip_address(part):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _viewer_username():
+    if not has_request_context():
+        return None
+    try:
+        from flask_login import current_user
+        if current_user.is_authenticated:
+            name = getattr(current_user, "username", None)
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+    except Exception:
+        return None
+    return None
+
+
+def is_internal_account(username) -> bool:
+    if not username:
+        return False
+    from app.models import is_admin
+    if is_admin(username):
+        return True
+    return username.strip().lower() in internal_usernames()
+
+
+def request_is_internal() -> bool:
+    """Signed-in owners, the opt-out cookie, ``?ht_internal=1``, or INTERNAL_IPS."""
+    if not has_request_context():
+        return False
+    if (request.args.get("ht_internal") or "") == "1":
+        return True
+    if (request.cookies.get(INTERNAL_COOKIE) or "") == "1":
+        return True
+    try:
+        from app.client_ip import real_client_ip
+        if ip_is_internal(real_client_ip()):
+            return True
+    except Exception:
+        pass
+    return is_internal_account(_viewer_username())
+
+
+def _internal_reason() -> str:
+    if not has_request_context():
+        return ""
+    if (request.args.get("ht_internal") or "") == "1":
+        return "query"
+    if (request.cookies.get(INTERNAL_COOKIE) or "") == "1":
+        return "cookie"
+    try:
+        from app.client_ip import real_client_ip
+        if ip_is_internal(real_client_ip()):
+            return "ip"
+    except Exception:
+        pass
+    if is_internal_account(_viewer_username()):
+        return "account"
+    return ""
+
+
+def note_internal_visit(reason: str) -> None:
+    """Remember this anonymous cookie so later logged-out hits stay out."""
+    if not _db_ready() or not has_request_context():
+        return
+    visit_id = (current_attribution().get("visit_id") or "")
+    if not visit_id:
+        return
+    try:
+        from app.db import execute
+        execute(
+            """
+            INSERT INTO funnel_internal_visits (visit_id, reason)
+            VALUES (%s, %s)
+            ON CONFLICT (visit_id) DO NOTHING
+            """,
+            (visit_id, (reason or "")[:80]),
+        )
+    except Exception as exc:
+        _log.warning("internal visit note skipped: %s", exc)
+
+
+def _cookie_secure() -> bool:
+    try:
+        return bool(current_app.config.get("SESSION_COOKIE_SECURE"))
+    except Exception:
+        return False
+
+
+def _attach_internal_cookie(response):
+    if not has_request_context() or not request_is_internal():
+        return response
+    if (request.cookies.get(INTERNAL_COOKIE) or "") == "1":
+        return response
+    response.set_cookie(
+        INTERNAL_COOKIE,
+        "1",
+        max_age=INTERNAL_COOKIE_DAYS * 24 * 60 * 60,
+        httponly=True,
+        samesite="Lax",
+        secure=_cookie_secure(),
+        path="/",
+    )
+    return response
+
+
+def human_traffic_sql() -> str:
+    """Rows that are not bots and not an internal account or visit.
+
+    ``client_beacon`` is separate: old rows are NULL and still count.
+    A new page view starts FALSE until the browser beacon sets TRUE.
+    """
+    quoted = ", ".join("'" + name + "'" for name in sorted(internal_usernames()))
+    return (
+        "(COALESCE(is_bot, FALSE) = FALSE "
+        "AND (visit_id IS NULL OR NOT EXISTS ("
+        "SELECT 1 FROM funnel_internal_visits iv "
+        "WHERE iv.visit_id = funnel_events.visit_id)) "
+        "AND (user_id IS NULL OR NOT EXISTS ("
+        "SELECT 1 FROM users u WHERE u.id = funnel_events.user_id "
+        f"AND lower(u.username) IN ({quoted}))))"
+    )
+
+
+def counted_traffic_sql() -> str:
+    """Human rows. Page views also need a browser beacon (NULL still counts)."""
+    return (
+        f"{human_traffic_sql()} "
+        "AND (event <> 'page_view' OR client_beacon IS DISTINCT FROM FALSE)"
+    )
+
+
+def backfill_bot_user_agents() -> None:
+    """Mark stored user agents that match the bot list. NULL agents stay."""
+    if not _db_ready():
+        return
+    from app.db import execute
+    execute(
+        """
+        UPDATE funnel_events
+           SET is_bot = TRUE
+         WHERE user_agent IS NOT NULL
+           AND user_agent ~* %s
+           AND is_bot IS DISTINCT FROM TRUE
+        """,
+        (_BOT_UA_PATTERN,),
+    )
 
 
 def tracking_opt_out() -> bool:
@@ -466,6 +678,9 @@ def log_event(
             first = bool(spec["first"])
         detail = clean_utm(detail) if detail else ""
         device = device_type() if has_request_context() else ""
+        user_agent = ""
+        if has_request_context():
+            user_agent = (request.headers.get("User-Agent") or "")[:512]
         landing = lt.get("landing") or ""
         variant = lt.get("variant") or ""
         if event == "landing_view" and _recent_same(event, visit_id, path, "", 12):
@@ -495,9 +710,10 @@ def log_event(
             INSERT INTO funnel_events
                 (event, event_id, visit_id, user_id, path, referrer,
                  utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-                 rdt_cid, landing, variant, device, detail)
+                 rdt_cid, landing, variant, device, detail,
+                 user_agent, is_bot, client_beacon)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s)
+                    %s, %s, %s, %s, %s, %s, FALSE)
             """,
             (
                 event,
@@ -516,6 +732,8 @@ def log_event(
                 variant or None,
                 device or None,
                 detail or None,
+                user_agent or None,
+                is_bot_user_agent(user_agent),
             ),
         )
         reddit_name = spec["reddit"]
@@ -709,6 +927,7 @@ def observe_response(response):
             path = request.path or ""
             if not path.startswith("/static") and not path.startswith("/healthz"):
                 attach_cookie(response)
+                _attach_internal_cookie(response)
     except Exception as exc:
         _log.warning("funnel cookie skipped: %s", exc)
     return response
@@ -725,6 +944,8 @@ def _observe(response):
         or path == "/favicon.ico"
     ):
         return
+    if request_is_internal():
+        note_internal_visit(_internal_reason())
     status = response.status_code
     if status >= 400:
         return
@@ -778,6 +999,29 @@ def _observe(response):
             log_event("checkout_started", path=path)
 
 
+def _mark_client_beacon() -> None:
+    """The browser ran JavaScript. Page views for this cookie now count."""
+    if not _db_ready() or not has_request_context():
+        return
+    visit_id = (current_attribution().get("visit_id") or "")
+    if not visit_id:
+        return
+    try:
+        from app.db import execute
+        execute(
+            """
+            UPDATE funnel_events
+               SET client_beacon = TRUE
+             WHERE visit_id = %s
+               AND created_at > NOW() - INTERVAL '2 days'
+               AND client_beacon IS DISTINCT FROM TRUE
+            """,
+            (visit_id,),
+        )
+    except Exception as exc:
+        _log.warning("client beacon skipped: %s", exc)
+
+
 def beacon(payload) -> tuple[dict, int]:
     if not isinstance(payload, dict):
         return {"ok": False}, 400
@@ -789,6 +1033,11 @@ def beacon(payload) -> tuple[dict, int]:
     for banned in ("email", "ip", "name", "user_id", "phone"):
         if banned in payload:
             return {"ok": False}, 400
+    if request_is_internal():
+        note_internal_visit(_internal_reason())
+    if event == "client_seen":
+        _mark_client_beacon()
+        return {"ok": True}, 200
     path = payload.get("path") or (request.path if has_request_context() else "")
     if not isinstance(path, str) or not path.startswith("/") or "?" in path or len(path) > 300:
         path = request.path if has_request_context() else ""
@@ -987,6 +1236,21 @@ def _user_opted_out(user_id) -> bool:
         return False
 
 
+def _with_signup_rate(rows) -> list[dict]:
+    out = []
+    for row in rows or []:
+        visitors = int(row.get("visitors") or 0)
+        signups = int(row.get("signups") or 0)
+        rate = round(100.0 * signups / visitors, 1) if visitors else 0.0
+        out.append({
+            "source": row.get("source") or "Direct",
+            "visitors": visitors,
+            "signups": signups,
+            "rate": rate,
+        })
+    return out
+
+
 def conversion_rates(counts: dict) -> list[dict]:
     """Each step as a count and a percent of visitors. Zero visitors stay 0."""
     visitors = int((counts or {}).get("visitors") or 0)
@@ -1032,6 +1296,8 @@ def _empty_acquisition(range_key="7d") -> dict:
             {"host": "YouTube", "visitors": 0},
             {"host": "Reddit", "visitors": 0},
         ],
+        "origins": [],
+        "filtered_out": 0,
     }
 
 
@@ -1047,6 +1313,7 @@ def build_acquisition(range_key=None) -> dict:
     if range_key not in _RANGE_WHERE:
         range_key = "7d"
     window = _RANGE_WHERE[range_key]
+    counted = counted_traffic_sql()
     empty = _empty_acquisition(range_key)
     if not _db_ready():
         return empty
@@ -1058,6 +1325,7 @@ def build_acquisition(range_key=None) -> dict:
                    COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors
               FROM funnel_events
              WHERE {window}
+               AND {counted}
              GROUP BY 1
             """
         )
@@ -1068,6 +1336,7 @@ def build_acquisition(range_key=None) -> dict:
                    COUNT(DISTINCT visit_id)::int AS visitors
               FROM funnel_events
              WHERE event = 'page_view' AND {window}
+               AND {counted}
              GROUP BY 1
              ORDER BY views DESC, visitors DESC
              LIMIT 12
@@ -1090,6 +1359,7 @@ def build_acquisition(range_key=None) -> dict:
                      FILTER (WHERE event = 'paid')::int AS paid
               FROM funnel_events
              WHERE {window}
+               AND {counted}
              GROUP BY 1
             """
         )
@@ -1103,6 +1373,7 @@ def build_acquisition(range_key=None) -> dict:
                      FILTER (WHERE event = 'signup_completed')::int AS signups
               FROM funnel_events
              WHERE {window}
+               AND {counted}
              GROUP BY 1, 2, 3
              ORDER BY visitors DESC, signups DESC
              LIMIT 30
@@ -1116,6 +1387,7 @@ def build_acquisition(range_key=None) -> dict:
                      FILTER (WHERE event = 'signup_completed')::int AS signups
               FROM funnel_events
              WHERE {window}
+               AND {counted}
              GROUP BY 1
              ORDER BY visitors DESC
             """
@@ -1128,9 +1400,46 @@ def build_acquisition(range_key=None) -> dict:
              WHERE event = 'page_view'
                AND referrer IS NOT NULL
                AND {window}
+               AND {counted}
              GROUP BY 1
              ORDER BY visitors DESC
              LIMIT 20
+            """
+        )
+        origins = fetch_all(
+            f"""
+            SELECT CASE
+                     WHEN NULLIF(utm_source, '') IS NOT NULL THEN
+                       utm_source || CASE
+                         WHEN NULLIF(utm_campaign, '') IS NOT NULL
+                         THEN ' / ' || utm_campaign
+                         ELSE ''
+                       END
+                     WHEN substring(referrer from '^https?://([^/]+)') IS NOT NULL
+                     THEN substring(referrer from '^https?://([^/]+)')
+                     ELSE 'Direct'
+                   END AS source,
+                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
+                     FILTER (WHERE event = 'signup_completed')::int AS signups
+              FROM funnel_events
+             WHERE {window}
+               AND {counted}
+             GROUP BY 1
+             ORDER BY visitors DESC, signups DESC
+             LIMIT 30
+            """
+        )
+        filtered_rows = fetch_all(
+            f"""
+            SELECT COUNT(DISTINCT visit_id)::int AS n
+              FROM funnel_events
+             WHERE event = 'page_view'
+               AND {window}
+               AND NOT (
+                 {human_traffic_sql()}
+                 AND client_beacon IS DISTINCT FROM FALSE
+               )
             """
         )
     except Exception as exc:
@@ -1187,6 +1496,8 @@ def build_acquisition(range_key=None) -> dict:
         "sources": sources or [],
         "devices": devices or [],
         "referrers": referrer_rows,
+        "origins": _with_signup_rate(origins),
+        "filtered_out": int(((filtered_rows or [{}])[0] or {}).get("n") or 0),
     }
 
 
@@ -1206,28 +1517,31 @@ def build_admin_analytics() -> dict:
     }
     if not _db_ready():
         return empty
+    counted = counted_traffic_sql()
     try:
         day_rows = fetch_all(
-            """
+            f"""
             SELECT to_char(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
                    COUNT(*)::int AS signups
               FROM funnel_events
              WHERE event = 'signup_completed'
                AND created_at >= NOW() - INTERVAL '30 days'
+               AND {counted}
              GROUP BY 1
             """
         )
         counts = fetch_all(
-            """
+            f"""
             SELECT event,
                    COUNT(DISTINCT COALESCE(user_id::text, visit_id))::int AS n
               FROM funnel_events
              WHERE created_at >= NOW() - INTERVAL '30 days'
+               AND {counted}
              GROUP BY event
             """
         )
         sources = fetch_all(
-            """
+            f"""
             SELECT COALESCE(NULLIF(utm_source, ''), '(none)') AS source,
                    COALESCE(NULLIF(utm_campaign, ''), '(none)') AS campaign,
                    COUNT(DISTINCT visit_id) FILTER (WHERE event = 'landing_view')::int AS visits,
@@ -1236,13 +1550,14 @@ def build_admin_analytics() -> dict:
                    COUNT(DISTINCT user_id) FILTER (WHERE event = 'paid')::int AS paid
               FROM funnel_events
              WHERE created_at >= NOW() - INTERVAL '30 days'
+               AND {counted}
              GROUP BY 1, 2
              ORDER BY visits DESC, signups DESC
              LIMIT 40
             """
         )
         yt = fetch_all(
-            """
+            f"""
             SELECT
               COUNT(DISTINCT visit_id) FILTER (
                 WHERE event = 'landing_view'
@@ -1256,6 +1571,7 @@ def build_admin_analytics() -> dict:
               )::int AS signups
               FROM funnel_events
              WHERE created_at >= NOW() - INTERVAL '30 days'
+               AND {counted}
             """
         )
     except Exception as exc:

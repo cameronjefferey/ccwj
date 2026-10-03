@@ -112,7 +112,7 @@
 {% if acquisition is defined and acquisition %}
 <div class="an-card">
     <h2>Visitors and page views</h2>
-    <p class="an-note">Logged-out public pages. One visitor is one anonymous cookie.</p>
+    <p class="an-note">Logged-out public pages, after bots and internal traffic are removed. One visitor is one anonymous cookie. A page view counts once the browser runs JavaScript. Older rows from before that check still count.</p>
     <div class="an-scroll">
         <table class="an-table">
             <thead>
@@ -170,6 +170,35 @@
         {% endfor %}
     </div>
     {% endfor %}
+</div>
+
+<div class="an-card">
+    <h2>Where they came from</h2>
+    <p class="an-note">utm source and campaign, otherwise the referrer host, otherwise Direct. {{ acquisition.filtered_out|default(0) }} filtered out (bots and internal).</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th class="an-num">Visitors</th>
+                    <th class="an-num">Signups</th>
+                    <th class="an-num">Signup rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in acquisition.origins|default([]) %}
+                <tr>
+                    <td>{{ row.source }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                    <td class="an-num">{{ row.rate }}%</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4">No traffic in this window.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <div class="an-card">

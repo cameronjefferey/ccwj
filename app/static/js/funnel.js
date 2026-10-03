@@ -5,6 +5,10 @@
     var path = location.pathname || "/";
     var sent = {};
 
+    // Marks this cookie as a real browser. Headless clients that never run
+    // this script stay out of Acquisition.
+    post("client_seen", "1");
+
     if (path.indexOf("/learn/") === 0 && path !== "/learn/progress") {
         post("lesson_started", "");
     }

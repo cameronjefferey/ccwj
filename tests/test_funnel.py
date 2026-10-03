@@ -4,6 +4,7 @@ import hashlib
 import html
 import json
 import os
+import uuid
 from urllib.parse import urlparse
 
 import pytest
@@ -480,6 +481,13 @@ def test_admin_analytics_is_admin_only(monkeypatch):
                     {"host": "YouTube", "visitors": 3},
                     {"host": "Reddit", "visitors": 8},
                 ],
+                "origins": [{
+                    "source": "reddit / learn",
+                    "visitors": 8,
+                    "signups": 2,
+                    "rate": 25.0,
+                }],
+                "filtered_out": 14,
             },
         },
     )
@@ -495,6 +503,10 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     assert "Campaign funnel" in body
     assert "50.0%" in body
     assert "/go/learn" in body
+    assert "Where they came from" in body
+    assert "reddit / learn" in body
+    assert "25.0%" in body
+    assert "14 filtered out" in body
 
 
 def test_start_hero_offers_learning_and_the_demo(monkeypatch):
@@ -522,6 +534,7 @@ def test_static_images_are_cached():
     assert "https://alb.reddit.com" in policy
     assert "cta_click" in resp.get_data(as_text=True)
     assert "scroll_depth" in resp.get_data(as_text=True)
+    assert "client_seen" in resp.get_data(as_text=True)
 
 
 def test_conversion_rates_are_percent_of_visitors():
@@ -757,6 +770,20 @@ def test_public_page_view_records_landing_device_and_not_identity():
     assert row["utm_campaign"] == "real-pnl"
     assert row["utm_content"] == "rolls"
 
+    seen = client.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/go/real-pnl", "detail": "1"},
+    )
+    assert seen.status_code == 200
+    beaconed = fetch_one(
+        """
+        SELECT client_beacon FROM funnel_events
+         WHERE event = 'page_view' AND path = '/go/real-pnl'
+         ORDER BY id DESC LIMIT 1
+        """
+    )
+    assert beaconed["client_beacon"] is True
+
     clicked = client.post(
         "/funnel/beacon",
         json={"event": "cta_click", "path": "/go/real-pnl", "detail": "try-demo"},
@@ -836,3 +863,340 @@ def test_learn_route_signup_opens_learn(monkeypatch):
     assert resp.status_code in (302, 303)
     assert urlparse(resp.headers["Location"]).path == "/learn"
     assert created["signed"] == 4242
+
+
+_MOZILLA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+def _cookie_value(client, name):
+    cookie = client.get_cookie(name)
+    if cookie is None:
+        return ""
+    return cookie.value
+
+
+def _origin(acq, source):
+    for row in acq.get("origins") or []:
+        if row["source"] == source:
+            return row
+    return {"visitors": 0, "signups": 0, "rate": 0.0}
+
+
+def _counted_page_views(visit_id) -> int:
+    from app.db import fetch_one
+    from app.funnel import counted_traffic_sql
+    row = fetch_one(
+        f"""
+        SELECT COUNT(*)::int AS n
+          FROM funnel_events
+         WHERE event = 'page_view' AND visit_id = %s
+           AND {counted_traffic_sql()}
+        """,
+        (visit_id,),
+    )
+    return int(row["n"] or 0)
+
+
+def test_bot_user_agents_internal_ip_and_opt_out(monkeypatch):
+    from app.funnel import ip_is_internal, is_bot_user_agent, request_is_internal
+
+    assert is_bot_user_agent(_MOZILLA) is False
+    assert is_bot_user_agent("") is False
+    assert is_bot_user_agent(None) is False
+    assert is_bot_user_agent("curling iron") is False
+    for ua in (
+        "Mozilla/5.0 HeadlessChrome/120.0.0.0",
+        "python-requests/2.32.3",
+        "curl/8.5.0",
+        "curl",
+        "Mozilla/5.0 Playwright",
+        "Mozilla/5.0 Puppeteer",
+        "Slackbot-LinkExpanding 1.0",
+        "Twitterbot/1.0",
+        "facebookexternalhit/1.1",
+        "redditbot/1.0",
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "SomeCrawler/1.0",
+        "MySpider/1.0",
+    ):
+        assert is_bot_user_agent(ua) is True, ua
+
+    assert ip_is_internal("127.0.0.1") is False
+    monkeypatch.setenv("INTERNAL_IPS", "10.0.0.0/8, 192.168.1.9")
+    assert ip_is_internal("10.1.2.3") is True
+    assert ip_is_internal("192.168.1.9") is True
+    assert ip_is_internal("192.168.1.10") is False
+    assert ip_is_internal("unknown") is False
+    assert ip_is_internal("") is False
+
+    with app.test_request_context("/pricing?ht_internal=1"):
+        assert request_is_internal() is True
+    with app.test_request_context("/pricing", headers={"Cookie": "ht_internal=1"}):
+        assert request_is_internal() is True
+    with app.test_request_context("/pricing"):
+        assert request_is_internal() is False
+    monkeypatch.setenv("INTERNAL_IPS", "203.0.113.5")
+    monkeypatch.setattr("app.client_ip.real_client_ip", lambda: "203.0.113.5")
+    with app.test_request_context("/pricing"):
+        assert request_is_internal() is True
+    monkeypatch.setenv("ADMIN_USERS", "cameron")
+    from app.funnel import human_traffic_sql, internal_usernames
+    assert "cameron" in internal_usernames()
+    assert "testingcameron" in human_traffic_sql()
+    assert "'cameron'" in human_traffic_sql()
+
+
+def test_log_event_flags_headless_chrome(monkeypatch):
+    inserts = []
+    _patch_db(monkeypatch, inserts)
+    with app.test_request_context(
+        "/pricing", headers={"User-Agent": "HeadlessChrome/120.0"},
+    ):
+        log_event("page_view", path="/pricing")
+    params = inserts[0][1]
+    assert params[-1] is True
+    assert "HeadlessChrome/120.0" in params
+    assert "FALSE" in inserts[0][0]
+
+
+def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
+    sqls = []
+
+    def _fetch_all(sql, params=()):
+        sqls.append(sql)
+        return []
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://funnel-test")
+    monkeypatch.setattr("app.db.fetch_all", _fetch_all)
+    from app.funnel import build_acquisition, build_admin_analytics
+    build_acquisition("7d")
+    build_admin_analytics()
+    blob = "\n".join(sqls)
+    assert "COALESCE(is_bot, FALSE) = FALSE" in blob
+    assert "client_beacon IS DISTINCT FROM FALSE" in blob
+    assert "funnel_internal_visits" in blob
+    assert "testingcameron" in blob
+    assert "ELSE 'Direct'" in blob
+
+
+def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    from app.db import execute, fetch_one
+    from app.funnel import backfill_bot_user_agents, build_acquisition, log_event
+
+    before = build_acquisition("7d")
+    before_reddit = _origin(before, "reddit / real-pnl")
+    before_direct = _origin(before, "Direct")
+    before_youtube = _origin(before, "www.youtube.com")
+    before_filtered = before["filtered_out"]
+
+    human = app.test_client()
+    human.get(
+        "/go/real-pnl?utm_source=reddit&utm_campaign=real-pnl",
+        headers={"User-Agent": _MOZILLA},
+    )
+    seen = human.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/go/real-pnl", "detail": "1"},
+    )
+    assert seen.status_code == 200
+    human_visit = fetch_one(
+        """
+        SELECT visit_id FROM funnel_events
+         WHERE event = 'page_view' AND path = '/go/real-pnl'
+           AND utm_campaign = 'real-pnl'
+         ORDER BY id DESC LIMIT 1
+        """
+    )["visit_id"]
+    assert _counted_page_views(human_visit) == 1
+    touch = _cookie_value(human, "ht_touch")
+    assert touch
+    signup_user = int(uuid.uuid4().hex[:6], 16)
+    with app.test_request_context(
+        "/signup",
+        headers={
+            "User-Agent": _MOZILLA,
+            "Cookie": "ht_touch=" + touch,
+        },
+    ):
+        signup_id = log_event(
+            "signup_completed", path="/signup", user_id=signup_user,
+        )
+    assert signup_id
+    signup_row = fetch_one(
+        """
+        SELECT utm_source, utm_campaign, is_bot
+          FROM funnel_events
+         WHERE event_id = %s
+        """,
+        (signup_id,),
+    )
+    assert signup_row["utm_source"] == "reddit"
+    assert signup_row["utm_campaign"] == "real-pnl"
+    assert signup_row["is_bot"] is False
+
+    bot = app.test_client()
+    bot.get(
+        "/go/mistakes",
+        headers={"User-Agent": "Mozilla/5.0 HeadlessChrome/120.0.0.0"},
+    )
+    bot.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/go/mistakes", "detail": "1"},
+    )
+    bot_row = fetch_one(
+        """
+        SELECT visit_id, is_bot, client_beacon FROM funnel_events
+         WHERE event = 'page_view' AND path = '/go/mistakes'
+         ORDER BY id DESC LIMIT 1
+        """
+    )
+    assert bot_row["is_bot"] is True
+    assert bot_row["client_beacon"] is True
+    assert _counted_page_views(bot_row["visit_id"]) == 0
+
+    quiet = app.test_client()
+    quiet.get("/pricing", headers={"User-Agent": _MOZILLA})
+    quiet_row = fetch_one(
+        """
+        SELECT visit_id, client_beacon FROM funnel_events
+         WHERE event = 'page_view' AND path = '/pricing'
+           AND COALESCE(is_bot, FALSE) = FALSE
+           AND client_beacon IS FALSE
+         ORDER BY id DESC LIMIT 1
+        """
+    )
+    assert quiet_row["client_beacon"] is False
+    assert _counted_page_views(quiet_row["visit_id"]) == 0
+
+    internal = app.test_client()
+    flagged = internal.get(
+        "/faq?ht_internal=1",
+        headers={"User-Agent": _MOZILLA},
+    )
+    assert "ht_internal=1" in " ".join(flagged.headers.getlist("Set-Cookie"))
+    internal.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/faq", "detail": "1"},
+    )
+    internal_visit = fetch_one(
+        """
+        SELECT visit_id FROM funnel_events
+         WHERE event = 'page_view' AND path = '/faq'
+         ORDER BY id DESC LIMIT 1
+        """
+    )["visit_id"]
+    assert _counted_page_views(internal_visit) == 0
+    assert fetch_one(
+        "SELECT reason FROM funnel_internal_visits WHERE visit_id = %s",
+        (internal_visit,),
+    )["reason"] == "query"
+
+    direct = app.test_client()
+    direct.get("/signup", headers={"User-Agent": _MOZILLA})
+    direct.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/signup", "detail": "1"},
+    )
+    referred = app.test_client()
+    referred.get(
+        "/learn",
+        headers={
+            "User-Agent": _MOZILLA,
+            "Referer": "https://www.youtube.com/watch?v=abc",
+        },
+    )
+    referred.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/learn", "detail": "1"},
+    )
+    mid = build_acquisition("7d")
+    assert _origin(mid, "Direct")["visitors"] == before_direct["visitors"] + 1
+    assert _origin(mid, "www.youtube.com")["visitors"] == before_youtube["visitors"] + 1
+
+    legacy_bot = uuid.uuid4().hex
+    legacy_human = uuid.uuid4().hex
+    execute(
+        """
+        INSERT INTO funnel_events (event, visit_id, path, user_agent, created_at)
+        VALUES ('page_view', %s, '/go/legacy-bot',
+                'Mozilla/5.0 HeadlessChrome/119', NOW())
+        """,
+        (legacy_bot,),
+    )
+    execute(
+        """
+        INSERT INTO funnel_events (event, visit_id, path, created_at)
+        VALUES ('page_view', %s, '/go/legacy-human', NOW())
+        """,
+        (legacy_human,),
+    )
+    backfill_bot_user_agents()
+    assert fetch_one(
+        "SELECT is_bot FROM funnel_events WHERE visit_id = %s",
+        (legacy_bot,),
+    )["is_bot"] is True
+    assert fetch_one(
+        "SELECT is_bot, user_agent FROM funnel_events WHERE visit_id = %s",
+        (legacy_human,),
+    )["is_bot"] is None
+    assert _counted_page_views(legacy_bot) == 0
+    assert _counted_page_views(legacy_human) == 1
+
+    after = build_acquisition("7d")
+    reddit = _origin(after, "reddit / real-pnl")
+    assert reddit["visitors"] == before_reddit["visitors"] + 1
+    assert reddit["signups"] == before_reddit["signups"] + 1
+    assert reddit["rate"] == round(100.0 * reddit["signups"] / reddit["visitors"], 1)
+    # The legacy row has no user agent, so it stays in Direct.
+    assert _origin(after, "Direct")["visitors"] == before_direct["visitors"] + 2
+    # Bot, no beacon, internal query, and the backfilled headless row.
+    assert after["filtered_out"] >= before_filtered + 4
+
+
+def test_testingcameron_login_removes_that_visitor(monkeypatch):
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    from app.db import fetch_one
+    from app.models import User
+
+    client = app.test_client()
+    client.get("/faq", headers={"User-Agent": _MOZILLA})
+    client.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/faq", "detail": "1"},
+    )
+    visit_id = fetch_one(
+        """
+        SELECT visit_id FROM funnel_events
+         WHERE event = 'page_view' AND path = '/faq'
+           AND COALESCE(is_bot, FALSE) = FALSE
+         ORDER BY id DESC LIMIT 1
+        """
+    )["visit_id"]
+    assert _counted_page_views(visit_id) == 1
+
+    class _Owner:
+        id = 1
+        username = "testingcameron"
+        is_active = True
+        is_anonymous = False
+        is_authenticated = True
+
+        def get_id(self):
+            return "1"
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda uid: _Owner()))
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "1"
+        sess["_fresh"] = True
+    client.get("/faq", headers={"User-Agent": _MOZILLA})
+    assert _counted_page_views(visit_id) == 0
+    assert fetch_one(
+        "SELECT reason FROM funnel_internal_visits WHERE visit_id = %s",
+        (visit_id,),
+    )["reason"] == "account"

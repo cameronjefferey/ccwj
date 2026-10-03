@@ -926,10 +926,27 @@ def _migrate_funnel_events():
             ("variant", "TEXT"),
             ("device", "TEXT"),
             ("detail", "TEXT"),
+            # NULL user_agent on older rows cannot be classified. No default
+            # on client_beacon: NULL means "before the beacon existed" and
+            # still counts. New inserts set FALSE until the browser checks in.
+            ("user_agent", "TEXT"),
+            ("is_bot", "BOOLEAN"),
+            ("client_beacon", "BOOLEAN"),
         ):
             execute(
                 f"ALTER TABLE funnel_events ADD COLUMN IF NOT EXISTS {column} {typedef}"
             )
+        execute(
+            """
+            CREATE TABLE IF NOT EXISTS funnel_internal_visits (
+                visit_id   TEXT PRIMARY KEY,
+                reason     TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        from app.funnel import backfill_bot_user_agents
+        backfill_bot_user_agents()
     except Exception as exc:
         _log.warning("funnel events migration skipped: %s", exc)
 
