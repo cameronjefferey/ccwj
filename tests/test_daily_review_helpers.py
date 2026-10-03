@@ -863,9 +863,54 @@ class TestBuildTodayMovers:
         # Tenant + OCC alone repeats each fill once per contract row.
         assert "f.account = o.account" in DAY_TRADES_QUERY
         assert "f.user_id IS NOT DISTINCT FROM o.user_id" in DAY_TRADES_QUERY
-        # Two contract rows for one OCC must not repeat the fill.
-        assert "MAX(realized_pnl) AS realized_pnl" in DAY_TRADES_QUERY
-        assert "GROUP BY tenant_id, account, user_id, trade_symbol" in DAY_TRADES_QUERY
+        # One row per OCC and direction. A 0 placeholder must not win,
+        # and a long plus a short on the same OCC both stay.
+        assert "MAX(realized_pnl)" not in DAY_TRADES_QUERY
+        assert "opened_before_history" in DAY_TRADES_QUERY
+        assert "PARTITION BY tenant_id, account, user_id, trade_symbol, direction" in DAY_TRADES_QUERY
+        assert "o.direction = 'Sold'" in DAY_TRADES_QUERY
+        assert "o.direction = 'Bought'" in DAY_TRADES_QUERY
+        # Opens posted the day after a same-day expiry still belong here.
+        assert "option_expiry = @day" in DAY_TRADES_QUERY
+        assert "DATE_ADD(@day, INTERVAL 2 DAY)" in DAY_TRADES_QUERY
+
+    def test_zero_placeholder_does_not_erase_a_loss(self):
+        from app.weekly_review import _select_contract_realized
+
+        occ = "SPXW  261002C07735000"
+        picked = _select_contract_realized([
+            {
+                "trade_symbol": occ, "direction": "Bought",
+                "realized_pnl": -8903.10, "opened_before_history": False,
+            },
+            {
+                "trade_symbol": occ, "direction": "Bought",
+                "realized_pnl": 0.0, "opened_before_history": True,
+            },
+        ])
+        assert len(picked) == 1
+        assert picked[0]["realized_pnl"] == -8903.10
+
+    def test_long_and_short_on_one_occ_both_stay(self):
+        from app.weekly_review import _select_contract_realized
+
+        occ = "SPXW  261002C07730000"
+        picked = _select_contract_realized([
+            {
+                "trade_symbol": occ, "direction": "Sold",
+                "realized_pnl": 10780.90, "opened_before_history": False,
+            },
+            {
+                "trade_symbol": occ, "direction": "Bought",
+                "realized_pnl": -8903.10, "opened_before_history": False,
+            },
+            {
+                "trade_symbol": occ, "direction": "Sold",
+                "realized_pnl": 0.0, "opened_before_history": True,
+            },
+        ])
+        by_dir = {row["direction"]: row["realized_pnl"] for row in picked}
+        assert by_dir == {"Sold": 10780.90, "Bought": -8903.10}
 
     def _oct2_statement_fills(self, *, copies=1, trade_date=None):
         """Oct 2 statement amounts, already net of the broker fee."""
@@ -1113,17 +1158,76 @@ class TestBuildTodayMovers:
         assert 'data-lot-split="split"' in admin_today
         assert "Lot split split:" in admin_today
 
-    def test_fills_on_another_day_keep_the_fused_tile(self, caplog):
-        """Friday's mart row stays one 30× tile when the fills are not that day.
+    def test_posting_day_opens_of_a_friday_expiry_split(self, caplog):
+        """The 10× expired with no close, so nothing caps its open back to Friday.
 
-        The card is rebuilt each request from the options frame and the
-        fills frame. A fills frame dated the posting day cannot produce
-        Friday lot tiles, so the fused rollup is what the card shows.
+        A next-day trade_date (UTC, or the broker post) still belongs on
+        the expiry session. The mart dollar is already the net credit.
         """
         result = _build_today_movers(
             self._friday_equity(),
             options_moves_df=self._oct2_production_options(),
             option_fills_df=self._oct2_statement_fills(trade_date=date(2026, 10, 3)),
+        )
+        self._assert_oct2_lots(result)
+        with caplog.at_level(logging.INFO):
+            _build_today_movers(
+                self._friday_equity(),
+                options_moves_df=self._oct2_production_options(),
+                option_fills_df=self._oct2_statement_fills(trade_date=date(2026, 10, 3)),
+            )
+        assert "reason=split" not in caplog.text
+        assert "lot_split" not in caplog.text
+
+    def test_gross_premium_with_blank_fees_nets_to_the_two_lots(self):
+        """Fees column 0 and gross amounts miss the mart by exactly $122.20.
+
+        The budget was $0, so the $122.20 gap kept the fused 30× tile.
+        The implied $1.222 per contract is the missing commission.
+        """
+        day = date(2026, 10, 2)
+        short = "SPXW  261002C07730000"
+        long = "SPXW  261002C07735000"
+        legs = [
+            ("option_sell_to_open", short, 20, 6.85, 13700.00),
+            ("option_buy_to_open", long, 20, 5.35, -10700.00),
+            ("option_sell_to_close", long, 20, 1.824, 3648.00),
+            ("option_buy_to_close", short, 20, 2.824, -5648.00),
+            ("option_sell_to_open", short, 10, 2.79, 2790.00),
+            ("option_buy_to_open", long, 10, 1.79, -1790.00),
+        ]
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "snaptrade:sara",
+                "account": "Sara Investment",
+                "trade_date": day,
+                "action": action,
+                "trade_symbol": occ,
+                "quantity": qty,
+                "price": price,
+                "amount": gross,
+                "fees": 0,
+            }
+            for action, occ, qty, price, gross in legs
+        ])
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=self._oct2_production_options(),
+            option_fills_df=fills,
+        )
+        self._assert_oct2_lots(result)
+
+    def test_fills_on_another_day_keep_the_fused_tile(self, caplog):
+        """A later expiry dated the next day is not Friday's SPXW lot."""
+        fills = self._oct2_statement_fills(trade_date=date(2026, 10, 3))
+        fills["trade_symbol"] = fills["trade_symbol"].replace({
+            "SPXW  261002C07730000": "SPXW  261016C07730000",
+            "SPXW  261002C07735000": "SPXW  261016C07735000",
+        })
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=self._oct2_production_options(),
+            option_fills_df=fills,
         )
         spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
         assert len(spxw) == 1
@@ -1137,7 +1241,7 @@ class TestBuildTodayMovers:
             _build_today_movers(
                 self._friday_equity(),
                 options_moves_df=self._oct2_production_options(),
-                option_fills_df=self._oct2_statement_fills(trade_date=date(2026, 10, 3)),
+                option_fills_df=fills,
             )
         assert "reason=no_session_fills" in caplog.text
 

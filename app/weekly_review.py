@@ -3942,21 +3942,59 @@ def _fill_action_text(row) -> str:
     return str(_fill_field(row, "action", "Action", default="") or "").strip().lower()
 
 
+def _fill_expiry_iso(row):
+    """OCC expiry as ``YYYY-MM-DD``, from the column or the symbol."""
+    iso = _iso_day(_fill_field(row, "option_expiry", "Option Expiry"))
+    if iso and len(iso) >= 10 and iso[4:5] == "-":
+        return iso[:10]
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(_fill_field(row, "trade_symbol", "Symbol", default=""))
+    if not parsed:
+        return None
+    return f"20{parsed['yy']}-{int(parsed['mm']):02d}-{int(parsed['dd']):02d}"
+
+
+def _fill_counts_for_session(iso, expiry, session) -> bool:
+    """True when this fill belongs on the mover session.
+
+    A same-day expiry has no closing fill to pin it. The open can be
+    dated the next calendar day (UTC timestamp, or the broker's posting
+    date) while the mart still books the credit on the expiry. Closes
+    are already capped at expiry in ``stg_history``. Opens are not.
+    Two days covers a Friday expiry posted on Saturday or Sunday.
+    A later expiry, or an earlier open, stays on its own date.
+    """
+    if not session or not iso:
+        return True
+    if iso == session:
+        return True
+    if not expiry or expiry != session:
+        return False
+    try:
+        delta = (date.fromisoformat(iso) - date.fromisoformat(session)).days
+    except ValueError:
+        return False
+    return 1 <= delta <= 2
+
+
 def _same_day_option_lot_tiles(fills_df, anchor):
     """One mover tile per same-day vertical, cash net of broker fees.
 
     The warehouse keeps one row per OCC symbol, so a 20-lot that closed
     and a 10-lot that expired at the same strikes arrive as ``30×`` and
     a single gross dollar. These tiles use the position page's lot split.
-    Returns ``(tiles, fees_by_symbol)``. Fees are the commission column,
-    counted once per fill whether or not the amount was already net.
+    Returns ``(tiles, fees_by_symbol, qty_by_symbol)``. Fees are the
+    commission column, counted once per fill whether or not the amount
+    was already net. Quantities are contract-fills, so a missing fee
+    column can be implied per contract.
     """
     from app.option_formatting import parse_occ
     from app.outcome_units import group_vertical_spreads
     from app.snaptrade_normalize import _net_option_cash
 
     if fills_df is None or getattr(fills_df, "empty", True):
-        return [], {}
+        return [], {}, {}
     records = _dedupe_lot_fills(fills_df.to_dict(orient="records"))
     dates = []
     for row in records:
@@ -3968,12 +4006,13 @@ def _same_day_option_lot_tiles(fills_df, anchor):
     session = _iso_day(anchor) or (max(dates) if dates else None)
     groups = {}
     fees_by_symbol = {}
+    qty_by_symbol = {}
     for row in records:
         action = _fill_action_text(row)
         if action in _LOT_SKIP_ACTIONS or action not in (_LOT_OPEN_ACTIONS | _LOT_CLOSE_ACTIONS):
             continue
         iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
-        if session and iso and iso != session:
+        if not _fill_counts_for_session(iso, _fill_expiry_iso(row), session):
             continue
         parsed = parse_occ(_fill_field(row, "trade_symbol", "Symbol", default=""))
         if not parsed:
@@ -3988,16 +4027,22 @@ def _same_day_option_lot_tiles(fills_df, anchor):
         net = _net_option_cash(amount, qty, price, fee)
         symbol = _option_root_match_key(parsed["root"])
         fees_by_symbol[symbol] = round(fees_by_symbol.get(symbol, 0.0) + fee, 2)
+        qty_by_symbol[symbol] = round(qty_by_symbol.get(symbol, 0.0) + qty, 4)
         tenant = str(_fill_field(row, "tenant_id", default="") or "")
         account = str(_fill_field(row, "account", default="") or "")
         trade_symbol = str(_fill_field(row, "trade_symbol", default="") or "")
         key = (tenant, account, trade_symbol)
+        # A posting-day open of this session's expiry is that session's
+        # lot, not the next calendar day's.
+        use_date = iso or session or ""
+        if session and iso and iso != session:
+            use_date = session
         groups.setdefault(key, []).append({
             "action": action,
             "quantity": qty,
             "price": price,
             "amount": net,
-            "trade_date": iso or session or "",
+            "trade_date": use_date,
             "trade_symbol": trade_symbol,
             "tenant_id": tenant,
             "account": account,
@@ -4037,7 +4082,7 @@ def _same_day_option_lot_tiles(fills_df, anchor):
             ],
         })
     if not outcomes:
-        return [], fees_by_symbol
+        return [], fees_by_symbol, qty_by_symbol
 
     tiles = []
     for row in group_vertical_spreads(outcomes):
@@ -4089,7 +4134,7 @@ def _same_day_option_lot_tiles(fills_df, anchor):
             "contract_detail": option_contract_detail(detail_rows),
             "option_caption": caption,
         })
-    return tiles, fees_by_symbol
+    return tiles, fees_by_symbol, qty_by_symbol
 
 
 def _dedupe_lot_fills(records):
@@ -4156,15 +4201,22 @@ _INDEX_ROOT_PAIRS = (
 )
 
 
+def _emit_lot_split(symbol, reason, detail):
+    """Log a skipped split. A successful split is not a log line."""
+    if reason == "split":
+        return
+    _lot_log.info(
+        "lot_split symbol=%s reason=%s detail=%s",
+        symbol, reason, detail,
+    )
+
+
 def _note_lot_split(opt, reason, detail):
-    """Stamp one tile and log the decision. The page shows this to admins."""
+    """Stamp one tile and log when the split was skipped."""
     stamped = dict(opt)
     stamped["lot_split_reason"] = reason
     stamped["lot_split_detail"] = detail
-    _lot_log.info(
-        "lot_split symbol=%s reason=%s detail=%s",
-        stamped.get("symbol"), reason, detail,
-    )
+    _emit_lot_split(stamped.get("symbol"), reason, detail)
     return stamped
 
 
@@ -4176,10 +4228,7 @@ def _note_lot_tiles(lots, reason, detail):
         row["lot_split_detail"] = detail
         stamped.append(row)
     if lots:
-        _lot_log.info(
-            "lot_split symbol=%s reason=%s detail=%s",
-            lots[0].get("symbol"), reason, detail,
-        )
+        _emit_lot_split(lots[0].get("symbol"), reason, detail)
     return stamped
 
 
@@ -4204,7 +4253,12 @@ def _lot_skip_diagnosis(fills_df, anchor):
         if iso:
             dates.append(iso)
     shown = ",".join(sorted(set(dates))[:8])
-    if session and dates and session not in dates:
+    session_hits = 0
+    for row in records:
+        iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
+        if _fill_counts_for_session(iso, _fill_expiry_iso(row), session):
+            session_hits += 1
+    if session and dates and session_hits == 0:
         return (
             "no_session_fills",
             f"anchor={session} fill_dates={shown} rows={len(records)}",
@@ -4214,7 +4268,7 @@ def _lot_skip_diagnosis(fills_df, anchor):
     parsed = 0
     for row in records:
         iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
-        if session and iso and iso != session:
+        if not _fill_counts_for_session(iso, _fill_expiry_iso(row), session):
             continue
         action = _fill_action_text(row)
         if action in _LOT_SKIP_ACTIONS or action not in (_LOT_OPEN_ACTIONS | _LOT_CLOSE_ACTIONS):
@@ -4232,19 +4286,100 @@ def _lot_skip_diagnosis(fills_df, anchor):
     )
 
 
+# SPXW's broker fee is $1.222 a contract. $1.50 leaves that gap inside
+# the budget and still rejects Oct 1's $5,000 settlement width.
+_IMPLIED_FEE_PER_CONTRACT = 1.50
+
+
+def _closer_mart_value(opt, lot_sum):
+    """The mart dollar the lot total is closest to."""
+    values = []
+    if opt.get("closed_impact") is not None:
+        values.append(float(opt.get("closed_impact") or 0))
+    if opt.get("dollar_impact") is not None:
+        values.append(float(opt.get("dollar_impact") or 0))
+    if not values:
+        values.append(0.0)
+    return min(values, key=lambda value: abs(round(value, 2) - lot_sum))
+
+
+def _gross_fee_rates(options, tiles, fees_by_symbol, qty_by_symbol):
+    """Per-contract rate when the premium is gross and fees are blank.
+
+    The lot cash is then the gross credit. The mart dollar is the net.
+    The difference is the commission. Applying it per contract-fill
+    (not as a wider accept of the gross tiles) keeps $902.24 and $975.56.
+    """
+    grouped = {}
+    for tile in tiles or []:
+        grouped.setdefault(_option_root_match_key(tile["symbol"]), []).append(tile)
+    rates = {}
+    for opt in options or []:
+        symbol = _option_root_match_key(opt.get("symbol"))
+        lots = grouped.get(symbol)
+        if not lots or symbol in rates:
+            continue
+        lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
+        gap = _option_tile_gap(opt, lot_sum)
+        budget = float(fees_by_symbol.get(symbol) or 0)
+        if budget >= 0.05 or gap <= max(1.0, budget + 1.0):
+            continue
+        qty = float(qty_by_symbol.get(symbol) or 0)
+        if qty <= 0 or gap > _IMPLIED_FEE_PER_CONTRACT * qty + 1.0:
+            continue
+        target = _closer_mart_value(opt, lot_sum)
+        if lot_sum <= target + 0.05:
+            continue
+        rates[symbol] = (lot_sum - target) / qty
+    return rates
+
+
+def _with_implied_option_fees(fills_df, rates):
+    """Copy fills, setting a blank fee to ``rate × contracts``."""
+    from app.option_formatting import parse_occ
+
+    records = fills_df.to_dict(orient="records")
+    for row in records:
+        parsed = parse_occ(_fill_field(row, "trade_symbol", "Symbol", default=""))
+        if not parsed:
+            continue
+        rate = rates.get(_option_root_match_key(parsed["root"]))
+        if not rate:
+            continue
+        try:
+            fee = abs(float(_fill_field(row, "fees", "fees_and_comm", "fee", default=0) or 0))
+            qty = abs(float(_fill_field(row, "quantity", "Quantity", default=0) or 0))
+        except (TypeError, ValueError):
+            continue
+        if fee >= 0.005 or qty <= 0:
+            continue
+        row["fees"] = round(rate * qty, 2)
+    return pd.DataFrame(records)
+
+
 def _apply_same_day_option_lots(options, fills_df, anchor):
     """Replace a fused symbol tile with one tile per same-day lot.
 
     The swap is kept when the lot cash matches the mart dollar, or
-    differs from it only by the broker fees on those fills. A settlement
-    estimate (credit versus width) stays on the mart tile.
+    differs from it only by the broker fees on those fills. A gross
+    premium with an empty fees column is netted at the implied
+    per-contract rate when that gap is within $1.50 a contract-fill.
+    A settlement estimate (credit versus width) stays on the mart tile.
 
     Every option tile is stamped with ``lot_split_reason`` (``split``,
     ``no_fills``, ``no_session_fills``, ``unparsed_symbol``, ``no_lots``,
     ``root_mismatch``, ``total_mismatch``). Admins see it on the card.
     """
     options = list(options or [])
-    tiles, fees_by_symbol = _same_day_option_lot_tiles(fills_df, anchor)
+    tiles, fees_by_symbol, qty_by_symbol = _same_day_option_lot_tiles(
+        fills_df, anchor,
+    )
+    if tiles:
+        rates = _gross_fee_rates(options, tiles, fees_by_symbol, qty_by_symbol)
+        if rates:
+            tiles, fees_by_symbol, qty_by_symbol = _same_day_option_lot_tiles(
+                _with_implied_option_fees(fills_df, rates), anchor,
+            )
     if not tiles:
         reason, detail = _lot_skip_diagnosis(fills_df, anchor)
         stamped = [_note_lot_split(opt, reason, detail) for opt in options]
@@ -6437,6 +6572,45 @@ WHERE s.symbol IS NULL
 # step, which caps a close at the contract expiry. A cash settlement
 # posted the next morning (seed Date 10/02, expiry 10/01) is the Oct 1
 # session on Today, the day page, and the story — not the raw post.
+def _select_contract_realized(rows):
+    """One realized P&L per direction on an OCC.
+
+    ``int_option_contracts`` emits a second grain row with
+    ``realized_pnl`` 0 when the contract was opened before the history
+    window. MAX() of that 0 and a real loss is 0. Grouping without
+    ``direction`` drops a genuine long or short on the same OCC.
+    Rank matches ``option_gl`` in ``DAY_TRADES_QUERY``: prefer the row
+    that was not opened before history, then the larger absolute P&L.
+    """
+    best = {}
+    for row in rows or []:
+        realized = row.get("realized_pnl")
+        try:
+            if realized is None or pd.isna(realized):
+                realized_n = None
+            else:
+                realized_n = float(realized)
+        except (TypeError, ValueError):
+            realized_n = None
+        opened = bool(row.get("opened_before_history"))
+        # Smaller wins: real history before the placeholder, then larger |pnl|.
+        rank = (
+            1 if opened else 0,
+            0.0 if realized_n is None else -abs(realized_n),
+        )
+        key = (
+            str(row.get("tenant_id") or ""),
+            str(row.get("account") or ""),
+            str(row.get("user_id") if row.get("user_id") is not None else ""),
+            str(row.get("trade_symbol") or ""),
+            str(row.get("direction") or ""),
+        )
+        prev = best.get(key)
+        if prev is None or rank < prev[0]:
+            best[key] = (rank, row)
+    return [item[1] for item in best.values()]
+
+
 # Option expiry / assignment / exercise date to option_expiry
 # (int_option_contracts.realized_close_date = least(broker fill, expiry),
 # plus OTM-at-expiry inference on Friday). Schwab posts the matching
@@ -6453,7 +6627,21 @@ WITH raw AS (
         underlying_symbol, description, quantity, price, amount, fees,
         instrument_type, option_expiry
     FROM `ccwj-dbt.analytics.stg_history`
-    WHERE trade_date = @day
+    WHERE (
+        trade_date = @day
+        -- A same-day expiry's open has no close to cap back onto the
+        -- session. The next one or two calendar days are the UTC date
+        -- or the posting date of that expiry, not a new trade.
+        OR (
+            option_expiry = @day
+            AND trade_date > @day
+            AND trade_date <= DATE_ADD(@day, INTERVAL 2 DAY)
+            AND action IN (
+                'option_buy_to_open', 'option_sell_to_open',
+                'option_buy_to_close', 'option_sell_to_close'
+            )
+        )
+    )
       AND action != 'dividend'  -- dividends render from int_dividend_events
       -- Lifecycle settlements are attributed on expiry, not the T+1 post.
       AND action NOT IN (
@@ -6487,20 +6675,30 @@ equity_gl AS (
 option_gl AS (
     -- Active closes (BTC/STC) only. Expiry/assignment/exercise come
     -- from the settlements UNION so they date to realized_close_date.
-    -- One row per OCC. int_option_contracts can emit two rows for one
-    -- contract (direction, opened_before_history). Joining both repeats
-    -- every fill, the lot cash doubles, and the mover keeps the fused
-    -- 30× tile. MAX ignores a NULL realized_pnl on the extra grain row.
-    SELECT
-        tenant_id,
-        account,
-        user_id,
-        trade_symbol,
-        MAX(realized_pnl) AS realized_pnl
-    FROM `ccwj-dbt.analytics.int_option_contracts`
-    WHERE realized_close_date = @day
-      {tenant_filter}
-    GROUP BY tenant_id, account, user_id, trade_symbol
+    -- One row per OCC and direction. Same rank as
+    -- ``_select_contract_realized``: a 0 placeholder
+    -- (opened_before_history) must not beat a real loss, and a long
+    -- plus a short on one OCC both stay. The fill join picks the side.
+    SELECT tenant_id, account, user_id, trade_symbol, direction, realized_pnl
+    FROM (
+        SELECT
+            tenant_id,
+            account,
+            user_id,
+            trade_symbol,
+            direction,
+            realized_pnl,
+            ROW_NUMBER() OVER (
+                PARTITION BY tenant_id, account, user_id, trade_symbol, direction
+                ORDER BY
+                    IF(COALESCE(opened_before_history, FALSE), 1, 0),
+                    ABS(COALESCE(realized_pnl, 0)) DESC
+            ) AS rn
+        FROM `ccwj-dbt.analytics.int_option_contracts`
+        WHERE realized_close_date = @day
+          {tenant_filter}
+    )
+    WHERE rn = 1
 ),
 history_rows AS (
     SELECT
@@ -6528,6 +6726,10 @@ history_rows AS (
         AND f.account = o.account
         AND (f.user_id IS NOT DISTINCT FROM o.user_id)
         AND f.trade_symbol = o.trade_symbol
+        AND (
+            (f.action = 'option_buy_to_close' AND o.direction = 'Sold')
+            OR (f.action = 'option_sell_to_close' AND o.direction = 'Bought')
+        )
 ),
 settlements AS (
     -- Closed via expiry / assignment / exercise (including OTM
