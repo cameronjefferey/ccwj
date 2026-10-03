@@ -856,6 +856,73 @@ class TestBuildTodayMovers:
         assert row["dollar_impact"] == 975.56
         assert result["options_impact"] == 975.56
 
+    def test_future_expiry_open_is_not_treated_as_expired_pnl(self):
+        """Opening premium is not a mover result while the contract is open.
+
+        A just-opened contract can have no mart row yet (or a $0 first
+        mark). The fill splitter must not append its cash flow as an
+        ``Expired`` gain or loss merely because no mart tile matched it.
+        """
+        day = date(2026, 10, 2)
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Main", "trade_date": day,
+                "action": "option_buy_to_open",
+                "trade_symbol": "SPY   261120C00600000",
+                "underlying_symbol": "SPY",
+                "option_expiry": date(2026, 11, 20),
+                "quantity": 10, "price": 5.0, "amount": -5000.0, "fees": 6.50,
+            },
+        ])
+        result = _build_today_movers(
+            None, options_moves_df=pd.DataFrame(), option_fills_df=fills,
+        )
+        assert result["winners"] == []
+        assert result["losers"] == []
+        assert result["options"] == []
+        assert result["options_impact"] == 0.0
+
+    def test_distinct_parent_and_weekly_index_moves_both_survive(self):
+        """SPX and SPXW are aliases for matching, not duplicate movers."""
+        day = date(2026, 10, 2)
+        expiry = date(2026, 11, 20)
+        options = [
+            {
+                "symbol": "SPX", "dollar_impact": 100.0,
+                "open_impact": 0.0, "closed_impact": 100.0,
+                "contract_detail": "1× SPX 6000C",
+                "option_caption": "Closed today",
+            },
+            {
+                "symbol": "SPXW", "dollar_impact": 200.0,
+                "open_impact": 0.0, "closed_impact": 200.0,
+                "contract_detail": "1× SPXW 6010C",
+                "option_caption": "Closed today",
+            },
+        ]
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Main", "trade_date": day,
+                "action": action, "trade_symbol": symbol,
+                "underlying_symbol": root, "option_expiry": expiry,
+                "quantity": 1, "price": price, "amount": amount, "fees": 0,
+            }
+            for root, symbol, action, price, amount in (
+                ("SPX", "SPX   261120C06000000", "option_sell_to_open", 2.0, 200.0),
+                ("SPX", "SPX   261120C06000000", "option_buy_to_close", 1.0, -100.0),
+                ("SPXW", "SPXW  261120C06010000", "option_sell_to_open", 3.0, 300.0),
+                ("SPXW", "SPXW  261120C06010000", "option_buy_to_close", 1.0, -100.0),
+            )
+        ])
+        kept, impact, _as_of = _apply_same_day_option_lots(
+            options, fills, day,
+        )
+        assert impact == 300.0
+        assert {(row["symbol"], row["dollar_impact"]) for row in kept} == {
+            ("SPX", 100.0),
+            ("SPXW", 200.0),
+        }
+
     def test_day_trades_query_carries_fees_for_mover_lots(self):
         assert "f.fees" in DAY_TRADES_QUERY
         assert "c.fees" in DAY_TRADES_QUERY

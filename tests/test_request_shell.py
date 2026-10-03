@@ -34,6 +34,35 @@ def test_plan_and_view_are_not_served_from_the_process_cache(monkeypatch):
     shell_cache.clear()
 
 
+def test_authorization_fields_are_not_served_from_process_cache(monkeypatch):
+    """Email and tenant ownership changes on another worker apply next request."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    from app import models, shell_cache
+
+    shell_cache.clear()
+    shell_cache.put(9, "email_unverified", False)
+    shell_cache.put(9, "tenant_ids", ["snaptrade:removed"])
+    shell_cache.put(9, "broker_tenants", [{
+        "tenant_id": "snaptrade:removed",
+        "connection_status": "active",
+    }])
+
+    monkeypatch.setattr(
+        models,
+        "fetch_one",
+        lambda *a, **k: {
+            "email": "new@example.com",
+            "email_verified_at": None,
+        },
+    )
+    monkeypatch.setattr(models, "fetch_all", lambda *a, **k: [])
+
+    assert models.email_needs_verification(9) is True
+    assert models.get_tenant_ids_for_user(9) == []
+    assert models.get_broker_tenants_for_user(9) == []
+    shell_cache.clear()
+
+
 def test_shell_cache_reuses_a_loader_until_invalidate(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     from app import shell_cache

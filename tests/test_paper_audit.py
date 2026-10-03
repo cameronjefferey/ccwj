@@ -49,6 +49,10 @@ def test_alpaca_paper_row_is_paper_and_live_alpaca_is_not():
     assert not is_paper_row(schwab)
     assert paper_display_label(paper) == "Paper"
     assert paper_display_label(live) is None
+    renamed_live = dict(live)
+    renamed_live["display_nickname"] = "Alpaca Paper testing"
+    assert not is_paper_row(renamed_live)
+    assert paper_display_label(renamed_live) is None
     nick = dict(paper)
     nick["display_nickname"] = "Testing"
     assert paper_display_label(nick) == "Testing · Paper"

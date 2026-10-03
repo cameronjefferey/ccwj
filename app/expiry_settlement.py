@@ -31,6 +31,12 @@ must not be booked as a worthless win just because ^GSPC was missing.
 SPXW prices live under SPX or SPXW (the loader fetches ^GSPC for both);
 the caller passes that close (exact symbol, then SPXW→SPX, NDXP→NDX,
 RUTW→RUT).
+
+Standard SPX, NDX, RUT, and VIX expiries are AM-settled against a special
+opening quotation (SET/VRO), not that day's closing index value. The current
+market-data source does not carry those settlement prints, so those roots stay
+pending until the broker line arrives. Their PM-settled aliases remain eligible
+for the close-based estimate.
 """
 
 from __future__ import annotations
@@ -49,6 +55,10 @@ CASH_INDEX_ROOTS = frozenset({
     "SPX", "SPXW", "XSP", "NDX", "NDXP", "RUT", "RUTW",
     "VIX", "DJX", "OEX", "XEO", "RVX",
 })
+
+# These roots settle from a special opening quotation that is not the daily
+# close in stg_daily_prices. Never substitute the close for SET/VRO.
+AM_SETTLED_INDEX_ROOTS = frozenset({"SPX", "NDX", "RUT", "VIX"})
 
 # Used only when the exact symbol has no close. Never joined in a way
 # that can also match an SPXW price row.
@@ -202,6 +212,8 @@ def settle_expired_option(
     expiry_d = _as_date(expiry)
     if expiry_d is None or not session_is_over(expiry_d, now_et, root):
         return ExpirySettlement(False, None, None, 0.0, 0.0)
+    if _root(root) in AM_SETTLED_INDEX_ROOTS:
+        return ExpirySettlement(False, PENDING_LABEL, None, 0.0, 0.0)
     # No price by the next trading day. Equity expires at $0, still an
     # estimate, close dated on the expiry. A cash index stays pending:
     # booking the opening credit is the worthless-ITM win.

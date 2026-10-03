@@ -150,6 +150,16 @@ def test_oct_1_spx_close_above_7655_settles_the_width():
     assert round(short.realized_pnl + long.realized_pnl, 2) == -3574.44
 
 
+def test_standard_spx_waits_for_set_instead_of_using_daily_close():
+    """Monthly SPX settles from the opening SET print, not ^GSPC close."""
+    pending = _leg(root="SPX", close=7666.45)
+    assert pending.settled is False
+    assert pending.close_type == PENDING_LABEL
+    assert pending.close_date is None
+    assert pending.settlement_cash == 0.0
+    assert pending.realized_pnl == 0.0
+
+
 def test_missing_spxw_close_stays_pending_not_a_worthless_win():
     # Thursday Oct 1. Friday morning, still no official close. The $0
     # fallback would book the opening credit (+1,425.56) as a win.

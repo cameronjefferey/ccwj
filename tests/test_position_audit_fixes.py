@@ -225,6 +225,48 @@ def test_covered_call_uses_its_own_sto_date_and_settles_otm():
     assert settled["quantity"] == 2
 
 
+def test_partial_option_close_settles_only_the_live_remainder():
+    """A prior BTC is cash flow, not proof that the whole contract closed."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.expiry_settlement import ESTIMATE_LABEL
+    from app.position_detail import promote_expired_snapshot_options
+
+    occ = "BE   261002C00030000"
+    positions = [
+        {
+            "tenant_id": "t", "account": "Main", "instrument_type": "Equity",
+            "symbol": "BE", "quantity": 100, "current_price": 25.0,
+        },
+        {
+            "tenant_id": "t", "account": "Main", "instrument_type": "Call",
+            "symbol": "BE", "trade_symbol": occ, "quantity": -10,
+        },
+    ]
+    trades = [
+        {
+            "action": "option_sell_to_open", "trade_symbol": occ,
+            "quantity": 30, "price": 1.0, "amount": 3000.0,
+        },
+        {
+            "action": "option_buy_to_close", "trade_symbol": occ,
+            "quantity": 20, "price": 0.5, "amount": -1000.0,
+        },
+    ]
+    now = datetime(2026, 10, 2, 17, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    kept, outcomes = promote_expired_snapshot_options(
+        positions, trades, symbol="BE", now_et=now,
+    )
+
+    assert [row["instrument_type"] for row in kept] == ["Equity"]
+    assert len(outcomes) == 1
+    assert outcomes[0]["close_type"] == ESTIMATE_LABEL
+    assert outcomes[0]["quantity"] == 10
+    assert outcomes[0]["pnl"] == pytest.approx(2000.0)
+
+
 def test_crypto_qty_is_not_truncated_and_kind_is_crypto():
     assert _format_share_qty(0.00412) == "0.00412"
     assert _format_share_qty(10) == "10"
