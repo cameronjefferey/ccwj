@@ -840,6 +840,26 @@ def _canonicalize_cross_source_amount(action, amount):
     return _canonicalize_seed_cell(f)
 
 
+# Keep in lockstep with app.snaptrade_normalize.ESTIMATED_FEE_MARK.
+# Imported there would cycle (normalize imports this module).
+_ESTIMATED_FEE_MARK = "est. fee"
+
+
+def _description_preference(text) -> tuple:
+    """Sort key: a real description beats an estimated-fee order row.
+
+    Longer text wins only among descriptions that are not provisional.
+    """
+    s = "" if text is None else str(text)
+    try:
+        if s.lower() in ("nan", "none"):
+            s = ""
+    except Exception:
+        s = ""
+    estimated = 1 if _ESTIMATED_FEE_MARK in s.lower() else 0
+    return (estimated, -len(s))
+
+
 def _safe_fee_amount(value) -> float:
     """Blank fees are 0. A commission cell is a positive dollar amount."""
     if value is None:
@@ -978,9 +998,14 @@ def _dedup_history_rows(df, seed_columns):
             canon2[c] = df[c].map(_normalize_history_action)
         else:
             canon2[c] = canon2[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
-    desc_lens = df["Description"].fillna("").astype(str).str.len()
-    # Visit longer-description rows first so the richer one wins its group.
-    order = (-desc_lens.to_numpy()).argsort(kind="stable")
+    # A provisional order row labels its fee "est. fee". That suffix can
+    # make the description longer than the activity, which used to keep
+    # the estimate. Real wording wins even when it is shorter; length
+    # only breaks a tie between two real descriptions.
+    order = sorted(
+        range(len(df)),
+        key=lambda i: _description_preference(df["Description"].iloc[i]),
+    )
 
     seen: set = set()
     winners: dict = {}
@@ -1003,6 +1028,13 @@ def _dedup_history_rows(df, seed_columns):
                 drop_fee = _safe_fee_amount(df.at[pos, fee_col])
                 if not keep_fee and drop_fee:
                     df.at[keep, fee_col] = drop_fee
+                    drop_desc = str(df.at[pos, "Description"] or "")
+                    if _ESTIMATED_FEE_MARK in drop_desc.lower():
+                        keep_desc = str(df.at[keep, "Description"] or "")
+                        if _ESTIMATED_FEE_MARK not in keep_desc.lower():
+                            df.at[keep, "Description"] = (
+                                f"{keep_desc} {_ESTIMATED_FEE_MARK}"
+                            ).strip()
             drop_positions.add(pos)
         else:
             seen.add(key)

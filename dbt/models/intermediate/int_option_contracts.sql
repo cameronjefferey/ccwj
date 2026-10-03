@@ -163,11 +163,13 @@ contract_summary as (
                                 'option_expired', 'option_assigned', 'option_exercised'
                             )
                             then least(o.trade_date, coalesce(o.option_expiry, o.trade_date))
-                            -- Active closes are booked same-day → trust them.
+                            -- A close after expiry is the broker's posting date
+                            -- (SPXW cash settlement lands the next session).
+                            -- Cap at expiry. An earlier close keeps its trade date.
                             when o.action in (
                                 'option_buy_to_close', 'option_sell_to_close'
                             )
-                            then o.trade_date
+                            then least(o.trade_date, coalesce(o.option_expiry, o.trade_date))
                         end),
                     case
                         when max(o.option_expiry) < current_date()
@@ -183,11 +185,13 @@ contract_summary as (
                                 'option_expired', 'option_assigned', 'option_exercised'
                             )
                             then least(o.trade_date, coalesce(o.option_expiry, o.trade_date))
-                            -- Active closes are booked same-day → trust them.
+                            -- A close after expiry is the broker's posting date
+                            -- (SPXW cash settlement lands the next session).
+                            -- Cap at expiry. An earlier close keeps its trade date.
                             when o.action in (
                                 'option_buy_to_close', 'option_sell_to_close'
                             )
-                            then o.trade_date
+                            then least(o.trade_date, coalesce(o.option_expiry, o.trade_date))
                         end),
                     case
                         when max(o.option_expiry) < current_date()

@@ -159,6 +159,72 @@ def test_open_leg_dates_follow_the_tenant():
     assert positions[1]["leg_num"] == 1
 
 
+def test_covered_call_uses_its_own_sto_date_and_settles_otm():
+    """BE Oct 2 $297.50C is the Oct 2 sell, not the Apr 23 share lot."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.expiry_settlement import ESTIMATE_LABEL
+    from app.position_detail import promote_expired_snapshot_options
+
+    occ = "BE   261002C00297500"
+    later = "BE   261016C00297500"
+    positions = [
+        {
+            "tenant_id": "t", "account": "Sara", "instrument_type": "Equity",
+            "symbol": "BE", "quantity": 200, "current_price": 280.0,
+        },
+        {
+            "tenant_id": "t", "account": "Sara", "instrument_type": "Call",
+            "symbol": "BE", "trade_symbol": occ, "quantity": -2,
+        },
+        {
+            "tenant_id": "t", "account": "Sara", "instrument_type": "Call",
+            "symbol": "BE", "trade_symbol": later, "quantity": -1,
+        },
+    ]
+    sessions = [{
+        "tenant_id": "t", "account": "Sara", "status": "Open",
+        "options_only": False, "display_leg": 1, "open_date": "2026-04-23",
+        "days_held": 162,
+    }]
+    trades = [
+        {
+            "trade_date": "2026-10-02", "action": "option_sell_to_open",
+            "instrument_type": "Call", "trade_symbol": occ, "symbol": "BE",
+            "quantity": 2, "price": 1.01, "amount": 202.0,
+        },
+        {
+            "trade_date": "2026-10-02", "action": "option_sell_to_open",
+            "instrument_type": "Call", "trade_symbol": later, "symbol": "BE",
+            "quantity": 1, "price": 1.50, "amount": 150.0,
+        },
+    ]
+    _annotate_open_legs(
+        positions, sessions, "BE", today=date(2026, 10, 2), trades=trades,
+    )
+    assert positions[0]["open_date"] == "2026-04-23"
+    assert positions[1]["open_date"] == "2026-10-02"
+    assert positions[2]["open_date"] == "2026-10-02"
+    now = datetime(2026, 10, 2, 17, 0, tzinfo=ZoneInfo("America/New_York"))
+    kept, outcomes = promote_expired_snapshot_options(
+        positions, trades, symbol="BE", now_et=now,
+    )
+    assert [p["instrument_type"] for p in kept] == ["Equity", "Call"]
+    assert kept[0]["open_date"] == "2026-04-23"
+    assert kept[1]["trade_symbol"] == later
+    assert kept[1]["open_date"] == "2026-10-02"
+    assert len(outcomes) == 1
+    settled = outcomes[0]
+    assert settled["close_type"] == ESTIMATE_LABEL
+    assert settled["open_date"] == "2026-10-02"
+    assert settled["close_date"] == "2026-10-02"
+    assert settled["pnl"] == pytest.approx(202.0)
+    assert settled["return_pct"] == pytest.approx(100.0)
+    assert settled["strategy"] == "Covered Call"
+    assert settled["quantity"] == 2
+
+
 def test_crypto_qty_is_not_truncated_and_kind_is_crypto():
     assert _format_share_qty(0.00412) == "0.00412"
     assert _format_share_qty(10) == "10"

@@ -80,6 +80,7 @@ def _unit_key(row) -> tuple:
             str(strategy or ""),
             str(row.get("open_date") or "")[:10],
             str(row.get("option_expiry") or "")[:10],
+            str(row.get("lot_id") or ""),
         )
     return ("leg", id(row))
 
@@ -342,14 +343,26 @@ def _vertical_meta(row):
     }
 
 
-def _pair_nearest(shorts, longs, metas):
+def _pair_nearest(shorts, longs, metas, rows):
+    """Nearest strike, and the same contract count when several lots share it.
+
+    Two 7730/7735 trades (20 closed, 10 left to expire) are four legs at
+    two strikes. Pairing by strike alone can match the 20-lot short with
+    the 10-lot long. Quantity agrees first, then strike, then order.
+    """
     unused = set(longs)
     pairs = []
     for short_i in shorts:
         if not unused:
             break
         short_k = metas[short_i]["strike"]
-        match = min(unused, key=lambda j: (abs(metas[j]["strike"] - short_k), j))
+        short_q = _abs_num((rows[short_i] or {}).get("quantity"))
+
+        def _key(j, _short_k=short_k, _short_q=short_q):
+            qty_gap = 0 if abs(_abs_num((rows[j] or {}).get("quantity")) - _short_q) < 1e-6 else 1
+            return (qty_gap, abs(metas[j]["strike"] - _short_k), j)
+
+        match = min(unused, key=_key)
         unused.remove(match)
         pairs.append((short_i, match))
     return pairs
@@ -458,17 +471,283 @@ def _make_vertical(short, long, short_meta, long_meta):
         "return_pct": return_pct,
         "raw_trades": raw,
         "fill_count": len(raw),
+        "lot_id": short.get("lot_id") or long.get("lot_id") or "",
     }
+
+
+_OPEN_SHORT = frozenset({"option_sell_to_open", "sell to open"})
+_OPEN_LONG = frozenset({"option_buy_to_open", "buy to open"})
+_CLOSE_SHORT = frozenset({"option_buy_to_close", "buy to close"})
+_CLOSE_LONG = frozenset({"option_sell_to_close", "sell to close"})
+_EXPIRE_ACTIONS = frozenset({
+    "option_expired", "expired", "option_assigned", "assigned",
+    "option_exercised", "exercised", "exchange or exercise",
+})
+
+
+def _fill_text(trade, *names) -> str:
+    for name in names:
+        if isinstance(trade, dict) and trade.get(name) not in (None, ""):
+            return str(trade.get(name))
+    return ""
+
+
+def _fill_action(trade) -> str:
+    return _fill_text(trade, "action", "Action").strip().lower()
+
+
+def _fill_qty(trade) -> float:
+    for name in ("quantity", "Quantity"):
+        if isinstance(trade, dict) and trade.get(name) not in (None, ""):
+            return _abs_num(trade.get(name))
+    return 0.0
+
+
+def _fill_amount(trade) -> float:
+    for name in ("amount", "Amount"):
+        if isinstance(trade, dict) and trade.get(name) not in (None, ""):
+            try:
+                return float(trade.get(name) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+
+
+def _fill_price(trade) -> float:
+    for name in ("price", "Price"):
+        if isinstance(trade, dict) and trade.get(name) not in (None, ""):
+            return _abs_num(trade.get(name))
+    qty = _fill_qty(trade)
+    if qty >= 1e-9:
+        return round(abs(_fill_amount(trade)) / qty / 100.0, 4)
+    return 0.0
+
+
+def _fill_date(trade) -> str:
+    raw = _fill_text(trade, "trade_date", "Date", "date")
+    return raw[:10]
+
+
+def _qty_display(qty) -> str:
+    if abs(qty - round(qty)) < 1e-6:
+        return str(int(round(qty)))
+    return f"{qty:.4f}".rstrip("0").rstrip(".")
+
+
+def _outcome_expiry(row) -> str:
+    parsed = parse_occ(row.get("trade_symbol"))
+    if parsed:
+        return _expiry_iso(parsed)
+    return str(row.get("option_expiry") or row.get("close_date") or "")[:10]
+
+
+def split_option_lots(outcome):
+    """One display row per open lot when a contract was traded twice.
+
+    The warehouse keeps one row per contract, so a 20-lot that was closed
+    and a 10-lot that expired at the same strikes become ``30×``. Same-price
+    partial fills stay one lot (the Oct 1 SPXW short filled 4,000 + 3,770
+    and is still one 10-lot). A later open at a different price, or a
+    close that does not cover the whole open, is its own row.
+    """
+    if not isinstance(outcome, dict) or outcome.get("vertical"):
+        return [outcome]
+    if str(outcome.get("type") or "") not in ("", "option"):
+        return [outcome]
+    fills = [t for t in (outcome.get("raw_trades") or []) if isinstance(t, dict)]
+    if not fills:
+        return [outcome]
+    direction = str(outcome.get("direction") or "")
+    if direction == "Sold":
+        open_actions, close_actions = _OPEN_SHORT, _CLOSE_SHORT
+    elif direction == "Bought":
+        open_actions, close_actions = _OPEN_LONG, _CLOSE_LONG
+    else:
+        return [outcome]
+
+    class _Lot:
+        def __init__(self, price, index):
+            self.price = price
+            self.index = index
+            self.qty = 0.0
+            self.remaining = 0.0
+            self.open_cash = 0.0
+            self.opens = []
+            self.closes = []
+            self.open_date = ""
+
+    lots = []
+    by_price = {}
+    closes = []
+    for trade in fills:
+        action = _fill_action(trade)
+        if action in open_actions:
+            price = round(_fill_price(trade), 4)
+            lot = by_price.get(price)
+            if lot is None:
+                lot = _Lot(price, len(lots))
+                by_price[price] = lot
+                lots.append(lot)
+            qty = _fill_qty(trade)
+            lot.qty += qty
+            lot.remaining += qty
+            lot.open_cash += _fill_amount(trade)
+            lot.opens.append(trade)
+            opened = _fill_date(trade)
+            if opened and (not lot.open_date or opened < lot.open_date):
+                lot.open_date = opened
+        elif action in close_actions or action in _EXPIRE_ACTIONS:
+            closes.append(trade)
+    if len(lots) <= 1 and not closes:
+        return [outcome]
+    open_qty = sum(lot.qty for lot in lots)
+    try:
+        outcome_qty = abs(float(outcome.get("quantity") or 0))
+    except (TypeError, ValueError):
+        outcome_qty = 0.0
+    # Placeholder fills (qty 1, price 1) must not explode a real 10-lot.
+    if outcome_qty >= 1 and abs(open_qty - outcome_qty) > max(0.05, 0.02 * outcome_qty):
+        return [outcome]
+    if len(lots) <= 1:
+        covered = sum(_fill_qty(t) for t in closes if _fill_action(t) in close_actions or _fill_action(t) in _EXPIRE_ACTIONS)
+        if open_qty <= 1e-9 or covered + 1e-6 >= open_qty:
+            return [outcome]
+
+    for trade in closes:
+        action = _fill_action(trade)
+        qty = _fill_qty(trade)
+        amount = _fill_amount(trade)
+        if qty <= 1e-9:
+            continue
+        exact = [lot for lot in lots if abs(lot.remaining - qty) < 1e-6]
+        if exact:
+            target = min(exact, key=lambda lot: (lot.open_date or "9999", lot.index))
+            target.closes.append(trade)
+            target.remaining = 0.0
+            continue
+        left_qty = qty
+        left_amt = amount
+        for lot in lots:
+            if left_qty <= 1e-9:
+                break
+            if lot.remaining <= 1e-9:
+                continue
+            take = min(lot.remaining, left_qty)
+            frac = take / left_qty if left_qty else 0.0
+            piece = dict(trade)
+            piece["quantity"] = take
+            piece["amount"] = left_amt * frac
+            lot.closes.append(piece)
+            lot.remaining -= take
+            left_amt -= piece["amount"]
+            left_qty -= take
+
+    expiry = _outcome_expiry(outcome)
+    parent_close = str(outcome.get("close_date") or "")[:10]
+    slices = []
+    for lot in lots:
+        closed_qty = lot.qty - max(lot.remaining, 0.0)
+        close_cash = sum(_fill_amount(t) for t in lot.closes)
+        if closed_qty > 1e-6:
+            frac = closed_qty / lot.qty if lot.qty else 0.0
+            open_part = lot.open_cash * frac
+            close_type = "Closed"
+            if lot.closes and all(_fill_action(t) in _EXPIRE_ACTIONS for t in lot.closes):
+                close_type = "Expired"
+            close_dates = [_fill_date(t) for t in lot.closes]
+            close_dates = [d for d in close_dates if len(d) == 10]
+            slices.append(_lot_slice(
+                outcome, lot,
+                qty=closed_qty,
+                open_cash=open_part,
+                pnl=open_part + close_cash,
+                close_type=close_type,
+                close_date=max(close_dates) if close_dates else parent_close,
+                raw=list(lot.opens) + list(lot.closes),
+                suffix="closed",
+            ))
+        if lot.remaining > 1e-6:
+            frac = lot.remaining / lot.qty if lot.qty else 0.0
+            open_part = lot.open_cash * frac
+            expired = bool(expiry) and (
+                (parent_close and expiry <= parent_close)
+                or (lot.open_date and expiry <= lot.open_date)
+            )
+            if not expired and str(outcome.get("close_type") or "") in ("Expired", "ExpiredOTM"):
+                expired = True
+            slices.append(_lot_slice(
+                outcome, lot,
+                qty=lot.remaining,
+                open_cash=open_part,
+                pnl=open_part,
+                close_type="Expired" if expired else str(outcome.get("close_type") or "Open"),
+                close_date=expiry if expired else "",
+                raw=list(lot.opens),
+                suffix="open",
+            ))
+    if len(slices) <= 1:
+        return [outcome]
+    return slices
+
+
+def _lot_slice(parent, lot, *, qty, open_cash, pnl, close_type, close_date, raw, suffix):
+    row = dict(parent)
+    pnl_r = round(float(pnl), 2)
+    direction = str(parent.get("direction") or "")
+    row["quantity"] = qty
+    row["quantity_display"] = _qty_display(qty)
+    row["pnl"] = pnl_r
+    row["is_winner"] = True if pnl_r > 0 else False if pnl_r < 0 else None
+    row["close_type"] = close_type
+    row["close_date"] = close_date or ""
+    if lot.open_date:
+        row["open_date"] = lot.open_date
+    row["raw_trades"] = raw
+    row["lot_id"] = f"{lot.price:.4f}:{suffix}"
+    basis = abs(open_cash)
+    if direction == "Sold":
+        row["premium_received"] = round(basis, 2)
+        row["premium_paid"] = 0.0
+        row["proceeds"] = round(basis, 2)
+        row["cost"] = 0.0
+    else:
+        row["premium_paid"] = round(basis, 2)
+        row["premium_received"] = 0.0
+        row["cost"] = round(basis, 2)
+        row["proceeds"] = 0.0
+    # A buy-to-close on expiry day is Closed, not a worthless expiry.
+    # leg_outcome reads cost (short) / proceeds (long) for that.
+    close_cash = 0.0
+    for trade in raw or []:
+        action = _fill_action(trade)
+        if direction == "Sold" and action in _CLOSE_SHORT:
+            close_cash += abs(_fill_amount(trade))
+        elif direction == "Bought" and action in _CLOSE_LONG:
+            close_cash += abs(_fill_amount(trade))
+    if close_cash >= 0.01:
+        if direction == "Sold":
+            row["cost"] = round(close_cash, 2)
+            row["cost_to_close"] = row["cost"]
+        else:
+            row["proceeds"] = round(close_cash, 2)
+            row["proceeds_from_close"] = row["proceeds"]
+    row["return_pct"] = round(pnl_r / basis * 100, 1) if basis >= 0.01 else None
+    return row
 
 
 def group_vertical_spreads(rows):
     """One row per vertical. Other legs pass through in the same order.
 
     A vertical is the same account, open date, and expiry, one short and
-    one long of a Call Spread or Put Spread. Several verticals on the
-    same day pair by nearest strike. The long is not its own win/loss row.
+    one long of a Call Spread or Put Spread. A contract that was opened
+    in two lots (different price, or a close between them) is two
+    verticals, each with its own status and win. Several verticals on
+    the same day pair by contract count, then nearest strike. The long
+    is not its own win/loss row.
     """
-    indexed = list(rows or [])
+    indexed = []
+    for row in rows or []:
+        indexed.extend(split_option_lots(row))
     metas = [_vertical_meta(row) for row in indexed]
     groups: dict[tuple, list[int]] = {}
     for i, meta in enumerate(metas):
@@ -490,7 +769,7 @@ def group_vertical_spreads(rows):
             out.append(row)
             used.add(i)
             continue
-        pairs = _pair_nearest(shorts, longs, metas)
+        pairs = _pair_nearest(shorts, longs, metas, indexed)
         for short_i, long_i in sorted(pairs, key=lambda pair: pair[0]):
             used.add(short_i)
             used.add(long_i)

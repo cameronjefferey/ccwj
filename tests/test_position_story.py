@@ -42,6 +42,25 @@ def test_parse_occ():
     assert parse_occ("BRK B 250117P00300500")["strike"] == 300.5
 
 
+def test_posted_expiry_settlement_is_not_a_roll():
+    """A buy-to-close dated after its own expiry is a settlement, not a roll."""
+    df = _trades([
+        (date(2026, 10, 1), "option_sell_to_open", "Call",
+         "SPXW  261001C07650000", 10, 7.77, 7757.78),
+        (date(2026, 10, 2), "option_buy_to_close", "Call",
+         "SPXW  261001C07650000", 10, 16.45, -16450.0),
+        (date(2026, 10, 2), "option_sell_to_open", "Call",
+         "SPXW  261002C07730000", 20, 6.85, 13675.56),
+    ])
+    df.loc[df["action"] == "option_buy_to_close", "description"] = (
+        "CALL S & P 500 INDEX $7650 EXP 10/01/26 as of 10/01/2026"
+    )
+    items, _, stats = build_position_story(df, None)
+    text = _headlines(items)
+    assert "Rolled" not in text
+    assert stats["rolls"] == 0
+
+
 def test_roll_up_and_out_detected():
     df = _trades([
         (date(2024, 11, 1), "option_sell_to_open", "Call", "RKLB 241115C00011000", 1, 0.52, 52.0),

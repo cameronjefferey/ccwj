@@ -289,12 +289,86 @@ crypto_norm as (
        and ct.symbol != ''
 )
 
+-- A cash-settlement fill is often dated the broker's posting day
+-- (SPXW Oct 1 expiry arrived as Oct 2). "as of MM/DD/YY(YY)" is the
+-- trade date. Otherwise a close after the contract's own expiry is
+-- the posting date — cap it at expiry. An earlier close keeps its
+-- trade date. Opens are untouched.
+dated as (
+    select
+        * except (trade_date),
+        case
+            when action in (
+                'option_buy_to_close', 'option_sell_to_close',
+                'option_expired', 'option_assigned', 'option_exercised'
+            )
+            then least(
+                coalesce(as_of_date, trade_date),
+                coalesce(option_expiry, as_of_date, trade_date)
+            )
+            else trade_date
+        end as trade_date
+    from (
+        select
+            c.*,
+            safe.parse_date(
+                '%m/%d/%Y',
+                case
+                    when regexp_extract(
+                        c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{4})\b'
+                    ) is not null
+                    then concat(
+                        lpad(regexp_extract(
+                            c.description, r'(?i)\bas of\s+(\d{1,2})/\d{1,2}/\d{4}\b'
+                        ), 2, '0'),
+                        '/',
+                        lpad(regexp_extract(
+                            c.description, r'(?i)\bas of\s+\d{1,2}/(\d{1,2})/\d{4}\b'
+                        ), 2, '0'),
+                        '/',
+                        regexp_extract(
+                            c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{4})\b'
+                        )
+                    )
+                    when regexp_extract(
+                        c.description, r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                    ) is not null
+                    then concat(
+                        lpad(regexp_extract(
+                            c.description, r'(?i)\bas of\s+(\d{1,2})/\d{1,2}/\d{2}\b'
+                        ), 2, '0'),
+                        '/',
+                        lpad(regexp_extract(
+                            c.description, r'(?i)\bas of\s+\d{1,2}/(\d{1,2})/\d{2}\b'
+                        ), 2, '0'),
+                        '/',
+                        case
+                            when cast(regexp_extract(
+                                c.description,
+                                r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                            ) as int64) < 80
+                            then concat('20', regexp_extract(
+                                c.description,
+                                r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                            ))
+                            else concat('19', regexp_extract(
+                                c.description,
+                                r'(?i)\bas of\s+\d{1,2}/\d{1,2}/(\d{2})\b'
+                            ))
+                        end
+                    )
+                end
+            ) as as_of_date
+        from crypto_norm c
+    )
+)
+
 select
     account, user_id, tenant_id,
     trade_date, action_raw, action, trade_symbol, underlying_symbol,
     option_expiry, option_strike, option_type, instrument_type, description,
     quantity, price, fees, amount
-from crypto_norm
+from dated
 -- CURRENCY_USD / CUSIP-shaped tickers are FX conversion noise, not trades.
 -- Deposits and withdrawals ship with a NULL Symbol. ``NULL !=
 -- 'CURRENCY_USD'`` is UNKNOWN in SQL, so the old predicate silently

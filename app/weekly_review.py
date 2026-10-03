@@ -4082,6 +4082,34 @@ def _parse_occ(trade_symbol):
     }
 
 
+def _close_is_settlement_not_trade(row) -> bool:
+    """A cash settlement or expiry is not the closing leg of a roll.
+
+    Schwab posts the Oct 1 SPXW settlement on Oct 2. Paired with that
+    day's new short, it read as a roll from 7650 to 7730. A roll is a
+    trade that closes one contract and opens another.
+    """
+    action = str((row or {}).get("action") or "")
+    if action in (
+        "option_expired", "option_assigned", "option_exercised",
+        "option_settled_est",
+    ):
+        return True
+    desc = str((row or {}).get("description") or "").lower()
+    if "as of" in desc or "cash settlement" in desc or "settled at expiry" in desc:
+        return True
+    occ = _parse_occ((row or {}).get("trade_symbol"))
+    trade_date = (row or {}).get("trade_date")
+    if hasattr(trade_date, "date") and not isinstance(trade_date, date):
+        try:
+            trade_date = trade_date.date()
+        except Exception:
+            trade_date = None
+    if occ and isinstance(trade_date, date) and occ["expiry"] < trade_date:
+        return True
+    return False
+
+
 def _group_day_rolls(trade_rows):
     """Collapse same-day close+open of the same option type into one roll.
 
@@ -4106,6 +4134,9 @@ def _group_day_rolls(trade_rows):
             continue
         action = row.get("action")
         if action in close_open:
+            if _close_is_settlement_not_trade(row):
+                out.append(row)
+                continue
             pair_action, short_side = close_open[action]
             close_row, seek_open = row, True
         elif action in open_close:
@@ -4124,6 +4155,10 @@ def _group_day_rolls(trade_rows):
                 continue
             cand = trade_rows[j]
             if cand.get("action") != pair_action:
+                continue
+            # The match is the close when we started from the open.
+            closing = row if seek_open else cand
+            if _close_is_settlement_not_trade(closing):
                 continue
             if (cand.get("symbol") or "").upper() != (row.get("symbol") or "").upper():
                 continue

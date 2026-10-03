@@ -566,13 +566,40 @@ def _matching_open_session(position, sessions_list):
     preferred = [
         s for s in open_sessions if bool(s.get("options_only")) is want_options
     ]
-    pool = preferred or open_sessions
+    # A covered call's open date is the sell-to-open, not the share lot.
+    # Falling back to the equity session dated the Oct 2 BE call Apr 23.
+    pool = preferred if want_options else (preferred or open_sessions)
     if not pool:
         return None
     return max(pool, key=lambda s: int(s.get("display_leg") or 0))
 
 
-def _annotate_open_legs(current_positions, sessions_list, symbol, today=None):
+def _option_fill_open_date(position, trades):
+    """Earliest opening fill for this contract. Shorts use the sell-to-open."""
+    ident = _contract_key(position)
+    if not ident:
+        return ""
+    sto, bto = [], []
+    for trade in trades or []:
+        if _contract_key(trade) != ident:
+            continue
+        action = str(trade.get("action") or trade.get("Action") or "")
+        raw = trade.get("trade_date") or trade.get("Date") or ""
+        opened = str(raw)[:10]
+        if len(opened) != 10:
+            continue
+        if action in ("option_sell_to_open", "Sell to Open"):
+            sto.append(opened)
+        elif action in ("option_buy_to_open", "Buy to Open"):
+            bto.append(opened)
+    if sto:
+        return min(sto)
+    if bto:
+        return min(bto)
+    return ""
+
+
+def _annotate_open_legs(current_positions, sessions_list, symbol, today=None, trades=None):
     """Opened / days / fractional qty / Crypto label for live holdings."""
     from app.upload import holding_is_crypto
 
@@ -597,19 +624,226 @@ def _annotate_open_legs(current_positions, sessions_list, symbol, today=None):
             position.setdefault("open_date", "")
             position.setdefault("close_date", "")
             position.setdefault("days_held", None)
-            continue
-        position["leg_num"] = session.get("display_leg")
-        raw_open = session.get("open_date") or ""
-        position["open_date"] = str(raw_open)[:10]
-        position["close_date"] = ""
-        days = session.get("days_held")
-        if position["open_date"] and (days is None or days == ""):
-            try:
-                days = (today - pd.to_datetime(position["open_date"]).date()).days
-            except Exception:
-                days = None
-        position["days_held"] = days
+        else:
+            position["leg_num"] = session.get("display_leg")
+            raw_open = session.get("open_date") or ""
+            position["open_date"] = str(raw_open)[:10]
+            position["close_date"] = ""
+            days = session.get("days_held")
+            if position["open_date"] and (days is None or days == ""):
+                try:
+                    days = (today - pd.to_datetime(position["open_date"]).date()).days
+                except Exception:
+                    days = None
+            position["days_held"] = days
+        if inst in ("Call", "Put"):
+            opened = _option_fill_open_date(position, trades)
+            if opened:
+                position["open_date"] = opened
+                try:
+                    position["days_held"] = (today - pd.to_datetime(opened).date()).days
+                except Exception:
+                    pass
     return current_positions
+
+
+def _position_is_short_option(position, trades) -> bool:
+    try:
+        if float(position.get("quantity") or 0) < 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    ident = _contract_key(position)
+    for trade in trades or []:
+        if _contract_key(trade) != ident:
+            continue
+        action = str(trade.get("action") or "")
+        if action in ("option_sell_to_open", "Sell to Open"):
+            return True
+    return False
+
+
+def _broker_closed_option(position, trades) -> bool:
+    ident = _contract_key(position)
+    closes = {
+        "option_buy_to_close", "option_sell_to_close", "option_expired",
+        "option_assigned", "option_exercised",
+        "Buy to Close", "Sell to Close", "Expired", "Assigned",
+    }
+    for trade in trades or []:
+        if _contract_key(trade) != ident:
+            continue
+        if str(trade.get("action") or "") in closes:
+            return True
+    return False
+
+
+def _opening_cash_for_option(position, trades) -> float:
+    ident = _contract_key(position)
+    short = _position_is_short_option(position, trades)
+    want = {"option_sell_to_open", "Sell to Open"} if short else {
+        "option_buy_to_open", "Buy to Open",
+    }
+    cash = 0.0
+    for trade in trades or []:
+        if _contract_key(trade) != ident:
+            continue
+        if str(trade.get("action") or "") not in want:
+            continue
+        try:
+            amount = abs(float(trade.get("amount") or 0))
+        except (TypeError, ValueError):
+            amount = 0.0
+        if amount < 0.01:
+            try:
+                amount = (
+                    abs(float(trade.get("quantity") or 0))
+                    * abs(float(trade.get("price") or 0))
+                    * 100
+                )
+            except (TypeError, ValueError):
+                amount = 0.0
+        cash += amount
+    return round(cash, 2)
+
+
+def promote_expired_snapshot_options(current_positions, trades, *, symbol, now_et=None):
+    """Take an expired option off the open list and settle it.
+
+    The share lot stays. The call's open date is its own sell-to-open.
+    After the expiry session, ``settle_expired_option`` books an OTM
+    short at $0 settlement — the premium kept, labeled Settled.
+    """
+    from zoneinfo import ZoneInfo
+
+    from app.expiry_settlement import settle_expired_option
+    from app.option_formatting import parse_occ
+
+    now = now_et or datetime.now(ZoneInfo("America/New_York"))
+    underlying = {}
+    for position in current_positions or []:
+        if str(position.get("instrument_type") or "") in ("Call", "Put"):
+            continue
+        sym = str(position.get("symbol") or symbol or "").strip().upper()
+        price = position.get("current_price")
+        if price in (None, ""):
+            try:
+                qty = float(position.get("quantity") or 0)
+                mv = float(position.get("market_value") or 0)
+                price = mv / qty if abs(qty) > 1e-9 else None
+            except (TypeError, ValueError, ZeroDivisionError):
+                price = None
+        try:
+            if price not in (None, "") and sym:
+                underlying[sym] = float(price)
+        except (TypeError, ValueError):
+            continue
+
+    kept = []
+    outcomes = []
+    for position in current_positions or []:
+        inst = str(position.get("instrument_type") or "")
+        if inst not in ("Call", "Put"):
+            kept.append(position)
+            continue
+        parsed = parse_occ(position.get("trade_symbol"))
+        if not parsed:
+            kept.append(position)
+            continue
+        try:
+            yy = int(parsed["yy"])
+            year = 2000 + yy if yy < 80 else 1900 + yy
+            expiry = date(year, int(parsed["mm"]), int(parsed["dd"]))
+        except (TypeError, ValueError):
+            kept.append(position)
+            continue
+        try:
+            qty = abs(float(position.get("quantity") or 0))
+        except (TypeError, ValueError):
+            qty = 0.0
+        short = _position_is_short_option(position, trades)
+        direction = "Sold" if short else "Bought"
+        cash = _opening_cash_for_option(position, trades)
+        signed = cash if short else -cash
+        root = str(parsed.get("root") or symbol or "").strip().upper()
+        close = underlying.get(str(position.get("symbol") or symbol or "").strip().upper())
+        if close is None:
+            close = underlying.get(root)
+        broker_closed = _broker_closed_option(position, trades)
+        settlement = settle_expired_option(
+            root=root,
+            option_type=parsed["cp"],
+            direction=direction,
+            strike=parsed["strike"],
+            close=close,
+            quantity=qty,
+            net_cash_flow=signed,
+            expiry=expiry,
+            now_et=now,
+            broker_closed=broker_closed,
+        )
+        if not settlement.settled and not broker_closed:
+            kept.append(position)
+            continue
+        shares = 0.0
+        for held in current_positions or []:
+            if str(held.get("instrument_type") or "") in ("Call", "Put"):
+                continue
+            if str(held.get("symbol") or symbol or "").strip().upper() != root:
+                continue
+            try:
+                shares += abs(float(held.get("quantity") or 0))
+            except (TypeError, ValueError):
+                pass
+        if settlement.settled:
+            close_type = settlement.close_type
+            pnl = round(float(settlement.realized_pnl or 0), 2)
+            close_date = settlement.close_date.isoformat() if settlement.close_date else expiry.isoformat()
+        else:
+            close_type = "Expired"
+            pnl = round(signed, 2)
+            close_date = expiry.isoformat()
+        open_date = _option_fill_open_date(position, trades) or str(position.get("open_date") or "")[:10]
+        outcome = {
+            "trade_symbol": position.get("trade_symbol"),
+            "strategy": (
+                "Covered Call" if short and inst == "Call" and shares >= 100
+                else inst
+            ),
+            "direction": direction,
+            "close_type": close_type,
+            "open_date": open_date,
+            "close_date": close_date,
+            "quantity": qty,
+            "quantity_display": _format_share_qty(qty),
+            "pnl": pnl,
+            "premium_received": cash if short else 0.0,
+            "premium_paid": 0.0 if short else cash,
+            "type": "option",
+            "tenant_id": position.get("tenant_id"),
+            "account": position.get("account"),
+            "account_display": position.get("account_display"),
+            "is_winner": True if pnl > 0 else False if pnl < 0 else None,
+            "raw_trades": [
+                t for t in (trades or [])
+                if _contract_key(t) == _contract_key(position)
+            ],
+        }
+        cost, proceeds, _pnl = _option_leg_cost_proceeds({
+            **outcome,
+            "total_pnl": pnl,
+        })
+        outcome["cost"] = cost
+        outcome["proceeds"] = proceeds
+        outcome["return_pct"] = _option_return_pct(outcome, pnl)
+        try:
+            outcome["days_held"] = (
+                pd.to_datetime(close_date) - pd.to_datetime(open_date)
+            ).days if open_date and close_date else 0
+        except Exception:
+            outcome["days_held"] = 0
+        outcomes.append(outcome)
+    return kept, outcomes
 
 
 def _filter_execution_review_to_leg(
@@ -3532,7 +3766,20 @@ def position_detail(symbol):
         for i, o in enumerate(lst_chrono, start=1):
             o["equity_partial_ix"] = i
             o["equity_partial_n"] = n
-    _annotate_open_legs(current_positions, sessions_list, symbol)
+    _annotate_open_legs(current_positions, sessions_list, symbol, trades=trades)
+    current_positions, _expired_options = promote_expired_snapshot_options(
+        current_positions, trades, symbol=symbol,
+    )
+    for _o in _expired_options:
+        _tid = _o.get("tenant_id")
+        _o["account_display"] = (
+            (_tenant_labels.get(_tid) if _tid else None)
+            or _o.get("account_display")
+            or _norm_account_label(_o.get("account"))
+        )
+        _o["quantity_display"] = _format_share_qty(_o.get("quantity"))
+        _o["leg_num"] = _date_to_leg(_o.get("open_date") or _o.get("close_date"))
+    trade_outcomes.extend(_expired_options)
 
     # ── Option matrices (DTE × Strike Distance heatmap) ──
     # (tenant scope already narrowed matrix_df to the selected account's tenant)
