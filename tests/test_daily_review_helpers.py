@@ -1627,6 +1627,34 @@ class TestSplitDayFills:
             tenant_id=tenant_id, account=account,
         )
 
+    def test_posted_settlement_is_not_a_roll_into_the_next_spread(self):
+        """Oct 1 SPXW cash settlement posted Oct 2 is not a 7650→7730 roll."""
+        close = self._row(
+            trade_date=date(2026, 10, 2),
+            action="option_buy_to_close",
+            trade_symbol="SPXW  261001C07650000",
+            underlying_symbol="SPXW",
+            description="CALL S & P 500 INDEX $7650 EXP 10/01/26 as of 10/01/2026",
+            quantity=10, price=16.45, amount=-16450.0,
+            realized_pnl=-3574.44,
+            instrument_type="Call",
+            option_expiry=date(2026, 10, 1),
+        )
+        opened = self._row(
+            trade_date=date(2026, 10, 2),
+            action="option_sell_to_open",
+            trade_symbol="SPXW  261002C07730000",
+            underlying_symbol="SPXW",
+            description="SPXW  261002C07730000",
+            quantity=20, price=6.85, amount=13675.56,
+            instrument_type="Call",
+        )
+        out = _split_day_fills(pd.DataFrame([close, opened]))
+        assert out["roll_count"] == 0
+        assert out["fill_count"] == 2
+        assert all(not t.get("is_roll") for t in out["trades"])
+        assert all("Rolled" not in str(t.get("verb")) for t in out["trades"])
+
     def test_btc_then_sto_call_credit_and_strike_up_is_successful(self):
         df = pd.DataFrame([
             self._jpm("option_buy_to_close", "JPM   260821C00300000", -120),

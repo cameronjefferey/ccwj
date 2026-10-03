@@ -256,6 +256,8 @@ _CASH_SETTLEMENT_TYPES = frozenset({
 _AS_OF_MDY_RE = re.compile(
     r"\bas of\s+(\d{1,2})/(\d{1,2})/(\d{4})\b", re.IGNORECASE,
 )
+# Provisional order rows with no commission. Activities replace them.
+ESTIMATED_FEE_MARK = "est. fee"
 _SCHWAB_OPTION_TEXT_RE = re.compile(
     r"\b([A-Z]{1,6})\s+(\d{1,2}/\d{1,2}/\d{2,4})\s+([\d.]+)\s+([CP])\b",
     re.IGNORECASE,
@@ -419,6 +421,19 @@ def _as_of_trade_date(value) -> str:
         return date(year, month, day).strftime("%m/%d/%Y")
     except ValueError:
         return ""
+
+
+def _mdy_date(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    head = text.split("T", 1)[0].split(" ", 1)[0]
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(head, fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 def _activity_fee(act: Mapping) -> float:
@@ -796,6 +811,11 @@ def activities_to_history_df(
         )
         if as_of:
             trade_date = as_of
+        # Do not rewrite Date or Description from the contract expiry.
+        # Rows already in the seed are keyed on the broker's posting
+        # date. Moving them to the expiry (and appending "as of") makes
+        # the next sync insert a twin. stg_history caps the warehouse
+        # trade_date at expiry; pages read that column.
         units = _safe_float(act.get("units"), 0.0)
         price = _safe_float(act.get("price"), 0.0)
         fees = _activity_fee(act)
@@ -888,6 +908,63 @@ def _option_symbol_from_text(symbol: str):
     }
 
 
+def _split_leg_fee(order: Mapping, leg: Mapping):
+    """A parent multi-leg fee belongs once, split across the legs.
+
+    Copying ``order.fee`` onto every leg charges the spread twice.
+    A leg that carries its own fee keeps that number, including zero.
+    """
+    own = leg.get("fee")
+    if own not in (None, ""):
+        return own
+    parent = order.get("fee")
+    if parent in (None, ""):
+        parent = order.get("fees")
+    if parent in (None, ""):
+        parent = order.get("commission")
+    if parent in (None, ""):
+        return None
+    parent_f = abs(_safe_float(parent, 0.0))
+    if not parent_f:
+        return None
+    legs = order.get("legs") or []
+    n = len(legs) if isinstance(legs, (list, tuple)) and legs else 1
+    return round(parent_f / n, 2)
+
+
+def recent_option_fee_rates(history_df) -> dict:
+    """Newest positive per-contract fee for each option root.
+
+    SPXW statement opens are $12.22 on 10 contracts → $1.222. Order
+    rows arrive with a blank fee; this rate fills them until the
+    activity replaces the row.
+    """
+    if history_df is None or getattr(history_df, "empty", True):
+        return {}
+    if "Symbol" not in history_df.columns or "fees_and_comm" not in history_df.columns:
+        return {}
+    from app.option_formatting import parse_occ
+
+    ranked = []
+    for _, row in history_df.iterrows():
+        fee = abs(_safe_float(row.get("fees_and_comm"), 0.0))
+        qty = abs(_safe_float(row.get("Quantity"), 0.0))
+        if fee <= 0 or qty < 1e-9:
+            continue
+        parsed = parse_occ(str(row.get("Symbol") or ""))
+        if not parsed:
+            continue
+        root = str(parsed.get("root") or "").strip().upper()
+        if not root:
+            continue
+        ranked.append((_mdy_date(row.get("Date")) or date.min, root, fee / qty))
+    ranked.sort(key=lambda item: item[0])
+    rates = {}
+    for _when, root, rate in ranked:
+        rates[root] = rate
+    return rates
+
+
 def _leg_as_order(order: Mapping, leg: Mapping, index: int) -> Optional[dict]:
     """One v2 order leg as the flat recent-order shape the history mapper reads."""
     instrument = leg.get("instrument") if isinstance(leg.get("instrument"), Mapping) else {}
@@ -922,7 +999,7 @@ def _leg_as_order(order: Mapping, leg: Mapping, index: int) -> Optional[dict]:
         "execution_price": price,
         "time_executed": order.get("time_executed") or leg.get("time_executed") or order.get("time_updated"),
         "time_updated": order.get("time_updated"),
-        "fee": leg.get("fee") or order.get("fee"),
+        "fee": _split_leg_fee(order, leg),
     }
     if looks_option:
         if option_symbol is None:
@@ -966,6 +1043,7 @@ def orders_to_history_df(
     account_name: str,
     user_id,
     tenant_id: str,
+    fee_rates: Optional[Mapping] = None,
 ) -> pd.DataFrame:
     """Build a HISTORY_SEED_COLUMNS DataFrame from SnapTrade's
     ``get_user_account_recent_orders`` endpoint.
@@ -1103,10 +1181,19 @@ def orders_to_history_df(
             # No fill price — can't construct an Amount. Skip; the
             # activities-side will eventually carry the right amount.
             continue
-        order_fees = _safe_float(
+        order_fees = abs(_safe_float(
             order.get("fee") or order.get("fees") or order.get("commission"),
             0.0,
-        )
+        ))
+        estimated_fee = False
+        if is_option and not order_fees and fee_rates:
+            from app.option_formatting import parse_occ
+            parsed = parse_occ(sym_str)
+            root = str((parsed or {}).get("root") or "").strip().upper()
+            rate = _safe_float((fee_rates or {}).get(root), 0.0)
+            if rate > 0 and units:
+                order_fees = round(abs(units) * rate, 2)
+                estimated_fee = order_fees > 0
 
         # Options are quoted per-share but the contract is 100 shares, so
         # the dollar Amount needs the 100x multiplier to match the
@@ -1132,6 +1219,8 @@ def orders_to_history_df(
         # company name. See docstring "Dedup contract".
         if is_option:
             description = sym_str
+            if estimated_fee:
+                description = f"{description} {ESTIMATED_FEE_MARK}"
         else:
             description = ((order.get("universal_symbol") or {}).get("description") or sym_str).strip()
 

@@ -77,6 +77,7 @@ from app.snaptrade_normalize import (
     balances_to_balance_df,
     orders_to_history_df,
     positions_to_current_df,
+    recent_option_fee_rates,
 )
 from app.utils import demo_block_writes, safe_internal_next
 from app.plan import plan_block_writes
@@ -3124,6 +3125,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     orders_df = orders_to_history_df(
         orders, account_name=account_name, user_id=user_id,
         tenant_id=tenant_id,
+        fee_rates=recent_option_fee_rates(activities_df),
     )
     import pandas as pd
     # Concat only the non-empty frames — pandas deprecates concatenating

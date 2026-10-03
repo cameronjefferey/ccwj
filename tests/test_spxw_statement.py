@@ -4,15 +4,17 @@ The broker statement (Oct 2, 2026) is down $821.08. The position page
 showed +$2,325.56 because the 10/02-as-of-10/01 closing fills were
 dropped and the Oct 1 opens were gross of the $12.22 commission.
 
-Closed P&L, including the Oct 2 20-lot that is already closed and
-excluding the still-open 10-lot credit, is -1,796.64. The three spreads
-dated before Oct 2 (what a sync that has not yet seen Oct 2 would book)
+The Oct 2 book is two trades, not one 30-lot: the 20-lot closed
+intraday for +902.24 and the 10-lot expired worthless for +975.56.
+Together with the earlier spreads that is -821.08. Dropping the
+10-lot credit leaves -1,796.64. The three spreads dated before Oct 2
 net to -2,698.88.
 """
 
 from datetime import datetime
 
 import pandas as pd
+import pytest
 
 from app.outcome_units import group_vertical_spreads, leg_outcome
 from app.snaptrade_normalize import (
@@ -401,6 +403,283 @@ def _legs_from_history(df):
             "is_winner": True if amount > 0 else False if amount < 0 else None,
         })
     return rows
+
+
+def _fill(action, qty, price, amount, day="2026-10-02"):
+    return {
+        "trade_date": day,
+        "action": action,
+        "quantity": qty,
+        "price": price,
+        "amount": amount,
+    }
+
+
+def _fused_oct2_legs():
+    """One warehouse row per contract, the 20-lot and the 10-lot blended."""
+    short = {
+        "type": "option",
+        "strategy": "Call Spread",
+        "trade_symbol": "SPXW  261002C07730000",
+        "direction": "Sold",
+        "close_type": "Closed",
+        "open_date": "2026-10-02",
+        "close_date": "2026-10-02",
+        "quantity": 30,
+        "quantity_display": "30",
+        "pnl": 13675.56 + 2777.78 - 5672.44,
+        "premium_received": 13675.56 + 2777.78,
+        "tenant_id": TENANT,
+        "account": ACCOUNT,
+        "raw_trades": [
+            _fill("option_sell_to_open", 20, 6.85, 13675.56),
+            _fill("option_buy_to_close", 20, 2.824, -5672.44),
+            _fill("option_sell_to_open", 10, 2.79, 2777.78),
+        ],
+    }
+    long = {
+        "type": "option",
+        "strategy": "Call Spread",
+        "trade_symbol": "SPXW  261002C07735000",
+        "direction": "Bought",
+        "close_type": "Closed",
+        "open_date": "2026-10-02",
+        "close_date": "2026-10-02",
+        "quantity": 30,
+        "quantity_display": "30",
+        "pnl": -10724.44 - 1802.22 + 3623.56,
+        "premium_paid": 10724.44 + 1802.22,
+        "tenant_id": TENANT,
+        "account": ACCOUNT,
+        "raw_trades": [
+            _fill("option_buy_to_open", 20, 5.35, -10724.44),
+            _fill("option_sell_to_close", 20, 1.824, 3623.56),
+            _fill("option_buy_to_open", 10, 1.79, -1802.22),
+        ],
+    }
+    return short, long
+
+
+def test_oct2_lots_split_into_a_closed_20_and_an_expired_10():
+    """20× at $6.85/$5.35 closed; 10× at $2.79/$1.79 expired worthless."""
+    short, long = _fused_oct2_legs()
+    grouped = group_vertical_spreads([short, long])
+    assert len(grouped) == 2
+    closed = next(row for row in grouped if row["outcome"] == "Closed")
+    expired = next(row for row in grouped if row["outcome"] == "Expired")
+    assert closed["quantity_display"] == "20"
+    assert expired["quantity_display"] == "10"
+    assert round(closed["pnl"], 2) == 902.24
+    assert round(expired["pnl"], 2) == 975.56
+    assert closed["is_winner"] is True
+    assert expired["is_winner"] is True
+    assert "30" not in str(closed["quantity_display"])
+    assert "7730" in closed["trade_symbol"] and "7735" in closed["trade_symbol"]
+
+    earlier = _legs_from_history(
+        _history()[_history()["Date"].map(_as_date) < _as_date("10/02/2026")]
+    )
+    book = group_vertical_spreads(earlier + [short, long])
+    assert len(book) == 5
+    assert round(sum(row["pnl"] for row in book), 2) == -821.08
+    winners = [row for row in book if row["is_winner"] is True]
+    losers = [row for row in book if row["is_winner"] is False]
+    assert len(winners) == 4
+    assert len(losers) == 1
+
+
+def test_resync_of_a_posted_settlement_does_not_twin_the_stored_row():
+    """The seed keeps the broker's posting date. The warehouse caps it.
+
+    A stored Oct 1 SPXW close is dated 10/02. Rewriting the re-sync to
+    10/01 and appending "as of" used to fail dedup and insert a second
+    fill. Both rows must collapse to the stored posting date.
+    """
+    resynced = activities_to_history_df(
+        [_act(
+            "2026-10-02",
+            "Buy to Close",
+            "SPXW 10/01/2026 7650.00 C",
+            10, 16.45, -16450.0, 0,
+            "CALL S & P 500 INDEX $7650 EXP 10/01/26",
+        )],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    assert resynced.iloc[0]["Date"] == "10/02/2026"
+    assert "as of" not in str(resynced.iloc[0]["Description"]).lower()
+    stored = resynced.copy()
+    stored.loc[stored.index[0], "Date"] = "10/02/2026"
+    stored.loc[stored.index[0], "Description"] = (
+        "CALL S & P 500 INDEX $7650 EXP 10/01/26"
+    )
+    merged = _dedup_history_rows(
+        pd.concat([stored, resynced], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(merged) == 1
+    assert merged.iloc[0]["Date"] == "10/02/2026"
+    assert "as of 10/01" not in str(merged.iloc[0]["Description"]).lower()
+
+
+def test_blank_order_fee_uses_the_recent_spxw_rate_and_splits_a_parent_fee():
+    from app.snaptrade_normalize import ESTIMATED_FEE_MARK, recent_option_fee_rates
+
+    rates = recent_option_fee_rates(_history())
+    assert round(rates["SPXW"], 3) == 1.222
+    orders = orders_to_history_df(
+        [{
+            "action": "SELL_TO_OPEN",
+            "option_symbol": {
+                "underlying_symbol": "SPXW",
+                "expiration_date": "2026-10-02",
+                "strike_price": 7730,
+                "option_type": "CALL",
+            },
+            "status": "EXECUTED",
+            "time_executed": "2026-10-02T15:00:00Z",
+            "filled_quantity": 10,
+            "execution_price": 2.79,
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+        fee_rates=rates,
+    )
+    assert float(orders.iloc[0]["fees_and_comm"]) == pytest.approx(12.22)
+    assert float(orders.iloc[0]["Amount"]) == pytest.approx(2777.78)
+    assert ESTIMATED_FEE_MARK in str(orders.iloc[0]["Description"])
+
+    spread = orders_to_history_df(
+        [{
+            "brokerage_order_id": "spxw-20",
+            "status": "EXECUTED",
+            "time_executed": "2026-10-02T14:00:00Z",
+            "fee": 48.88,
+            "legs": [
+                {
+                    "leg_id": "short",
+                    "action": "SELL_TO_OPEN",
+                    "filled_quantity": "20",
+                    "execution_price": "6.85",
+                    "instrument": {
+                        "symbol": "SPXW  261002C07730000",
+                        "asset_type": "OPTION",
+                    },
+                },
+                {
+                    "leg_id": "long",
+                    "action": "BUY_TO_OPEN",
+                    "filled_quantity": "20",
+                    "execution_price": "5.35",
+                    "instrument": {
+                        "symbol": "SPXW  261002C07735000",
+                        "asset_type": "OPTION",
+                    },
+                },
+            ],
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    by_action = {row["Action"]: row for _, row in spread.iterrows()}
+    assert float(by_action["Sell to Open"]["fees_and_comm"]) == pytest.approx(24.44)
+    assert float(by_action["Buy to Open"]["fees_and_comm"]) == pytest.approx(24.44)
+    # 20 × 6.85 × 100 − 24.44, and the long debit plus the same half.
+    assert float(by_action["Sell to Open"]["Amount"]) == pytest.approx(13675.56)
+    assert float(by_action["Buy to Open"]["Amount"]) == pytest.approx(-10724.44)
+
+    activity = activities_to_history_df(
+        [_act(
+            "2026-10-02", "Sell to Open", "SPXW 10/02/2026 7730.00 C",
+            10, 2.79, 2777.78, 12.22, "INDEX",
+        )],
+        account_name=ACCOUNT, user_id=9, tenant_id=TENANT,
+    )
+    # The estimate mark must not win just because the order text is longer.
+    orders.loc[orders.index[0], "Description"] = (
+        "SPXW  261002C07730000 est. fee provisional order text that is longer"
+    )
+    merged = _dedup_history_rows(
+        pd.concat([orders, activity], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(merged) == 1
+    assert str(merged.iloc[0]["Description"]) == "INDEX"
+    assert float(merged.iloc[0]["Amount"]) == pytest.approx(2777.78)
+
+
+def test_copied_estimate_nets_the_gross_amount_and_the_activity_replaces_it():
+    """A stored no-fee order row stays one fill, net of the estimate.
+
+    The 20× 6.85 / 5.35 open and 2.824 / 1.824 close is +902.24 after
+    $24.44 per leg. A later activity with that same net and fee must
+    not charge the estimate again.
+    """
+    from app.snaptrade_normalize import recent_option_fee_rates
+
+    rates = recent_option_fee_rates(_history())
+    legs = [
+        ("SELL_TO_OPEN", "Sell to Open", 7730, "20", "6.85", 13675.56, 24.44),
+        ("BUY_TO_OPEN", "Buy to Open", 7735, "20", "5.35", -10724.44, 24.44),
+        ("BUY_TO_CLOSE", "Buy to Close", 7730, "20", "2.824", -5672.44, 24.44),
+        ("SELL_TO_CLOSE", "Sell to Close", 7735, "20", "1.824", 3623.56, 24.44),
+    ]
+    estimated = orders_to_history_df(
+        [{
+            "brokerage_order_id": f"leg-{i}",
+            "status": "EXECUTED",
+            "time_executed": "2026-10-02T14:00:00Z",
+            "action": action,
+            "filled_quantity": qty,
+            "execution_price": price,
+            "option_symbol": {
+                "underlying_symbol": "SPXW",
+                "expiration_date": "2026-10-02",
+                "strike_price": strike,
+                "option_type": "CALL",
+            },
+        } for i, (action, _label, strike, qty, price, _net, _fee) in enumerate(legs)],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+        fee_rates=rates,
+    )
+    stored = estimated.copy()
+    stored["fees_and_comm"] = ""
+    stored["Description"] = stored["Description"].map(
+        lambda text: str(text).replace(" est. fee", "").replace("est. fee", "").strip()
+    )
+    for i, row in stored.iterrows():
+        gross = round(abs(float(row["Quantity"])) * float(row["Price"]) * 100, 2)
+        stored.at[i, "Amount"] = -gross if str(row["Action"]).startswith("Buy") else gross
+    with_estimate = _dedup_history_rows(
+        pd.concat([stored, estimated], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(with_estimate) == 4
+    assert float(with_estimate["Amount"].sum()) == pytest.approx(902.24)
+    assert float(with_estimate["fees_and_comm"].astype(float).sum()) == pytest.approx(97.76)
+
+    activities = []
+    for _action, label, strike, qty, price, net, fee in legs:
+        activities.append(_act(
+            "2026-10-02", label, f"SPXW 10/02/2026 {strike:.2f} C",
+            float(qty), float(price), net, fee, f"INDEX {strike}",
+        ))
+    activity_df = activities_to_history_df(
+        activities, account_name=ACCOUNT, user_id=9, tenant_id=TENANT,
+    )
+    replaced = _dedup_history_rows(
+        pd.concat([with_estimate, activity_df], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(replaced) == 4
+    assert float(replaced["Amount"].sum()) == pytest.approx(902.24)
+    assert float(replaced["fees_and_comm"].astype(float).sum()) == pytest.approx(97.76)
+    assert not replaced["Description"].astype(str).str.contains("est. fee").any()
 
 
 def test_statement_spreads_group_and_the_oct1_credit_is_a_loss():

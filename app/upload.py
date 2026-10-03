@@ -840,6 +840,55 @@ def _canonicalize_cross_source_amount(action, amount):
     return _canonicalize_seed_cell(f)
 
 
+# Keep in lockstep with app.snaptrade_normalize.ESTIMATED_FEE_MARK.
+# Imported there would cycle (normalize imports this module).
+_ESTIMATED_FEE_MARK = "est. fee"
+
+
+def _description_preference(text) -> tuple:
+    """Sort key: a real description beats an estimated-fee order row.
+
+    Longer text wins only among descriptions that are not provisional.
+    """
+    s = "" if text is None else str(text)
+    try:
+        if s.lower() in ("nan", "none"):
+            s = ""
+    except Exception:
+        s = ""
+    estimated = 1 if _ESTIMATED_FEE_MARK in s.lower() else 0
+    return (estimated, -len(s))
+
+
+def _net_gross_option_amount(amount, qty, price, fee, action):
+    """Subtract a copied fee from an option Amount that is still gross.
+
+    ``qty × price × 100`` is the pre-fee premium. An amount that already
+    differs from that gross is the statement net — leave it, or the fee
+    is charged twice. Buys become more negative; sells stay a credit.
+    """
+    action_l = str(action or "").lower()
+    if "to open" not in action_l and "to close" not in action_l and "option_" not in action_l:
+        return amount
+    fee_f = _safe_fee_amount(fee)
+    if fee_f <= 0:
+        return amount
+    try:
+        qty_f = abs(float(qty))
+        price_f = abs(float(price))
+        signed = float(str(amount).replace(",", "").replace("$", ""))
+    except (TypeError, ValueError):
+        return amount
+    if qty_f <= 0 or price_f <= 0:
+        return amount
+    gross = qty_f * price_f * 100.0
+    if abs(abs(signed) - gross) > 0.05:
+        return amount
+    if signed < 0:
+        return round(-(gross + fee_f), 2)
+    return round(gross - fee_f, 2)
+
+
 def _safe_fee_amount(value) -> float:
     """Blank fees are 0. A commission cell is a positive dollar amount."""
     if value is None:
@@ -978,14 +1027,22 @@ def _dedup_history_rows(df, seed_columns):
             canon2[c] = df[c].map(_normalize_history_action)
         else:
             canon2[c] = canon2[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
-    desc_lens = df["Description"].fillna("").astype(str).str.len()
-    # Visit longer-description rows first so the richer one wins its group.
-    order = (-desc_lens.to_numpy()).argsort(kind="stable")
+    # A provisional order row labels its fee "est. fee". That suffix can
+    # make the description longer than the activity, which used to keep
+    # the estimate. Real wording wins even when it is shorter; length
+    # only breaks a tie between two real descriptions.
+    order = sorted(
+        range(len(df)),
+        key=lambda i: _description_preference(df["Description"].iloc[i]),
+    )
 
     seen: set = set()
     winners: dict = {}
     drop_positions: set = set()
     fee_col = next((c for c in df.columns if str(c).lower() == "fees_and_comm"), None)
+    amount_col = next((c for c in df.columns if str(c).lower() == "amount"), None)
+    qty_col = next((c for c in df.columns if str(c).lower() == "quantity"), None)
+    action_col = next((c for c in df.columns if str(c).lower() == "action"), None)
     for pos in order:
         if not bool(eligible.iloc[pos]):
             continue  # non-fill event — never cross-source deduped
@@ -1003,6 +1060,25 @@ def _dedup_history_rows(df, seed_columns):
                 drop_fee = _safe_fee_amount(df.at[pos, fee_col])
                 if not keep_fee and drop_fee:
                     df.at[keep, fee_col] = drop_fee
+                    # The survivor is often a stored order row whose
+                    # Amount is still gross. Net it once. A later activity
+                    # whose Amount is already net does not match gross, so
+                    # this does not subtract the fee again.
+                    if amount_col and qty_col and price_col and action_col:
+                        df.at[keep, amount_col] = _net_gross_option_amount(
+                            df.at[keep, amount_col],
+                            df.at[keep, qty_col],
+                            df.at[keep, price_col],
+                            drop_fee,
+                            df.at[keep, action_col],
+                        )
+                    drop_desc = str(df.at[pos, "Description"] or "")
+                    if _ESTIMATED_FEE_MARK in drop_desc.lower():
+                        keep_desc = str(df.at[keep, "Description"] or "")
+                        if _ESTIMATED_FEE_MARK not in keep_desc.lower():
+                            df.at[keep, "Description"] = (
+                                f"{keep_desc} {_ESTIMATED_FEE_MARK}"
+                            ).strip()
             drop_positions.add(pos)
         else:
             seen.add(key)

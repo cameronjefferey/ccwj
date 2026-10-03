@@ -158,6 +158,27 @@ _RAW_VERBS = {
 }
 
 
+def _fill_is_settlement(fill) -> bool:
+    """Expiry and cash settlement are not a trade that closed the contract.
+
+    A roll is a buy-to-close (or sell-to-close) plus a new open. The Oct 1
+    SPXW settlement posted on Oct 2 is not that close, even when the
+    action says buy-to-close.
+    """
+    action = str((fill or {}).get("action") or "")
+    if action in ("option_expired", "option_assigned", "option_exercised"):
+        return True
+    desc = str((fill or {}).get("description") or "").lower()
+    if "as of" in desc or "cash settlement" in desc or "settled at expiry" in desc:
+        return True
+    occ = (fill or {}).get("occ") or {}
+    expiry = occ.get("expiry")
+    traded = (fill or {}).get("date")
+    if expiry is not None and traded is not None and expiry < traded:
+        return True
+    return False
+
+
 def _normalize_fills(trades_df):
     """Yield one dict per story-relevant fill, oldest first."""
     if trades_df is None or trades_df.empty or "trade_date" not in trades_df.columns:
@@ -196,6 +217,7 @@ def _normalize_fills(trades_df):
             "quantity": _num(r.get("quantity")) or 0.0,
             "price": _num(r.get("price")),
             "amount": _num(r.get("amount")) or 0.0,
+            "description": str(r.get("description") or ""),
         })
     fills.sort(key=lambda f: f["date"])
     for i, f in enumerate(fills):
@@ -396,6 +418,8 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         def _detect_rolls(closes, opens, short_side):
             for c in closes:
                 if id(c) in consumed or not c["occ"]:
+                    continue
+                if _fill_is_settlement(c):
                     continue
                 for o in opens:
                     if id(o) in consumed or not o["occ"]:
