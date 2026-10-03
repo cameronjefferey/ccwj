@@ -286,7 +286,16 @@ snapshot_only_options as (
         case when coalesce(c.quantity, 0) < 0 then 'Sold' else 'Bought' end as direction,
         false as opened_before_history,
 
-        coalesce(c.snapshot_date, current_date()) as open_date,
+        -- snapshot_date is BigQuery current_date(), which is UTC. After
+        -- 20:00 ET that date is already the next calendar day, so a
+        -- Friday expiry settled that evening opened on Saturday and
+        -- closed on Friday. The open we keep is the New York market
+        -- date, and it cannot fall after the expiry.
+        least(
+            coalesce(c.snapshot_date, current_date('America/New_York')),
+            current_date('America/New_York'),
+            coalesce(c.option_expiry, current_date('America/New_York'))
+        ) as open_date,
         -- Snapshot-only contracts have no fills in stg_history, so
         -- they have no closing-action date. But the same calendar-
         -- truth rule still applies: if option_expiry is in the past,
@@ -298,10 +307,13 @@ snapshot_only_options as (
         -- silently drop their realized P&L. Mirrors the close_date
         -- precedence in contract_summary.
         case
-            when c.option_expiry < current_date()
+            when c.option_expiry < current_date('America/New_York')
             then greatest(
                 c.option_expiry,
-                coalesce(c.snapshot_date, current_date())
+                least(
+                    coalesce(c.snapshot_date, current_date('America/New_York')),
+                    current_date('America/New_York')
+                )
             )
             else cast(null as date)
         end as close_date,

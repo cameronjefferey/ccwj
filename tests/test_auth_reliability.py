@@ -213,6 +213,14 @@ def test_snaptrade_timeout_replaces_none_only():
     client.account_information.api_client.request(method="GET", timeout=3)
     assert seen["timeout"] == 3
 
+    from app.snaptrade import _SNAPTRADE_SYNC_HTTP_TIMEOUT, snaptrade_sync_timeout
+    assert _SNAPTRADE_SYNC_HTTP_TIMEOUT >= 30
+    with snaptrade_sync_timeout():
+        client.account_information.api_client.request(method="GET", timeout=None)
+    assert seen["timeout"] == _SNAPTRADE_SYNC_HTTP_TIMEOUT
+    client.account_information.api_client.request(method="GET", timeout=None)
+    assert seen["timeout"] == _SNAPTRADE_HTTP_TIMEOUT
+
 
 def test_stripe_http_client_gets_a_timeout():
     from app.billing import _STRIPE_HTTP_TIMEOUT, _bound_stripe_http

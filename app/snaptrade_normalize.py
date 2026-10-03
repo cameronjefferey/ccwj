@@ -865,6 +865,101 @@ def activities_to_history_df(
 # ---------------------------------------------------------------------------
 
 
+def _option_symbol_from_text(symbol: str):
+    """OCC or long-form contract text → the nested shape ``snaptrade_symbol_to_osi`` reads."""
+    from app.option_formatting import parse_occ
+    parsed = parse_occ(symbol)
+    if not parsed:
+        return None
+    try:
+        year = 2000 + int(parsed["yy"])
+        expiry = f"{year:04d}-{int(parsed['mm']):02d}-{int(parsed['dd']):02d}"
+    except (TypeError, ValueError, KeyError):
+        return None
+    cp = str(parsed.get("cp") or "").upper()
+    return {
+        "underlying_symbol": {
+            "symbol": parsed.get("root") or "",
+            "raw_symbol": parsed.get("root") or "",
+        },
+        "expiration_date": expiry,
+        "strike_price": parsed.get("strike"),
+        "option_type": "CALL" if cp == "C" else "PUT",
+    }
+
+
+def _leg_as_order(order: Mapping, leg: Mapping, index: int) -> Optional[dict]:
+    """One v2 order leg as the flat recent-order shape the history mapper reads."""
+    instrument = leg.get("instrument") if isinstance(leg.get("instrument"), Mapping) else {}
+    symbol = str(instrument.get("symbol") or leg.get("symbol") or "").strip()
+    asset = str(
+        instrument.get("asset_type")
+        or instrument.get("instrument_type")
+        or leg.get("instrument_type")
+        or ""
+    ).upper()
+    option_symbol = leg.get("option_symbol") if isinstance(leg.get("option_symbol"), Mapping) else None
+    if option_symbol is None and isinstance(instrument.get("option_symbol"), Mapping):
+        option_symbol = instrument.get("option_symbol")
+    # v2 legs put the contract on instrument.symbol (OCC text) and leave
+    # option_symbol empty. asset_type OPTION used to skip the parse and
+    # fall through as an equity row, which the action map then dropped.
+    if option_symbol is None:
+        description = str(instrument.get("description") or "").strip()
+        option_symbol = _option_symbol_from_text(symbol) or _option_symbol_from_text(description)
+    looks_option = asset in {"OPTION", "OPTIONS"} or option_symbol is not None
+    parent_id = str(order.get("brokerage_order_id") or "")
+    leg_id = str(leg.get("leg_id") or index)
+    price = leg.get("execution_price")
+    if price in (None, "") and len(order.get("legs") or []) == 1:
+        price = order.get("execution_price")
+    row = {
+        "brokerage_order_id": f"{parent_id}:{leg_id}" if parent_id else leg_id,
+        "status": leg.get("status") or order.get("status"),
+        "action": leg.get("action") or order.get("action"),
+        "filled_quantity": leg.get("filled_quantity") if leg.get("filled_quantity") not in (None, "") else leg.get("total_quantity"),
+        "total_quantity": leg.get("total_quantity"),
+        "execution_price": price,
+        "time_executed": order.get("time_executed") or leg.get("time_executed") or order.get("time_updated"),
+        "time_updated": order.get("time_updated"),
+        "fee": leg.get("fee") or order.get("fee"),
+    }
+    if looks_option:
+        if option_symbol is None:
+            return None
+        row["option_symbol"] = option_symbol
+    elif symbol:
+        row["universal_symbol"] = {"raw_symbol": symbol, "symbol": symbol, "description": symbol}
+    else:
+        return None
+    return row
+
+
+def flatten_order_legs(orders: Iterable[Mapping]) -> list:
+    """Explode multi-leg orders into one row per leg.
+
+    A same-day SPXW spread is one executed order with two option legs.
+    The flat ``option_symbol`` field is empty on that shape, so the
+    history mapper used to drop the whole fill. Legs that already look
+    like a single-leg order pass through unchanged.
+    """
+    flat = []
+    for order in orders or ():
+        if not isinstance(order, Mapping):
+            continue
+        legs = order.get("legs")
+        if not isinstance(legs, (list, tuple)) or not legs:
+            flat.append(order)
+            continue
+        for index, leg in enumerate(legs):
+            if not isinstance(leg, Mapping):
+                continue
+            row = _leg_as_order(order, leg, index)
+            if row is not None:
+                flat.append(row)
+    return flat
+
+
 def orders_to_history_df(
     orders: Iterable[Mapping],
     *,
@@ -922,7 +1017,7 @@ def orders_to_history_df(
     user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
 
-    for order in orders or ():
+    for order in flatten_order_legs(orders):
         if not isinstance(order, Mapping):
             continue
 

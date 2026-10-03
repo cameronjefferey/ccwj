@@ -148,8 +148,9 @@ verification — acceptable for local dev only.
   tables + one rebuild dispatch = a single dbt build):
     - **`happytrader-snaptrade-intraday` — real-time orders poll, every
       ~15 min during market hours** (`--intraday`; suggested
-      `*/15 13-21 * * 1-5` UTC). Reads the real-time `recent_orders` feed
-      (skipping the T+1 `activities` feed) and pushes a **history-only**
+      `*/15 13-21 * * 1-5` UTC). Reads the real-time orders feed
+      (`recent_orders` plus account orders `state=executed`, `days=1`;
+      skipping the T+1 `activities` feed) and pushes a **history-only**
       diff — only NEW trade fills hit `trade_history`; the
       positions/balances **snapshots are NOT rewritten** (they drift on
       every read, so pushing them every 15 min would rebuild the whole
@@ -173,7 +174,8 @@ verification — acceptable for local dev only.
   > plan 403s it) and only ever touches `activities`, which are **T+1 for
   > every broker** (the broker posts transactions the night after close). It
   > could never advance same-day data, so it was deleted. Same-day trades ride
-  > the real-time **ORDERS** feed (`recent_orders`); positions/orders/balances
+  > the real-time **ORDERS** feed (`recent_orders` and account orders
+  > `state=executed` `days=1`); positions/orders/balances
   > are already live on this plan. If the cron still exists in the Render
   > dashboard, delete it. The `--force-refresh` flag is retained but dormant
   > (only meaningful on a hypothetical future cached plan)

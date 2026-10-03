@@ -1093,6 +1093,53 @@ def test_orders_df_skips_zero_quantity_or_zero_price_orders():
     assert len(df) == 0
 
 
+def test_orders_df_emits_each_leg_of_an_executed_spread():
+    """A same-day SPXW spread is one order with two option legs and no
+    top-level option_symbol. Each executed leg is a provisional fill.
+    The parent net price is not the per-leg premium."""
+    order = {
+        "brokerage_order_id": "spxw-spread",
+        "status": "EXECUTED",
+        "time_executed": "2026-10-01T18:00:00Z",
+        "execution_price": "1.45",
+        "legs": [
+            {
+                "leg_id": "short",
+                "action": "SELL_TO_OPEN",
+                "filled_quantity": "10",
+                "execution_price": "7.77",
+                "instrument": {
+                    "symbol": "SPXW  261001C07650000",
+                    "asset_type": "OPTION",
+                },
+            },
+            {
+                "leg_id": "long",
+                "action": "BUY_TO_OPEN",
+                "filled_quantity": "10",
+                "execution_price": "6.32",
+                "instrument": {
+                    "symbol": "SPXW  261001C07655000",
+                    "asset_type": "OPTION",
+                },
+            },
+        ],
+    }
+    df = orders_to_history_df(
+        [order], account_name="Schwab", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+    assert len(df) == 2
+    by_action = {row["Action"]: row for _, row in df.iterrows()}
+    short = by_action["Sell to Open"]
+    long = by_action["Buy to Open"]
+    assert float(short["Quantity"]) == pytest.approx(10)
+    assert float(short["Price"]) == pytest.approx(7.77)
+    assert float(short["Amount"]) == pytest.approx(7770.0)
+    assert float(long["Amount"]) == pytest.approx(-6320.0)
+    assert "7650" in short["Symbol"] or "07650000" in short["Symbol"]
+    assert "7655" in long["Symbol"] or "07655000" in long["Symbol"]
+
+
 def test_orders_df_uses_filled_quantity_for_partial_fills():
     """Partial fill: 100 placed, 60 filled, rest cancelled. Emit the
     real fill (60) not the placed quantity (100)."""

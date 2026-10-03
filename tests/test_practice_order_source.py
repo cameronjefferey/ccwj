@@ -12,7 +12,11 @@ from unittest.mock import patch
 os.environ.setdefault("HAPPYTRADER_SKIP_DB_INIT", "1")
 
 from app.paper_practice import normalize_broker_order, order_status_bucket
-from app.snaptrade import _fetch_recent_orders, list_account_recent_orders
+from app.snaptrade import (
+    _fetch_recent_orders,
+    _fetch_sync_orders,
+    list_account_recent_orders,
+)
 
 _SNAP = {"snaptrade_user_id": "su", "snaptrade_secret": "ss"}
 
@@ -90,6 +94,36 @@ def test_recent_orders_default_omits_only_executed():
 
     assert _fetch_recent_orders(client, "u", "s", "acc", only_executed=False) == []
     assert seen[1]["only_executed"] is False
+
+
+def test_sync_orders_reads_executed_account_orders_for_today():
+    """Same-day option fills were missing because sync only called
+    recent_orders. The account orders endpoint (days=1, state=executed)
+    is the other real-time read, and it fills the gap when recent is empty."""
+    seen = {}
+
+    class _Info:
+        @staticmethod
+        def get_user_account_recent_orders(**kwargs):
+            seen["recent"] = kwargs
+            return {"orders": []}
+
+        @staticmethod
+        def get_user_account_orders(**kwargs):
+            seen["orders"] = kwargs
+            return {"orders": [{
+                "brokerage_order_id": "be-sale",
+                "status": "EXECUTED",
+            }]}
+
+    client = SimpleNamespace(account_information=_Info)
+    rows = _fetch_sync_orders(client, "u", "s", "48086b12-acct")
+    assert seen["recent"]["account_id"] == "48086b12-acct"
+    assert "only_executed" not in seen["recent"]
+    assert seen["orders"]["state"] == "executed"
+    assert seen["orders"]["days"] == 1
+    assert seen["orders"]["account_id"] == "48086b12-acct"
+    assert rows[0]["brokerage_order_id"] == "be-sale"
 
 
 def test_list_includes_open_cancelled_filled_and_rejected():
