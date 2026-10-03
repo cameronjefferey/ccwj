@@ -27,6 +27,18 @@ def test_stg_history_uses_shared_parse_seed_date_macro():
     assert "parse_seed_date('date')" in _STG.read_text()
 
 
+def test_settlement_dated_cte_is_comma_joined():
+    """A missing comma after crypto_norm makes BigQuery reject ``dated``.
+
+    Run 37089600141: Syntax error: Unexpected identifier "dated".
+    """
+    sql = _STG.read_text()
+    assert re.search(
+        r"crypto_norm as \([\s\S]*?\)\s*,\s*(?:--[^\n]*\n\s*)*dated as \(",
+        sql,
+    )
+
+
 def test_parse_seed_date_covers_four_and_two_digit_mdy():
     sql = _MACRO.read_text()
     assert r"r'(\d{1,2}/\d{1,2}/\d{4})$'" not in sql

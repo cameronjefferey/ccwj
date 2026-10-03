@@ -287,7 +287,7 @@ crypto_norm as (
         on a.instrument_type not in ('Call', 'Put')
        and ct.symbol = {{ crypto_pair_base_expr('a.trade_symbol') }}
        and ct.symbol != ''
-)
+),
 
 -- A cash-settlement fill is often dated the broker's posting day
 -- (SPXW Oct 1 expiry arrived as Oct 2). "as of MM/DD/YY(YY)" is the
