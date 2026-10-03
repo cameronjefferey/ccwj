@@ -242,7 +242,7 @@ def register_redirect():
 
 
 _SIGNUP_ROUTES = {
-    "learn": "Lessons, replays, and paper trading are free. No card.",
+    "learn": "Lessons, replays, and paper trading are free.",
     "real-pnl": "See your real P&L across every broker you connect. Read-only.",
     "mistakes": "See what an early close cost, on the trades you already made.",
 }
@@ -360,7 +360,10 @@ def signup():
             return _retry("That username is already taken.")
 
         token = (request.form.get("cf-turnstile-response") or "").strip()
-        if not verify_turnstile(token, real_client_ip()):
+        # Fail open when the widget script never loads or Cloudflare
+        # errors. A completed challenge that returns success=false still
+        # rejects. The signup rate limit above still applies.
+        if not verify_turnstile(token, real_client_ip(), fail_open=True):
             return _retry("Confirm you're a person and try again.")
 
         User.create(username, password, email=email)

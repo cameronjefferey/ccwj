@@ -4010,7 +4010,19 @@ def _same_day_option_lot_tiles(fills_df, anchor):
     qty_by_symbol = {}
     for row in records:
         action = _fill_action_text(row)
-        if action in _LOT_SKIP_ACTIONS or action not in (_LOT_OPEN_ACTIONS | _LOT_CLOSE_ACTIONS):
+        # Expiry, assignment, and exercise credit is the row's cash
+        # (premiums in or out, minus fees). The fused contract
+        # realized_pnl is one number for every lot of that OCC and is
+        # not added. A zero placeholder stays out so an OTM expiry does
+        # not invent a close.
+        if action in _LOT_SKIP_ACTIONS:
+            try:
+                settle_amt = float(_fill_field(row, "amount", "Amount", default=0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if abs(settle_amt) < 0.01:
+                continue
+        elif action not in (_LOT_OPEN_ACTIONS | _LOT_CLOSE_ACTIONS):
             continue
         iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
         if not _fill_counts_for_session(iso, _fill_expiry_iso(row), session):
@@ -4255,11 +4267,18 @@ def _lot_fill_census(fills_df, anchor):
         elif raw_symbol.strip():
             roots.append(raw_symbol.split()[0][:12].upper())
         account = str(_fill_field(row, "account", default="") or "").strip()
-        tail = _tenant_tail(_fill_field(row, "tenant_id", default=""))
-        if account and tail:
-            accounts.append(f"{account} {tail}")
-        elif account or tail:
-            accounts.append(account or tail)
+        tenant = str(_fill_field(row, "tenant_id", default="") or "").strip()
+        if _privacy_amounts():
+            from app.privacy import shown_account
+            masked = shown_account(account, tenant or None)
+            if masked:
+                accounts.append(str(masked))
+        else:
+            tail = _tenant_tail(tenant)
+            if account and tail:
+                accounts.append(f"{account} {tail}")
+            elif account or tail:
+                accounts.append(account or tail)
         if not _fill_counts_for_session(iso, _fill_expiry_iso(row), session):
             continue
         action = _fill_action_text(row)
@@ -4278,7 +4297,18 @@ def _lot_fill_census(fills_df, anchor):
     }
 
 
+def _privacy_amounts() -> bool:
+    """True when the signed-in viewer has privacy mode on."""
+    try:
+        from app.privacy import privacy_mode_on
+        return bool(privacy_mode_on())
+    except Exception:
+        return False
+
+
 def _fmt_lot_money(value):
+    if _privacy_amounts():
+        return "••••"
     if value is None:
         return "—"
     try:
@@ -4470,6 +4500,66 @@ def _with_implied_option_fees(fills_df, rates):
     return pd.DataFrame(records)
 
 
+def _fill_match_root(row) -> str:
+    """OCC root for one fill, with SPX/NDX/RUT folded onto the weekly root."""
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(_fill_field(row, "trade_symbol", "Symbol", default=""))
+    if not parsed:
+        return ""
+    return _option_root_match_key(parsed["root"])
+
+
+def _fills_for_root(fills_df, root):
+    """Fills whose OCC root is this tile. Other symbols stay out.
+
+    ``DAY_TRADES_QUERY`` orders by underlying, so ASTS and BE are built
+    before SPXW. Pairing by contract count then nearest strike was
+    handing SPXW's 20-lot and 10-lot longs to those earlier shorts.
+    The SPXW tile then summed only the short legs (``lot_sum=10780.90``)
+    and the gap was the missing long (``8903.10``).
+    """
+    if fills_df is None or getattr(fills_df, "empty", True):
+        return fills_df
+    want = _option_root_match_key(root)
+    records = [
+        row for row in fills_df.to_dict(orient="records")
+        if _fill_match_root(row) == want
+    ]
+    if not records:
+        return pd.DataFrame(columns=list(getattr(fills_df, "columns", [])))
+    return pd.DataFrame(records)
+
+
+def _ordered_lot_roots(options, fills_df):
+    roots = []
+    for opt in options or []:
+        key = _option_root_match_key(opt.get("symbol"))
+        if key and key not in roots:
+            roots.append(key)
+    if fills_df is not None and not getattr(fills_df, "empty", True):
+        for row in fills_df.to_dict(orient="records"):
+            key = _fill_match_root(row)
+            if key and key not in roots:
+                roots.append(key)
+    return roots
+
+
+def _built_lots_for_root(marts, scoped, anchor):
+    """Lot tiles from this root's fills only. Cash is premiums minus fees."""
+    census = _lot_fill_census(scoped, anchor)
+    tiles, fees_by_symbol, qty_by_symbol = _same_day_option_lot_tiles(
+        scoped, anchor,
+    )
+    if tiles:
+        rates = _gross_fee_rates(marts, tiles, fees_by_symbol, qty_by_symbol)
+        if rates:
+            tiles, fees_by_symbol, qty_by_symbol = _same_day_option_lot_tiles(
+                _with_implied_option_fees(scoped, rates), anchor,
+            )
+    return tiles, fees_by_symbol, census
+
+
 def _apply_same_day_option_lots(options, fills_df, anchor):
     """Replace a fused symbol tile with one tile per same-day lot.
 
@@ -4479,89 +4569,139 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
     per-contract rate when that gap is within $1.50 a contract-fill.
     A settlement estimate (credit versus width) stays on the mart tile.
 
+    Fills are scoped to the tile's root before the spread is paired, so
+    another symbol's same-day calls cannot take a leg. Lot P&L is the
+    net cash of those fills, including a non-zero expiry credit. The
+    contract's fused ``realized_pnl`` is not used.
+
     Every option tile is stamped with ``lot_split_reason`` (``split``,
     ``no_fills``, ``no_session_fills``, ``unparsed_symbol``, ``no_lots``,
     ``root_mismatch``, ``total_mismatch``) and ``lot_split_line``. The
     line is the owner-visible diagnostic for ``?debug=lots``.
     """
     options = list(options or [])
-    census = _lot_fill_census(fills_df, anchor)
-    tiles, fees_by_symbol, qty_by_symbol = _same_day_option_lot_tiles(
-        fills_df, anchor,
-    )
-    if tiles:
-        rates = _gross_fee_rates(options, tiles, fees_by_symbol, qty_by_symbol)
-        if rates:
-            tiles, fees_by_symbol, qty_by_symbol = _same_day_option_lot_tiles(
-                _with_implied_option_fees(fills_df, rates), anchor,
-            )
-    if not tiles:
+    roots = _ordered_lot_roots(options, fills_df)
+    if not roots:
+        census = _lot_fill_census(fills_df, anchor)
         reason, detail = _lot_skip_diagnosis(fills_df, anchor)
         stamped = [
             _note_lot_split(opt, reason, detail, census) for opt in options
         ]
         impact = round(sum(float(o.get("dollar_impact") or 0) for o in stamped), 2)
         return stamped, impact, None
-    grouped = {}
-    for tile in tiles:
-        grouped.setdefault(_option_root_match_key(tile["symbol"]), []).append(tile)
+
+    built = {}
+    for root in roots:
+        marts = [
+            opt for opt in options
+            if _option_root_match_key(opt.get("symbol")) == root
+        ]
+        scoped = _fills_for_root(fills_df, root)
+        tiles, fees_by_symbol, census = _built_lots_for_root(marts, scoped, anchor)
+        built[root] = {
+            "marts": marts,
+            "tiles": tiles,
+            "fees": fees_by_symbol,
+            "census": census,
+            "scoped": scoped,
+        }
+
     kept = []
     used = set()
-    for opt in options:
-        symbol = _option_root_match_key(opt.get("symbol"))
-        lots = grouped.get(symbol)
-        if not lots:
-            lot_keys = ",".join(sorted(grouped))
-            if _roots_look_like_one_index(opt.get("symbol"), grouped):
-                reason = "root_mismatch"
-            else:
-                reason = "no_lots"
-            kept.append(_note_lot_split(
-                opt, reason, f"mart={opt.get('symbol')} lot_roots={lot_keys}",
-                census,
-            ))
-            continue
-        # A second mart row for the same root (SPX beside SPXW) must
-        # not keep the fused tile or append the lots twice.
-        if symbol in used:
-            _lot_log.info(
-                "lot_split symbol=%s reason=already_split detail=dropped duplicate mart row",
-                opt.get("symbol"),
+    produced = [root for root, row in built.items() if row["tiles"]]
+    for root, row in built.items():
+        tiles = row["tiles"]
+        census = row["census"]
+        fees_by_symbol = row["fees"]
+        if not tiles:
+            if not row["marts"]:
+                continue
+            frame = row["scoped"]
+            if frame is None or getattr(frame, "empty", True):
+                frame = fills_df
+            if produced:
+                lot_keys = ",".join(sorted(produced))
+                for opt in row["marts"]:
+                    if _roots_look_like_one_index(opt.get("symbol"), produced):
+                        reason = "root_mismatch"
+                    else:
+                        reason = "no_lots"
+                    kept.append(_note_lot_split(
+                        opt, reason,
+                        f"mart={opt.get('symbol')} lot_roots={lot_keys}",
+                        census,
+                    ))
+                continue
+            reason, detail = _lot_skip_diagnosis(frame, anchor)
+            kept.extend(
+                _note_lot_split(opt, reason, detail, census)
+                for opt in row["marts"]
             )
             continue
-        used.add(symbol)
-        lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
-        gap = _option_tile_gap(opt, lot_sum)
-        budget = float(fees_by_symbol.get(symbol) or 0)
-        closed = opt.get("closed_impact")
-        dollar = opt.get("dollar_impact")
-        detail = (
-            f"lot_sum={lot_sum:.2f} gap={gap:.2f} budget={budget:.2f} "
-            f"dollar={dollar} closed={closed} lots={len(lots)} "
-            f"anchor={_iso_day(anchor) or 'none'}"
-        )
-        if gap > max(1.0, budget + 1.0):
-            kept.append(_note_lot_split(
-                opt, "total_mismatch", detail, census, lot_sum, gap, budget,
-            ))
-            continue
-        open_i = opt.get("open_impact")
-        open_v = float(open_i or 0) if open_i is not None else 0.0
-        if abs(open_v) >= 0.5:
-            kept.append(_note_lot_split({
-                **opt,
-                "dollar_impact": round(open_v, 2),
-                "closed_impact": 0.0,
-                "option_caption": option_mover_caption(open_v, 0),
-            }, "split", f"open mark kept {detail}", census, lot_sum, gap, budget))
-        kept.extend(_note_lot_tiles(
-            lots, "split", detail, census, lot_sum, gap, budget,
-        ))
-    for symbol, lots in grouped.items():
-        if symbol not in used:
+        grouped = {}
+        for tile in tiles:
+            grouped.setdefault(
+                _option_root_match_key(tile["symbol"]), [],
+            ).append(tile)
+        root_used = False
+        for opt in row["marts"]:
+            symbol = _option_root_match_key(opt.get("symbol"))
+            lots = grouped.get(symbol)
+            if not lots:
+                lot_keys = ",".join(sorted(grouped))
+                if _roots_look_like_one_index(opt.get("symbol"), grouped):
+                    reason = "root_mismatch"
+                else:
+                    reason = "no_lots"
+                kept.append(_note_lot_split(
+                    opt, reason,
+                    f"mart={opt.get('symbol')} lot_roots={lot_keys}",
+                    census,
+                ))
+                continue
+            if symbol in used:
+                _lot_log.info(
+                    "lot_split symbol=%s reason=already_split detail=dropped duplicate mart row",
+                    opt.get("symbol"),
+                )
+                continue
+            used.add(symbol)
+            root_used = True
+            lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
+            gap = _option_tile_gap(opt, lot_sum)
+            budget = float(fees_by_symbol.get(symbol) or 0)
+            closed = opt.get("closed_impact")
+            dollar = opt.get("dollar_impact")
+            detail = (
+                f"lot_sum={lot_sum:.2f} gap={gap:.2f} budget={budget:.2f} "
+                f"dollar={dollar} closed={closed} lots={len(lots)} "
+                f"anchor={_iso_day(anchor) or 'none'}"
+            )
+            if gap > max(1.0, budget + 1.0):
+                kept.append(_note_lot_split(
+                    opt, "total_mismatch", detail, census, lot_sum, gap, budget,
+                ))
+                continue
+            open_i = opt.get("open_impact")
+            open_v = float(open_i or 0) if open_i is not None else 0.0
+            if abs(open_v) >= 0.5:
+                kept.append(_note_lot_split({
+                    **opt,
+                    "dollar_impact": round(open_v, 2),
+                    "closed_impact": 0.0,
+                    "option_caption": option_mover_caption(open_v, 0),
+                }, "split", f"open mark kept {detail}", census, lot_sum, gap, budget))
             kept.extend(_note_lot_tiles(
-                lots, "split", f"no mart row for {symbol}", census,
+                lots, "split", detail, census, lot_sum, gap, budget,
             ))
+        if not root_used:
+            for symbol, lots in grouped.items():
+                if symbol in used:
+                    continue
+                used.add(symbol)
+                kept.extend(_note_lot_tiles(
+                    lots, "split", f"no mart row for {symbol}", census,
+                ))
     kept.sort(key=lambda o: abs(float(o.get("dollar_impact") or 0)), reverse=True)
     impact = round(sum(float(o.get("dollar_impact") or 0) for o in kept), 2)
     lot_as_of = _iso_day(anchor)

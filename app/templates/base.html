@@ -77,12 +77,11 @@
     </script>
     {% endif %}
 
-    {% if _public_page %}
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"></noscript>
-    {% else %}
+    {# Bootstrap stays render-blocking. Deferring it (media=print) painted
+       the public nav as a bullet list, then a late style recalc. Measured
+       mobile Lighthouse on /go/learn, /go/real-pnl, and /go/mistakes:
+       blocking 94 vs deferred 91–92, with desktop CLS 0.008 vs 0.058. #}
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    {% endif %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
@@ -124,7 +123,14 @@
             box-shadow: 0 8px 24px rgba(0,0,0,.35);
         }
         .ht-cookie-notice p { margin: 0; line-height: 1.4; }
-        .ht-cookie-notice a { color: #5b8cff; }
+        .ht-cookie-notice a {
+            color: #5b8cff;
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+            min-width: 44px;
+            padding: 0 .25rem;
+        }
         .ht-cookie-notice button {
             background: #5b8cff; color: #0a0e17; border: 0; border-radius: 999px;
             font-weight: 700; min-height: 44px; padding: .5rem 1rem; flex: none;
@@ -132,6 +138,12 @@
         .ht-public-links a {
             display: inline-flex; align-items: center; min-height: 44px;
             padding: .35rem .4rem;
+        }
+        a.ht-inline-tap {
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+            padding: 0 .2rem;
         }
         footer .ht-disclaimer {
             color: #c5d0e4; font-size: .95rem; line-height: 1.5;
@@ -211,6 +223,56 @@
                 radial-gradient(ellipse 80% 50% at 50% -10%, rgba(91, 140, 255, 0.07), transparent 50%),
                 radial-gradient(ellipse 60% 40% at 100% 50%, rgba(91, 140, 255, 0.05), transparent 45%),
                 #05070c;
+        }
+        /* Public nav layout before Bootstrap's stylesheet arrives.
+           Without these rules the Learn / Pricing / FAQ / Sign In list
+           paints as bullets, then jumps when Bootstrap lands. */
+        body.ht-public nav.navbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 56px;
+            padding: .5rem 1rem;
+        }
+        body.ht-public nav.navbar .container-fluid {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            gap: .5rem;
+        }
+        body.ht-public nav.navbar .navbar-nav {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            gap: .25rem;
+        }
+        body.ht-public nav.navbar .nav-item { list-style: none; }
+        body.ht-public nav.navbar .nav-link {
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+            padding: .4rem .75rem;
+            text-decoration: none;
+        }
+        @media (min-width: 992px) {
+            body.ht-public nav.navbar .navbar-collapse {
+                display: flex !important;
+                flex-basis: auto;
+                flex-grow: 1;
+                align-items: center;
+                justify-content: space-between;
+            }
+            body.ht-public nav.navbar .navbar-toggler { display: none; }
+        }
+        @media (max-width: 991.98px) {
+            body.ht-public nav.navbar .navbar-collapse:not(.show) { display: none; }
+            body.ht-public nav.navbar .navbar-nav { flex-direction: column; align-items: flex-start; }
         }
         .navbar {
             background: rgba(5, 7, 12, 0.78) !important;
@@ -326,6 +388,12 @@
         /* Guest auth — same lift + shadow on Sign In and Sign Up */
         .navbar .btn.btn-auth-nav {
             font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            min-width: 44px;
+            padding: .5rem .9rem;
             transition: transform .2s ease, box-shadow .2s ease, opacity .15s;
         }
         .navbar .btn.btn-auth-nav:hover,
