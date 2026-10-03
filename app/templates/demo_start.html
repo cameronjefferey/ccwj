@@ -18,6 +18,14 @@
                 {% endif %}
                 <button type="submit" class="btn btn-primary" data-ht-cta="start-demo">Start the demo</button>
             </form>
+            {% if not turnstile_site_key %}
+            <script>
+            (function () {
+                var form = document.querySelector("form[action]");
+                if (form) form.submit();
+            })();
+            </script>
+            {% endif %}
         </div>
     </div>
 </div>

@@ -225,10 +225,15 @@
     }
     .ht-hero-signin {
         margin: 0.25rem 0 0;
-        font-size: 0.85rem;
+        font-size: 0.95rem;
     }
     .ht-hero-signin a {
-        color: #7d8aa3;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0.4rem 0.75rem;
+        color: #c5d0e4;
         text-decoration: none;
     }
     .ht-hero-signin a:hover { color: #5b8cff; }
@@ -364,10 +369,10 @@
         margin-top: 0.5rem;
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
-        font-size: 0.7rem;
-        letter-spacing: 0.1em;
+        font-size: 0.875rem;
+        letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #7d8aa3;
+        color: #c5d0e4;
     }
     .ht-feature-title {
         color: #fff;
@@ -436,10 +441,20 @@
         margin-top: 0.5rem;
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
-        font-size: 0.7rem;
-        letter-spacing: 0.1em;
+        font-size: 0.875rem;
+        letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: #7d8aa3;
+        color: #c5d0e4;
+    }
+    .ht-narrow-still,
+    .ht-narrow-shot,
+    .ht-hero-short { display: none; }
+    .ht-disclaimer {
+        color: #c5d0e4;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        max-width: 40rem;
+        margin: 1rem 0 0;
     }
     .ht-learn {
         display: grid;
@@ -464,7 +479,7 @@
         font-size: 0.75rem;
         letter-spacing: 0.14em;
         text-transform: uppercase;
-        color: rgba(10,14,23,.72);
+        color: #0a0e17;
         margin: 0 0 0.7rem;
     }
     .ht-cta {
@@ -489,7 +504,7 @@
     .ht-cta-note {
         margin: 0.9rem auto 0;
         max-width: 34rem;
-        color: rgba(10,14,23,.78);
+        color: #0a0e17;
         font-size: 0.95rem;
         line-height: 1.5;
     }
@@ -588,9 +603,10 @@
         background: transparent;
         color: #c5d0e4;
         border-radius: 999px;
-        padding: 0.32rem 0.75rem;
+        min-height: 44px;
+        padding: 0.5rem 0.9rem;
         font: inherit;
-        font-size: 0.82rem;
+        font-size: 0.95rem;
         font-weight: 650;
         letter-spacing: -0.01em;
         cursor: pointer;
@@ -724,8 +740,62 @@
         color: #c5d0e4;
     }
     .ht-faq .faq-answer a { color: #5b8cff; }
+    .ht-overview-mock {
+        margin-top: 1.15rem;
+        background: #0c111c;
+        border: 1px solid #243049;
+        border-radius: 0.85rem;
+        padding: 1rem 1.1rem 1.15rem;
+        max-width: 28rem;
+    }
+    .ht-ov-head,
+    .ht-ov-accounts li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        color: #e8edf7;
+        font-size: 1.05rem;
+        padding: 0.55rem 0;
+    }
+    .ht-ov-accounts { list-style: none; margin: 0; padding: 0; }
+    .ht-ov-accounts li { border-top: 1px solid #243049; }
+    .ht-ov-mask {
+        width: 4.5rem;
+        height: 0.7rem;
+        border-radius: 999px;
+        background: #243049;
+    }
+    .ht-ov-syms {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.85rem;
+    }
+    .ht-ov-syms span {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.95rem;
+        color: #e8edf7;
+        border: 1px solid #243049;
+        border-radius: 999px;
+        padding: 0.35rem 0.7rem;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+    }
     @media (max-width: 640px) {
-        .ht-sticky-cta {
+        .ht-feature > .ht-facade,
+        .ht-desk-shot { display: none; }
+        .ht-narrow-still,
+        .ht-narrow-shot { display: block; }
+        .ht-narrow-shot,
+        .ht-hero-short {
+            width: min(100%, 22rem);
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .ht-hero-short { display: block; margin-top: 1.15rem; }
+        .ht-sticky-cta.is-shown {
             display: block;
             position: fixed;
             left: 0;
@@ -736,18 +806,15 @@
             background: #0a0e17;
             border-top: 1px solid #243049;
         }
-        body.ht-campaign { padding-bottom: 4.75rem; }
+        body.ht-campaign:has(.ht-sticky-cta.is-shown) { padding-bottom: 4.75rem; }
         .ht-sticky-cta .ht-hero-primary { max-width: none; }
-        /* The cookie notice is fixed to the bottom and used to cover the
-           signup bar. Lift it above the bar while it is on screen. A
-           dismissed notice is removed or hidden via html.ht-cookie-ok. */
-        html:not(.ht-cookie-ok) body.ht-campaign:has(#ht-cookie-notice) .ht-cookie-notice {
+        /* The cookie notice is one line. Lift it above the signup bar
+           only after that bar is on screen. */
+        html:not(.ht-cookie-ok) body.ht-campaign:has(.ht-sticky-cta.is-shown):has(#ht-cookie-notice) .ht-cookie-notice {
             bottom: calc(4.75rem + 0.35rem + env(safe-area-inset-bottom, 0px));
         }
-        html:not(.ht-cookie-ok) body.ht-campaign:has(#ht-cookie-notice) {
-            /* Notice copy wraps to about 8.5rem on a 390px phone. Keep the
-               last line above that notice and the signup bar. */
-            padding-bottom: calc(4.75rem + 10rem + env(safe-area-inset-bottom, 0px));
+        html:not(.ht-cookie-ok) body.ht-campaign:has(.ht-sticky-cta.is-shown):has(#ht-cookie-notice) {
+            padding-bottom: calc(4.75rem + 4.5rem + env(safe-area-inset-bottom, 0px));
         }
         /* Signed-in visitors still get the feedback bubble. On a phone it
            sits on the sticky signup bar, so landing pages hide it there. */

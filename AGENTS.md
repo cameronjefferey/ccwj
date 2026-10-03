@@ -290,6 +290,10 @@ What's working:
   (`10× 7650/7655C spread`, `20× 7730/7735C spread`, `2× MU 120C`). The
   other line is `Open contracts, change in value`, `Closed today`,
   `Expired`, or both dollars when the day mixed a mark change and a close.
+  `?debug=lots` on `/weekly-review` and `/today` prints one line under
+  each option tile for the signed-in account owner: reason, lot sum,
+  gap, fee budget, fill count, fill dates, OCC roots, and account
+  labels. It is that owner's own book.
   Clicking a mover opens the same right-side position drawer as Today.
 - Watch list: a 15-day radar (earnings with company name, expiries, pending verdicts, ex-divs with share count and last amount) starting on the current New York market date. It must not start on the older settled close: doing so shortens the forward window every weekend / pre-market and hides day-14 events whenever any earlier chip makes the radar replace the legacy list. The lists behind it are still upcoming earnings (≤14d), expiring options (≤14d, **not already expired**), ex-divs (≤30d, radar shows the next 14). Overview drops past-expiry option rows (and mart-Closed contracts still lingering in the broker snapshot) before the positions strip / watch list aggregate — Schwab's snapshot lags expiry 1-2 days and a missing `trade_symbol` join used to keep those contracts on the page. Ex-div dates prefer `stg_ex_div_calendar` (yfinance `Ticker.calendar`, persisted by `scripts/refresh_earnings_calendar.py`); the last+median cadence heuristic is the fallback and is labeled "projected" in UI. Option expiry comparisons use the New York market date, not the viewer's profile date, so users east of the U.S. do not lose Friday contracts while Friday's session is still open.
 - Daily account Δ heatmap (rolling 12 weeks, 4 visible by default)
@@ -327,6 +331,7 @@ open contracts as disclosures.
   expiry (there is no close to cap it). A blank fees column on a gross
   premium is netted at the implied per-contract rate when the gap is
   within $1.50 a contract; a settlement width stays on the mart tile.
+  `?debug=lots` shows the same lot-split line as Overview.
   Clicking a mover (or an open-contract row) opens the
   right-side position drawer (same motion as Strategy Fit's cell panel)
   with lifetime P&amp;L, open lots, and a link to the full position page;
@@ -687,20 +692,27 @@ or uploaded a CSV, and which button was clicked.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
 Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
-(`app/go_landings.py`). Each is noindex and reuses the homepage sections
-(proof, positions, covered-call runs, strategies, if-held, fit, Learn,
-Practice, pricing, FAQ). The hero is the ad, and that page's section
-comes first. Primary button is **Create free account** (Learn:
-**Start learning free**) to `/signup`, repeated mid-page, at the bottom,
-and as a sticky bar on phones. The live demo is a text link. `?v=`
-swaps an allow-listed headline. The slug and variant stick on `ht_touch`
-and are copied to `funnel_events` and `users.acquisition_landing` at
-signup, beside the UTMs and `rdt_cid`. `/go/learn` sends signup to
-`/learn`. These pages keep the marketing header (logo, Sign in, sign-up)
-even when a session exists; signed-in visitors get **Go to your
-dashboard** and do not see the app nav or the broker-data bar.
+(`app/go_landings.py`). Each is noindex. The page is a hero, three
+angle sections, proof, a short FAQ, and a close. Learn leads with
+Options 101, paper trading, and replays, and its close says **Free
+forever · no card**. Real P&L leads with a privacy-masked multi-account
+Overview (no account totals, no share counts) and the headline names
+the brokers plus read-only. Mistakes leads with the founder's BE
+covered-call buyback, then the ONON early close. Primary button is
+**Create free account** (Learn: **Start learning free**) to
+`/signup?route=learn|real-pnl|mistakes`, repeated at the bottom and as
+a sticky bar on phones only after the hero button scrolls away. The
+live demo is a text link. `?v=` swaps an allow-listed headline. The
+slug and variant stick on `ht_touch` and are copied to `funnel_events`
+and `users.acquisition_landing` at signup, beside the UTMs and
+`rdt_cid`. `/go/learn` sends signup to `/learn`. These pages keep the
+marketing header (logo, Sign in, sign-up) even when a session exists;
+signed-in visitors get **Go to your dashboard** and do not see the app
+nav or the broker-data bar.
 Logged-out public pages also record page views, CTA clicks, scroll
-depth, and public video plays. Ad pixels stay off on DNT/GPC; those
+depth, and public video plays. Ad pixels and Conversions API stay off
+on DNT/GPC, on internal traffic (`?ht_internal=1`, the `ht_internal`
+cookie, internal IPs, owner accounts), and on bot user agents; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
 `data.test_id` to every v3 CAPI body for Event testing and must be
 removed after. Admin → Acquisition is `/admin/analytics`. That page

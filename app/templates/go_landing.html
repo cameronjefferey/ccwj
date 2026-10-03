@@ -1,10 +1,10 @@
 {% extends "base.html" %}
+{% from "_landing_macros.html" import video_frame %}
 
 {% block meta_tags %}
 <meta name="robots" content="noindex">
-<meta name="description" content="{{ trial_line }}">
-<meta property="og:title" content="{{ headline }}">
-<meta property="og:description" content="{{ trial_line }}">
+<meta name="description" content="{{ page.lead }}">
+<meta property="og:description" content="{{ page.lead }}">
 {% endblock %}
 
 {% block head %}
@@ -26,6 +26,11 @@
                 {% endif %}
                 <p class="ht-hero-signin"><a href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Try the live demo</a></p>
             </div>
+            {% if hero_short %}
+            <div class="ht-hero-short">
+                {{ video_frame(hero_short, lightbox=true, eager=true) }}
+            </div>
+            {% endif %}
         </div>
     </header>
     {% for name in sections %}
@@ -38,4 +43,17 @@
 <div class="ht-sticky-cta">
     <a class="ht-hero-primary" href="{{ signup_url if signup_enabled else url_for('login') }}" data-ht-cta="{{ cta_base }}-sticky">{{ cta_label if signup_enabled else 'Sign in' }}</a>
 </div>
+<script>
+(function () {
+    var bar = document.querySelector(".ht-sticky-cta");
+    var hero = document.querySelector(".ht-hero-cta");
+    if (!bar || !hero || !("IntersectionObserver" in window)) return;
+    var watch = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            bar.classList.toggle("is-shown", !entry.isIntersecting);
+        });
+    }, {threshold: 0});
+    watch.observe(hero);
+})();
+</script>
 {% endblock %}

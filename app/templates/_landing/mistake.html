@@ -1,0 +1,16 @@
+    <section class="ht-band ht-band-shot-b ht-section" aria-label="A costly early close">
+        <div class="ht-wrap">
+            <div class="ht-kicker">Founder's account</div>
+            <h2 class="ht-section-title">Bought back, then it expired worthless</h2>
+            <p>The founder's BE covered call was bought back for a −$2,357 loss. It expired worthless two days later, and the early close gave up $6,265 versus holding.</p>
+            <figure class="ht-shot">
+                <img src="{{ url_for('static', filename='marketing/catch/be-close.webp') }}"
+                     srcset="{{ url_for('static', filename='marketing/catch/be-close-800.webp') }} 800w, {{ url_for('static', filename='marketing/catch/be-close.webp') }} 1280w"
+                     sizes="(max-width: 640px) 100vw, 920px"
+                     alt="A BE covered call bought back for a loss. The contract expired worthless, and the early close gave up $6,265 versus holding."
+                     width="1280" height="720" {% if section_eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %} decoding="async">
+                <figcaption>Founder's account · BE</figcaption>
+            </figure>
+            {% include "_landing/disclaimer.html" %}
+        </div>
+    </section>

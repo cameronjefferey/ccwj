@@ -12,9 +12,11 @@
                     {% endif %}
                 </p>
             </div>
+            {% if not hero_short or hero_short.step != step.step %}
             <div class="ht-learn-still">
                 {{ video_frame(step, lightbox=true, eager=section_eager|default(false)) }}
             </div>
+            {% endif %}
         </div>
     </section>
     {% endfor %}

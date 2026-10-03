@@ -22,20 +22,21 @@ def test_reddit_pixel_copy_matches_where_it_loads():
     base = (_TEMPLATES / "base.html").read_text()
     assert "reached from an ad" not in privacy
     assert "reached from ads" not in base
-    assert "Home, pricing, signup, Learn, FAQ, and ad landing pages load the Reddit pixel." in base
-    assert "Login does not." in base
-    assert "Do Not Track or Global Privacy Control" in base
-    assert "The Reddit pixel loads on the home page, pricing, signup, Learn, the FAQ, and the ad landing pages." in privacy
-    assert "It does not load on the login page." in privacy
+    assert "We use a cookie to remember how you found us." in base
+    assert "ad landing pages load the Reddit pixel" not in base
+    assert "Do Not Track" not in base
+    assert "The Reddit pixel loads on the home page, pricing, Learn, the FAQ, and the ad landing pages." in privacy
+    assert "It does not load on the login page or the signup page." in privacy
     assert "Do Not Track or Global Privacy Control" in privacy
 
 
 def test_phone_landing_keeps_the_sticky_signup_clear_of_the_cookie_notice():
     css = (_TEMPLATES / "_landing_styles.html").read_text()
     phone = css.split("@media (max-width: 640px)", 1)[1]
-    assert "html:not(.ht-cookie-ok) body.ht-campaign:has(#ht-cookie-notice) .ht-cookie-notice" in phone
+    assert "html:not(.ht-cookie-ok) body.ht-campaign:has(.ht-sticky-cta.is-shown):has(#ht-cookie-notice) .ht-cookie-notice" in phone
     assert "bottom: calc(4.75rem + 0.35rem + env(safe-area-inset-bottom, 0px));" in phone
-    assert "padding-bottom: calc(4.75rem + 10rem + env(safe-area-inset-bottom, 0px));" in phone
+    assert "padding-bottom: calc(4.75rem + 4.5rem + env(safe-area-inset-bottom, 0px));" in phone
+    assert ".ht-sticky-cta.is-shown" in phone
     assert "body.ht-campaign .ht-feedback-fab { display: none; }" in phone
 
 

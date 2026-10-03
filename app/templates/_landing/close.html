@@ -1,7 +1,7 @@
 {% from "_landing_macros.html" import trial_label with context %}
     <section class="ht-band ht-band-cta" aria-label="Start a trial">
         <div class="ht-wrap">
-            <p class="ht-cta-kicker">30 days · no card</p>
+            <p class="ht-cta-kicker">{% if page is defined and page.kicker %}{{ page.kicker }}{% else %}30 days · no card{% endif %}</p>
             {% if campaign %}
             <a class="ht-cta" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-close">{{ cta_label }}</a>
             {% elif signup_enabled %}

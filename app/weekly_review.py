@@ -3622,6 +3622,7 @@ def _option_mover_tile(opt):
     if opt.get("lot_split_reason"):
         tile["lot_split_reason"] = opt.get("lot_split_reason")
         tile["lot_split_detail"] = opt.get("lot_split_detail") or ""
+        tile["lot_split_line"] = opt.get("lot_split_line") or ""
     return tile
 
 
@@ -4201,6 +4202,109 @@ _INDEX_ROOT_PAIRS = (
 )
 
 
+def _uniq_join(values, limit=4):
+    seen = []
+    for raw in values:
+        text = str(raw or "").strip()
+        if not text or text in seen:
+            continue
+        seen.append(text)
+    shown = seen[:limit]
+    extra = len(seen) - len(shown)
+    body = ",".join(shown) if shown else "—"
+    if extra:
+        body += f",+{extra}"
+    return body
+
+
+def _tenant_tail(tenant_id):
+    text = str(tenant_id or "").strip()
+    if ":" in text:
+        text = text.split(":", 1)[1]
+    if len(text) > 8:
+        text = text[-8:]
+    return f"••{text}" if text else ""
+
+
+def _lot_fill_census(fills_df, anchor):
+    """Fill count, dates, OCC roots, and account labels on this frame.
+
+    ``fills`` is session option opens and closes over every row, so a
+    frame dated the next day reads ``0/6`` instead of a silent zero.
+    Roots come from the OCC symbol. Account text is the warehouse
+    label plus the tenant id tail, which is the isolation key.
+    """
+    from app.option_formatting import parse_occ
+
+    session = _iso_day(anchor) or ""
+    if fills_df is None or getattr(fills_df, "empty", True):
+        return {"fills": "0", "dates": "—", "roots": "—", "accounts": "—"}
+    records = fills_df.to_dict(orient="records")
+    dates = []
+    roots = []
+    accounts = []
+    session_fills = 0
+    for row in records:
+        iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
+        if iso:
+            dates.append(iso)
+        raw_symbol = str(_fill_field(row, "trade_symbol", "Symbol", default="") or "")
+        parsed = parse_occ(raw_symbol)
+        if parsed and parsed.get("root"):
+            roots.append(str(parsed["root"]).upper())
+        elif raw_symbol.strip():
+            roots.append(raw_symbol.split()[0][:12].upper())
+        account = str(_fill_field(row, "account", default="") or "").strip()
+        tail = _tenant_tail(_fill_field(row, "tenant_id", default=""))
+        if account and tail:
+            accounts.append(f"{account} {tail}")
+        elif account or tail:
+            accounts.append(account or tail)
+        if not _fill_counts_for_session(iso, _fill_expiry_iso(row), session):
+            continue
+        action = _fill_action_text(row)
+        if action in _LOT_SKIP_ACTIONS or action not in (_LOT_OPEN_ACTIONS | _LOT_CLOSE_ACTIONS):
+            continue
+        session_fills += 1
+    fills = (
+        str(session_fills) if session_fills == len(records)
+        else f"{session_fills}/{len(records)}"
+    )
+    return {
+        "fills": fills,
+        "dates": _uniq_join(sorted(set(dates)), limit=6),
+        "roots": _uniq_join(roots, limit=6),
+        "accounts": _uniq_join(accounts, limit=4),
+    }
+
+
+def _fmt_lot_money(value):
+    if value is None:
+        return "—"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if number != number:
+        return "—"
+    return f"{number:.2f}"
+
+
+def _lot_split_line(reason, census, lot_sum=None, gap=None, budget=None):
+    """One visible line: reason, lot cash, gap, fee budget, fills."""
+    census = census or {}
+    return (
+        f"{reason} "
+        f"lot_sum={_fmt_lot_money(lot_sum)} "
+        f"gap={_fmt_lot_money(gap)} "
+        f"budget={_fmt_lot_money(budget)} "
+        f"fills={census.get('fills', 0)} "
+        f"dates={census.get('dates') or '—'} "
+        f"roots={census.get('roots') or '—'} "
+        f"accts={census.get('accounts') or '—'}"
+    )
+
+
 def _emit_lot_split(symbol, reason, detail):
     """Log a skipped split. A successful split is not a log line."""
     if reason == "split":
@@ -4211,21 +4315,30 @@ def _emit_lot_split(symbol, reason, detail):
     )
 
 
-def _note_lot_split(opt, reason, detail):
+def _note_lot_split(opt, reason, detail, census=None,
+                    lot_sum=None, gap=None, budget=None):
     """Stamp one tile and log when the split was skipped."""
     stamped = dict(opt)
     stamped["lot_split_reason"] = reason
     stamped["lot_split_detail"] = detail
+    stamped["lot_split_line"] = _lot_split_line(
+        reason, census, lot_sum=lot_sum, gap=gap, budget=budget,
+    )
     _emit_lot_split(stamped.get("symbol"), reason, detail)
     return stamped
 
 
-def _note_lot_tiles(lots, reason, detail):
+def _note_lot_tiles(lots, reason, detail, census=None,
+                    lot_sum=None, gap=None, budget=None):
+    line = _lot_split_line(
+        reason, census, lot_sum=lot_sum, gap=gap, budget=budget,
+    )
     stamped = []
     for tile in lots:
         row = dict(tile)
         row["lot_split_reason"] = reason
         row["lot_split_detail"] = detail
+        row["lot_split_line"] = line
         stamped.append(row)
     if lots:
         _emit_lot_split(lots[0].get("symbol"), reason, detail)
@@ -4368,9 +4481,11 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
 
     Every option tile is stamped with ``lot_split_reason`` (``split``,
     ``no_fills``, ``no_session_fills``, ``unparsed_symbol``, ``no_lots``,
-    ``root_mismatch``, ``total_mismatch``). Admins see it on the card.
+    ``root_mismatch``, ``total_mismatch``) and ``lot_split_line``. The
+    line is the owner-visible diagnostic for ``?debug=lots``.
     """
     options = list(options or [])
+    census = _lot_fill_census(fills_df, anchor)
     tiles, fees_by_symbol, qty_by_symbol = _same_day_option_lot_tiles(
         fills_df, anchor,
     )
@@ -4382,7 +4497,9 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
             )
     if not tiles:
         reason, detail = _lot_skip_diagnosis(fills_df, anchor)
-        stamped = [_note_lot_split(opt, reason, detail) for opt in options]
+        stamped = [
+            _note_lot_split(opt, reason, detail, census) for opt in options
+        ]
         impact = round(sum(float(o.get("dollar_impact") or 0) for o in stamped), 2)
         return stamped, impact, None
     grouped = {}
@@ -4401,6 +4518,7 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
                 reason = "no_lots"
             kept.append(_note_lot_split(
                 opt, reason, f"mart={opt.get('symbol')} lot_roots={lot_keys}",
+                census,
             ))
             continue
         # A second mart row for the same root (SPX beside SPXW) must
@@ -4423,7 +4541,9 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
             f"anchor={_iso_day(anchor) or 'none'}"
         )
         if gap > max(1.0, budget + 1.0):
-            kept.append(_note_lot_split(opt, "total_mismatch", detail))
+            kept.append(_note_lot_split(
+                opt, "total_mismatch", detail, census, lot_sum, gap, budget,
+            ))
             continue
         open_i = opt.get("open_impact")
         open_v = float(open_i or 0) if open_i is not None else 0.0
@@ -4433,12 +4553,14 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
                 "dollar_impact": round(open_v, 2),
                 "closed_impact": 0.0,
                 "option_caption": option_mover_caption(open_v, 0),
-            }, "split", f"open mark kept {detail}"))
-        kept.extend(_note_lot_tiles(lots, "split", detail))
+            }, "split", f"open mark kept {detail}", census, lot_sum, gap, budget))
+        kept.extend(_note_lot_tiles(
+            lots, "split", detail, census, lot_sum, gap, budget,
+        ))
     for symbol, lots in grouped.items():
         if symbol not in used:
             kept.extend(_note_lot_tiles(
-                lots, "split", f"no mart row for {symbol}",
+                lots, "split", f"no mart row for {symbol}", census,
             ))
     kept.sort(key=lambda o: abs(float(o.get("dollar_impact") or 0)), reverse=True)
     impact = round(sum(float(o.get("dollar_impact") or 0) for o in kept), 2)
@@ -5642,6 +5764,7 @@ def weekly_review():
         # The full page includes Daily change after Accounts. Only the
         # lazy /overview/below response also embeds that partial.
         "overview_daily_in_fragment": False,
+        "debug_lots": request.args.get("debug") == "lots",
     }
 
     daily_changes_map = {}
@@ -6377,6 +6500,7 @@ def today_view():
         "covered_call_unwritten": None,
         "all_user_tags": [],
         "since_last_looked": None,
+        "debug_lots": request.args.get("debug") == "lots",
     }
 
     try:

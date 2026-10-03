@@ -65,22 +65,23 @@ def test_signup_keeps_invite_and_trial_line_without_echoing_passwords(monkeypatc
     assert "30-day trial starts when you connect a real brokerage" in body
     assert "No credit card" in body
 
+    assert "By creating an account you agree to the" in body
+    assert 'name="confirm"' not in body
     resp = client.post("/signup", data={
         "username": "ada_trader",
         "email": "ada@example.com",
         "invite_code": "beta-invite",
-        "password": "Secret1pass",
-        "confirm": "Secret2pass",
+        "password": "longpassword",
     })
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "Passwords do not match." in html
+    assert "Password must contain at least one number." in html
     assert 'value="beta-invite"' in html
     assert 'value="ada_trader"' in html
-    assert "Secret1pass" not in html
-    assert "Secret2pass" not in html
+    assert "longpassword" not in html
     assert 'name="password"' in html
-    assert 'value="Secret1pass"' not in html
+    assert 'name="confirm"' not in html
+    assert 'value="longpassword"' not in html
 
 
 def test_demo_session_can_open_forgot_and_reset(monkeypatch):
