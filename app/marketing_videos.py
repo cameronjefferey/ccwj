@@ -341,9 +341,9 @@ CATCH_STORIES = [
         "id": "rklb",
         "tab": "RKLB",
         "caption": (
-            "Five RKLB covered calls expired for +$931, but call six had a "
-            "strike below the founder's $69 cost, so assignment locked in −$600 on the "
-            "shares. Two weeks later the stock was at $84.80."
+            "On the founder account, five RKLB covered calls expired for +$931, "
+            "but call six had a strike below the $69 cost basis, so assignment "
+            "locked in −$600 on the shares. Two weeks later the stock was at $84.80."
         ),
         "alt": (
             "RKLB daily close from February 20 to April 17, ending at "

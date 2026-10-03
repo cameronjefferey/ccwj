@@ -133,8 +133,8 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     proof = html.find('class="ht-band ht-band-proof"')
     how = html.find('class="ht-band ht-band-how')
     assert 0 <= stage < cta < proof < how
-    assert html.count('class="ht-facade"') == 16
-    assert html.count('data-lightbox="short"') == 13
+    assert html.count('class="ht-facade"') == 15
+    assert html.count('data-lightbox="short"') == 12
     assert "ht-phone" not in html
     assert "ht-lightbox-stage" in html
     assert "min-width: 360px" in html
@@ -244,7 +244,7 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert name in html
         assert (root / "app" / "static" / name).is_file()
     assert "marketing/amd-pnl.png" not in html
-    assert "Founder's account · BE" in html
+    assert "Founder&#39;s account · BE" in html
     assert "Cumulative P&amp;L on BE trades, April to September 2026, with trade-day markers" in html
     assert "account BE" not in html
     assert (

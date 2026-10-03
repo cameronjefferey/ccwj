@@ -568,7 +568,7 @@
 
         /* Glossary tooltip. The header word is the control (dotted
            underline) so a fixed-width column does not also pay for an
-           "i". The popover is position:fixed in term-tips.js so tables
+           "i". The popover is position:fixed in the term-tip script so tables
            do not clip it. .ht-term-mark is the small "i" used only when
            the label text cannot be the control. */
         .ht-term {
@@ -716,7 +716,7 @@
         .visibility-toggles { display: inline-flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
         .visibility-toggles .form-check { font-size: .78rem; color: var(--ht-muted); }
 
-        /* Shared table behavior (see static/js/tables.js). Sortable headers
+        /* Shared table behavior. Sortable headers
            + row-click navigation, used across accounts, positions, symbols,
            daily-review, insights, strategies, profile and admin tables. */
         th.sortable { cursor: pointer; user-select: none; }
@@ -1077,7 +1077,7 @@
         /* ── Phone density pass (Aug 2026) ──────────────────────────
            Financial tables + cards need every horizontal pixel on a
            390px viewport. Pairs with the mobile column-priority system
-           in tables.js (<th data-m="hide">) that collapses low-priority
+           in the shared table script (<th data-m="hide">) that collapses low-priority
            columns so the identity + headline-P&L columns fit unclipped. */
         .ht-page { max-width: 72rem; margin-inline: auto; }
         body .review-hero {

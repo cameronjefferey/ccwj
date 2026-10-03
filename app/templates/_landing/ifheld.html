@@ -9,7 +9,7 @@
                     <figcaption>Demo account</figcaption>
                 </figure>
                 {% for step in story_steps if step.step == 3 %}
-                <div class="ht-phone-shot">
+                <div class="ht-narrow-shot">
                     {{ video_frame(step, lightbox=true, eager=section_eager|default(false)) }}
                 </div>
                 {% endfor %}

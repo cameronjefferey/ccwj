@@ -714,8 +714,10 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert f'data-ht-cta="{cta}-{place}"' in body
         assert f'data-ht-cta="{cta}-mid"' not in body
         assert 'data-youtube-id="' in body
-        assert 'loading="lazy"' in body
         assert 'fetchpriority="high"' in body
+        # Learn's only picture is the hero Short, loaded up front.
+        if slug != "learn":
+            assert 'loading="lazy"' in body
         positions = [body.index(band) for band in bands]
         assert positions == sorted(positions)
         assert "Read-only" in body
