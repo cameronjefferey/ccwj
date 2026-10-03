@@ -932,12 +932,57 @@ def _split_leg_fee(order: Mapping, leg: Mapping):
     return round(parent_f / n, 2)
 
 
+_NO_ESTIMATE_ACTIONS = frozenset({
+    "expired", "assigned", "exchange or exercise", "exercised",
+    "option_expired", "option_assigned", "option_exercised",
+})
+
+
+def _option_expiry_date(symbol, option_symbol=None):
+    """Calendar expiry from a SnapTrade option dict or an OCC symbol."""
+    if isinstance(option_symbol, Mapping):
+        raw = option_symbol.get("expiration_date") or option_symbol.get("expiration")
+        parsed = _mdy_date(raw)
+        if parsed:
+            return parsed
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(str(symbol or ""))
+    if not parsed:
+        return None
+    try:
+        return date(2000 + int(parsed["yy"]), int(parsed["mm"]), int(parsed["dd"]))
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _rejects_estimated_fee(action, symbol, trade_date, option_symbol=None, description=""):
+    """Settlement, expiry, and assignment rows are not commission fills.
+
+    A same-day close (expiry == trade date, no settlement wording) still
+    gets an estimate. A fill posted after the contract expired does not:
+    that is the cash-settlement posting day.
+    """
+    action_l = str(action or "").strip().lower()
+    if action_l in _NO_ESTIMATE_ACTIONS:
+        return True
+    blob = f"{description or ''} {symbol or ''}".lower()
+    if "as of" in blob or "cash settlement" in blob:
+        return True
+    if re.search(r"\b(expired|assigned|exercised)\b", blob):
+        return True
+    expiry = _option_expiry_date(symbol, option_symbol)
+    posted = _mdy_date(trade_date)
+    return bool(expiry and posted and expiry < posted)
+
+
 def recent_option_fee_rates(history_df) -> dict:
     """Newest positive per-contract fee for each option root.
 
     SPXW statement opens are $12.22 on 10 contracts → $1.222. Order
     rows arrive with a blank fee; this rate fills them until the
-    activity replaces the row.
+    activity replaces the row. Settlement, expiry, assignment, and
+    rows already marked estimated are not a rate source.
     """
     if history_df is None or getattr(history_df, "empty", True):
         return {}
@@ -947,6 +992,13 @@ def recent_option_fee_rates(history_df) -> dict:
 
     ranked = []
     for _, row in history_df.iterrows():
+        desc = str(row.get("Description") or "")
+        if ESTIMATED_FEE_MARK in desc.lower():
+            continue
+        if _rejects_estimated_fee(
+            row.get("Action"), row.get("Symbol"), row.get("Date"), description=desc,
+        ):
+            continue
         fee = abs(_safe_float(row.get("fees_and_comm"), 0.0))
         qty = abs(_safe_float(row.get("Quantity"), 0.0))
         if fee <= 0 or qty < 1e-9:
@@ -1186,7 +1238,17 @@ def orders_to_history_df(
             0.0,
         ))
         estimated_fee = False
-        if is_option and not order_fees and fee_rates:
+        # Cash settlement, expiry, and assignment are zero-commission.
+        # A 0DTE close on the expiry date still estimates (Oct 2 20-lot).
+        if (
+            is_option
+            and not order_fees
+            and fee_rates
+            and not _rejects_estimated_fee(
+                action_label, sym_str, trade_date, option_symbol,
+                str(order.get("description") or ""),
+            )
+        ):
             from app.option_formatting import parse_occ
             parsed = parse_occ(sym_str)
             root = str((parsed or {}).get("root") or "").strip().upper()

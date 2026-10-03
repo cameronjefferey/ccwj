@@ -221,67 +221,119 @@ cleaned as (
     from osi_split
 ),
 
+-- An estimated order fee copied onto a cash settlement (description
+-- still contains "est. fee") nets 10 × 16.45 × 100 = 16,450 into
+-- 16,462.22. The next rebuild puts the statement cash back and zeros
+-- the fee. Same-day 0DTE estimates (expiry = trade date, no "as of")
+-- stay. A later statement row has no mark, so it still wins the
+-- fill rank below.
+fee_guard as (
+    select
+        c.*,
+        (
+            regexp_contains(lower(coalesce(c.description, '')), r'est\. fee')
+            and (
+                c.action in (
+                    'option_expired', 'option_assigned', 'option_exercised'
+                )
+                or regexp_contains(
+                    lower(coalesce(c.description, '')),
+                    r'\bas of\b|cash settlement'
+                )
+                or (
+                    c.option_expiry is not null
+                    and c.trade_date is not null
+                    and c.option_expiry < c.trade_date
+                )
+            )
+        ) as drop_estimated_fee
+    from cleaned c
+),
+
 amount_signed as (
     select
-        c.* except (amount_raw),
+        g.* except (amount_raw, fees, drop_estimated_fee),
+        case
+            when g.drop_estimated_fee then 0
+            else g.fees
+        end as fees,
         -- 1 when this row's Amount was still the gross premium and we
         -- netted ``fees`` here. The broker statement is already net, so
         -- it stays 0. After the expiry-date cap below, an order row and
         -- its later activity can share a fill key; prefer the statement.
-        (
-            c.action in (
+        -- A dropped settlement estimate is 0 so the statement cash wins.
+        case
+            when g.drop_estimated_fee then false
+            else (
+            g.action in (
                 'option_buy_to_open', 'option_buy_to_close',
                 'option_sell_to_open', 'option_sell_to_close'
             )
-            and abs(coalesce(c.fees, 0)) > 0.005
-            and c.quantity is not null
-            and c.price is not null
+            and abs(coalesce(g.fees, 0)) > 0.005
+            and g.quantity is not null
+            and g.price is not null
             and abs(
-                   abs(c.amount_raw) - abs(c.quantity) * c.price * 100
+                   abs(g.amount_raw) - abs(g.quantity) * g.price * 100
                 ) <= 0.05
-        ) as fee_adjusted,
+            )
+        end as fee_adjusted,
         case
+            -- Copied estimate on a settlement: 16,450 became 16,462.22.
+            -- Put qty × price × 100 back. A zero-amount expiry stays 0.
+            when g.drop_estimated_fee
+             and abs(coalesce(g.amount_raw, 0)) <= 0.005
+            then g.amount_raw
+            when g.drop_estimated_fee
+             and g.quantity is not null
+             and g.price is not null
+             and abs(g.price) > 0
+            then case
+                when g.amount_raw < 0
+                    then -(abs(g.quantity) * abs(g.price) * 100)
+                else abs(g.quantity) * abs(g.price) * 100
+            end
+
             -- Option order rows store gross premium (qty × price × 100)
             -- and the commission in ``fees``. The broker statement Amount
             -- is already net (Sep SPXW: 5 × 2.87 × 100 − 6.11 = 1,428.89).
             -- Subtract the fee only when the raw amount still matches the
             -- gross, so a net activity amount is not charged twice.
-            when c.action in (
+            when g.action in (
                 'option_buy_to_open', 'option_buy_to_close',
                 'option_sell_to_open', 'option_sell_to_close'
             )
-             and abs(coalesce(c.fees, 0)) > 0.005
-             and c.quantity is not null
-             and c.price is not null
+             and abs(coalesce(g.fees, 0)) > 0.005
+             and g.quantity is not null
+             and g.price is not null
              and abs(
-                    abs(c.amount_raw) - abs(c.quantity) * c.price * 100
+                    abs(g.amount_raw) - abs(g.quantity) * g.price * 100
                  ) <= 0.05
             then case
-                when c.action in ('option_sell_to_open', 'option_sell_to_close')
-                    then abs(c.quantity) * c.price * 100 - abs(c.fees)
-                else -(abs(c.quantity) * c.price * 100 + abs(c.fees))
+                when g.action in ('option_sell_to_open', 'option_sell_to_close')
+                    then abs(g.quantity) * g.price * 100 - abs(g.fees)
+                else -(abs(g.quantity) * g.price * 100 + abs(g.fees))
             end
 
-            when c.action in (
+            when g.action in (
                 'equity_buy',
                 'option_buy_to_open',
                 'option_buy_to_close',
                 'margin_interest',
                 'adr_fee'
-            ) then -abs(c.amount_raw)
+            ) then -abs(g.amount_raw)
 
-            when c.action in (
+            when g.action in (
                 'equity_sell',
                 'equity_sell_short',
                 'option_sell_to_open',
                 'option_sell_to_close',
                 'dividend',
                 'credit_interest'
-            ) then abs(c.amount_raw)
+            ) then abs(g.amount_raw)
 
-            else c.amount_raw
+            else g.amount_raw
         end as amount
-    from cleaned c
+    from fee_guard g
 ),
 
 -- Pair tickers (BTC-USD, BTCUSD) collapse onto the bare crypto symbol

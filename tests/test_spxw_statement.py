@@ -783,3 +783,188 @@ def test_estimated_itm_spread_is_a_loss_not_a_worthless_win():
     pnl_cell = html.split("pd-pnl", 1)[1].split("</td>", 1)[0]
     assert "-$3,574.44" in pnl_cell
     assert "Settlement pending" not in pnl_cell
+
+
+def test_settlement_and_expiry_orders_do_not_take_an_estimated_fee():
+    """Oct 1 7650/7655C cash settlement stays 16.45 / 11.45 with no commission.
+
+    A same-day 0DTE close still estimates. A $50 fee on a settlement row
+    must not become the SPXW rate.
+    """
+    from app.snaptrade_normalize import ESTIMATED_FEE_MARK, recent_option_fee_rates
+
+    rates = recent_option_fee_rates(_history())
+    assert round(rates["SPXW"], 3) == 1.222
+
+    poison = _history().iloc[0:1].copy()
+    poison.loc[poison.index[0], "Date"] = "10/02/2026"
+    poison.loc[poison.index[0], "Action"] = "Buy to Close"
+    poison.loc[poison.index[0], "Symbol"] = "SPXW  261001C07650000"
+    poison.loc[poison.index[0], "Description"] = "Cash settlement as of 10/01/2026 est. fee"
+    poison.loc[poison.index[0], "Quantity"] = 1
+    poison.loc[poison.index[0], "Price"] = 16.45
+    poison.loc[poison.index[0], "fees_and_comm"] = 50
+    poison.loc[poison.index[0], "Amount"] = -1695
+    assert round(recent_option_fee_rates(
+        pd.concat([_history(), poison], ignore_index=True)
+    )["SPXW"], 3) == 1.222
+
+    posted_after = orders_to_history_df(
+        [
+            {
+                "action": "BUY_TO_CLOSE",
+                "description": "Buy to Close",
+                "option_symbol": {
+                    "underlying_symbol": "SPXW",
+                    "expiration_date": "2026-10-01",
+                    "strike_price": 7650,
+                    "option_type": "CALL",
+                },
+                "status": "EXECUTED",
+                "time_executed": "2026-10-02T14:00:00Z",
+                "filled_quantity": 10,
+                "execution_price": 16.45,
+            },
+            {
+                "action": "SELL_TO_CLOSE",
+                "option_symbol": {
+                    "underlying_symbol": "SPXW",
+                    "expiration_date": "2026-10-01",
+                    "strike_price": 7655,
+                    "option_type": "CALL",
+                },
+                "status": "EXECUTED",
+                "time_executed": "2026-10-02T14:00:00Z",
+                "filled_quantity": 10,
+                "execution_price": 11.45,
+            },
+        ],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+        fee_rates=rates,
+    )
+    by_price = {float(row["Price"]): row for _, row in posted_after.iterrows()}
+    assert float(by_price[16.45]["Amount"]) == -16450.0
+    assert float(by_price[11.45]["Amount"]) == 11450.0
+    assert by_price[16.45]["fees_and_comm"] in ("", 0, 0.0)
+    assert by_price[11.45]["fees_and_comm"] in ("", 0, 0.0)
+    assert not posted_after["Description"].astype(str).str.contains(ESTIMATED_FEE_MARK).any()
+
+    # Same calendar day, but the text is a cash settlement.
+    same_day = orders_to_history_df(
+        [{
+            "action": "BUY_TO_CLOSE",
+            "description": "Cash settlement as of 10/01/2026",
+            "option_symbol": {
+                "underlying_symbol": "SPXW",
+                "expiration_date": "2026-10-01",
+                "strike_price": 7650,
+                "option_type": "CALL",
+            },
+            "status": "EXECUTED",
+            "time_executed": "2026-10-01T20:00:00Z",
+            "filled_quantity": 10,
+            "execution_price": 16.45,
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+        fee_rates=rates,
+    )
+    assert float(same_day.iloc[0]["Amount"]) == -16450.0
+    assert same_day.iloc[0]["fees_and_comm"] in ("", 0, 0.0)
+
+    # The Oct 2 20-lot close expires that day, so the estimate still applies.
+    intraday = orders_to_history_df(
+        [{
+            "action": "BUY_TO_CLOSE",
+            "option_symbol": {
+                "underlying_symbol": "SPXW",
+                "expiration_date": "2026-10-02",
+                "strike_price": 7730,
+                "option_type": "CALL",
+            },
+            "status": "EXECUTED",
+            "time_executed": "2026-10-02T18:00:00Z",
+            "filled_quantity": 20,
+            "execution_price": 2.824,
+        }],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+        fee_rates=rates,
+    )
+    assert float(intraday.iloc[0]["fees_and_comm"]) == pytest.approx(24.44)
+    assert float(intraday.iloc[0]["Amount"]) == pytest.approx(-5672.44)
+    assert ESTIMATED_FEE_MARK in str(intraday.iloc[0]["Description"])
+
+
+def test_statement_zero_fee_wins_over_a_copied_settlement_estimate():
+    """The next sync drops the $12.22 that was copied onto each settlement.
+
+    10 × 16.45 and 10 × 11.45 with those fees is −$3,598.88. The statement
+    cash is −$3,574.44 with the Oct 1 opens.
+    """
+    bad = pd.DataFrame([
+        {
+            "Account": ACCOUNT, "user_id": 9, "tenant_id": TENANT,
+            "Date": "10/01/2026", "Action": "Buy to Close",
+            "Symbol": "SPXW  261001C07650000",
+            "Description": (
+                "CALL S & P 500 INDEX $7650 EXP 10/01/26 as of 10/01/2026 est. fee"
+            ),
+            "Quantity": 10, "Price": 16.45, "fees_and_comm": 12.22,
+            "Amount": -16462.22,
+        },
+        {
+            "Account": ACCOUNT, "user_id": 9, "tenant_id": TENANT,
+            "Date": "10/02/2026", "Action": "Sell to Close",
+            "Symbol": "SPXW  261001C07655000",
+            "Description": "SPXW  261001C07655000 est. fee",
+            "Quantity": 10, "Price": 11.45, "fees_and_comm": 12.22,
+            "Amount": 11437.78,
+        },
+    ], columns=HISTORY_SEED_COLUMNS)
+    clean = activities_to_history_df(
+        [
+            _act(
+                "10/02/2026 as of 10/01/2026",
+                "Buy to Close",
+                "SPXW 10/01/2026 7650.00 C",
+                10, 16.45, -16450.0, 0,
+                "CALL S & P 500 INDEX $7650 EXP 10/01/26 as of 10/01/2026",
+            ),
+            _act(
+                "2026-10-02",
+                "Sell to Close",
+                "SPXW 10/01/2026 7655.00 C",
+                10, 11.45, 11450.0, 0,
+                "CALL S & P 500 INDEX $7655 EXP 10/01/26",
+            ),
+        ],
+        account_name=ACCOUNT,
+        user_id=9,
+        tenant_id=TENANT,
+    )
+    merged = _dedup_history_rows(
+        pd.concat([bad, clean], ignore_index=True),
+        HISTORY_SEED_COLUMNS,
+    )
+    assert len(merged) == 2
+    by_price = {float(row["Price"]): row for _, row in merged.iterrows()}
+    assert float(by_price[16.45]["Amount"]) == -16450.0
+    assert float(by_price[11.45]["Amount"]) == 11450.0
+    assert by_price[16.45]["fees_and_comm"] in ("", 0, 0.0)
+    assert by_price[11.45]["fees_and_comm"] in ("", 0, 0.0)
+    assert not merged["Description"].astype(str).str.contains("est. fee").any()
+
+    opens = _history()
+    opens = opens[
+        (opens["Date"] == "10/01/2026")
+        & (opens["Action"].isin(["Buy to Open", "Sell to Open"]))
+    ]
+    spread = pd.concat([opens, merged], ignore_index=True)
+    assert round(float(spread["Amount"].sum()), 2) == -3574.44
+    poisoned = -3574.44 - 12.22 - 12.22
+    assert round(poisoned, 2) == -3598.88
