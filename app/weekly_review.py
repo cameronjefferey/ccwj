@@ -3610,7 +3610,8 @@ def _option_mover_tile(opt):
 
 
 def _build_today_movers(today_moves_df, account_total_value=None,
-                        options_moves_df=None, dividends_df=None):
+                        options_moves_df=None, dividends_df=None,
+                        option_fills_df=None):
     """Today's biggest $ moves on currently-held symbols.
 
     Stocks (price × shares) and options (MTM drift + same-day realizations)
@@ -3620,6 +3621,10 @@ def _build_today_movers(today_moves_df, account_total_value=None,
 
     Dividends stay a separate paid-today strip — they are cash received,
     not a price move.
+
+    Same-day option structures are one tile per lot, using the position
+    page's spread grouping. The dollar is the fill cash after broker
+    fees. A multi-day mark change stays on the mart day-delta.
     """
     empty = {
         "winners": [], "losers": [], "total_impact": 0.0, "as_of": None,
@@ -3659,6 +3664,10 @@ def _build_today_movers(today_moves_df, account_total_value=None,
     extras = _today_options_and_divs(options_moves_df, dividends_df, as_of)
     as_of = as_of or extras.pop("options_as_of", None)
     extras.pop("options_as_of", None)
+    extras["options"], extras["options_impact"], lot_as_of = (
+        _apply_same_day_option_lots(extras["options"], option_fills_df, as_of)
+    )
+    as_of = as_of or lot_as_of
 
     tiles = list(equity_items)
     tiles.extend(_option_mover_tile(o) for o in extras.get("options") or [])
@@ -3853,6 +3862,248 @@ def _today_options_and_divs(options_moves_df, dividends_df, equity_as_of):
         out["dividends_impact"] = round(sum(d["amount"] for d in divs), 2)
 
     return out
+
+
+_LOT_OPEN_ACTIONS = frozenset({
+    "option_sell_to_open", "option_buy_to_open",
+    "sell to open", "buy to open",
+})
+_LOT_CLOSE_ACTIONS = frozenset({
+    "option_buy_to_close", "option_sell_to_close",
+    "buy to close", "sell to close",
+})
+_LOT_SKIP_ACTIONS = frozenset({
+    "option_expired", "option_assigned", "option_exercised",
+    "option_settled_est", "expired", "assigned", "exercised",
+})
+_LOT_DONE = frozenset({
+    "Closed", "Expired", "Assigned", "Exercised",
+})
+
+
+def _fill_field(row, *names, default=None):
+    for name in names:
+        if name in row and row.get(name) not in (None, ""):
+            value = row.get(name)
+            try:
+                if pd.isna(value):
+                    continue
+            except (TypeError, ValueError):
+                pass
+            return value
+    return default
+
+
+def _fill_action_text(row) -> str:
+    return str(_fill_field(row, "action", "Action", default="") or "").strip().lower()
+
+
+def _same_day_option_lot_tiles(fills_df, anchor):
+    """One mover tile per same-day vertical, cash net of broker fees.
+
+    The warehouse keeps one row per OCC symbol, so a 20-lot that closed
+    and a 10-lot that expired at the same strikes arrive as ``30×`` and
+    a single gross dollar. These tiles use the position page's lot split.
+    Returns ``(tiles, fees_by_symbol)``. Fees are the commission column,
+    counted once per fill whether or not the amount was already net.
+    """
+    from app.option_formatting import parse_occ
+    from app.outcome_units import group_vertical_spreads
+    from app.snaptrade_normalize import _net_option_cash
+
+    if fills_df is None or getattr(fills_df, "empty", True):
+        return [], {}
+    records = fills_df.to_dict(orient="records")
+    dates = []
+    for row in records:
+        iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
+        if iso:
+            dates.append(iso)
+    session = anchor or (max(dates) if dates else None)
+    groups = {}
+    fees_by_symbol = {}
+    for row in records:
+        action = _fill_action_text(row)
+        if action in _LOT_SKIP_ACTIONS or action not in (_LOT_OPEN_ACTIONS | _LOT_CLOSE_ACTIONS):
+            continue
+        iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
+        if session and iso and iso != session:
+            continue
+        parsed = parse_occ(_fill_field(row, "trade_symbol", "Symbol", default=""))
+        if not parsed:
+            continue
+        try:
+            qty = abs(float(_fill_field(row, "quantity", "Quantity", default=0) or 0))
+            price = abs(float(_fill_field(row, "price", "Price", default=0) or 0))
+            amount = float(_fill_field(row, "amount", "Amount", default=0) or 0)
+            fee = abs(float(_fill_field(row, "fees", "fees_and_comm", "fee", default=0) or 0))
+        except (TypeError, ValueError):
+            continue
+        net = _net_option_cash(amount, qty, price, fee)
+        symbol = parsed["root"]
+        fees_by_symbol[symbol] = round(fees_by_symbol.get(symbol, 0.0) + fee, 2)
+        tenant = str(_fill_field(row, "tenant_id", default="") or "")
+        account = str(_fill_field(row, "account", default="") or "")
+        trade_symbol = str(_fill_field(row, "trade_symbol", default="") or "")
+        key = (tenant, account, trade_symbol)
+        groups.setdefault(key, []).append({
+            "action": action,
+            "quantity": qty,
+            "price": price,
+            "amount": net,
+            "trade_date": iso or session or "",
+            "trade_symbol": trade_symbol,
+            "tenant_id": tenant,
+            "account": account,
+            "_parsed": parsed,
+        })
+
+    outcomes = []
+    for (tenant, account, trade_symbol), raw in groups.items():
+        parsed = raw[0]["_parsed"]
+        opens = [t for t in raw if t["action"] in _LOT_OPEN_ACTIONS]
+        if not opens:
+            continue
+        open_dates = [t["trade_date"] for t in opens if t["trade_date"]]
+        open_date = min(open_dates) if open_dates else (session or "")
+        if session and open_date != session:
+            continue
+        sto = sum(t["quantity"] for t in opens if "sell" in t["action"])
+        bto = sum(t["quantity"] for t in opens if "buy" in t["action"])
+        direction = "Sold" if sto >= bto else "Bought"
+        cp = parsed.get("cp") or ""
+        expiry = f"20{parsed['yy']}-{int(parsed['mm']):02d}-{int(parsed['dd']):02d}"
+        outcomes.append({
+            "type": "option",
+            "strategy": "Call Spread" if cp == "C" else "Put Spread",
+            "trade_symbol": trade_symbol,
+            "direction": direction,
+            "close_type": "Closed" if any(t["action"] in _LOT_CLOSE_ACTIONS for t in raw) else "Expired",
+            "open_date": open_date,
+            "close_date": session or open_date,
+            "quantity": sum(t["quantity"] for t in opens),
+            "pnl": round(sum(t["amount"] for t in raw), 2),
+            "tenant_id": tenant,
+            "account": account,
+            "option_expiry": expiry,
+            "raw_trades": [
+                {k: v for k, v in t.items() if k != "_parsed"} for t in raw
+            ],
+        })
+    if not outcomes:
+        return [], fees_by_symbol
+
+    tiles = []
+    for row in group_vertical_spreads(outcomes):
+        status = str(row.get("outcome") or row.get("close_type") or "")
+        if status not in _LOT_DONE:
+            continue
+        if session and str(row.get("open_date") or "")[:10] != session:
+            continue
+        raw = row.get("raw_trades") or []
+        if not any(_fill_action_text(t) in _LOT_OPEN_ACTIONS for t in raw):
+            continue
+        try:
+            pnl = round(float(row.get("pnl") or 0), 2)
+        except (TypeError, ValueError):
+            continue
+        if abs(pnl) < 0.01:
+            continue
+        legs = row.get("legs") or [row]
+        detail_rows = []
+        symbol = ""
+        for leg in legs:
+            parsed = parse_occ(leg.get("trade_symbol"))
+            if not parsed:
+                continue
+            symbol = symbol or parsed["root"]
+            detail_rows.append({
+                "symbol": parsed["root"],
+                "tenant_id": leg.get("tenant_id") or row.get("tenant_id"),
+                "option_type": "C" if parsed.get("cp") == "C" else "P",
+                "option_strike": parsed.get("strike"),
+                "option_expiry": f"20{parsed['yy']}-{int(parsed['mm']):02d}-{int(parsed['dd']):02d}",
+                "quantity": leg.get("quantity"),
+                "direction": leg.get("direction"),
+                "trade_symbol": leg.get("trade_symbol"),
+            })
+        if not symbol or not detail_rows:
+            continue
+        if status == "Expired":
+            caption = "Expired"
+        elif status in ("Assigned", "Exercised"):
+            caption = status
+        else:
+            caption = "Closed today"
+        tiles.append({
+            "symbol": symbol,
+            "dollar_impact": pnl,
+            "open_impact": 0.0,
+            "closed_impact": pnl,
+            "contract_detail": option_contract_detail(detail_rows),
+            "option_caption": caption,
+        })
+    return tiles, fees_by_symbol
+
+
+def _apply_same_day_option_lots(options, fills_df, anchor):
+    """Replace a fused symbol tile with one tile per same-day lot.
+
+    The swap is kept when the lot cash matches the mart dollar, or
+    differs from it only by the broker fees on those fills. A settlement
+    estimate (credit versus width) stays on the mart tile.
+    """
+    options = list(options or [])
+    tiles, fees_by_symbol = _same_day_option_lot_tiles(fills_df, anchor)
+    if not tiles:
+        impact = round(sum(float(o.get("dollar_impact") or 0) for o in options), 2)
+        return options, impact, None
+    grouped = {}
+    for tile in tiles:
+        grouped.setdefault(tile["symbol"], []).append(tile)
+    kept = []
+    used = set()
+    for opt in options:
+        symbol = opt.get("symbol")
+        lots = grouped.get(symbol)
+        if not lots:
+            kept.append(opt)
+            continue
+        used.add(symbol)
+        lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
+        closed = opt.get("closed_impact")
+        compare = (
+            float(opt.get("dollar_impact") or 0)
+            if closed is None else float(closed or 0)
+        )
+        gap = abs(round(compare, 2) - lot_sum)
+        budget = float(fees_by_symbol.get(symbol) or 0)
+        if gap > max(1.0, budget + 1.0):
+            kept.append(opt)
+            continue
+        open_i = opt.get("open_impact")
+        open_v = float(open_i or 0) if open_i is not None else 0.0
+        if abs(open_v) >= 0.5:
+            kept.append({
+                **opt,
+                "dollar_impact": round(open_v, 2),
+                "closed_impact": 0.0,
+                "option_caption": option_mover_caption(open_v, 0),
+            })
+        kept.extend(lots)
+    for symbol, lots in grouped.items():
+        if symbol not in used:
+            kept.extend(lots)
+    kept.sort(key=lambda o: abs(float(o.get("dollar_impact") or 0)), reverse=True)
+    impact = round(sum(float(o.get("dollar_impact") or 0) for o in kept), 2)
+    lot_as_of = anchor
+    if not lot_as_of and fills_df is not None and not getattr(fills_df, "empty", True):
+        dates = [
+            _iso_day(v) for v in fills_df.get("trade_date", [])
+        ] if "trade_date" in getattr(fills_df, "columns", []) else []
+        dates = [d for d in dates if d]
+        lot_as_of = max(dates) if dates else None
+    return kept, impact, lot_as_of
 
 
 def _build_after_hours_movers(ah_df):
@@ -5416,6 +5667,7 @@ def weekly_review():
                 account_total_value=(context.get("equity_snapshot") or {}).get("account_value"),
                 options_moves_df=batch.get("today_options_moves", pd.DataFrame()),
                 dividends_df=batch.get("today_dividends", pd.DataFrame()),
+                option_fills_df=batch.get("today_trades", pd.DataFrame()),
             )
             # DATE-HONEST LABELING: the movers pair is anchored on the
             # latest close in the warehouse, which is FRIDAY all weekend
@@ -5826,6 +6078,7 @@ def today_view():
                 batch.get("today_moves", pd.DataFrame()),
                 options_moves_df=batch.get("today_options_moves", pd.DataFrame()),
                 dividends_df=batch.get("today_dividends", pd.DataFrame()),
+                option_fills_df=batch.get("today_trades", pd.DataFrame()),
             )
             _tm = context["today_movers"]
             if _tm.get("as_of"):
@@ -5986,7 +6239,7 @@ WITH raw AS (
     -- DRIP join also has tenant_id).
     SELECT
         tenant_id, account, user_id, trade_date, action, trade_symbol,
-        underlying_symbol, description, quantity, price, amount,
+        underlying_symbol, description, quantity, price, amount, fees,
         instrument_type, option_expiry
     FROM `ccwj-dbt.analytics.stg_history`
     WHERE trade_date = @day
@@ -6032,7 +6285,7 @@ history_rows AS (
     SELECT
         f.tenant_id, f.account, f.user_id, f.trade_date, f.action,
         f.trade_symbol, f.underlying_symbol, f.description, f.quantity,
-        f.price, f.amount, f.instrument_type, f.option_expiry,
+        f.price, f.amount, f.fees, f.instrument_type, f.option_expiry,
         CASE
             WHEN f.action IN ('equity_sell', 'equity_sell_short')
                 THEN e.realized_pnl
@@ -6078,6 +6331,7 @@ settlements AS (
         ) AS quantity,
         CAST(NULL AS FLOAT64) AS price,
         CAST(0 AS FLOAT64) AS amount,
+        CAST(0 AS FLOAT64) AS fees,
         CASE
             WHEN UPPER(CAST(option_type AS STRING)) IN ('P', 'PUT')
                 THEN 'Put'
@@ -6125,7 +6379,7 @@ legs AS (
 SELECT
     c.tenant_id, c.account, c.user_id, c.trade_date, c.action, c.trade_symbol,
     c.underlying_symbol, c.description, c.quantity, c.price, c.amount,
-    c.instrument_type, c.option_expiry, c.realized_pnl,
+    c.fees, c.instrument_type, c.option_expiry, c.realized_pnl,
     l.open_date AS leg_open_date
 FROM combined c
 LEFT JOIN legs l
