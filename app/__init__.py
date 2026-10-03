@@ -789,7 +789,11 @@ def _check_session_idle():
     # will fail during a pool stall and mark the pod unhealthy at the worst
     # possible moment). current_user.is_authenticated triggers the user
     # loader, which queries Postgres — short-circuit before that.
-    if request.path.startswith("/healthz") or request.path.startswith("/static/"):
+    if (
+        request.path.startswith("/healthz")
+        or request.path == "/version"
+        or request.path.startswith("/static/")
+    ):
         return None
     if not current_user.is_authenticated:
         return None
@@ -906,7 +910,7 @@ def _after_request_timing(response):
         from app import query_cache
         # Skip static assets / health probes — pure noise.
         path = request.path or ""
-        if path.startswith("/static/") or path.startswith("/healthz"):
+        if path.startswith("/static/") or path.startswith("/healthz") or path == "/version":
             return response
         start = getattr(g, "_req_start", None)
         if start is None:

@@ -487,7 +487,7 @@ def guard_demo_request():
     from flask_login import current_user
 
     path = request.path or ""
-    if path.startswith("/static/") or path.startswith("/healthz"):
+    if path.startswith("/static/") or path.startswith("/healthz") or path == "/version":
         return None
 
     ephemeral = is_ephemeral_demo_user(current_user)

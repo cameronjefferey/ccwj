@@ -925,7 +925,11 @@ def observe_response(response):
     try:
         if has_request_context():
             path = request.path or ""
-            if not path.startswith("/static") and not path.startswith("/healthz"):
+            if (
+                not path.startswith("/static")
+                and not path.startswith("/healthz")
+                and path != "/version"
+            ):
                 attach_cookie(response)
                 _attach_internal_cookie(response)
     except Exception as exc:
@@ -940,6 +944,7 @@ def _observe(response):
     if (
         path.startswith("/static")
         or path.startswith("/healthz")
+        or path == "/version"
         or path.startswith("/funnel/")
         or path == "/favicon.ico"
     ):

@@ -238,8 +238,32 @@ def test_onrender_host_redirects_except_healthz(app):
     health = client.get("/healthz", base_url="https://ccwj.onrender.com")
     assert health.status_code == 200
     assert health.get_data(as_text=True).startswith("ok")
+    version = client.get("/version", base_url="https://ccwj.onrender.com")
+    assert version.status_code == 200
+    assert version.is_json
     local = client.get("/login", base_url="http://notonrender.com")
     assert local.status_code == 200
+
+
+def test_version_reports_commit_and_boot_time(app, monkeypatch):
+    client = _client(app)
+    monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+    bare = client.get("/version")
+    assert bare.status_code == 200
+    body = bare.get_json()
+    assert set(body) == {"commit", "booted_at"}
+    assert body["commit"] is None
+    assert body["booted_at"]
+    assert "no-store" in bare.headers["Cache-Control"]
+    # The probe body stays the plain-text health check.
+    health = client.get("/healthz")
+    assert health.get_data(as_text=True).startswith("ok")
+    assert not health.is_json
+
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "  abc123def  ")
+    stamped = client.get("/version")
+    assert stamped.get_json()["commit"] == "abc123def"
+    assert stamped.get_json()["booted_at"] == body["booted_at"]
 
 
 def test_security_headers_and_demo_noindex(app, monkeypatch):

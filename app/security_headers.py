@@ -91,7 +91,7 @@ def redirect_onrender_origin():
     from flask import redirect, request
 
     path = request.path or ""
-    if path == "/healthz" or path.startswith("/healthz/"):
+    if path == "/healthz" or path.startswith("/healthz/") or path == "/version":
         return None
     host = (request.host or "").split(":")[0].strip().lower()
     if host != "onrender.com" and not host.endswith(".onrender.com"):
