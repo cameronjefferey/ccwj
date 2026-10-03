@@ -121,6 +121,37 @@ def test_repair_never_collapses_across_tenants():
     assert set(out["tenant_id"]) == {"snaptrade:parent", "snaptrade:child"}
 
 
+def test_repair_collapses_option_close_posted_after_expiry():
+    """Same grain as upload dedup. Run 37090194526: BE close on the
+    expiry and the posting-day twin must collapse, and the stored Date
+    stays the posting day."""
+    symbol = "BE    260306C00165000"
+    desc = "CALL BLOOM ENERGY CORP $165 EXP 03/06/26"
+    df = pd.DataFrame([
+        _row("Schwab Account", "03/06/2026", "Buy to Close", symbol,
+             "10", "0.042", "-42.12", tenant_id="snaptrade:be", desc=desc),
+        _row("Schwab Account", "03/09/2026", "Buy to Close", symbol,
+             "10", "0.042", "-42.92", tenant_id="snaptrade:be",
+             desc=desc + " posted"),
+    ], columns=HISTORY_SEED_COLUMNS)
+    out = dedup_history_by_tenant(df)
+    assert len(out) == 1
+    assert out.iloc[0]["Date"] == "03/09/2026"
+    assert "posted" in out.iloc[0]["Description"]
+
+
+def test_repair_keeps_closes_before_expiry_on_their_own_dates():
+    symbol = "BE    260320C00165000"
+    df = pd.DataFrame([
+        _row("Schwab Account", "03/04/2026", "Buy to Close", symbol,
+             "10", "0.042", "-42.12", tenant_id="snaptrade:be", desc="early"),
+        _row("Schwab Account", "03/06/2026", "Buy to Close", symbol,
+             "10", "0.042", "-42.92", tenant_id="snaptrade:be", desc="later"),
+    ], columns=HISTORY_SEED_COLUMNS)
+    out = dedup_history_by_tenant(df)
+    assert len(out) == 2
+
+
 def test_repair_collapses_csv_cent_price_vs_snaptrade_fill_price():
     df = pd.DataFrame([
         _row("Schwab Account", "04/24/2026", "Buy", "JEPQ",

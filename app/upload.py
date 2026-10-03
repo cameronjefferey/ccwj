@@ -840,6 +840,98 @@ def _canonicalize_cross_source_amount(action, amount):
     return _canonicalize_seed_cell(f)
 
 
+# Close-like actions whose warehouse trade_date is capped at the
+# contract expiry (stg_history ``dated``). Opens stay on the fill date.
+_CROSS_SOURCE_CLOSE_ACTIONS = frozenset({
+    "option_buy_to_close", "option_sell_to_close",
+    "option_expired", "option_assigned", "option_exercised",
+})
+_AS_OF_MDY4_RE = re.compile(
+    r"(?i)\bas of\s+(\d{1,2})/(\d{1,2})/(\d{4})\b"
+)
+_AS_OF_MDY2_RE = re.compile(
+    r"(?i)\bas of\s+(\d{1,2})/(\d{1,2})/(\d{2})\b"
+)
+_OCC_EXPIRY_RE = re.compile(
+    r"([A-Z][A-Z0-9.\-]{0,5})\s*(\d{2})(\d{2})(\d{2})[CP]\d{8}",
+    re.IGNORECASE,
+)
+_LONG_EXPIRY_RE = re.compile(
+    r"([A-Z][A-Z0-9.\-]{0,5})\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+"
+    r"\d+(?:\.\d+)?\s+[CP]\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_mdy_date(month, day, year):
+    try:
+        return date(int(year), int(month), int(day))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_of_date_from_text(text):
+    """Trade date after ``as of`` in a description, matching stg_history."""
+    if text is None:
+        return None
+    s = str(text)
+    match = _AS_OF_MDY4_RE.search(s)
+    if match:
+        return _parse_mdy_date(match.group(1), match.group(2), match.group(3))
+    match = _AS_OF_MDY2_RE.search(s)
+    if not match:
+        return None
+    year = int(match.group(3))
+    year += 2000 if year < 80 else 1900
+    return _parse_mdy_date(match.group(1), match.group(2), year)
+
+
+def _option_expiry_from_symbol(symbol):
+    """OCC or Schwab long-form expiry. Same calendar rule as stg_history."""
+    if symbol is None:
+        return None
+    text = str(symbol).upper()
+    match = _OCC_EXPIRY_RE.search(text)
+    if match:
+        return _parse_mdy_date(
+            match.group(3), match.group(4), 2000 + int(match.group(2)),
+        )
+    match = _LONG_EXPIRY_RE.search(text)
+    if not match:
+        return None
+    return _parse_mdy_date(match.group(2), match.group(3), match.group(4))
+
+
+def _cross_source_fill_date(action, symbol, raw_date, description=""):
+    """Date half of the cross-source key, matching stg_history ``dated``.
+
+    A close posted after expiry (or carrying ``as of MM/DD/YYYY``) is
+    dated on that earlier day in the warehouse. The seed keeps the
+    broker posting date — rewriting it made the next sync insert a
+    twin — so the key has to cap the same way or CHECK 2 sees one fill
+    twice (run 37090194526: BE 260306C00165000, −42.92 and −42.12).
+    Opens and equities keep the posted date. The stored Date cell is
+    not rewritten.
+    """
+    posted = _canonicalize_date_mdy(raw_date)
+    if _normalize_history_action(action) not in _CROSS_SOURCE_CLOSE_ACTIONS:
+        return posted
+    posted_d = None
+    if posted:
+        try:
+            posted_d = datetime.strptime(posted, "%m/%d/%Y").date()
+        except ValueError:
+            posted_d = None
+    candidate = _as_of_date_from_text(description) or posted_d
+    if candidate is None:
+        return posted
+    expiry = _option_expiry_from_symbol(symbol)
+    chosen = candidate
+    if expiry is not None and candidate > expiry:
+        chosen = expiry
+    return chosen.strftime("%m/%d/%Y")
+
+
 # Keep in lockstep with app.snaptrade_normalize.ESTIMATED_FEE_MARK.
 # Imported there would cycle (normalize imports this module).
 _ESTIMATED_FEE_MARK = "est. fee"
@@ -962,8 +1054,11 @@ def _dedup_history_rows(df, seed_columns):
     # orders derives Amount = qty * exec_price at full precision while
     # activities carries the broker's cent-rounded Amount).
     #
-    # Cross-source key: (Date, Action, Symbol, Quantity, Price). These
-    # five cells uniquely identify a trade fill. ``Amount`` is omitted
+    # Cross-source key: (Date, Action, Symbol, Quantity, Price). Date for
+    # a close is the warehouse date (``_cross_source_fill_date``): posting
+    # day capped at the contract expiry, and ``as of`` when the
+    # description has one. The stored Date cell stays the posting day.
+    # These five cells uniquely identify a trade fill. ``Amount`` is omitted
     # because it's derived from Quantity * Price ± rounding direction
     # — keying on it lets sub-cent FP drift between the two sources
     # defeat the dedup. ``Description`` and ``fees_and_comm`` are
@@ -1025,6 +1120,21 @@ def _dedup_history_rows(df, seed_columns):
             # Buy/BUY and Cash Dividend/Qualified Dividend are one action
             # after stg_history parse — key them that way here too.
             canon2[c] = df[c].map(_normalize_history_action)
+        elif str(c).lower() == "date":
+            # Posting-day closes cap at OCC expiry, matching stg_history.
+            action_name = next(
+                (k for k in cross_key_cols if str(k).lower() == "action"),
+                None,
+            )
+            canon2[c] = [
+                _cross_source_fill_date(
+                    df.iloc[i][action_name] if action_name else "",
+                    df.iloc[i][sym_col] if sym_col else "",
+                    df.iloc[i][c],
+                    df.iloc[i]["Description"],
+                )
+                for i in range(len(df))
+            ]
         else:
             canon2[c] = canon2[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
     # A provisional order row labels its fee "est. fee". That suffix can
