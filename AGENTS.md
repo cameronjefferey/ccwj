@@ -322,7 +322,12 @@ open contracts as disclosures.
   newest `stg_daily_prices` rows with `date <=` calendar today — includes
   in-session last-trade bars. Header is holdings price impact, not full
   account value. Option rows are the same lot split as Overview: one line
-  per same-day vertical, and the dollar includes broker fees. Clicking a mover (or an open-contract row) opens the
+  per same-day vertical, and the dollar includes broker fees. An open of
+  a same-day expiry posted the next calendar day still counts on that
+  expiry (there is no close to cap it). A blank fees column on a gross
+  premium is netted at the implied per-contract rate when the gap is
+  within $1.50 a contract; a settlement width stays on the mart tile.
+  Clicking a mover (or an open-contract row) opens the
   right-side position drawer (same motion as Strategy Fit's cell panel)
   with lifetime P&amp;L, open lots, and a link to the full position page;
   cmd/ctrl-click still goes straight there. Covered Call names that
