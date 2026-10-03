@@ -16,7 +16,9 @@ Tenancy: every BQ read passes through `_tenant_sql_and` (SQL-level) and
 every DataFrame is filtered via `_filter_df_by_tenant_ids` BEFORE any
 merge / re-aggregation. See `.cursor/rules/bigquery-tenant-isolation.mdc`.
 """
+import logging
 import math
+import sys
 from datetime import date, datetime, time, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -3594,8 +3596,18 @@ def option_contract_detail(rows):
     return " · ".join(seen)
 
 
+# Module loggers do not reach Render stdout (root is WARNING+). This
+# handler is the lot-split decision line an operator can grep.
+_lot_log = logging.getLogger("happytrader.lot_split")
+if not _lot_log.handlers:
+    _lot_handler = logging.StreamHandler(sys.stdout)
+    _lot_handler.setFormatter(logging.Formatter("%(message)s"))
+    _lot_log.addHandler(_lot_handler)
+    _lot_log.setLevel(logging.INFO)
+
+
 def _option_mover_tile(opt):
-    return {
+    tile = {
         "symbol": opt["symbol"],
         "kind": "option",
         "dollar_impact": opt["dollar_impact"],
@@ -3607,6 +3619,10 @@ def _option_mover_tile(opt):
         "contract_detail": opt.get("contract_detail") or "",
         "option_caption": opt.get("option_caption") or "",
     }
+    if opt.get("lot_split_reason"):
+        tile["lot_split_reason"] = opt.get("lot_split_reason")
+        tile["lot_split_detail"] = opt.get("lot_split_detail") or ""
+    return tile
 
 
 def _build_today_movers(today_moves_df, account_total_value=None,
@@ -4133,18 +4149,107 @@ def _option_tile_gap(opt, lot_sum):
     return min(abs(round(value, 2) - lot_sum) for value in values)
 
 
+_INDEX_ROOT_PAIRS = (
+    frozenset({"SPX", "SPXW"}),
+    frozenset({"NDX", "NDXP"}),
+    frozenset({"RUT", "RUTW"}),
+)
+
+
+def _note_lot_split(opt, reason, detail):
+    """Stamp one tile and log the decision. The page shows this to admins."""
+    stamped = dict(opt)
+    stamped["lot_split_reason"] = reason
+    stamped["lot_split_detail"] = detail
+    _lot_log.info(
+        "lot_split symbol=%s reason=%s detail=%s",
+        stamped.get("symbol"), reason, detail,
+    )
+    return stamped
+
+
+def _note_lot_tiles(lots, reason, detail):
+    stamped = []
+    for tile in lots:
+        row = dict(tile)
+        row["lot_split_reason"] = reason
+        row["lot_split_detail"] = detail
+        stamped.append(row)
+    if lots:
+        _lot_log.info(
+            "lot_split symbol=%s reason=%s detail=%s",
+            lots[0].get("symbol"), reason, detail,
+        )
+    return stamped
+
+
+def _roots_look_like_one_index(mart_symbol, lot_keys):
+    mart = str(mart_symbol or "").strip().upper()
+    for key in lot_keys:
+        pair = frozenset({mart, str(key or "").strip().upper()})
+        if pair in _INDEX_ROOT_PAIRS and len(pair) == 2:
+            return True
+    return False
+
+
+def _lot_skip_diagnosis(fills_df, anchor):
+    """Why the lot builder produced no tiles for this session."""
+    session = _iso_day(anchor) or ""
+    if fills_df is None or getattr(fills_df, "empty", True):
+        return "no_fills", f"anchor={session or 'none'} fills=0"
+    records = fills_df.to_dict(orient="records")
+    dates = []
+    for row in records:
+        iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
+        if iso:
+            dates.append(iso)
+    shown = ",".join(sorted(set(dates))[:8])
+    if session and dates and session not in dates:
+        return (
+            "no_session_fills",
+            f"anchor={session} fill_dates={shown} rows={len(records)}",
+        )
+    from app.option_formatting import parse_occ
+
+    parsed = 0
+    for row in records:
+        iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
+        if session and iso and iso != session:
+            continue
+        action = _fill_action_text(row)
+        if action in _LOT_SKIP_ACTIONS or action not in (_LOT_OPEN_ACTIONS | _LOT_CLOSE_ACTIONS):
+            continue
+        if parse_occ(_fill_field(row, "trade_symbol", "Symbol", default="")):
+            parsed += 1
+    if parsed == 0:
+        return (
+            "unparsed_symbol",
+            f"anchor={session or 'none'} rows={len(records)} fill_dates={shown}",
+        )
+    return (
+        "no_lots",
+        f"anchor={session or 'none'} parsed={parsed} rows={len(records)}",
+    )
+
+
 def _apply_same_day_option_lots(options, fills_df, anchor):
     """Replace a fused symbol tile with one tile per same-day lot.
 
     The swap is kept when the lot cash matches the mart dollar, or
     differs from it only by the broker fees on those fills. A settlement
     estimate (credit versus width) stays on the mart tile.
+
+    Every option tile is stamped with ``lot_split_reason`` (``split``,
+    ``no_fills``, ``no_session_fills``, ``unparsed_symbol``, ``no_lots``,
+    ``root_mismatch``, ``total_mismatch``). Admins see it on the card.
     """
     options = list(options or [])
     tiles, fees_by_symbol = _same_day_option_lot_tiles(fills_df, anchor)
     if not tiles:
-        impact = round(sum(float(o.get("dollar_impact") or 0) for o in options), 2)
-        return options, impact, None
+        reason, detail = _lot_skip_diagnosis(fills_df, anchor)
+        stamped = [_note_lot_split(opt, reason, detail) for opt in options]
+        impact = round(sum(float(o.get("dollar_impact") or 0) for o in stamped), 2)
+        return stamped, impact, None
     grouped = {}
     for tile in tiles:
         grouped.setdefault(_option_root_match_key(tile["symbol"]), []).append(tile)
@@ -4154,32 +4259,52 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
         symbol = _option_root_match_key(opt.get("symbol"))
         lots = grouped.get(symbol)
         if not lots:
-            kept.append(opt)
+            lot_keys = ",".join(sorted(grouped))
+            if _roots_look_like_one_index(opt.get("symbol"), grouped):
+                reason = "root_mismatch"
+            else:
+                reason = "no_lots"
+            kept.append(_note_lot_split(
+                opt, reason, f"mart={opt.get('symbol')} lot_roots={lot_keys}",
+            ))
             continue
         # A second mart row for the same root (SPX beside SPXW) must
         # not keep the fused tile or append the lots twice.
         if symbol in used:
+            _lot_log.info(
+                "lot_split symbol=%s reason=already_split detail=dropped duplicate mart row",
+                opt.get("symbol"),
+            )
             continue
         used.add(symbol)
         lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
         gap = _option_tile_gap(opt, lot_sum)
         budget = float(fees_by_symbol.get(symbol) or 0)
+        closed = opt.get("closed_impact")
+        dollar = opt.get("dollar_impact")
+        detail = (
+            f"lot_sum={lot_sum:.2f} gap={gap:.2f} budget={budget:.2f} "
+            f"dollar={dollar} closed={closed} lots={len(lots)} "
+            f"anchor={_iso_day(anchor) or 'none'}"
+        )
         if gap > max(1.0, budget + 1.0):
-            kept.append(opt)
+            kept.append(_note_lot_split(opt, "total_mismatch", detail))
             continue
         open_i = opt.get("open_impact")
         open_v = float(open_i or 0) if open_i is not None else 0.0
         if abs(open_v) >= 0.5:
-            kept.append({
+            kept.append(_note_lot_split({
                 **opt,
                 "dollar_impact": round(open_v, 2),
                 "closed_impact": 0.0,
                 "option_caption": option_mover_caption(open_v, 0),
-            })
-        kept.extend(lots)
+            }, "split", f"open mark kept {detail}"))
+        kept.extend(_note_lot_tiles(lots, "split", detail))
     for symbol, lots in grouped.items():
         if symbol not in used:
-            kept.extend(lots)
+            kept.extend(_note_lot_tiles(
+                lots, "split", f"no mart row for {symbol}",
+            ))
     kept.sort(key=lambda o: abs(float(o.get("dollar_impact") or 0)), reverse=True)
     impact = round(sum(float(o.get("dollar_impact") or 0) for o in kept), 2)
     lot_as_of = _iso_day(anchor)
@@ -6362,13 +6487,20 @@ equity_gl AS (
 option_gl AS (
     -- Active closes (BTC/STC) only. Expiry/assignment/exercise come
     -- from the settlements UNION so they date to realized_close_date.
-    -- account + user_id stay on the join. Matching only tenant + OCC
-    -- repeats every fill once per contract row and the mover lot
-    -- split rejects the doubled cash.
-    SELECT tenant_id, account, user_id, trade_symbol, realized_pnl
+    -- One row per OCC. int_option_contracts can emit two rows for one
+    -- contract (direction, opened_before_history). Joining both repeats
+    -- every fill, the lot cash doubles, and the mover keeps the fused
+    -- 30× tile. MAX ignores a NULL realized_pnl on the extra grain row.
+    SELECT
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        MAX(realized_pnl) AS realized_pnl
     FROM `ccwj-dbt.analytics.int_option_contracts`
     WHERE realized_close_date = @day
       {tenant_filter}
+    GROUP BY tenant_id, account, user_id, trade_symbol
 ),
 history_rows AS (
     SELECT

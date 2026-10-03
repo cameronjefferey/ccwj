@@ -289,7 +289,7 @@
             <div class="ov-mover-k">Up {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.winners %}
-                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
+                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}"{% if is_admin_user and m.lot_split_reason %} data-lot-split="{{ m.lot_split_reason }}" data-lot-split-detail="{{ m.lot_split_detail }}"{% endif %}>
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -297,6 +297,7 @@
                     <div>
                         {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
                         {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
+                        {% if is_admin_user and m.lot_split_reason %}<span class="visually-hidden">Lot split {{ m.lot_split_reason }}: {{ m.lot_split_detail }}</span>{% endif %}
                     </div>
                     {% else %}
                     <div>
@@ -320,7 +321,7 @@
             <div class="ov-mover-k">Down {{ tm_day }}</div>
             <div class="movers-list">
                 {% for m in today_movers.losers %}
-                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
+                <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}"{% if is_admin_user and m.lot_split_reason %} data-lot-split="{{ m.lot_split_reason }}" data-lot-split-detail="{{ m.lot_split_detail }}"{% endif %}>
                     {% if m.kind == 'option' %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
@@ -328,6 +329,7 @@
                     <div>
                         {% if m.contract_detail %}<div class="mover-meta">{{ m.contract_detail }}</div>{% endif %}
                         {% if m.option_caption %}<div class="mover-meta">{{ m.option_caption }}</div>{% endif %}
+                        {% if is_admin_user and m.lot_split_reason %}<span class="visually-hidden">Lot split {{ m.lot_split_reason }}: {{ m.lot_split_detail }}</span>{% endif %}
                     </div>
                     {% else %}
                     <div>

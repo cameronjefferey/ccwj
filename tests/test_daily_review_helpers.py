@@ -9,6 +9,7 @@ position to 10,000%/yr.
 The endpoint name stayed `weekly_review` for url_for() compat, so the
 module path is unchanged.
 """
+import logging
 from datetime import date
 
 import pandas as pd
@@ -557,6 +558,8 @@ class TestBuildTodayMovers:
             "shares": None, "current_value": None, "price_change": None,
             "price_change_pct": None, "today_close": None,
             "contract_detail": "", "option_caption": "",
+            "lot_split_reason": "no_fills",
+            "lot_split_detail": "anchor=2026-05-18 fills=0",
         }]
         # Header still totals every row, not just the displayed 5.
         assert result["options_impact"] == 750.0
@@ -805,6 +808,9 @@ class TestBuildTodayMovers:
         assert row["dollar_impact"] == -3574.44
         assert row["contract_detail"] == "10× 7650/7655C spread"
         assert row["option_caption"] == "Closed today"
+        # Opening credit versus the width is outside the fee budget.
+        assert row["lot_split_reason"] == "total_mismatch"
+        assert "gap=" in row["lot_split_detail"]
 
     def test_single_spread_mover_nets_a_gross_order_fee(self):
         day = date(2026, 10, 2)
@@ -857,6 +863,9 @@ class TestBuildTodayMovers:
         # Tenant + OCC alone repeats each fill once per contract row.
         assert "f.account = o.account" in DAY_TRADES_QUERY
         assert "f.user_id IS NOT DISTINCT FROM o.user_id" in DAY_TRADES_QUERY
+        # Two contract rows for one OCC must not repeat the fill.
+        assert "MAX(realized_pnl) AS realized_pnl" in DAY_TRADES_QUERY
+        assert "GROUP BY tenant_id, account, user_id, trade_symbol" in DAY_TRADES_QUERY
 
     def _oct2_statement_fills(self, *, copies=1, trade_date=None):
         """Oct 2 statement amounts, already net of the broker fee."""
@@ -956,6 +965,7 @@ class TestBuildTodayMovers:
         assert by_detail["10× 7730/7735C spread"]["option_caption"] == "Expired"
         assert result["options_impact"] == 1877.80
         assert result["as_of"] == "2026-10-02"
+        assert all(r["lot_split_reason"] == "split" for r in spxw)
         details = " ".join(r.get("contract_detail") or "" for r in result["winners"] + result["losers"])
         assert "30×" not in details
         assert all(r["symbol"] != "SPX" for r in result["winners"] + result["losers"])
@@ -1068,6 +1078,16 @@ class TestBuildTodayMovers:
         assert "30×" not in html
         assert 'data-peek-symbol="SPXW"' in html
         assert 'data-peek-symbol="SPX"' not in html
+        # The skip reason is admin-only. A signed-out render stays clean.
+        assert "data-lot-split" not in html
+        assert "Lot split" not in html
+        with app.test_request_context("/weekly-review"):
+            admin_html = app.jinja_env.get_template("weekly_review.html").render(
+                **overview, is_admin_user=True,
+            )
+        assert 'data-lot-split="split"' in admin_html
+        assert "Lot split split:" in admin_html
+        assert "30×" not in admin_html
         today_ctx = {
             **overview,
             "session_is_live": True,
@@ -1085,6 +1105,84 @@ class TestBuildTodayMovers:
         assert "30×" not in today_html
         assert "+$902" in today_html
         assert "+$976" in today_html
+        assert "data-lot-split" not in today_html
+        with app.test_request_context("/today"):
+            admin_today = app.jinja_env.get_template("today.html").render(
+                **today_ctx, is_admin_user=True,
+            )
+        assert 'data-lot-split="split"' in admin_today
+        assert "Lot split split:" in admin_today
+
+    def test_fills_on_another_day_keep_the_fused_tile(self, caplog):
+        """Friday's mart row stays one 30× tile when the fills are not that day.
+
+        The card is rebuilt each request from the options frame and the
+        fills frame. A fills frame dated the posting day cannot produce
+        Friday lot tiles, so the fused rollup is what the card shows.
+        """
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=self._oct2_production_options(),
+            option_fills_df=self._oct2_statement_fills(trade_date=date(2026, 10, 3)),
+        )
+        spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
+        assert len(spxw) == 1
+        assert "30×" in spxw[0]["contract_detail"]
+        assert spxw[0]["dollar_impact"] == 1877.80
+        assert spxw[0]["lot_split_reason"] == "no_session_fills"
+        assert "anchor=2026-10-02" in spxw[0]["lot_split_detail"]
+        assert "2026-10-03" in spxw[0]["lot_split_detail"]
+
+        with caplog.at_level(logging.INFO):
+            _build_today_movers(
+                self._friday_equity(),
+                options_moves_df=self._oct2_production_options(),
+                option_fills_df=self._oct2_statement_fills(trade_date=date(2026, 10, 3)),
+            )
+        assert "reason=no_session_fills" in caplog.text
+
+    def test_missing_fills_name_no_fills(self):
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=self._oct2_production_options(),
+            option_fills_df=None,
+        )
+        spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
+        assert len(spxw) == 1
+        assert "30×" in spxw[0]["contract_detail"]
+        assert spxw[0]["lot_split_reason"] == "no_fills"
+        assert "fills=0" in spxw[0]["lot_split_detail"]
+
+    def test_unparsed_session_fill_names_the_skip(self):
+        day = date(2026, 10, 2)
+        fills = pd.DataFrame([{
+            "tenant_id": "t1", "account": "Sara", "trade_date": day,
+            "action": "option_sell_to_open",
+            "trade_symbol": "not-an-occ",
+            "quantity": 1, "price": 1.0, "amount": 100.0, "fees": 0,
+        }])
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=self._oct2_production_options(),
+            option_fills_df=fills,
+        )
+        spxw = [r for r in result["winners"] if r["symbol"] == "SPXW"]
+        assert spxw[0]["lot_split_reason"] == "unparsed_symbol"
+
+    def test_unrelated_root_is_no_lots(self):
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=self._oct2_production_options(symbol="QQQ"),
+            option_fills_df=self._oct2_statement_fills(),
+        )
+        qqq = [
+            r for r in result["winners"] + result["losers"]
+            if r["symbol"] == "QQQ"
+        ]
+        assert len(qqq) == 1
+        assert qqq[0]["lot_split_reason"] == "no_lots"
+        assert "lot_roots=SPXW" in qqq[0]["lot_split_detail"]
+        assert qqq[0]["dollar_impact"] == 1877.80
 
     def test_option_caption_matches_what_the_row_contains(self):
         opt = pd.DataFrame([

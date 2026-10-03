@@ -83,6 +83,7 @@ _SKIP_ENDPOINTS = frozenset({
     "static",
     "healthz",
     "healthz_db",
+    "version",
     "api_github_workflow_status",
     "api_nav_symbols",
     "internal_cache_flush",
@@ -90,7 +91,7 @@ _SKIP_ENDPOINTS = frozenset({
     "snaptrade_webhook",
 })
 _SKIP_PREFIXES = (
-    "/api/", "/internal/", "/webhooks/", "/static/", "/sw.js", "/healthz",
+    "/api/", "/internal/", "/webhooks/", "/static/", "/sw.js", "/healthz", "/version",
 )
 
 

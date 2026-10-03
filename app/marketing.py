@@ -635,6 +635,25 @@ def campaign_go(dest, place=None):
     return attach_cookie(redirect(target), attr)
 
 
+@app.route("/version")
+def version():
+    """Deploy identity. Does not touch Postgres or BigQuery.
+
+    ``/healthz`` stays the plain-text probe Render already calls. This
+    route is the one a person can curl to see which commit is serving.
+    """
+    from flask import jsonify
+
+    from app.build_info import BOOTED_AT, deploy_commit
+
+    response = jsonify({
+        "commit": deploy_commit(),
+        "booted_at": BOOTED_AT,
+    })
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/healthz")
 def healthz():
     """Liveness probe — does NOT touch DB or BigQuery so it stays green even

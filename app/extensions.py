@@ -61,7 +61,7 @@ def _default_limit_exempt() -> bool:
         path = request.path or ""
     except Exception:
         return False
-    if path.startswith("/static/") or path.startswith("/healthz"):
+    if path.startswith("/static/") or path.startswith("/healthz") or path == "/version":
         return True
     if path in ("/favicon.ico", "/sw.js"):
         return True
