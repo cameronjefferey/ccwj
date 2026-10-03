@@ -236,6 +236,87 @@ def _canonicalize_cross_source_amount(action, amount):
     return _canonicalize_seed_cell(f)
 
 
+# Keep in lockstep with app.upload._cross_source_fill_date. stg_history
+# caps a close at the contract expiry; the seed date stays the posting
+# day. Run 37090194526 failed CHECK 2 on that cap (BE 03/06/26).
+_CROSS_SOURCE_CLOSE_ACTIONS = frozenset({
+    "option_buy_to_close", "option_sell_to_close",
+    "option_expired", "option_assigned", "option_exercised",
+})
+_AS_OF_MDY4_RE = re.compile(
+    r"(?i)\bas of\s+(\d{1,2})/(\d{1,2})/(\d{4})\b"
+)
+_AS_OF_MDY2_RE = re.compile(
+    r"(?i)\bas of\s+(\d{1,2})/(\d{1,2})/(\d{2})\b"
+)
+_OCC_EXPIRY_RE = re.compile(
+    r"([A-Z][A-Z0-9.\-]{0,5})\s*(\d{2})(\d{2})(\d{2})[CP]\d{8}",
+    re.IGNORECASE,
+)
+_LONG_EXPIRY_RE = re.compile(
+    r"([A-Z][A-Z0-9.\-]{0,5})\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+"
+    r"\d+(?:\.\d+)?\s+[CP]\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_mdy_date(month, day, year):
+    try:
+        return date(int(year), int(month), int(day))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_of_date_from_text(text):
+    if text is None:
+        return None
+    s = str(text)
+    match = _AS_OF_MDY4_RE.search(s)
+    if match:
+        return _parse_mdy_date(match.group(1), match.group(2), match.group(3))
+    match = _AS_OF_MDY2_RE.search(s)
+    if not match:
+        return None
+    year = int(match.group(3))
+    year += 2000 if year < 80 else 1900
+    return _parse_mdy_date(match.group(1), match.group(2), year)
+
+
+def _option_expiry_from_symbol(symbol):
+    if symbol is None:
+        return None
+    text = str(symbol).upper()
+    match = _OCC_EXPIRY_RE.search(text)
+    if match:
+        return _parse_mdy_date(
+            match.group(3), match.group(4), 2000 + int(match.group(2)),
+        )
+    match = _LONG_EXPIRY_RE.search(text)
+    if not match:
+        return None
+    return _parse_mdy_date(match.group(2), match.group(3), match.group(4))
+
+
+def _cross_source_fill_date(action, symbol, raw_date, description=""):
+    posted = _canonicalize_date_mdy(raw_date)
+    if _normalize_history_action(action) not in _CROSS_SOURCE_CLOSE_ACTIONS:
+        return posted
+    posted_d = None
+    if posted:
+        try:
+            posted_d = datetime.strptime(posted, "%m/%d/%Y").date()
+        except ValueError:
+            posted_d = None
+    candidate = _as_of_date_from_text(description) or posted_d
+    if candidate is None:
+        return posted
+    expiry = _option_expiry_from_symbol(symbol)
+    chosen = candidate
+    if expiry is not None and candidate > expiry:
+        chosen = expiry
+    return chosen.strftime("%m/%d/%Y")
+
+
 def _dedup_history_rows(df, seed_columns):
     """Same grain as ``app.upload._dedup_history_rows`` (staging action)."""
     if df is None or df.empty:
@@ -274,6 +355,20 @@ def _dedup_history_rows(df, seed_columns):
             canon2[c] = canon2[c].map(_canonicalize_cross_source_price)
         elif str(c).lower() == "action":
             canon2[c] = df[c].map(_normalize_history_action)
+        elif str(c).lower() == "date":
+            action_name = next(
+                (k for k in cross_key_cols if str(k).lower() == "action"),
+                None,
+            )
+            canon2[c] = [
+                _cross_source_fill_date(
+                    df.iloc[i][action_name] if action_name else "",
+                    df.iloc[i][sym_col] if sym_col else "",
+                    df.iloc[i][c],
+                    df.iloc[i]["Description"],
+                )
+                for i in range(len(df))
+            ]
         else:
             canon2[c] = canon2[c].map(lambda v, _c=c: _canonicalize_key_cell(_c, v))
     desc_lens = df["Description"].fillna("").astype(str).str.len()

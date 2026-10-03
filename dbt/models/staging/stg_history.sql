@@ -310,6 +310,11 @@ crypto_norm as (
 -- trade date. Otherwise a close after the contract's own expiry is
 -- the posting date — cap it at expiry. An earlier close keeps its
 -- trade date. Opens are untouched.
+-- ``_cross_source_fill_date`` in app/upload.py and
+-- scripts/repair_history_fill_dedup.py must use this same cap. The
+-- seed keeps the posting date; only the key and this column move.
+-- Run 37090194526: BE 260306C00165000 landed twice (−42.92 / −42.12)
+-- once both dates became the 2026-03-06 expiry.
 dated as (
     select
         * except (trade_date),
