@@ -3692,7 +3692,12 @@ def _build_today_movers(today_moves_df, account_total_value=None,
 
 
 def _iso_day(value):
-    """ISO date prefix, or None for missing / NaT cells."""
+    """ISO date prefix, or None for missing / NaT cells.
+
+    Schwab dates can arrive as ``MM/DD/YYYY``. The first ten characters
+    of that string are ``10/02/2026``, which never equals the session
+    ``2026-10-02``, so every fill is dropped and the fused mart tile stays.
+    """
     if value is None:
         return None
     try:
@@ -3703,10 +3708,18 @@ def _iso_day(value):
     if hasattr(value, "isoformat"):
         text = value.isoformat()[:10]
     else:
-        text = str(value)[:10]
+        text = str(value).strip()
     if not text or text in ("NaT", "None", "nan"):
         return None
-    return text
+    if "/" in text:
+        head = text.split()[0]
+        for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+            try:
+                return datetime.strptime(head, fmt).date().isoformat()
+            except ValueError:
+                continue
+        return head[:10]
+    return text[:10]
 
 
 def _invested_from_close_sleeve(hero_value, sleeve_value, sleeve_cash):
@@ -3879,6 +3892,21 @@ _LOT_SKIP_ACTIONS = frozenset({
 _LOT_DONE = frozenset({
     "Closed", "Expired", "Assigned", "Exercised",
 })
+# Weekly index series share a position page with the parent root.
+# XSP stays its own root. The tile still displays the OCC root.
+_INDEX_OPTION_MATCH = {
+    "SPX": "SPXW",
+    "SPXW": "SPXW",
+    "NDX": "NDXP",
+    "NDXP": "NDXP",
+    "RUT": "RUTW",
+    "RUTW": "RUTW",
+}
+
+
+def _option_root_match_key(symbol) -> str:
+    text = str(symbol or "").strip().upper()
+    return _INDEX_OPTION_MATCH.get(text, text)
 
 
 def _fill_field(row, *names, default=None):
@@ -3913,7 +3941,7 @@ def _same_day_option_lot_tiles(fills_df, anchor):
 
     if fills_df is None or getattr(fills_df, "empty", True):
         return [], {}
-    records = fills_df.to_dict(orient="records")
+    records = _dedupe_lot_fills(fills_df.to_dict(orient="records"))
     dates = []
     for row in records:
         iso = _iso_day(_fill_field(row, "trade_date", "Date", "date"))
@@ -3942,7 +3970,7 @@ def _same_day_option_lot_tiles(fills_df, anchor):
         except (TypeError, ValueError):
             continue
         net = _net_option_cash(amount, qty, price, fee)
-        symbol = parsed["root"]
+        symbol = _option_root_match_key(parsed["root"])
         fees_by_symbol[symbol] = round(fees_by_symbol.get(symbol, 0.0) + fee, 2)
         tenant = str(_fill_field(row, "tenant_id", default="") or "")
         account = str(_fill_field(row, "account", default="") or "")
@@ -4048,6 +4076,63 @@ def _same_day_option_lot_tiles(fills_df, anchor):
     return tiles, fees_by_symbol
 
 
+def _dedupe_lot_fills(records):
+    """Drop exact copies of one fill.
+
+    ``DAY_TRADES_QUERY`` joins contract realized P&L onto each fill.
+    Two contract rows for the same OCC (a second user_id, a second
+    account) repeat every fill. The copies double the lot cash, the
+    gap check rejects the swap, and the fused 30× tile stays. Two
+    partials that differ in quantity, price, or amount stay.
+    """
+    seen = set()
+    unique = []
+    for row in records:
+        try:
+            qty = round(abs(float(_fill_field(row, "quantity", "Quantity", default=0) or 0)), 4)
+            price = round(abs(float(_fill_field(row, "price", "Price", default=0) or 0)), 4)
+            amount = round(float(_fill_field(row, "amount", "Amount", default=0) or 0), 2)
+            fee = round(abs(float(
+                _fill_field(row, "fees", "fees_and_comm", "fee", default=0) or 0
+            )), 2)
+        except (TypeError, ValueError):
+            unique.append(row)
+            continue
+        ident = (
+            str(_fill_field(row, "tenant_id", default="") or ""),
+            str(_fill_field(row, "account", default="") or ""),
+            str(_fill_field(row, "trade_symbol", "Symbol", default="") or ""),
+            _fill_action_text(row),
+            _iso_day(_fill_field(row, "trade_date", "Date", "date")),
+            qty, price, amount, fee,
+        )
+        if ident in seen:
+            continue
+        seen.add(ident)
+        unique.append(row)
+    return unique
+
+
+def _option_tile_gap(opt, lot_sum):
+    """Distance from the lot cash to the closer mart dollar.
+
+    ``closed_impact`` of 0 is a real number. Comparing only that value
+    rejects a lot total that matches ``dollar_impact``. A settlement
+    whose mart dollar is the width (not the opening credit) is far
+    from both, so the fused tile stays.
+    """
+    values = []
+    closed = opt.get("closed_impact")
+    if closed is not None:
+        values.append(float(closed or 0))
+    dollar = opt.get("dollar_impact")
+    if dollar is not None:
+        values.append(float(dollar or 0))
+    if not values:
+        values.append(0.0)
+    return min(abs(round(value, 2) - lot_sum) for value in values)
+
+
 def _apply_same_day_option_lots(options, fills_df, anchor):
     """Replace a fused symbol tile with one tile per same-day lot.
 
@@ -4062,23 +4147,22 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
         return options, impact, None
     grouped = {}
     for tile in tiles:
-        grouped.setdefault(tile["symbol"], []).append(tile)
+        grouped.setdefault(_option_root_match_key(tile["symbol"]), []).append(tile)
     kept = []
     used = set()
     for opt in options:
-        symbol = opt.get("symbol")
+        symbol = _option_root_match_key(opt.get("symbol"))
         lots = grouped.get(symbol)
         if not lots:
             kept.append(opt)
             continue
+        # A second mart row for the same root (SPX beside SPXW) must
+        # not keep the fused tile or append the lots twice.
+        if symbol in used:
+            continue
         used.add(symbol)
         lot_sum = round(sum(t["dollar_impact"] for t in lots), 2)
-        closed = opt.get("closed_impact")
-        compare = (
-            float(opt.get("dollar_impact") or 0)
-            if closed is None else float(closed or 0)
-        )
-        gap = abs(round(compare, 2) - lot_sum)
+        gap = _option_tile_gap(opt, lot_sum)
         budget = float(fees_by_symbol.get(symbol) or 0)
         if gap > max(1.0, budget + 1.0):
             kept.append(opt)
@@ -6278,7 +6362,10 @@ equity_gl AS (
 option_gl AS (
     -- Active closes (BTC/STC) only. Expiry/assignment/exercise come
     -- from the settlements UNION so they date to realized_close_date.
-    SELECT tenant_id, trade_symbol, realized_pnl
+    -- account + user_id stay on the join. Matching only tenant + OCC
+    -- repeats every fill once per contract row and the mover lot
+    -- split rejects the doubled cash.
+    SELECT tenant_id, account, user_id, trade_symbol, realized_pnl
     FROM `ccwj-dbt.analytics.int_option_contracts`
     WHERE realized_close_date = @day
       {tenant_filter}
@@ -6306,6 +6393,8 @@ history_rows AS (
         AND ABS(COALESCE(f.amount, 0) - COALESCE(e.sell_proceeds, 0)) < 1.0
     LEFT JOIN option_gl o
         ON (f.tenant_id IS NOT DISTINCT FROM o.tenant_id)
+        AND f.account = o.account
+        AND (f.user_id IS NOT DISTINCT FROM o.user_id)
         AND f.trade_symbol = o.trade_symbol
 ),
 settlements AS (
