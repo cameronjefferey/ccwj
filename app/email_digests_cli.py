@@ -7,9 +7,11 @@ CLI for lifecycle / product-marketing email digests. Run via cron:
   python -m app.email_digests_cli connection_reminder
 
 Each kind:
-  - weekly_summary : recap of the user's most recent trading week
-                     (source: mart_weekly_summary). Gated by
-                     user_profiles.digest_email.
+  - weekly_summary : recap of the user's most recent trading week.
+                     Net return is grouped closed-trade realized P&L
+                     (spreads count once). Dividends come from
+                     mart_weekly_summary and are not added into that
+                     number. Gated by user_profiles.digest_email.
   - weekly_preview : look-ahead — upcoming earnings, option expirations,
                      and projected ex-dividends for currently-held symbols.
                      Gated by user_profiles.weekly_preview_email.
@@ -72,10 +74,13 @@ def _scope_params(bigquery, user_id, tenant_ids):
 # weekly_summary
 # ---------------------------------------------------------------------------
 
-_WEEKLY_SUMMARY_SQL = f"""
-SELECT account, week_start, total_return, total_pnl, dividends_amount,
-       trades_closed, num_winners, num_losers,
-       best_symbol, best_pnl, worst_symbol, worst_pnl
+# Week identity and dividend cash only. Trade counts, best/worst, and
+# net return are built in Python from grouped fills (see
+# app.weekly_digest). mart_weekly_summary.total_return adds dividends
+# on top of per-leg P&L; the email must not use that as "Net return".
+_WEEK_BOUNDS_SQL = f"""
+SELECT week_start,
+       SUM(dividends_amount) AS dividends_amount
 FROM `{_PROJECT}.mart_weekly_summary`
 WHERE CAST(user_id AS STRING) = @user_id
   AND tenant_id IN UNNEST(@tenant_ids)
@@ -84,6 +89,70 @@ WHERE CAST(user_id AS STRING) = @user_id
       WHERE CAST(user_id AS STRING) = @user_id
         AND tenant_id IN UNNEST(@tenant_ids)
   )
+GROUP BY week_start
+"""
+
+# Every fill of option contracts that closed this ISO week, including
+# an open from before Monday. The digest groups these into spreads.
+_WEEK_OPTION_FILLS_SQL = f"""
+WITH bounds AS (
+    SELECT MAX(week_start) AS week_start
+    FROM `{_PROJECT}.mart_weekly_summary`
+    WHERE CAST(user_id AS STRING) = @user_id
+      AND tenant_id IN UNNEST(@tenant_ids)
+),
+closed AS (
+    SELECT DISTINCT c.tenant_id, c.trade_symbol
+    FROM `{_PROJECT}.int_option_contracts` c
+    CROSS JOIN bounds b
+    WHERE CAST(c.user_id AS STRING) = @user_id
+      AND c.tenant_id IN UNNEST(@tenant_ids)
+      AND c.status = 'Closed'
+      AND c.close_date BETWEEN b.week_start
+                           AND DATE_ADD(b.week_start, INTERVAL 6 DAY)
+)
+SELECT
+    h.tenant_id,
+    h.account,
+    h.trade_date,
+    h.action,
+    h.trade_symbol,
+    h.quantity,
+    h.price,
+    h.fees,
+    h.amount
+FROM `{_PROJECT}.stg_history` h
+JOIN closed c
+  ON h.tenant_id = c.tenant_id
+ AND h.trade_symbol = c.trade_symbol
+WHERE CAST(h.user_id AS STRING) = @user_id
+  AND h.tenant_id IN UNNEST(@tenant_ids)
+  AND h.instrument_type IN ('Call', 'Put')
+"""
+
+# Equity sessions closed this week. Already one trade each — not option
+# legs. total_pnl is the realized session result Overview sums.
+_WEEK_EQUITY_SQL = f"""
+WITH bounds AS (
+    SELECT MAX(week_start) AS week_start
+    FROM `{_PROJECT}.mart_weekly_summary`
+    WHERE CAST(user_id AS STRING) = @user_id
+      AND tenant_id IN UNNEST(@tenant_ids)
+)
+SELECT
+    s.tenant_id,
+    s.account,
+    s.symbol,
+    s.total_pnl,
+    s.close_date
+FROM `{_PROJECT}.int_strategy_classification` s
+CROSS JOIN bounds b
+WHERE CAST(s.user_id AS STRING) = @user_id
+  AND s.tenant_id IN UNNEST(@tenant_ids)
+  AND s.trade_group_type = 'equity_session'
+  AND s.status = 'Closed'
+  AND s.close_date BETWEEN b.week_start
+                       AND DATE_ADD(b.week_start, INTERVAL 6 DAY)
 """
 
 
@@ -91,16 +160,41 @@ WHERE CAST(user_id AS STRING) = @user_id
 # expiry date arrived, making the "what if you'd held" counterfactual
 # knowable. Phrasing is delegated to app.execution_quality.verdicts_landed
 # so the email and the Daily Review section can never drift apart.
+# Close price is the per-share premium on the buy-to-close / sell-to-close
+# fill. The verdict dollar is recomputed from that price, the contract
+# count, and the underlying close on the expiry date (×100 once). A
+# stored delta that multiplied the 100 a second time is replaced.
 _VERDICTS_SQL = f"""
-SELECT tenant_id, account, symbol, trade_symbol, option_type, option_strike,
-       option_expiry, direction, close_date, close_type, was_rolled,
-       expired_worthless, gradeable_early_close, early_close_vs_expiry_delta
-FROM `{_PROJECT}.int_option_exit_quality`
-WHERE CAST(user_id AS STRING) = @user_id
-  AND tenant_id IN UNNEST(@tenant_ids)
-  AND gradeable_early_close
-  AND option_expiry BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)
-                        AND CURRENT_DATE()
+WITH closes AS (
+    SELECT
+        tenant_id,
+        trade_symbol,
+        SAFE_DIVIDE(
+            SUM(ABS(price) * ABS(quantity)),
+            NULLIF(SUM(ABS(quantity)), 0)
+        ) AS close_price
+    FROM `{_PROJECT}.stg_history`
+    WHERE CAST(user_id AS STRING) = @user_id
+      AND tenant_id IN UNNEST(@tenant_ids)
+      AND action IN ('option_buy_to_close', 'option_sell_to_close')
+    GROUP BY tenant_id, trade_symbol
+)
+SELECT
+    q.tenant_id, q.account, q.symbol, q.trade_symbol, q.option_type,
+    q.option_strike, q.option_expiry, q.direction, q.close_date, q.close_type,
+    q.was_rolled, q.expired_worthless, q.gradeable_early_close,
+    q.early_close_vs_expiry_delta, q.contracts, q.cost_to_close,
+    q.proceeds_from_close, q.underlying_close_at_expiry, q.intrinsic_at_expiry,
+    c.close_price
+FROM `{_PROJECT}.int_option_exit_quality` q
+LEFT JOIN closes c
+  ON q.tenant_id = c.tenant_id
+ AND q.trade_symbol = c.trade_symbol
+WHERE CAST(q.user_id AS STRING) = @user_id
+  AND q.tenant_id IN UNNEST(@tenant_ids)
+  AND q.gradeable_early_close
+  AND q.option_expiry BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)
+                          AND CURRENT_DATE()
 """
 
 
@@ -123,55 +217,46 @@ def _build_weekly_verdicts(client, bigquery, user_id, tenant_ids):
         return []
 
 
+def _query_rows(client, bigquery, sql, user_id, tenant_ids):
+    cfg = bigquery.QueryJobConfig(
+        query_parameters=_scope_params(bigquery, user_id, tenant_ids))
+    return [dict(r) for r in client.query(sql, job_config=cfg).result()]
+
+
 def _build_weekly_summary(client, bigquery, user_id, tenant_ids):
-    """Aggregate the user's most-recent-week rows (one per tenant) into a
-    single summary dict, or None if there's no week to report."""
-    cfg = bigquery.QueryJobConfig(query_parameters=_scope_params(bigquery, user_id, tenant_ids))
-    rows = list(client.query(_WEEKLY_SUMMARY_SQL, job_config=cfg).result())
-    if not rows:
+    """One summary for the user's most recent ISO week, or None.
+
+    Net return is grouped closed-trade realized P&L. Dividends are
+    queried from the weekly mart and kept as their own line. Best and
+    worst name the grouped trade, not a single option leg.
+    """
+    import pandas as pd
+
+    from app.weekly_digest import (
+        equity_closed_trades,
+        grouped_option_trades,
+        summarize_closed_trades,
+        week_end,
+    )
+
+    bounds = _query_rows(client, bigquery, _WEEK_BOUNDS_SQL, user_id, tenant_ids)
+    if not bounds or bounds[0].get("week_start") is None:
         return None
+    week_start = bounds[0]["week_start"]
+    dividends = float(bounds[0].get("dividends_amount") or 0)
+    end = week_end(week_start)
 
-    week_start = rows[0]["week_start"]
-    total_return = sum(float(r["total_return"] or 0) for r in rows)
-    total_pnl = sum(float(r["total_pnl"] or 0) for r in rows)
-    dividends = sum(float(r["dividends_amount"] or 0) for r in rows)
-    trades_closed = sum(int(r["trades_closed"] or 0) for r in rows)
-    num_winners = sum(int(r["num_winners"] or 0) for r in rows)
-    num_losers = sum(int(r["num_losers"] or 0) for r in rows)
-
-    best = max(
-        (r for r in rows if r["best_symbol"]),
-        key=lambda r: float(r["best_pnl"] or 0),
-        default=None,
-    )
-    worst = min(
-        (r for r in rows if r["worst_symbol"]),
-        key=lambda r: float(r["worst_pnl"] or 0),
-        default=None,
-    )
-
-    week_label = ""
-    if week_start is not None:
-        try:
-            week_label = f"{week_start:%b %d}"
-        except Exception:
-            week_label = str(week_start)
-
-    return {
-        "week_start": week_start.isoformat() if hasattr(week_start, "isoformat") else str(week_start),
-        "week_label": f"week of {week_label}" if week_label else "this past week",
-        "total_return": total_return,
-        "total_pnl": total_pnl,
-        "dividends": dividends,
-        "trades_closed": trades_closed,
-        "num_winners": num_winners,
-        "num_losers": num_losers,
-        "best_symbol": best["best_symbol"] if best else None,
-        "best_pnl": float(best["best_pnl"]) if best else None,
-        "worst_symbol": worst["worst_symbol"] if worst else None,
-        "worst_pnl": float(worst["worst_pnl"]) if worst else None,
-        "verdicts": _build_weekly_verdicts(client, bigquery, user_id, tenant_ids),
-    }
+    fills = _query_rows(
+        client, bigquery, _WEEK_OPTION_FILLS_SQL, user_id, tenant_ids)
+    equity = _query_rows(
+        client, bigquery, _WEEK_EQUITY_SQL, user_id, tenant_ids)
+    trades = grouped_option_trades(pd.DataFrame(fills), week_start, end)
+    trades.extend(equity_closed_trades(equity))
+    summary = summarize_closed_trades(
+        trades, dividends=dividends, week_start=week_start)
+    summary["verdicts"] = _build_weekly_verdicts(
+        client, bigquery, user_id, tenant_ids)
+    return summary
 
 
 def run_weekly_summary(client, bigquery):
@@ -186,6 +271,19 @@ def run_weekly_summary(client, bigquery):
     for rec in list_email_recipients_for_kind("weekly_summary"):
         user_id = rec["user_id"]
         tenant_ids = get_tenant_ids_for_user(user_id)
+        if not tenant_ids:
+            empty += 1
+            continue
+        # Alpaca Paper is practice money. Drop it from a mixed book so
+        # the digest matches Overview. A paper-only user still gets the
+        # paper week.
+        try:
+            from app.models import get_broker_tenants_for_user
+            from app.weekly_digest import scope_digest_tenants
+            tenant_ids = scope_digest_tenants(
+                tenant_ids, get_broker_tenants_for_user(user_id))
+        except Exception as exc:
+            print(f"User {user_id}: paper scope skipped: {exc}", file=sys.stderr)
         if not tenant_ids:
             empty += 1
             continue

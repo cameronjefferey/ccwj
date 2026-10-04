@@ -442,38 +442,67 @@ def _verdict_action(row):
     return f"Sold the {short}; the exit beat the expiry outcome."
 
 
+def _verdict_money(v) -> str:
+    """$820 when the dollar is whole, $241.71 when it is not."""
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return _money(0)
+    if abs(n - round(n)) < 0.005:
+        return _money(n, 0)
+    return _money(n, 2)
+
+
+def _close_on(row) -> str:
+    closed = row.get("close_date")
+    try:
+        return f" on {pd.Timestamp(closed).strftime('%b %-d')}"
+    except (TypeError, ValueError):
+        return ""
+
+
 def _verdict_sentence(row):
-    """One landed verdict as a full sentence — used by the weekly summary
-    EMAIL, which renders plain list items with no delta column."""
+    """One landed verdict as a full sentence for the weekly email.
+
+    Plain result: who closed, whether the option expired worthless or
+    finished in the money, and how many dollars the exit made or gave
+    up compared with holding to expiry. The dollar is a magnitude; the
+    words carry the direction.
+    """
     delta = float(row["early_close_vs_expiry_delta"])
     label = _contract_label(row)
-    closed = row.get("close_date")
-    closed_txt = ""
-    try:
-        closed_txt = f" on {pd.Timestamp(closed).strftime('%b %-d')}"
-    except (TypeError, ValueError):
-        pass
-    if row["was_rolled"]:
-        if row["expired_worthless"]:
-            return (f"The {label} you rolled away from{closed_txt} expired "
-                    f"worthless — the roll was never tested.")
-        return (f"The {label} you rolled away from{closed_txt} finished in "
-                f"the money — rolling sidestepped {_money(delta)}.")
-    if str(row["direction"]) == "Sold":
+    when = _close_on(row)
+    money = _verdict_money(delta)
+    worthless = bool(row.get("expired_worthless"))
+    if row.get("was_rolled"):
+        if worthless:
+            return (f"You rolled out of the {label}{when}. It expired "
+                    f"worthless, so the old strike was never tested.")
+        return (f"You rolled out of the {label}{when}. It finished in "
+                f"the money, so the roll avoided {money}.")
+    if str(row.get("direction")) == "Sold":
+        if delta < 0 and worthless:
+            return (f"You bought back the {label}{when}. It expired "
+                    f"worthless, so that close gave up {money}.")
         if delta < 0:
-            if row["expired_worthless"]:
-                return (f"The {label} you bought back{closed_txt} expired "
-                        f"worthless — that close gave up {_money(delta)} vs "
-                        f"holding.")
-            return (f"The {label} you bought back{closed_txt} — holding to "
-                    f"expiry would have come out {_money(delta)} better.")
-        return (f"The {label} you bought back{closed_txt} finished in the "
-                f"money — closing early avoided {_money(delta)}.")
+            return (f"You bought back the {label}{when}. Holding to "
+                    f"expiry would have been {money} better.")
+        if worthless:
+            return (f"You bought back the {label}{when}. It expired "
+                    f"worthless, and that close beat holding by {money}.")
+        return (f"You bought back the {label}{when}. It finished in "
+                f"the money, so that close beat holding by {money}.")
+    if delta < 0 and worthless:
+        return (f"You sold the {label}{when}. It expired worthless, "
+                f"so that sale gave up {money}.")
     if delta < 0:
-        return (f"The {label} you sold{closed_txt} was worth {_money(delta)} "
-                f"more at expiry than your exit.")
-    return (f"The {label} you sold{closed_txt} — that exit beat the expiry "
-            f"outcome by {_money(delta)}.")
+        return (f"You sold the {label}{when}. Holding to expiry would "
+                f"have been {money} better.")
+    if worthless:
+        return (f"You sold the {label}{when}. It expired worthless, "
+                f"so that sale beat holding by {money}.")
+    return (f"You sold the {label}{when}. That sale beat holding to "
+            f"expiry by {money}.")
 
 
 # Multi-leg labels from int_strategy_classification. Used when the
@@ -590,34 +619,236 @@ def _structure_action(members):
 
 
 def _structure_sentence(members):
-    symbol = str(members[0].get("symbol") or "")
+    """One sentence for a whole spread. The dollar is the net of the legs."""
     name = _structure_name(members)
     delta = sum(float(m["early_close_vs_expiry_delta"]) for m in members)
     n = len(members)
     legs = "both legs" if n == 2 else "all legs"
+    money = _verdict_money(delta)
     if delta < 0:
-        return (f"The {symbol} {name} you closed — that exit was "
-                f"{_money(delta)} worse than holding {legs} to expiry.")
+        return (f"You closed the {name}. Holding {legs} to expiry "
+                f"would have been {money} better.")
     if delta > 0:
-        return (f"The {symbol} {name} you closed — that exit beat holding "
-                f"{legs} to expiry by {_money(delta)}.")
-    return (f"The {symbol} {name} you closed — that exit came out even "
-            f"with holding {legs} to expiry.")
+        return (f"You closed the {name}. That close beat holding "
+                f"{legs} to expiry by {money}.")
+    return (f"You closed the {name}. That close came out even with "
+            f"holding {legs} to expiry.")
+
+
+def _leg_qty(row) -> float:
+    qty = _num(row.get("contracts"))
+    if qty is None or qty <= 0:
+        return 1.0
+    return abs(qty)
+
+
+def _leg_strike(row) -> float:
+    strike = _num(row.get("option_strike"))
+    return strike if strike is not None else 0.0
+
+
+def _pair_vertical_legs(members):
+    """Pair one short with one long of the same type.
+
+    Same size first, then the nearest strike — the same rule as a
+    vertical on the position page. A second spread on that expiry is
+    its own verdict. A leftover leg (two shorts, no long) stays alone.
+    """
+    groups = []
+    by_side = {}
+    for member in members:
+        by_side.setdefault(_option_side(member) or "", []).append(member)
+    used = set()
+    for legs in by_side.values():
+        shorts = [m for m in legs if str(m.get("direction") or "") == "Sold"]
+        longs = [m for m in legs if str(m.get("direction") or "") == "Bought"]
+        unused = list(longs)
+        for short in shorts:
+            if not unused:
+                break
+            short_qty = _leg_qty(short)
+            short_strike = _leg_strike(short)
+
+            def _key(leg, _qty=short_qty, _strike=short_strike):
+                qty_gap = 0 if abs(_leg_qty(leg) - _qty) < 1e-6 else 1
+                return (qty_gap, abs(_leg_strike(leg) - _strike))
+
+            match = min(unused, key=_key)
+            unused.remove(match)
+            groups.append([short, match])
+            used.add(id(short))
+            used.add(id(match))
+        for leg in legs:
+            if id(leg) not in used:
+                groups.append([leg])
+    return groups
 
 
 def _cluster_structure_groups(records):
-    """Partition same-(tenant, symbol, expiry) rows into one strategy
-    group or a list of standalone contracts."""
+    """Partition same-(tenant, symbol, expiry) rows into spreads or
+    standalone contracts.
+
+    A call and a put on that expiry (a condor, straddle, or strangle)
+    stay one verdict. One option type with both a short and a long is
+    paired into verticals, one spread at a time. Two longs, or two
+    shorts, stay separate trades.
+    """
     buckets = {}
     for rec in records:
         buckets.setdefault(_structure_bucket(rec), []).append(rec)
     groups = []
     for members in buckets.values():
-        if _is_multi_leg_structure(members):
-            groups.append(members)
-        else:
+        if len(members) < 2 or not _is_multi_leg_structure(members):
             groups.extend([[m] for m in members])
+            continue
+        sides = {_option_side(m) for m in members} - {""}
+        if sides >= {"C", "P"}:
+            groups.append(members)
+            continue
+        groups.extend(_pair_vertical_legs(members))
     return groups
+
+
+def _num(value):
+    try:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_option_multiplier(contracts, fill_price, cash):
+    """Contract count and closing cash with the 100-share factor applied once.
+
+    Option quantity in this warehouse is a contract count. Closing cash
+    is ``price × contracts × 100`` (fees can move it by a dollar or two
+    per contract). Two bad shapes double that 100:
+
+    * Cash equals ``price × contracts × 100 × 100`` while the contract
+      count itself is a real lot (under 100). Divide the cash by 100.
+      This is the MU $1100 case: one call sold for about $2.42 a share
+      was stored as $24,171 instead of $241.71.
+    * Quantity is a share count (a multiple of 100) and the cash equals
+      ``price × quantity`` with no ×100. The settlement must use
+      ``quantity / 100`` contracts. The cash is already the dollar premium.
+
+    A real 100-contract trade whose cash equals ``price × 100 × 100``
+    is left alone. Ten contracts at $24.17 ($24,171) are also left alone.
+    """
+    qty = _num(contracts)
+    price = _num(fill_price)
+    amount = _num(cash)
+    if qty is None or qty <= 0 or amount is None:
+        return qty, amount
+    qty = abs(qty)
+    if price is None or price <= 0:
+        return qty, amount
+    price = abs(price)
+    once = price * qty * 100.0
+    fee_room = max(2.0, 1.5 * qty)
+
+    def _same(left, right):
+        return abs(abs(left) - abs(right)) <= fee_room
+
+    if _same(amount, once):
+        return qty, amount
+    if qty < 100 and _same(amount, once * 100.0):
+        signed = -abs(amount) / 100.0 if amount < 0 else abs(amount) / 100.0
+        return qty, round(signed, 2)
+    if qty >= 100 and abs(qty % 100) < 1e-6 and _same(amount, price * qty):
+        return qty / 100.0, amount
+    return qty, amount
+
+
+def early_close_delta(row):
+    """Dollars the early close made (+) or gave up (−) versus expiry.
+
+    ``closing cash − settlement``. Settlement is intrinsic per share
+    × 100 × contracts, once. A long receives that intrinsic; a short
+    pays it. Equity options use the same intrinsic (the share assignment
+    is a different line; this is only the option's leftover value).
+    Out of the money, intrinsic is $0, so the dollar is the exit cash.
+
+    Returns None when the expiry close or the exit cash is missing.
+    """
+    from app.expiry_settlement import intrinsic_per_share
+
+    close = _num(row.get("underlying_close_at_expiry"))
+    strike = _num(row.get("option_strike"))
+    if close is None or strike is None:
+        return None
+    price = row.get("close_price")
+    if price is None:
+        price = row.get("fill_price")
+    cash = (_num(row.get("cost_to_close")) or 0.0) + (
+        _num(row.get("proceeds_from_close")) or 0.0
+    )
+    if row.get("cost_to_close") is None and row.get("proceeds_from_close") is None:
+        return None
+    qty, cash = normalize_option_multiplier(row.get("contracts"), price, cash)
+    if qty is None or qty <= 0:
+        return None
+    per = intrinsic_per_share(row.get("option_type"), strike, close)
+    settlement = per * 100.0 * qty
+    if str(row.get("direction") or "") == "Sold":
+        settlement = -settlement
+    elif str(row.get("direction") or "") != "Bought":
+        return None
+    return round(cash - settlement, 2)
+
+
+def audit_verdict_frame(df):
+    """Replace a stored verdict dollar when the close price shows a bad ×100.
+
+    Rows with no close price keep the warehouse dollar, so existing
+    page fixtures are unchanged. When the close price is present, the
+    dollar is recomputed from the exit cash and the underlying close
+    on the expiry date. A second ×100 on that cash is removed first.
+    """
+    if df is None or getattr(df, "empty", True):
+        return df
+    if "close_price" not in df.columns and "fill_price" not in df.columns:
+        return df
+    out = df.copy()
+    deltas = []
+    worthless = []
+    contracts = []
+    for _, row in out.iterrows():
+        raw = row.to_dict()
+        price = raw.get("close_price")
+        if price is None or (isinstance(price, float) and pd.isna(price)):
+            price = raw.get("fill_price")
+        if price is None or (isinstance(price, float) and pd.isna(price)):
+            deltas.append(raw.get("early_close_vs_expiry_delta"))
+            worthless.append(raw.get("expired_worthless"))
+            contracts.append(raw.get("contracts"))
+            continue
+        fresh = early_close_delta(raw)
+        if fresh is None:
+            deltas.append(raw.get("early_close_vs_expiry_delta"))
+            worthless.append(raw.get("expired_worthless"))
+            contracts.append(raw.get("contracts"))
+            continue
+        from app.expiry_settlement import intrinsic_per_share
+        per = intrinsic_per_share(
+            raw.get("option_type"), raw.get("option_strike"),
+            raw.get("underlying_close_at_expiry"),
+        )
+        qty, _cash = normalize_option_multiplier(
+            raw.get("contracts"), price,
+            (_num(raw.get("cost_to_close")) or 0.0)
+            + (_num(raw.get("proceeds_from_close")) or 0.0),
+        )
+        deltas.append(fresh)
+        worthless.append(per <= 0)
+        contracts.append(qty if qty is not None else raw.get("contracts"))
+    out["early_close_vs_expiry_delta"] = deltas
+    if "expired_worthless" in out.columns:
+        out["expired_worthless"] = worthless
+    if "contracts" in out.columns:
+        out["contracts"] = contracts
+    return out
 
 
 def verdicts_landed(df, start, end):
@@ -631,8 +862,13 @@ def verdicts_landed(df, start, end):
     whose delta is the net vs holding every leg. A standalone option
     stays its own verdict — pairing two unrelated VICR-sized numbers as
     if they were independent trades is the failure this grouping stops.
+
+    When a row carries the per-share exit price, the dollar is recomputed
+    (×100 once, against the underlying close on the expiry date) before
+    the legs are grouped.
     """
     df = _prep(df)
+    df = audit_verdict_frame(df)
     if df.empty or "gradeable_early_close" not in df.columns:
         return []
     rows = df[df["gradeable_early_close"]
