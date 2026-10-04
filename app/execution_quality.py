@@ -443,7 +443,7 @@ def _verdict_action(row):
 
 
 def _verdict_money(v) -> str:
-    """$820 when the dollar is whole, $241.71 when it is not."""
+    """$820 when the dollar is whole, $24,171.17 when it is not."""
     try:
         n = float(v)
     except (TypeError, ValueError):
@@ -727,8 +727,11 @@ def normalize_option_multiplier(contracts, fill_price, cash):
 
     * Cash equals ``price × contracts × 100 × 100`` while the contract
       count itself is a real lot (under 100). Divide the cash by 100.
-      This is the MU $1100 case: one call sold for about $2.42 a share
-      was stored as $24,171 instead of $241.71.
+      That is a synthetic bad shape: one contract at about $2.42
+      stored as $24,171 instead of $241.71. The live MU $1100 call is
+      not this shape — 5 contracts sold at $48.35 for $24,171.17
+      (bought Sep 22 for $23,828.31, sold Sep 23, expired worthless).
+      That cash already is price × contracts × 100, and it stays.
     * Quantity is a share count (a multiple of 100) and the cash equals
       ``price × quantity`` with no ×100. The settlement must use
       ``quantity / 100`` contracts. The cash is already the dollar premium.

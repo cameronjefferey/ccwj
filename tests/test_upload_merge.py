@@ -2102,3 +2102,114 @@ def test_intraday_history_only_reruns_are_noop_when_no_new_fills(monkeypatch):
         [_entry()], commit_message="intraday 2",
     )
     assert ok2 and nc2 is True            # identical re-poll → no change → no build
+
+
+def test_asts_estimated_fee_close_collapses_onto_the_real_fill():
+    """8 opened, one real buy-to-close, one estimated-fee buy-to-close.
+
+    The order is 8 × $0.45, −$366.33, dated the day before, with
+    different OCC spacing. Price, date, and symbol spacing are why the
+    old key kept both. Closing quantity must stay 8, and the statement
+    amount must win.
+    """
+    tenant = "snaptrade:asts"
+    symbol_est = "ASTS  260918C00058000"
+    symbol_real = "ASTS260918C00058000"
+    df = pd.DataFrame([
+        _row(
+            "Schwab", 9, "09/10/2026", "Buy to Open", symbol_real,
+            8, 1.20, -966.0, tenant_id=tenant,
+            desc="Bought to open ASTS 58C",
+        ),
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol_est,
+            8, 0.45, -366.33, tenant_id=tenant,
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+        _row(
+            "Schwab", 9, "09/19/2026", "Buy to Close", symbol_real,
+            8, 0.22, -180.50, tenant_id=tenant,
+            desc="Bought to close ASTS 58C",
+        ),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    assert len(out) == 2
+    closes = out[out["Action"].str.lower().str.contains("close")]
+    assert len(closes) == 1
+    assert float(closes.iloc[0]["Amount"]) == -180.50
+    assert "est. fee" not in str(closes.iloc[0]["Description"]).lower()
+    opened = float(out[out["Action"].str.lower().str.contains("open")]["Quantity"].sum())
+    closed = float(closes["Quantity"].sum())
+    assert opened == 8
+    assert closed == 8
+
+
+def test_estimated_fee_shadow_keeps_a_lone_row_a_later_fill_and_other_accounts():
+    tenant = "snaptrade:asts"
+    symbol = "ASTS  260918C00058000"
+    lone = pd.DataFrame([
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            8, 0.45, -366.33, tenant_id=tenant,
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+    ])
+    assert len(_upload._dedup_history_rows(lone, HISTORY_SEED_COLUMNS)) == 1
+
+    same_day = pd.DataFrame([
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            8, 0.45, -366.33, tenant_id=tenant,
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            8, 0.22, -180.50, tenant_id=tenant,
+            desc="Bought to close ASTS 58C",
+        ),
+    ])
+    same = _upload._dedup_history_rows(same_day, HISTORY_SEED_COLUMNS)
+    assert len(same) == 1
+    assert float(same.iloc[0]["Amount"]) == -180.50
+
+    week = pd.DataFrame([
+        _row(
+            "Schwab", 9, "09/01/2026", "Buy to Close", symbol,
+            8, 0.45, -366.33, tenant_id=tenant,
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+        _row(
+            "Schwab", 9, "09/10/2026", "Buy to Close", symbol,
+            8, 0.22, -180.50, tenant_id=tenant,
+            desc="Bought to close ASTS 58C",
+        ),
+    ])
+    assert len(_upload._dedup_history_rows(week, HISTORY_SEED_COLUMNS)) == 2
+
+    other = pd.DataFrame([
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            8, 0.45, -366.33, tenant_id="snaptrade:a",
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            8, 0.22, -180.50, tenant_id="snaptrade:b",
+            desc="Bought to close ASTS 58C",
+        ),
+    ])
+    assert len(_upload._dedup_history_rows(other, HISTORY_SEED_COLUMNS)) == 2
+
+    sized = pd.DataFrame([
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            8, 0.45, -366.33, tenant_id=tenant,
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            800, 0.22, -180.50, tenant_id=tenant,
+            desc="Bought to close ASTS 58C",
+        ),
+    ])
+    assert len(_upload._dedup_history_rows(sized, HISTORY_SEED_COLUMNS)) == 2

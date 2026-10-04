@@ -63,11 +63,16 @@ def _money(val):
     return f"{'-' if n < 0 else ''}${abs(n):,.2f}"
 
 
-def _scope_params(bigquery, user_id, tenant_ids):
-    return [
+def _scope_params(bigquery, user_id, tenant_ids, week_start=None):
+    params = [
         bigquery.ScalarQueryParameter("user_id", "STRING", str(user_id)),
         bigquery.ArrayQueryParameter("tenant_ids", "STRING", list(tenant_ids)),
     ]
+    if week_start is not None:
+        params.append(
+            bigquery.ScalarQueryParameter("week_start", "DATE", week_start)
+        )
+    return params
 
 
 # ---------------------------------------------------------------------------
@@ -198,32 +203,90 @@ WHERE CAST(q.user_id AS STRING) = @user_id
 """
 
 
-def _build_weekly_verdicts(client, bigquery, user_id, tenant_ids):
+def _verdicts_sql_for_week(week_start):
+    """Saturday's cron keeps the last-7-days filter. A preview week pins expiry."""
+    if week_start is None:
+        return _VERDICTS_SQL
+    import re
+    updated, n = re.subn(
+        r"q\.option_expiry BETWEEN DATE_SUB\(CURRENT_DATE\(\), INTERVAL 6 DAY\)\s+"
+        r"AND CURRENT_DATE\(\)",
+        "q.option_expiry BETWEEN @week_start "
+        "AND DATE_ADD(@week_start, INTERVAL 6 DAY)",
+        _VERDICTS_SQL,
+        count=1,
+    )
+    if n != 1:
+        raise RuntimeError("verdict expiry filter drifted")
+    return updated
+
+
+def _sql_for_week(sql, week_start):
+    """Pin the ISO week. ``None`` returns the cron SQL unchanged."""
+    if week_start is None:
+        return sql
+    old = (
+        f"SELECT MAX(week_start) AS week_start\n"
+        f"    FROM `{_PROJECT}.mart_weekly_summary`\n"
+        f"    WHERE CAST(user_id AS STRING) = @user_id\n"
+        f"      AND tenant_id IN UNNEST(@tenant_ids)"
+    )
+    if old not in sql:
+        raise RuntimeError("weekly bounds CTE drifted")
+    return sql.replace(old, "SELECT @week_start AS week_start", 1)
+
+
+def _bounds_sql_for_week(week_start):
+    if week_start is None:
+        return _WEEK_BOUNDS_SQL
+    return f"""
+SELECT @week_start AS week_start,
+       (
+           SELECT COALESCE(SUM(dividends_amount), 0)
+           FROM `{_PROJECT}.mart_weekly_summary`
+           WHERE CAST(user_id AS STRING) = @user_id
+             AND tenant_id IN UNNEST(@tenant_ids)
+             AND week_start = @week_start
+       ) AS dividends_amount
+"""
+
+
+def _build_weekly_verdicts(client, bigquery, user_id, tenant_ids, week_start=None):
     """[{symbol, sentence, delta}] for verdicts that landed this week, or []
     (including on any error — a missing section, never a crashed digest)."""
     import pandas as pd
     from app.execution_quality import verdicts_landed
+    if week_start is None:
+        start = date.today() - timedelta(days=6)
+        end = date.today()
+    else:
+        start = week_start
+        end = week_start + timedelta(days=6)
     try:
         cfg = bigquery.QueryJobConfig(
-            query_parameters=_scope_params(bigquery, user_id, tenant_ids))
-        rows = [dict(r) for r in client.query(_VERDICTS_SQL, job_config=cfg).result()]
+            query_parameters=_scope_params(
+                bigquery, user_id, tenant_ids, week_start))
+        rows = [
+            dict(r) for r in client.query(
+                _verdicts_sql_for_week(week_start), job_config=cfg,
+            ).result()
+        ]
         if not rows:
             return []
-        return verdicts_landed(
-            pd.DataFrame(rows),
-            date.today() - timedelta(days=6), date.today())
+        return verdicts_landed(pd.DataFrame(rows), start, end)
     except Exception as exc:
         print(f"User {user_id}: weekly verdicts query failed: {exc}", file=sys.stderr)
         return []
 
 
-def _query_rows(client, bigquery, sql, user_id, tenant_ids):
+def _query_rows(client, bigquery, sql, user_id, tenant_ids, week_start=None):
+    pinned = week_start if week_start is not None and "@week_start" in sql else None
     cfg = bigquery.QueryJobConfig(
-        query_parameters=_scope_params(bigquery, user_id, tenant_ids))
+        query_parameters=_scope_params(bigquery, user_id, tenant_ids, pinned))
     return [dict(r) for r in client.query(sql, job_config=cfg).result()]
 
 
-def _build_weekly_summary(client, bigquery, user_id, tenant_ids):
+def _build_weekly_summary(client, bigquery, user_id, tenant_ids, week_start=None):
     """One summary for the user's most recent ISO week, or None.
 
     Net return is grouped closed-trade realized P&L. Dividends are
@@ -239,30 +302,33 @@ def _build_weekly_summary(client, bigquery, user_id, tenant_ids):
         week_end,
     )
 
-    bounds = _query_rows(client, bigquery, _WEEK_BOUNDS_SQL, user_id, tenant_ids)
+    bounds = _query_rows(
+        client, bigquery, _bounds_sql_for_week(week_start),
+        user_id, tenant_ids, week_start)
     if not bounds or bounds[0].get("week_start") is None:
         return None
-    week_start = bounds[0]["week_start"]
+    resolved_start = bounds[0]["week_start"]
     dividends = float(bounds[0].get("dividends_amount") or 0)
-    end = week_end(week_start)
+    end = week_end(resolved_start)
 
     fills = _query_rows(
-        client, bigquery, _WEEK_OPTION_FILLS_SQL, user_id, tenant_ids)
+        client, bigquery, _sql_for_week(_WEEK_OPTION_FILLS_SQL, week_start),
+        user_id, tenant_ids, week_start)
     equity = _query_rows(
-        client, bigquery, _WEEK_EQUITY_SQL, user_id, tenant_ids)
-    trades = grouped_option_trades(pd.DataFrame(fills), week_start, end)
+        client, bigquery, _sql_for_week(_WEEK_EQUITY_SQL, week_start),
+        user_id, tenant_ids, week_start)
+    trades = grouped_option_trades(pd.DataFrame(fills), resolved_start, end)
     trades.extend(equity_closed_trades(equity))
     summary = summarize_closed_trades(
-        trades, dividends=dividends, week_start=week_start)
+        trades, dividends=dividends, week_start=resolved_start)
     summary["verdicts"] = _build_weekly_verdicts(
-        client, bigquery, user_id, tenant_ids)
+        client, bigquery, user_id, tenant_ids, week_start=week_start)
     return summary
 
 
 def run_weekly_summary(client, bigquery):
     from app.email import send_weekly_summary_email, app_base_url
     from app.models import (
-        get_tenant_ids_for_user,
         list_email_recipients_for_kind,
         record_email_send,
     )
@@ -270,20 +336,10 @@ def run_weekly_summary(client, bigquery):
     sent = skipped = empty = 0
     for rec in list_email_recipients_for_kind("weekly_summary"):
         user_id = rec["user_id"]
-        tenant_ids = get_tenant_ids_for_user(user_id)
-        if not tenant_ids:
-            empty += 1
-            continue
-        # Alpaca Paper is practice money. Drop it from a mixed book so
-        # the digest matches Overview. A paper-only user still gets the
-        # paper week.
-        try:
-            from app.models import get_broker_tenants_for_user
-            from app.weekly_digest import scope_digest_tenants
-            tenant_ids = scope_digest_tenants(
-                tenant_ids, get_broker_tenants_for_user(user_id))
-        except Exception as exc:
-            print(f"User {user_id}: paper scope skipped: {exc}", file=sys.stderr)
+        # Paper is practice money, including a paper-only book. A lookup
+        # error returns no tenants so the unfiltered book is not mailed.
+        from app.weekly_digest import digest_tenants_for_user
+        tenant_ids = digest_tenants_for_user(user_id)
         if not tenant_ids:
             empty += 1
             continue
@@ -314,6 +370,47 @@ def run_weekly_summary(client, bigquery):
         sent += 1
         print(f"User {user_id}: weekly_summary sent to {rec['email']}")
     print(f"weekly_summary: {sent} sent, {skipped} already-sent, {empty} no-data")
+
+
+def render_weekly_digest_html(
+    client, bigquery, user_id, tenant_ids, username, week_start,
+):
+    """Digest HTML for one user and ISO week. Does not send or record a send."""
+    from html import escape
+
+    from app.email import app_base_url, build_weekly_summary_email
+
+    summary = None
+    if tenant_ids:
+        summary = _build_weekly_summary(
+            client, bigquery, user_id, tenant_ids, week_start=week_start,
+        )
+    quiet = (
+        not summary
+        or (
+            not summary.get("trades_closed")
+            and not summary.get("dividends")
+            and not summary.get("verdicts")
+        )
+    )
+    if quiet:
+        label = f"{week_start.strftime('%b')} {week_start.day}"
+        safe_user = escape(str(username or ""))
+        return (
+            "<!doctype html><html><body style=\"background:#0a0e17;color:#e8eaed;"
+            "font-family:sans-serif;padding:32px;\">"
+            f"<p>No closed trades on a real brokerage for {safe_user} "
+            f"in the week of {escape(label)}.</p>"
+            "<p>Paper accounts are left out of this digest.</p>"
+            "</body></html>"
+        )
+    _subject, _body, html = build_weekly_summary_email(
+        username=username,
+        summary=summary,
+        dashboard_url=f"{app_base_url()}/overview",
+        unsubscribe_url=f"{app_base_url()}/email/unsubscribe/preview",
+    )
+    return html
 
 
 # ---------------------------------------------------------------------------

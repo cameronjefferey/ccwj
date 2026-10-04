@@ -21,6 +21,8 @@ from app.execution_quality import (
     verdicts_landed,
 )
 from app.weekly_digest import (
+    digest_tenants_for_user,
+    digest_trade_label,
     equity_closed_trades,
     grouped_option_trades,
     scope_digest_tenants,
@@ -86,7 +88,7 @@ def test_net_return_is_realized_trades_and_dividends_stay_separate():
     assert summary["net_return"] != round(-721.08 + 175.65, 2)
 
 
-def test_paper_is_dropped_from_a_mixed_book_and_kept_when_alone():
+def test_paper_is_left_out_even_when_it_is_the_only_account():
     rows = [
         {
             "tenant_id": "snaptrade:real",
@@ -104,7 +106,53 @@ def test_paper_is_dropped_from_a_mixed_book_and_kept_when_alone():
     )
     assert mixed == ["snaptrade:real"]
     paper_only = scope_digest_tenants(["snaptrade:paper"], rows)
-    assert paper_only == ["snaptrade:paper"]
+    assert paper_only == []
+    # No broker row means we cannot prove the account is real.
+    assert scope_digest_tenants(["snaptrade:mystery"], rows) == []
+
+
+def test_paper_lookup_error_returns_no_tenants(monkeypatch):
+    def _boom(_user_id):
+        raise RuntimeError("broker lookup failed")
+
+    monkeypatch.setattr("app.models.get_tenant_ids_for_user", _boom)
+    assert digest_tenants_for_user(9) == []
+
+
+def test_single_leg_label_does_not_repeat_the_symbol():
+    assert digest_trade_label("MU", "1× MU 1000C", 3267) == "MU 1× 1000C +$3,267.00"
+    assert "MU 1× MU" not in digest_trade_label("MU", "1× MU 1000C", 1)
+    assert digest_trade_label(
+        "SPXW", "10× 7730/7735C spread", 975.56, expired=True,
+    ) == "SPXW 10× 7730/7735C spread (expired) +$975.56"
+    fills = pd.DataFrame([
+        {
+            "tenant_id": "snaptrade:sara",
+            "account": "Sara",
+            "trade_date": date(2026, 9, 22),
+            "action": "option_buy_to_open",
+            "trade_symbol": "MU    261002C01000000",
+            "quantity": 1,
+            "price": 32.67,
+            "fees": 0,
+            "amount": -3267.0,
+        },
+        {
+            "tenant_id": "snaptrade:sara",
+            "account": "Sara",
+            "trade_date": date(2026, 9, 30),
+            "action": "option_sell_to_close",
+            "trade_symbol": "MU    261002C01000000",
+            "quantity": 1,
+            "price": 32.67,
+            "fees": 0,
+            "amount": 3267.0,
+        },
+    ])
+    trades = grouped_option_trades(fills, WEEK, WEEK_END)
+    assert len(trades) == 1
+    assert trades[0]["label"].startswith("MU 1× 1000C")
+    assert "MU 1× MU" not in trades[0]["label"]
 
 
 def _verdict(**kw):
@@ -133,19 +181,42 @@ def _verdict(**kw):
     return base
 
 
-def test_one_contract_cash_is_not_multiplied_by_100_twice():
-    """1 × $2.4171 × 100 = $241.71. Storing $24,171 applied the 100 again.
+def test_double_times_100_cash_is_divided_once():
+    """1 × $2.4171 × 100 = $241.71. Cash of $24,171 is that premium × 100 again.
 
-    MU's $1100 call expired worthless: the close was $1,074.89, under
-    the strike. The verdict dollar is the sale, not a settlement.
+    This is a synthetic bad shape on a made-up symbol. The live MU
+    $1100 call is 5 contracts at $48.35, tested below.
     """
     qty, cash = normalize_option_multiplier(1, 2.4171, 24171.0)
     assert qty == 1
     assert cash == 241.71
     delta = early_close_delta(_verdict(
-        proceeds_from_close=24171.0, close_price=2.4171,
+        symbol="XYZ",
+        trade_symbol="XYZ   261002C01100000",
+        proceeds_from_close=24171.0,
+        close_price=2.4171,
+        contracts=1,
     ))
     assert delta == 241.71
+
+
+def test_mu_1100_five_contracts_at_48_35_stays_24171():
+    """5 × $48.35 × 100 = $24,175. The fill is $24,171.17 after a few dollars of fees.
+
+    Bought Sep 22 for $23,828.31, sold Sep 23, expired worthless
+    (MU closed at $1,074.89, under $1,100). The ×100 guard must leave
+    this dollar alone.
+    """
+    qty, cash = normalize_option_multiplier(5, 48.35, 24171.17)
+    assert qty == 5
+    assert cash == 24171.17
+    delta = early_close_delta(_verdict(
+        contracts=5,
+        proceeds_from_close=24171.17,
+        close_price=48.35,
+        early_close_vs_expiry_delta=24171.17,
+    ))
+    assert delta == 24171.17
 
 
 def test_ten_contracts_at_24_dollars_stay_24171():
@@ -219,8 +290,10 @@ def test_mu_1000_and_be_match_the_expiry_close():
 def test_verdicts_phrase_the_audited_dollars_and_group_a_spread():
     rows = [
         _verdict(
-            proceeds_from_close=24171.0,
-            close_price=2.4171,
+            contracts=5,
+            proceeds_from_close=24171.17,
+            close_price=48.35,
+            early_close_vs_expiry_delta=24171.17,
         ),
         _verdict(
             option_strike=1000.0,
@@ -274,12 +347,12 @@ def test_verdicts_phrase_the_audited_dollars_and_group_a_spread():
 
     texts = " ".join(v["sentence"] for v in landed)
     assert "10,780.90" not in texts
-    # The $1100 call's $24,171 was the sale with the 100 applied twice.
+    # 5 × $48.35, sold for $24,171.17, expired worthless.
     sold = next(v for v in landed if "1100" in v["sentence"] or "$1100" in v["sentence"])
-    assert sold["delta"] == 241.71
+    assert sold["delta"] == 24171.17
     assert "expired worthless" in sold["sentence"]
-    assert "beat holding by $241.71" in sold["sentence"]
-    assert "$24,171" not in sold["sentence"]
+    assert "beat holding by $24,171.17" in sold["sentence"]
+    assert "$241.71" not in sold["sentence"]
 
     held = next(v for v in landed if "$1000" in v["sentence"])
     assert held["delta"] == -4222.0
@@ -304,7 +377,12 @@ def test_rendered_weekly_email_uses_grouped_labels(monkeypatch, tmp_path):
         _spxw_trades(), dividends=175.65, week_start=WEEK,
     )
     summary["verdicts"] = verdicts_landed(pd.DataFrame([
-        _verdict(proceeds_from_close=24171.0, close_price=2.4171),
+        _verdict(
+            contracts=5,
+            proceeds_from_close=24171.17,
+            close_price=48.35,
+            early_close_vs_expiry_delta=24171.17,
+        ),
         _verdict(
             option_strike=1000.0,
             trade_symbol="MU    261002C01000000",
@@ -347,11 +425,135 @@ def test_rendered_weekly_email_uses_grouped_labels(monkeypatch, tmp_path):
     assert "SPXW 10× 7650/7655C spread -$3,574.44" in html
     assert "$10,780.90" not in html
     assert "$8,903.10" not in html
-    assert "beat holding by $241.71" in html
+    assert "beat holding by $24,171.17" in html
     assert "would have been $4,222 better" in html
     assert "gave up $290" in html
-    assert "$24,171" not in html
+    assert "$241.71" not in html
     out = Path("/tmp/weekly_digest_preview.html")
     out.write_text(html, encoding="utf-8")
     preview = tmp_path / "weekly_digest_preview.html"
     preview.write_text(html, encoding="utf-8")
+
+
+def test_preview_week_pins_sql_and_cron_sql_stays():
+    from app.email_digests_cli import (
+        _VERDICTS_SQL,
+        _WEEK_EQUITY_SQL,
+        _WEEK_OPTION_FILLS_SQL,
+        _sql_for_week,
+        _verdicts_sql_for_week,
+    )
+
+    assert _sql_for_week(_WEEK_OPTION_FILLS_SQL, None) == _WEEK_OPTION_FILLS_SQL
+    for sql in (_WEEK_OPTION_FILLS_SQL, _WEEK_EQUITY_SQL):
+        pinned = _sql_for_week(sql, WEEK)
+        assert "SELECT @week_start AS week_start" in pinned
+        assert "MAX(week_start)" not in pinned
+    assert _verdicts_sql_for_week(None) == _VERDICTS_SQL
+    week_sql = _verdicts_sql_for_week(WEEK)
+    assert "DATE_ADD(@week_start, INTERVAL 6 DAY)" in week_sql
+    assert "DATE_SUB(CURRENT_DATE()" not in week_sql
+
+
+def test_preview_html_does_not_send(monkeypatch):
+    from app.email_digests_cli import render_weekly_digest_html
+
+    def _no(**_kwargs):
+        raise AssertionError("sent")
+
+    monkeypatch.setattr("app.email.send_email", _no)
+    quiet = render_weekly_digest_html(None, None, 1, [], "ada", WEEK)
+    assert "Paper accounts are left out" in quiet
+    assert "ada" in quiet
+    monkeypatch.setattr(
+        "app.email_digests_cli._build_weekly_summary",
+        lambda *_a, **_k: {
+            "week_label": "week of Sep 28",
+            "week_start": WEEK,
+            "total_return": -821.08,
+            "trades_closed": 1,
+            "num_winners": 0,
+            "num_losers": 1,
+            "best_label": None,
+            "worst_label": "MU 1× 1000C -$1.00",
+            "verdicts": [],
+            "dividends": 0,
+        },
+    )
+    html = render_weekly_digest_html(
+        object(), object(), 1, ["snaptrade:real"], "ada", WEEK,
+    )
+    assert "week of Sep 28" in html
+    assert "-$821.08" in html
+
+
+def test_admin_digest_preview_renders_without_sending(monkeypatch):
+    from app import app
+    from app.models import User
+
+    class _User:
+        is_authenticated = True
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "cameron"
+
+        def get_id(self):
+            return "7"
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda uid: _User()))
+    monkeypatch.setenv("ADMIN_USERS", "cameron")
+    sent = []
+    monkeypatch.setattr("app.email.send_email", lambda **k: sent.append(k))
+    seen = {}
+
+    def _render(_client, _bigquery, user_id, tenant_ids, username, week_start):
+        seen.update(
+            user_id=user_id,
+            tenant_ids=list(tenant_ids),
+            username=username,
+            week=week_start,
+        )
+        return "<html>digest preview</html>"
+
+    monkeypatch.setattr("app.email_digests_cli.render_weekly_digest_html", _render)
+    monkeypatch.setattr("app.bigquery_client.get_bigquery_client", lambda: object())
+    monkeypatch.setattr(
+        "app.weekly_digest.digest_tenants_for_user",
+        lambda _user_id: ["snaptrade:real"],
+    )
+    target = _User()
+    target.username = "testingcameron"
+    target.id = 3
+    monkeypatch.setattr(
+        User,
+        "get_by_username",
+        staticmethod(lambda name: target if name == "testingcameron" else None),
+    )
+    client = app.test_client()
+    anon = client.get("/admin/digest-preview?user=testingcameron&week=2026-10-02")
+    assert anon.status_code in (302, 303, 401)
+
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "7"
+        sess["_fresh"] = True
+
+    class _NotAdmin(_User):
+        username = "alice"
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda uid: _NotAdmin()))
+    hidden = client.get("/admin/digest-preview?user=testingcameron&week=2026-10-02")
+    assert hidden.status_code == 404
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda uid: _User()))
+    bad = client.get("/admin/digest-preview?user=testingcameron&week=not-a-date")
+    assert bad.status_code == 400
+    missing = client.get("/admin/digest-preview?user=nobody&week=2026-10-02")
+    assert missing.status_code == 404
+    ok = client.get("/admin/digest-preview?user=testingcameron&week=2026-10-02")
+    assert ok.status_code == 200
+    assert b"digest preview" in ok.data
+    assert seen["week"] == date(2026, 9, 28)
+    assert seen["username"] == "testingcameron"
+    assert seen["tenant_ids"] == ["snaptrade:real"]
+    assert sent == []

@@ -10,15 +10,18 @@ That sum is the same number as Overview's "Trades this week" realized
 total (each closed leg's ``total_pnl``) once the two legs of a spread
 are added together instead of ranked on their own.
 
-Paper / Alpaca Paper accounts are left out of a mixed book, the same
-way Overview drops them. A paper-only book stays paper.
+Paper / Alpaca Paper accounts are left out, including a paper-only
+book. A paper week is not mailed as a real result. If the paper
+lookup fails, the send is skipped.
 """
 
 from __future__ import annotations
 
+import re
+import sys
 from datetime import date, timedelta
 
-from app.paper_accounts import drop_paper_from_mixed_book, is_paper_row
+from app.paper_accounts import is_paper_row
 
 
 def signed_money(val) -> str:
@@ -35,19 +38,78 @@ def signed_money(val) -> str:
 
 
 def scope_digest_tenants(tenant_ids, broker_rows):
-    """Tenant ids for one digest, with paper removed from a mixed book.
+    """Real-brokerage tenant ids for one digest.
 
     ``broker_rows`` are this user's ``broker_tenants`` rows (account
     name, broker label, nickname). Paper is matched on those labels,
     not on the warehouse broker slug — Alpaca Paper and live Alpaca
-    share the slug ``alpaca``.
+    share the slug ``alpaca``. Paper is left out even when it is the
+    only account. An id with no broker row is left out too: we cannot
+    tell that it is not paper.
     """
     rows_by_id = {}
     for row in broker_rows or []:
         tid = str((row or {}).get("tenant_id") or "").strip()
         if tid:
             rows_by_id[tid] = row
-    return drop_paper_from_mixed_book(list(tenant_ids or []), rows_by_id)
+    kept = []
+    seen = set()
+    for tid in tenant_ids or []:
+        key = str(tid or "").strip()
+        row = rows_by_id.get(key)
+        if not key or key in seen or row is None or is_paper_row(row):
+            continue
+        seen.add(key)
+        kept.append(key)
+    return kept
+
+
+def digest_tenants_for_user(user_id) -> list:
+    """Tenants for this user's digest. Paper is excluded.
+
+    A paper-only user gets an empty list, so the send is skipped.
+    If the lookup fails, return [] — do not send the unfiltered book.
+    """
+    try:
+        from app.models import get_broker_tenants_for_user, get_tenant_ids_for_user
+        return scope_digest_tenants(
+            get_tenant_ids_for_user(user_id),
+            get_broker_tenants_for_user(user_id),
+        )
+    except Exception as exc:
+        print(
+            f"User {user_id}: paper scope failed closed: {exc}",
+            file=sys.stderr,
+        )
+        return []
+
+
+def _strip_repeated_root(symbol, detail) -> str:
+    """``1× MU 1000C`` → ``1× 1000C``. A spread chip has no inner root."""
+    text = " ".join(str(detail or "").split())
+    root = str(symbol or "").strip()
+    if not text or not root:
+        return text
+    pattern = re.compile(
+        rf"^(\d+(?:\.\d+)?×)\s+{re.escape(root)}\s+",
+        re.IGNORECASE,
+    )
+    parts = [pattern.sub(r"\1 ", part.strip()) for part in text.split(" · ")]
+    return " · ".join(parts)
+
+
+def digest_trade_label(symbol, detail, pnl, *, expired=False) -> str:
+    """``MU 1× 1000C +$1.00``. The symbol is not written twice.
+
+    A spread chip is already ``10× 7730/7735C spread``, so the symbol
+    stays in front. A single leg's chip is ``1× MU 1000C``; prefixing
+    the symbol again would read ``MU 1× MU 1000C``.
+    """
+    chip = _strip_repeated_root(symbol, detail)
+    base = f"{symbol} {chip}".strip()
+    if expired:
+        base += " (expired)"
+    return f"{base} {signed_money(pnl)}"
 
 
 def _as_date(value):
@@ -230,13 +292,10 @@ def grouped_option_trades(fills, week_start, week_end):
         if not detail:
             continue
         expired = status == "Expired"
-        base = f"{symbol} {detail}"
-        if expired:
-            base += " (expired)"
         trades.append({
             "symbol": symbol,
             "detail": detail,
-            "label": f"{base} {signed_money(pnl)}",
+            "label": digest_trade_label(symbol, detail, pnl, expired=expired),
             "pnl": pnl,
             "expired": expired,
             "kind": "option",

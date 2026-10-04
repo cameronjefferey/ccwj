@@ -436,6 +436,54 @@ dated as (
     )
 ),
 
+-- An estimated-fee order fill and the later statement for the same
+-- close do not share price or date. ASTS 58C: the order is 8 × $0.45,
+-- −$366.33, description contains "est. fee"; the statement is the
+-- same buy-to-close of 8, a different price, often the next day.
+-- Quantity, action, and tenant already match — those are not why the
+-- pair survives. fill_ranked keys price@4dp, the raw symbol text, and
+-- the exact trade_date, so both rows stay and the close quantity
+-- doubles (8 opened, 16 closed, about −$529.93 instead of −$163.60).
+-- Drop the estimate when a real fill of the same contract, action,
+-- and quantity exists within one day. The statement amount wins.
+-- Price and OCC spacing are ignored. A lone estimate stays. A fill
+-- a week later is a different trade. ``_drop_estimated_fee_shadows``
+-- in app/upload.py is the same rule for the next sync.
+est_fee_shadow as (
+    select
+        d.*,
+        coalesce(
+            regexp_contains(lower(coalesce(d.description, '')), r'est\. fee')
+            and d.tenant_id is not null
+            and d.underlying_symbol is not null
+            and d.option_expiry is not null
+            and d.option_strike is not null
+            and d.option_type is not null
+            and d.quantity is not null
+            and d.trade_date is not null
+            and exists (
+                select 1
+                from dated r
+                where r.tenant_id = d.tenant_id
+                  and not regexp_contains(
+                      lower(coalesce(r.description, '')), r'est\. fee'
+                  )
+                  and r.underlying_symbol = d.underlying_symbol
+                  and r.option_expiry = d.option_expiry
+                  and r.option_strike is not null
+                  and abs(r.option_strike - d.option_strike) < 0.001
+                  and r.option_type = d.option_type
+                  and r.action = d.action
+                  and r.quantity is not null
+                  and abs(abs(r.quantity) - abs(d.quantity)) < 0.0001
+                  and r.trade_date is not null
+                  and abs(date_diff(r.trade_date, d.trade_date, day)) <= 1
+            ),
+            false
+        ) as drop_est_fee_shadow
+    from dated d
+),
+
 -- Capping a posting date at expiry (or reading "as of") can land an
 -- order fill and its later activity on the same check-2 grain:
 -- (tenant, trade_date, action, trade_symbol, quantity, price@4dp).
@@ -443,10 +491,12 @@ dated as (
 -- -42.92 and -42.12. The raw dates still differ, so upload dedup keeps
 -- both (rewriting the seed date is what inserted the twin). Collapse
 -- here, after the date rewrite. Blank-price rows stay put — distinct
--- expiries share an empty Symbol and must not fuse.
+-- expiries share an empty Symbol and must not fuse. Estimated-fee
+-- shadows (different price or a one-day posting lag) are already
+-- flagged and left out of this rank.
 fill_ranked as (
     select
-        d.*,
+        d.* except (drop_est_fee_shadow),
         row_number() over (
             -- BigQuery rejects FLOAT64 in a window PARTITION BY
             -- (run 37091190523: "Partitioning by expressions of type
@@ -464,9 +514,10 @@ fill_ranked as (
                 abs(d.amount) asc,
                 d.amount asc
         ) as _fill_rank
-    from dated d
+    from est_fee_shadow d
     where d.trade_symbol is not null
       and d.price is not null
+      and not d.drop_est_fee_shadow
 ),
 
 history_rows as (
@@ -476,10 +527,10 @@ history_rows as (
 
     union all
 
-    select *
-    from dated
-    where trade_symbol is null
-       or price is null
+    select * except (drop_est_fee_shadow)
+    from est_fee_shadow
+    where (trade_symbol is null or price is null)
+      and not drop_est_fee_shadow
 )
 
 select

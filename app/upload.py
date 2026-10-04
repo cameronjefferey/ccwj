@@ -1028,6 +1028,154 @@ def _safe_fee_amount(value) -> float:
         return 0.0
 
 
+def _occ_contract_key(symbol):
+    """Root, expiry, call/put, and strike. Spacing in the OCC text is ignored."""
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(symbol)
+    if not parsed:
+        return None
+    try:
+        strike = round(float(parsed["strike"]), 4)
+    except (TypeError, ValueError):
+        return None
+    return (
+        str(parsed["root"]).upper(),
+        str(parsed["yy"]),
+        int(parsed["mm"]),
+        int(parsed["dd"]),
+        str(parsed["cp"]).upper(),
+        strike,
+    )
+
+
+def _history_cell(df, *names):
+    wanted = {name.lower() for name in names}
+    for col in df.columns:
+        if str(col).lower() in wanted:
+            return col
+    return None
+
+
+def _history_qty(value):
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    text = str(value).strip().replace(",", "").replace("$", "")
+    if not text or text.lower() in ("nan", "none"):
+        return None
+    try:
+        return abs(float(text))
+    except ValueError:
+        return None
+
+
+def _history_day(value):
+    posted = _canonicalize_date_mdy(value)
+    if not posted:
+        return None
+    try:
+        return datetime.strptime(posted, "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def _history_tenant(value):
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except TypeError:
+        pass
+    text = str(value).strip()
+    if text.lower() in ("", "nan", "none"):
+        return ""
+    return text
+
+
+def _drop_estimated_fee_shadows(df):
+    """Drop an estimated-fee order fill when the statement fill is already here.
+
+    ASTS 58C: the order row is 8 contracts at $0.45, amount −$366.33,
+    description contains ``est. fee``. The statement is the same
+    buy-to-close of 8, a different price, often the next calendar day.
+    Cross-source dedup keys the exact date, the raw symbol text, and
+    price at 4 decimals, so that pair stays. Closing quantity then
+    reads 16 against 8 opened (−$529.93 instead of about −$163.60).
+
+    Quantity, action, and tenant already match. Those are not the
+    escape. Price and the posting date are. Match the contract
+    (root, expiry, strike, type), the action, and the quantity, with
+    dates within one day. Ignore price and OCC spacing. The statement
+    row wins; its amount and description are left as the broker wrote
+    them. A lone estimate stays until the statement arrives. A fill a
+    week later is a different trade and is kept.
+    """
+    if df is None or getattr(df, "empty", True) or "Description" not in df.columns:
+        return df
+    tenant_col = _history_cell(df, "tenant_id")
+    action_col = _history_cell(df, "action")
+    symbol_col = _history_cell(df, "symbol")
+    qty_col = _history_cell(df, "quantity")
+    date_col = _history_cell(df, "date")
+    if not all([tenant_col, action_col, symbol_col, qty_col, date_col]):
+        return df
+
+    df = df.reset_index(drop=True)
+    parsed = []
+    for i in range(len(df)):
+        desc = str(df.at[i, "Description"] or "")
+        parsed.append({
+            "i": i,
+            "est": _ESTIMATED_FEE_MARK in desc.lower(),
+            "tenant": _history_tenant(df.at[i, tenant_col]),
+            "action": _normalize_history_action(df.at[i, action_col]),
+            "qty": _history_qty(df.at[i, qty_col]),
+            "day": _history_day(df.at[i, date_col]),
+            "contract": _occ_contract_key(df.at[i, symbol_col]),
+        })
+    reals = [
+        row for row in parsed
+        if not row["est"]
+        and row["tenant"]
+        and row["contract"]
+        and row["qty"] is not None
+        and row["day"] is not None
+    ]
+    drop = set()
+    for est in parsed:
+        if (
+            not est["est"]
+            or not est["tenant"]
+            or not est["contract"]
+            or est["qty"] is None
+            or est["day"] is None
+        ):
+            continue
+        for real in reals:
+            if real["tenant"] != est["tenant"]:
+                continue
+            if real["contract"] != est["contract"]:
+                continue
+            if real["action"] != est["action"]:
+                continue
+            if abs(real["qty"] - est["qty"]) >= 1e-4:
+                continue
+            if abs((real["day"] - est["day"]).days) > 1:
+                continue
+            drop.add(est["i"])
+            break
+    if not drop:
+        return df
+    keep = [i not in drop for i in range(len(df))]
+    return df.loc[keep].reset_index(drop=True)
+
+
 def _dedup_history_rows(df, seed_columns):
     """Collapse byte-different but value-identical history rows.
 
@@ -1322,10 +1470,10 @@ def _dedup_history_rows(df, seed_columns):
             drop4.add(pos)
         else:
             seen4.add(key4)
-    if not drop4:
-        return df
-    keep_mask4 = [i not in drop4 for i in range(len(df))]
-    return df.loc[keep_mask4].reset_index(drop=True)
+    if drop4:
+        keep_mask4 = [i not in drop4 for i in range(len(df))]
+        df = df.loc[keep_mask4].reset_index(drop=True)
+    return _drop_estimated_fee_shadows(df)
 
 
 # Sentinel so ``_merge_seed_with_existing`` can tell "fetch the file from
