@@ -1212,8 +1212,9 @@ def _drop_estimated_fee_shadows(df):
       no later order fill at a different premium exists.
 
     A lone estimate stays until the statement arrives. A fill a week
-    later is a different trade and is kept. The same predicate is the
-    ``est_fee_shadow`` CTE in ``stg_history``.
+    later is a different trade and is kept. The same predicate is
+    ``est_fee_matched`` in ``stg_history`` (joins, not a nested
+    EXISTS — BigQuery will not decorrelate that).
     """
     if df is None or getattr(df, "empty", True) or "Description" not in df.columns:
         return df
