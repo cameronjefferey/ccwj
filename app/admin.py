@@ -92,6 +92,45 @@ def admin_overview():
     )
 
 
+@app.route("/admin/digest-preview")
+@_admin_only
+def admin_digest_preview():
+    """Render one user's weekly digest. Does not send it.
+
+    ``?user=<username>&week=YYYY-MM-DD``. The date snaps to that ISO
+    Monday. Paper accounts are left out. A missing user is 404. A bad
+    week is 400.
+    """
+    from datetime import date, timedelta
+
+    username = (request.args.get("user") or "").strip()
+    week_raw = (request.args.get("week") or "").strip()
+    if not username or not week_raw:
+        abort(400)
+    try:
+        day = date.fromisoformat(week_raw[:10])
+    except ValueError:
+        abort(400)
+    week_start = day - timedelta(days=day.weekday())
+    target = User.get_by_username(username)
+    if target is None:
+        abort(404)
+    from app.bigquery_client import get_bigquery_client
+    from app.email_digests_cli import render_weekly_digest_html
+    from app.weekly_digest import digest_tenants_for_user
+    from google.cloud import bigquery
+
+    html = render_weekly_digest_html(
+        get_bigquery_client(),
+        bigquery,
+        target.id,
+        digest_tenants_for_user(target.id),
+        target.username,
+        week_start,
+    )
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
 @app.route("/admin/analytics")
 @_admin_only
 def admin_analytics():

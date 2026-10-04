@@ -516,15 +516,14 @@ def send_data_ready_email(
 # ---------------------------------------------------------------------------
 
 
-def send_weekly_summary_email(
+def build_weekly_summary_email(
     *,
-    to: str,
     username: str,
     summary: Mapping,
     dashboard_url: str,
     unsubscribe_url: str,
-) -> None:
-    """Weekly recap of how the trader's week went.
+) -> tuple:
+    """Subject, plain body, and HTML for the weekly recap. Does not send.
 
     ``summary`` keys (all optional; missing → omitted from the email):
       week_label, total_return (realized closed trades; dividends are
@@ -612,6 +611,24 @@ def send_weekly_summary_email(
             f'style="background:{_ACCENT};color:#fff;text-decoration:none;padding:12px 22px;'
             'border-radius:8px;font-weight:600;display:inline-block;">See the full breakdown</a></p>'
         ),
+        unsubscribe_url=unsubscribe_url,
+    )
+    return subject, body, html_body
+
+
+def send_weekly_summary_email(
+    *,
+    to: str,
+    username: str,
+    summary: Mapping,
+    dashboard_url: str,
+    unsubscribe_url: str,
+) -> None:
+    """Send the weekly recap. The HTML is ``build_weekly_summary_email``."""
+    subject, body, html_body = build_weekly_summary_email(
+        username=username,
+        summary=summary,
+        dashboard_url=dashboard_url,
         unsubscribe_url=unsubscribe_url,
     )
     send_email(

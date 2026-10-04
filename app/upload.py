@@ -1028,6 +1028,262 @@ def _safe_fee_amount(value) -> float:
         return 0.0
 
 
+def _occ_contract_key(symbol):
+    """Root, expiry, call/put, and strike. Spacing in the OCC text is ignored."""
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(symbol)
+    if not parsed:
+        return None
+    try:
+        strike = round(float(parsed["strike"]), 4)
+    except (TypeError, ValueError):
+        return None
+    return (
+        str(parsed["root"]).upper(),
+        str(parsed["yy"]),
+        int(parsed["mm"]),
+        int(parsed["dd"]),
+        str(parsed["cp"]).upper(),
+        strike,
+    )
+
+
+def _history_cell(df, *names):
+    wanted = {name.lower() for name in names}
+    for col in df.columns:
+        if str(col).lower() in wanted:
+            return col
+    return None
+
+
+def _history_qty(value):
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    text = str(value).strip().replace(",", "").replace("$", "")
+    if not text or text.lower() in ("nan", "none"):
+        return None
+    try:
+        return abs(float(text))
+    except ValueError:
+        return None
+
+
+def _history_day(value):
+    posted = _canonicalize_date_mdy(value)
+    if not posted:
+        return None
+    try:
+        return datetime.strptime(posted, "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def _history_tenant(value):
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except TypeError:
+        pass
+    text = str(value).strip()
+    if text.lower() in ("", "nan", "none"):
+        return ""
+    return text
+
+
+def _history_number(value):
+    """Absolute dollar or price. Blank cells are missing, not zero."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    text = str(value).strip().replace(",", "").replace("$", "")
+    if not text or text.lower() in ("nan", "none"):
+        return None
+    try:
+        return abs(float(text))
+    except ValueError:
+        return None
+
+
+def _estimate_fee_tolerance(qty):
+    """Room for a per-contract commission on top of the option gross.
+
+    Same scale as the multiplier guard: a couple of dollars, or $1.50
+    a contract when the lot is larger. ASTS's estimated fee is about
+    $6 on 8 contracts. A second close at a different premium is
+    hundreds of dollars away.
+    """
+    contracts = abs(float(qty or 0))
+    return max(2.0, 1.50 * contracts)
+
+
+def _option_premium_gross(price, qty):
+    if price is None or qty is None:
+        return None
+    if price <= 0 or qty <= 0:
+        return None
+    return price * qty * 100.0
+
+
+def _real_near_estimate_gross(real, est):
+    """The statement dollars are this order's premium, within fee room.
+
+    Compare the statement amount, and price × qty × 100, to the
+    estimate's gross (its price × qty × 100). The estimate amount
+    already includes the provisional fee, so it is not the target.
+    """
+    gross = _option_premium_gross(est.get("price"), est.get("qty"))
+    if gross is None:
+        return False
+    tol = _estimate_fee_tolerance(est.get("qty"))
+    candidates = []
+    if real.get("amount") is not None:
+        candidates.append(real["amount"])
+    real_gross = _option_premium_gross(real.get("price"), real.get("qty"))
+    if real_gross is not None:
+        candidates.append(real_gross)
+    return any(abs(candidate - gross) <= tol for candidate in candidates)
+
+
+def _later_separate_order_fill(est, parsed):
+    """Another estimated-fee order for this contract after this row.
+
+    Same premium on a later day is a repost of this order, not a
+    second trade. A different premium is a separate close (close 8,
+    reopen, close 8 again).
+    """
+    for other in parsed:
+        if other["i"] == est["i"] or not other["est"]:
+            continue
+        if other["tenant"] != est["tenant"] or other["contract"] != est["contract"]:
+            continue
+        if other["action"] != est["action"]:
+            continue
+        if other["qty"] is None or other["day"] is None or est["day"] is None:
+            continue
+        if abs(other["qty"] - est["qty"]) >= 1e-4:
+            continue
+        if other["day"] <= est["day"]:
+            continue
+        if _real_near_estimate_gross(
+            {"price": other.get("price"), "qty": other.get("qty"), "amount": other.get("amount")},
+            est,
+        ):
+            continue
+        return True
+    return False
+
+
+def _drop_estimated_fee_shadows(df):
+    """Drop an estimated-fee order fill when the statement fill is already here.
+
+    ASTS 58C: the order row is 8 contracts at $0.45, amount −$366.33,
+    description contains ``est. fee``. The statement is the same
+    buy-to-close of 8, a different price, often the next calendar day.
+    Cross-source dedup keys the exact date, the raw symbol text, and
+    price at 4 decimals, so that pair stays. Closing quantity then
+    reads 16 against 8 opened (−$529.93 instead of about −$163.60).
+
+    Quantity, action, and tenant already match. Those are not the
+    escape. Price and the posting date are. Match the contract
+    (root, expiry, strike, type), the action, and the quantity, with
+    dates within one day. OCC spacing is ignored. The statement row
+    wins; its amount and description are left as the broker wrote them.
+
+    That identity is not enough. Two genuine closes of the same size
+    on consecutive days (close 8, reopen, close 8 at a different
+    premium) share it, and dropping the earlier order deletes a real
+    trade. Also require one of:
+
+    * the statement amount, or its price × qty × 100, is within fee
+      room of the estimate's gross, or
+    * the other row is a statement, this row is the order fill, and
+      no later order fill at a different premium exists.
+
+    A lone estimate stays until the statement arrives. A fill a week
+    later is a different trade and is kept. The same predicate is the
+    ``est_fee_shadow`` CTE in ``stg_history``.
+    """
+    if df is None or getattr(df, "empty", True) or "Description" not in df.columns:
+        return df
+    tenant_col = _history_cell(df, "tenant_id")
+    action_col = _history_cell(df, "action")
+    symbol_col = _history_cell(df, "symbol")
+    qty_col = _history_cell(df, "quantity")
+    date_col = _history_cell(df, "date")
+    price_col = _history_cell(df, "price")
+    amount_col = _history_cell(df, "amount")
+    if not all([tenant_col, action_col, symbol_col, qty_col, date_col]):
+        return df
+
+    df = df.reset_index(drop=True)
+    parsed = []
+    for i in range(len(df)):
+        desc = str(df.at[i, "Description"] or "")
+        parsed.append({
+            "i": i,
+            "est": _ESTIMATED_FEE_MARK in desc.lower(),
+            "tenant": _history_tenant(df.at[i, tenant_col]),
+            "action": _normalize_history_action(df.at[i, action_col]),
+            "qty": _history_qty(df.at[i, qty_col]),
+            "day": _history_day(df.at[i, date_col]),
+            "contract": _occ_contract_key(df.at[i, symbol_col]),
+            "price": _history_number(df.at[i, price_col]) if price_col else None,
+            "amount": _history_number(df.at[i, amount_col]) if amount_col else None,
+        })
+    reals = [
+        row for row in parsed
+        if not row["est"]
+        and row["tenant"]
+        and row["contract"]
+        and row["qty"] is not None
+        and row["day"] is not None
+    ]
+    drop = set()
+    for est in parsed:
+        if (
+            not est["est"]
+            or not est["tenant"]
+            or not est["contract"]
+            or est["qty"] is None
+            or est["day"] is None
+        ):
+            continue
+        later_order = _later_separate_order_fill(est, parsed)
+        for real in reals:
+            if real["tenant"] != est["tenant"]:
+                continue
+            if real["contract"] != est["contract"]:
+                continue
+            if real["action"] != est["action"]:
+                continue
+            if abs(real["qty"] - est["qty"]) >= 1e-4:
+                continue
+            if abs((real["day"] - est["day"]).days) > 1:
+                continue
+            # Statement vs this order fill. A later order at another
+            # premium is a second close; only a matching dollar amount
+            # may still treat the two rows as one fill.
+            if _real_near_estimate_gross(real, est) or not later_order:
+                drop.add(est["i"])
+                break
+    if not drop:
+        return df
+    keep = [i not in drop for i in range(len(df))]
+    return df.loc[keep].reset_index(drop=True)
+
+
 def _dedup_history_rows(df, seed_columns):
     """Collapse byte-different but value-identical history rows.
 
@@ -1322,10 +1578,10 @@ def _dedup_history_rows(df, seed_columns):
             drop4.add(pos)
         else:
             seen4.add(key4)
-    if not drop4:
-        return df
-    keep_mask4 = [i not in drop4 for i in range(len(df))]
-    return df.loc[keep_mask4].reset_index(drop=True)
+    if drop4:
+        keep_mask4 = [i not in drop4 for i in range(len(df))]
+        df = df.loc[keep_mask4].reset_index(drop=True)
+    return _drop_estimated_fee_shadows(df)
 
 
 # Sentinel so ``_merge_seed_with_existing`` can tell "fetch the file from
