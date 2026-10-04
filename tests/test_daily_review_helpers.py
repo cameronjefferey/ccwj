@@ -1195,6 +1195,141 @@ class TestBuildTodayMovers:
         assert "roots=SPXW" in owner_today
         assert "data-lot-split" not in owner_today
 
+    def test_lot_split_does_not_add_open_mark_when_lots_match_total(self):
+        """A split must still equal the mart's day move.
+
+        When fill cash already matches the mart total, the residual
+        open mark is inside that total. Adding it again turned Oct 2
+        SPXW from $1,877.80 into $1,902.80.
+        """
+        options = self._oct2_production_options()
+        short = options["direction"] == "Sold"
+        long = options["direction"] == "Bought"
+        options.loc[short, "open_mtm"] = 25.0
+        options.loc[short, "realized_today"] = 10755.90
+        options.loc[long, "open_mtm"] = 0.0
+        options.loc[long, "realized_today"] = -8903.10
+        assert round(
+            options["open_mtm"].sum() + options["realized_today"].sum(), 2
+        ) == 1877.80
+
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=options,
+            option_fills_df=self._oct2_statement_fills(),
+        )
+        spxw = [
+            row for row in result["winners"] + result["losers"]
+            if row["symbol"] == "SPXW"
+        ]
+        assert result["options_impact"] == 1877.80
+        assert sum(row["dollar_impact"] for row in spxw) == 1877.80
+        assert len(spxw) == 2
+        by_detail = {row["contract_detail"]: row for row in spxw}
+        assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
+        assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
+
+        # The open mark is extra when the lot cash matches only the
+        # closed component. Keep it, and still reconcile to the mart.
+        options.loc[short, "realized_today"] = 10780.90
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=options,
+            option_fills_df=self._oct2_statement_fills(),
+        )
+        spxw = [
+            row for row in result["winners"] + result["losers"]
+            if row["symbol"] == "SPXW"
+        ]
+        assert result["options_impact"] == 1902.80
+        assert sum(row["dollar_impact"] for row in spxw) == 1902.80
+        assert len(spxw) == 3
+        assert any(row["dollar_impact"] == 25.0 for row in spxw)
+
+    def test_future_expiry_open_is_not_treated_as_expired_pnl(self):
+        """Opening premium is not a result while the contract is open.
+
+        A just-opened later expiry can have no mart row yet. The fill
+        splitter must not append that cash as an Expired mover.
+        """
+        day = date(2026, 10, 2)
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Main", "trade_date": day,
+                "action": "option_buy_to_open",
+                "trade_symbol": "SPY   261120C00600000",
+                "underlying_symbol": "SPY",
+                "option_expiry": date(2026, 11, 20),
+                "quantity": 10, "price": 5.0, "amount": -5000.0, "fees": 6.50,
+            },
+        ])
+        result = _build_today_movers(
+            None, options_moves_df=pd.DataFrame(), option_fills_df=fills,
+        )
+        assert result["winners"] == []
+        assert result["losers"] == []
+        assert result["options"] == []
+        assert result["options_impact"] == 0.0
+
+        # A later expiry that actually closed today is still a close.
+        fills = pd.DataFrame([
+            {
+                "tenant_id": "t1", "account": "Main", "trade_date": day,
+                "action": "option_sell_to_open",
+                "trade_symbol": "SPY   261120C00600000",
+                "quantity": 10, "price": 5.0, "amount": 5000.0, "fees": 6.50,
+            },
+            {
+                "tenant_id": "t1", "account": "Main", "trade_date": day,
+                "action": "option_buy_to_close",
+                "trade_symbol": "SPY   261120C00600000",
+                "quantity": 10, "price": 4.0, "amount": -4000.0, "fees": 6.50,
+            },
+        ])
+        result = _build_today_movers(
+            None, options_moves_df=pd.DataFrame(), option_fills_df=fills,
+        )
+        assert len(result["winners"]) == 1
+        assert result["winners"][0]["option_caption"] == "Closed today"
+        assert result["winners"][0]["symbol"] == "SPY"
+        assert result["options_impact"] != 0.0
+
+    def test_later_expiry_open_does_not_block_the_oct2_split(self):
+        """A new SPXW open expiring later must not join Friday's lots.
+
+        Folding its premium into the Oct 2 cash would miss $1,877.80
+        and leave the fused tile. The 10× and 20× stay, and the new
+        open is not an Expired mover.
+        """
+        day = date(2026, 10, 2)
+        fills = self._oct2_statement_fills()
+        extra = pd.DataFrame([{
+            "tenant_id": "snaptrade:sara",
+            "account": "Sara Investment",
+            "user_id": 9,
+            "trade_date": day,
+            "action": "option_buy_to_open",
+            "trade_symbol": "SPXW  261016C07730000",
+            "underlying_symbol": "SPXW",
+            "quantity": 10,
+            "price": 8.0,
+            "amount": -8000.0,
+            "fees": 12.22,
+            "instrument_type": "Call",
+        }])
+        fills = pd.concat([fills, extra], ignore_index=True)
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=self._oct2_production_options(),
+            option_fills_df=fills,
+        )
+        self._assert_oct2_lots(result)
+        captions = [
+            row.get("option_caption")
+            for row in result["winners"] + result["losers"]
+        ]
+        assert captions.count("Expired") == 1
+
     def test_posting_day_opens_of_a_friday_expiry_split(self, caplog):
         """The 10× expired with no close, so nothing caps its open back to Friday.
 
