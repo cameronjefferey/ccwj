@@ -1195,6 +1195,55 @@ class TestBuildTodayMovers:
         assert "roots=SPXW" in owner_today
         assert "data-lot-split" not in owner_today
 
+    def test_lot_split_does_not_add_open_mark_when_lots_match_total(self):
+        """A split decomposition must still equal the mart's day move.
+
+        The mart can carry both realized and residual open MTM on a
+        partially-resolved contract. When fill cash already matches the
+        mart's total, adding that open MTM again inflates the mover.
+        """
+        options = self._oct2_production_options()
+        short = options["direction"] == "Sold"
+        long = options["direction"] == "Bought"
+        options.loc[short, "open_mtm"] = 25.0
+        options.loc[short, "realized_today"] = 10755.90
+        options.loc[long, "open_mtm"] = 0.0
+        options.loc[long, "realized_today"] = -8903.10
+        assert round(
+            options["open_mtm"].sum() + options["realized_today"].sum(), 2
+        ) == 1877.80
+
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=options,
+            option_fills_df=self._oct2_statement_fills(),
+        )
+
+        spxw = [
+            row for row in result["winners"] + result["losers"]
+            if row["symbol"] == "SPXW"
+        ]
+        assert result["options_impact"] == 1877.80
+        assert sum(row["dollar_impact"] for row in spxw) == 1877.80
+        assert len(spxw) == 2
+
+        # When the open mark is genuinely in addition to the lot cash,
+        # keep it as the third tile and still reconcile to the mart.
+        options.loc[short, "realized_today"] = 10780.90
+        result = _build_today_movers(
+            self._friday_equity(),
+            options_moves_df=options,
+            option_fills_df=self._oct2_statement_fills(),
+        )
+        spxw = [
+            row for row in result["winners"] + result["losers"]
+            if row["symbol"] == "SPXW"
+        ]
+        assert result["options_impact"] == 1902.80
+        assert sum(row["dollar_impact"] for row in spxw) == 1902.80
+        assert len(spxw) == 3
+        assert any(row["dollar_impact"] == 25.0 for row in spxw)
+
     def test_posting_day_opens_of_a_friday_expiry_split(self, caplog):
         """The 10× expired with no close, so nothing caps its open back to Friday.
 

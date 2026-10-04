@@ -4672,9 +4672,27 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
             budget = float(fees_by_symbol.get(symbol) or 0)
             closed = opt.get("closed_impact")
             dollar = opt.get("dollar_impact")
+            open_i = opt.get("open_impact")
+            open_v = float(open_i or 0) if open_i is not None else 0.0
+            if dollar is not None:
+                mart_total = float(dollar or 0)
+            elif closed is not None:
+                mart_total = float(closed or 0) + open_v
+            else:
+                mart_total = lot_sum + open_v
+            # Lot cash sometimes matches the mart's full day move and
+            # sometimes only its closed component. Keep the separate open
+            # mark only when adding it makes the replacement reconcile more
+            # closely to the original total; otherwise it is counted twice.
+            keep_open = (
+                abs(open_v) >= 0.5
+                and abs(mart_total - (lot_sum + open_v))
+                    < abs(mart_total - lot_sum)
+            )
             detail = (
                 f"lot_sum={lot_sum:.2f} gap={gap:.2f} budget={budget:.2f} "
                 f"dollar={dollar} closed={closed} lots={len(lots)} "
+                f"open_kept={keep_open} "
                 f"anchor={_iso_day(anchor) or 'none'}"
             )
             if gap > max(1.0, budget + 1.0):
@@ -4682,9 +4700,7 @@ def _apply_same_day_option_lots(options, fills_df, anchor):
                     opt, "total_mismatch", detail, census, lot_sum, gap, budget,
                 ))
                 continue
-            open_i = opt.get("open_impact")
-            open_v = float(open_i or 0) if open_i is not None else 0.0
-            if abs(open_v) >= 0.5:
+            if keep_open:
                 kept.append(_note_lot_split({
                     **opt,
                     "dollar_impact": round(open_v, 2),
