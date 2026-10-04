@@ -444,11 +444,18 @@ dated as (
 -- pair survives. fill_ranked keys price@4dp, the raw symbol text, and
 -- the exact trade_date, so both rows stay and the close quantity
 -- doubles (8 opened, 16 closed, about −$529.93 instead of −$163.60).
--- Drop the estimate when a real fill of the same contract, action,
--- and quantity exists within one day. The statement amount wins.
--- Price and OCC spacing are ignored. A lone estimate stays. A fill
--- a week later is a different trade. ``_drop_estimated_fee_shadows``
--- in app/upload.py is the same rule for the next sync.
+--
+-- Identity (contract, action, quantity, dates within one day) is not
+-- enough. Close 8, reopen, close 8 the next day at a different premium
+-- shares it, and dropping the earlier order deletes a real trade.
+-- Also require either:
+--   * the statement amount, or its price × qty × 100, is within fee
+--     room (greatest($2, $1.50 × contracts)) of the estimate gross, or
+--   * the other row is a statement and this row is the only order fill
+--     (no later estimated-fee order at a different premium).
+-- The statement amount wins. A lone estimate stays. A fill a week
+-- later is a different trade. ``_drop_estimated_fee_shadows`` in
+-- app/upload.py is the same rule for the next sync.
 est_fee_shadow as (
     select
         d.*,
@@ -478,6 +485,49 @@ est_fee_shadow as (
                   and abs(abs(r.quantity) - abs(d.quantity)) < 0.0001
                   and r.trade_date is not null
                   and abs(date_diff(r.trade_date, d.trade_date, day)) <= 1
+                  and (
+                      (
+                          d.price is not null
+                          and abs(d.price) > 0
+                          and (
+                              abs(
+                                  abs(coalesce(r.amount, 0))
+                                  - abs(d.price) * abs(d.quantity) * 100
+                              ) <= greatest(2.0, 1.5 * abs(d.quantity))
+                              or (
+                                  r.price is not null
+                                  and abs(
+                                      abs(r.price) * abs(r.quantity) * 100
+                                      - abs(d.price) * abs(d.quantity) * 100
+                                  ) <= greatest(2.0, 1.5 * abs(d.quantity))
+                              )
+                          )
+                      )
+                      or not exists (
+                          select 1
+                          from dated later
+                          where later.tenant_id = d.tenant_id
+                            and regexp_contains(
+                                lower(coalesce(later.description, '')),
+                                r'est\. fee'
+                            )
+                            and later.underlying_symbol = d.underlying_symbol
+                            and later.option_expiry = d.option_expiry
+                            and later.option_strike is not null
+                            and abs(later.option_strike - d.option_strike) < 0.001
+                            and later.option_type = d.option_type
+                            and later.action = d.action
+                            and later.quantity is not null
+                            and abs(abs(later.quantity) - abs(d.quantity)) < 0.0001
+                            and later.trade_date is not null
+                            and later.trade_date > d.trade_date
+                            and later.price is not null
+                            and abs(
+                                abs(later.price) * abs(later.quantity) * 100
+                                - abs(d.price) * abs(d.quantity) * 100
+                            ) > greatest(2.0, 1.5 * abs(d.quantity))
+                      )
+                  )
             ),
             false
         ) as drop_est_fee_shadow

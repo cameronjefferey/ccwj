@@ -2213,3 +2213,60 @@ def test_estimated_fee_shadow_keeps_a_lone_row_a_later_fill_and_other_accounts()
         ),
     ])
     assert len(_upload._dedup_history_rows(sized, HISTORY_SEED_COLUMNS)) == 2
+
+
+def test_consecutive_same_size_closes_keep_both_trades():
+    """Close 8, reopen, close 8 the next day. Both trades stay.
+
+    The first close exists only as the order fill (8 × $0.45,
+    −$366.33, ``est. fee``). The next day is a different premium
+    (8 × $1.10) with its own order fill and a statement whose amount
+    matches that gross. Quantity and a one-day gap used to treat the
+    first order as a shadow of the second statement and delete it.
+    """
+    tenant = "snaptrade:asts"
+    symbol = "ASTS260918C00058000"
+    df = pd.DataFrame([
+        _row(
+            "Schwab", 9, "09/10/2026", "Buy to Open", symbol,
+            8, 1.20, -966.0, tenant_id=tenant,
+            desc="Bought to open ASTS 58C",
+        ),
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Close", symbol,
+            8, 0.45, -366.33, tenant_id=tenant,
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+        _row(
+            "Schwab", 9, "09/18/2026", "Buy to Open", symbol,
+            8, 0.50, -406.0, tenant_id=tenant,
+            desc="Bought to open ASTS 58C",
+        ),
+        _row(
+            "Schwab", 9, "09/19/2026", "Buy to Close", symbol,
+            8, 1.10, -886.40, tenant_id=tenant,
+            desc="ASTS  260918C00058000 est. fee",
+        ),
+        # Statement price differs, so the exact-price dedup leaves the
+        # order row in place. Its amount is the order gross ($880).
+        _row(
+            "Schwab", 9, "09/19/2026", "Buy to Close", symbol,
+            8, 1.05, -880.00, tenant_id=tenant,
+            desc="Bought to close ASTS 58C",
+        ),
+    ])
+    out = _upload._dedup_history_rows(df, HISTORY_SEED_COLUMNS)
+    closes = out[out["Action"].str.lower().str.contains("close")]
+    assert len(closes) == 2
+    first = closes[closes["Date"] == "09/18/2026"]
+    second = closes[closes["Date"] == "09/19/2026"]
+    assert len(first) == 1
+    assert "est. fee" in str(first.iloc[0]["Description"]).lower()
+    assert float(first.iloc[0]["Amount"]) == -366.33
+    assert len(second) == 1
+    assert float(second.iloc[0]["Amount"]) == -880.00
+    assert "est. fee" not in str(second.iloc[0]["Description"]).lower()
+    opened = float(out[out["Action"].str.lower().str.contains("open")]["Quantity"].sum())
+    closed = float(closes["Quantity"].sum())
+    assert opened == 16
+    assert closed == 16
