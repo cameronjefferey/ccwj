@@ -527,11 +527,24 @@ def send_weekly_summary_email(
     """Weekly recap of how the trader's week went.
 
     ``summary`` keys (all optional; missing → omitted from the email):
-      week_label, total_return, total_pnl, dividends, trades_closed,
-      num_winners, num_losers, best_symbol, best_pnl, worst_symbol, worst_pnl.
+      week_label, total_return (realized closed trades; dividends are
+      not included), dividends, trades_closed, num_winners, num_losers,
+      best_label / worst_label (grouped trade, dollar included).
     """
     week = summary.get("week_label") or "this past week"
     subject = f"Your HappyTrader week: {week}"
+
+    def _trade_text(label_key, symbol_key, pnl_key):
+        label = summary.get(label_key)
+        if label:
+            return label
+        symbol = summary.get(symbol_key)
+        if not symbol:
+            return None
+        return f"{symbol} {_money(summary.get(pnl_key))}"
+
+    best_text = _trade_text("best_label", "best_symbol", "best_pnl")
+    worst_text = _trade_text("worst_label", "worst_symbol", "worst_pnl")
 
     lines = [f"Hi {username},", "", f"Here's how your week went ({week}):", ""]
     lines.append(f"  Net return:   {_money(summary.get('total_return'))}")
@@ -542,10 +555,10 @@ def send_weekly_summary_email(
         if summary.get("num_winners") is not None and summary.get("num_losers") is not None:
             wl = f" ({summary.get('num_winners')}W / {summary.get('num_losers')}L)"
         lines.append(f"  Trades closed: {summary.get('trades_closed')}{wl}")
-    if summary.get("best_symbol"):
-        lines.append(f"  Best trade:   {summary.get('best_symbol')} {_money(summary.get('best_pnl'))}")
-    if summary.get("worst_symbol"):
-        lines.append(f"  Worst trade:  {summary.get('worst_symbol')} {_money(summary.get('worst_pnl'))}")
+    if best_text:
+        lines.append(f"  Best trade:   {best_text}")
+    if worst_text:
+        lines.append(f"  Worst trade:  {worst_text}")
     verdicts = list(summary.get("verdicts") or [])
     if verdicts:
         lines += ["", "Verdicts that landed this week (early closes graded "
@@ -565,10 +578,10 @@ def send_weekly_summary_email(
         if summary.get("num_winners") is not None and summary.get("num_losers") is not None:
             wl = f" ({summary.get('num_winners')}W / {summary.get('num_losers')}L)"
         rows.append(("Trades closed", f"{summary.get('trades_closed')}{wl}"))
-    if summary.get("best_symbol"):
-        rows.append(("Best trade", f"{summary.get('best_symbol')} {_money(summary.get('best_pnl'))}"))
-    if summary.get("worst_symbol"):
-        rows.append(("Worst trade", f"{summary.get('worst_symbol')} {_money(summary.get('worst_pnl'))}"))
+    if best_text:
+        rows.append(("Best trade", best_text))
+    if worst_text:
+        rows.append(("Worst trade", worst_text))
     rows_html = "".join(
         f'<tr><td style="padding:6px 0;color:#9aa0a6;font-size:14px;">{label}</td>'
         f'<td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:right;">{val}</td></tr>'

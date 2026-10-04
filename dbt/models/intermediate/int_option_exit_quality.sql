@@ -27,6 +27,17 @@
                = closing_cash − settlement_cash
            where settlement_cash = −intrinsic_total (short)
                                    +intrinsic_total (long)
+           intrinsic_total = intrinsic_per_share × 100 × contracts
+           The ×100 is applied once. ``contracts`` is a contract count,
+           not a share count. Two bad shapes double it: closing cash
+           stored as price × contracts × 100 × 100 (one MU $1100 call
+           sold for about $2.42 became $24,171 instead of $241.71), or
+           a share count (100) used as the contract count so intrinsic
+           is scaled a second time. The digest recomputes the dollar
+           in Python from the close fill's per-share price before it
+           sends (app.execution_quality.early_close_delta). A real
+           10-contract sale at $24.17 stays $24,171. Spread legs are
+           graded as one spread there, not as two independent trades.
 
        delta < 0 → closing early cost money vs holding to expiry
        (canonical case: paid $180 to buy back a call that went on to

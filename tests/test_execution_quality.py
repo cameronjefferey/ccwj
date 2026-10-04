@@ -363,7 +363,7 @@ def test_verdicts_landed_sorted_by_magnitude():
     ])
     landed = verdicts_landed(df, _TODAY - timedelta(days=6), _TODAY)
     assert [v["symbol"] for v in landed] == ["RKLB", "SOFI"]
-    assert "closing early avoided $820" in landed[0]["sentence"]
+    assert "beat holding by $820" in landed[0]["sentence"]
 
 
 def test_verdicts_pending_counts_and_next():
@@ -417,7 +417,7 @@ def test_verdicts_landed_groups_put_spread_as_one_net():
     assert vicr["delta"] == -3894.0
     assert vicr["structure"] == "Put Spread"
     assert vicr["action"] == "Closed the $190 / $210 put spread."
-    assert "worse than holding both legs" in vicr["sentence"]
+    assert "Holding both legs to expiry would have been $3,894 better." in vicr["sentence"]
     assert "$3,894" in vicr["sentence"]
     fn = landed[0]
     assert fn["structure"] is None
