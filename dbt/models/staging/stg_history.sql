@@ -456,82 +456,142 @@ dated as (
 -- The statement amount wins. A lone estimate stays. A fill a week
 -- later is a different trade. ``_drop_estimated_fee_shadows`` in
 -- app/upload.py is the same rule for the next sync.
+--
+-- Joins, not EXISTS. Run 37223667300 failed stg_history with
+-- "Correlated subqueries that reference other tables are not supported
+-- unless they can be de-correlated": the real-fill EXISTS contained a
+-- NOT EXISTS against ``dated`` again. BigQuery will not decorrelate
+-- that nesting. A self-join plus a precomputed later-order set is the
+-- same predicate.
+
+-- An estimated-fee order dated after this one, same contract / action /
+-- quantity, whose premium is outside fee room of this order's gross.
+-- Same premium on a later day is a repost, not a second close.
+later_separate_orders as (
+    select distinct
+        d.tenant_id,
+        d.trade_date,
+        d.action,
+        d.underlying_symbol,
+        d.option_expiry,
+        d.option_strike,
+        d.option_type,
+        d.quantity,
+        d.price
+    from dated d
+    inner join dated later
+        on later.tenant_id = d.tenant_id
+       and later.underlying_symbol = d.underlying_symbol
+       and later.option_expiry = d.option_expiry
+       and later.option_strike is not null
+       and abs(later.option_strike - d.option_strike) < 0.001
+       and later.option_type = d.option_type
+       and later.action = d.action
+       and later.quantity is not null
+       and abs(abs(later.quantity) - abs(d.quantity)) < 0.0001
+       and later.trade_date is not null
+       and later.trade_date > d.trade_date
+       and later.price is not null
+       and regexp_contains(lower(coalesce(later.description, '')), r'est\. fee')
+       and abs(
+            abs(later.price) * abs(later.quantity) * 100
+            - abs(d.price) * abs(d.quantity) * 100
+          ) > greatest(2.0, 1.5 * abs(d.quantity))
+    where regexp_contains(lower(coalesce(d.description, '')), r'est\. fee')
+      and d.tenant_id is not null
+      and d.underlying_symbol is not null
+      and d.option_expiry is not null
+      and d.option_strike is not null
+      and d.option_type is not null
+      and d.quantity is not null
+      and d.trade_date is not null
+      and d.price is not null
+),
+
+-- Estimates that have a statement fill within one day, and either the
+-- dollars match or there is no later separate order.
+est_fee_matched as (
+    select distinct
+        d.tenant_id,
+        d.trade_date,
+        d.action,
+        d.underlying_symbol,
+        d.option_expiry,
+        d.option_strike,
+        d.option_type,
+        d.quantity,
+        d.price,
+        d.description
+    from dated d
+    inner join dated r
+        on r.tenant_id = d.tenant_id
+       and not regexp_contains(lower(coalesce(r.description, '')), r'est\. fee')
+       and r.underlying_symbol = d.underlying_symbol
+       and r.option_expiry = d.option_expiry
+       and r.option_strike is not null
+       and abs(r.option_strike - d.option_strike) < 0.001
+       and r.option_type = d.option_type
+       and r.action = d.action
+       and r.quantity is not null
+       and abs(abs(r.quantity) - abs(d.quantity)) < 0.0001
+       and r.trade_date is not null
+       and abs(date_diff(r.trade_date, d.trade_date, day)) <= 1
+    left join later_separate_orders ls
+        on ls.tenant_id = d.tenant_id
+       and ls.trade_date is not distinct from d.trade_date
+       and ls.action is not distinct from d.action
+       and ls.underlying_symbol = d.underlying_symbol
+       and ls.option_expiry is not distinct from d.option_expiry
+       and ls.option_strike is not distinct from d.option_strike
+       and ls.option_type is not distinct from d.option_type
+       and ls.quantity is not distinct from d.quantity
+       and ls.price is not distinct from d.price
+    where regexp_contains(lower(coalesce(d.description, '')), r'est\. fee')
+      and d.tenant_id is not null
+      and d.underlying_symbol is not null
+      and d.option_expiry is not null
+      and d.option_strike is not null
+      and d.option_type is not null
+      and d.quantity is not null
+      and d.trade_date is not null
+      and (
+          (
+              d.price is not null
+              and abs(d.price) > 0
+              and (
+                  abs(
+                      abs(coalesce(r.amount, 0))
+                      - abs(d.price) * abs(d.quantity) * 100
+                  ) <= greatest(2.0, 1.5 * abs(d.quantity))
+                  or (
+                      r.price is not null
+                      and abs(
+                          abs(r.price) * abs(r.quantity) * 100
+                          - abs(d.price) * abs(d.quantity) * 100
+                      ) <= greatest(2.0, 1.5 * abs(d.quantity))
+                  )
+              )
+          )
+          or ls.tenant_id is null
+      )
+),
+
 est_fee_shadow as (
     select
         d.*,
-        coalesce(
-            regexp_contains(lower(coalesce(d.description, '')), r'est\. fee')
-            and d.tenant_id is not null
-            and d.underlying_symbol is not null
-            and d.option_expiry is not null
-            and d.option_strike is not null
-            and d.option_type is not null
-            and d.quantity is not null
-            and d.trade_date is not null
-            and exists (
-                select 1
-                from dated r
-                where r.tenant_id = d.tenant_id
-                  and not regexp_contains(
-                      lower(coalesce(r.description, '')), r'est\. fee'
-                  )
-                  and r.underlying_symbol = d.underlying_symbol
-                  and r.option_expiry = d.option_expiry
-                  and r.option_strike is not null
-                  and abs(r.option_strike - d.option_strike) < 0.001
-                  and r.option_type = d.option_type
-                  and r.action = d.action
-                  and r.quantity is not null
-                  and abs(abs(r.quantity) - abs(d.quantity)) < 0.0001
-                  and r.trade_date is not null
-                  and abs(date_diff(r.trade_date, d.trade_date, day)) <= 1
-                  and (
-                      (
-                          d.price is not null
-                          and abs(d.price) > 0
-                          and (
-                              abs(
-                                  abs(coalesce(r.amount, 0))
-                                  - abs(d.price) * abs(d.quantity) * 100
-                              ) <= greatest(2.0, 1.5 * abs(d.quantity))
-                              or (
-                                  r.price is not null
-                                  and abs(
-                                      abs(r.price) * abs(r.quantity) * 100
-                                      - abs(d.price) * abs(d.quantity) * 100
-                                  ) <= greatest(2.0, 1.5 * abs(d.quantity))
-                              )
-                          )
-                      )
-                      or not exists (
-                          select 1
-                          from dated later
-                          where later.tenant_id = d.tenant_id
-                            and regexp_contains(
-                                lower(coalesce(later.description, '')),
-                                r'est\. fee'
-                            )
-                            and later.underlying_symbol = d.underlying_symbol
-                            and later.option_expiry = d.option_expiry
-                            and later.option_strike is not null
-                            and abs(later.option_strike - d.option_strike) < 0.001
-                            and later.option_type = d.option_type
-                            and later.action = d.action
-                            and later.quantity is not null
-                            and abs(abs(later.quantity) - abs(d.quantity)) < 0.0001
-                            and later.trade_date is not null
-                            and later.trade_date > d.trade_date
-                            and later.price is not null
-                            and abs(
-                                abs(later.price) * abs(later.quantity) * 100
-                                - abs(d.price) * abs(d.quantity) * 100
-                            ) > greatest(2.0, 1.5 * abs(d.quantity))
-                      )
-                  )
-            ),
-            false
-        ) as drop_est_fee_shadow
+        m.tenant_id is not null as drop_est_fee_shadow
     from dated d
+    left join est_fee_matched m
+        on m.tenant_id = d.tenant_id
+       and m.trade_date is not distinct from d.trade_date
+       and m.action is not distinct from d.action
+       and m.underlying_symbol is not distinct from d.underlying_symbol
+       and m.option_expiry is not distinct from d.option_expiry
+       and m.option_strike is not distinct from d.option_strike
+       and m.option_type is not distinct from d.option_type
+       and m.quantity is not distinct from d.quantity
+       and m.price is not distinct from d.price
+       and m.description is not distinct from d.description
 ),
 
 -- Capping a posting date at expiry (or reading "as of") can land an
