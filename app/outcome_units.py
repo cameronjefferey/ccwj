@@ -141,35 +141,59 @@ def annotate_contract_outcomes(df):
     return out
 
 
-def outcome_win_loss(rows) -> tuple[int, int]:
-    """(winners, losers) after collapsing a same-day spread to one outcome.
+def closed_outcome_units(rows) -> list[dict]:
+    """One closed result per unit.
 
-    A unit counts only when every leg is Closed. Rounded $0 is neither.
+    A same-day spread (same strategy, account, symbol, open date, and
+    expiry) is one unit. The unit is dropped when any leg is still open.
+    Rounded $0 stays in the list so callers can see it is neither a win
+    nor a loss. ``pnl`` is the sum of ``total_pnl`` (already net of fees).
     """
     buckets: dict[tuple, dict] = {}
     order = []
     for row in rows or []:
         key = _unit_key(row)
         if key not in buckets:
-            buckets[key] = {"closed": True, "pnl": 0.0}
+            symbol = row.get("symbol") or row.get("underlying_symbol") or ""
+            buckets[key] = {
+                "closed": True,
+                "pnl": 0.0,
+                "symbol": str(symbol or ""),
+                "strategy": str(row.get("strategy") or ""),
+                "tenant_id": str(row.get("tenant_id") or ""),
+            }
             order.append(key)
         bucket = buckets[key]
-        status = str(row.get("status") or "")
-        if status != "Closed":
+        if str(row.get("status") or "") != "Closed":
             bucket["closed"] = False
         try:
             bucket["pnl"] += float(row.get("total_pnl") or 0)
         except (TypeError, ValueError):
             pass
-    winners = losers = 0
+    units = []
     for key in order:
         bucket = buckets[key]
         if not bucket["closed"]:
             continue
-        pnl = round(bucket["pnl"], 2)
-        if pnl > 0:
+        units.append({
+            "symbol": bucket["symbol"],
+            "strategy": bucket["strategy"],
+            "tenant_id": bucket["tenant_id"],
+            "pnl": round(bucket["pnl"], 2),
+        })
+    return units
+
+
+def outcome_win_loss(rows) -> tuple[int, int]:
+    """(winners, losers) after collapsing a same-day spread to one outcome.
+
+    A unit counts only when every leg is Closed. Rounded $0 is neither.
+    """
+    winners = losers = 0
+    for unit in closed_outcome_units(rows):
+        if unit["pnl"] > 0:
             winners += 1
-        elif pnl < 0:
+        elif unit["pnl"] < 0:
             losers += 1
     return winners, losers
 
@@ -878,3 +902,220 @@ def adjusted_contract_strike(raw_strike, factor_at_open, factor_at_close) -> flo
 def adjusted_contract_qty(raw_qty, factor_at_open, factor_at_close) -> float:
     scale = float(factor_at_open) / float(factor_at_close)
     return float(raw_qty) * scale
+
+
+def _fill_rows(trades):
+    """Normalize a DataFrame or a list of fill dicts."""
+    if trades is None:
+        return []
+    if hasattr(trades, "to_dict") and hasattr(trades, "empty"):
+        if trades.empty:
+            return []
+        return trades.to_dict("records")
+    return list(trades)
+
+
+def _contract_cluster(row) -> tuple:
+    source = row
+    if row.get("vertical") and row.get("legs"):
+        source = row["legs"][0]
+    parsed = parse_occ(source.get("trade_symbol"))
+    if not parsed:
+        return (
+            str(row.get("tenant_id") or source.get("tenant_id") or ""),
+            str(row.get("account") or source.get("account") or ""),
+            "",
+            str(row.get("open_date") or source.get("open_date") or "")[:10],
+            "",
+        )
+    return (
+        str(row.get("tenant_id") or source.get("tenant_id") or ""),
+        str(row.get("account") or source.get("account") or ""),
+        _vertical_root(parsed["root"]),
+        str(source.get("open_date") or row.get("open_date") or "")[:10],
+        _expiry_iso(parsed),
+    )
+
+
+def _contract_cp(row) -> str:
+    source = row["legs"][0] if row.get("vertical") and row.get("legs") else row
+    parsed = parse_occ(source.get("trade_symbol"))
+    return parsed["cp"] if parsed else ""
+
+
+def _pair_structures(calls, puts):
+    """Pair a call structure with a put structure of the same size.
+
+    Two condors opened the same day stay two results when the contract
+    counts differ. Leftovers stay their own results.
+    """
+    unused = set(range(len(puts)))
+    pairs = []
+    for call in calls:
+        if not unused:
+            break
+        try:
+            call_qty = abs(float(call.get("quantity") or 0))
+        except (TypeError, ValueError):
+            call_qty = 0.0
+
+        def _key(index, _qty=call_qty):
+            try:
+                put_qty = abs(float(puts[index].get("quantity") or 0))
+            except (TypeError, ValueError):
+                put_qty = 0.0
+            gap = 0 if abs(put_qty - _qty) < 1e-6 else 1
+            return (gap, index)
+
+        match = min(unused, key=_key)
+        unused.remove(match)
+        pairs.append((call, puts[match]))
+    leftover = [puts[index] for index in sorted(unused)]
+    if len(calls) > len(pairs):
+        leftover.extend(calls[len(pairs):])
+    return pairs, leftover
+
+
+def _combine_structures(left, right) -> dict:
+    try:
+        pnl = round(float(left.get("pnl") or 0) + float(right.get("pnl") or 0), 2)
+    except (TypeError, ValueError):
+        pnl = 0.0
+    try:
+        qty = abs(float(left.get("quantity") or right.get("quantity") or 0))
+    except (TypeError, ValueError):
+        qty = 0.0
+    return {"pnl": pnl, "quantity": qty, "vertical": True, "legs": []}
+
+
+def option_record_from_fills(trades, tenant_ids=None) -> dict:
+    """Closed option results counted from raw fills.
+
+    A vertical is one result. A same-day call structure plus put
+    structure (iron condor or strangle) is one result. Two lots at the
+    same strikes stay two results. A contract that is still open, only
+    partly closed, or closed with no opening fill is left out. If any
+    leg of a same-day structure is still open, the whole structure is
+    left out. Rounded $0 is neither a win nor a loss. Fill ``amount``
+    is already net of broker fees.
+
+    ``tenant_ids`` is an allow-list. Pass the real-book ids to keep a
+    paper account out of the record.
+    """
+    allowed = None if tenant_ids is None else {str(tid) for tid in tenant_ids}
+    grouped: dict[tuple, list] = {}
+    for trade in _fill_rows(trades):
+        if not isinstance(trade, dict):
+            continue
+        action = str(trade.get("action") or "")
+        if action not in OPEN_OPTION_ACTIONS and action not in CLOSE_OPTION_ACTIONS:
+            continue
+        symbol = str(trade.get("trade_symbol") or "").strip()
+        if not symbol or parse_occ(symbol) is None:
+            continue
+        tenant = str(trade.get("tenant_id") or "")
+        if allowed is not None and tenant not in allowed:
+            continue
+        account = str(trade.get("account") or "")
+        grouped.setdefault((tenant, account, symbol), []).append(trade)
+
+    built = []
+    tainted = set()
+    for (tenant, account, symbol), fills in grouped.items():
+        opened_qty = 0.0
+        closed_qty = 0.0
+        sto_qty = 0.0
+        bto_qty = 0.0
+        pnl = 0.0
+        open_date = ""
+        saw_open = False
+        saw_close = False
+        for trade in fills:
+            action = str(trade.get("action") or "")
+            qty = _fill_qty(trade)
+            pnl += _fill_amount(trade)
+            if action in OPEN_OPTION_ACTIONS:
+                saw_open = True
+                opened_qty += qty
+                if action == "option_sell_to_open":
+                    sto_qty += qty
+                else:
+                    bto_qty += qty
+                opened = _fill_date(trade)
+                if opened and (not open_date or opened < open_date):
+                    open_date = opened
+            elif action in CLOSE_OPTION_ACTIONS:
+                saw_close = True
+                closed_qty += qty
+        parsed = parse_occ(symbol)
+        cluster = (
+            tenant,
+            account,
+            _vertical_root(parsed["root"]),
+            open_date,
+            _expiry_iso(parsed),
+        )
+        if saw_close and not saw_open:
+            continue
+        if not saw_open:
+            continue
+        if abs(opened_qty - closed_qty) > 1e-6:
+            tainted.add(cluster)
+            continue
+        direction = "Sold" if sto_qty >= bto_qty and sto_qty > 0 else "Bought"
+        built.append({
+            "type": "option",
+            "strategy": "Call Spread" if parsed["cp"] == "C" else "Put Spread",
+            "direction": direction,
+            "trade_symbol": symbol,
+            "tenant_id": tenant,
+            "account": account,
+            "open_date": open_date,
+            "quantity": max(sto_qty, bto_qty),
+            "pnl": round(pnl, 2),
+            "status": "Closed",
+            "close_type": "Closed",
+            "raw_trades": fills,
+        })
+
+    units = []
+    by_cluster: dict[tuple, list] = {}
+    for row in group_vertical_spreads(built):
+        cluster = _contract_cluster(row)
+        if cluster in tainted:
+            continue
+        if str(row.get("close_type") or "") == "Open":
+            continue
+        by_cluster.setdefault(cluster, []).append(row)
+
+    for cluster, members in by_cluster.items():
+        if cluster in tainted:
+            continue
+        calls = [row for row in members if _contract_cp(row) == "C"]
+        puts = [row for row in members if _contract_cp(row) == "P"]
+        if calls and puts:
+            pairs, leftover = _pair_structures(calls, puts)
+            for left, right in pairs:
+                units.append(_combine_structures(left, right))
+            units.extend(leftover)
+        else:
+            units.extend(members)
+
+    winners = losers = zeros = 0
+    for unit in units:
+        try:
+            pnl = round(float(unit.get("pnl") or 0), 2)
+        except (TypeError, ValueError):
+            pnl = 0.0
+        if pnl > 0:
+            winners += 1
+        elif pnl < 0:
+            losers += 1
+        else:
+            zeros += 1
+    return {
+        "winners": winners,
+        "losers": losers,
+        "zeros": zeros,
+        "decided": winners + losers,
+    }
