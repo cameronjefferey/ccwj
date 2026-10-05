@@ -4,9 +4,13 @@
 variant stick on the first-party touch cookie so later funnel events
 and the signup record carry the campaign.
 
-Each page is one promise: a headline, one subhead, one primary button,
-a trust line, then only the proof that promise needs. Signup is the
-primary button. The live demo is a text link.
+Learn and Mistakes are one promise: a headline, one subhead, one primary
+button, a trust line, then only the proof that promise needs. Signup is
+the primary button. The live demo is a text link.
+
+``/go/real-pnl`` is the long Monday ad page (``go_real_pnl.html``):
+side-by-side Create free account and Explore live demo, then the chart,
+ONON/RKLB, shorts, fit matrix, how it works, compact pricing, and FAQ.
 """
 from __future__ import annotations
 
@@ -26,8 +30,8 @@ TRUST_LINE = (
 )
 
 # Hero, the proof that matches the ad, then objections and a close.
-# Screenshots are wide product stills. Phone-frame Shorts stay off
-# these pages: they pushed the button down and loaded a YouTube thumb.
+# Learn and Mistakes use wide stills only. /go/real-pnl places Shorts
+# in a glowing 9:16 frame (no phone bezel) beside the copy.
 LANDINGS = {
     "learn": {
         "title": "Learn options free",
@@ -79,31 +83,23 @@ LANDINGS = {
     },
     "real-pnl": {
         "title": "Real P&L across brokers",
-        "headline": "See your real P&L across every broker",
-        "lead": "Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only.",
+        "headline": "What did your covered calls really make?",
+        "lead": (
+            "Rolls, covered-call runs, and early exits, "
+            "on the trades themselves."
+        ),
+        # Existing ad URLs still pass ?v=rolls and ?v=runs. Those keys
+        # stay so the funnel records the variant. The approved headline
+        # is the only copy on the page.
         "variants": {
-            "rolls": "One P&L for every account you connect",
-            "runs": "Your trades, marked across every brokerage",
+            "rolls": "What did your covered calls really make?",
+            "runs": "What did your covered calls really make?",
         },
         "cta_label": "Create free account",
         "cta_base": "create-account",
         "signup_route": "real-pnl",
-        "kicker": "Free to start · no card",
-        "shot": {
-            "file": "marketing/pnl_real.webp",
-            "width": 1600,
-            "height": 804,
-            "alt": (
-                "Cumulative P&L on the founder's BE trades, April to "
-                "September 2026, with trade-day markers. Account totals "
-                "and share counts are not shown."
-            ),
-            "caption": (
-                "Founder's account · BE, April to September 2026. "
-                "Options and shares are split out. Account totals and "
-                "share counts are left off this example."
-            ),
-        },
+        "kicker": "30 days · no card",
+        "shot": None,
         "second": None,
         "points_label": "",
         "points": (),
@@ -208,6 +204,17 @@ def _signup_url(page: dict) -> str:
     return url_for("signup")
 
 
+def _vertical_short(steps, youtube_id: str, label: str) -> dict:
+    """9:16 Short poster. YouTube's oardefault is the vertical still."""
+    match = next(step for step in steps if step.get("youtube_id") == youtube_id)
+    video = dict(match)
+    video["poster_url"] = f"https://i.ytimg.com/vi/{youtube_id}/oardefault.jpg"
+    video["poster_srcset"] = ""
+    video["poster_sizes"] = ""
+    video["duration_label"] = label
+    return video
+
+
 def _point_href(link_to: str) -> str:
     if link_to == "learn":
         from app.marketing_videos import resolve_learn_url
@@ -230,8 +237,31 @@ def go_landing(slug):
         row = dict(point)
         row["href"] = _point_href(point.get("link_to") or "")
         points.append(row)
+    extra = {}
+    template = "go_landing.html"
+    if slug == "real-pnl":
+        from app.marketing_videos import catch_stories, story_steps
+
+        steps = story_steps()
+        template = "go_real_pnl.html"
+        extra = {
+            "story_steps": steps,
+            "catch_stories": [
+                row for row in catch_stories() if row["id"] in ("onon", "rklb")
+            ],
+            "covered_short": _vertical_short(
+                steps, "u_YWl5fKEjo", "Short · Covered-call runs"
+            ),
+            "held_short": _vertical_short(
+                steps, "sCZVeeY_6SA", "Short · If held to expiration"
+            ),
+            "minimal_nav": True,
+            "demo_pair": True,
+            "catch_quiet": True,
+            "pricing_compact": True,
+        }
     return render_template(
-        "go_landing.html",
+        template,
         title=page["title"],
         slug=slug,
         page=page,
@@ -247,4 +277,5 @@ def go_landing(slug):
         cta_base=page["cta_base"],
         campaign=True,
         marketing_chrome=True,
+        **extra,
     )

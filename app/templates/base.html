@@ -1339,9 +1339,14 @@
                   font-size: .82rem;">Stop impersonating</a>
     </div>
     {% endif %}
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4{% if minimal_nav %} ht-nav-min{% endif %}">
         <div class="container-fluid">
             <a class="navbar-brand ht-wordmark" href="{{ scoped_url('weekly_review') if current_user.is_authenticated and not public_marketing else url_for('index') }}">happy<span>trader</span></a>
+            {% if minimal_nav %}
+            {% if signup_enabled %}
+            <a class="btn btn-sm btn-primary btn-auth-nav" href="{{ signup_url|default(url_for('signup')) }}" data-ht-cta="{{ cta_base }}-nav">{{ cta_label }}</a>
+            {% endif %}
+            {% else %}
             <div class="d-flex align-items-center gap-2">
                 {% if current_user.is_authenticated and not public_marketing %}
                 {# Phone-only palette trigger OUTSIDE the collapse: on mobile
@@ -1563,6 +1568,7 @@
                 </ul>
                 {% endif %}
             </div>
+            {% endif %}
         </div>
     </nav>
     <script>
@@ -1812,7 +1818,7 @@
     <footer class="mt-5 py-4 border-top">
         <div class="container-fluid px-4">
             <div class="d-flex flex-wrap justify-content-center gap-3 ht-public-links">
-                <a href="{{ url_for('demo_start') }}">Try Demo</a>
+                <a href="{{ url_for('demo_start') }}">{% if minimal_nav %}Explore live demo{% else %}Try Demo{% endif %}</a>
                 <a href="{{ url_for('login', next=request.path) if request.path.startswith('/learn') else url_for('login') }}">Sign In</a>
                 {% if signup_enabled %}
                 <a href="{{ signup_url|default(url_for('signup')) }}"{% if public_marketing %} data-ht-cta="{{ cta_base }}-footer"{% endif %}>

@@ -2,8 +2,8 @@
 {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial, no credit card{%- endif -%}
 {% endmacro %}
 
-{% macro video_frame(v, wide=false, eager=false, lightbox=false) %}
-<div class="ht-frame {% if wide %}ht-frame-wide{% else %}ht-frame-short{% endif %}">
+{% macro video_frame(v, wide=false, eager=false, lightbox=false, frame_class="") %}
+<div class="ht-frame {% if wide %}ht-frame-wide{% else %}ht-frame-short{% endif %}{% if frame_class %} {{ frame_class }}{% endif %}">
     <button type="button" class="ht-facade"
             {% if lightbox %}data-lightbox="short"{% endif %}
             data-youtube-id="{{ v.youtube_id }}"
