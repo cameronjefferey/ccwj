@@ -3,7 +3,7 @@
         <div class="ht-wrap ht-how-grid">
             {% for step in story_steps if step.step == 1 %}
             <div class="ht-media">
-                {{ feature_poster(step, eager=section_eager|default(false), show_title=true) }}
+                {{ feature_poster(step, eager=section_eager|default(false), show_title=not (hide_how_caption|default(false))) }}
             </div>
             {% endfor %}
             <div>
