@@ -748,10 +748,12 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
                 "covered-call-scroll.json",
             )
             lottie = json.loads(open(lottie_path, encoding="utf-8").read())
-            assert lottie["w"] == 510 and lottie["h"] == 590
+            assert lottie["w"] == 1020 and lottie["h"] == 638
             assert lottie["fr"] == 8 and lottie["op"] == 127
-            assert lottie["assets"][0]["p"].startswith("data:image/jpeg;base64,")
-            assert os.path.getsize(lottie_path) < 3_000_000
+            assert lottie["assets"][0]["w"] == 1020
+            assert lottie["assets"][0]["p"].startswith("data:image/webp;base64,")
+            assert "aspect-ratio: 1020 / 638" in body
+            assert os.path.getsize(lottie_path) < 6_000_000
             nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
             assert 'href="/learn"' not in nav
             assert 'href="/pricing"' not in nav
