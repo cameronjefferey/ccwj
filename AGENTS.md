@@ -285,7 +285,12 @@ What's working:
   so two SPXW trades at the same strikes are two lines (20× closed, 10×
   expired) and the dollar is the fill cash after broker fees. A gross
   order amount is netted once, the same way `stg_history` does; a statement
-  amount that is already net is not charged again. Multi-day mark changes
+  amount that is already net is not charged again. The open mark is kept
+  beside those tiles only when the lot cash matches the closed component
+  of the day move; when the lots already equal the full day total, that
+  mark is already inside them. A later-expiry option opened that session
+  is not labeled Expired — same-day expiry with no close still is.
+  Multi-day mark changes
   stay on the mart day-delta. The line under the symbol is the contracts
   (`10× 7650/7655C spread`, `20× 7730/7735C spread`, `2× MU 120C`). The
   other line is `Open contracts, change in value`, `Closed today`,
