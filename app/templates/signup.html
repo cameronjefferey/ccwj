@@ -27,7 +27,7 @@
     <div class="card login-card">
         <div class="login-header">
             <h1 class="ht-wordmark"><a class="ht-wordmark-link" href="{{ url_for('index') }}">happy<span style="color:#5b8cff">trader</span></a></h1>
-            <p>Create your account</p>
+            <p class="auth-headline">{{ signup_headline or "Create your account" }}</p>
             <p class="auth-trial">{{ signup_subhead or "Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage." }} No credit card.</p>
         </div>
         <div class="login-body">
@@ -87,7 +87,7 @@
                 <div id="signup-turnstile" class="mb-3"></div>
                 {% endif %}
                 <button type="submit" id="signupSubmit" class="btn btn-login w-100 d-flex align-items-center justify-content-center" aria-busy="false" data-ht-cta="create-account">
-                    <span class="signup-btn-label">Create Account</span>
+                    <span class="signup-btn-label">Create free account</span>
                     <span class="signup-btn-progress d-none align-items-center gap-2" aria-hidden="true" style="min-height: 1.5rem">
                         <span class="spinner-border spinner-border-sm" role="status" aria-label="Loading"></span>
                         <span>Creating account…</span>

@@ -50,6 +50,13 @@
         font-size: .9rem;
         margin-bottom: 0;
     }
+    .auth-headline {
+        color: #fff;
+        font-size: 1.05rem;
+        font-weight: 650;
+        line-height: 1.35;
+        margin: 0;
+    }
     .auth-trial { margin-top: .35rem; }
     .ht-wordmark-link {
         color: #fff;
@@ -66,7 +73,12 @@
         border-radius: 0.5rem;
     }
     .login-card .input-group > .form-control { min-width: 0; }
-    .login-card .input-group > .btn { border-left: 0; color: var(--ht-muted); }
+    .login-card .input-group > .btn {
+        border-left: 0;
+        color: var(--ht-muted);
+        min-width: 44px;
+        min-height: 44px;
+    }
     .login-card .form-text,
     .login-card .text-muted { color: var(--ht-muted) !important; }
     .form-control:focus {
@@ -81,6 +93,7 @@
         color: #0a0e17;
         font-weight: 650;
         padding: .7rem 1rem;
+        min-height: 48px;
         border-radius: 8px;
     }
     .btn-login:hover:not(:disabled) { color: #0a0e17; opacity: .92; }

@@ -826,4 +826,151 @@
            sits on the sticky signup bar, so landing pages hide it there. */
         body.ht-campaign .ht-feedback-fab { display: none; }
     }
+
+    /* /go ad landings. One column of copy, the button first, a wide
+       still beside it on a desktop. Phone-frame Shorts stay off. */
+    body.ht-campaign {
+        background: #0a0e17;
+    }
+    .ht-go .landing-hero {
+        text-align: left;
+        padding: 1.15rem 0 1.25rem;
+    }
+    .ht-go .landing-hero h1 {
+        font-size: clamp(1.7rem, 4.4vw, 2.65rem);
+        max-width: 16em;
+        margin: 0 0 0.4rem;
+    }
+    .ht-go .landing-hero .lead {
+        text-align: left;
+        color: #c5d0e4;
+        font-size: 1.05rem;
+        line-height: 1.4;
+        max-width: 34rem;
+        margin: 0 0 0.85rem;
+    }
+    .ht-go .ht-hero-cta {
+        align-items: stretch;
+        margin: 0;
+        max-width: 24rem;
+    }
+    .ht-go .ht-hero-primary {
+        min-height: 48px;
+        padding: 0.85rem 1.15rem;
+        font-size: 1.15rem;
+    }
+    .ht-go .ht-trust {
+        margin: 0.15rem 0 0;
+        color: #c5d0e4;
+        font-size: 0.92rem;
+        line-height: 1.4;
+        max-width: 36rem;
+    }
+    .ht-go .ht-hero-signin {
+        text-align: left;
+        font-size: 0.9rem;
+    }
+    .ht-go-hero {
+        display: grid;
+        gap: 1.15rem;
+        align-items: center;
+    }
+    .ht-go-hero:not(.has-shot) { max-width: 40rem; }
+    .ht-go-figure { margin: 0; }
+    .ht-shot-open {
+        display: block;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        border: 1px solid #243049;
+        border-radius: 0.85rem;
+        background: #121826;
+        cursor: zoom-in;
+        overflow: hidden;
+        line-height: 0;
+    }
+    .ht-shot-open img {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+    .ht-shot-open:focus-visible {
+        outline: 2px solid #5b8cff;
+        outline-offset: 3px;
+    }
+    .ht-go-figure figcaption {
+        margin-top: 0.55rem;
+        color: #c5d0e4;
+        font-size: 0.92rem;
+        line-height: 1.45;
+    }
+    .ht-go-points {
+        display: grid;
+        gap: 1.15rem;
+    }
+    .ht-go-points h2,
+    .ht-go-second h2 {
+        font-size: 1.25rem;
+        margin: 0 0 0.3rem;
+    }
+    .ht-go-points p,
+    .ht-go-second p {
+        margin: 0;
+        color: #c5d0e4;
+        font-size: 1.02rem;
+        line-height: 1.5;
+        max-width: 40rem;
+    }
+    .ht-go .ht-section { padding: 1.75rem 0; }
+    .ht-objections {
+        display: grid;
+        gap: 0.75rem;
+    }
+    .ht-objections > div {
+        background: #0a0e17;
+        border: 1px solid #243049;
+        border-radius: 12px;
+        padding: 0.95rem 1rem 1.05rem;
+    }
+    .ht-objections h2 {
+        font-size: 1.05rem;
+        margin: 0 0 0.3rem;
+    }
+    .ht-objections p {
+        margin: 0;
+        color: #c5d0e4;
+        font-size: 0.95rem;
+        line-height: 1.45;
+    }
+    .ht-lightbox-stage.is-shot {
+        width: min(1100px, calc(100vw - 2rem));
+        min-width: 0;
+        height: auto;
+        aspect-ratio: auto;
+        background: transparent;
+        overflow: visible;
+    }
+    .ht-lightbox-stage.is-shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: calc(100vh - 5.5rem);
+        object-fit: contain;
+        border-radius: 0.5rem;
+    }
+    .ht-lightbox-close {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    @media (min-width: 800px) {
+        .ht-objections { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .ht-go-points { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; }
+    }
+    @media (min-width: 960px) {
+        .ht-go .landing-hero { padding: 2rem 0 1.75rem; }
+        .ht-go-hero.has-shot {
+            grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+            gap: 2.25rem;
+        }
+    }
 </style>

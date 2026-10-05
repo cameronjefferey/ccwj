@@ -697,17 +697,16 @@ or uploaded a CSV, and which button was clicked.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
 Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
-(`app/go_landings.py`). Each is noindex. The page is a hero, three
-angle sections, proof, a short FAQ, and a close. Learn leads with
-Options 101, paper trading, and replays, and its close says **Free
-forever · no card**. Real P&L leads with a privacy-masked multi-account
-Overview (no account totals, no share counts) and the headline names
-the brokers plus read-only. Mistakes leads with the founder's BE
-covered-call buyback, then the ONON early close. Primary button is
-**Create free account** (Learn: **Start learning free**) to
-`/signup?route=learn|real-pnl|mistakes`, repeated at the bottom and as
-a sticky bar on phones only after the hero button scrolls away. The
-live demo is a text link. `?v=` swaps an allow-listed headline. The
+(`app/go_landings.py`). Each is noindex and short: headline, one-line
+subhead, **Create free account**, a trust line (free, no card, read-only
+SnapTrade, major brokers), then only the proof for that ad. Learn is
+free lessons plus paper trading (free forever). Real P&L is one wide BE
+chart that leaves account totals and share counts off the still. Mistakes
+leads with the founder's BE covered-call buyback (−$2,357), then the ONON
+early close. The same button is repeated at the bottom and as a sticky
+bar on phones only after the hero button scrolls away. The live demo is
+a smaller text link. Signup `?route=` repeats that page's headline and
+subhead. `?v=` swaps an allow-listed headline. The
 slug and variant stick on `ht_touch` and are copied to `funnel_events`
 and `users.acquisition_landing` at signup, beside the UTMs and
 `rdt_cid`. `/go/learn` sends signup to `/learn`. These pages keep the

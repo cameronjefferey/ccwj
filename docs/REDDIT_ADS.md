@@ -56,9 +56,12 @@ https://happytrader.me/go/mistakes?utm_source=reddit&utm_medium=paid&utm_campaig
 https://happytrader.me/go/mistakes?utm_source=reddit&utm_medium=paid&utm_campaign=mistakes&utm_content=premium&v=premium
 ```
 
-`control` keeps the default headline. `past` and `free` are the learn
-headlines. `rolls` and `runs` are the real-P&L headlines. `early` and
-`premium` are the mistakes headlines.
+`control` keeps the default headline. Learn: "Free options lessons, then
+paper trading." Real P&L: "See your real P&L across every broker."
+Mistakes: "See which early closes cost you" (the subhead is the BE
+−$2,357 buyback). `past` and `free` are the learn headline variants.
+`rolls` and `runs` are the real-P&L variants. `early` and `premium` are
+the mistakes variants. Every page's button says "Create free account."
 
 The landing says learning and paper trading are free, and that the 30-day
 trial starts when a real brokerage is connected. Ad creative can keep

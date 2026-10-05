@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_landing_macros.html" import video_frame %}
 
 {% block meta_tags %}
 <meta name="robots" content="noindex">
@@ -11,35 +10,104 @@
 {% include "_landing_styles.html" %}
 {% endblock %}
 
+{% macro shot(item, eager=false) %}
+<figure class="ht-go-figure">
+    <button type="button" class="ht-shot-open" data-lightbox="shot">
+        <img src="{{ url_for('static', filename=item.file) }}"
+             {% if item.srcset %}srcset="{% for path, width in item.srcset %}{{ url_for('static', filename=path) }} {{ width }}{% if not loop.last %}, {% endif %}{% endfor %}"
+             sizes="{{ item.sizes }}"{% endif %}
+             alt="{{ item.alt }}"
+             width="{{ item.width }}" height="{{ item.height }}"
+             decoding="async"
+             {% if eager %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
+        <span class="visually-hidden">Enlarge</span>
+    </button>
+    {% if item.caption %}
+    <figcaption>{{ item.caption }}</figcaption>
+    {% endif %}
+</figure>
+{% endmacro %}
+
 {% block content %}
-<div class="ht-landing">
+<div class="ht-landing ht-go">
     <header class="ht-band ht-band-hero landing-hero">
-        <div class="ht-wrap">
-            <h1>{{ headline }}</h1>
-            <p class="lead">{{ page.lead }}</p>
-            <p class="ht-fine">{{ trial_line }}</p>
-            <div class="ht-hero-cta">
-                {% if signup_enabled %}
-                <a class="ht-hero-primary" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}">{{ cta_label }}</a>
-                {% else %}
-                <a class="ht-hero-primary" href="{{ url_for('login') }}" data-ht-cta="{{ cta_base }}">Sign in</a>
-                {% endif %}
-                <p class="ht-hero-signin"><a href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Try the live demo</a></p>
+        <div class="ht-wrap ht-go-hero{% if page.shot %} has-shot{% endif %}">
+            <div class="ht-go-copy">
+                <h1>{{ headline }}</h1>
+                <p class="lead">{{ page.lead }}</p>
+                <div class="ht-hero-cta">
+                    {% if signup_enabled %}
+                    <a class="ht-hero-primary" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}">{{ cta_label }}</a>
+                    {% else %}
+                    <a class="ht-hero-primary" href="{{ url_for('login') }}" data-ht-cta="{{ cta_base }}">Sign in</a>
+                    {% endif %}
+                    <p class="ht-trust">{{ trust_line }}</p>
+                    <p class="ht-hero-signin"><a href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Try the live demo</a></p>
+                </div>
             </div>
-            {% if hero_short %}
-            <div class="ht-hero-short">
-                {{ video_frame(hero_short, lightbox=true, eager=true) }}
-            </div>
+            {% if page.shot %}
+            {{ shot(page.shot, eager=true) }}
             {% endif %}
         </div>
     </header>
-    {% for name in sections %}
-    {% with section_eager = loop.first %}
-    {% include "_landing/" ~ name ~ ".html" %}
-    {% endwith %}
-    {% endfor %}
+
+    {% if points %}
+    <section class="ht-band ht-band-shot-a ht-section" aria-label="{{ page.points_label or 'Details' }}">
+        <div class="ht-wrap ht-go-points">
+            {% for point in points %}
+            <div>
+                <h2>{{ point.heading }}</h2>
+                <p>{{ point.body }}
+                    {% if point.href and point.link_label %}
+                    <a class="ht-inline-tap" href="{{ point.href }}"{% if point.cta %} data-ht-cta="{{ point.cta }}"{% endif %}>{{ point.link_label }}</a>
+                    {% endif %}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if page.second %}
+    <section class="ht-band ht-band-shot-b ht-section" aria-label="{{ page.second.heading }}">
+        <div class="ht-wrap ht-go-second">
+            <h2>{{ page.second.heading }}</h2>
+            <p>{{ page.second.body }}</p>
+            {{ shot(page.second, eager=false) }}
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="ht-band ht-band-proof" aria-label="Before you create an account">
+        <div class="ht-wrap">
+            <div class="ht-objections">
+                <div>
+                    <h2>Is it safe?</h2>
+                    <p>Read-only through SnapTrade. HappyTrader never stores your broker password.</p>
+                </div>
+                <div>
+                    <h2>What does it cost?</h2>
+                    <p>{{ trial_line }} No card to create an account.</p>
+                </div>
+                <div>
+                    <h2>How soon can you see it?</h2>
+                    <p>About a minute to create the account. Lessons and paper trading open right away. Broker history shows up after the first sync.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-cta" aria-label="Create a free account">
+        <div class="ht-wrap">
+            <p class="ht-cta-kicker">{{ page.kicker }}</p>
+            {% if signup_enabled %}
+            <a class="ht-cta" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-close">{{ cta_label }}</a>
+            {% else %}
+            <a class="ht-cta" href="{{ url_for('login') }}">Sign in</a>
+            {% endif %}
+        </div>
+    </section>
 </div>
-{% include "_landing/player.html" %}
 <div class="ht-sticky-cta">
     <a class="ht-hero-primary" href="{{ signup_url if signup_enabled else url_for('login') }}" data-ht-cta="{{ cta_base }}-sticky">{{ cta_label if signup_enabled else 'Sign in' }}</a>
 </div>
@@ -47,13 +115,69 @@
 (function () {
     var bar = document.querySelector(".ht-sticky-cta");
     var hero = document.querySelector(".ht-hero-cta");
-    if (!bar || !hero || !("IntersectionObserver" in window)) return;
-    var watch = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-            bar.classList.toggle("is-shown", !entry.isIntersecting);
+    if (bar && hero && "IntersectionObserver" in window) {
+        var watch = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                bar.classList.toggle("is-shown", !entry.isIntersecting);
+            });
+        }, {threshold: 0});
+        watch.observe(hero);
+    }
+
+    function openShot(btn) {
+        if (document.querySelector(".ht-lightbox")) return;
+        var img = btn.querySelector("img");
+        if (!img) return;
+        var title = img.alt || "Image";
+        var root = document.createElement("div");
+        root.className = "ht-lightbox";
+        root.setAttribute("role", "dialog");
+        root.setAttribute("aria-modal", "true");
+        root.setAttribute("aria-label", title);
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "ht-lightbox-close";
+        close.setAttribute("aria-label", "Close");
+        close.textContent = "Close";
+        var stage = document.createElement("div");
+        stage.className = "ht-lightbox-stage is-shot";
+        var big = document.createElement("img");
+        big.src = img.currentSrc || img.src;
+        big.alt = img.alt || "";
+        stage.appendChild(big);
+        root.appendChild(close);
+        root.appendChild(stage);
+        var previous = document.activeElement;
+        function dismiss() {
+            document.removeEventListener("keydown", onKey);
+            root.remove();
+            document.body.classList.remove("ht-lightbox-open");
+            if (previous && previous.focus) {
+                try { previous.focus(); } catch (err) { /* focus is optional */ }
+            }
+        }
+        function onKey(event) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                dismiss();
+            }
+        }
+        close.addEventListener("click", function (event) {
+            event.stopPropagation();
+            dismiss();
         });
-    }, {threshold: 0});
-    watch.observe(hero);
+        root.addEventListener("click", function (event) {
+            if (event.target === root) dismiss();
+        });
+        document.addEventListener("keydown", onKey);
+        document.body.classList.add("ht-lightbox-open");
+        document.body.appendChild(root);
+        try { close.focus(); } catch (err) { /* focus is optional */ }
+    }
+
+    document.querySelectorAll(".ht-shot-open").forEach(function (btn) {
+        btn.addEventListener("click", function () { openShot(btn); });
+    });
 })();
 </script>
 {% endblock %}

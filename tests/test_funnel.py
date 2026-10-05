@@ -650,29 +650,25 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
     client = app.test_client()
     pages = {
         "learn": (
-            "Learn options free, then practice with paper money",
-            "Start learning free",
+            "Free options lessons, then paper trading",
+            "Create free account",
             "start-learning",
             "route=learn",
-            ("Learn options", "Practice with paper money", "Replay a trade, free"),
+            ("Ten short lessons", "Practice with paper money", "Replay a trade, free"),
         ),
         "real-pnl": (
             "See your real P&L across every broker",
             "Create free account",
             "create-account",
             "route=real-pnl",
-            ("Every account, one close", "The result, day by day", "Two closed trades, written out"),
+            ("Founder's account · BE, April to September 2026",),
         ),
         "mistakes": (
-            "Bought it back early. Then it expired worthless.",
+            "See which early closes cost you",
             "Create free account",
             "create-account",
             "route=mistakes",
-            (
-                "Bought back, then it expired worthless",
-                "Closed the morning after results",
-                "The close, next to holding",
-            ),
+            ("−$2,357", "Closed the morning after results"),
         ),
     }
     trial = (
@@ -708,22 +704,27 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert 'class="ht-hero-secondary"' not in hero
         assert 'class="ht-demo-btn"' not in body
         assert 'class="ht-hero-signin"' in hero
-        assert 'class="ht-hero-short"' in hero
-        assert "hqdefault.jpg" in hero
-        assert "sddefault.jpg" in hero
-        assert "maxresdefault" not in hero
-        assert 'fetchpriority="high"' in hero
+        assert 'class="ht-hero-short"' not in body
+        assert "hqdefault.jpg" not in body
+        assert "sddefault.jpg" not in body
+        assert "maxresdefault" not in body
+        assert "i.ytimg.com" not in body
         assert 'data-ht-cta="try-demo"' in hero
         assert "Try the live demo" in hero
-        assert 'Play Short:' in hero
+        assert "Play Short:" not in body
+        assert "Free, no card." in hero
+        assert "SnapTrade" in hero
+        assert "Read-only" in hero
         for place in ("close", "sticky", "nav", "footer"):
             assert f'data-ht-cta="{cta}-{place}"' in body
         assert f'data-ht-cta="{cta}-mid"' not in body
-        assert 'data-youtube-id="' in body
-        assert 'fetchpriority="high"' in body
-        # Learn's only picture is the hero Short, loaded up front.
-        if slug != "learn":
-            assert 'loading="lazy"' in body
+        if slug == "learn":
+            assert 'fetchpriority="high"' not in body
+            assert 'loading="lazy"' not in body
+        else:
+            assert 'fetchpriority="high"' in hero
+            assert 'class="ht-shot-open"' in hero
+            assert body.index("ht-hero-primary") < body.index("ht-shot-open")
         positions = [body.index(band) for band in bands]
         assert positions == sorted(positions)
         assert "Read-only" in body
@@ -749,20 +750,25 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
     assert "Learn from real past trades, then practice with paper money" in varied_body
     assert "route=learn" in varied_body
     assert 'data-ht-cta="start-learning"' in varied_body
+    assert "Create free account" in varied_body
     unknown = client.get("/go/learn?v=not-a-variant")
-    assert "Learn options free, then practice with paper money" in unknown.get_data(as_text=True)
+    assert "Free options lessons, then paper trading" in unknown.get_data(as_text=True)
     assert client.get("/go/nope").status_code == 404
     _, mistakes = _go_body(client, "/go/mistakes")
     assert "be-close.webp" in mistakes
     assert "onon.webp" in mistakes
     assert mistakes.index("be-close.webp") < mistakes.index("onon.webp")
+    assert "−$2,357" in mistakes
+    assert "$6,265" in mistakes
     assert "Closing early saved you" not in mistakes
     assert "be-swing.webp" not in mistakes
+    assert 'loading="lazy"' in mistakes
     _, real = _go_body(client, "/go/real-pnl")
     assert "Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only." in real
     assert real.count("pnl_real.webp") == 1
     assert "Covered-call income tracked" not in real
-    assert 'class="ht-overview-mock"' in real
+    assert 'class="ht-overview-mock"' not in real
+    assert "AAPL" not in real
 
 
 def test_go_pages_keep_marketing_chrome_when_signed_in(monkeypatch):
@@ -939,8 +945,17 @@ def test_learn_route_signup_opens_learn(monkeypatch):
     page = client.get("/signup?route=learn")
     signup_html = page.get_data(as_text=True)
     assert 'name="route" value="learn"' in signup_html
+    assert "Free options lessons, then paper trading" in signup_html
+    assert "Ten short lessons and a paper account. Free forever." in signup_html
     assert signup_html.count("No credit card") == 1
     assert "No card." not in signup_html
+    assert "Create free account" in signup_html
+    real_signup = html.unescape(client.get("/signup?route=real-pnl").get_data(as_text=True))
+    assert "See your real P&L across every broker" in real_signup
+    assert "Read-only." in real_signup
+    mistake_signup = html.unescape(client.get("/signup?route=mistakes").get_data(as_text=True))
+    assert "See which early closes cost you" in mistake_signup
+    assert "−$2,357" in mistake_signup
     resp = client.post("/signup", data={
         "username": "learnrouteuser",
         "email": "learnroute@example.com",
