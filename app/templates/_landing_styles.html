@@ -975,7 +975,8 @@
     }
 
     /* /go/real-pnl. Desktop is the approved layout: copy on the left,
-       a glowing 9:16 Short on the right. Narrow screens stack. */
+       a glowing product-screen loop on the right (510×590, the cropped
+       covered-call runs recording). Narrow screens stack. */
     body.ht-public nav.navbar.ht-nav-min .container-fluid {
         display: flex;
         align-items: center;
@@ -1044,31 +1045,33 @@
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 700px;
-        height: 900px;
+        width: 640px;
+        height: 760px;
         transform: translate(-50%, -50%);
         background: radial-gradient(closest-side, rgba(91,140,255,.22), rgba(91,140,255,.06) 55%, transparent 75%);
         pointer-events: none;
     }
-    .ht-real-pnl .ht-frame-hero {
-        width: 400px;
+    .ht-real-pnl .ht-lottie-hero {
+        position: relative;
+        z-index: 1;
+        width: 420px;
         max-width: 100%;
-        border-radius: 1.6rem;
+        aspect-ratio: 510 / 590;
+        border-radius: 1.15rem;
         border: 1px solid rgba(91,140,255,.55);
         box-shadow: 0 0 0 6px rgba(91,140,255,.07), 0 0 60px rgba(91,140,255,.28), 0 30px 80px rgba(0,0,0,.55);
+        overflow: hidden;
+        background: #0c111c;
     }
-    .ht-real-pnl .ht-frame-hero .ht-play {
-        width: 5.5rem;
-        height: 5.5rem;
-        top: 50%;
-        box-shadow: 0 0 0 10px rgba(91,140,255,.22), 0 12px 34px rgba(10,14,23,.6);
-    }
-    .ht-real-pnl .ht-frame-hero .ht-play svg { width: 30px; height: 30px; }
-    .ht-real-pnl .ht-frame-hero .ht-duration {
-        left: 1rem;
-        bottom: 1rem;
-        font-size: .8rem;
-        text-transform: uppercase;
+    .ht-real-pnl .ht-lottie-hero .ht-lottie-poster,
+    .ht-real-pnl .ht-lottie-hero canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        border: 0;
+        object-fit: cover;
     }
     .ht-real-pnl .ht-merged .ht-wrap { max-width: 1080px; }
     .ht-real-pnl .ht-merged-copy { max-width: 52rem; margin: 0 auto 1.6rem; text-align: center; }
@@ -1187,8 +1190,8 @@
             gap: 1.75rem;
             padding: 0 1.25rem;
         }
-        .ht-real-pnl .ht-hero-video::before { width: 420px; height: 520px; }
-        .ht-real-pnl .ht-frame-hero { width: min(100%, 320px); }
+        .ht-real-pnl .ht-hero-video::before { width: 480px; height: 560px; }
+        .ht-real-pnl .ht-lottie-hero { width: min(420px, 100%); }
         .ht-real-pnl .ht-band-break { height: 3rem; }
         .ht-real-pnl .ht-banner-card { padding: 1.75rem 1.25rem 2rem; }
         .ht-real-pnl .ht-banner-title,

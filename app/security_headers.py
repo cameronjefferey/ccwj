@@ -72,7 +72,7 @@ def apply_security_headers(response):
     # Flask's test client and a None SEND_FILE_MAX_AGE_DEFAULT both emit
     # no-cache. Public assets should stay cacheable in production too.
     if path.startswith("/static/"):
-        if path.endswith((".webp", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff2")):
+        if path.endswith((".webp", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff2", ".json")):
             response.headers["Cache-Control"] = "public, max-age=604800"
         elif path.endswith((".js", ".css")):
             response.headers["Cache-Control"] = "public, max-age=3600"

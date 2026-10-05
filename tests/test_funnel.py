@@ -535,6 +535,12 @@ def test_static_images_are_cached():
     assert "cta_click" in resp.get_data(as_text=True)
     assert "scroll_depth" in resp.get_data(as_text=True)
     assert "client_seen" in resp.get_data(as_text=True)
+    lottie = client.get("/static/marketing/covered-call-scroll.json")
+    assert lottie.status_code == 200
+    assert "max-age=604800" in (lottie.headers.get("Cache-Control") or "")
+    poster = client.get("/static/marketing/covered-call-scroll-poster.webp")
+    assert poster.status_code == 200
+    assert "max-age=604800" in (poster.headers.get("Cache-Control") or "")
 
 
 def test_conversion_rates_are_percent_of_visitors():
@@ -723,10 +729,29 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert "Try Demo" not in body
             assert hero.index("ht-hero-primary") < hero.index("ht-hero-secondary")
             assert hero.index("Explore live demo") < hero.index("Learning and paper trading are free.")
-            assert "u_YWl5fKEjo" in hero
-            assert "oardefault.jpg" in hero
-            assert "Play Short: Covered-call runs" in hero
+            assert "u_YWl5fKEjo" not in body
+            assert "oardefault.jpg" not in hero
+            assert "Play Short: Covered-call runs" not in body
+            assert "ht-frame-hero" not in hero
+            assert "ht-lottie-hero" in hero
+            assert "covered-call-scroll.json" in hero
+            assert "covered-call-scroll-poster.webp" in hero
+            assert 'aria-label="Covered-call runs scrolling in HappyTrader"' in hero
+            assert "lottie.min.js" in body
             assert 'fetchpriority="high"' in hero
+            lottie_path = os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "app",
+                "static",
+                "marketing",
+                "covered-call-scroll.json",
+            )
+            lottie = json.loads(open(lottie_path, encoding="utf-8").read())
+            assert lottie["w"] == 510 and lottie["h"] == 590
+            assert lottie["fr"] == 8 and lottie["op"] == 127
+            assert lottie["assets"][0]["p"].startswith("data:image/jpeg;base64,")
+            assert os.path.getsize(lottie_path) < 3_000_000
             nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
             assert 'href="/learn"' not in nav
             assert 'href="/pricing"' not in nav

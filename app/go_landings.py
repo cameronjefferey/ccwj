@@ -205,17 +205,6 @@ def _signup_url(page: dict) -> str:
     return url_for("signup")
 
 
-def _vertical_short(steps, youtube_id: str, label: str) -> dict:
-    """9:16 Short poster. YouTube's oardefault is the vertical still."""
-    match = next(step for step in steps if step.get("youtube_id") == youtube_id)
-    video = dict(match)
-    video["poster_url"] = f"https://i.ytimg.com/vi/{youtube_id}/oardefault.jpg"
-    video["poster_srcset"] = ""
-    video["poster_sizes"] = ""
-    video["duration_label"] = label
-    return video
-
-
 def _point_href(link_to: str) -> str:
     if link_to == "learn":
         from app.marketing_videos import resolve_learn_url
@@ -247,6 +236,8 @@ def go_landing(slug):
         # sCZVeeY_6SA is the if-held Short. TRADE_STORIES documents
         # VssdUIrHcjs (ONON calls, closed early) as that Short's full-length
         # upload. The catch-story id abjZ4_UFhP4 stays gated and is not used.
+        # The hero loop is a static Lottie of the covered-call runs screen
+        # (marketing/covered-call-scroll.json), not a YouTube Short.
         position_video = next(
             row for row in trade_stories() if row.get("step") == "onon"
         )
@@ -256,9 +247,6 @@ def go_landing(slug):
             "catch_stories": [
                 row for row in catch_stories() if row["id"] in ("onon", "rklb")
             ],
-            "covered_short": _vertical_short(
-                steps, "u_YWl5fKEjo", "Short · Covered-call runs"
-            ),
             "position_video": position_video,
             "minimal_nav": True,
             "demo_pair": True,
