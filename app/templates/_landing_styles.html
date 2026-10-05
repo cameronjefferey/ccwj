@@ -975,10 +975,8 @@
     }
 
     /* /go/real-pnl. Desktop is the approved layout: copy on the left,
-       a glowing 16:10 product window on the right. The window overhangs
-       the centered page column and meets the viewport's right edge, so
-       the desktop screen is not clipped by the content margin. Narrow
-       screens stack. */
+       a glowing 16:10 product window on the right (1020×638, the cropped
+       covered-call runs recording). Narrow screens stack. */
     body.ht-public nav.navbar.ht-nav-min .container-fluid {
         display: flex;
         align-items: center;
@@ -986,40 +984,20 @@
         flex-wrap: nowrap;
     }
     body.ht-public nav.navbar.ht-nav-min .btn-auth-nav { font-weight: 650; }
-    /* The shared landing bleed clips anything past the 72rem page.
-       This hero has to escape that clip to reach the viewport edge. */
-    .ht-real-pnl {
-        --bleed: 0px;
-        overflow-x: visible;
-    }
-    .ht-real-pnl .landing-hero {
-        padding: 0.75rem 0 2.5rem;
-        text-align: left;
-        /* The page column is centered. 50% is half that column; 50vw is
-           half the viewport. The difference is the gap from this hero's
-           right edge to the viewport edge, so the desktop window can
-           finish there instead of being clipped by the content margin. */
-        width: calc(100% + max(0px, 50vw - 50%));
-        margin-right: min(0px, calc(50% - 50vw));
-    }
+    .ht-real-pnl .landing-hero { padding: 0.75rem 0 2.5rem; text-align: left; }
     /* The feedback button's right gutter is for app tables. This hero
-       needs that space for the desktop window. Clip only the viewport
-       so a scrollbar-width vw rounding cannot open a horizontal scroll. */
-    body.ht-public:has(.ht-real-pnl) {
-        overflow-x: clip;
-    }
+       needs that space for the desktop window. */
     body.ht-public:has(.ht-real-pnl) .ht-page.container-fluid {
         padding-right: 1.5rem !important;
-        overflow: visible;
     }
     .ht-real-pnl .ht-wrap.ht-hero-grid {
-        max-width: none;
+        max-width: 1280px;
         width: 100%;
         display: grid;
-        grid-template-columns: minmax(0, 34rem) minmax(0, 1fr);
+        grid-template-columns: minmax(520px, 0.78fr) minmax(640px, 1.22fr);
         align-items: center;
         gap: 2rem;
-        padding: 0 0 0 1.5rem;
+        padding: 0 1.5rem;
     }
     .ht-real-pnl .ht-hero-text { max-width: 40rem; }
     .ht-real-pnl .landing-hero h1 {
@@ -1071,18 +1049,17 @@
         display: flex;
         justify-content: flex-end;
         width: 100%;
-        min-width: 0;
         margin-top: 0;
         position: relative;
     }
     .ht-real-pnl .ht-hero-video::before {
         content: "";
         position: absolute;
-        left: 8%;
-        right: 0;
+        left: 50%;
         top: 50%;
-        height: 140%;
-        transform: translateY(-50%);
+        width: 118%;
+        height: 155%;
+        transform: translate(-50%, -50%);
         background: radial-gradient(closest-side, rgba(91,140,255,.22), rgba(91,140,255,.06) 55%, transparent 75%);
         pointer-events: none;
     }
@@ -1097,22 +1074,15 @@
         overflow: hidden;
         background: #0c111c;
     }
-    /* The 1020-wide frame is the desktop window. The product UI occupies
-       the left of that frame (about x=0–540); the rest is empty window
-       interior. Scale the picture so that column fills the chrome.
-       190% shows x=0–537 and the matching top band, clipped by the frame.
-       Inline sizes from the lottie canvas renderer lose to !important. */
     .ht-real-pnl .ht-lottie-hero .ht-lottie-poster,
     .ht-real-pnl .ht-lottie-hero canvas {
         position: absolute;
-        left: 0 !important;
-        top: -12% !important;
-        width: 190% !important;
-        height: 190% !important;
-        max-width: none;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         display: block;
         border: 0;
-        object-fit: fill;
+        object-fit: cover;
     }
     .ht-real-pnl .ht-merged .ht-wrap { max-width: 1080px; }
     .ht-real-pnl .ht-merged-copy { max-width: 52rem; margin: 0 auto 1.6rem; text-align: center; }
@@ -1224,14 +1194,9 @@
         filter: none;
     }
     @media (max-width: 1240px) {
-        .ht-real-pnl .landing-hero { width: auto; margin-right: 0; }
-        .ht-real-pnl .ht-wrap.ht-hero-grid {
-            grid-template-columns: 1fr;
-            gap: 1.75rem;
-            padding-right: 1.25rem;
-        }
+        .ht-real-pnl .ht-wrap.ht-hero-grid { grid-template-columns: 1fr; gap: 1.75rem; }
         .ht-real-pnl .ht-hero-video { justify-content: center; }
-        .ht-real-pnl .ht-hero-video::before { left: 50%; right: auto; width: 108%; height: 140%; transform: translate(-50%, -50%); }
+        .ht-real-pnl .ht-hero-video::before { width: 108%; height: 140%; }
         .ht-real-pnl .ht-lottie-hero { width: min(100%, 860px); margin-inline: auto; }
     }
     @media (max-width: 959px) {
