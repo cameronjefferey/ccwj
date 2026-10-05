@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_landing_macros.html" import video_frame %}
 
 {% block meta_tags %}
 <meta name="robots" content="noindex">
@@ -29,7 +28,18 @@
                 <p class="ht-fine ht-hero-fine">{{ trial_line }}</p>
             </div>
             <div class="ht-hero-video">
-                {{ video_frame(covered_short, eager=true, lightbox=true, frame_class="ht-frame-hero") }}
+                {# Desktop product screen from Short u_YWl5fKEjo only: the
+                   stable frame interior (x 30–1050, y 400–1580 of the
+                   1080×1920 source), 0–15.9s, before the end card.
+                   Captions, the phone bezel, and the outro are not in this loop. #}
+                <div class="ht-lottie-hero"
+                     data-lottie-src="{{ url_for('static', filename='marketing/covered-call-scroll.json') }}"
+                     role="img"
+                     aria-label="Covered-call runs scrolling in HappyTrader">
+                    <img class="ht-lottie-poster"
+                         src="{{ url_for('static', filename='marketing/covered-call-scroll-poster.webp') }}"
+                         alt="" width="510" height="590" decoding="async" fetchpriority="high">
+                </div>
             </div>
         </div>
     </header>
@@ -207,6 +217,29 @@
         });
     }, {threshold: [0, 0.25]});
     watch.observe(section);
+})();
+</script>
+<script src="{{ url_for('static', filename='js/lottie.min.js') }}"></script>
+<script>
+(function () {
+    var slot = document.querySelector(".ht-lottie-hero");
+    if (!slot || !window.lottie) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var src = slot.getAttribute("data-lottie-src") || "";
+    if (!src) return;
+    var anim = window.lottie.loadAnimation({
+        container: slot,
+        renderer: "canvas",
+        loop: true,
+        autoplay: true,
+        path: src
+    });
+    anim.addEventListener("DOMLoaded", function () {
+        var poster = slot.querySelector(".ht-lottie-poster");
+        if (poster) poster.remove();
+        anim.resize();
+        window.requestAnimationFrame(function () { anim.resize(); });
+    });
 })();
 </script>
 {% endblock %}
