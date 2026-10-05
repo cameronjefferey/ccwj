@@ -241,21 +241,25 @@ def register_redirect():
     return redirect(url_for("signup"))
 
 
-_SIGNUP_ROUTES = {
-    "learn": "Lessons, replays, and paper trading are free.",
-    "real-pnl": "See your real P&L across every broker you connect. Read-only.",
-    "mistakes": "See what an early close cost, on the trades you already made.",
-}
-
-
 def _signup_route(raw) -> str:
     """Ad landings preselect a path. Anything else is blank."""
     text = (raw or "").strip()
-    return text if text in _SIGNUP_ROUTES else ""
+    from app.go_landings import page_for_route
+    return text if page_for_route(text) else ""
+
+
+def _signup_headline(route: str) -> str:
+    """Echo the landing headline so the form matches the ad."""
+    from app.go_landings import signup_headline
+    return signup_headline(route)
 
 
 def _signup_subhead(route: str) -> str:
-    return _SIGNUP_ROUTES.get(route) or (
+    from app.go_landings import signup_subhead
+    text = signup_subhead(route)
+    if text:
+        return text
+    return (
         "Learning and paper trading are free. "
         "Your 30-day trial starts when you connect a real brokerage."
     )
@@ -284,6 +288,7 @@ def _render_signup_form(
         form_email=email,
         form_invite=invite,
         form_route=chosen,
+        signup_headline=_signup_headline(chosen),
         signup_subhead=_signup_subhead(chosen),
         turnstile_site_key=site_key,
     )
