@@ -30,6 +30,7 @@
                 </div>
                 {% endfor %}
             </div>
+            {% if not catch_quiet %}
             {% if campaign %}
             <a class="ht-catch-cta" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-catch">{{ cta_label }}</a>
             {% elif signup_enabled and not signup_invite_required %}
@@ -39,5 +40,6 @@
             {% endif %}
             <p class="ht-catch-note">For learning only, not investment advice</p>
             {% include "_landing/disclaimer.html" %}
+            {% endif %}
         </div>
     </section>

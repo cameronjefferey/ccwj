@@ -657,11 +657,20 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             ("Ten short lessons", "Practice with paper money", "Replay a trade, free"),
         ),
         "real-pnl": (
-            "See your real P&L across every broker",
+            "What did your covered calls really make?",
             "Create free account",
             "create-account",
             "route=real-pnl",
-            ("Founder's account · BE, April to September 2026",),
+            (
+                "Every trade day on one line, covered-call income tracked",
+                "Here's what you'd catch with HappyTrader",
+                "See what your own trades really made.",
+                "Every position's full story",
+                "What do your trades say about your next one?",
+                "Three steps, then the record",
+                "What it costs",
+                "Questions",
+            ),
         ),
         "mistakes": (
             "See which early closes cost you",
@@ -697,31 +706,65 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert "term-tips.js" not in body
         assert 'bootstrap.min.css" media="print"' not in body
         assert "bootstrap.min.css" in body
-        hero = body.split('class="ht-hero-cta"', 1)[1].split("</header>", 1)[0]
+        hero = body.split('class="ht-hero-cta', 1)[1].split("</header>", 1)[0]
         assert f'class="ht-hero-primary" href="/signup' in hero
         assert f'data-ht-cta="{cta}"' in hero
         assert label in hero
-        assert 'class="ht-hero-secondary"' not in hero
         assert 'class="ht-demo-btn"' not in body
-        assert 'class="ht-hero-signin"' in hero
         assert 'class="ht-hero-short"' not in body
-        assert "hqdefault.jpg" not in body
-        assert "sddefault.jpg" not in body
-        assert "maxresdefault" not in body
-        assert "i.ytimg.com" not in body
         assert 'data-ht-cta="try-demo"' in hero
-        assert "Try the live demo" in hero
-        assert "Play Short:" not in body
-        assert "Free, no card." in hero
-        assert "SnapTrade" in hero
-        assert "Read-only" in hero
         for place in ("close", "sticky", "nav", "footer"):
             assert f'data-ht-cta="{cta}-{place}"' in body
         assert f'data-ht-cta="{cta}-mid"' not in body
+        if slug == "real-pnl":
+            assert 'ht-hero-secondary' in hero
+            assert "Explore live demo" in hero
+            assert "Try the live demo" not in body
+            assert "Try Demo" not in body
+            assert hero.index("ht-hero-primary") < hero.index("ht-hero-secondary")
+            assert hero.index("Explore live demo") < hero.index("Learning and paper trading are free.")
+            assert "u_YWl5fKEjo" in hero
+            assert "oardefault.jpg" in hero
+            assert "Play Short: Covered-call runs" in hero
+            assert 'fetchpriority="high"' in hero
+            nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
+            assert 'href="/learn"' not in nav
+            assert 'href="/pricing"' not in nav
+            assert 'href="/faq"' not in nav
+            assert "Sign In" not in nav
+            assert "Go to your dashboard" not in nav
+            assert "Create free account" in nav
+            assert body.count("Educational tool, not investment advice.") == 1
+            assert "be-close.webp" not in body
+            assert "be-swing.webp" not in body
+            assert "win-rate.webp" not in body
+            assert "onon.webp" in body
+            assert "rklb.webp" in body
+            assert "sCZVeeY_6SA" in body
+            assert "GZ3mPiagkLo" in body
+            assert "fit-matrix.webp" in body
+            assert "pnl_real.webp" in body
+            assert "How do I connect a brokerage?" in body
+            assert body.count('class="faq-item"') == 11
+        else:
+            assert 'class="ht-hero-secondary"' not in hero
+            assert 'class="ht-hero-signin"' in hero
+            assert "hqdefault.jpg" not in body
+            assert "sddefault.jpg" not in body
+            assert "maxresdefault" not in body
+            assert "i.ytimg.com" not in body
+            assert "Try the live demo" in hero
+            assert "Play Short:" not in body
+            assert "Free, no card." in hero
+            assert "SnapTrade" in hero
+            assert "Read-only" in hero
+            assert "How it works" not in body
+            assert "strategies.webp" not in body
+            assert "win-rate.webp" not in body
         if slug == "learn":
             assert 'fetchpriority="high"' not in body
             assert 'loading="lazy"' not in body
-        else:
+        elif slug != "real-pnl":
             assert 'fetchpriority="high"' in hero
             assert 'class="ht-shot-open"' in hero
             assert body.index("ht-hero-primary") < body.index("ht-shot-open")
@@ -730,11 +773,8 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         assert "Read-only" in body
         assert "SnapTrade" in body
         assert "What does it cost?" in body
-        assert "How it works" not in body
         assert "Trader Profile" not in body
         assert "msft-if-held.webp" not in body
-        assert "strategies.webp" not in body
-        assert "win-rate.webp" not in body
     _, learn = _go_body(client, "/go/learn")
     assert "Free forever · no card" in learn
     assert 'class="ht-inline-tap"' in learn
@@ -764,11 +804,13 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
     assert "be-swing.webp" not in mistakes
     assert 'loading="lazy"' in mistakes
     _, real = _go_body(client, "/go/real-pnl")
-    assert "Schwab, Fidelity, Vanguard, Robinhood, and others. Read-only." in real
+    assert "Rolls, covered-call runs, and early exits, on the trades themselves." in real
     assert real.count("pnl_real.webp") == 1
-    assert "Covered-call income tracked" not in real
+    assert "Every trade day on one line, covered-call income tracked" in real
     assert 'class="ht-overview-mock"' not in real
     assert "AAPL" not in real
+    assert "See pricing" in real
+    assert 'href="/pricing"' in real
 
 
 def test_go_pages_keep_marketing_chrome_when_signed_in(monkeypatch):
@@ -795,11 +837,16 @@ def test_go_pages_keep_marketing_chrome_when_signed_in(monkeypatch):
     with client.session_transaction() as sess:
         sess["_user_id"] = "1"
         sess["_fresh"] = True
-    resp, body = _go_body(client, "/go/real-pnl")
+    resp, body = _go_body(client, "/go/learn")
     assert "ht-public" in body
     assert "Go to your dashboard" in body
     assert "Sign In" in body
     assert "Create free account" in body
+    _, real = _go_body(client, "/go/real-pnl")
+    real_nav = real.split("<nav", 1)[1].split("</nav>", 1)[0]
+    assert "Go to your dashboard" not in real_nav
+    assert "Sign In" not in real_nav
+    assert "Create free account" in real_nav
     assert "Broker data as of" not in body
     assert 'id="userMenu"' not in body
     assert "Jump to" not in body
@@ -951,8 +998,8 @@ def test_learn_route_signup_opens_learn(monkeypatch):
     assert "No card." not in signup_html
     assert "Create free account" in signup_html
     real_signup = html.unescape(client.get("/signup?route=real-pnl").get_data(as_text=True))
-    assert "See your real P&L across every broker" in real_signup
-    assert "Read-only." in real_signup
+    assert "What did your covered calls really make?" in real_signup
+    assert "Rolls, covered-call runs, and early exits" in real_signup
     mistake_signup = html.unescape(client.get("/signup?route=mistakes").get_data(as_text=True))
     assert "See which early closes cost you" in mistake_signup
     assert "−$2,357" in mistake_signup

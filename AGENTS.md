@@ -697,22 +697,34 @@ or uploaded a CSV, and which button was clicked.
 Checklist and creatives: `docs/REDDIT_ADS.md`.
 
 Message-test landings are `/go/learn`, `/go/real-pnl`, and `/go/mistakes`
-(`app/go_landings.py`). Each is noindex and short: headline, one-line
-subhead, **Create free account**, a trust line (free, no card, read-only
-SnapTrade, major brokers), then only the proof for that ad. Learn is
-free lessons plus paper trading (free forever). Real P&L is one wide BE
-chart that leaves account totals and share counts off the still. Mistakes
-leads with the founder's BE covered-call buyback (−$2,357), then the ONON
-early close. The same button is repeated at the bottom and as a sticky
-bar on phones only after the hero button scrolls away. The live demo is
-a smaller text link. Signup `?route=` repeats that page's headline and
-subhead. `?v=` swaps an allow-listed headline. The
-slug and variant stick on `ht_touch` and are copied to `funnel_events`
-and `users.acquisition_landing` at signup, beside the UTMs and
-`rdt_cid`. `/go/learn` sends signup to `/learn`. These pages keep the
-marketing header (logo, Sign in, sign-up) even when a session exists;
-signed-in visitors get **Go to your dashboard** and do not see the app
-nav or the broker-data bar.
+(`app/go_landings.py`). Each is noindex. Learn and Mistakes stay short:
+headline, one-line subhead, **Create free account**, a trust line (free,
+no card, read-only SnapTrade, major brokers), then only the proof for
+that ad. Learn is free lessons plus paper trading (free forever).
+Mistakes leads with the founder's BE covered-call buyback (−$2,357),
+then the ONON early close. On those two the live demo is a text link,
+**Try the live demo**, and the same Create free account button repeats
+at the bottom and as a sticky bar on phones only after the hero button
+scrolls away. `/go/real-pnl` is the Monday ad page
+(`app/templates/go_real_pnl.html`): left-aligned headline "What did
+your covered calls really make?", side-by-side **Create free account**
+and **Explore live demo**, the free/trial line under the buttons, and
+the covered-call runs Short (`u_YWl5fKEjo`) in a glowing 9:16 frame.
+Below that: the BE cumulative chart, ONON and RKLB catch tabs only,
+a mid CTA, the if-held Short (`sCZVeeY_6SA`), the fit matrix, the
+homepage How it works block (including `GZ3mPiagkLo`), a compact
+pricing blurb, and the FAQ accordion. Nav on that page is the logo
+and Create free account. The risk disclaimer is the footer line, once.
+Stills leave account totals and share counts off. Signup `?route=`
+repeats that page's headline and subhead. `?v=` swaps an allow-listed
+headline; `rolls` and `runs` still record on `/go/real-pnl` and show
+the approved headline. The slug and variant stick on `ht_touch` and
+are copied to `funnel_events` and `users.acquisition_landing` at
+signup, beside the UTMs and `rdt_cid`. `/go/learn` sends signup to
+`/learn`. Learn and Mistakes keep the marketing header (logo, Sign in,
+sign-up) even when a session exists; signed-in visitors get **Go to
+your dashboard** and do not see the app nav or the broker-data bar.
+`/go/real-pnl` does not show Sign in or Go to your dashboard.
 Logged-out public pages also record page views, CTA clicks, scroll
 depth, and public video plays. Ad pixels and Conversions API stay off
 on DNT/GPC, on internal traffic (`?ht_internal=1`, the `ht_internal`

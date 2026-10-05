@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% from "_landing_macros.html" import video_frame %}
+
+{% block meta_tags %}
+<meta name="robots" content="noindex">
+<meta name="description" content="{{ page.lead }}">
+<meta property="og:description" content="{{ page.lead }}">
+{% endblock %}
+
+{% block head %}
+{% include "_landing_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="ht-landing ht-real-pnl">
+    <header class="ht-band ht-band-hero landing-hero">
+        <div class="ht-wrap ht-hero-grid">
+            <div class="ht-hero-text">
+                <h1>{{ headline }}</h1>
+                <p class="lead">{{ page.lead }}</p>
+                <div class="ht-hero-cta ht-cta-row">
+                    {% if signup_enabled %}
+                    <a class="ht-hero-primary" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}">{{ cta_label }}</a>
+                    {% else %}
+                    <a class="ht-hero-primary" href="{{ url_for('login') }}" data-ht-cta="{{ cta_base }}">Sign in</a>
+                    {% endif %}
+                    <a class="ht-hero-secondary ht-ghost" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Explore live demo</a>
+                </div>
+                <p class="ht-fine ht-hero-fine">{{ trial_line }}</p>
+            </div>
+            <div class="ht-hero-video">
+                {{ video_frame(covered_short, eager=true, lightbox=true, frame_class="ht-frame-hero") }}
+            </div>
+        </div>
+    </header>
+
+    <section class="ht-band ht-band-shot-a ht-section ht-merged" aria-label="Daily P and L with covered-call income">
+        <div class="ht-wrap">
+            <div class="ht-merged-copy">
+                <div class="ht-kicker">Overview</div>
+                <h2 class="ht-section-title">Every trade day on one line, covered-call income tracked</h2>
+                <p class="ht-section-lead">See every day's P&amp;L in one line, with options and shares split out. Every covered-call run is tracked from buy to sale, assignment or today: premium, share result, one net.</p>
+            </div>
+            <figure class="ht-shot ht-merged-shot">
+                <img src="{{ url_for('static', filename='marketing/pnl_real.webp') }}"
+                     alt="Cumulative P&amp;L on the founder's BE trades, April to September 2026, with trade-day markers"
+                     width="1600" height="804" loading="lazy" decoding="async">
+                <figcaption>Real account · BE</figcaption>
+            </figure>
+        </div>
+    </section>
+
+    {% include "_landing/catch.html" %}
+
+    <section class="ht-band ht-band-banner" aria-label="Get started">
+        <div class="ht-wrap">
+            <div class="ht-banner-card">
+                <div class="ht-banner-copy">
+                    <h2 class="ht-banner-title">See what your own trades really made.</h2>
+                    <p class="ht-banner-sub">Connect read-only in about a minute. Free to start, no card.</p>
+                </div>
+                <div class="ht-hero-cta ht-cta-row ht-banner-cta">
+                    {% if signup_enabled %}
+                    <a class="ht-hero-primary" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-banner">{{ cta_label }}</a>
+                    {% else %}
+                    <a class="ht-hero-primary" href="{{ url_for('login') }}" data-ht-cta="{{ cta_base }}-banner">Sign in</a>
+                    {% endif %}
+                    <a class="ht-hero-secondary ht-ghost" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo-banner">Explore live demo</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-story ht-section ht-shorts" aria-label="Every position's full story">
+        <div class="ht-wrap ht-shorts-grid">
+            <div class="ht-copy">
+                <div class="ht-kicker">Shorts</div>
+                <h2 class="ht-section-title">Every position's full story</h2>
+                <p>Each symbol opens to the fills, the open lots, and a chart of equity, options, and dividends.</p>
+                <p>An early close also keeps the P&amp;L if that contract had been held to expiration. The line after the close is an estimate.</p>
+            </div>
+            <div class="ht-hero-video ht-shorts-video">
+                {{ video_frame(held_short, lightbox=true, frame_class="ht-frame-hero") }}
+            </div>
+        </div>
+    </section>
+
+    <section class="ht-band ht-band-shot-a ht-section ht-edge" aria-label="Win rate and return by strategy and sector">
+        <div class="ht-wrap ht-shorts-grid ht-edge-grid">
+            <div class="ht-copy">
+                <div class="ht-kicker">Strategies</div>
+                <h2 class="ht-section-title">What do your trades say about your next one?</h2>
+                <p>See your win rate and return by strategy and sector, so you know which setups to repeat and which to drop. Cells with no trades stay empty.</p>
+            </div>
+            <figure class="ht-shot ht-edge-shot">
+                <img src="{{ url_for('static', filename='marketing/fit-matrix.webp') }}"
+                     alt="Strategy fit matrix from the demo account, return by strategy and sector."
+                     width="1400" height="641" decoding="async" loading="lazy">
+                <figcaption>Demo account</figcaption>
+            </figure>
+        </div>
+    </section>
+
+    {% include "_landing/how.html" %}
+    {% include "_landing/proof.html" %}
+    {% include "_landing/pricing.html" %}
+    {% include "_landing/faq.html" %}
+    {% include "_landing/close.html" %}
+</div>
+{% include "_landing/player.html" %}
+<div class="ht-sticky-cta">
+    <a class="ht-hero-primary" href="{{ signup_url if signup_enabled else url_for('login') }}" data-ht-cta="{{ cta_base }}-sticky">{{ cta_label if signup_enabled else 'Sign in' }}</a>
+</div>
+<script>
+(function () {
+    var bar = document.querySelector(".ht-sticky-cta");
+    var hero = document.querySelector(".ht-hero-cta");
+    if (!bar || !hero || !("IntersectionObserver" in window)) return;
+    var watch = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            bar.classList.toggle("is-shown", !entry.isIntersecting);
+        });
+    }, {threshold: 0});
+    watch.observe(hero);
+})();
+</script>
+{% endblock %}
