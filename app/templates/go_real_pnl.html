@@ -28,11 +28,11 @@
                 <p class="ht-fine ht-hero-fine">{{ trial_line }}</p>
             </div>
             <div class="ht-hero-video">
-                {# Desktop window of Short u_YWl5fKEjo only, 0–15.9s, before the
-                   end card. The product UI is scaled to fill the 16:10 window
-                   (no side gutter inside the chrome). The frame itself
-                   overhangs the page column to the viewport's right edge.
-                   Captions, the phone bezel, and the outro are not in this loop. #}
+                {# Desktop window of Short u_YWl5fKEjo only: a 16:10 slice of the
+                   product screen (x 30–1050, y 400–1038 of the 1080×1920
+                   source), 0–15.9s, before the end card. Native 1020×638,
+                   not scaled up. Captions, the phone bezel, and the outro
+                   are not in this loop. #}
                 <div class="ht-lottie-hero"
                      data-lottie-src="{{ url_for('static', filename='marketing/covered-call-scroll.json') }}"
                      data-lottie-w="1020"
@@ -239,11 +239,7 @@
         loop: true,
         autoplay: true,
         path: src,
-        rendererSettings: {
-            dpr: dpr,
-            clearCanvas: true,
-            preserveAspectRatio: "xMidYMid slice"
-        }
+        rendererSettings: { dpr: dpr, clearCanvas: true }
     });
     anim.addEventListener("DOMLoaded", function () {
         var poster = slot.querySelector(".ht-lottie-poster");
