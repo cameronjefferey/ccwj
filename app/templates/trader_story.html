@@ -217,6 +217,7 @@
     .ts-style-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--gain); }
     .ts-style-row.directional .ts-style-bar > span,
     .ts-style-row.stock .ts-style-bar > span { background: var(--ht-muted); }
+    .ts-style-phone-meta { display: none; color: var(--ht-muted); font-size: .75rem; margin-top: .15rem; }
     .ts-style-pnl { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .ts-style-pnl.pos { color: var(--gain); }
     .ts-style-pnl.neg { color: var(--loss); }
@@ -238,24 +239,14 @@
         .ts-now-grid, .ts-books, .ts-exec-grid, .ts-exec-tiles { grid-template-columns: 1fr; }
         .ts-finding { grid-template-columns: 1fr auto; }
         .ts-finding-detail { grid-column: 1 / -1; }
-        .ts-style-head { display: none; }
-        .ts-style-row { display: flex; flex-direction: column; align-items: stretch; gap: .35rem; }
-        .ts-style-row [data-label] {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: .75rem;
-            text-align: right;
+        .ts-style-head, .ts-style-row {
+            grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
         }
-        .ts-style-row [data-label]::before {
-            content: attr(data-label);
-            color: var(--ht-muted);
-            font-size: .66rem;
-            font-weight: 650;
-            text-align: left;
-            flex: 0 0 42%;
-        }
-        .ts-style-pnl, .ts-style-best { text-align: right; }
+        .ts-style-n, .ts-style-best,
+        .ts-style-head span:nth-child(2),
+        .ts-style-head span:nth-child(5) { display: none; }
+        .ts-style-phone-meta { display: block; }
+        .ts-style-pnl { white-space: nowrap; text-align: right; }
         a.ts-swing { grid-template-columns: 1fr auto; }
         .ts-swing-desc { grid-column: 1 / -1; }
         .ts-standouts { grid-template-columns: 1fr; }
@@ -299,6 +290,7 @@
         </div>
     </div>
     <p class="ov-line">Trade days add each symbol's active days. Three names on one session are three trade days.</p>
+    {% if paper_only %}<p class="ov-line">These figures are the paper account.</p>{% endif %}
     {% else %}
     <p class="ov-line">Once your trade history syncs, this page builds a complete profile of how you trade.</p>
     {% endif %}
@@ -363,13 +355,13 @@
 <details class="disclosure" id="ts-profile">
     <summary>
         <span class="section-header">Profile summary</span>
-        <span class="disclosure-note">Income, directional, and the contract record.</span>
+        <span class="disclosure-note">Income, directional, and closed option trades.</span>
     </summary>
     <div class="disclosure-body">
     {% set income = novel.profile.facts | selectattr('label', 'equalto', 'Income book') | list %}
     {% set directional = novel.profile.facts | selectattr('label', 'equalto', 'Directional book') | list %}
     {% set kept = novel.profile.facts | selectattr('label', 'equalto', 'Kept at expiry') | list %}
-    {% set record = novel.profile.facts | selectattr('label', 'equalto', 'Contract record') | list %}
+    {% set record = novel.profile.facts | selectattr('label', 'equalto', 'Closed option trades') | list %}
     {% set wheels = novel.profile.facts | selectattr('label', 'equalto', 'Wheels completed') | list %}
     {% set dividends = novel.profile.facts | selectattr('label', 'equalto', 'Dividends') | list %}
     {% set busiest = novel.profile.facts | selectattr('label', 'equalto', 'Busiest day') | list %}
@@ -427,7 +419,7 @@
     {% set f = record[0] %}
     <div class="ts-record">
         <div class="ts-record-top">
-            <span class="ts-record-label">Contract record</span>
+            <span class="ts-record-label">{{ f.label }}</span>
             <span class="ts-record-value">{{ f.value }}</span>
         </div>
         {% if f.meter is defined %}
@@ -588,10 +580,11 @@
         <span class="disclosure-note">Income, directional, and stock.</span>
     </summary>
     <div class="disclosure-body">
+    <p class="ts-era-note">Ahead counts symbols whose total return is positive. Total return includes positions still open.</p>
     <div class="ts-style-head">
         <span>Style</span>
         <span>Positions</span>
-        <span>Profitable</span>
+        <span>Ahead</span>
         <span class="ts-align-end">Total return</span>
         <span class="ts-align-end">Best position</span>
     </div>
@@ -601,9 +594,10 @@
         <div class="ts-style-name-cell">
             <div class="ts-style-name">{{ r.label }}</div>
             <div class="ts-style-desc">{{ r.desc }}</div>
+            <div class="ts-style-phone-meta">{{ r.symbols }} position{{ 's' if r.symbols != 1 else '' }}{% if r.best_symbol %} · best {{ r.best_symbol }} <span class="ts-style-pnl {{ 'pos' if r.best_pnl >= 0 else 'neg' }}">{{ r.best_text }}</span>{% endif %}</div>
         </div>
         <div class="ts-style-n" data-label="Positions">{{ r.symbols }}</div>
-        <div data-label="Profitable">
+        <div data-label="Ahead">
             <div><span class="ts-style-win">{{ r.green }} of {{ r.symbols }}</span><span class="ts-style-pct">{{ win_pct }}%</span></div>
             <div class="ts-style-bar"><span style="width: {{ win_pct }}%"></span></div>
         </div>

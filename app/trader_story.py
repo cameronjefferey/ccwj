@@ -39,6 +39,7 @@ from app.position_story import (
     _span_text,
     build_position_story,
 )
+from app.outcome_units import option_record_from_fills
 from app.routes import (
     _bq_parallel,
     _redirect_if_no_accounts,
@@ -230,7 +231,40 @@ def _sum_stats(book):
     return totals or {}
 
 
-def _compose_profile(totals, busiest):
+def _contract_record_fact(record):
+    """Grouped closed option results. One decided trade is still shown.
+
+    The detail names the rule so a single win is not read as a habit.
+    """
+    if not record:
+        return None
+    winners = int(record.get("winners") or 0)
+    losses = int(record.get("losers") or 0)
+    decided = winners + losses
+    if decided < 1:
+        return None
+    pct = round(100.0 * winners / decided)
+    if decided == 1:
+        detail = (
+            "One closed option trade. A spread counts as one. "
+            "Opens are excluded, and a close with no opening fill is left out."
+        )
+    else:
+        detail = (
+            f"{pct}% of closed option trades finished ahead. "
+            "A spread counts as one. Opens are excluded, and a close "
+            "with no opening fill is left out."
+        )
+    return {
+        "label": "Closed option trades",
+        "value": f"{winners}W / {losses}L",
+        "tone": "pos" if winners >= losses else "neg",
+        "detail": detail,
+        "meter": winners / decided,
+    }
+
+
+def _compose_profile(totals, busiest, option_record=None):
     """The profile summary, takeaway-first (READABILITY REGISTER).
 
     One identity HEADLINE (what kind of trader the fills show) plus
@@ -292,16 +326,20 @@ def _compose_profile(totals, busiest):
             "lead": "placed at risk buying options",
         })
 
-    w = totals.get("contract_wins", 0)
-    losses = totals.get("contract_losses", 0)
-    if w + losses >= 5:
-        pct = round(100.0 * w / (w + losses))
-        facts.append({
-            "label": "Contract record", "value": f"{w}W / {losses}L",
-            "tone": "pos" if w >= losses else "neg",
-            "detail": f"{pct}% of the contracts you closed finished profitable.",
-            "meter": w / (w + losses),
-        })
+    record_fact = _contract_record_fact(option_record) if option_record is not None else None
+    if record_fact is None and option_record is None:
+        w = totals.get("contract_wins", 0)
+        losses = totals.get("contract_losses", 0)
+        if w + losses >= 5:
+            pct = round(100.0 * w / (w + losses))
+            record_fact = {
+                "label": "Closed option trades", "value": f"{w}W / {losses}L",
+                "tone": "pos" if w >= losses else "neg",
+                "detail": f"{pct}% of the contracts you closed finished profitable.",
+                "meter": w / (w + losses),
+            }
+    if record_fact:
+        facts.append(record_fact)
     if totals.get("expired_kept", 0) >= 3:
         facts.append({
             "label": "Kept at expiry",
@@ -692,7 +730,11 @@ def compose_novel(book, trades_df):
             "open_stories": open_stories,
             "since": first_day.strftime("%B %Y") if first_day else "",
         },
-        "profile": _compose_profile(totals, _busiest_day(trades_df)),
+        "profile": _compose_profile(
+            totals,
+            _busiest_day(trades_df),
+            option_record=option_record_from_fills(trades_df),
+        ),
         "eras": _build_eras(trades_df, book),
         "standouts": _build_standouts(book),
         "scoreboard": _build_scoreboard(book),
@@ -748,12 +790,22 @@ def trader_story():
     selected_account = request.args.get("account", "").strip()
     tenant_scope = _tenants_for_scope(selected_account)
 
+    paper_only = False
+    try:
+        from app.paper_accounts import paper_scope_note
+        paper_only = bool(paper_scope_note(
+            getattr(current_user, "id", None), tenant_scope,
+        ).get("paper_only"))
+    except Exception:
+        paper_only = False
+
     context = {
         "title": "Trader Profile",
         "novel": None,
         "accounts": sorted(user_accounts) if user_accounts else [],
         "selected_account": selected_account,
         "error": None,
+        "paper_only": paper_only,
     }
 
     try:

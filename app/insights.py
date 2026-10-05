@@ -36,6 +36,11 @@ from app.llm import (
 )
 from app.llm_access import user_can_use_paid_llm
 from app.money import signed_points
+from app.outcome_units import (
+    SPREAD_STRATEGIES,
+    apply_spread_collected,
+    closed_outcome_units,
+)
 
 
 # ------------------------------------------------------------------
@@ -80,6 +85,7 @@ GROUP BY 1, 2
 
 RECENT_EXITS_QUERY = """
 SELECT
+    tenant_id,
     trade_symbol, underlying_symbol, strategy, direction,
     open_date, close_date, close_type, days_in_trade,
     actual_pnl, peak_unrealized_pnl, peak_date,
@@ -135,29 +141,59 @@ LIMIT 5
 """
 
 
+# Latest ISO week of closed classification rows, one row per contract
+# (or equity session). Ask AI summarizes these in Python so a same-day
+# spread is one result and best/worst is the true max/min across
+# accounts. ``mart_weekly_summary`` stays the Overview grain — this
+# query does not replace it. Dividends and opens are repeated scalars
+# from that mart for the same week.
 WEEKLY_QA_QUERY = """
+WITH bounds AS (
+  SELECT MAX(DATE_TRUNC(close_date, ISOWEEK)) AS week_start
+  FROM `ccwj-dbt.analytics.int_strategy_classification`
+  WHERE status = 'Closed'
+    AND close_date IS NOT NULL
+    {tenant_and}
+),
+week_side AS (
+  SELECT
+    b.week_start,
+    (
+      SELECT SUM(w.dividends_amount)
+      FROM `ccwj-dbt.analytics.mart_weekly_summary` w
+      WHERE w.week_start = b.week_start
+      {tenant_and}
+    ) AS dividends_amount,
+    (
+      SELECT SUM(w.trades_opened)
+      FROM `ccwj-dbt.analytics.mart_weekly_summary` w
+      WHERE w.week_start = b.week_start
+      {tenant_and}
+    ) AS trades_opened
+  FROM bounds b
+  WHERE b.week_start IS NOT NULL
+)
 SELECT
-  week_start,
-  SUM(trades_closed) AS trades_closed,
-  SUM(trades_opened) AS trades_opened,
-  SUM(total_pnl)     AS total_pnl,
-  SUM(dividends_amount) AS dividends_amount,
-  SUM(total_return)  AS total_return,
-  SUM(num_winners)   AS num_winners,
-  SUM(num_losers)    AS num_losers,
-  SUM(premium_received) AS premium_received,
-  SUM(premium_paid)     AS premium_paid,
-  ANY_VALUE(best_symbol)      AS best_symbol,
-  ANY_VALUE(best_strategy)    AS best_strategy,
-  ANY_VALUE(best_pnl)         AS best_pnl,
-  ANY_VALUE(worst_symbol)     AS worst_symbol,
-  ANY_VALUE(worst_strategy)   AS worst_strategy,
-  ANY_VALUE(worst_pnl)        AS worst_pnl
-FROM `ccwj-dbt.analytics.mart_weekly_summary`
-{where}
-GROUP BY week_start
-ORDER BY week_start DESC
-LIMIT 1
+  side.week_start,
+  side.dividends_amount,
+  side.trades_opened,
+  s.tenant_id,
+  s.account,
+  s.user_id,
+  s.symbol,
+  s.strategy,
+  s.trade_symbol,
+  s.open_date,
+  s.close_date,
+  s.option_expiry,
+  s.status,
+  s.total_pnl
+FROM `ccwj-dbt.analytics.int_strategy_classification` s
+JOIN week_side side
+  ON DATE_TRUNC(s.close_date, ISOWEEK) = side.week_start
+WHERE s.status = 'Closed'
+  AND s.close_date IS NOT NULL
+  {tenant_and}
 """
 
 # Portfolio-level “discovery” metrics (calendar, concentration, DTE, post-loss
@@ -239,15 +275,81 @@ sold_dte AS (
   FROM rel
 ),
 
+seq_grouped AS (
+  SELECT
+    s.tenant_id,
+    s.symbol,
+    s.strategy,
+    s.open_date,
+    s.trade_symbol,
+    s.option_expiry,
+    s.close_date,
+    s.status,
+    s.is_winner,
+    s.total_pnl,
+    CASE
+      WHEN s.strategy IN ({spread_list})
+        THEN CONCAT(
+          CAST(s.open_date AS STRING), '|',
+          COALESCE(
+            REGEXP_EXTRACT(s.trade_symbol, r'(\\d{{6}})[CP]'),
+            CAST(s.option_expiry AS STRING),
+            s.trade_symbol
+          )
+        )
+      ELSE s.trade_symbol
+    END AS unit_key
+  FROM `ccwj-dbt.analytics.int_strategy_classification` s
+  WHERE s.trade_group_type = 'option_contract'
+    AND s.open_date IS NOT NULL
+    {sequence_clause}
+),
+
+seq_units AS (
+  SELECT
+    tenant_id,
+    MAX(close_date) AS close_date,
+    unit_key,
+    -- An open leg drops the whole structure. A $0 leg does not: the
+    -- unit's win or loss is the net, and a $0 net is neither.
+    LOGICAL_AND(status = 'Closed') AS all_closed,
+    SUM(total_pnl) AS total_pnl
+  FROM seq_grouped
+  GROUP BY tenant_id, symbol, strategy, open_date, unit_key
+),
+
+seq_decided AS (
+  SELECT
+    tenant_id,
+    close_date,
+    unit_key,
+    CASE
+      WHEN NOT all_closed THEN NULL
+      WHEN ROUND(total_pnl, 2) > 0 THEN 'Winner'
+      WHEN ROUND(total_pnl, 2) < 0 THEN 'Loser'
+      ELSE NULL
+    END AS outcome
+  FROM seq_units
+),
+
+seq_ordered AS (
+  SELECT
+    outcome,
+    LAG(outcome) OVER (
+      PARTITION BY tenant_id
+      ORDER BY close_date, unit_key
+    ) AS prev_trade_outcome
+  FROM seq_decided
+  WHERE outcome IS NOT NULL
+),
+
 seq_agg AS (
   SELECT
     count(*) AS n_closed_seq,
     countif(prev_trade_outcome = 'Loser') AS n_after_loss,
-    countif(prev_trade_outcome = 'Loser' and outcome = 'Winner') AS wins_after_loss,
+    countif(prev_trade_outcome = 'Loser' AND outcome = 'Winner') AS wins_after_loss,
     countif(outcome = 'Winner') AS wins_total
-  FROM `ccwj-dbt.analytics.int_trade_sequence` s
-  WHERE s.trade_group_type = 'option_contract'
-  {sequence_clause}
+  FROM seq_ordered
 )
 
 SELECT
@@ -304,6 +406,15 @@ CROSS JOIN sold_dte sd
 CROSS JOIN seq_agg sa
 """
 
+def _spread_strategy_sql():
+    """Quoted strategy names for the discovery sequence IN-list.
+
+    Same set as ``outcome_units.SPREAD_STRATEGIES`` so a new spread
+    label cannot group on one page and stay split on another.
+    """
+    return ", ".join(f"'{name}'" for name in sorted(SPREAD_STRATEGIES))
+
+
 # BigQuery EXTRACT(dayofweek): Sunday = 1 ... Saturday = 7
 _DOW_EN = {
     1: "Sunday",
@@ -347,9 +458,9 @@ def _discovery_cards_from_series(r: pd.Series):
         cards.append({
             "tag": "Calendar",
             "title": "Your closes look different by weekday",
-            "stat": f"+{dow_spread:.0f} pp",
+            "stat": f"+{dow_spread:.0f} points",
             "body": (
-                f"On **{ww}** closes, about **{wf:.0f}%** of the peak unrealized gain was gone by the time you closed, "
+                f"On **{ww}** closes, about **{wf:.0f}%** of the best value while you held it was gone by the time you closed, "
                 f"on average. On **{bw}**, that average is about **{bf:.0f}%**."
             ),
             "score": dow_spread * 3.5,
@@ -365,7 +476,7 @@ def _discovery_cards_from_series(r: pd.Series):
             "title": "One symbol accounts for a large share of giveback",
             "stat": f"{conc:.0f}% of ${tot_gb:,.0f}",
             "body": (
-                f"About **{conc:.0f}%** of the dollars between the peak mark and the close is on **{tsym}**. "
+                f"About **{conc:.0f}%** of the dollars between the best value while you held it and the close is on **{tsym}**. "
                 f"The rest of the book is smaller."
             ),
             "score": conc * 2.8,
@@ -381,26 +492,26 @@ def _discovery_cards_from_series(r: pd.Series):
         if dte_gap > 0:
             cards.append({
                 "tag": "Timing",
-                "title": "Short-dated shorts give back more of the peak than longer-dated ones",
-                "stat": f"+{dte_gap:.0f} pp avg giveback",
+                "title": "Options you sold with little time left give back more than longer-dated ones",
+                "stat": f"+{dte_gap:.0f} points",
                 "body": (
-                    f"Shorts opened inside about 14 days to expiry give back about **{sh:.0f}%** of the peak mark, "
-                    f"on average. Shorts opened beyond about 45 days give back about **{lg:.0f}%**."
+                    f"Options you sold inside about 14 days to expiry give back about **{sh:.0f}%** of the best value while you held them, "
+                    f"on average. Options you sold beyond about 45 days give back about **{lg:.0f}%**."
                 ),
                 "score": abs(dte_gap) * 2.9,
-                "muted": "Sold short options only.",
+                "muted": "Options you sold only.",
             })
         else:
             cards.append({
                 "tag": "Timing",
-                "title": "Longer-dated shorts give back more of the peak than short-dated ones",
-                "stat": f"{signed_points(dte_gap, 0)} pp avg giveback",
+                "title": "Longer-dated options you sold give back more than short-dated ones",
+                "stat": f"{signed_points(dte_gap, 0)} points",
                 "body": (
-                    f"Shorts opened beyond about 45 days to expiry give back about **{lg:.0f}%** of the peak mark. "
-                    f"Shorts opened inside about 14 days give back about **{sh:.0f}%**."
+                    f"Options you sold beyond about 45 days to expiry give back about **{lg:.0f}%** of the best value while you held them. "
+                    f"Options you sold inside about 14 days give back about **{sh:.0f}%**."
                 ),
                 "score": abs(dte_gap) * 2.9,
-                "muted": "Sold short options only.",
+                "muted": "Options you sold only.",
             })
 
     rgap = _safe_float(r.get("rebound_vs_overall_gap"))
@@ -415,25 +526,31 @@ def _discovery_cards_from_series(r: pd.Series):
             cards.append({
                 "tag": "Sequence",
                 "title": "Win rate is higher on the trade after a loss",
-                "stat": f"+{rgap * 100:.1f} pts vs your usual win rate",
+                "stat": f"+{rgap * 100:.1f} points vs your usual win rate",
                 "body": (
                     f"After a losing close, the next option trade won about **{pct_al:.0f}%** of the time, "
                     f"versus about **{pct_overall:.0f}%** overall. That is {n_al} trades after a loss."
                 ),
                 "score": abs(rgap) * 500,
-                "muted": f"Across {n_seq:,} qualifying closed trades in sequence.",
+                "muted": (
+                    f"Across {n_seq:,} closed option trades in sequence. "
+                    "A spread counts as one. A $0 close is neither."
+                ),
             })
         elif rgap <= -0.07:
             cards.append({
                 "tag": "Sequence",
                 "title": "Win rate is lower on the trade after a loss",
-                "stat": f"{signed_points(rgap * 100, 1)} pts vs your usual win rate",
+                "stat": f"{signed_points(rgap * 100, 1)} points vs your usual win rate",
                 "body": (
                     f"After a losing close, the next option trade won about **{pct_al:.0f}%** of the time, "
                     f"versus about **{pct_overall:.0f}%** overall."
                 ),
                 "score": abs(rgap) * 520,
-                "muted": f"Across {n_seq:,} qualifying closed trades in sequence.",
+                "muted": (
+                    f"Across {n_seq:,} closed option trades in sequence. "
+                    "A spread counts as one. A $0 close is neither."
+                ),
             })
 
     if not cards:
@@ -444,7 +561,7 @@ def _discovery_cards_from_series(r: pd.Series):
         c["rank"] = i + 1
     blob_lines = [
         "DISCOVERY LAB (deterministic contrasts; not advice):",
-        f"- Snapshot-quality contracts summarized: ~{n_rel} reliable closes (daily MTM-backed).",
+        f"- Snapshot-quality contracts summarized: ~{n_rel} reliable closes (backed by daily prices).",
     ]
     for c in cards[:5]:
         blob_lines.append(f"- [{c['tag']}] {c['title']}: {_strip_md_for_brief(c['body'])}")
@@ -610,20 +727,24 @@ def _rollup_exit_signals(signals_df):
 def _exit_timing_headlines(rows, reliable_contracts, total_closed):
     """The four numbers on the Exit Timing cards.
 
-    Giveback and days-past-peak are the unweighted mean of the strategy
-    rows the page lists (same formula the template used to recompute).
+    Giveback and days-after-the-high are weighted by scored closes
+    (``trades``). A 200-close strategy counts more than a 3-close one.
     Coverage stays book-wide: contracts below the per-strategy minimum
     still count in "15 of 410".
     """
     if not rows:
         return None
-    n = len(rows)
+    weight = sum(int(r.get("trades") or 0) for r in rows) or len(rows)
     total_closed = int(total_closed or 0)
     reliable_contracts = int(reliable_contracts or 0)
     return {
         "total_given_back": float(sum(r["pnl_given_back"] for r in rows)),
-        "avg_giveback": float(sum(r["giveback_pct"] for r in rows) / n),
-        "avg_days": float(sum(r["days_past_peak"] for r in rows) / n),
+        "avg_giveback": float(
+            sum(float(r["giveback_pct"]) * int(r.get("trades") or 0) for r in rows) / weight
+        ),
+        "avg_days": float(
+            sum(float(r["days_past_peak"]) * int(r.get("trades") or 0) for r in rows) / weight
+        ),
         "reliable_contracts": reliable_contracts,
         "total_closed": total_closed,
         "pct_reliable": (
@@ -638,16 +759,23 @@ def _format_exit_timing_brief(headlines, rows):
         "CANONICAL EXIT TIMING (these are the live Insights cards. "
         "Quote these figures exactly. Do not recompute a different total, "
         "giveback percent, coverage count, or strategy name.):",
-        f"- Total left on table: ${headlines['total_given_back']:,.0f}",
-        f"- Avg giveback: {headlines['avg_giveback']:.0f}% of peak profit",
-        f"- Avg days past peak: {headlines['avg_days']:.0f}",
         (
-            f"- Data coverage: {headlines['reliable_contracts']} of "
+            f"- Given back: ${headlines['total_given_back']:,.0f} "
+            "(gap from the best value while the option was open to the close; "
+            "scored closes only; opens are not included)"
+        ),
+        (
+            f"- Of the best value: {headlines['avg_giveback']:.0f}% "
+            "(weighted by scored closes)"
+        ),
+        f"- Days after the high: {headlines['avg_days']:.0f}",
+        (
+            f"- Scored closes: {headlines['reliable_contracts']} of "
             f"{headlines['total_closed']} closed contracts "
             f"({headlines['pct_reliable']:.0f}%)"
         ),
         (
-            "BY STRATEGY (exit-timing order, profit left on the table. "
+            "BY STRATEGY (exit-timing order, dollars given back. "
             "This is not the Strategies page, which ranks by lifetime P&L. "
             "Use these names as written — do not rename a row.):"
         ),
@@ -657,10 +785,10 @@ def _format_exit_timing_brief(headlines, rows):
         if int(s.get("account_count") or 0) > 1:
             accounts = f", {int(s['account_count'])} accounts combined"
         lines.append(
-            f"- {s.get('strategy_label') or s['strategy']}: ${s['pnl_given_back']:,.0f} left on table, "
-            f"{s['giveback_pct']:.0f}% giveback, "
-            f"{s['days_past_peak']:.0f} days past peak, "
-            f"{s['trades']} of {s['total_closed']} trades with daily marks"
+            f"- {s.get('strategy_label') or s['strategy']}: ${s['pnl_given_back']:,.0f} given back, "
+            f"{s['giveback_pct']:.0f}% of the best value, "
+            f"{s['days_past_peak']:.0f} days after the high, "
+            f"{s['trades']} of {int(s.get('total_closed') or 0)} scored closes"
             f"{accounts}."
         )
     return "\n".join(lines)
@@ -826,6 +954,7 @@ def _build_coaching_brief(client, tenant_ids):
         "coach_discovery": _DISCOVERY_SQL.format(
             tenant_clause=e_and if e_and else "",
             sequence_clause=s_and if s_and else "",
+            spread_list=_spread_strategy_sql(),
         ),
     }
     if app.config.get("BEHAVIOR_INSIGHTS_ENABLED", True):
@@ -897,33 +1026,20 @@ def _build_coaching_brief(client, tenant_ids):
             if headlines:
                 sections.append(_format_exit_timing_brief(headlines, strat_rows))
 
-            dte_lines = []
-            for s in strat_rows:
-                best_b = s.get("best_dte_bucket")
-                worst_b = s.get("worst_dte_bucket")
-                if best_b and worst_b and best_b != worst_b:
-                    bwr = float(s.get("best_dte_win_rate") or 0)
-                    wwr = float(s.get("worst_dte_win_rate") or 0)
-                    if bwr - wwr >= 15:
-                        dte_lines.append(
-                            f"- {s.get('strategy_label') or s['strategy']}: best at {best_b} ({bwr:.0f}% WR, "
-                            f"{int(s.get('best_dte_trades') or 0)} trades), "
-                            f"worst at {worst_b} ({wwr:.0f}% WR). "
-                            f"Win rate by tenor, separate from the giveback dollars above."
-                        )
-            if dte_lines:
-                sections.append(
-                    "DTE WIN RATES (not giveback, not the Strategies page ranking)\n"
-                    + "\n".join(dte_lines[:5])
-                )
+            # Days-to-expiration win rates stay off the brief. They come
+            # from mart_option_trades_by_kind, which books a $0 close as
+            # a loss and counts each leg. Strategies already stopped
+            # narrating that grain. Quoting it here would teach Ask AI
+            # a rate the cards do not show.
 
     except Exception as exc:
-        app.logger.warning("insights: DTE sweet-spots section failed (prompt degrades): %s", exc)
+        app.logger.warning("insights: exit-timing section failed (prompt degrades): %s", exc)
 
     # 2. Recent exits (last 90 days, for weekly context)
     try:
-        exits_df = batch.get("coach_exits", pd.DataFrame())
-        if not exits_df.empty:
+        exits_df = _filter_df_by_tenant_ids(
+            batch.get("coach_exits", pd.DataFrame()), tenant_ids)
+        if exits_df is not None and not exits_df.empty:
             recent_lines = []
             for _, r in exits_df.head(10).iterrows():
                 gb = float(r.get("pnl_given_back", 0) or 0)
@@ -946,9 +1062,9 @@ def _build_coaching_brief(client, tenant_ids):
 
                 if gb > 10:
                     recent_lines.append(
-                        f"  - {sym} ({strat}): peaked at +${peak:,.0f}, "
-                        f"closed at +${pnl:,.0f}, gave back ${gb:,.0f} "
-                        f"({days_past}d past peak)"
+                        f"  - {sym} ({strat}) contract: best value while open +${peak:,.0f}, "
+                        f"closed at +${pnl:,.0f}, given back ${gb:,.0f} "
+                        f"({days_past} days after the high)"
                     )
             if recent_lines:
                 sections.append("RECENT EXIT EXAMPLES (last 90 days)\n" + "\n".join(recent_lines))
@@ -1008,11 +1124,103 @@ def _build_coaching_brief(client, tenant_ids):
     return brief_text, coaching_data
 
 
+def summarize_weekly_closes(frame):
+    """Closed results for the latest week the query returned.
+
+    A same-day spread is one result. Best and worst are the true max
+    and min across every account in the frame, not one arbitrary row.
+    Opens are already excluded by the query. Rounded $0 is neither.
+    """
+    if frame is None or getattr(frame, "empty", True):
+        return None
+    records = frame.to_dict("records")
+    units = closed_outcome_units(records)
+    if not units:
+        return None
+    winners = sum(1 for unit in units if unit["pnl"] > 0)
+    losers = sum(1 for unit in units if unit["pnl"] < 0)
+    zeros = sum(1 for unit in units if unit["pnl"] == 0)
+    # $0 is neither a win nor a loss, so it is not the best or worst result.
+    decided = [unit for unit in units if unit["pnl"] != 0]
+    if decided:
+        best = max(decided, key=lambda unit: (unit["pnl"], unit["symbol"]))
+        worst = min(decided, key=lambda unit: (unit["pnl"], unit["symbol"]))
+    else:
+        best = worst = None
+    first = records[0]
+    week = first.get("week_start")
+    return {
+        "week_start": str(week or "")[:10],
+        "winners": winners,
+        "losers": losers,
+        "zeros": zeros,
+        "pnl": float(sum(unit["pnl"] for unit in units)),
+        "opened": int(_safe_float(first.get("trades_opened"), 0) or 0),
+        "dividends": float(_safe_float(first.get("dividends_amount"), 0) or 0),
+        "best": best,
+        "worst": None if worst is best else worst,
+    }
+
+
+def _signed_dollars(value, decimals=2) -> str:
+    """-$1,234.56. The sign sits in front of the dollar sign."""
+    amount = float(value or 0)
+    sign = "-" if amount < 0 else ""
+    return f"{sign}${abs(amount):,.{decimals}f}"
+
+
+def format_weekly_context(summary) -> str:
+    """Ask AI sentence for one week. Dates and units are named."""
+    if not summary:
+        return ""
+    winners = int(summary["winners"])
+    losers = int(summary["losers"])
+    decided = winners + losers
+    rate = winners / decided if decided else 0
+    text = (
+        f"WEEK STARTING {summary['week_start']} "
+        "(closed grouped results; a spread counts as one; "
+        "positions still open are not included; dollars are net of broker fees): "
+        f"{decided} closed ({winners}W/{losers}L, {rate:.0%})"
+    )
+    zeros = int(summary.get("zeros") or 0)
+    if zeros:
+        text += f", {zeros} closed at $0 (neither a win nor a loss)"
+    text += (
+        f", {int(summary.get('opened') or 0)} opened, "
+        f"closed result {_signed_dollars(summary.get('pnl'))}"
+    )
+    dividends = float(summary.get("dividends") or 0)
+    if dividends:
+        text += (
+            f". Dividends {_signed_dollars(dividends)} are separate from the closed result"
+        )
+    best = summary.get("best") or {}
+    if best:
+        text += (
+            f". Best closed result: {best.get('symbol') or ''} "
+            f"{best.get('strategy') or ''} {_signed_dollars(best.get('pnl'))}"
+        )
+    worst = summary.get("worst")
+    if worst:
+        text += (
+            f". Worst closed result: {worst.get('symbol') or ''} "
+            f"{worst.get('strategy') or ''} {_signed_dollars(worst.get('pnl'))}"
+        )
+    return text
+
+
 def _build_prompt_data(df):
-    """Fallback: flat portfolio summary when coaching signals aren't available."""
-    if df.empty:
+    """Fallback: flat portfolio summary when coaching signals aren't available.
+
+    Win rate uses closed grouped results (``num_winners`` / ``num_losers``
+    on ``positions_summary``, where a same-day spread is already one).
+    Fills stay a separate count. Spread premium is the net credit.
+    """
+    if df is None or df.empty:
         return None
 
+    df = apply_spread_collected(df)
     num_cols = [
         "total_pnl", "realized_pnl", "unrealized_pnl",
         "total_premium_received", "total_premium_paid",
@@ -1032,9 +1240,19 @@ def _build_prompt_data(df):
         float(df["total_dividend_income"].sum())
         if "total_dividend_income" in df.columns else 0.0
     )
-    premium_received = float(df["total_premium_received"].sum())
-    premium_paid = float(df["total_premium_paid"].sum())
-    total_trades = int(df["num_individual_trades"].sum())
+    if "strategy" in df.columns:
+        spread_mask = df["strategy"].isin(SPREAD_STRATEGIES)
+    else:
+        spread_mask = pd.Series(False, index=df.index)
+    # apply_spread_collected already stored the spread net credit in
+    # total_premium_received. Subtracting paid again would charge the
+    # long twice. Non-spread rows still net received minus paid.
+    net_credit = (
+        float(df.loc[spread_mask, "total_premium_received"].sum())
+        + float(df.loc[~spread_mask, "total_premium_received"].sum())
+        - float(df.loc[~spread_mask, "total_premium_paid"].sum())
+    )
+    fills = int(df["num_individual_trades"].sum())
     total_winners = int(df["num_winners"].sum())
     total_losers = int(df["num_losers"].sum())
     total_closed = total_winners + total_losers
@@ -1047,7 +1265,7 @@ def _build_prompt_data(df):
     strat_agg = df.groupby("strategy").agg(
         total_return=("total_return", "sum"),
         dividend_income=("total_dividend_income", "sum"),
-        num_trades=("num_individual_trades", "sum"),
+        num_fills=("num_individual_trades", "sum"),
         num_winners=("num_winners", "sum"),
         num_losers=("num_losers", "sum"),
         avg_days=("avg_days_in_trade", "mean"),
@@ -1059,25 +1277,28 @@ def _build_prompt_data(df):
         closed = int(r["num_winners"] + r["num_losers"])
         wr = r["num_winners"] / closed if closed else 0
         div_part = (
-            f", divs=${r['dividend_income']:,.2f}"
+            f", dividends ${r['dividend_income']:,.2f}"
             if r.get("dividend_income", 0) and float(r["dividend_income"]) != 0
             else ""
         )
         strategy_lines.append(
-            f"  - {r['strategy']}: return=${r['total_return']:,.2f}{div_part}, "
-            f"WR={wr:.1%}, trades={int(r['num_trades'])}, avg_days={r['avg_days']:.1f}"
+            f"  - {r['strategy']}: total return ${r['total_return']:,.2f} "
+            f"(includes positions still open){div_part}, "
+            f"closed win rate {wr:.1%} ({int(r['num_winners'])}W/{int(r['num_losers'])}L "
+            f"of {closed} closed results), fills={int(r['num_fills'])}, "
+            f"average days held={r['avg_days']:.1f}"
         )
 
     div_line = (
-        f", dividends ${dividend_income:,.2f}"
+        f", dividends ${dividend_income:,.2f} (separate from the closed result)"
         if dividend_income else ""
     )
 
-    return f"""PORTFOLIO OVERVIEW (lifetime P&L by strategy — a different ranking from CANONICAL EXIT TIMING; do not use these dollars or this order when answering about giveback, coverage, or profit left on the table)
-- Symbols: {num_symbols}, Trades: {total_trades}, Range: {first_date} to {last_date}
-- Return: ${total_return:,.2f} (realized ${realized:,.2f}, unrealized ${unrealized:,.2f}{div_line})
-- Win rate: {overall_win_rate:.1%} ({total_winners}W / {total_losers}L)
-- Net premium: ${premium_received - premium_paid:,.2f}
+    return f"""PORTFOLIO OVERVIEW (lifetime P&L by strategy — a different ranking from CANONICAL EXIT TIMING; do not use these dollars or this order when answering about giveback, coverage, or dollars given back)
+- Symbols: {num_symbols}. Closed results: {total_closed} ({total_winners}W / {total_losers}L). A spread counts as one. Opens are not included. Fills: {fills}. First fill {first_date}, last fill {last_date}.
+- Total return: ${total_return:,.2f} (realized ${realized:,.2f}, still open ${unrealized:,.2f}{div_line}). Dollars are net of broker fees.
+- Win rate of closed results: {overall_win_rate:.1%} ({total_winners}W / {total_losers}L)
+- Net credit: ${net_credit:,.2f} (a spread is credit received minus what the long cost)
 
 STRATEGY BREAKDOWN
 {chr(10).join(strategy_lines)}"""
@@ -1088,8 +1309,8 @@ STRATEGY BREAKDOWN
 # ------------------------------------------------------------------
 
 SYSTEM_PROMPT = """You are narrating a trader's behavioral insights report. The data below
-contains PRE-COMPUTED signals about their option trading behavior — exit timing
-and DTE performance. These signals come from daily option marks on the trader's own closes.
+contains PRE-COMPUTED signals about their option trading behavior — exit timing.
+These signals come from daily prices on the trader's own closes.
 
 You surface OBSERVATIONS, not financial advice. Never recommend trades,
 strikes, expirations, position sizes, or strategies; describe the patterns
@@ -1097,11 +1318,11 @@ the data shows.
 
 IMPORTANT — DATA COVERAGE: The signals are computed only from contracts with
 sufficient daily snapshot data (at least 40% of hold days covered, minimum 2
-snapshots) that closed since daily option marks began (August 2026). The
-denominator is that marks window, not lifetime closed — a trader with years
+snapshots) that closed since daily prices began (August 2026). The
+denominator is that window, not lifetime closed — a trader with years
 of history will have many contracts that can never be scored. The data will
 tell you how many contracts qualified. If coverage is low (e.g., "15 of 40
-contracts since marks began"), acknowledge that the patterns are based on a
+contracts since daily prices began"), acknowledge that the patterns are based on a
 subset and may become clearer as more daily data accumulates. Do NOT present
 partial-coverage findings as definitive. Do NOT treat a small numerator over
 a large lifetime closed count as a data-quality failure.
@@ -1109,7 +1330,7 @@ a large lifetime closed count as a data-quality failure.
 DISCOVERY LAB (when present): These are deterministic contrasts surfaced only
 because we reconstruct daily unrealized curves — e.g., weekday clustering of
 peak givebacks, ticker concentration vs total dollars surrendered to the peak,
-DTE tenor differences on sold short premium, sequencing after prior losses versus
+how soon the options they sold expired, sequencing after prior losses versus
 overall win frequency. Quote at least ONE discovery fact by number as a headline
 finding if DISCOVERY LAB appears below. Do not inflate or invent discoveries that
 were not listed.
@@ -1118,9 +1339,9 @@ Your job:
 1. Lead with the MOST ACTIONABLE finding — the behavior change that would
    save the most money if corrected.
 2. Use specific numbers from the signals. Never generalize when you have data.
-3. Frame everything as process, not outcome. Say "You held 8 days past peak"
-   not "you lost money." Say "Your strongest DTE bucket is 45-60d at 65% win rate"
-   not "you should only trade that tenor."
+3. Frame everything as process, not outcome. Say "You closed 8 days after the high"
+   not "you lost money." Do not cite a win rate by days to expiration —
+   that breakdown is not in this brief.
 4. Write 3-4 concise paragraphs. No section headings. No bullet lists.
    Write like an analyst summarizing a game film — direct, specific,
    observational, never prescriptive.
@@ -1145,27 +1366,26 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
 CANONICAL EXIT TIMING (when present) is the live Insights cards. Those
 dollars, percents, coverage counts, and strategy names are the only
 exit-timing figures you may cite. Do not average the rows into a new
-percent, do not add a second "left on the table" total, and do not rename
+percent, do not add a second "given back" total, and do not rename
 a strategy (a row labeled Covered Call stays Covered Call). BY STRATEGY
-ranks profit left on the table. The Strategies page ranks lifetime P&L.
-Do not mix those rankings. DTE WIN RATES are win rates by tenor, not
-giveback.
+ranks dollars given back. The Strategies page ranks lifetime P&L.
+Do not mix those rankings. Do not cite a win rate by days to expiration.
 
 IMPORTANT: Start with a 2-sentence summary under "## Summary" that captures
 the single most important behavioral insight. Then write the full analysis."""
 
 
 QA_SYSTEM_PROMPT = """You are a trading-data analyst with access to detailed behavioral
-data about this trader's option trading — including daily mark-to-market curves,
-exit timing analysis, and DTE performance breakdowns. You answer
+data about this trader's option trading — including daily price curves and
+exit timing analysis. You answer
 questions with OBSERVATIONS grounded in the data; you do NOT give financial
 advice or recommend trades.
 
 You will receive:
-- BEHAVIORAL SIGNALS: Pre-computed metrics (exit timing, giveback patterns, DTE sweet spots)
+- BEHAVIORAL SIGNALS: Pre-computed metrics (exit timing, giveback patterns)
 - DISCOVERY LAB (optional): Deterministic calendar / concentration / tenor / sequencing contrasts
 - PORTFOLIO OVERVIEW: Lifetime strategy performance
-- Optionally: RECENT EXITS showing specific trades where profit was left on the table
+- Optionally: RECENT EXITS showing contracts and the gap from the best value while open to the close
 - Optionally: LAST WEEK performance summary
 - Optionally: PRIOR ANALYSIS — the cached insights report already generated for this trader
 - Optionally: EXECUTION REVIEW — early-exit grades vs holding to expiry
@@ -1195,10 +1415,11 @@ If a BEHAVIOR OBSERVATIONS section is present in the data:
 CANONICAL EXIT TIMING (when present) is the live Insights cards. Quote
 those dollars, percents, coverage counts, and strategy names exactly.
 Do not recompute a different total, giveback percent, or coverage.
-Do not rename a strategy row. BY STRATEGY ranks profit left on the table;
+Do not rename a strategy row. BY STRATEGY ranks dollars given back;
 PORTFOLIO OVERVIEW ranks lifetime P&L. Do not answer an exit-timing
 question with the portfolio ranking, and do not answer a P&L question
 with the giveback ranking, without saying which one you are using.
+Do not cite a win rate by days to expiration.
 
 PRIOR ANALYSIS is an older narration. If any figure in it disagrees with
 CANONICAL EXIT TIMING, ignore the prior figure."""
@@ -1491,6 +1712,14 @@ def insights():
         })
 
     scope_narrowed = _insights_scope_narrowed()
+    paper_only = False
+    try:
+        from app.paper_accounts import paper_scope_note
+        paper_only = bool(paper_scope_note(
+            getattr(current_user, "id", None), tenant_ids,
+        ).get("paper_only"))
+    except Exception:
+        paper_only = False
 
     # Load deterministic coaching data for the template
     coaching_data = {
@@ -1543,6 +1772,7 @@ def insights():
         coaching=coaching_data,
         scope_narrowed=scope_narrowed,
         insight_conflict=insight_conflict,
+        paper_only=paper_only,
     )
 
 
@@ -1594,11 +1824,14 @@ def generate_insights():
         # Fallback to portfolio summary if no coaching data
         if not coaching_text:
             where = _tenant_sql_filter(tenant_ids)
-            df = cached_query_df(
-                client, INSIGHTS_DATA_QUERY.format(where=where),
-                label="insights_data",
+            df = _filter_df_by_tenant_ids(
+                cached_query_df(
+                    client, INSIGHTS_DATA_QUERY.format(where=where),
+                    label="insights_data",
+                ),
+                tenant_ids,
             )
-            if df.empty:
+            if df is None or df.empty:
                 flash("No portfolio data found. Upload your trading data first.", "warning")
                 return redirect(redir)
             coaching_text = _build_prompt_data(df)
@@ -1685,39 +1918,30 @@ def insights_ask():
 
         # Portfolio fallback
         where = _tenant_sql_filter(tenant_ids)
-        df = cached_query_df(
-            client, INSIGHTS_DATA_QUERY.format(where=where),
-            label="insights_data",
+        df = _filter_df_by_tenant_ids(
+            cached_query_df(
+                client, INSIGHTS_DATA_QUERY.format(where=where),
+                label="insights_data",
+            ),
+            tenant_ids,
         )
-        portfolio_text = _build_prompt_data(df) if not df.empty else None
+        portfolio_text = (
+            _build_prompt_data(df) if df is not None and not df.empty else None
+        )
 
-        # Weekly context
+        # Weekly context: one row per closed contract, grouped in Python.
         weekly_text = None
         try:
-            wdf = cached_query_df(
-                client, WEEKLY_QA_QUERY.format(where=where),
-                label="insights_weekly_qa",
+            tenant_and = _tenant_sql_and(tenant_ids)
+            wdf = _filter_df_by_tenant_ids(
+                cached_query_df(
+                    client,
+                    WEEKLY_QA_QUERY.format(tenant_and=tenant_and),
+                    label="insights_weekly_qa",
+                ),
+                tenant_ids,
             )
-            if not wdf.empty:
-                row = wdf.iloc[0]
-                tc = int(row.get("trades_closed", 0) or 0)
-                to = int(row.get("trades_opened", 0) or 0)
-                tp = float(row.get("total_pnl", 0) or 0)
-                divs = float(row.get("dividends_amount", 0) or 0)
-                tr = float(row.get("total_return", tp + divs) or 0)
-                nw = int(row.get("num_winners", 0) or 0)
-                nl = int(row.get("num_losers", 0) or 0)
-                total_c = nw + nl
-                wr = nw / total_c if total_c else 0
-                ws = str(row.get("week_start", ""))
-                divs_part = (
-                    f", divs ${divs:,.2f}, total return ${tr:,.2f}"
-                    if divs else ""
-                )
-                weekly_text = (
-                    f"WEEK {ws}: {tc} closed ({nw}W/{nl}L, {wr:.0%}), "
-                    f"{to} opened, trade P&L ${tp:,.2f}{divs_part}"
-                )
+            weekly_text = format_weekly_context(summarize_weekly_closes(wdf)) or None
         except Exception as exc:
             app.logger.warning("insights: weekly-context section failed (coach answers without it): %s", exc)
 

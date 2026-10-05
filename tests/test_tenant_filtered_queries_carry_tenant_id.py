@@ -72,6 +72,8 @@ FILTERED_QUERIES = [
     ("app.insights", "BEHAVIOR_OBSERVATIONS_QUERY"),
     ("app.insights", "COACHING_SIGNALS_QUERY"),
     ("app.insights", "EXIT_COVERAGE_QUERY"),
+    ("app.insights", "RECENT_EXITS_QUERY"),
+    ("app.insights", "WEEKLY_QA_QUERY"),
     ("app.wealth", "WEALTH_DAILY_QUERY"),
     ("app.wealth", "WEALTH_DAILY_QUERY_LEGACY"),
     ("app.wealth", "HISTORY_SPAN_QUERY"),
