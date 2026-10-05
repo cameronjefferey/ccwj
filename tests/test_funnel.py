@@ -753,6 +753,9 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert lottie["assets"][0]["w"] == 1020
             assert lottie["assets"][0]["p"].startswith("data:image/webp;base64,")
             assert "aspect-ratio: 1020 / 638" in body
+            # The desktop window overhangs the centered page column.
+            assert "50vw - 50%" in body
+            assert "width: 190%" in body
             assert os.path.getsize(lottie_path) < 6_000_000
             nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
             assert 'href="/learn"' not in nav
