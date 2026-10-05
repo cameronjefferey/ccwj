@@ -487,6 +487,31 @@ def test_preview_html_does_not_send(monkeypatch):
     assert "-$821.08" in html
 
 
+def test_weekly_digest_html_escapes_user_controlled_fields():
+    from app.email import build_weekly_summary_email
+
+    payload = '<script>window.adminSessionStolen = true</script>'
+    _subject, _body, html = build_weekly_summary_email(
+        username=payload,
+        summary={
+            "week_label": payload,
+            "total_return": 1,
+            "trades_closed": 1,
+            "num_winners": 1,
+            "num_losers": 0,
+            "best_label": payload,
+            "verdicts": [{"symbol": payload, "sentence": payload}],
+        },
+        dashboard_url='https://happytrader.me/overview" onmouseover="alert(1)',
+        unsubscribe_url='https://happytrader.me/unsubscribe" onmouseover="alert(1)',
+    )
+
+    assert payload not in html
+    assert "&lt;script&gt;window.adminSessionStolen = true&lt;/script&gt;" in html
+    assert 'onmouseover="alert(1)' not in html
+    assert "onmouseover=&quot;alert(1)" in html
+
+
 def test_admin_digest_preview_renders_without_sending(monkeypatch):
     from app import app
     from app.models import User
@@ -553,6 +578,8 @@ def test_admin_digest_preview_renders_without_sending(monkeypatch):
     ok = client.get("/admin/digest-preview?user=testingcameron&week=2026-10-02")
     assert ok.status_code == 200
     assert b"digest preview" in ok.data
+    assert ok.headers["Content-Security-Policy"].startswith("default-src 'none'")
+    assert "form-action 'none'" in ok.headers["Content-Security-Policy"]
     assert seen["week"] == date(2026, 9, 28)
     assert seen["username"] == "testingcameron"
     assert seen["tenant_ids"] == ["snaptrade:real"]
