@@ -128,7 +128,16 @@ def admin_digest_preview():
         target.username,
         week_start,
     )
-    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+    return html, 200, {
+        "Content-Type": "text/html; charset=utf-8",
+        # This is email HTML rendered at our authenticated origin. Keep the
+        # preview useful while denying script execution if a future template
+        # forgets to escape a user-controlled field.
+        "Content-Security-Policy": (
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; "
+            "base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+        ),
+    }
 
 
 @app.route("/admin/analytics")
