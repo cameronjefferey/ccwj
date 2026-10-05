@@ -28,17 +28,19 @@
                 <p class="ht-fine ht-hero-fine">{{ trial_line }}</p>
             </div>
             <div class="ht-hero-video">
-                {# Desktop product screen from Short u_YWl5fKEjo only: the
-                   stable frame interior (x 30–1050, y 400–1580 of the
-                   1080×1920 source), 0–15.9s, before the end card.
-                   Captions, the phone bezel, and the outro are not in this loop. #}
+                {# Desktop window of Short u_YWl5fKEjo only: a 16:10 slice of the
+                   product screen (x 30–1050, y 400–1038 of the 1080×1920
+                   source), 0–15.9s, before the end card. Native 1020×638,
+                   not scaled up. Captions, the phone bezel, and the outro
+                   are not in this loop. #}
                 <div class="ht-lottie-hero"
                      data-lottie-src="{{ url_for('static', filename='marketing/covered-call-scroll.json') }}"
+                     data-lottie-w="1020"
                      role="img"
                      aria-label="Covered-call runs scrolling in HappyTrader">
                     <img class="ht-lottie-poster"
                          src="{{ url_for('static', filename='marketing/covered-call-scroll-poster.webp') }}"
-                         alt="" width="510" height="590" decoding="async" fetchpriority="high">
+                         alt="" width="1020" height="638" decoding="async" fetchpriority="high">
                 </div>
             </div>
         </div>
@@ -227,12 +229,17 @@
     if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     var src = slot.getAttribute("data-lottie-src") || "";
     if (!src) return;
+    var sourceW = parseInt(slot.getAttribute("data-lottie-w") || "1020", 10) || 1020;
+    var cssW = slot.clientWidth || sourceW;
+    var dpr = Math.min(window.devicePixelRatio || 1, sourceW / cssW);
+    if (!(dpr > 0)) dpr = 1;
     var anim = window.lottie.loadAnimation({
         container: slot,
         renderer: "canvas",
         loop: true,
         autoplay: true,
-        path: src
+        path: src,
+        rendererSettings: { dpr: dpr, clearCanvas: true }
     });
     anim.addEventListener("DOMLoaded", function () {
         var poster = slot.querySelector(".ht-lottie-poster");

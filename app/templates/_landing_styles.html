@@ -975,7 +975,7 @@
     }
 
     /* /go/real-pnl. Desktop is the approved layout: copy on the left,
-       a glowing product-screen loop on the right (510×590, the cropped
+       a glowing 16:10 product window on the right (1020×638, the cropped
        covered-call runs recording). Narrow screens stack. */
     body.ht-public nav.navbar.ht-nav-min .container-fluid {
         display: flex;
@@ -985,13 +985,19 @@
     }
     body.ht-public nav.navbar.ht-nav-min .btn-auth-nav { font-weight: 650; }
     .ht-real-pnl .landing-hero { padding: 0.75rem 0 2.5rem; text-align: left; }
-    .ht-real-pnl .ht-hero-grid {
-        max-width: 1200px;
+    /* The feedback button's right gutter is for app tables. This hero
+       needs that space for the desktop window. */
+    body.ht-public:has(.ht-real-pnl) .ht-page.container-fluid {
+        padding-right: 1.5rem !important;
+    }
+    .ht-real-pnl .ht-wrap.ht-hero-grid {
+        max-width: 1280px;
+        width: 100%;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(520px, 0.78fr) minmax(640px, 1.22fr);
         align-items: center;
-        gap: 5rem;
-        padding: 0 2.5rem;
+        gap: 2rem;
+        padding: 0 1.5rem;
     }
     .ht-real-pnl .ht-hero-text { max-width: 40rem; }
     .ht-real-pnl .landing-hero h1 {
@@ -1039,14 +1045,20 @@
         filter: none;
     }
     .ht-real-pnl .ht-hero-fine { text-align: left; margin: 0.95rem 0 0; font-size: 0.88rem; color: #7d8aa3; }
-    .ht-real-pnl .ht-hero-video { display: flex; justify-content: center; margin-top: 0; position: relative; }
+    .ht-real-pnl .ht-hero-video {
+        display: flex;
+        justify-content: flex-end;
+        width: 100%;
+        margin-top: 0;
+        position: relative;
+    }
     .ht-real-pnl .ht-hero-video::before {
         content: "";
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 640px;
-        height: 760px;
+        width: 118%;
+        height: 155%;
         transform: translate(-50%, -50%);
         background: radial-gradient(closest-side, rgba(91,140,255,.22), rgba(91,140,255,.06) 55%, transparent 75%);
         pointer-events: none;
@@ -1054,10 +1066,9 @@
     .ht-real-pnl .ht-lottie-hero {
         position: relative;
         z-index: 1;
-        width: 420px;
-        max-width: 100%;
-        aspect-ratio: 510 / 590;
-        border-radius: 1.15rem;
+        width: 100%;
+        aspect-ratio: 1020 / 638;
+        border-radius: 0.9rem;
         border: 1px solid rgba(91,140,255,.55);
         box-shadow: 0 0 0 6px rgba(91,140,255,.07), 0 0 60px rgba(91,140,255,.28), 0 30px 80px rgba(0,0,0,.55);
         overflow: hidden;
@@ -1182,6 +1193,12 @@
         color: #0a0e17;
         filter: none;
     }
+    @media (max-width: 1240px) {
+        .ht-real-pnl .ht-wrap.ht-hero-grid { grid-template-columns: 1fr; gap: 1.75rem; }
+        .ht-real-pnl .ht-hero-video { justify-content: center; }
+        .ht-real-pnl .ht-hero-video::before { width: 108%; height: 140%; }
+        .ht-real-pnl .ht-lottie-hero { width: min(100%, 860px); margin-inline: auto; }
+    }
     @media (max-width: 959px) {
         .ht-real-pnl .ht-hero-grid,
         .ht-real-pnl .ht-shorts-grid,
@@ -1190,8 +1207,6 @@
             gap: 1.75rem;
             padding: 0 1.25rem;
         }
-        .ht-real-pnl .ht-hero-video::before { width: 480px; height: 560px; }
-        .ht-real-pnl .ht-lottie-hero { width: min(420px, 100%); }
         .ht-real-pnl .ht-band-break { height: 3rem; }
         .ht-real-pnl .ht-banner-card { padding: 1.75rem 1.25rem 2rem; }
         .ht-real-pnl .ht-banner-title,
