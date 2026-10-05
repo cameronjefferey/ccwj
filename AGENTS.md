@@ -711,9 +711,11 @@ your covered calls really make?", side-by-side **Create free account**
 and **Explore live demo**, the free/trial line under the buttons, and
 the covered-call runs Short (`u_YWl5fKEjo`) in a glowing 9:16 frame.
 Below that: the BE cumulative chart, ONON and RKLB catch tabs only,
-a mid CTA, the if-held Short (`sCZVeeY_6SA`), the fit matrix, the
-homepage How it works block (including `GZ3mPiagkLo`), a compact
-pricing blurb, and the FAQ accordion. Nav on that page is the logo
+a mid CTA, the position story (long-form `VssdUIrHcjs`, the full-length
+pair of the if-held Short, muted and playing only while that section is
+in view), the fit matrix, the homepage How it works block (including
+`GZ3mPiagkLo`, without the strategy caption or the sync/privacy note),
+a compact pricing blurb, and the FAQ accordion. Nav on that page is the logo
 and Create free account. The risk disclaimer is the footer line, once.
 Stills leave account totals and share counts off. Signup `?route=`
 repeats that page's headline and subhead. `?v=` swaps an allow-listed

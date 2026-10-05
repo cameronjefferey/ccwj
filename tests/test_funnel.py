@@ -662,11 +662,11 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             "create-account",
             "route=real-pnl",
             (
-                "Every trade day on one line, covered-call income tracked",
+                "Every trade day on one line",
                 "Here's what you'd catch with HappyTrader",
                 "See what your own trades really made.",
-                "Every position's full story",
-                "What do your trades say about your next one?",
+                "See every position's full story",
+                "Use your trading history to find your sweet spots",
                 "Three steps, then the record",
                 "What it costs",
                 "Questions",
@@ -740,7 +740,40 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert "win-rate.webp" not in body
             assert "onon.webp" in body
             assert "rklb.webp" in body
-            assert "sCZVeeY_6SA" in body
+            assert "sCZVeeY_6SA" not in body
+            assert "VssdUIrHcjs" in body
+            assert "data-viewport-video" in body
+            assert "mute=1" in body
+            assert "pauseVideo" in body
+            assert "playVideo" in body
+            assert body.count('class="ht-band-break"') == 3
+            overview_at = body.index("Every trade day on one line")
+            catch_at = body.index("Here's what you'd catch with HappyTrader")
+            positions_at = body.index("See every position's full story")
+            strategies_at = body.index("Use your trading history to find your sweet spots")
+            how_at = body.index("Three steps, then the record")
+            break_at = body.index('class="ht-band-break"')
+            break_mid = body.index('class="ht-band-break"', break_at + 1)
+            break_last = body.index('class="ht-band-break"', break_mid + 1)
+            assert overview_at < break_at < catch_at
+            assert positions_at < break_mid < strategies_at < break_last < how_at
+            story = body.split('aria-label="See every position\'s full story"', 1)[1].split("</section>", 1)[0]
+            assert "ht-frame-short" not in story
+            assert "ht-frame-hero" not in story
+            assert "Play Short" not in story
+            assert "SHORTS" not in story
+            assert ">Positions<" in story
+            how_block = body.split('aria-label="How it works"', 1)[1].split("</section>", 1)[0]
+            assert "ht-feature-title" not in how_block
+            assert ">Which strategies work<" not in how_block
+            assert "GZ3mPiagkLo" in how_block
+            assert "Privacy mode masks account names" not in body
+            assert "A share card is a picture" not in body
+            assert "Sync your accounts" not in body
+            assert "covered-call income tracked" not in body
+            assert "What do your trades say about your next one?" not in body
+            assert ".ht-real-pnl .ht-band-break" in body
+            assert "background: #0a0e17" in body.split(".ht-real-pnl .ht-band-break", 1)[1][:180]
             assert "GZ3mPiagkLo" in body
             assert "fit-matrix.webp" in body
             assert "pnl_real.webp" in body
@@ -806,7 +839,8 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
     _, real = _go_body(client, "/go/real-pnl")
     assert "Rolls, covered-call runs, and early exits, on the trades themselves." in real
     assert real.count("pnl_real.webp") == 1
-    assert "Every trade day on one line, covered-call income tracked" in real
+    assert "Every trade day on one line" in real
+    assert "covered-call income tracked" not in real
     assert 'class="ht-overview-mock"' not in real
     assert "AAPL" not in real
     assert "See pricing" in real

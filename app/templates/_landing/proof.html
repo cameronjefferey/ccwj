@@ -27,6 +27,7 @@
                     <p>A paper account. Simulated money, real market data.</p>
                 </li>
             </ul>
+            {% if not hide_sync_note|default(false) %}
             <p class="ht-fine">
                 Sync your accounts. {% include "_broker_sync_timing.html" %}
                 See your trading profile once the sync finishes.
@@ -41,5 +42,6 @@
                 dates, and realized P&amp;L — and it leaves out the account, the broker,
                 and the balance.
             </p>
+            {% endif %}
         </div>
     </section>

@@ -10,7 +10,8 @@ the primary button. The live demo is a text link.
 
 ``/go/real-pnl`` is the long Monday ad page (``go_real_pnl.html``):
 side-by-side Create free account and Explore live demo, then the chart,
-ONON/RKLB, shorts, fit matrix, how it works, compact pricing, and FAQ.
+ONON/RKLB, the position-story video, fit matrix, how it works, compact
+pricing, and FAQ.
 """
 from __future__ import annotations
 
@@ -240,9 +241,15 @@ def go_landing(slug):
     extra = {}
     template = "go_landing.html"
     if slug == "real-pnl":
-        from app.marketing_videos import catch_stories, story_steps
+        from app.marketing_videos import catch_stories, story_steps, trade_stories
 
         steps = story_steps()
+        # sCZVeeY_6SA is the if-held Short. TRADE_STORIES documents
+        # VssdUIrHcjs (ONON calls, closed early) as that Short's full-length
+        # upload. The catch-story id abjZ4_UFhP4 stays gated and is not used.
+        position_video = next(
+            row for row in trade_stories() if row.get("step") == "onon"
+        )
         template = "go_real_pnl.html"
         extra = {
             "story_steps": steps,
@@ -252,9 +259,7 @@ def go_landing(slug):
             "covered_short": _vertical_short(
                 steps, "u_YWl5fKEjo", "Short · Covered-call runs"
             ),
-            "held_short": _vertical_short(
-                steps, "sCZVeeY_6SA", "Short · If held to expiration"
-            ),
+            "position_video": position_video,
             "minimal_nav": True,
             "demo_pair": True,
             "catch_quiet": True,

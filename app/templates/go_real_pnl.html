@@ -38,7 +38,7 @@
         <div class="ht-wrap">
             <div class="ht-merged-copy">
                 <div class="ht-kicker">Overview</div>
-                <h2 class="ht-section-title">Every trade day on one line, covered-call income tracked</h2>
+                <h2 class="ht-section-title">Every trade day on one line</h2>
                 <p class="ht-section-lead">See every day's P&amp;L in one line, with options and shares split out. Every covered-call run is tracked from buy to sale, assignment or today: premium, share result, one net.</p>
             </div>
             <figure class="ht-shot ht-merged-shot">
@@ -49,6 +49,8 @@
             </figure>
         </div>
     </section>
+
+    <div class="ht-band-break" aria-hidden="true"></div>
 
     {% include "_landing/catch.html" %}
 
@@ -71,25 +73,33 @@
         </div>
     </section>
 
-    <section class="ht-band ht-band-story ht-section ht-shorts" aria-label="Every position's full story">
-        <div class="ht-wrap ht-shorts-grid">
+    <section class="ht-band ht-band-story ht-section ht-shorts ht-positions" aria-label="See every position's full story">
+        <div class="ht-wrap ht-shorts-grid ht-positions-grid">
             <div class="ht-copy">
-                <div class="ht-kicker">Shorts</div>
-                <h2 class="ht-section-title">Every position's full story</h2>
+                <div class="ht-kicker">Positions</div>
+                <h2 class="ht-section-title">See every position's full story</h2>
                 <p>Each symbol opens to the fills, the open lots, and a chart of equity, options, and dividends.</p>
                 <p>An early close also keeps the P&amp;L if that contract had been held to expiration. The line after the close is an estimate.</p>
             </div>
-            <div class="ht-hero-video ht-shorts-video">
-                {{ video_frame(held_short, lightbox=true, frame_class="ht-frame-hero") }}
+            <div class="ht-position-video">
+                <div class="ht-viewport-video"
+                     data-viewport-video
+                     data-youtube-id="{{ position_video.youtube_id }}"
+                     data-title="{{ position_video.title }}">
+                    <img class="ht-poster" src="{{ position_video.poster_url }}"
+                         alt="" width="1280" height="720" loading="lazy" decoding="async">
+                </div>
             </div>
         </div>
     </section>
+
+    <div class="ht-band-break" aria-hidden="true"></div>
 
     <section class="ht-band ht-band-shot-a ht-section ht-edge" aria-label="Win rate and return by strategy and sector">
         <div class="ht-wrap ht-shorts-grid ht-edge-grid">
             <div class="ht-copy">
                 <div class="ht-kicker">Strategies</div>
-                <h2 class="ht-section-title">What do your trades say about your next one?</h2>
+                <h2 class="ht-section-title">Use your trading history to find your sweet spots</h2>
                 <p>See your win rate and return by strategy and sector, so you know which setups to repeat and which to drop. Cells with no trades stay empty.</p>
             </div>
             <figure class="ht-shot ht-edge-shot">
@@ -101,6 +111,10 @@
         </div>
     </section>
 
+    <div class="ht-band-break" aria-hidden="true"></div>
+
+    {% set hide_how_caption = true %}
+    {% set hide_sync_note = true %}
     {% include "_landing/how.html" %}
     {% include "_landing/proof.html" %}
     {% include "_landing/pricing.html" %}
@@ -122,6 +136,77 @@
         });
     }, {threshold: 0});
     watch.observe(hero);
+})();
+(function () {
+    var slot = document.querySelector("[data-viewport-video]");
+    if (!slot) return;
+    var id = slot.getAttribute("data-youtube-id") || "";
+    if (!/^[A-Za-z0-9_-]{6,64}$/.test(id)) return;
+    var title = slot.getAttribute("data-title") || "Video";
+    var section = slot.closest("section") || slot;
+    var frame = null;
+    var visible = false;
+
+    function command(name) {
+        if (!frame || !frame.contentWindow) return;
+        frame.contentWindow.postMessage(JSON.stringify({
+            event: "command",
+            func: name,
+            args: []
+        }), "*");
+    }
+
+    function sync() {
+        if (!frame) {
+            if (visible) mount();
+            return;
+        }
+        command(visible ? "playVideo" : "pauseVideo");
+    }
+
+    function mount() {
+        if (frame) return;
+        frame = document.createElement("iframe");
+        var origin = "";
+        try { origin = "&origin=" + encodeURIComponent(window.location.origin); } catch (err) { origin = ""; }
+        frame.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(id)
+            + "?autoplay=1&mute=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1" + origin;
+        frame.title = title;
+        frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+        frame.setAttribute("allowfullscreen", "");
+        frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+        frame.addEventListener("load", function () {
+            if (!frame.contentWindow) return;
+            frame.contentWindow.postMessage(JSON.stringify({event: "listening"}), "*");
+            sync();
+            window.setTimeout(sync, 400);
+            window.setTimeout(sync, 1200);
+        });
+        slot.appendChild(frame);
+    }
+
+    window.addEventListener("message", function (event) {
+        if (!frame || event.source !== frame.contentWindow) return;
+        var data = event.data;
+        if (typeof data === "string") {
+            try { data = JSON.parse(data); } catch (err) { return; }
+        }
+        if (data && data.event === "onReady") sync();
+    });
+
+    if (!("IntersectionObserver" in window)) {
+        visible = true;
+        mount();
+        return;
+    }
+    var watch = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            if (entry.intersectionRatio >= 0.25) visible = true;
+            else if (!entry.isIntersecting) visible = false;
+            sync();
+        });
+    }, {threshold: [0, 0.25]});
+    watch.observe(section);
 })();
 </script>
 {% endblock %}
