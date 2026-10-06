@@ -1,3 +1,22 @@
+    {% if proof_cta|default(false) %}
+    <section class="ht-band ht-band-proof ht-proof-cta" aria-label="How the trial works">
+        <div class="ht-wrap">
+            <ul class="ht-proof">
+                <li>
+                    <strong>30 days free, no credit card</strong>
+                    <p>Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.</p>
+                </li>
+            </ul>
+            <div class="ht-final-cta ht-proof-action">
+                {% if signup_enabled %}
+                <a class="ht-cta" href="{{ signup_url }}" data-ht-cta="create-account-strip">{{ cta_label }}</a>
+                {% else %}
+                <a class="ht-cta" href="{{ url_for('login') }}" data-ht-cta="create-account-strip">Sign in</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+    {% else %}
     <section class="ht-band ht-band-proof" aria-label="How the trial works">
         <div class="ht-wrap">
             <ul class="ht-proof">
@@ -45,3 +64,4 @@
             {% endif %}
         </div>
     </section>
+    {% endif %}
