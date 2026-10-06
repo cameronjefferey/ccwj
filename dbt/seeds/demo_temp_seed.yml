@@ -1,0 +1,56 @@
+version: 2
+
+# Temporary public-demo book. Column types are STRING so empty cells
+# (the deposit has no quantity; most snapshot columns are blank) still
+# load. Delete this file with the CSVs — steps in DEMO_TEMP_SEED.md.
+seeds:
+  - name: demo_temp_history
+    description: >
+      Temporary trades for demo:demo-account. Not a real customer.
+      Stamped onto the demo tenant only in stg_demo_history.
+    config:
+      column_types:
+        Date: string
+        Action: string
+        Symbol: string
+        Description: string
+        Quantity: string
+        Price: string
+        fees_and_comm: string
+        Amount: string
+  - name: demo_temp_current
+    description: >
+      Temporary open positions for demo:demo-account, priced at the
+      2026-10-06 close. Stamped in stg_demo_current only.
+    config:
+      column_types:
+        Symbol: string
+        Description: string
+        Quantity: string
+        Price: string
+        price_change_dollar: string
+        price_change_percent: string
+        market_value: string
+        day_change_dollar: string
+        day_change_percent: string
+        cost_bases: string
+        gain_or_loss_dollat: string
+        gain_or_loss_percent: string
+        rating: string
+        divident_reinvestment: string
+        is_capital_gain: string
+        percent_of_account: string
+        expiration_date: string
+        cost_per_share: string
+        last_earnings_date: string
+        dividend_yield: string
+        last_dividend: string
+        ex_dividend_date: string
+        pe_ratio: string
+        annual_week_low: string
+        annual_week_high: string
+        volume: string
+        intrinsic_value: string
+        in_the_money: string
+        security_type: string
+        margin_requirement: string

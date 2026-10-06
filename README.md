@@ -196,7 +196,7 @@ to copy a single user's data over. See the script docstring for usage.
 Visitors can explore the app with **real, live** data—no sign-up required. Click **Explore live demo** on the landing page. That opens the demo gate; there is no demo password.
 
 - The Postgres user `demo` cannot sign in at `/login`. `demo123` is not a password.
-- The "Demo Account" is a relabeled **mirror** of the EarningsFollower trading bot's Alpaca paper account, not fabricated data. The source tenant is `var('demo_source_tenant_id')` in `dbt/dbt_project.yml`; the mirror models live in `dbt/models/staging/demo/`.
+- The "Demo Account" is temporarily the made-up book in `dbt/seeds/demo_temp_history.csv` and `dbt/seeds/demo_temp_current.csv` (`demo_temp_seed: true` in `dbt/dbt_project.yml`). It is a rising account: covered calls, a wheel, and spreads. Delete it by following `dbt/seeds/DEMO_TEMP_SEED.md`. With the flag off, Demo Account is again a relabeled **mirror** of the EarningsFollower trading bot's Alpaca paper account (`var('demo_source_tenant_id')`). The models live in `dbt/models/staging/demo/`.
 - Because it is a mirror into the demo's own `demo:demo-account` tenant, the demo renders through the exact same tenant scoping as a real user — there is no isolation carve-out.
 - Ensure `dbt build` has been run so BigQuery has current data
 - EarningsFollower links back in at `/earningsfollower/<symbol>` (see Routes)

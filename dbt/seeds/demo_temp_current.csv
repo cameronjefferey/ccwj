@@ -1,0 +1,5 @@
+Symbol,Description,Quantity,Price,price_change_dollar,price_change_percent,market_value,day_change_dollar,day_change_percent,cost_bases,gain_or_loss_dollat,gain_or_loss_percent,rating,divident_reinvestment,is_capital_gain,percent_of_account,expiration_date,cost_per_share,last_earnings_date,dividend_yield,last_dividend,ex_dividend_date,pe_ratio,annual_week_low,annual_week_high,volume,intrinsic_value,in_the_money,security_type,margin_requirement
+AAPL,Apple Inc,200,333.63,0.74,0.22,66726.00,148.0,0.22,52472.00,14254.00,27.16,,,,,,262.36,,,,,,,,,,,Equity,
+AAPL 11/20/2026 370 C,AAPL Nov 370 Call,-2,1.35,,,-270.00,,,560.00,290.00,51.79,,,,,,2.80,,,,,,,,,,No,Option,
+MSFT 11/20/2026 470 P,MSFT Nov 470 Put,-1,1.10,,,-110.00,,,420.00,310.00,73.81,,,,,,4.20,,,,,,,,,,No,Option,
+MSFT 11/20/2026 460 P,MSFT Nov 460 Put,1,0.55,,,55.00,,,240.00,-185.00,-77.08,,,,,,2.40,,,,,,,,,,No,Option,
