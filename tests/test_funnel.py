@@ -798,7 +798,8 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             faq_at = body.index('aria-label="FAQ"')
             assert proof_at < body.index('class="ht-band-break"', proof_at) < pricing_at
             assert pricing_at < body.index('class="ht-band-break"', pricing_at) < faq_at
-            strip = body.split('aria-label="How the trial works"', 1)[1].split("</section>", 1)[0]
+            strip_at = body.index('class="ht-band ht-band-proof ht-proof-cta"')
+            strip = body[strip_at:body.index("</section>", strip_at)]
             assert "ht-proof-cta" in strip
             assert "30 days free, no credit card" in strip
             assert "ht-proof-k" not in strip
