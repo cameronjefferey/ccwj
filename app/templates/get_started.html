@@ -50,10 +50,15 @@
         background: var(--ht-surface-2, #1a2233);
         border: 1px solid var(--ht-line);
         padding: .65rem .85rem; border-radius: 8px;
+        overflow-wrap: break-word; word-break: normal; min-width: 0;
     }
+    .gs-path-row { display: flex; flex-direction: column; gap: .75rem; min-width: 0; }
+    .gs-hero, .gs-path { min-width: 0; overflow-wrap: break-word; word-break: normal; }
     @media (max-width: 640px) {
         .gs-hero, .gs-path { padding: 1.15rem 1rem; }
         .gs-hero h1 { font-size: 1.3rem; }
+        .gs-path form, .gs-path .btn, .gs-hero .btn { width: 100%; }
+        .gs-path .btn, .gs-hero .btn { min-height: 44px; }
     }
 </style>
 {% endblock %}
@@ -92,17 +97,18 @@
         </div>
 
         {% if has_data %}
-        <p class="text-muted small mb-3">Overview already has your trades.</p>
+        <p class="text-muted small mb-3">This account is in Overview.</p>
         <a class="btn btn-outline-secondary" href="{{ url_for('weekly_review') }}">Open Overview</a>
         {% elif has_uploaded %}
         <p class="text-muted small mb-3">
-            Sync is in progress. After the broker sends data, building your profile usually takes 15–40 minutes.
+            The first sync is still running. Positions usually show up within minutes.
+            Trade history can take a few hours, then building your profile usually takes 15–40 minutes.
             Refresh this page, or wait for the email that Overview is ready.
         </p>
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('get_started') }}">Refresh status</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('get_started') }}">Refresh status</a>
         {% else %}
         <p class="text-muted small mb-3">
-            Nothing has landed in the warehouse yet. {% include "_broker_sync_timing.html" %}
+            No account data has arrived yet. {% include "_broker_sync_timing.html" %}
         </p>
         {% endif %}
 
@@ -133,21 +139,21 @@
         <div class="gs-path-row dual mb-3">
             <div class="gs-path">
                 <div class="gs-label">Paper</div>
-                <h6>Connect an Alpaca paper account</h6>
+                <h6>Practice with paper money</h6>
                 <p class="pitch">
-                    Practice one call or one put inside HappyTrader. Paper money.
+                    Opens Practice. The next step there is signing in to an Alpaca paper account.
+                    HappyTrader does not open that account for you.
                     The trade you pick is not a recommendation and it is not advice.
-                    This signs you in to Alpaca. It does not open the account for you.
                 </p>
                 <p class="pitch">
                     No Alpaca login yet?
                     <a href="https://app.alpaca.markets/signup" target="_blank" rel="noopener">Create one at Alpaca</a>,
-                    then come back and connect the paper account.
+                    then come back and open Practice.
                 </p>
                 <div class="cta-row">
-                    <form method="post" action="{{ url_for('get_started_paper') }}">
+                    <form method="post" action="{{ url_for('get_started_paper') }}" data-submit-once>
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="btn btn-primary" type="submit">Connect an Alpaca paper account</button>
+                        <button class="btn btn-primary" type="submit">Open Practice</button>
                     </form>
                 </div>
             </div>
@@ -155,11 +161,11 @@
                 <div class="gs-label">Your brokerage</div>
                 <h6>See how you trade</h6>
                 <p class="pitch">
-                    Connect the brokerage you already use. Read-only.
+                    The next page is a read-only connection.
                     HappyTrader shows the trades you already made, and never stores your broker password.
                 </p>
                 <div class="cta-row">
-                    <a class="btn btn-primary" href="{{ url_for('get_started', path='broker') }}">See how I trade</a>
+                    <a class="btn btn-primary" href="{{ url_for('get_started', path='broker') }}">Connect my brokerage</a>
                 </div>
             </div>
         </div>

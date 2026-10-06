@@ -75,6 +75,8 @@
         .acct-mgr { overflow-x: clip; }
         .acct-row { align-items: stretch; }
         .acct-row .nick { flex-basis: 100%; }
+        .acct-mgr .btn { min-height: 44px; }
+        .acct-cta .btn, .reconnect-form .btn { width: 100%; }
     }
 </style>
 {% endblock %}
@@ -160,7 +162,7 @@
                             at once — your already-synced data is safe.
                         </div>
                     </div>
-                    <form method="POST" action="{{ url_for('snaptrade_connect') }}" class="reconnect-form">
+                    <form method="POST" action="{{ url_for('snaptrade_connect') }}" data-submit-once class="reconnect-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="reconnect_broker_label" value="{{ g.broker_label }}">
                         {% if g.authorization_id %}
@@ -202,13 +204,16 @@
                         <span class="needs-reconnect-note">Paused — reconnect above</span>
                         {% elif c.holdings_last_successful_sync %}
                         <div class="freshness"
-                             title="When SnapTrade last pulled fresh holdings from your broker.">
-                            Broker data as of {{ c.holdings_last_successful_sync.strftime('%b %-d, %Y') }}
+                             title="The last day your broker's positions were read.">
+                            Broker data as of {{ c.holdings_last_successful_sync | human_date }}
                         </div>
-                        {% elif c.first_sync_completed %}
-                        <span class="badge badge-open">Synced</span>
+                        {% elif c | sync_status_label %}
+                        <span class="badge">{{ c | sync_status_label }}</span>
                         {% else %}
-                        <span class="badge">First sync pending</span>
+                        <span class="badge badge-open">Synced</span>
+                        {% endif %}
+                        {% if not c.connection_broken_at and c.holdings_last_successful_sync and c | sync_status_label %}
+                        <div class="acct-meta">{{ c | sync_status_label }}</div>
                         {% endif %}
                     </div>
                     <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form">
@@ -220,7 +225,7 @@
                         </button>
                         <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Asking your broker for fresh data, then syncing. This can take a minute — keep this tab open.</p>
                     </form>
-                    <form method="POST" action="{{ url_for('snaptrade_disconnect') }}"
+                    <form method="POST" action="{{ url_for('snaptrade_disconnect') }}" data-submit-once
                           onsubmit="return confirm('Disconnect this brokerage account from HappyTrader? Already-synced data is kept.');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">

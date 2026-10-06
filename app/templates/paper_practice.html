@@ -108,6 +108,11 @@
     .pp-order .is-cancelled,
     .pp-order .is-rejected,
     .pp-order .is-expired { color: var(--loss); }
+    @media (max-width: 576px) {
+        .pp-card { padding: 1.15rem 1rem; }
+        .pp-card .btn { min-height: 44px; }
+        .pp-card form .btn-primary { width: 100%; }
+    }
 </style>
 {% endblock %}
 
@@ -189,7 +194,7 @@
                 </p>
                 <p class="pp-note">Opening the account is one sign-in. After that, you place the trade on this page.</p>
                 {% if snaptrade_ready %}
-                <form method="POST" action="{{ url_for('paper_practice_connect') }}" class="mt-3">
+                <form method="POST" action="{{ url_for('paper_practice_connect') }}" data-submit-once class="mt-3">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="btn btn-primary" type="submit">Sign in to the paper account</button>
                 </form>
@@ -208,7 +213,7 @@
                     </p>
                     <p class="pp-note">Opening the account is one sign-in. After that, you place the trade on this page.</p>
                     {% if snaptrade_ready %}
-                    <form method="POST" action="{{ url_for('paper_practice_connect') }}" class="mt-3">
+                    <form method="POST" action="{{ url_for('paper_practice_connect') }}" data-submit-once class="mt-3">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button class="btn btn-primary" type="submit">Sign in to the paper account</button>
                     </form>

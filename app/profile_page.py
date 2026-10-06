@@ -110,6 +110,23 @@ def profile_header_counts(snaptrade_accounts, legacy_accounts):
     return account_count, len(brokers)
 
 
+def settings_header_counts(
+    snaptrade_accounts, profile_rows, legacy_accounts, tenant_choices,
+):
+    """Hero chips on Settings.
+
+    Account count is live SnapTrade rows plus CSV-only manuals. Broker
+    count collapses ``Schwab`` and ``Charles Schwab`` to one institution.
+    When the SnapTrade list cannot be read, fall back to readable tenants.
+    """
+    _, brokers = profile_header_counts(snaptrade_accounts, legacy_accounts)
+    if snaptrade_accounts or profile_rows:
+        return len(list(profile_rows or [])), brokers
+    fallback_accounts, _ = profile_header_counts([], legacy_accounts)
+    choices = len(list(tenant_choices or []))
+    return choices or fallback_accounts, brokers
+
+
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
@@ -192,8 +209,14 @@ def profile():
                     created = create_account_group(current_user.id, name)
                     set_account_group_members(current_user.id, created["id"], tids)
                     flash("Group saved.", "success")
-            except (TypeError, ValueError) as exc:
-                flash(str(exc), "danger")
+            except ValueError as exc:
+                msg = str(exc)
+                if "user_id" in msg.lower():
+                    msg = "Couldn't save that group. Try again."
+                flash(msg, "danger")
+            except Exception:
+                app.logger.exception("save_account_group failed")
+                flash("Couldn't save that group. Try again.", "danger")
             return redirect(url_for("profile", tab="account") + "#account-groups")
 
         if action == "delete_account_group":
@@ -343,8 +366,7 @@ def profile():
 
         snaptrade_enabled = _snaptrade_enabled_fn()
         snaptrade_accounts = _get_snaptrade_accounts(current_user.id) or []
-        from app.linked_accounts import distinct_broker_names, profile_account_rows
-        broker_names = distinct_broker_names(snaptrade_accounts)
+        from app.linked_accounts import profile_account_rows
         profile_rows = profile_account_rows(
             snaptrade_accounts, tenant_rows, tenant_labels,
         )
@@ -353,7 +375,6 @@ def profile():
     except Exception:
         snaptrade_enabled = False
         snaptrade_accounts = []
-        broker_names = []
         profile_rows = []
 
     routes = sorted(_ALLOWED_DEFAULT_ROUTE)
@@ -375,16 +396,13 @@ def profile():
     except Exception:
         pass
 
-    account_count, _header_brokers = profile_header_counts(snaptrade_accounts, accounts)
     # Live SnapTrade rows plus CSV-only manuals. Orphan broker_tenants are
     # not extra accounts. If the SnapTrade read failed, fall back to
-    # readable tenants.
-    if snaptrade_accounts or profile_rows:
-        account_count = len(profile_rows)
-        broker_count = len(broker_names or [])
-    else:
-        account_count = len(group_tenant_choices or []) or account_count
-        broker_count = _header_brokers
+    # readable tenants. Broker count uses the Schwab-name collapse, not
+    # the raw institution strings.
+    account_count, broker_count = settings_header_counts(
+        snaptrade_accounts, profile_rows, accounts, group_tenant_choices,
+    )
 
     subscribe_offer = None
     try:

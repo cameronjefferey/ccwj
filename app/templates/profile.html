@@ -80,6 +80,15 @@
     }
     @media (max-width: 767px) {
         .settings-page { overflow-x: clip; }
+        .settings-tabs a {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            padding: .55rem .9rem;
+        }
+        .settings-page .btn { min-height: 44px; }
+        .settings-page .conn-meta,
+        .settings-page .acct-line { max-width: 100%; }
         .settings-page .table-responsive { overflow: visible; }
         .settings-page table.ht-stack { display: block; width: 100%; }
         .settings-page table.ht-stack > thead { display: none !important; }
@@ -189,9 +198,9 @@
                 {% if a.connection_broken_at %}{% set _ns_st_o.any_broken = true %}{% endif %}
             {% endfor %}
             {% if _ns_st_o.any_broken %}
-            <p class="settings-lead">A broker connection needs reconnecting. Syncing won't help until it's fixed.</p>
+            <p class="settings-lead">A broker connection needs reconnecting. New trades won't come in until you reconnect.</p>
             <div class="settings-actions">
-                <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-primary btn-lg">Reconnect now</a>
+                <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-primary btn-lg">Open accounts to reconnect</a>
             </div>
             {% endif %}
             {% for a in _snaptrade_accounts %}
@@ -200,15 +209,13 @@
                     <span class="badge">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
                     <span class="small text-body-secondary">{{ a.broker_slug | title | privacy_hide }}</span>
                     {% if a.holdings_last_successful_sync %}
-                    <div class="conn-meta">Broker data as of {{ a.holdings_last_successful_sync.strftime('%b %-d, %Y') }}</div>
+                    <div class="conn-meta">Broker data as of {{ a.holdings_last_successful_sync | human_date }}</div>
                     {% elif a.last_sync_at %}
                     <div class="conn-meta">Last refresh {{ a.last_sync_at | friendly_time }}</div>
                     {% endif %}
                 </div>
-                {% if a.connection_broken_at %}
-                <span class="badge">Reconnect needed</span>
-                {% elif not a.first_sync_completed %}
-                <span class="badge">First sync pending</span>
+                {% if a | sync_status_label %}
+                <span class="badge">{{ a | sync_status_label }}</span>
                 {% else %}
                 <span class="badge badge-open">Connected</span>
                 {% endif %}
@@ -425,8 +432,8 @@
             {% elif plan_state == 'trialing' %}
                 <p class="mb-1"><strong>30-day free trial, no credit card</strong></p>
                 <p class="settings-lead mb-0">
-                    {% if plan_status and plan_status.days_left is not none %}{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} left.{% endif %}
-                    When it ends your mirror freezes: every page stays readable, daily updates stop.
+                    {% if plan_status and plan_status.days_left is not none %}{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} left{% if plan_status.frozen_on %}. Updates stop {{ plan_status.frozen_on | human_date }}{% endif %}.{% endif %}
+                    After that, every page stays readable and daily updates stop.
                 </p>
             {% elif plan_state in ('frozen', 'grace_expired') %}
                 <p class="mb-1"><strong>Frozen — readable, not updating</strong></p>
@@ -525,11 +532,18 @@
                 from then on.
             </p>
             {% if _snaptrade_accounts %}
-            {% set _ns = namespace(any_first_pending=false) %}
+            {% set _ns = namespace(any_first_pending=false, any_broken=false) %}
             {% for a in _snaptrade_accounts %}
                 {% if not a.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
+                {% if a.connection_broken_at %}{% set _ns.any_broken = true %}{% endif %}
             {% endfor %}
             {% set _any_first_pending_st = _ns.any_first_pending %}
+            {% if _ns.any_broken %}
+            <p class="settings-lead">A broker connection needs reconnecting. New trades won't come in until you reconnect.</p>
+            <div class="settings-actions">
+                <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-primary">Open accounts to reconnect</a>
+            </div>
+            {% endif %}
             <p class="settings-lead">
                 You have <strong>{{ _snaptrade_accounts|length }}</strong>
                 brokerage account{{ '' if _snaptrade_accounts|length == 1 else 's' }}
@@ -560,8 +574,13 @@
             <div class="acct-line">
                 <span class="badge">{{ (a.display_nickname or a.account_name or a.snaptrade_account_id) | account_label(a.tenant_id) }}</span>
                 <span class="small text-body-secondary">{{ a.broker_slug | privacy_hide }}</span>
-                {% if not a.first_sync_completed %}
-                <span class="badge">First sync pending</span>
+                {% if a | sync_status_label %}
+                <span class="badge">{{ a | sync_status_label }}</span>
+                {% endif %}
+                {% if a.holdings_last_successful_sync %}
+                <span class="small text-body-secondary">Broker data as of {{ a.holdings_last_successful_sync | human_date }}</span>
+                {% elif a.last_sync_at %}
+                <span class="small text-body-secondary">Last refresh {{ a.last_sync_at | friendly_time }}</span>
                 {% endif %}
                 <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form m-0">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -863,7 +882,7 @@
                     onclick="document.getElementById('delete-account-form').classList.toggle('d-none')">
                 Delete my account…
             </button>
-            <form id="delete-account-form" class="d-none mt-3" method="POST"
+            <form id="delete-account-form" class="d-none mt-3" method="POST" data-submit-once
                   action="{{ url_for('delete_account') }}"
                   onsubmit="return confirm('Really delete your account and ALL trading data? This cannot be undone.');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

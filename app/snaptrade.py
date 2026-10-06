@@ -1762,7 +1762,15 @@ def snaptrade_account_nickname():
     if not snaptrade_account_id:
         flash("Missing account id.", "warning")
         return redirect(url_for("snaptrade_accounts_page"))
-    update_snaptrade_account_nickname(current_user.id, snaptrade_account_id, nickname)
+    owned = get_snaptrade_account(current_user.id, snaptrade_account_id)
+    if not owned:
+        flash("That account isn't on your login. Nothing was renamed.", "warning")
+        return redirect(url_for("snaptrade_accounts_page"))
+    if not update_snaptrade_account_nickname(
+        current_user.id, snaptrade_account_id, nickname,
+    ):
+        flash("Couldn't save that nickname. Try again.", "danger")
+        return redirect(url_for("snaptrade_accounts_page"))
     flash("Nickname saved.", "success")
     return redirect(url_for(
         "snaptrade_accounts_page",
@@ -1786,6 +1794,7 @@ def snaptrade_disconnect():
 
     snap = get_snaptrade_user(current_user.id)
     client = _get_snaptrade_client()
+    broker_revoke_failed = False
     if snap and client:
         try:
             client.connections.remove_brokerage_authorization(
@@ -1797,7 +1806,9 @@ def snaptrade_disconnect():
             # Don't block the local DB cleanup on a SnapTrade error —
             # we still want the user to be able to remove the row from
             # our UI. Surface the error in the flash so they know
-            # the broker side may need manual revoke.
+            # the broker side may need manual revoke. The exception
+            # text stays in the log.
+            broker_revoke_failed = True
             _log.warning(
                 "SnapTrade remove_brokerage_authorization failed for user_id=%s account=%s: %s",
                 current_user.id, snaptrade_account_id, exc,
@@ -1809,7 +1820,8 @@ def snaptrade_disconnect():
             )
 
     remove_snaptrade_account(current_user.id, snaptrade_account_id)
-    flash("Account disconnected.", "success")
+    if not broker_revoke_failed:
+        flash("Account disconnected.", "success")
     return redirect(url_for("snaptrade_accounts_page"))
 
 
@@ -2103,7 +2115,14 @@ def _flash_and_redirect_after_sync(res, *, first_done, refreshed=False):
         return redirect(url_for("snaptrade_accounts_page"))
 
     if res["github_error"]:
-        flash(f"{summary} Couldn't push to the cloud: {res['github_error']}", "warning")
+        _log.warning(
+            "seed store write failed after sync: %s", res["github_error"],
+        )
+        flash(
+            f"{summary} We read the broker, but couldn't store the update. "
+            "Try again in a minute.",
+            "warning",
+        )
     elif res["github_seed_push_skipped"]:
         flash(
             f"{summary} Live dashboard updates are not turned on for this "
@@ -2714,7 +2733,9 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
         else:
             failures.append({
                 "label": _public_sync_label(res.get("label"), res.get("tenant_id")),
-                "reason": res.get("user_message") or res["error"] or "unknown",
+                "reason": public_sync_failure_reason(
+                    res.get("error"), res.get("user_message"),
+                ),
             })
 
     parts = []
@@ -2726,7 +2747,9 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
             f"{s['current_rows']} open {'position' if s['current_rows'] == 1 else 'positions'}"
             for s in successes
         )
-        parts.append(f"Synced {len(successes)} broker account(s) — {per_account}.")
+        n_ok = len(successes)
+        account_word = "account" if n_ok == 1 else "accounts"
+        parts.append(f"Synced {n_ok} broker {account_word} — {per_account}.")
         # Detect the rare case where SnapTrade has positions but no
         # trades from EITHER source (activities or orders). Now that
         # we read both endpoints, ``history_rows == 0`` means SnapTrade
@@ -2755,12 +2778,11 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
         parts.append(f"Failed: {per_failure}.")
     if history_pending_accounts:
         parts.append(
-            f"Heads up: SnapTrade has the current positions for "
-            f"{', '.join(history_pending_accounts)} but no trade history "
-            f"yet — common on a brand-new connection while SnapTrade "
-            f"backfills the broker's transaction archive. Re-sync in 30 "
-            f"minutes; if it's still empty after a few hours your account "
-            f"may genuinely have no recent trades on file."
+            f"Heads up: current positions are in for "
+            f"{', '.join(history_pending_accounts)}, but trade history "
+            f"hasn't arrived yet. That's common on a new connection. "
+            f"Sync again in 30 minutes. If it's still empty after a few "
+            f"hours, the broker may not have recent trades on file."
         )
     summary = " ".join(parts) or "Nothing to sync."
 
@@ -2848,6 +2870,31 @@ def _log_snaptrade_sync_error(step: str, endpoint: str, account_id, exc) -> str:
         step, endpoint, status, account_id, type(exc).__name__, str(exc)[:500],
     )
     return status
+
+
+def public_sync_failure_reason(error, user_message=None) -> str:
+    """Clause for a sync-failure flash. Never a stack trace or raw exception.
+
+    A prepared ``user_message`` is shown as-is when it is a short single
+    line. Internal codes (``connection_broken``, ``unknown``, a stored
+    exception string) become a sentence the trader can act on.
+    """
+    text = str(user_message or "").strip()
+    if text and "Traceback" not in text and "\n" not in text and len(text) <= 240:
+        return text
+    code = str(error or "").strip()
+    known = {
+        "connection_broken": "reconnect the broker first",
+        "connection_broken_pending": "the broker didn't answer. Try again in a minute",
+        "session_expired": "the sign-in session expired. Connect again",
+        "plan_frozen": "updates are paused until the plan is active",
+        "seed_write_failed": "the update could not be stored",
+        "snapshot_ordering_unavailable": "another sync is already running",
+        "unknown": "the sync didn't finish. Try again in a minute",
+    }
+    if code in known:
+        return known[code]
+    return "the sync didn't finish. Try again in a minute"
 
 
 def _sync_user_reason(step: str, status) -> str:

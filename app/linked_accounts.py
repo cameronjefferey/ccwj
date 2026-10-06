@@ -21,6 +21,27 @@ SCHWAB_CSV_INSTITUTIONS = frozenset({
 })
 
 
+def sync_status_label(row):
+    """Plain status for one linked account.
+
+    ``last_sync_error`` can be an internal code or a truncated exception.
+    Support can read that column. This label never includes it.
+    """
+    row = row or {}
+    if row.get("connection_broken_at"):
+        return "Reconnect needed"
+    err = str(row.get("last_sync_error") or "").strip()
+    if err.startswith("connection_broken_pending:"):
+        return None
+    if err.startswith("connection_broken:"):
+        return "Reconnect needed"
+    if err:
+        return "Last sync didn't finish"
+    if not row.get("first_sync_completed"):
+        return "Waiting for the first sync"
+    return None
+
+
 def distinct_broker_names(snaptrade_accounts):
     """Institution names in first-seen order, case-insensitive.
 
