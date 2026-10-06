@@ -176,7 +176,7 @@ def _book_on(history: list[dict], day: date, snap: dict[str, float]) -> float:
 
 def test_temp_seed_files_and_flag_are_the_only_switch():
     project = (ROOT / "dbt" / "dbt_project.yml").read_text()
-    assert "demo_temp_seed: true" in project
+    assert "demo_temp_seed: false" in project
     removal = REMOVAL.read_text()
     for name in (
         "demo_temp_history.csv",

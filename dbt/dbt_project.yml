@@ -30,7 +30,7 @@ vars:
   # (a rising multi-strategy account) instead of the bot mirror below.
   # Set to false and delete the seed when the bot is worth showing.
   # Steps: dbt/seeds/DEMO_TEMP_SEED.md.
-  demo_temp_seed: true
+  demo_temp_seed: false
 
   # The public demo MIRROR source, used when demo_temp_seed is false.
   # Relabeled to the demo's own tenant (`demo:demo-account` / `Demo Account`).
