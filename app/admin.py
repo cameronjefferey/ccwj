@@ -143,7 +143,7 @@ def admin_digest_preview():
 @app.route("/admin/analytics")
 @_admin_only
 def admin_analytics():
-    """Signups, funnel, and campaign source for the last 30 days.
+    """Real people on /go/real-pnl: visitors, scroll, time, and signups.
 
     Postgres only. Non-admins get 404, same as the rest of /admin.
     """

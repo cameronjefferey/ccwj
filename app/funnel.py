@@ -31,9 +31,16 @@ COOKIE = "ht_touch"
 COOKIE_DAYS = 90
 INTERNAL_COOKIE = "ht_internal"
 INTERNAL_COOKIE_DAYS = 365
-# Screenshot and dev-login accounts. Admins come from ADMIN_USERS.
-# There is no separate owner column — owner accounts are those admins.
-_TESTING_USERNAMES = frozenset({"testingcameron", "testingcameron1"})
+# Owner and screenshot logins. These stay out of Acquisition even when
+# ADMIN_USERS is empty or incomplete. ``demo`` is the public demo and
+# is not in this set.
+_OWNER_USERNAMES = frozenset({
+    "cameron",
+    "cameron3",
+    "happycameron",
+    "testingcameron",
+    "testingcameron1",
+})
 _VISIT_RE = re.compile(r"^[a-f0-9]{32}$")
 _UTM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 _CLICK_RE = re.compile(r"^[A-Za-z0-9._\-]{4,200}$")
@@ -64,10 +71,12 @@ EVENTS = {
     "checkout_started": {"first": True, "reddit": None},
     "paid": {"first": True, "reddit": "Purchase"},
     # Logged-out public pages. These stay first-party even when an ad
-    # pixel is off. detail carries a CTA name, a scroll mark, or a video id.
+    # pixel is off. detail carries a CTA name, a scroll mark, a time
+    # bucket, or a video id.
     "page_view": {"first": False, "reddit": None},
     "cta_click": {"first": False, "reddit": None},
     "scroll_depth": {"first": False, "reddit": None},
+    "time_on_page": {"first": False, "reddit": None},
     "video_play": {"first": False, "reddit": None},
 }
 # The browser beacon may only name these. Paid and signup stay server-side.
@@ -78,6 +87,7 @@ BEACON_EVENTS = frozenset({
     "landing_view",
     "cta_click",
     "scroll_depth",
+    "time_on_page",
     "video_play",
     "client_seen",
 })
@@ -109,6 +119,29 @@ _RANGE_WHERE = {
     "30d": "created_at >= NOW() - INTERVAL '30 days'",
 }
 _RANGE_DAYS = {"today": 1, "7d": 7, "30d": 30}
+# Scroll marks the browser already sends. A visit that reached 75% also
+# has rows for 25 and 50, because the client posts every mark it crossed.
+SCROLL_COLUMNS = (
+    ("25", "s25"),
+    ("50", "s50"),
+    ("75", "s75"),
+    ("100", "s100"),
+)
+# Visible-time buckets, in seconds. The label is what Acquisition shows.
+TIME_BUCKETS = (
+    ("5", "5s", "t5"),
+    ("15", "15s", "t15"),
+    ("30", "30s", "t30"),
+    ("60", "1m", "t60"),
+    ("120", "2m", "t120"),
+    ("300", "5m", "t300"),
+)
+_SCROLL_DETAILS = frozenset(mark for mark, _key in SCROLL_COLUMNS)
+_TIME_DETAILS = frozenset(bucket for bucket, _label, _key in TIME_BUCKETS)
+# The only live ad. Acquisition counts this page and signups attributed
+# to this campaign. Other /go/* landings stay out of the page.
+REAL_PNL_PATH = "/go/real-pnl"
+REAL_PNL_CAMPAIGN = "real-pnl"
 FUNNEL_STEPS = (
     ("landing_view", "Landing view"),
     ("demo_start", "Demo start"),
@@ -356,10 +389,10 @@ def is_bot_user_agent(user_agent) -> bool:
 def internal_usernames() -> set[str]:
     """Accounts whose traffic stays out of Acquisition.
 
-    Testing logins, ``INTERNAL_USERS``, and ``ADMIN_USERS``. ``demo`` is
-    never internal — that username is the public demo.
+    Owner and test logins, ``INTERNAL_USERS``, and ``ADMIN_USERS``.
+    ``demo`` is never internal — that username is the public demo.
     """
-    names = set(_TESTING_USERNAMES)
+    names = set(_OWNER_USERNAMES)
     for env_name in ("INTERNAL_USERS", "ADMIN_USERS"):
         for part in (os.environ.get(env_name) or "").split(","):
             part = part.strip().lower()
@@ -498,8 +531,11 @@ def _attach_internal_cookie(response):
 def human_traffic_sql() -> str:
     """Rows that are not bots and not an internal account or visit.
 
-    ``client_beacon`` is separate: old rows are NULL and still count.
-    A new page view starts FALSE until the browser beacon sets TRUE.
+    A page view logged before login is dropped when that same visit later
+    has an owner or test ``user_id``, even if the visit was never stamped
+    in ``funnel_internal_visits``. ``client_beacon`` is separate: old rows
+    are NULL and still count. A new page view starts FALSE until the
+    browser beacon sets TRUE.
     """
     quoted = ", ".join("'" + name + "'" for name in sorted(internal_usernames()))
     return (
@@ -509,6 +545,11 @@ def human_traffic_sql() -> str:
         "WHERE iv.visit_id = funnel_events.visit_id)) "
         "AND (user_id IS NULL OR NOT EXISTS ("
         "SELECT 1 FROM users u WHERE u.id = funnel_events.user_id "
+        f"AND lower(u.username) IN ({quoted}))) "
+        "AND (visit_id IS NULL OR NOT EXISTS ("
+        "SELECT 1 FROM funnel_events owner_hit "
+        "JOIN users u ON u.id = owner_hit.user_id "
+        "WHERE owner_hit.visit_id = funnel_events.visit_id "
         f"AND lower(u.username) IN ({quoted}))))"
     )
 
@@ -687,7 +728,7 @@ def log_event(
             return None
         if event == "page_view" and _recent_same(event, visit_id, path, "", 1):
             return None
-        if event in ("cta_click", "scroll_depth", "video_play") and _recent_same(
+        if event in ("cta_click", "scroll_depth", "time_on_page", "video_play") and _recent_same(
             event, visit_id, path, detail, 12,
         ):
             return None
@@ -1050,9 +1091,11 @@ def beacon(payload) -> tuple[dict, int]:
     if not isinstance(detail, str):
         return {"ok": False}, 400
     detail = clean_utm(detail)
-    if event in ("cta_click", "scroll_depth", "video_play") and not detail:
+    if event in ("cta_click", "scroll_depth", "time_on_page", "video_play") and not detail:
         return {"ok": False}, 400
-    if event == "scroll_depth" and detail not in ("25", "50", "75", "100"):
+    if event == "scroll_depth" and detail not in _SCROLL_DETAILS:
+        return {"ok": False}, 400
+    if event == "time_on_page" and detail not in _TIME_DETAILS:
         return {"ok": False}, 400
     log_event(event, path=path, detail=detail)
     return {"ok": True}, 200
@@ -1259,21 +1302,6 @@ def _user_opted_out(user_id) -> bool:
         return False
 
 
-def _with_signup_rate(rows) -> list[dict]:
-    out = []
-    for row in rows or []:
-        visitors = int(row.get("visitors") or 0)
-        signups = int(row.get("signups") or 0)
-        rate = round(100.0 * signups / visitors, 1) if visitors else 0.0
-        out.append({
-            "source": row.get("source") or "Direct",
-            "visitors": visitors,
-            "signups": signups,
-            "rate": rate,
-        })
-    return out
-
-
 def conversion_rates(counts: dict) -> list[dict]:
     """Each step as a count and a percent of visitors. Zero visitors stay 0."""
     visitors = int((counts or {}).get("visitors") or 0)
@@ -1294,43 +1322,102 @@ def _range_key() -> str:
     return raw
 
 
-def _referrer_bucket(host: str) -> str:
-    text = (host or "").lower()
-    if "youtube.com" in text or "youtu.be" in text:
-        return "YouTube"
-    if "reddit.com" in text:
-        return "Reddit"
-    return host or "(none)"
+def _pct(count, visitors) -> float:
+    visitors = int(visitors or 0)
+    if not visitors:
+        return 0.0
+    return round(100.0 * int(count or 0) / visitors, 1)
+
+
+def _as_int(value):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def time_bucket_label(seconds) -> str | None:
+    """Display label for a dwell bucket. Unknown numbers stay as seconds."""
+    sec = _as_int(seconds)
+    if sec is None:
+        return None
+    for bucket, label, _key in TIME_BUCKETS:
+        if int(bucket) == sec:
+            return label
+    return f"{sec}s"
+
+
+def _engagement_metrics(row, visitors, median_sec) -> dict:
+    row = row or {}
+    visitors = int(visitors or 0)
+    scroll = []
+    for mark, key in SCROLL_COLUMNS:
+        count = int(row.get(key) or 0)
+        scroll.append({"mark": mark, "count": count, "rate": _pct(count, visitors)})
+    time_cells = []
+    for bucket, label, key in TIME_BUCKETS:
+        count = int(row.get(key) or 0)
+        time_cells.append({
+            "bucket": bucket,
+            "label": label,
+            "count": count,
+            "rate": _pct(count, visitors),
+        })
+    sec = _as_int(median_sec)
+    return {
+        "scroll": scroll,
+        "time": time_cells,
+        "time_median": time_bucket_label(sec),
+        "time_median_sec": sec,
+    }
+
+
+def _time_details_sql() -> str:
+    return ", ".join(f"'{bucket}'" for bucket, _label, _key in TIME_BUCKETS)
+
+
+def _real_pnl_signup_sql() -> str:
+    """signup_completed attributed to the live landing or its utm campaign."""
+    camp = REAL_PNL_CAMPAIGN
+    return (
+        "(event = 'signup_completed' AND "
+        f"(landing = '{camp}' OR utm_campaign = '{camp}'))"
+    )
 
 
 def _empty_acquisition(range_key="7d") -> dict:
-    from app.go_landings import LANDING_SLUGS
+    metrics = _engagement_metrics({}, 0, None)
     return {
         "range_key": range_key,
+        "visitors": 0,
+        "views": 0,
+        "signups": 0,
+        "signup_rate": 0.0,
         "days": [],
-        "pages": [],
-        "campaigns": [
-            {"landing": slug, "steps": conversion_rates({})}
-            for slug in LANDING_SLUGS
-        ],
+        "scroll": metrics["scroll"],
+        "time": metrics["time"],
+        "time_median": None,
+        "time_median_sec": None,
         "sources": [],
         "devices": [],
-        "referrers": [
-            {"host": "YouTube", "visitors": 0},
-            {"host": "Reddit", "visitors": 0},
-        ],
-        "origins": [],
         "filtered_out": 0,
     }
 
 
 def build_acquisition(range_key=None) -> dict:
-    """Logged-out visitors, campaign funnel, and referrers for one window."""
+    """Real people on /go/real-pnl: visitors, scroll, dwell, and signups.
+
+    Other landings are not in this page. Counts use counted_traffic_sql,
+    so bots, headless browsers, unbeaconed page views, internal visits,
+    and owner or test accounts (including a later login on the same
+    visit) stay out.
+    """
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
 
     from app.db import fetch_all
-    from app.go_landings import LANDING_SLUGS
 
     range_key = range_key or _range_key()
     if range_key not in _RANGE_WHERE:
@@ -1340,50 +1427,81 @@ def build_acquisition(range_key=None) -> dict:
     empty = _empty_acquisition(range_key)
     if not _db_ready():
         return empty
+    path = REAL_PNL_PATH
+    signup = _real_pnl_signup_sql()
+    on_page = (
+        f"path = '{path}' AND event IN "
+        "('page_view', 'scroll_depth', 'time_on_page')"
+    )
+    attributed = (
+        f"((event = 'page_view' AND path = '{path}') OR {signup})"
+    )
+    scroll_cols = ",\n               ".join(
+        "COUNT(DISTINCT visit_id) FILTER "
+        f"(WHERE event = 'scroll_depth' AND detail = '{mark}')::int AS {key}"
+        for mark, key in SCROLL_COLUMNS
+    )
+    time_cols = ",\n               ".join(
+        "COUNT(DISTINCT visit_id) FILTER "
+        f"(WHERE event = 'time_on_page' AND detail = '{bucket}')::int AS {key}"
+        for bucket, _label, key in TIME_BUCKETS
+    )
     try:
+        totals = fetch_all(
+            f"""
+            SELECT COUNT(*) FILTER (WHERE event = 'page_view')::int AS views,
+                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
+                   {scroll_cols},
+                   {time_cols}
+              FROM funnel_events
+             WHERE {on_page}
+               AND {window}
+               AND {counted}
+            """
+        )
+        signup_rows = fetch_all(
+            f"""
+            SELECT COUNT(DISTINCT COALESCE(user_id::text, visit_id))::int AS signups
+              FROM funnel_events
+             WHERE {signup}
+               AND {window}
+               AND {counted}
+            """
+        )
         day_rows = fetch_all(
             f"""
             SELECT to_char(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
-                   COUNT(*) FILTER (WHERE event = 'page_view')::int AS views,
-                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors
+                   COUNT(*) FILTER (
+                       WHERE event = 'page_view' AND path = '{path}'
+                   )::int AS views,
+                   COUNT(DISTINCT visit_id) FILTER (
+                       WHERE event = 'page_view' AND path = '{path}'
+                   )::int AS visitors,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id)) FILTER (
+                       WHERE {signup}
+                   )::int AS signups
               FROM funnel_events
-             WHERE {window}
+             WHERE {attributed}
+               AND {window}
                AND {counted}
              GROUP BY 1
             """
         )
-        pages = fetch_all(
+        median_rows = fetch_all(
             f"""
-            SELECT COALESCE(path, '/') AS path,
-                   COUNT(*)::int AS views,
-                   COUNT(DISTINCT visit_id)::int AS visitors
-              FROM funnel_events
-             WHERE event = 'page_view' AND {window}
-               AND {counted}
-             GROUP BY 1
-             ORDER BY views DESC, visitors DESC
-             LIMIT 12
-            """
-        )
-        campaigns = fetch_all(
-            f"""
-            SELECT COALESCE(NULLIF(landing, ''), '(none)') AS landing,
-                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
-                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'cta_click')::int AS cta,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'signup_completed')::int AS signups,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'lesson_started')::int AS lessons,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'paper_connected')::int AS paper,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'broker_connected')::int AS broker,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'paid')::int AS paid
-              FROM funnel_events
-             WHERE {window}
-               AND {counted}
-             GROUP BY 1
+            SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY max_sec) AS median_sec
+              FROM (
+                    SELECT visit_id,
+                           MAX(detail::int) AS max_sec
+                      FROM funnel_events
+                     WHERE event = 'time_on_page'
+                       AND path = '{path}'
+                       AND detail IN ({_time_details_sql()})
+                       AND visit_id IS NOT NULL
+                       AND {window}
+                       AND {counted}
+                     GROUP BY visit_id
+                   ) dwell
             """
         )
         sources = fetch_all(
@@ -1391,11 +1509,15 @@ def build_acquisition(range_key=None) -> dict:
             SELECT COALESCE(NULLIF(utm_source, ''), '(none)') AS source,
                    COALESCE(NULLIF(utm_campaign, ''), '(none)') AS campaign,
                    COALESCE(NULLIF(utm_content, ''), '(none)') AS content,
-                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'signup_completed')::int AS signups
+                   COUNT(DISTINCT visit_id) FILTER (
+                       WHERE event = 'page_view' AND path = '{path}'
+                   )::int AS visitors,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id)) FILTER (
+                       WHERE {signup}
+                   )::int AS signups
               FROM funnel_events
-             WHERE {window}
+             WHERE {attributed}
+               AND {window}
                AND {counted}
              GROUP BY 1, 2, 3
              ORDER BY visitors DESC, signups DESC
@@ -1405,52 +1527,18 @@ def build_acquisition(range_key=None) -> dict:
         devices = fetch_all(
             f"""
             SELECT COALESCE(NULLIF(device, ''), 'desktop') AS device,
-                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'signup_completed')::int AS signups
+                   COUNT(DISTINCT visit_id) FILTER (
+                       WHERE event = 'page_view' AND path = '{path}'
+                   )::int AS visitors,
+                   COUNT(DISTINCT COALESCE(user_id::text, visit_id)) FILTER (
+                       WHERE {signup}
+                   )::int AS signups
               FROM funnel_events
-             WHERE {window}
-               AND {counted}
-             GROUP BY 1
-             ORDER BY visitors DESC
-            """
-        )
-        referrers = fetch_all(
-            f"""
-            SELECT substring(referrer from '^https?://([^/]+)') AS host,
-                   COUNT(DISTINCT visit_id)::int AS visitors
-              FROM funnel_events
-             WHERE event = 'page_view'
-               AND referrer IS NOT NULL
+             WHERE {attributed}
                AND {window}
                AND {counted}
              GROUP BY 1
              ORDER BY visitors DESC
-             LIMIT 20
-            """
-        )
-        origins = fetch_all(
-            f"""
-            SELECT CASE
-                     WHEN NULLIF(utm_source, '') IS NOT NULL THEN
-                       utm_source || CASE
-                         WHEN NULLIF(utm_campaign, '') IS NOT NULL
-                         THEN ' / ' || utm_campaign
-                         ELSE ''
-                       END
-                     WHEN substring(referrer from '^https?://([^/]+)') IS NOT NULL
-                     THEN substring(referrer from '^https?://([^/]+)')
-                     ELSE 'Direct'
-                   END AS source,
-                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'page_view')::int AS visitors,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))
-                     FILTER (WHERE event = 'signup_completed')::int AS signups
-              FROM funnel_events
-             WHERE {window}
-               AND {counted}
-             GROUP BY 1
-             ORDER BY visitors DESC, signups DESC
-             LIMIT 30
             """
         )
         filtered_rows = fetch_all(
@@ -1458,6 +1546,7 @@ def build_acquisition(range_key=None) -> dict:
             SELECT COUNT(DISTINCT visit_id)::int AS n
               FROM funnel_events
              WHERE event = 'page_view'
+               AND path = '{path}'
                AND {window}
                AND NOT (
                  {human_traffic_sql()}
@@ -1469,10 +1558,18 @@ def build_acquisition(range_key=None) -> dict:
         _log.warning("acquisition query failed: %s", exc)
         return empty
 
+    total = (totals or [None])[0] or {}
+    visitors = int(total.get("visitors") or 0)
+    views = int(total.get("views") or 0)
+    signups = int(((signup_rows or [None])[0] or {}).get("signups") or 0)
+    median_sec = ((median_rows or [None])[0] or {}).get("median_sec")
+    metrics = _engagement_metrics(total, visitors, median_sec)
+
     by_day = {
         row["day"]: {
             "views": int(row["views"] or 0),
             "visitors": int(row["visitors"] or 0),
+            "signups": int(row["signups"] or 0),
         }
         for row in day_rows or []
     }
@@ -1481,156 +1578,34 @@ def build_acquisition(range_key=None) -> dict:
     days = []
     for offset in range(span - 1, -1, -1):
         day = (today - timedelta(days=offset)).isoformat()
-        found = by_day.get(day) or {"views": 0, "visitors": 0}
-        days.append({"day": day, "views": found["views"], "visitors": found["visitors"]})
-
-    by_landing = {row["landing"]: row for row in campaigns or []}
-    ordered = list(LANDING_SLUGS)
-    for key in by_landing:
-        if key not in ordered:
-            ordered.append(key)
-    campaign_rows = []
-    for slug in ordered:
-        raw = by_landing.get(slug) or {}
-        campaign_rows.append({
-            "landing": slug,
-            "steps": conversion_rates(raw),
+        found = by_day.get(day) or {"views": 0, "visitors": 0, "signups": 0}
+        days.append({
+            "day": day,
+            "views": found["views"],
+            "visitors": found["visitors"],
+            "signups": found["signups"],
         })
-
-    buckets = {"YouTube": 0, "Reddit": 0}
-    extras = []
-    for row in referrers or []:
-        label = _referrer_bucket(row.get("host") or "")
-        n = int(row.get("visitors") or 0)
-        if label in buckets:
-            buckets[label] += n
-        else:
-            extras.append({"host": label, "visitors": n})
-    referrer_rows = [
-        {"host": "YouTube", "visitors": buckets["YouTube"]},
-        {"host": "Reddit", "visitors": buckets["Reddit"]},
-    ] + extras[:8]
 
     return {
         "range_key": range_key,
+        "visitors": visitors,
+        "views": views,
+        "signups": signups,
+        "signup_rate": _pct(signups, visitors),
         "days": days,
-        "pages": pages or [],
-        "campaigns": campaign_rows,
+        "scroll": metrics["scroll"],
+        "time": metrics["time"],
+        "time_median": metrics["time_median"],
+        "time_median_sec": metrics["time_median_sec"],
         "sources": sources or [],
         "devices": devices or [],
-        "referrers": referrer_rows,
-        "origins": _with_signup_rate(origins),
         "filtered_out": int(((filtered_rows or [{}])[0] or {}).get("n") or 0),
     }
 
 
 def build_admin_analytics() -> dict:
-    """Signups, funnel, UTM, and YouTube referrals for the last 30 days."""
-    from datetime import datetime, timedelta
-    from zoneinfo import ZoneInfo
-
-    from app.db import fetch_all
-
-    empty = {
-        "days": [],
-        "steps": [],
-        "sources": [],
-        "youtube": {"visits": 0, "signups": 0},
-        "acquisition": _empty_acquisition(_range_key()),
-    }
-    if not _db_ready():
-        return empty
-    counted = counted_traffic_sql()
-    try:
-        day_rows = fetch_all(
-            f"""
-            SELECT to_char(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
-                   COUNT(*)::int AS signups
-              FROM funnel_events
-             WHERE event = 'signup_completed'
-               AND created_at >= NOW() - INTERVAL '30 days'
-               AND {counted}
-             GROUP BY 1
-            """
-        )
-        counts = fetch_all(
-            f"""
-            SELECT event,
-                   COUNT(DISTINCT COALESCE(user_id::text, visit_id))::int AS n
-              FROM funnel_events
-             WHERE created_at >= NOW() - INTERVAL '30 days'
-               AND {counted}
-             GROUP BY event
-            """
-        )
-        sources = fetch_all(
-            f"""
-            SELECT COALESCE(NULLIF(utm_source, ''), '(none)') AS source,
-                   COALESCE(NULLIF(utm_campaign, ''), '(none)') AS campaign,
-                   COUNT(DISTINCT visit_id) FILTER (WHERE event = 'landing_view')::int AS visits,
-                   COUNT(DISTINCT user_id) FILTER (WHERE event = 'signup_completed')::int AS signups,
-                   COUNT(DISTINCT user_id) FILTER (WHERE event = 'broker_connected')::int AS brokers,
-                   COUNT(DISTINCT user_id) FILTER (WHERE event = 'paid')::int AS paid
-              FROM funnel_events
-             WHERE created_at >= NOW() - INTERVAL '30 days'
-               AND {counted}
-             GROUP BY 1, 2
-             ORDER BY visits DESC, signups DESC
-             LIMIT 40
-            """
-        )
-        yt = fetch_all(
-            f"""
-            SELECT
-              COUNT(DISTINCT visit_id) FILTER (
-                WHERE event = 'landing_view'
-                  AND (referrer ILIKE '%%youtube.com%%' OR referrer ILIKE '%%youtu.be%%'
-                       OR utm_source ILIKE 'youtube')
-              )::int AS visits,
-              COUNT(DISTINCT user_id) FILTER (
-                WHERE event = 'signup_completed'
-                  AND (referrer ILIKE '%%youtube.com%%' OR referrer ILIKE '%%youtu.be%%'
-                       OR utm_source ILIKE 'youtube')
-              )::int AS signups
-              FROM funnel_events
-             WHERE created_at >= NOW() - INTERVAL '30 days'
-               AND {counted}
-            """
-        )
-    except Exception as exc:
-        _log.warning("admin analytics query failed: %s", exc)
-        empty["acquisition"] = build_acquisition()
-        return empty
-
-    by_day = {row["day"]: int(row["signups"] or 0) for row in day_rows or []}
-    today = datetime.now(ZoneInfo("America/New_York")).date()
-    days = []
-    for offset in range(29, -1, -1):
-        day = (today - timedelta(days=offset)).isoformat()
-        days.append({"day": day, "signups": by_day.get(day, 0)})
-
-    by_event = {row["event"]: int(row["n"] or 0) for row in counts or []}
-    landing_n = by_event.get("landing_view") or 0
-    steps = []
-    for key, label in FUNNEL_STEPS:
-        n = by_event.get(key) or 0
-        steps.append({
-            "key": key,
-            "label": label,
-            "count": n,
-            "of_landing": (round(100.0 * n / landing_n, 1) if landing_n else None),
-        })
-    yt_row = (yt or [{}])[0] or {}
-    return {
-        "days": days,
-        "steps": steps,
-        "sources": sources or [],
-        "youtube": {
-            "visits": int(yt_row.get("visits") or 0),
-            "signups": int(yt_row.get("signups") or 0),
-        },
-        "acquisition": build_acquisition(),
-    }
+    """The live /go/real-pnl campaign for the selected window."""
+    return {"acquisition": build_acquisition()}
 
 
 def register(app):

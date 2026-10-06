@@ -25,16 +25,20 @@ is the pixel `conversionId`, and the tracking type is `PAGE_VISIT`,
 and both stay off when the browser sends Do Not Track or Global Privacy
 Control.
 
-First-party counts live at Admin → Acquisition (`/admin/analytics`):
-logged-out visitors and page views, the campaign funnel, where they
-came from (utm source and campaign, otherwise the referrer host,
-otherwise Direct), utm_source / utm_campaign / utm_content, device, and
-referrers (YouTube and Reddit stay on the list). Bots, headless
-browsers, unsigned JavaScript beacons, and internal traffic (admins,
-testingcameron, `INTERNAL_IPS`, `?ht_internal=1`) are left out, and the
-page shows how many were filtered. The window is today, 7 days, or 30
-days. That page is the source of truth when the pixel is blocked. The
-older Admin → Overview card is still the `/start` button funnel.
+First-party counts for the live ad live at Admin → Acquisition
+(`/admin/analytics`). That page is only `/go/real-pnl` (utm campaign
+`real-pnl`): visitors, page views, signups from that landing or
+campaign, scroll 25/50/75/100, time-on-page buckets, utm source /
+campaign / content, and device. The window is today, 7 days, or 30
+days. Scroll 50% is visits that sent the 50 mark. Time stays zero
+until a visit sends a bucket. Bots, crawlers, headless browsers,
+page views that never ran JavaScript, internal IPs, `?ht_internal=1`,
+and owner or test accounts (`cameron`, `cameron3`, `happycameron`,
+`testingcameron`, `testingcameron1`, plus `ADMIN_USERS`) are left out.
+A visit later tied to one of those accounts is left out too. The page
+shows how many `/go/real-pnl` visits were filtered. That page is the
+source of truth when the pixel is blocked. The older Admin → Overview
+card is still the `/start` button funnel.
 
 ## Message tests
 

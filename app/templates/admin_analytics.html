@@ -87,6 +87,17 @@
         color: #e8edf7;
     }
     .an-step .r { font-size: .72rem; color: #8a97b1; }
+    .an-sub {
+        display: block;
+        font-size: .68rem;
+        color: #8a97b1;
+        font-weight: 600;
+    }
+    .an-card h3 {
+        font-size: .9rem;
+        font-weight: 650;
+        margin: .85rem 0 .4rem;
+    }
     @media (max-width: 640px) {
         .an-hero, .an-card { padding: .75rem .7rem; }
         .an-table { font-size: .75rem; }
@@ -98,7 +109,7 @@
 {% block content %}
 <div class="an-hero">
     <h1>Acquisition</h1>
-    <p>Logged-out visitors, campaign funnel, and referrers. First-party events only — no email or IP in the rows.
+    <p>Real people on <span class="font-monospace">/go/real-pnl</span>: who arrived, how far they scrolled, how long the tab stayed open, and who signed up. Bots, headless browsers, test runs, and owner accounts stay out. First-party events only — no email or IP in the rows.
         <a href="{{ url_for('admin_overview') }}">Overview</a>
     </p>
     {% set window = acquisition.range_key if acquisition is defined and acquisition else '7d' %}
@@ -111,12 +122,72 @@
 
 {% if acquisition is defined and acquisition %}
 <div class="an-card">
-    <h2>Visitors and page views</h2>
-    <p class="an-note">Logged-out public pages, after bots and internal traffic are removed. One visitor is one anonymous cookie. A page view counts once the browser runs JavaScript. Older rows from before that check still count.</p>
+    <h2>/go/real-pnl</h2>
+    <p class="an-note">One visitor is one anonymous cookie that loaded this page. A page view counts once the browser runs JavaScript. Older rows from before that check still count. Signups are accounts created from this landing or the real-pnl campaign. {{ acquisition.filtered_out|default(0) }} visits on this page were left out: bots, crawlers, headless browsers, pages that never ran JavaScript, internal IPs, owner and test accounts, and any visit later tied to one of those accounts.</p>
+    <div class="an-funnel">
+        <div class="an-step">
+            <div class="lbl">Visitors</div>
+            <div class="n">{{ acquisition.visitors }}</div>
+        </div>
+        <div class="an-step">
+            <div class="lbl">Page views</div>
+            <div class="n">{{ acquisition.views }}</div>
+        </div>
+        <div class="an-step">
+            <div class="lbl">Signups</div>
+            <div class="n">{{ acquisition.signups }}</div>
+        </div>
+        <div class="an-step">
+            <div class="lbl">Signup rate</div>
+            <div class="n">{{ acquisition.signup_rate }}%</div>
+        </div>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Scroll</h2>
+    <p class="an-note">Distinct visits on /go/real-pnl that sent each mark, as a percent of visitors. Reaching 75% also sends 50% and 25%, so Scroll 50% is everyone who got at least halfway down.</p>
+    <div class="an-funnel">
+        {% for cell in acquisition.scroll %}
+        <div class="an-step">
+            <div class="lbl">Scroll {{ cell.mark }}%</div>
+            <div class="n">{{ cell.rate }}%</div>
+            <div class="r">{{ cell.count }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Time on page</h2>
+    <p class="an-note">How long the tab stayed visible. Median is the middle of the longest bucket among visits that sent one. Visits under 5 seconds, and visits from before this beacon, stay at zero.</p>
+    <div class="an-funnel">
+        <div class="an-step">
+            <div class="lbl">Median</div>
+            <div class="n">{{ acquisition.time_median or "—" }}</div>
+        </div>
+        {% for cell in acquisition.time %}
+        <div class="an-step">
+            <div class="lbl">≥{{ cell.label }}</div>
+            <div class="n">{{ cell.rate }}%</div>
+            <div class="r">{{ cell.count }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>By day</h2>
+    <p class="an-note">Visitors and signups for /go/real-pnl in this window. Days with none stay in the table.</p>
     <div class="an-scroll">
         <table class="an-table">
             <thead>
-                <tr><th>Day</th><th class="an-num">Visitors</th><th class="an-num">Page views</th></tr>
+                <tr>
+                    <th>Day</th>
+                    <th class="an-num">Visitors</th>
+                    <th class="an-num">Page views</th>
+                    <th class="an-num">Signups</th>
+                </tr>
             </thead>
             <tbody>
                 {% for row in acquisition.days %}
@@ -124,91 +195,28 @@
                     <td>{{ row.day }}</td>
                     <td class="an-num">{{ row.visitors }}</td>
                     <td class="an-num">{{ row.views }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="3">No page views in this window.</td></tr>
+                <tr><td colspan="4">No page views in this window.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
-
-<div class="an-card">
-    <h2>Top landing pages</h2>
-    <div class="an-scroll">
-        <table class="an-table">
-            <thead>
-                <tr><th>Path</th><th class="an-num">Visitors</th><th class="an-num">Views</th></tr>
-            </thead>
-            <tbody>
-                {% for row in acquisition.pages %}
-                <tr>
-                    <td>{{ row.path }}</td>
-                    <td class="an-num">{{ row.visitors }}</td>
-                    <td class="an-num">{{ row.views }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="3">No pages yet.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div class="an-card">
-    <h2>Campaign funnel</h2>
-    <p class="an-note">Percents are of that landing's visitors. The three ad paths stay listed even at zero.</p>
-    {% for camp in acquisition.campaigns %}
-    <h3 style="font-size:.9rem;margin:.2rem 0 .4rem;">{{ camp.landing }}</h3>
-    <div class="an-funnel">
-        {% for step in camp.steps %}
-        <div class="an-step">
-            <div class="lbl">{{ step.label }}</div>
-            <div class="n">{{ step.count }}</div>
-            <div class="r">{{ step.rate }}%</div>
-        </div>
-        {% endfor %}
-    </div>
-    {% endfor %}
 </div>
 
 <div class="an-card">
     <h2>Where they came from</h2>
-    <p class="an-note">utm source and campaign, otherwise the referrer host, otherwise Direct. {{ acquisition.filtered_out|default(0) }} filtered out (bots and internal).</p>
+    <p class="an-note">utm source, campaign, and content on /go/real-pnl visits and on signups from this campaign.</p>
     <div class="an-scroll">
         <table class="an-table">
             <thead>
                 <tr>
                     <th>Source</th>
+                    <th>Campaign</th>
+                    <th>Content</th>
                     <th class="an-num">Visitors</th>
                     <th class="an-num">Signups</th>
-                    <th class="an-num">Signup rate</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in acquisition.origins|default([]) %}
-                <tr>
-                    <td>{{ row.source }}</td>
-                    <td class="an-num">{{ row.visitors }}</td>
-                    <td class="an-num">{{ row.signups }}</td>
-                    <td class="an-num">{{ row.rate }}%</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="4">No traffic in this window.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div class="an-card">
-    <h2>Source, campaign, and ad variant</h2>
-    <div class="an-scroll">
-        <table class="an-table">
-            <thead>
-                <tr>
-                    <th>Source</th><th>Campaign</th><th>Content</th>
-                    <th class="an-num">Visitors</th><th class="an-num">Signups</th>
                 </tr>
             </thead>
             <tbody>
@@ -249,127 +257,5 @@
         </table>
     </div>
 </div>
-
-<div class="an-card">
-    <h2>Referrers</h2>
-    <p class="an-note">YouTube and Reddit stay on the list. Host only — the path and query are dropped.</p>
-    <div class="an-scroll">
-        <table class="an-table">
-            <thead>
-                <tr><th>Referrer</th><th class="an-num">Visitors</th></tr>
-            </thead>
-            <tbody>
-                {% for row in acquisition.referrers %}
-                <tr>
-                    <td>{{ row.host }}</td>
-                    <td class="an-num">{{ row.visitors }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
 {% endif %}
-
-<div class="an-card">
-    <h2>Signups per day</h2>
-    <p class="an-note">Completed account creations. Days with none stay in the table.</p>
-    <div class="an-scroll">
-        <table class="an-table">
-            <thead>
-                <tr><th>Day</th><th class="an-num">Signups</th></tr>
-            </thead>
-            <tbody>
-                {% for row in days %}
-                <tr>
-                    <td>{{ row.day }}</td>
-                    <td class="an-num">{{ row.signups }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="2">No signups in this window.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div class="an-card">
-    <h2>Funnel</h2>
-    <p class="an-note">Distinct people, or distinct visits when they have not signed up. Percent is of landing views. Paper and broker are branches, not a single line.</p>
-    <div class="an-scroll">
-        <table class="an-table">
-            <thead>
-                <tr>
-                    <th>Step</th>
-                    <th class="an-num">Count</th>
-                    <th class="an-num">Of landing</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for step in steps %}
-                <tr>
-                    <td>{{ step.label }}</td>
-                    <td class="an-num">{{ step.count }}</td>
-                    <td class="an-num">{% if step.of_landing is not none %}{{ step.of_landing }}%{% else %}—{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div class="an-card">
-    <h2>YouTube referrals</h2>
-    <div class="an-scroll">
-        <table class="an-table">
-            <thead>
-                <tr>
-                    <th>Source</th>
-                    <th class="an-num">Landing views</th>
-                    <th class="an-num">Signups</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>YouTube</td>
-                    <td class="an-num">{{ youtube.visits }}</td>
-                    <td class="an-num">{{ youtube.signups }}</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div class="an-card">
-    <h2>By source and campaign</h2>
-    <p class="an-note">Last-touch UTM on the event. (none) is a direct visit or a link without parameters.</p>
-    <div class="an-scroll">
-        <table class="an-table">
-            <thead>
-                <tr>
-                    <th>Source</th>
-                    <th>Campaign</th>
-                    <th class="an-num">Visits</th>
-                    <th class="an-num">Signups</th>
-                    <th class="an-num">Brokers</th>
-                    <th class="an-num">Paid</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in sources %}
-                <tr>
-                    <td>{{ row.source }}</td>
-                    <td>{{ row.campaign }}</td>
-                    <td class="an-num">{{ row.visits }}</td>
-                    <td class="an-num">{{ row.signups }}</td>
-                    <td class="an-num">{{ row.brokers }}</td>
-                    <td class="an-num">{{ row.paid }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="6">No campaign traffic in this window.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
 {% endblock %}
