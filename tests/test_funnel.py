@@ -753,6 +753,11 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert lottie["assets"][0]["w"] == 1020
             assert lottie["assets"][0]["p"].startswith("data:image/webp;base64,")
             assert "aspect-ratio: 1020 / 638" in body
+            assert "ht-hero-glow" in hero
+            assert "3.75rem 0 2.5rem" in body
+            assert "linear-gradient(to right, #000 62%, transparent 100%)" in body
+            assert "linear-gradient(to bottom, #000 58%, transparent 100%)" in body
+            assert "rgba(91,140,255, calc(var(--a) * 1))" in body
             assert os.path.getsize(lottie_path) < 6_000_000
             nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
             assert 'href="/learn"' not in nav
