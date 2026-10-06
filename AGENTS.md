@@ -706,8 +706,8 @@ then the ONON early close. On those two the live demo is a text link,
 **Try the live demo**, and the same Create free account button repeats
 at the bottom and as a sticky bar on phones only after the hero button
 scrolls away. `/go/real-pnl` is the Monday ad page
-(`app/templates/go_real_pnl.html`): left-aligned headline "What did
-your covered calls really make?", side-by-side **Create free account**
+(`app/templates/go_real_pnl.html`): left-aligned headline "Discover the
+truth behind your trading", side-by-side **Create free account**
 and **Explore live demo**, the free/trial line under the buttons, and
 a looping Lottie of the covered-call runs screen (`app/static/marketing/covered-call-scroll.json`, a 16:10 desktop window of the product UI from Short `u_YWl5fKEjo`). The window fades into the page on the right and bottom (a long cosine ramp), with rounded corners so the navy backing does not square off the top-left. A `#5b8cff` wash sits behind it along the left edge and across the top, and is gone before the nav. Overview, Real trades, Positions, Strategies, Pricing, and FAQ use the How it works gradient. Positions puts the video on the left. CTAs match the nav button. The trial strip under the steps is the footer blue, with “30 days free, no credit card” and Create free account. A navy break sits between that strip and Pricing, and between Pricing and FAQ.
 Below that: the BE cumulative chart, ONON and RKLB catch tabs only,
@@ -718,9 +718,12 @@ in view), the fit matrix, the homepage How it works block (including
 a compact pricing blurb, and the FAQ accordion. Nav on that page is the logo
 and Create free account. The risk disclaimer is the footer line, once.
 Stills leave account totals and share counts off. Signup `?route=`
-repeats that page's headline and subhead. `?v=` swaps an allow-listed
-headline; `rolls` and `runs` still record on `/go/real-pnl` and show
-the approved headline. The slug and variant stick on `ht_touch` and
+repeats that page's stored headline and subhead. On `/go/real-pnl` the
+hero H1 is its own line; the stored headline (Open Graph title and the
+signup echo) stays "What did your covered calls really make?". `?v=`
+swaps an allow-listed headline for that stored sentence; `rolls` and
+`runs` still record on `/go/real-pnl` and the hero shows the approved
+H1 either way. The slug and variant stick on `ht_touch` and
 are copied to `funnel_events` and `users.acquisition_landing` at
 signup, beside the UTMs and `rdt_cid`. `/go/learn` sends signup to
 `/learn`. Learn and Mistakes keep the marketing header (logo, Sign in,

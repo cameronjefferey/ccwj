@@ -663,7 +663,7 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             ("Ten short lessons", "Practice with paper money", "Replay a trade, free"),
         ),
         "real-pnl": (
-            "What did your covered calls really make?",
+            'Discover the <span class="ht-h1-accent">truth</span> behind your trading',
             "Create free account",
             "create-account",
             "route=real-pnl",
@@ -725,6 +725,14 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
         if slug == "real-pnl":
             assert 'ht-hero-secondary' in hero
             assert "Explore live demo" in hero
+            h1 = body.split("<h1>", 1)[1].split("</h1>", 1)[0]
+            assert h1 == (
+                'Discover the <span class="ht-h1-accent">truth</span> '
+                "behind your trading"
+            )
+            assert 'content="What did your covered calls really make?"' in body
+            assert "<title>Real P&L across brokers - HappyTrader</title>" in body
+            assert "#5EDC72" in body
             assert "Try the live demo" not in body
             assert "Try Demo" not in body
             assert hero.index("ht-hero-primary") < hero.index("ht-hero-secondary")

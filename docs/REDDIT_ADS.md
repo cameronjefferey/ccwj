@@ -57,7 +57,7 @@ https://happytrader.me/go/mistakes?utm_source=reddit&utm_medium=paid&utm_campaig
 ```
 
 `control` keeps the default headline. Learn: "Free options lessons, then
-paper trading." Real P&L: "What did your covered calls really make?"
+paper trading." Real P&L hero: "Discover the truth behind your trading."
 Mistakes: "See which early closes cost you" (the subhead is the BE
 −$2,357 buyback). `past` and `free` are the learn headline variants.
 `rolls` and `runs` still stamp a variant on `/go/real-pnl`; the page
