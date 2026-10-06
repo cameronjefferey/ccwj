@@ -31,12 +31,14 @@
                 {% endfor %}
             </div>
             {% if not catch_quiet %}
+            {% if not hide_catch_cta|default(false) %}
             {% if campaign %}
             <a class="ht-catch-cta" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-catch">{{ cta_label }}</a>
             {% elif signup_enabled and not signup_invite_required %}
             <a class="ht-catch-cta" href="{{ url_for('signup') }}">30-day free trial, no credit card</a>
             {% elif signup_enabled %}
             <a class="ht-catch-cta" href="{{ url_for('signup') }}">Sign Up (invite)</a>
+            {% endif %}
             {% endif %}
             <p class="ht-catch-note">For learning only, not investment advice</p>
             {% include "_landing/disclaimer.html" %}

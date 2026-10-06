@@ -1818,7 +1818,7 @@
     <footer class="mt-5 py-4 border-top">
         <div class="container-fluid px-4">
             <div class="d-flex flex-wrap justify-content-center gap-3 ht-public-links">
-                <a href="{{ url_for('demo_start') }}">{% if minimal_nav %}Explore live demo{% else %}Try Demo{% endif %}</a>
+                <a href="{{ url_for('demo_start') }}">Explore live demo</a>
                 <a href="{{ url_for('login', next=request.path) if request.path.startswith('/learn') else url_for('login') }}">Sign In</a>
                 {% if signup_enabled %}
                 <a href="{{ signup_url|default(url_for('signup')) }}"{% if public_marketing %} data-ht-cta="{{ cta_base }}-footer"{% endif %}>

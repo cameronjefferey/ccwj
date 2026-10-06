@@ -1,16 +1,21 @@
 {% from "_landing_macros.html" import feature_poster %}
-    <section class="ht-band ht-band-story ht-section" aria-label="Every position's full story">
-        <div class="ht-wrap ht-split media-end">
-            <div class="ht-media ht-feature-stack">
-                {% for step in story_steps if step.step in [2, 3] %}
-                {{ feature_poster(step, eager=section_eager|default(false) and loop.first, show_title=true) }}
-                {% endfor %}
+    <section class="ht-band ht-band-story ht-section ht-shorts ht-positions" aria-label="Every position's full story">
+        <div class="ht-wrap ht-shorts-grid ht-positions-grid ht-home-positions">
+            {% for step in story_steps if step.step == 2 %}
+            <div class="ht-media">
+                {{ feature_poster(step, eager=section_eager|default(false), show_title=true, phone=false) }}
             </div>
+            {% endfor %}
             <div class="ht-copy">
-                <div class="ht-kicker">Shorts</div>
+                <div class="ht-kicker">Positions</div>
                 <h2 class="ht-section-title">Every position's full story</h2>
                 <p>Each symbol opens to the fills, the open lots, and a chart of equity, options, and dividends.</p>
                 <p>An early close also keeps the P&amp;L if that contract had been held to expiration. The line after the close is an estimate.</p>
             </div>
+            {% for step in story_steps if step.step == 3 %}
+            <div class="ht-home-ifheld">
+                {{ feature_poster(step, eager=false, show_title=true, phone=false) }}
+            </div>
+            {% endfor %}
         </div>
     </section>

@@ -1,8 +1,14 @@
-    <section class="ht-band ht-band-demo" aria-label="Live demo">
+    <section class="ht-band ht-band-banner ht-home-demo" aria-label="Live demo">
         <div class="ht-wrap">
-            <div class="ht-kicker">Live demo</div>
-            <h2 class="ht-section-title">A mirror of a paper account</h2>
-            <p class="ht-section-lead">The live demo is a paper account. Simulated money, real market data, including the losing trades. The pages are the same ones a connected brokerage opens.</p>
-            <a class="ht-demo-btn" href="{{ url_for('demo_start') }}">See the live demo</a>
+            <div class="ht-banner-card">
+                <div class="ht-banner-copy">
+                    <div class="ht-kicker">Live demo</div>
+                    <h2 class="ht-banner-title">A mirror of a paper account</h2>
+                    <p class="ht-banner-sub">The live demo is a paper account. Simulated money, real market data, including the losing trades. The pages are the same ones a connected brokerage opens.</p>
+                </div>
+                <div class="ht-hero-cta ht-cta-row ht-banner-cta">
+                    <a class="ht-hero-primary" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo-band">Explore live demo</a>
+                </div>
+            </div>
         </div>
     </section>

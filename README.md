@@ -193,7 +193,7 @@ to copy a single user's data over. See the script docstring for usage.
 
 ### Demo Environment
 
-Visitors can explore the app with **real, live** data—no sign-up required. Click **Try Demo** on the landing page. That opens the demo gate; there is no demo password.
+Visitors can explore the app with **real, live** data—no sign-up required. Click **Explore live demo** on the landing page. That opens the demo gate; there is no demo password.
 
 - The Postgres user `demo` cannot sign in at `/login`. `demo123` is not a password.
 - The "Demo Account" is a relabeled **mirror** of the EarningsFollower trading bot's Alpaca paper account, not fabricated data. The source tenant is `var('demo_source_tenant_id')` in `dbt/dbt_project.yml`; the mirror models live in `dbt/models/staging/demo/`.

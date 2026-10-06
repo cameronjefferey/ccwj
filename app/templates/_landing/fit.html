@@ -1,15 +1,13 @@
 {% from "_landing_macros.html" import feature_poster %}
-    <section class="ht-band ht-band-fit ht-section" aria-label="The fit matrix">
-        <div class="ht-wrap ht-split">
+    <section class="ht-band ht-band-fit ht-section ht-edge ht-home-band" aria-label="The fit matrix">
+        <div class="ht-wrap ht-shorts-grid ht-edge-grid">
             {% for step in story_steps if step.step == 5 %}
-            <div class="ht-media">
-                {{ feature_poster(step, eager=section_eager|default(false)) }}
-            </div>
             <div class="ht-copy">
-                <div class="ht-kicker">Short</div>
+                <div class="ht-kicker">Strategies</div>
                 <h2 class="ht-section-title">{{ step.title }}</h2>
                 <p>{{ step.caption }}</p>
             </div>
+            {{ feature_poster(step, eager=section_eager|default(false), phone=false, figure_class="ht-edge-shot") }}
             {% endfor %}
         </div>
     </section>

@@ -30,8 +30,8 @@
 </div>
 {% endmacro %}
 
-{% macro feature_poster(step, eager=false, show_title=false) %}
-<figure class="ht-feature">
+{% macro feature_poster(step, eager=false, show_title=false, phone=true, caption="", figure_class="") %}
+<figure class="ht-feature{% if figure_class %} {{ figure_class }}{% endif %}">
     <button type="button" class="ht-facade" data-lightbox="short"
             data-youtube-id="{{ step.youtube_id }}"
             data-mp4-url="{{ step.mp4_url }}"
@@ -51,7 +51,7 @@
         <span class="ht-duration">{{ step.duration_label }}</span>
         {% endif %}
     </button>
-    {% if step.youtube_id %}
+    {% if phone and step.youtube_id %}
     <div class="ht-narrow-still">
         {{ video_frame(step, lightbox=true, eager=eager) }}
     </div>
@@ -59,8 +59,8 @@
     {% if show_title %}
     <h3 class="ht-feature-title">{{ step.title }}</h3>
     {% endif %}
-    {% if step.feature_caption %}
-    <figcaption>{{ step.feature_caption }}</figcaption>
+    {% if caption or step.feature_caption %}
+    <figcaption>{{ caption or step.feature_caption }}</figcaption>
     {% endif %}
     {% if step.feature_note %}
     <p class="ht-feature-note">{{ step.feature_note }}</p>
