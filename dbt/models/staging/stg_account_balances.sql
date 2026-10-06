@@ -14,10 +14,10 @@
 
     Demo union is preserved; demo rows carry
     tenant_id = 'demo:demo-account' (matches the demo user's
-    broker_tenants row from ensure_demo_user). While var('demo_temp_seed')
-    is true those rows are derived from the temporary seed; otherwise they
-    are a relabeled mirror of a real tenant. See
-    dbt/models/staging/demo/stg_demo_balances.sql.
+    broker_tenants row from ensure_demo_user). They are a relabeled mirror
+    of a real tenant. While demo_temp_seed_on(), the seed book's cash and
+    position value are added onto those rows. Flag off is the mirror only.
+    See dbt/models/staging/demo/stg_demo_balances.sql.
 */
 -- Real-broker balance rows now arrive via the per-broker staging adapters
 -- (dbt/models/staging/brokers/stg_broker_<slug>_balances), each of which

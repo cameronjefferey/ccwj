@@ -256,10 +256,11 @@ The permanent path is a relabeled **mirror** of a real tenant
 (`var('demo_source_tenant_id')`, the EarningsFollower bot's Alpaca paper
 account) built by `dbt/models/staging/demo/stg_demo_{history,current,balances}`.
 
-While `var('demo_temp_seed')` is true, that mirror is paused and the demo
-reads `dbt/seeds/demo_temp_history.csv` and `dbt/seeds/demo_temp_current.csv`
-instead. Those files are stamped `demo:demo-account` in the demo models
-only. Removal steps: `dbt/seeds/DEMO_TEMP_SEED.md`.
+While `demo_temp_seed_on()` is true, `dbt/seeds/demo_temp_history.csv` and
+`dbt/seeds/demo_temp_current.csv` are added on top of that mirror. They
+are stamped `demo:demo-account` in the demo models only. The switch is
+the GitHub Actions variable `DEMO_TEMP_SEED`: `false` and the next
+warehouse build leave the pure mirror. Steps: `dbt/seeds/DEMO_TEMP_SEED.md`.
 
 The mirror stamps `tenant_id = 'demo:demo-account'` itself, so the demo is
 still a genuinely separate tenant and renders through the exact same

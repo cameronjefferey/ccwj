@@ -7,17 +7,18 @@
 /*
     Public demo history.
 
-    TEMPORARY: while var('demo_temp_seed') is true this view is the
-    made-up book in dbt/seeds/demo_temp_history.csv, stamped
-    demo:demo-account. Real tenants never read that file. How to turn
-    it off and go back to the bot mirror: dbt/seeds/DEMO_TEMP_SEED.md.
+    Always the bot mirror (stg_broker_alpaca_history, relabeled
+    demo:demo-account). While demo_temp_seed_on() is true, the made-up
+    book in dbt/seeds/demo_temp_history.csv is UNIONED on top. It does
+    not replace the mirror. Flag off = the mirror select only, so the
+    demo tenant has zero seed rows.
 
-    The else branch is the permanent path: a MIRROR of a real tenant,
-    relabeled. The demo used to be fabricated data (hand-written
-    AAPL/MSFT buys in dbt/seeds/demo_history.csv, plus a synthetic
-    account-value curve in int_demo_equity_daily). It became a relabeled
-    copy of the EarningsFollower trading bot's Alpaca paper account.
-    See var('demo_source_tenant_id') in dbt_project.yml.
+    How to turn the seed off without a code edit: dbt/seeds/DEMO_TEMP_SEED.md.
+
+    A seed fill that would land on the same stg_history dedup grain as a
+    mirror fill (tenant, date, action, symbol, quantity, price@4dp) has
+    its price moved by one cent and its amount scaled with it, so the
+    mirror row is kept and the seed row is kept. No collision, no bump.
 
     ── Why a mirror and not shared tenancy ──────────────────────────────
     Postgres ``broker_tenants.tenant_id`` is a PRIMARY KEY (app/models.py),
@@ -42,38 +43,94 @@
     tenant_id.
 */
 
-{% if var('demo_temp_seed', false) %}
+with mirror as (
+    select
+        'Demo Account'                          as Account,
+        cast(null as string)                    as user_id,
+        'demo:demo-account'                     as tenant_id,
+        Date,
+        Action,
+        Symbol,
+        Description,
+        Quantity,
+        Price,
+        fees_and_comm,
+        Amount
+    from {{ ref('stg_broker_alpaca_history') }}
+    where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
+      and '{{ var("demo_source_tenant_id", "") }}' != ''
+)
 
-select
-    'Demo Account'                          as Account,
-    cast(null as string)                    as user_id,
-    'demo:demo-account'                     as tenant_id,
-    cast(Date as string)                    as Date,
-    cast(Action as string)                  as Action,
-    cast(Symbol as string)                  as Symbol,
-    cast(Description as string)             as Description,
-    cast(Quantity as string)                as Quantity,
-    cast(Price as string)                   as Price,
-    cast(fees_and_comm as string)           as fees_and_comm,
-    cast(Amount as string)                  as Amount
-from {{ ref('demo_temp_history') }}
+{% if demo_temp_seed_on() %}
+
+, seed_base as (
+    select
+        'Demo Account'                          as Account,
+        cast(null as string)                    as user_id,
+        'demo:demo-account'                     as tenant_id,
+        cast(Date as string)                    as Date,
+        cast(Action as string)                  as Action,
+        cast(Symbol as string)                  as Symbol,
+        cast(Description as string)             as Description,
+        cast(Quantity as string)                as Quantity,
+        cast(Price as string)                   as Price,
+        cast(fees_and_comm as string)           as fees_and_comm,
+        cast(Amount as string)                  as Amount,
+        {{ parse_seed_date('Date') }}           as _d,
+        lower(trim(cast(Action as string)))     as _a,
+        upper(trim(cast(Symbol as string)))     as _s,
+        {{ parse_seed_number('Quantity') }}     as _q,
+        {{ parse_seed_number('Price') }}        as _p,
+        {{ parse_seed_number('Amount') }}       as _amt
+    from {{ ref('demo_temp_history') }}
+),
+
+mirror_keys as (
+    select
+        {{ parse_seed_date('Date') }}           as _d,
+        lower(trim(Action))                     as _a,
+        upper(trim(Symbol))                     as _s,
+        {{ parse_seed_number('Quantity') }}     as _q,
+        round({{ parse_seed_number('Price') }}, 4) as _p
+    from mirror
+),
+
+seed as (
+    select
+        s.Account,
+        s.user_id,
+        s.tenant_id,
+        s.Date,
+        s.Action,
+        s.Symbol,
+        s.Description,
+        s.Quantity,
+        case
+            when k._d is not null and s._p is not null
+                then cast(s._p + 0.01 as string)
+            else s.Price
+        end as Price,
+        s.fees_and_comm,
+        case
+            when k._d is not null and s._p is not null and s._p != 0
+                then cast(s._amt * (s._p + 0.01) / s._p as string)
+            else s.Amount
+        end as Amount
+    from seed_base s
+    left join mirror_keys k
+        on k._d is not distinct from s._d
+       and k._a is not distinct from s._a
+       and k._s is not distinct from s._s
+       and k._q is not distinct from s._q
+       and k._p is not distinct from round(s._p, 4)
+)
+
+select * from mirror
+union all
+select * from seed
 
 {% else %}
 
-select
-    'Demo Account'                          as Account,
-    cast(null as string)                    as user_id,
-    'demo:demo-account'                     as tenant_id,
-    Date,
-    Action,
-    Symbol,
-    Description,
-    Quantity,
-    Price,
-    fees_and_comm,
-    Amount
-from {{ ref('stg_broker_alpaca_history') }}
-where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
-  and '{{ var("demo_source_tenant_id", "") }}' != ''
+select * from mirror
 
 {% endif %}
