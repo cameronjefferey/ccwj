@@ -1,11 +1,17 @@
-{% from "_landing_macros.html" import feature_poster %}
-    <section class="ht-band ht-band-how ht-section" aria-label="How it works">
+{% from "_landing_macros.html" import feature_poster, video_frame %}
+    <section class="ht-band ht-band-how ht-section{% if home_how|default(false) %} ht-home-how{% endif %}" aria-label="How it works">
         <div class="ht-wrap ht-how-grid">
+            {% if home_how|default(false) %}
+            <div class="ht-media">
+                {{ video_frame(hero_video, wide=true, eager=true) }}
+            </div>
+            {% else %}
             {% for step in story_steps if step.step == 1 %}
             <div class="ht-media">
                 {{ feature_poster(step, eager=section_eager|default(false), show_title=not (hide_how_caption|default(false))) }}
             </div>
             {% endfor %}
+            {% endif %}
             <div>
                 <div class="ht-kicker">How it works</div>
                 <h2 class="ht-section-title">Three steps, then the record</h2>
@@ -27,5 +33,21 @@
                     </li>
                 </ol>
             </div>
+            {% if home_how|default(false) %}
+            <p class="ht-fine ht-how-fine">
+                Sync your accounts. {% include "_broker_sync_timing.html" %}
+                See your trading profile once the sync finishes.
+                Need older history? Broker sync is not a lifetime archive.
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('upload') }}">Upload a CSV</a> after connecting.
+                {% else %}
+                You can upload a CSV after you connect.
+                {% endif %}
+                Privacy mode masks account names and balances on your screen.
+                A share card is a picture of one closed trade — symbol, strategy,
+                dates, and realized P&amp;L — and it leaves out the account, the broker,
+                and the balance.
+            </p>
+            {% endif %}
         </div>
     </section>

@@ -117,24 +117,39 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     html = resp.get_data(as_text=True)
 
     assert "Watch the trading mirror" in html
+    hero_h1 = html.split("<h1>", 1)[1].split("</h1>", 1)[0]
+    assert hero_h1.strip() == "Watch the trading mirror"
+    assert "ht-h1-accent" not in hero_h1
+    assert "Connect a brokerage and open these same pages on your own history." in html
+    assert "About two and a half minutes" not in html
     assert 'class="ht-hero-primary"' in html
     assert ">Start your 30-day free trial</a>" in html
-    assert 'class="ht-hero-sub">No credit card</p>' in html
-    assert 'class="ht-hero-secondary"' in html
-    assert ">Try the live demo</a>" in html
+    assert 'class="ht-hero-secondary ht-ghost"' in html
+    assert ">Explore live demo</a>" in html
+    assert "Try the live demo" not in html
+    assert "Try Demo" not in html
     assert ">New to options? Start learning free</a>" in html
+    assert 'data-ht-cta="start-learning"' in html
     assert 'href="/learn"' in html
-    assert 'class="ht-hero-signin"' in html
+    assert 'class="ht-hero-signin"' not in html
+    assert 'class="ht-stage"' not in html
     assert "ht-text-cta" not in html
-    # Closing band keeps the combined line. The hero splits it across button + subline.
+    assert "covered-call-scroll.json" in html
+    assert "ht-hero-glow" in html
+    # Closing band keeps the combined line beside Explore live demo.
     assert "Start your 30-day free trial, no credit card" in html
-    stage = html.find('class="ht-stage"')
-    cta = html.find('class="ht-hero-cta"')
-    proof = html.find('class="ht-band ht-band-proof"')
-    how = html.find('class="ht-band ht-band-how')
-    assert 0 <= stage < cta < proof < how
-    assert html.count('class="ht-facade"') == 15
-    assert html.count('data-lightbox="short"') == 12
+    assert 'data-ht-cta="try-demo-close"' in html
+    page = html.split('<div class="ht-landing ht-real-pnl ht-home">', 1)[1]
+    cta = page.find('class="ht-hero-cta ht-cta-row"')
+    how = page.find("ht-home-how")
+    demo = page.find("ht-home-demo")
+    positions = page.find("Every position's full story")
+    catch = page.find('id="ht-catch"')
+    proof = page.find("ht-proof-cta")
+    trades = page.find("Two closed trades, written out")
+    assert 0 <= cta < how < demo < positions < catch < proof < trades
+    assert html.count('class="ht-facade"') == 9
+    assert html.count('data-lightbox="short"') == 6
     assert "ht-phone" not in html
     assert "ht-lightbox-stage" in html
     assert "min-width: 360px" in html
@@ -166,7 +181,10 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     trades_at = html.index("Two closed trades, written out")
     assert catch_at < trades_at
     assert "ht-band-trades" in html
-    assert ">30-day free trial, no credit card</a>" in html
+    assert 'class="ht-catch-cta"' not in html
+    assert "30 days free, no credit card" in html
+    assert 'data-ht-cta="create-account-strip"' in html
+    assert ">Create free account</a>" in html
     assert "For learning only, not investment advice" in html
     band = _catch_band(html)
     assert "Watch the story" not in band
@@ -216,11 +234,14 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert _webp_width(small) == 800
     assert "Privacy mode masks account names" in html
     assert "ht-band-proof" in html
+    assert 'class="ht-proof-k"' not in page
     assert "ht-band-how" in html
+    assert "ht-home-how" in html
     assert "How it works" in html
     assert "Strategies detected" in html
     assert "See what's working" in html
-    assert "ht-band-demo" in html
+    assert "ht-home-demo" in html
+    assert 'data-ht-cta="try-demo-band"' in html
     assert "A mirror of a paper account" in html
     assert "The live demo is a paper account" in html
     assert "trading bot" not in html.lower()
@@ -245,6 +266,13 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert (root / "app" / "static" / name).is_file()
     assert "marketing/amd-pnl.png" not in html
     assert "Founder&#39;s account · BE" in html
+    assert "Founder&#39;s account · RKLB" in html
+    assert ">Positions<" in html
+    assert ">Covered calls<" in html
+    covered = html.split('aria-label="Covered-call income tracked"', 1)[1].split("</section>", 1)[0]
+    assert "rklb.webp" in covered
+    assert "u_YWl5fKEjo" in covered
+    assert "win-rate.webp" not in covered
     assert "Cumulative P&amp;L on BE trades, April to September 2026, with trade-day markers" in html
     assert "account BE" not in html
     assert (
@@ -253,7 +281,7 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     ) in html
     assert 'href="/signup"' in html or "signup" in html
     assert 'href="/login"' in html
-    assert "Sign in" in html
+    assert ">Sign In</a>" in html
     assert 'name="description"' in html
     assert 'property="og:description"' in html
     assert "<title>Home - HappyTrader</title>" in html
@@ -297,7 +325,8 @@ def test_catch_watch_links_follow_live_flag(monkeypatch):
     assert "youtu.be" not in band
     assert "youtube.com" not in band
     assert band.count('class="ht-catch-panel"') == 5
-    assert ">30-day free trial, no credit card</a>" in html
+    assert 'class="ht-catch-cta"' not in html
+    assert 'data-ht-cta="create-account-strip"' in html
 
     monkeypatch.setenv("CATCH_STORY_VIDEOS_LIVE", "1")
     html = app.test_client().get("/").get_data(as_text=True)

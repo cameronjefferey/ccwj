@@ -10,45 +10,95 @@
 {% endblock %}
 
 {% block content %}
-{% from "_landing_macros.html" import video_frame %}
-<div class="ht-landing">
+<div class="ht-landing ht-real-pnl ht-home">
     <header class="ht-band ht-band-hero landing-hero">
-        <div class="ht-wrap">
-            <h1>Watch the trading mirror</h1>
-            <p class="lead">{{ hero_video.caption }}</p>
-            <div class="ht-stage">
-                {{ video_frame(hero_video, wide=true, eager=true) }}
-            </div>
-            <div class="ht-hero-cta">
-                {% if signup_enabled %}
-                <a class="ht-hero-primary" href="{{ url_for('signup') }}" data-ht-cta="start-trial">
-                    {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial{%- endif -%}
-                </a>
-                {% if not signup_invite_required %}
-                <p class="ht-hero-sub">No credit card</p>
-                {% endif %}
-                {% endif %}
-                <a class="ht-hero-secondary" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Try the live demo</a>
-                <a class="ht-hero-secondary" href="{{ url_for('learn_index') }}" data-ht-cta="start-learning">New to options? Start learning free</a>
-                <p class="ht-hero-signin"><a href="{{ url_for('login') }}">Sign in</a></p>
+        <div class="ht-wrap ht-hero-grid">
+            <div class="ht-hero-text">
+                <h1>Watch the trading mirror</h1>
+                <p class="lead">Connect a brokerage and open these same pages on your own history.</p>
+                <div class="ht-hero-cta ht-cta-row">
+                    {% if signup_enabled %}
+                    <a class="ht-hero-primary" href="{{ url_for('signup') }}" data-ht-cta="start-trial">
+                        {%- if signup_invite_required -%}Sign Up (invite){%- else -%}Start your 30-day free trial{%- endif -%}
+                    </a>
+                    {% endif %}
+                    <a class="ht-hero-secondary ht-ghost" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo">Explore live demo</a>
+                </div>
+                <p class="ht-fine ht-hero-fine">{% if not signup_invite_required %}No credit card. {% endif %}<a class="ht-hero-learn" href="{{ url_for('learn_index') }}" data-ht-cta="start-learning">New to options? Start learning free</a></p>
                 {% if signup_invite_required %}
                 <p class="ht-note">Closed beta. Account creation requires an invite code.</p>
                 {% endif %}
             </div>
+            <div class="ht-hero-video">
+                {# Background-only #5b8cff wash along the window's left and
+                   top. The frame's navy backing keeps it off the picture. #}
+                <div class="ht-hero-glow" aria-hidden="true">
+                    <span class="ht-glow-blob ht-glow-col"></span>
+                    <span class="ht-glow-blob ht-glow-top"></span>
+                    <span class="ht-glow-blob ht-glow-corner"></span>
+                </div>
+                <div class="ht-lottie-hero"
+                     data-lottie-src="{{ url_for('static', filename='marketing/covered-call-scroll.json') }}"
+                     data-lottie-w="1020"
+                     role="img"
+                     aria-label="Covered-call runs scrolling in HappyTrader">
+                    <img class="ht-lottie-poster"
+                         src="{{ url_for('static', filename='marketing/covered-call-scroll-poster.webp') }}"
+                         alt="" width="1020" height="638" decoding="async" fetchpriority="high">
+                </div>
+            </div>
         </div>
     </header>
 
-    {% include "_landing/proof.html" %}
+    {% set home_how = true %}
     {% include "_landing/how.html" %}
     {% include "_landing/demo.html" %}
     {% include "_landing/story.html" %}
+    <div class="ht-band-break" aria-hidden="true"></div>
+    {% set hide_catch_cta = true %}
     {% include "_landing/catch.html" %}
+    {% set proof_cta = true %}
+    {% include "_landing/proof.html" %}
+    <div class="ht-band-break" aria-hidden="true"></div>
     {% include "_landing/trades.html" %}
+    <div class="ht-band-break" aria-hidden="true"></div>
     {% include "_landing/covered.html" %}
+    <div class="ht-band-break" aria-hidden="true"></div>
     {% include "_landing/strategies.html" %}
+    <div class="ht-band-break" aria-hidden="true"></div>
     {% include "_landing/fit.html" %}
+    <div class="ht-band-break" aria-hidden="true"></div>
     {% include "_landing/learn.html" %}
+    {% set home_pair = true %}
     {% include "_landing/close.html" %}
 </div>
 {% include "_landing/player.html" %}
+<script src="{{ url_for('static', filename='js/lottie.min.js') }}"></script>
+<script>
+(function () {
+    var slot = document.querySelector(".ht-lottie-hero");
+    if (!slot || !window.lottie) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var src = slot.getAttribute("data-lottie-src") || "";
+    if (!src) return;
+    var sourceW = parseInt(slot.getAttribute("data-lottie-w") || "1020", 10) || 1020;
+    var cssW = slot.clientWidth || sourceW;
+    var dpr = Math.min(window.devicePixelRatio || 1, sourceW / cssW);
+    if (!(dpr > 0)) dpr = 1;
+    var anim = window.lottie.loadAnimation({
+        container: slot,
+        renderer: "canvas",
+        loop: true,
+        autoplay: true,
+        path: src,
+        rendererSettings: { dpr: dpr, clearCanvas: true }
+    });
+    anim.addEventListener("DOMLoaded", function () {
+        var poster = slot.querySelector(".ht-lottie-poster");
+        if (poster) poster.remove();
+        anim.resize();
+        window.requestAnimationFrame(function () { anim.resize(); });
+    });
+})();
+</script>
 {% endblock %}

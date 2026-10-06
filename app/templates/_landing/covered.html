@@ -1,15 +1,39 @@
-{% from "_landing_macros.html" import feature_poster %}
-    <section class="ht-band ht-band-covered ht-section" aria-label="Covered-call income tracked">
-        <div class="ht-wrap ht-split">
+    <section class="ht-band ht-band-covered ht-section ht-edge ht-home-band" aria-label="Covered-call income tracked">
+        <div class="ht-wrap ht-shorts-grid ht-edge-grid">
+            {% set ns = namespace(rklb=none) %}
+            {% for story in catch_stories if story.id == 'rklb' %}
+            {% set ns.rklb = story %}
+            {% endfor %}
             {% for step in story_steps if step.step == 4 %}
-            <div class="ht-media">
-                {{ feature_poster(step, eager=section_eager|default(false)) }}
-            </div>
             <div class="ht-copy">
-                <div class="ht-kicker">Short</div>
+                <div class="ht-kicker">Covered calls</div>
                 <h2 class="ht-section-title">Covered-call income tracked</h2>
                 <p>{{ step.caption }}</p>
             </div>
+            <figure class="ht-feature ht-edge-shot">
+                <button type="button" class="ht-facade" data-lightbox="short"
+                        data-youtube-id="{{ step.youtube_id }}"
+                        data-mp4-url="{{ step.mp4_url }}"
+                        data-title="{{ step.title }}"
+                        aria-label="Play Short: {{ step.title }}">
+                    <img class="ht-feature-img"
+                         src="{{ url_for('static', filename=ns.rklb.image) }}"
+                         srcset="{{ url_for('static', filename=ns.rklb.image_sm) }} 800w, {{ url_for('static', filename=ns.rklb.image) }} 1280w"
+                         sizes="(min-width: 960px) 680px, 100vw"
+                         alt="{{ ns.rklb.alt }}"
+                         width="{{ ns.rklb.width }}" height="{{ ns.rklb.height }}"
+                         decoding="async" loading="lazy">
+                    <span class="ht-play" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M4.5 2.8a1 1 0 0 1 1.53-.85l8 5.2a1 1 0 0 1 0 1.7l-8 5.2A1 1 0 0 1 4.5 13.2z"/>
+                        </svg>
+                    </span>
+                    {% if step.duration_label %}
+                    <span class="ht-duration">{{ step.duration_label }}</span>
+                    {% endif %}
+                </button>
+                <figcaption>{{ "Founder's account · RKLB" }}</figcaption>
+            </figure>
             {% endfor %}
         </div>
     </section>

@@ -833,6 +833,10 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert "What do your trades say about your next one?" not in body
             assert ".ht-real-pnl .ht-band-break" in body
             assert "background: #0a0e17" in body.split(".ht-real-pnl .ht-band-break", 1)[1][:180]
+            pad = "body.ht-public:has(.ht-real-pnl) .ht-page.container-fluid"
+            pad_at = body.index("padding-right: 1.5rem !important")
+            assert pad in body[pad_at - 180:pad_at]
+            assert "@media (min-width: 992px)" in body[pad_at - 180:pad_at]
             assert "GZ3mPiagkLo" in body
             assert "fit-matrix.webp" in body
             assert "pnl_real.webp" in body

@@ -593,39 +593,57 @@ Known issues:
 **Status: Working. Public landing page; logged-in users redirect to Overview.**
 
 Logged-out `/` is a banded marketing page (`app/templates/landing.html`,
-catalog in `app/marketing_videos.py`). Order: a click-to-play walkthrough
-of about 2:30 (`NpU79Lwkdn4`; poster is
+catalog in `app/marketing_videos.py`). The hero reuses the `/go/real-pnl`
+layout (class `ht-home` plus `ht-real-pnl`): copy on the left, the
+covered-call Lottie (`marketing/covered-call-scroll.json`) on the right,
+with the same blue wash, rounded clip, navy backing, and soft right and
+bottom fade. The H1 stays "Watch the trading mirror" in plain white.
+The lead is "Connect a brokerage and open these same pages on your own
+history." CTAs sit side by side: "Start your 30-day free trial" and
+"Explore live demo". One small-print line under them: "No credit card.
+New to options? Start learning free". The nav already has Sign in, so
+the hero does not. How it works sits directly under the hero on the
+`.ht-band-how` gradient: the 2:30 walkthrough (`NpU79Lwkdn4`; poster is
 `app/static/marketing/walkthrough_poster.webp` at 1920 and 1280 via
 srcset, not the YouTube still, which shows account-wide totals;
 the youtube-nocookie iframe is created only on click; nothing autoplays
-on load), then a hero CTA block (solid `#5b8cff` button "Start your
-30-day free trial", subline "No credit card", outline button "Try the
-live demo", and a small Sign in link), a tight qualitative proof strip,
-How it works (connect read-only, strategies detected, see what's working),
-then the live demo as its own band — a paper account. Shorts are themed bands
-with a large screenshot of the feature beside the copy (which strategies work,
-every position's story, if held, covered-call income, the fit matrix).
-Clicking the screenshot opens that Short in a lightbox, at least 360px wide
+on load) is large on the left, and the three steps are on the right.
+The sync, privacy, and share-card paragraph is small print at the bottom
+of that section. The old four-item proof band is gone. The live demo is
+the outlined card on navy, button "Explore live demo". Positions is a
+large chart on the left (eyebrow "Positions"), copy on the right, and
+the if-held table full width. "Here's what you'd catch" keeps all five
+tabs and has no trial button of its own. The blue trial strip sits
+directly under it ("30 days free, no credit card" and "Create free
+account"). Then, with a 72px navy break between content sections: two
+closed trades (wider, on the gradient), covered-call income (visual on
+the right, still `catch/rklb.webp`, still opens the Covered-call runs
+Short, eyebrow "Covered calls"), which strategies (visual on the left),
+the fit matrix (large on the right, eyebrow "Strategies"), and Learn
+options (same phone frame, on the gradient). Product stills stay wide
+on a phone; Learn options keeps its phone frame. The final band is flat
+`#5b8cff` with "Start your 30-day free trial, no credit card" and
+"Explore live demo". The public footer says "Explore live demo".
+Clicking a still opens that Short in a lightbox, at least 360px wide
 on a desktop and the full width of a phone. Options 101 uses the same
 lightbox; its poster is the Short, at least 360px wide on desktop and full
-width on a phone. Just before the real-trades band, "Here's what you'd catch with HappyTrader"
-is one still at a time (ONON, RKLB, the BE buyback, the BE swing, win
-rate versus return) from `CATCH_STORIES` in `app/marketing_videos.py`.
+width on a phone. Catch stills (ONON, RKLB, the BE buyback, the BE swing, win
+rate versus return) come from `CATCH_STORIES` in `app/marketing_videos.py`.
 Each still's YouTube id lives in `CATCH_STORY_VIDEOS`. "Watch the story" renders only when `CATCH_STORY_VIDEOS_LIVE=1`; unset hides the links and leaves the band complete. A Real
 trades band plays the ONON and RKLB stories wide.
-Privacy mode and share cards stay a sentence on the proof strip (there is
-no matching upload). The short-section posters are those stills: the
+The short-section posters are those stills: the
 cumulative P&amp;L on BE trades (`app/static/marketing/pnl_real.webp`,
-caption "Real account · BE"), the if-held summary, and the fit matrix
-(`app/static/marketing/`). Covered-call income uses the masked win-rate
-still (`marketing/catch/win-rate.webp`). Strategy cards stay their own
+caption "Founder's account · BE"), the if-held summary, and the fit matrix
+(`app/static/marketing/`). The catalog still lists the masked win-rate
+still for the covered-call step; the home section renders the RKLB catch
+still instead. Strategy cards stay their own
 band. The day-by-day chart is that still of BE trades from April to
 September 2026, with trade-day markers, not the demo AMD crop. Those crops do not show
 ORCL, CFLT, or the Earnings or Admin tabs. Options 101 and the full-width
 trial close stay. The Options 101 step links to `/learn` only when that
-exact route exists. Hero primary CTA: "Start your 30-day free trial"
-with the subline "No credit card". The closing band still uses the
-combined line "Start your 30-day free trial, no credit card".
+exact route exists. On `/go/real-pnl`, the page padding that clears the
+feedback button applies only from 992px up, so a phone does not keep a
+dark strip on the right.
 
 There is no separate dashboard page — Overview is the authenticated home.
 

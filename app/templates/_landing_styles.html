@@ -996,9 +996,13 @@
         overflow: clip;
     }
     /* The feedback button's right gutter is for app tables. This hero
-       needs that space for the desktop window. */
-    body.ht-public:has(.ht-real-pnl) .ht-page.container-fluid {
-        padding-right: 1.5rem !important;
+       needs that space for the desktop window. Below the lg breakpoint
+       the landing only bleeds 0.5rem, so this 1.5rem padding leaves a
+       dark strip on the right. */
+    @media (min-width: 992px) {
+        body.ht-public:has(.ht-real-pnl) .ht-page.container-fluid {
+            padding-right: 1.5rem !important;
+        }
     }
     .ht-real-pnl .ht-wrap.ht-hero-grid {
         max-width: 1280px;
@@ -1387,5 +1391,74 @@
         .ht-real-pnl .ht-proof-cta .ht-wrap { flex-direction: column; align-items: flex-start; gap: .9rem; }
         .ht-real-pnl .ht-proof-cta .ht-proof-action { justify-content: flex-start; align-items: flex-start; }
         .ht-real-pnl .landing-hero h1 { font-size: clamp(2rem, 9vw, 2.6rem); max-width: 12ch; }
+    }
+
+    /* Logged-out home. Reuses the real-pnl hero, wash, and band rules,
+       then corrects measure, stills, and band order for this page only. */
+    body.ht-public:has(.ht-home) nav.navbar .btn-auth-nav { font-weight: 650; border-radius: .45rem; }
+    .ht-home .landing-hero h1 { color: #fff; max-width: 12ch; }
+    .ht-home .ht-hero-fine a.ht-hero-learn { color: #c5d0e4; text-decoration: underline; text-underline-offset: 3px; }
+    .ht-home .ht-hero-fine a.ht-hero-learn:hover { color: #5b8cff; }
+    .ht-home .ht-band.ht-home-band,
+    .ht-home .ht-band.ht-band-learn {
+        background:
+            radial-gradient(70% 90% at 100% 0%, rgba(91,140,255,.18), transparent 55%),
+            linear-gradient(180deg, #10182a 0%, #17243a 100%);
+    }
+    .ht-home .ht-band-learn { border: 0; }
+    .ht-home .ht-section { padding: 4.5rem 0; }
+    .ht-home .ht-home-how .ht-wrap.ht-how-grid { max-width: 1200px; padding: 0 2.5rem; gap: 3.5rem; }
+    .ht-home .ht-home-how .ht-section-title { font-size: 2.1rem; text-wrap: balance; }
+    .ht-home .ht-how-fine { grid-column: 1 / -1; margin: 0; max-width: 62rem; }
+    .ht-home .ht-home-demo .ht-banner-card { gap: 1.4rem; }
+    .ht-home .ht-home-demo .ht-banner-sub { max-width: 40rem; margin: 0 auto; }
+    .ht-home .ht-home-demo .ht-kicker { margin-bottom: .55rem; }
+    .ht-home .ht-home-positions { grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); row-gap: 2.5rem; }
+    .ht-home .ht-home-positions .ht-home-ifheld { grid-column: 1 / -1; }
+    .ht-home .ht-feature > .ht-facade {
+        border: 1px solid rgba(91,140,255,.35);
+        box-shadow: 0 0 40px rgba(91,140,255,.12), 0 24px 60px rgba(0,0,0,.45);
+        border-radius: .9rem;
+    }
+    .ht-home .ht-edge-shot img { border: 0; box-shadow: none; }
+    .ht-home .ht-home-how .ht-frame-wide {
+        border: 1px solid rgba(91,140,255,.35);
+        box-shadow: 0 0 40px rgba(91,140,255,.12), 0 24px 60px rgba(0,0,0,.45);
+    }
+    .ht-home .ht-edge-grid.ht-home-media-left { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); }
+    .ht-home .ht-band-catch .ht-wrap,
+    .ht-home .ht-home-wide { max-width: 1200px; padding: 0 2.5rem; }
+    .ht-home .ht-band-catch .ht-catch-note { text-align: left; margin-top: 1rem; }
+    .ht-home .ht-band-catch .ht-section-title,
+    .ht-home .ht-home-wide .ht-section-title { font-size: 2.1rem; }
+    .ht-home .ht-band-learn .ht-wrap { max-width: 1200px; padding: 0 2.5rem; }
+    .ht-home .ht-band-learn .ht-section-title { font-size: 2.1rem; }
+    .ht-home .ht-band-cta .ht-final-cta { margin-top: .4rem; }
+    @media (max-width: 959px) {
+        .ht-home .ht-home-how .ht-wrap.ht-how-grid,
+        .ht-home .ht-band-catch .ht-wrap,
+        .ht-home .ht-home-wide,
+        .ht-home .ht-band-learn .ht-wrap { padding: 0 1.25rem; gap: 1.75rem; }
+        .ht-home .ht-home-positions,
+        .ht-home .ht-edge-grid.ht-home-media-left { grid-template-columns: 1fr; }
+        .ht-home .ht-home-positions .ht-copy,
+        .ht-home .ht-home-media-left .ht-copy { order: -1; }
+        .ht-home .ht-home-how .ht-section-title,
+        .ht-home .ht-band-catch .ht-section-title,
+        .ht-home .ht-home-wide .ht-section-title,
+        .ht-home .ht-edge .ht-section-title,
+        .ht-home .ht-band-learn .ht-section-title { font-size: 1.7rem; }
+        .ht-home .ht-section { padding: 3rem 0; }
+    }
+    @media (max-width: 640px) {
+        .ht-home .ht-feature > .ht-facade { display: block; }
+        .ht-home .ht-narrow-still,
+        .ht-home .ht-narrow-shot { display: none; }
+        .ht-home .ht-band-banner .ht-wrap { padding: 0 1.25rem; }
+        .ht-home .ht-banner-title { font-size: 1.7rem; }
+        .ht-home .ht-banner-cta { align-items: center; }
+        .ht-home .ht-final-cta { flex-direction: column; align-items: center; }
+        .ht-home .ht-band-cta .ht-cta { width: auto; }
+        .ht-home .ht-hero-fine { max-width: 22rem; }
     }
 </style>

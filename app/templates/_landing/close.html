@@ -11,6 +11,15 @@
                 {% endif %}
                 <a class="ht-cta ht-cta-ghost" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo-close">Explore live demo</a>
             </div>
+            {% elif home_pair|default(false) %}
+            <div class="ht-final-cta">
+                {% if signup_enabled %}
+                <a class="ht-cta" href="{{ url_for('signup') }}" data-ht-cta="start-trial">{{ trial_label() }}</a>
+                {% else %}
+                <a class="ht-cta" href="{{ url_for('login') }}">Sign in</a>
+                {% endif %}
+                <a class="ht-cta ht-cta-ghost" href="{{ url_for('demo_start') }}" data-ht-cta="try-demo-close">Explore live demo</a>
+            </div>
             {% elif campaign %}
             <a class="ht-cta" href="{{ signup_url }}" data-ht-cta="{{ cta_base }}-close">{{ cta_label }}</a>
             {% elif signup_enabled %}

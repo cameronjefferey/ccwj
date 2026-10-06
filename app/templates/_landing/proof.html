@@ -9,7 +9,7 @@
             </ul>
             <div class="ht-final-cta ht-proof-action">
                 {% if signup_enabled %}
-                <a class="ht-cta" href="{{ signup_url }}" data-ht-cta="create-account-strip">{{ cta_label }}</a>
+                <a class="ht-cta" href="{{ signup_url|default(url_for('signup')) }}" data-ht-cta="create-account-strip">{{ cta_label|default('Create free account') }}</a>
                 {% else %}
                 <a class="ht-cta" href="{{ url_for('login') }}" data-ht-cta="create-account-strip">Sign in</a>
                 {% endif %}

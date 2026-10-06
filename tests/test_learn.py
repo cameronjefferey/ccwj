@@ -546,8 +546,12 @@ def test_progress_save_rejects_a_missing_csrf_token(monkeypatch):
 
 def _assert_public_copy(html):
     lowered = html.lower()
-    for banned in ("no sign-up", "no signup", "live demo", "the only place", "guaranteed"):
+    # The shared footer says "Explore live demo". Lesson copy still must not.
+    before_footer = lowered.split("<footer", 1)[0]
+    for banned in ("no sign-up", "no signup", "the only place", "guaranteed"):
         assert banned not in lowered
+    assert "live demo" not in before_footer
+    assert ">explore live demo</a>" in lowered
     assert "Create a free account" in html
     assert 'data-ht-cta="create-account"' in html
     assert "Learning and paper trading are free." in html
