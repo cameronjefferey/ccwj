@@ -67,6 +67,7 @@ with versions as (
       and underlying_symbol is not null
       and trim(underlying_symbol) != ''
 
+    {% if not var('demo_temp_seed', false) %}
     union all
 
     -- Demo = relabeled MIRROR of the source tenant's option-mark history,
@@ -76,6 +77,9 @@ with versions as (
     -- MTM, and the demo's option leg would degrade to flat
     -- realize-on-close steps — hiding the product's headline feature on the
     -- one page prospects actually look at.
+    -- Skipped while demo_temp_seed is on: those marks belong to the bot,
+    -- and copying them onto the temporary book would draw the bot's
+    -- option curve under the seed's trades. See dbt/seeds/DEMO_TEMP_SEED.md.
     select
         'demo:demo-account' as tenant_id,
         'Demo Account'      as account,
@@ -98,6 +102,7 @@ with versions as (
       and trim(underlying_symbol) != ''
       and nullif(trim(tenant_id), '') = '{{ var("demo_source_tenant_id", "") }}'
       and '{{ var("demo_source_tenant_id", "") }}' != ''
+    {% endif %}
 ),
 
 unfolded as (

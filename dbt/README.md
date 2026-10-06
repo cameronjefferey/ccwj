@@ -7,7 +7,7 @@ dbt project that transforms raw brokerage trade data into strategy-classified po
 ### Staging (views)
 - `stg_history` — Normalizes historical trades from `trade_history` (manual upload and Schwab sync both write here) plus the demo mirror `stg_demo_history`. Parses dates, actions, option symbols, instrument types.
 - `stg_current` — Cleans current positions from `current_positions` (same — one source for both) plus the demo mirror `stg_demo_current`. Filters cash/totals, parses option symbols, casts numerics.
-- `stg_demo_{history,current,balances}` (`models/staging/demo/`) — The public demo, built as a relabeled **mirror** of a real tenant set by `var('demo_source_tenant_id')` rather than fabricated data. Reads the per-broker adapters, never the raw source, so it inherits every broker-quirk fix. See `stg_demo_history.sql`.
+- `stg_demo_{history,current,balances}` (`models/staging/demo/`) — The public demo. While `var('demo_temp_seed')` is true this is the temporary book in `dbt/seeds/demo_temp_*.csv` (removal steps in `dbt/seeds/DEMO_TEMP_SEED.md`). When the flag is false it is a relabeled **mirror** of a real tenant set by `var('demo_source_tenant_id')`. The mirror reads the per-broker adapters, never the raw source. See `stg_demo_history.sql`.
 
 ### Intermediate (tables)
 - `int_equity_sessions` — Detects equity position lifecycles using running share count. Session = one continuous holding period.
@@ -42,6 +42,7 @@ app's write order (never selected by staging). Local dev builds read
 |------|-------------|
 | `cflt_prices.csv` | Optional price seed |
 | `crypto_symbols.csv` | Curated crypto symbol whitelist |
+| `demo_temp_history.csv` / `demo_temp_current.csv` | **Temporary.** Made-up demo book while `demo_temp_seed` is true. Delete with `DEMO_TEMP_SEED.md` when the bot mirror should return |
 
 ## Usage
 

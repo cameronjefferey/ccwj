@@ -24,10 +24,11 @@
 -- The demo union is preserved so the demo user keeps working — demo rows
 -- carry tenant_id = 'demo:demo-account' matching the demo user's
 -- broker_tenants row created by ``ensure_demo_user``, so the public demo
--- renders through the exact same tenant scoping as a real user. Since
--- Aug 2026 the demo is no longer fabricated seed CSVs but a relabeled
--- MIRROR of a real tenant (the EarningsFollower bot's Alpaca paper
--- account) — see dbt/models/staging/demo/stg_demo_history.sql.
+-- renders through the exact same tenant scoping as a real user. While
+-- var('demo_temp_seed') is true, stg_demo_history is the temporary book
+-- in dbt/seeds/demo_temp_history.csv (see dbt/seeds/DEMO_TEMP_SEED.md).
+-- When that flag is false it is again a relabeled MIRROR of the
+-- EarningsFollower bot's Alpaca paper account.
 --
 -- Real-broker rows now arrive via the per-broker staging adapters
 -- (dbt/models/staging/brokers/stg_broker_<slug>_history) rather than a

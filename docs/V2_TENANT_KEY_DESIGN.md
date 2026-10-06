@@ -249,12 +249,17 @@ unrealized_pnl, unrealized_pnl_pct, percent_of_account
 - `dbt/seeds/schwab_account_balances.csv` — direct Schwab is gone;
   collapse into `account_balances.csv`.
 
-### Demo seeds (superseded Aug 2026)
+### Demo seeds
 
-`demo_current.csv` / `demo_history.csv` are **gone**. The public demo is no
-longer fabricated fixtures — it is a relabeled **mirror** of a real tenant
+The Aug 2026 fixtures `demo_current.csv` / `demo_history.csv` are **gone**.
+The permanent path is a relabeled **mirror** of a real tenant
 (`var('demo_source_tenant_id')`, the EarningsFollower bot's Alpaca paper
 account) built by `dbt/models/staging/demo/stg_demo_{history,current,balances}`.
+
+While `var('demo_temp_seed')` is true, that mirror is paused and the demo
+reads `dbt/seeds/demo_temp_history.csv` and `dbt/seeds/demo_temp_current.csv`
+instead. Those files are stamped `demo:demo-account` in the demo models
+only. Removal steps: `dbt/seeds/DEMO_TEMP_SEED.md`.
 
 The mirror stamps `tenant_id = 'demo:demo-account'` itself, so the demo is
 still a genuinely separate tenant and renders through the exact same

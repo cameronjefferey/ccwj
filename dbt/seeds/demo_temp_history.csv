@@ -1,0 +1,52 @@
+Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
+2026-01-02,Deposit,,Opening deposit,,,0.00,100000.00
+2026-01-06,Buy,AAPL,Buy 200 shares,200,262.36,0.00,52472.00
+2026-01-06,Sell to Open,AAPL 01/16/2026 290 C,Sell to open,2,0.45,1.30,90.00
+2026-01-16,Expired,AAPL 01/16/2026 290 C,Expired,2,0.00,0.00,0.00
+2026-01-20,Sell to Open,AAPL 02/20/2026 300 C,Sell to open,2,0.55,1.30,110.00
+2026-02-20,Expired,AAPL 02/20/2026 300 C,Expired,2,0.00,0.00,0.00
+2026-02-23,Sell to Open,AAPL 03/20/2026 300 C,Sell to open,2,0.70,1.30,140.00
+2026-03-20,Expired,AAPL 03/20/2026 300 C,Expired,2,0.00,0.00,0.00
+2026-03-23,Sell to Open,AAPL 04/17/2026 310 C,Sell to open,2,0.80,1.30,160.00
+2026-04-17,Expired,AAPL 04/17/2026 310 C,Expired,2,0.00,0.00,0.00
+2026-04-20,Sell to Open,AAPL 05/15/2026 330 C,Sell to open,2,0.75,1.30,150.00
+2026-05-15,Expired,AAPL 05/15/2026 330 C,Expired,2,0.00,0.00,0.00
+2026-05-18,Sell to Open,AAPL 06/18/2026 340 C,Sell to open,2,0.60,1.30,120.00
+2026-06-18,Expired,AAPL 06/18/2026 340 C,Expired,2,0.00,0.00,0.00
+2026-06-22,Sell to Open,AAPL 07/17/2026 370 C,Sell to open,2,0.45,1.30,90.00
+2026-07-17,Expired,AAPL 07/17/2026 370 C,Expired,2,0.00,0.00,0.00
+2026-07-20,Sell to Open,AAPL 08/21/2026 360 C,Sell to open,2,1.10,1.30,220.00
+2026-08-21,Expired,AAPL 08/21/2026 360 C,Expired,2,0.00,0.00,0.00
+2026-08-24,Sell to Open,AAPL 09/18/2026 370 C,Sell to open,2,0.80,1.30,160.00
+2026-09-18,Expired,AAPL 09/18/2026 370 C,Expired,2,0.00,0.00,0.00
+2026-09-21,Sell to Open,AAPL 11/20/2026 370 C,Sell to open,2,2.80,1.30,560.00
+2026-02-20,Sell to Open,KO 03/20/2026 75 P,Sell to open,1,1.55,0.65,155.00
+2026-03-20,Assigned,KO 03/20/2026 75 P,Assigned,1,0.00,0.00,0.00
+2026-03-20,Buy,KO,Buy 100 shares,100,75.00,0.00,7500.00
+2026-03-23,Sell to Open,KO 04/17/2026 82 C,Sell to open,1,0.90,0.65,90.00
+2026-04-17,Expired,KO 04/17/2026 82 C,Expired,1,0.00,0.00,0.00
+2026-04-20,Sell to Open,KO 05/15/2026 84 C,Sell to open,1,0.75,0.65,75.00
+2026-05-15,Expired,KO 05/15/2026 84 C,Expired,1,0.00,0.00,0.00
+2026-05-18,Sell to Open,KO 06/18/2026 86 C,Sell to open,1,0.65,0.65,65.00
+2026-06-18,Expired,KO 06/18/2026 86 C,Expired,1,0.00,0.00,0.00
+2026-06-22,Sell to Open,KO 07/17/2026 80 C,Sell to open,1,1.40,0.65,140.00
+2026-07-17,Assigned,KO 07/17/2026 80 C,Assigned,1,0.00,0.00,0.00
+2026-07-17,Sell,KO,Sell 100 shares,100,80.00,0.00,8000.00
+2026-02-09,Sell to Open,MSFT 02/20/2026 430 C,Sell to open,1,2.35,0.65,235.00
+2026-02-09,Buy to Open,MSFT 02/20/2026 440 C,Buy to open,1,1.05,0.65,105.00
+2026-02-20,Expired,MSFT 02/20/2026 430 C,Expired,1,0.00,0.00,0.00
+2026-02-20,Expired,MSFT 02/20/2026 440 C,Expired,1,0.00,0.00,0.00
+2026-03-09,Sell to Open,MSFT 03/20/2026 430 C,Sell to open,1,2.55,0.65,255.00
+2026-03-09,Buy to Open,MSFT 03/20/2026 440 C,Buy to open,1,1.15,0.65,115.00
+2026-03-20,Expired,MSFT 03/20/2026 430 C,Expired,1,0.00,0.00,0.00
+2026-03-20,Expired,MSFT 03/20/2026 440 C,Expired,1,0.00,0.00,0.00
+2026-05-18,Buy to Open,MSFT 08/21/2026 430 C,Buy to open,1,22.40,0.65,2240.00
+2026-05-18,Sell to Open,MSFT 08/21/2026 450 C,Sell to open,1,14.80,0.65,1480.00
+2026-08-07,Sell to Close,MSFT 08/21/2026 430 C,Sell to close,1,71.20,0.65,7120.00
+2026-08-07,Buy to Close,MSFT 08/21/2026 450 C,Buy to close,1,51.40,0.65,5140.00
+2026-02-23,Sell to Open,SPY 03/20/2026 710 C,Sell to open,1,3.10,0.65,310.00
+2026-02-23,Buy to Open,SPY 03/20/2026 720 C,Buy to open,1,1.40,0.65,140.00
+2026-03-20,Expired,SPY 03/20/2026 710 C,Expired,1,0.00,0.00,0.00
+2026-03-20,Expired,SPY 03/20/2026 720 C,Expired,1,0.00,0.00,0.00
+2026-09-18,Sell to Open,MSFT 11/20/2026 470 P,Sell to open,1,4.20,0.65,420.00
+2026-09-18,Buy to Open,MSFT 11/20/2026 460 P,Buy to open,1,2.40,0.65,240.00

@@ -74,14 +74,43 @@ with bal_versions as (
     from {{ ref('snapshot_account_balances_daily') }}
     -- The 'Demo Account' exclusion is LOAD-BEARING and must stay: this SCD2
     -- snapshot still holds legacy versions from the era when the demo was
-    -- fabricated seed data. The demo's balance history comes from the mirror
-    -- branch below instead, which yields the source tenant's full history on
-    -- day one rather than starting from the first post-cutover snapshot.
+    -- fabricated seed data, and it will also collect rows while the
+    -- temporary seed is on. The demo's balance history comes from the
+    -- branch below (the temp equity curve, or the bot mirror when
+    -- demo_temp_seed is false) — never from these snapshot rows.
     where account != 'Demo Account'
       and row_type in ('cash', 'account_total')
 
     union all
 
+    {% if var('demo_temp_seed', false) %}
+    -- TEMPORARY demo curve from the made-up seed. One version per day so
+    -- the spine below does not need the bot's SCD2 history. Removal:
+    -- dbt/seeds/DEMO_TEMP_SEED.md.
+    select
+        'Demo Account'      as account,
+        cast(null as int64) as user_id,
+        'demo:demo-account' as tenant_id,
+        'demo:demo-account' as tenant_grain,
+        'account_total'     as row_type,
+        account_value       as market_value,
+        as_of               as valid_from,
+        date_add(as_of, interval 1 day) as valid_to
+    from {{ ref('int_demo_temp_equity_daily') }}
+
+    union all
+
+    select
+        'Demo Account'      as account,
+        cast(null as int64) as user_id,
+        'demo:demo-account' as tenant_id,
+        'demo:demo-account' as tenant_grain,
+        'cash'              as row_type,
+        cash_value          as market_value,
+        as_of               as valid_from,
+        date_add(as_of, interval 1 day) as valid_to
+    from {{ ref('int_demo_temp_equity_daily') }}
+    {% else %}
     -- Demo = relabeled MIRROR of the source tenant's balance history.
     -- Matches the staging-layer mirror (stg_demo_balances) so the demo's
     -- account-value chart reconciles with its positions instead of being
@@ -99,6 +128,7 @@ with bal_versions as (
     where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
       and '{{ var("demo_source_tenant_id", "") }}' != ''
       and row_type in ('cash', 'account_total')
+    {% endif %}
 ),
 
 -- One calendar day per row from the earliest snapshot through today.
