@@ -1315,6 +1315,24 @@
     .ht-real-pnl .ht-pricing-mini .ht-price { font-weight: 600; color: #e8edf7; }
     .ht-real-pnl .ht-pricing-mini a { color: #5b8cff; text-decoration: underline; }
     .ht-real-pnl .ht-final-cta { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
+    /* Trial strip under the steps: footer-banner blue, copy left, nav-sized
+       .ht-cta on the right. Same .ht-wrap as the section above it. */
+    .ht-real-pnl .ht-band-proof.ht-proof-cta {
+        background: #5b8cff;
+        color: #0a0e17;
+        padding: 1.25rem 0;
+    }
+    .ht-real-pnl .ht-proof-cta .ht-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+    }
+    .ht-real-pnl .ht-proof-cta .ht-proof { display: block; }
+    .ht-real-pnl .ht-proof-cta .ht-proof li { max-width: 40rem; }
+    .ht-real-pnl .ht-proof-cta .ht-proof strong { color: #0a0e17; }
+    .ht-real-pnl .ht-proof-cta .ht-proof p { color: #0a0e17; }
+    .ht-real-pnl .ht-proof-cta .ht-proof-action { flex: none; justify-content: flex-end; }
     .ht-real-pnl .ht-cta-ghost {
         background: transparent;
         color: #0a0e17;
@@ -1355,6 +1373,8 @@
     @media (max-width: 640px) {
         .ht-real-pnl .ht-cta-row { flex-direction: column; align-items: flex-start; }
         .ht-real-pnl .ht-final-cta { align-items: center; }
+        .ht-real-pnl .ht-proof-cta .ht-wrap { flex-direction: column; align-items: flex-start; gap: .9rem; }
+        .ht-real-pnl .ht-proof-cta .ht-proof-action { justify-content: flex-start; align-items: flex-start; }
         .ht-real-pnl .landing-hero h1 { font-size: clamp(2rem, 9vw, 2.6rem); max-width: 12ch; }
     }
 </style>
