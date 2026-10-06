@@ -468,6 +468,12 @@ def test_admin_analytics_is_admin_only(monkeypatch):
                     "signups": 2,
                 }],
                 "devices": [{"device": "phone", "visitors": 5, "signups": 1}],
+                "destinations": [{
+                    "target": "try-demo",
+                    "visitors": 3,
+                    "clicks": 4,
+                    "rate": 37.5,
+                }],
                 "filtered_out": 14,
             },
         },
@@ -476,6 +482,7 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     assert page.status_code == 200
     body = page.get_data(as_text=True)
     assert "Acquisition" in body
+    assert ">Paid<" in body
     assert "/go/real-pnl" in body
     assert "2026-10-01" in body
     assert "Scroll 50%" in body
@@ -484,10 +491,104 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     assert "real-pnl" in body
     assert "15s" in body
     assert "14 visits on this page were left out" in body
+    assert "Where they went" in body
+    assert "try-demo" in body
+    assert "37.5%" in body
+    assert "tab=paid" in body
     assert "Campaign funnel" not in body
     assert "First lesson" not in body
     assert "/go/learn" not in body
     assert "YouTube referrals" not in body
+
+
+def test_admin_analytics_product_tab_is_separate(monkeypatch):
+    from app.models import User
+
+    class _Admin:
+        is_authenticated = True
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "cameron"
+
+        def get_id(self):
+            return "7"
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda uid: _Admin()))
+    monkeypatch.setenv("ADMIN_USERS", "cameron")
+    monkeypatch.setattr(
+        "app.funnel.build_admin_analytics",
+        lambda: {
+            "tab": "product",
+            "acquisition": None,
+            "product": {
+                "range_key": "30d",
+                "days": [{"day": "2026-10-02", "visitors": 3, "views": 4}],
+                "pages": [{"path": "/go/learn", "visitors": 2, "views": 2}],
+                "campaigns": [{
+                    "landing": "learn",
+                    "steps": [
+                        {"label": "Visitors", "count": 2, "rate": 100.0},
+                        {"label": "First lesson", "count": 1, "rate": 50.0},
+                        {"label": "Paid", "count": 0, "rate": 0.0},
+                    ],
+                }],
+                "origins": [{
+                    "source": "reddit / learn",
+                    "visitors": 2,
+                    "signups": 1,
+                    "rate": 50.0,
+                }],
+                "sources": [{
+                    "source": "reddit",
+                    "campaign": "learn",
+                    "content": "free",
+                    "visitors": 2,
+                    "signups": 1,
+                }],
+                "devices": [{"device": "desktop", "visitors": 2, "signups": 1}],
+                "referrers": [
+                    {"host": "YouTube", "visitors": 1},
+                    {"host": "Reddit", "visitors": 1},
+                ],
+                "filtered_out": 9,
+                "signup_days": [{"day": "2026-10-02", "signups": 1}],
+                "steps": [{
+                    "label": "First lesson started",
+                    "count": 1,
+                    "of_landing": 25.0,
+                }],
+                "channels": [{
+                    "source": "reddit",
+                    "campaign": "learn",
+                    "visits": 2,
+                    "signups": 1,
+                    "brokers": 0,
+                    "paid": 0,
+                }],
+                "youtube": {"visits": 4, "signups": 1},
+            },
+        },
+    )
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "7"
+        sess["_fresh"] = True
+    page = client.get("/admin/analytics?tab=product")
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    assert ">Product<" in body
+    assert "Campaign funnel" in body
+    assert "First lesson" in body
+    assert "/go/learn" in body
+    assert "YouTube referrals" in body
+    assert "Signups per day" in body
+    assert "By source and campaign" in body
+    assert "9 visits were left out" in body
+    assert "tab=product" in body
+    assert "Where they went" not in body
+    assert "Scroll 50%" not in body
+    assert "14 visits on this page were left out" not in body
 
 
 def test_start_hero_offers_learning_and_the_demo(monkeypatch):
@@ -1040,6 +1141,9 @@ def test_public_page_view_records_landing_device_and_not_identity():
     sources = {(row["source"], row["campaign"]) for row in acq["sources"]}
     assert ("reddit", "real-pnl") in sources
     assert "campaigns" not in acq
+    clicked_targets = {row["target"]: row for row in acq["destinations"]}
+    assert clicked_targets["try-demo"]["visitors"] >= 1
+    assert clicked_targets["try-demo"]["clicks"] >= 1
 
 
 def test_learn_route_signup_opens_learn(monkeypatch):
@@ -1112,6 +1216,13 @@ def _mark_count(acq, kind, key, field):
     for cell in acq.get(kind) or []:
         if cell.get(field) == key:
             return int(cell.get("count") or 0)
+    return 0
+
+
+def _dest_visitors(acq, target) -> int:
+    for row in acq.get("destinations") or []:
+        if row.get("target") == target:
+            return int(row.get("visitors") or 0)
     return 0
 
 
@@ -1222,8 +1333,12 @@ def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
     from app.funnel import build_acquisition, build_admin_analytics
     built = build_acquisition("7d")
     assert built["visitors"] == 0
+    assert built["destinations"] == []
+    assert "campaigns" not in built
     assert [cell["mark"] for cell in built["scroll"]] == ["25", "50", "75", "100"]
-    build_admin_analytics()
+    page = build_admin_analytics()
+    assert page["tab"] == "paid"
+    assert page["product"] is None
     blob = "\n".join(sqls)
     assert "COALESCE(is_bot, FALSE) = FALSE" in blob
     assert "client_beacon IS DISTINCT FROM FALSE" in blob
@@ -1239,9 +1354,82 @@ def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
     assert "time_on_page" in blob
     assert "percentile_disc" in blob
     assert "utm_campaign = 'real-pnl'" in blob
+    assert "cta_click" in blob
+    assert "video_play" in blob
     assert "lesson_started" not in blob
     assert "broker_connected" not in blob
     assert "ELSE 'Direct'" not in blob
+
+
+def test_click_target_label_uses_detail_then_path():
+    from app.funnel import _destination_rows, click_target_label
+
+    assert click_target_label("try-demo", "/go/real-pnl") == "try-demo"
+    assert click_target_label("", "/signup") == "/signup"
+    assert click_target_label(None, None) == "(unknown)"
+    rows = _destination_rows(
+        [
+            {"event": "cta_click", "detail": "create-account", "path": "/go/real-pnl",
+             "visitors": 2, "clicks": 2},
+            {"event": "video_play", "detail": "VssdUIrHcjs", "path": "/go/real-pnl",
+             "visitors": 1, "clicks": 1},
+            {"event": "cta_click", "detail": "", "path": "/go/real-pnl",
+             "visitors": 1, "clicks": 1},
+        ],
+        4,
+    )
+    assert rows[0]["target"] == "create-account"
+    assert rows[0]["rate"] == 50.0
+    assert rows[1]["target"] == "video:VssdUIrHcjs"
+    assert rows[2]["target"] == "/go/real-pnl"
+
+
+def test_product_report_sql_keeps_the_human_filter(monkeypatch):
+    sqls = []
+
+    def _fetch_all(sql, params=()):
+        sqls.append(sql)
+        return []
+
+    monkeypatch.delenv("ADMIN_USERS", raising=False)
+    monkeypatch.delenv("INTERNAL_USERS", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://funnel-test")
+    monkeypatch.setattr("app.db.fetch_all", _fetch_all)
+    from app.funnel import build_admin_analytics, build_product_report
+
+    with app.test_request_context("/admin/analytics?tab=product&range=7d"):
+        page = build_admin_analytics()
+    assert page["tab"] == "product"
+    assert page["acquisition"] is None
+    built = page["product"]
+    assert [row["landing"] for row in built["campaigns"]] == [
+        "learn", "real-pnl", "mistakes",
+    ]
+    assert len(built["days"]) == 7
+    assert len(built["signup_days"]) == 30
+    labels = [step["label"] for step in built["steps"]]
+    assert "First lesson started" in labels
+    assert "Paper account connected" in labels
+    assert "Real broker connected" in labels
+    assert "Paid" in labels
+    assert built["referrers"][0]["host"] == "YouTube"
+    assert built["referrers"][1]["host"] == "Reddit"
+    blob = "\n".join(sqls)
+    assert "lesson_started" in blob
+    assert "paper_connected" in blob
+    assert "broker_connected" in blob
+    assert "event = 'paid'" in blob
+    assert "INTERVAL '30 days'" in blob
+    assert "INTERVAL '7 days'" in blob
+    assert "funnel_internal_visits" in blob
+    assert "owner_hit" in blob
+    assert "bot_hit" in blob
+    assert "'testingcameron1'" in blob
+    assert "ELSE 'Direct'" in blob
+    # Paid-card path filter stays off this report's page-view totals.
+    assert "path = '/go/real-pnl'" not in blob
+    empty = build_product_report("nope")
+    assert empty["range_key"] == "7d"
 
 
 def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
@@ -1256,6 +1444,7 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
     before_filtered = before["filtered_out"]
     before_scroll = _mark_count(before, "scroll", "50", "mark")
     before_time = _mark_count(before, "time", "15", "bucket")
+    before_demo = _dest_visitors(before, "try-demo")
 
     human = app.test_client()
     human.get(
@@ -1277,6 +1466,11 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
         json={"event": "time_on_page", "path": "/go/real-pnl", "detail": "15"},
     )
     assert dwell.status_code == 200
+    clicked = human.post(
+        "/funnel/beacon",
+        json={"event": "cta_click", "path": "/go/real-pnl", "detail": "try-demo"},
+    )
+    assert clicked.status_code == 200
     human_visit = fetch_one(
         """
         SELECT visit_id FROM funnel_events
@@ -1392,6 +1586,7 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
     assert mid["signups"] == before_signups + 1
     assert _mark_count(mid, "scroll", "50", "mark") == before_scroll + 1
     assert _mark_count(mid, "time", "15", "bucket") == before_time + 1
+    assert _dest_visitors(mid, "try-demo") == before_demo + 1
     assert mid["filtered_out"] == before_filtered
 
     legacy_bot = uuid.uuid4().hex
@@ -1444,6 +1639,10 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
         "/funnel/beacon",
         json={"event": "scroll_depth", "path": "/go/real-pnl", "detail": "50"},
     )
+    headless.post(
+        "/funnel/beacon",
+        json={"event": "cta_click", "path": "/go/real-pnl", "detail": "try-demo"},
+    )
     quiet_ad = app.test_client()
     quiet_ad.get(
         "/go/real-pnl",
@@ -1452,6 +1651,7 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
     dropped = build_acquisition("7d")
     assert dropped["visitors"] == before_visitors + 1
     assert _mark_count(dropped, "scroll", "50", "mark") == before_scroll + 1
+    assert _dest_visitors(dropped, "try-demo") == before_demo + 1
     # Headless page view and the page view that never ran JavaScript.
     assert dropped["filtered_out"] >= before_filtered + 2
 
@@ -1642,9 +1842,18 @@ def test_owner_accounts_do_not_count_on_real_pnl(monkeypatch):
         (live,),
     )["reason"] == "account"
 
+    execute(
+        """
+        INSERT INTO funnel_events
+            (event, visit_id, user_id, path, detail, is_bot)
+        VALUES ('cta_click', %s, %s, '/go/real-pnl', 'try-demo', FALSE)
+        """,
+        (owned_scroll, cameron3),
+    )
     after = build_acquisition("7d")
     assert after["visitors"] == before["visitors"]
     assert after["signups"] == before["signups"]
     assert _mark_count(after, "scroll", "50", "mark") == _mark_count(
         before, "scroll", "50", "mark",
     )
+    assert _dest_visitors(after, "try-demo") == _dest_visitors(before, "try-demo")
