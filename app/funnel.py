@@ -533,7 +533,10 @@ def human_traffic_sql() -> str:
 
     A page view logged before login is dropped when that same visit later
     has an owner or test ``user_id``, even if the visit was never stamped
-    in ``funnel_internal_visits``. ``client_beacon`` is separate: old rows
+    in ``funnel_internal_visits``. A scroll or time row is dropped when
+    any row on that visit is a bot, so a headless page view cannot keep
+    a later beacon that omitted the crawler user agent. ``client_beacon``
+    is separate: old rows
     are NULL and still count. A new page view starts FALSE until the
     browser beacon sets TRUE.
     """
@@ -550,7 +553,11 @@ def human_traffic_sql() -> str:
         "SELECT 1 FROM funnel_events owner_hit "
         "JOIN users u ON u.id = owner_hit.user_id "
         "WHERE owner_hit.visit_id = funnel_events.visit_id "
-        f"AND lower(u.username) IN ({quoted}))))"
+        f"AND lower(u.username) IN ({quoted}))) "
+        "AND (visit_id IS NULL OR NOT EXISTS ("
+        "SELECT 1 FROM funnel_events bot_hit "
+        "WHERE bot_hit.visit_id = funnel_events.visit_id "
+        "AND COALESCE(bot_hit.is_bot, FALSE) = TRUE)))"
     )
 
 

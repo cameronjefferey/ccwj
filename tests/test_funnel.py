@@ -1229,6 +1229,7 @@ def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
     assert "client_beacon IS DISTINCT FROM FALSE" in blob
     assert "funnel_internal_visits" in blob
     assert "owner_hit" in blob
+    assert "bot_hit" in blob
     assert "'testingcameron'" in blob
     assert "'cameron3'" in blob
     assert "'happycameron'" in blob

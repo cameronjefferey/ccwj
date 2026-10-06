@@ -768,9 +768,10 @@ count), and internal traffic: `?ht_internal=1` (sets the `ht_internal`
 cookie), `INTERNAL_IPS`, and owner or test accounts — `cameron`,
 `cameron3`, `happycameron`, `testingcameron`, `testingcameron1`, plus
 `ADMIN_USERS` / `INTERNAL_USERS`. A visit is dropped when it is stamped
-in `funnel_internal_visits` or when any row on that `visit_id` carries
-one of those accounts, so a page view logged before login does not
-stay in the count. `demo` stays public. The card shows how many
+in `funnel_internal_visits`, when any row on that `visit_id` carries
+one of those accounts, or when any row on that visit is a bot, so a
+page view logged before login and a later beacon from a headless
+session do not stay in the count. `demo` stays public. The card shows how many
 `/go/real-pnl` visits were filtered. A stored user agent is backfilled;
 rows that never saved one stay in the count.
 

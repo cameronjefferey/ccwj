@@ -35,7 +35,8 @@ until a visit sends a bucket. Bots, crawlers, headless browsers,
 page views that never ran JavaScript, internal IPs, `?ht_internal=1`,
 and owner or test accounts (`cameron`, `cameron3`, `happycameron`,
 `testingcameron`, `testingcameron1`, plus `ADMIN_USERS`) are left out.
-A visit later tied to one of those accounts is left out too. The page
+A visit later tied to one of those accounts is left out too, and so
+is every row on a visit that already has a bot hit. The page
 shows how many `/go/real-pnl` visits were filtered. That page is the
 source of truth when the pixel is blocked. The older Admin → Overview
 card is still the `/start` button funnel.
