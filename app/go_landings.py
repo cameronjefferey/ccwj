@@ -90,8 +90,9 @@ LANDINGS = {
             "on the trades themselves."
         ),
         # Existing ad URLs still pass ?v=rolls and ?v=runs. Those keys
-        # stay so the funnel records the variant. The approved headline
-        # is the only copy on the page.
+        # stay so the funnel records the variant. The hero H1 is fixed
+        # in go_real_pnl.html. These strings stay on the Open Graph
+        # title and the signup echo.
         "variants": {
             "rolls": "What did your covered calls really make?",
             "runs": "What did your covered calls really make?",
