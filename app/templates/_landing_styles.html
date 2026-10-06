@@ -1034,14 +1034,28 @@
         width: auto;
         margin: 2rem 0 0;
     }
+    /* Same box as the nav Create free account button: 44px, 8px 14.4px,
+       14px/21px, weight 650, 7.2px radius. Colors and shadows stay. */
     .ht-real-pnl .ht-cta-row .ht-hero-primary,
-    .ht-real-pnl .ht-cta-row .ht-hero-secondary {
+    .ht-real-pnl .ht-cta-row .ht-hero-secondary,
+    .ht-real-pnl .ht-final-cta .ht-cta,
+    .ht-real-pnl ~ .ht-sticky-cta .ht-hero-primary {
+        height: 44px;
+        min-height: 44px;
+        min-width: 44px;
         width: auto;
-        min-width: 15rem;
-        height: 3.6rem;
-        padding: 0 1.75rem;
-        font-size: 1.15rem;
-        border-radius: 0.65rem;
+        max-width: none;
+        padding: .5rem .9rem;
+        font-size: .875rem;
+        line-height: 1.5;
+        font-weight: 650;
+        letter-spacing: normal;
+        border-radius: .45rem;
+    }
+    .ht-real-pnl .ht-cta-row .ht-hero-primary,
+    .ht-real-pnl .ht-final-cta .ht-cta:not(.ht-cta-ghost),
+    .ht-real-pnl ~ .ht-sticky-cta .ht-hero-primary {
+        border: 1px solid transparent;
     }
     .ht-real-pnl .ht-cta-row .ht-hero-primary { box-shadow: 0 10px 30px rgba(91,140,255,.28); }
     .ht-real-pnl .ht-ghost {
@@ -1099,6 +1113,7 @@
         right: -90px;
         bottom: -90px;
         background: #0a0e17;
+        border-radius: 0.9rem;
         z-index: 1;
         pointer-events: none;
         -webkit-mask-image:
@@ -1167,12 +1182,17 @@
         box-shadow: 0 0 0 6px rgba(91,140,255,.07), 0 0 60px rgba(91,140,255,.28), 0 30px 80px rgba(0,0,0,.55);
         overflow: hidden;
         background: #0c111c;
+        /* Round the window to the frame. The navy backing is a separate
+           box; without this the canvas corners stay square inside the mask. */
+        clip-path: inset(0 round 0.9rem);
+        /* Longer cosine ease on the right (from 24%) and bottom (from 16%).
+           Stops are 0.5*(1+cos(pi*t)) so the ramp leaves and lands flat. */
         -webkit-mask-image:
-            linear-gradient(to right, #000 62%, transparent 100%),
-            linear-gradient(to bottom, #000 58%, transparent 100%);
+            linear-gradient(to right, #000 24%, rgba(0,0,0,.962) 33.5%, rgba(0,0,0,.854) 43%, rgba(0,0,0,.691) 52.5%, rgba(0,0,0,.5) 62%, rgba(0,0,0,.309) 71.5%, rgba(0,0,0,.146) 81%, rgba(0,0,0,.038) 90.5%, transparent 100%),
+            linear-gradient(to bottom, #000 16%, rgba(0,0,0,.962) 26.5%, rgba(0,0,0,.854) 37%, rgba(0,0,0,.691) 47.5%, rgba(0,0,0,.5) 58%, rgba(0,0,0,.309) 68.5%, rgba(0,0,0,.146) 79%, rgba(0,0,0,.038) 89.5%, transparent 100%);
         mask-image:
-            linear-gradient(to right, #000 62%, transparent 100%),
-            linear-gradient(to bottom, #000 58%, transparent 100%);
+            linear-gradient(to right, #000 24%, rgba(0,0,0,.962) 33.5%, rgba(0,0,0,.854) 43%, rgba(0,0,0,.691) 52.5%, rgba(0,0,0,.5) 62%, rgba(0,0,0,.309) 71.5%, rgba(0,0,0,.146) 81%, rgba(0,0,0,.038) 90.5%, transparent 100%),
+            linear-gradient(to bottom, #000 16%, rgba(0,0,0,.962) 26.5%, rgba(0,0,0,.854) 37%, rgba(0,0,0,.691) 47.5%, rgba(0,0,0,.5) 58%, rgba(0,0,0,.309) 68.5%, rgba(0,0,0,.146) 79%, rgba(0,0,0,.038) 89.5%, transparent 100%);
         -webkit-mask-composite: source-in;
         mask-composite: intersect;
         -webkit-mask-size: 100% 100%;
@@ -1189,6 +1209,7 @@
         display: block;
         border: 0;
         object-fit: cover;
+        border-radius: calc(0.9rem - 1px);
     }
     .ht-real-pnl .ht-merged .ht-wrap { max-width: 1080px; }
     .ht-real-pnl .ht-merged-copy { max-width: 52rem; margin: 0 auto 1.6rem; text-align: center; }
@@ -1243,9 +1264,10 @@
     .ht-real-pnl .ht-shorts .ht-section-title { font-size: 2.3rem; margin-bottom: 1rem; text-wrap: balance; }
     .ht-real-pnl .ht-shorts .ht-copy p { font-size: 1.12rem; color: #c5d0e4; }
     .ht-real-pnl .ht-positions-grid {
-        grid-template-columns: minmax(0, 0.9fr) minmax(280px, 1.1fr);
+        grid-template-columns: minmax(280px, 1.1fr) minmax(0, 0.9fr);
         gap: 3.5rem;
     }
+    .ht-real-pnl .ht-positions-grid .ht-position-video { order: -1; }
     .ht-real-pnl .ht-viewport-video {
         position: relative;
         aspect-ratio: 16 / 9;
@@ -1275,19 +1297,24 @@
         border: 1px solid rgba(91,140,255,.35);
         box-shadow: 0 0 40px rgba(91,140,255,.12), 0 24px 60px rgba(0,0,0,.45);
     }
-    .ht-real-pnl .ht-pricing-mini { background: #0a0e17; padding: 3.35rem 0 3rem; }
+    .ht-real-pnl .ht-pricing-mini { padding: 3.35rem 0 3rem; }
+    /* Same wash as .ht-band-how. The pricing rule used to paint a flat
+       #0a0e17; this selector outranks it. */
+    .ht-real-pnl .ht-band.ht-merged,
+    .ht-real-pnl .ht-band.ht-band-catch,
+    .ht-real-pnl .ht-band.ht-positions,
+    .ht-real-pnl .ht-band.ht-edge,
+    .ht-real-pnl .ht-band.ht-pricing-mini,
+    .ht-real-pnl .ht-band.ht-faq {
+        background:
+            radial-gradient(70% 90% at 100% 0%, rgba(91,140,255,.18), transparent 55%),
+            linear-gradient(180deg, #10182a 0%, #17243a 100%);
+    }
     .ht-real-pnl .ht-pricing-mini .ht-copy p { color: #c5d0e4; font-size: 1.02rem; }
     .ht-real-pnl .ht-pricing-mini .ht-copy p + p { margin-top: .6rem; }
     .ht-real-pnl .ht-pricing-mini .ht-price { font-weight: 600; color: #e8edf7; }
     .ht-real-pnl .ht-pricing-mini a { color: #5b8cff; text-decoration: underline; }
     .ht-real-pnl .ht-final-cta { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
-    .ht-real-pnl .ht-final-cta .ht-cta {
-        font-size: 1.45rem;
-        min-width: 15rem;
-        height: 4rem;
-        padding: 0 1.75rem;
-        max-width: none;
-    }
     .ht-real-pnl .ht-cta-ghost {
         background: transparent;
         color: #0a0e17;
@@ -1318,16 +1345,16 @@
             gap: 1.75rem;
             padding: 0 1.25rem;
         }
+        /* Copy stays above the video once the columns stack. */
+        .ht-real-pnl .ht-positions-grid .ht-position-video { order: 0; }
         .ht-real-pnl .ht-band-break { height: 3rem; }
         .ht-real-pnl .ht-banner-card { padding: 1.75rem 1.25rem 2rem; }
         .ht-real-pnl .ht-banner-title,
         .ht-real-pnl .ht-shorts .ht-section-title { font-size: 1.7rem; }
     }
     @media (max-width: 640px) {
-        .ht-real-pnl .ht-cta-row { flex-direction: column; align-items: stretch; }
-        .ht-real-pnl .ht-cta-row .ht-hero-primary,
-        .ht-real-pnl .ht-cta-row .ht-hero-secondary { width: 100%; min-width: 0; }
-        .ht-real-pnl .ht-final-cta .ht-cta { width: 100%; font-size: 1.15rem; height: auto; min-height: 3.4rem; }
+        .ht-real-pnl .ht-cta-row { flex-direction: column; align-items: flex-start; }
+        .ht-real-pnl .ht-final-cta { align-items: center; }
         .ht-real-pnl .landing-hero h1 { font-size: clamp(2rem, 9vw, 2.6rem); max-width: 12ch; }
     }
 </style>
