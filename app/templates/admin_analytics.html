@@ -61,6 +61,24 @@
         font-weight: 700;
     }
     .an-ranges a.on { background: #5b8cff; color: #0a0e17; border-color: #5b8cff; }
+    .an-tabs { display: flex; gap: .4rem; margin-bottom: .65rem; }
+    .an-tabs a {
+        color: #e8edf7;
+        border: 1px solid #1c2538;
+        border-radius: 8px;
+        padding: .28rem .75rem;
+        text-decoration: none;
+        font-size: .82rem;
+        font-weight: 700;
+    }
+    .an-tabs a.on { background: #5b8cff; color: #0a0e17; border-color: #5b8cff; }
+    .an-split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+        gap: 1rem;
+        align-items: start;
+    }
+    .an-split > .an-card { margin-bottom: 1rem; }
     .an-funnel {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(5.6rem, 1fr));
@@ -98,6 +116,9 @@
         font-weight: 650;
         margin: .85rem 0 .4rem;
     }
+    @media (max-width: 960px) {
+        .an-split { grid-template-columns: 1fr; }
+    }
     @media (max-width: 640px) {
         .an-hero, .an-card { padding: .75rem .7rem; }
         .an-table { font-size: .75rem; }
@@ -107,16 +128,28 @@
 {% endblock %}
 
 {% block content %}
+{% set tab = tab|default('paid') %}
+{% set window = (acquisition.range_key if acquisition else none) or (product.range_key if product else none) or '7d' %}
 <div class="an-hero">
-    <h1>Acquisition</h1>
-    <p>Real people on <span class="font-monospace">/go/real-pnl</span>: who arrived, how far they scrolled, how long the tab stayed open, and who signed up. Bots, headless browsers, test runs, and owner accounts stay out. First-party events only — no email or IP in the rows.
+    <div class="an-tabs">
+        <a href="{{ url_for('admin_analytics', tab='paid', range=window) }}" class="{{ 'on' if tab != 'product' else '' }}">Paid</a>
+        <a href="{{ url_for('admin_analytics', tab='product', range=window) }}" class="{{ 'on' if tab == 'product' else '' }}">Product</a>
+    </div>
+    {% if tab == 'product' %}
+    <h1>Product</h1>
+    <p>Visitors through paid, across public pages. The campaign ladder follows the selected window. Signups per day, the step list, YouTube, and source by campaign are the last 30 days. Same human filter as Paid. First-party events only — no email or IP in the rows.
         <a href="{{ url_for('admin_overview') }}">Overview</a>
     </p>
-    {% set window = acquisition.range_key if acquisition is defined and acquisition else '7d' %}
+    {% else %}
+    <h1>Acquisition</h1>
+    <p>Real people on <span class="font-monospace">/go/real-pnl</span>: who arrived, how far they scrolled, how long the tab stayed open, who signed up, and which buttons they clicked. Bots, headless browsers, test runs, and owner accounts stay out. First-party events only — no email or IP in the rows.
+        <a href="{{ url_for('admin_overview') }}">Overview</a>
+    </p>
+    {% endif %}
     <div class="an-ranges">
-        <a href="{{ url_for('admin_analytics', range='today') }}" class="{{ 'on' if window == 'today' else '' }}">Today</a>
-        <a href="{{ url_for('admin_analytics', range='7d') }}" class="{{ 'on' if window == '7d' else '' }}">7 days</a>
-        <a href="{{ url_for('admin_analytics', range='30d') }}" class="{{ 'on' if window == '30d' else '' }}">30 days</a>
+        <a href="{{ url_for('admin_analytics', tab=tab, range='today') }}" class="{{ 'on' if window == 'today' else '' }}">Today</a>
+        <a href="{{ url_for('admin_analytics', tab=tab, range='7d') }}" class="{{ 'on' if window == '7d' else '' }}">7 days</a>
+        <a href="{{ url_for('admin_analytics', tab=tab, range='30d') }}" class="{{ 'on' if window == '30d' else '' }}">30 days</a>
     </div>
 </div>
 
@@ -205,6 +238,7 @@
     </div>
 </div>
 
+<div class="an-split">
 <div class="an-card">
     <h2>Where they came from</h2>
     <p class="an-note">utm source, campaign, and content on /go/real-pnl visits and on signups from this campaign.</p>
@@ -237,6 +271,36 @@
 </div>
 
 <div class="an-card">
+    <h2>Where they went</h2>
+    <p class="an-note">Buttons and links already logged on /go/real-pnl. The label is the button name. A video start is video: and the id. Visitors are distinct cookies. Clicks count each logged press. Same people filter as the rest of this card.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Clicked</th>
+                    <th class="an-num">Visitors</th>
+                    <th class="an-num">Clicks</th>
+                    <th class="an-num">Of visitors</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in acquisition.destinations|default([]) %}
+                <tr>
+                    <td>{{ row.target }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                    <td class="an-num">{{ row.clicks }}</td>
+                    <td class="an-num">{{ row.rate }}%</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4">No clicks in this window.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+</div>
+
+<div class="an-card">
     <h2>Device</h2>
     <div class="an-scroll">
         <table class="an-table">
@@ -252,6 +316,271 @@
                 </tr>
                 {% else %}
                 <tr><td colspan="3">No device rows yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if tab == 'product' and product %}
+<div class="an-card">
+    <h2>Visitors and page views</h2>
+    <p class="an-note">Logged-out public pages, after bots and internal traffic are removed. One visitor is one anonymous cookie. A page view counts once the browser runs JavaScript. Older rows from before that check still count. {{ product.filtered_out|default(0) }} visits were left out: bots, crawlers, headless browsers, pages that never ran JavaScript, internal IPs, owner and test accounts, and any visit later tied to one of those accounts.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr><th>Day</th><th class="an-num">Visitors</th><th class="an-num">Page views</th></tr>
+            </thead>
+            <tbody>
+                {% for row in product.days %}
+                <tr>
+                    <td>{{ row.day }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                    <td class="an-num">{{ row.views }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3">No page views in this window.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Top landing pages</h2>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr><th>Path</th><th class="an-num">Visitors</th><th class="an-num">Views</th></tr>
+            </thead>
+            <tbody>
+                {% for row in product.pages %}
+                <tr>
+                    <td>{{ row.path }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                    <td class="an-num">{{ row.views }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3">No pages yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Campaign funnel</h2>
+    <p class="an-note">Percents are of that landing's visitors. The three ad paths stay listed even at zero. Paper and a real broker are branches, not one line.</p>
+    {% for camp in product.campaigns %}
+    <h3>{{ camp.landing }}</h3>
+    <div class="an-funnel">
+        {% for step in camp.steps %}
+        <div class="an-step">
+            <div class="lbl">{{ step.label }}</div>
+            <div class="n">{{ step.count }}</div>
+            <div class="r">{{ step.rate }}%</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="an-card">
+    <h2>Where they came from</h2>
+    <p class="an-note">utm source and campaign, otherwise the referrer host, otherwise Direct.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th class="an-num">Visitors</th>
+                    <th class="an-num">Signups</th>
+                    <th class="an-num">Signup rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in product.origins|default([]) %}
+                <tr>
+                    <td>{{ row.source }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                    <td class="an-num">{{ row.rate }}%</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4">No traffic in this window.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Source, campaign, and ad variant</h2>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Source</th><th>Campaign</th><th>Content</th>
+                    <th class="an-num">Visitors</th><th class="an-num">Signups</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in product.sources %}
+                <tr>
+                    <td>{{ row.source }}</td>
+                    <td>{{ row.campaign }}</td>
+                    <td>{{ row.content }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5">No campaign traffic yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Device</h2>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr><th>Device</th><th class="an-num">Visitors</th><th class="an-num">Signups</th></tr>
+            </thead>
+            <tbody>
+                {% for row in product.devices %}
+                <tr>
+                    <td>{{ row.device }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3">No device rows yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Referrers</h2>
+    <p class="an-note">YouTube and Reddit stay on the list. Host only — the path and query are dropped.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr><th>Referrer</th><th class="an-num">Visitors</th></tr>
+            </thead>
+            <tbody>
+                {% for row in product.referrers %}
+                <tr>
+                    <td>{{ row.host }}</td>
+                    <td class="an-num">{{ row.visitors }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Signups per day</h2>
+    <p class="an-note">Last 30 days. Completed account creations. Days with none stay in the table.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr><th>Day</th><th class="an-num">Signups</th></tr>
+            </thead>
+            <tbody>
+                {% for row in product.signup_days %}
+                <tr>
+                    <td>{{ row.day }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="2">No signups in this window.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>Funnel</h2>
+    <p class="an-note">Last 30 days. Distinct people, or distinct visits when they have not signed up. Percent is of landing views. Paper and broker are branches, not a single line.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Step</th>
+                    <th class="an-num">Count</th>
+                    <th class="an-num">Of landing</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for step in product.steps %}
+                <tr>
+                    <td>{{ step.label }}</td>
+                    <td class="an-num">{{ step.count }}</td>
+                    <td class="an-num">{% if step.of_landing is not none %}{{ step.of_landing }}%{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>YouTube referrals</h2>
+    <p class="an-note">Last 30 days. Landing views and signups whose referrer or utm source is YouTube.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th class="an-num">Landing views</th>
+                    <th class="an-num">Signups</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>YouTube</td>
+                    <td class="an-num">{{ product.youtube.visits }}</td>
+                    <td class="an-num">{{ product.youtube.signups }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="an-card">
+    <h2>By source and campaign</h2>
+    <p class="an-note">Last 30 days. Last-touch UTM on the event. (none) is a direct visit or a link without parameters.</p>
+    <div class="an-scroll">
+        <table class="an-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Campaign</th>
+                    <th class="an-num">Visits</th>
+                    <th class="an-num">Signups</th>
+                    <th class="an-num">Brokers</th>
+                    <th class="an-num">Paid</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in product.channels %}
+                <tr>
+                    <td>{{ row.source }}</td>
+                    <td>{{ row.campaign }}</td>
+                    <td class="an-num">{{ row.visits }}</td>
+                    <td class="an-num">{{ row.signups }}</td>
+                    <td class="an-num">{{ row.brokers }}</td>
+                    <td class="an-num">{{ row.paid }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6">No campaign traffic in this window.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

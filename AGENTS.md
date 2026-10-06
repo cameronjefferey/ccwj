@@ -757,11 +757,17 @@ on DNT/GPC, on internal traffic (`?ht_internal=1`, the `ht_internal`
 cookie, internal IPs, owner accounts), and on bot user agents; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
 `data.test_id` to every v3 CAPI body for Event testing and must be
-removed after. Admin → Acquisition is `/admin/analytics`. It counts only the live
-campaign: page views on `/go/real-pnl`, scroll marks and time-on-page
-buckets on that path, and `signup_completed` rows whose landing or
-`utm_campaign` is `real-pnl`. Other `/go/*` landings and the lesson /
-paper / broker / paid ladder are not on this page. The window is today,
+removed after. Admin → Analytics is `/admin/analytics`, two tabs.
+**Paid** (default) counts only the live campaign: page views on
+`/go/real-pnl`, scroll marks and time-on-page buckets on that path,
+`signup_completed` rows whose landing or `utm_campaign` is `real-pnl`,
+and **Where they went** — `cta_click` button labels already logged by
+`funnel.js` on that path, plus a `video_play` row as `video:<id>`.
+**Product** is the wider report that used to sit on this page: visitors
+and top pages, each landing's visitors → CTA → signup → first lesson →
+paper → broker → paid, referrers, and the 30-day step ladder (signups
+per day, funnel, YouTube, source × campaign). That ladder stays off
+the Paid card. Admin Overview's `/start` funnel is unchanged. The window is today,
 7 days, or 30 days. Scroll reads existing `scroll_depth` rows (a visit
 that reached 75% also has 50 and 25). Time is empty until a visit sends
 a bucket. The page drops bots and crawlers (user agent), page views
