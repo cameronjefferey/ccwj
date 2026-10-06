@@ -1,6 +1,6 @@
 /* First-party funnel beacon. Sends an event name, a path, and a short
-   detail (CTA name, scroll mark, or video id). No email and no click ids
-   from the page — the server reads those from the cookie. */
+   detail (CTA name, scroll mark, time bucket, or video id). No email
+   and no click ids from the page — the server reads those from the cookie. */
 (function () {
     var path = location.pathname || "/";
     var sent = {};
@@ -41,6 +41,36 @@
     }
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("load", onScroll);
+
+    // Visible time only. Each bucket is sent once (post() dedupes) as the
+    // visitor crosses it, and again on hide/unload in case the timer was late.
+    var TIME_MARKS = [5, 15, 30, 60, 120, 300];
+    var dwellMs = 0;
+    var dwellVisibleAt = document.visibilityState === "hidden" ? 0 : Date.now();
+    var dwellTimer = 0;
+
+    function flushDwell() {
+        if (dwellVisibleAt) {
+            dwellMs += Date.now() - dwellVisibleAt;
+            dwellVisibleAt = document.visibilityState === "hidden" ? 0 : Date.now();
+        }
+        var seconds = Math.floor(dwellMs / 1000);
+        for (var i = 0; i < TIME_MARKS.length; i++) {
+            if (seconds >= TIME_MARKS[i]) post("time_on_page", String(TIME_MARKS[i]));
+        }
+        if (seconds >= 300 && dwellTimer) {
+            clearInterval(dwellTimer);
+            dwellTimer = 0;
+        }
+    }
+
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "hidden") flushDwell();
+        else if (!dwellVisibleAt) dwellVisibleAt = Date.now();
+    });
+    window.addEventListener("pagehide", flushDwell);
+    window.addEventListener("beforeunload", flushDwell);
+    dwellTimer = setInterval(flushDwell, 5000);
 
     function youtubeId(node) {
         var raw = node.getAttribute("data-youtube-id") || "";

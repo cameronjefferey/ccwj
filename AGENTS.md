@@ -749,20 +749,31 @@ sign-up) even when a session exists; signed-in visitors get **Go to
 your dashboard** and do not see the app nav or the broker-data bar.
 `/go/real-pnl` does not show Sign in or Go to your dashboard.
 Logged-out public pages also record page views, CTA clicks, scroll
-depth, and public video plays. Ad pixels and Conversions API stay off
+depth (25/50/75/100), time on page (visible-time buckets 5, 15, 30,
+60, 120, and 300 seconds), and public video plays. Ad pixels and Conversions API stay off
 on DNT/GPC, on internal traffic (`?ht_internal=1`, the `ht_internal`
 cookie, internal IPs, owner accounts), and on bot user agents; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
 `data.test_id` to every v3 CAPI body for Event testing and must be
-removed after. Admin → Acquisition is `/admin/analytics`. That page
-drops bots and crawlers (user agent), visits with no JavaScript beacon
-(older rows with no beacon flag still count), and internal traffic:
-signed-in admins, `testingcameron`, any visitor cookie that ever logged
-in as one of those, `INTERNAL_IPS`, and `?ht_internal=1` (sets the
-`ht_internal` cookie). Where they came from is utm source and campaign,
-otherwise the referrer host, otherwise Direct, plus how many visits were
-filtered out. A stored user agent is backfilled; rows that never saved
-one stay in the count.
+removed after. Admin → Acquisition is `/admin/analytics`. It counts only the live
+campaign: page views on `/go/real-pnl`, scroll marks and time-on-page
+buckets on that path, and `signup_completed` rows whose landing or
+`utm_campaign` is `real-pnl`. Other `/go/*` landings and the lesson /
+paper / broker / paid ladder are not on this page. The window is today,
+7 days, or 30 days. Scroll reads existing `scroll_depth` rows (a visit
+that reached 75% also has 50 and 25). Time is empty until a visit sends
+a bucket. The page drops bots and crawlers (user agent), page views
+with no JavaScript beacon (older rows with a NULL beacon flag still
+count), and internal traffic: `?ht_internal=1` (sets the `ht_internal`
+cookie), `INTERNAL_IPS`, and owner or test accounts — `cameron`,
+`cameron3`, `happycameron`, `testingcameron`, `testingcameron1`, plus
+`ADMIN_USERS` / `INTERNAL_USERS`. A visit is dropped when it is stamped
+in `funnel_internal_visits`, when any row on that `visit_id` carries
+one of those accounts, or when any row on that visit is a bot, so a
+page view logged before login and a later beacon from a headless
+session do not stay in the count. `demo` stays public. The card shows how many
+`/go/real-pnl` visits were filtered. A stored user agent is backfilled;
+rows that never saved one stay in the count.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)
 **Status: Working. One story: headline, then right now, then the rest behind disclosures.**

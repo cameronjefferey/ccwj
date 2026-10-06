@@ -422,7 +422,7 @@ def test_admin_analytics_is_admin_only(monkeypatch):
 
     anon = client.get("/admin/analytics")
     assert anon.status_code in (302, 303, 401)
-    assert b"Signups per day" not in anon.data
+    assert b"Scroll 50%" not in anon.data
 
     with client.session_transaction() as sess:
         sess["_user_id"] = "7"
@@ -437,56 +437,37 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     monkeypatch.setattr(
         "app.funnel.build_admin_analytics",
         lambda: {
-            "days": [{"day": "2026-10-01", "signups": 2}],
-            "steps": [{
-                "key": "landing_view",
-                "label": "Landing view",
-                "count": 4,
-                "of_landing": 100.0,
-            }],
-            "sources": [{
-                "source": "reddit",
-                "campaign": "mirror-v1",
-                "visits": 4,
-                "signups": 2,
-                "brokers": 1,
-                "paid": 0,
-            }],
-            "youtube": {"visits": 3, "signups": 1},
             "acquisition": {
                 "range_key": "7d",
-                "days": [{"day": "2026-10-01", "visitors": 8, "views": 11}],
-                "pages": [{"path": "/go/learn", "visitors": 8, "views": 11}],
-                "campaigns": [{
-                    "landing": "learn",
-                    "steps": conversion_rates({
-                        "visitors": 8,
-                        "cta": 4,
-                        "signups": 2,
-                        "lessons": 1,
-                        "paper": 0,
-                        "broker": 0,
-                        "paid": 0,
-                    }),
+                "visitors": 8,
+                "views": 11,
+                "signups": 2,
+                "signup_rate": 25.0,
+                "days": [{
+                    "day": "2026-10-01",
+                    "visitors": 8,
+                    "views": 11,
+                    "signups": 2,
                 }],
+                "scroll": [
+                    {"mark": "25", "count": 6, "rate": 75.0},
+                    {"mark": "50", "count": 4, "rate": 50.0},
+                    {"mark": "75", "count": 2, "rate": 25.0},
+                    {"mark": "100", "count": 1, "rate": 12.5},
+                ],
+                "time": [
+                    {"bucket": "15", "label": "15s", "count": 3, "rate": 37.5},
+                ],
+                "time_median": "15s",
+                "time_median_sec": 15,
                 "sources": [{
                     "source": "reddit",
-                    "campaign": "learn",
-                    "content": "past",
+                    "campaign": "real-pnl",
+                    "content": "rolls",
                     "visitors": 8,
                     "signups": 2,
                 }],
                 "devices": [{"device": "phone", "visitors": 5, "signups": 1}],
-                "referrers": [
-                    {"host": "YouTube", "visitors": 3},
-                    {"host": "Reddit", "visitors": 8},
-                ],
-                "origins": [{
-                    "source": "reddit / learn",
-                    "visitors": 8,
-                    "signups": 2,
-                    "rate": 25.0,
-                }],
                 "filtered_out": 14,
             },
         },
@@ -494,19 +475,19 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     page = client.get("/admin/analytics")
     assert page.status_code == 200
     body = page.get_data(as_text=True)
-    assert "Signups per day" in body
-    assert "2026-10-01" in body
-    assert "Landing view" in body
-    assert "mirror-v1" in body
-    assert "YouTube" in body
     assert "Acquisition" in body
-    assert "Campaign funnel" in body
+    assert "/go/real-pnl" in body
+    assert "2026-10-01" in body
+    assert "Scroll 50%" in body
     assert "50.0%" in body
-    assert "/go/learn" in body
-    assert "Where they came from" in body
-    assert "reddit / learn" in body
     assert "25.0%" in body
-    assert "14 filtered out" in body
+    assert "real-pnl" in body
+    assert "15s" in body
+    assert "14 visits on this page were left out" in body
+    assert "Campaign funnel" not in body
+    assert "First lesson" not in body
+    assert "/go/learn" not in body
+    assert "YouTube referrals" not in body
 
 
 def test_start_hero_offers_learning_and_the_demo(monkeypatch):
@@ -532,9 +513,12 @@ def test_static_images_are_cached():
     assert "https://www.redditstatic.com" in policy
     assert "https://pixel-config.reddit.com" in policy
     assert "https://alb.reddit.com" in policy
-    assert "cta_click" in resp.get_data(as_text=True)
-    assert "scroll_depth" in resp.get_data(as_text=True)
-    assert "client_seen" in resp.get_data(as_text=True)
+    script = resp.get_data(as_text=True)
+    assert "cta_click" in script
+    assert "scroll_depth" in script
+    assert "client_seen" in script
+    assert "time_on_page" in script
+    assert "300" in script
     lottie = client.get("/static/marketing/covered-call-scroll.json")
     assert lottie.status_code == 200
     assert "max-age=604800" in (lottie.headers.get("Cache-Control") or "")
@@ -1050,13 +1034,12 @@ def test_public_page_view_records_landing_device_and_not_identity():
     assert played.status_code == 200
     from app.funnel import build_acquisition
     acq = build_acquisition("7d")
-    by_landing = {row["landing"]: row for row in acq["campaigns"]}
-    visitors = by_landing["real-pnl"]["steps"][0]
-    assert visitors["key"] == "visitors"
-    assert visitors["count"] >= 1
-    assert visitors["rate"] == 100.0
-    hosts = {row["host"] for row in acq["referrers"]}
-    assert "YouTube" in hosts and "Reddit" in hosts
+    assert acq["visitors"] >= 1
+    scrolled = next(cell for cell in acq["scroll"] if cell["mark"] == "50")
+    assert scrolled["count"] >= 1
+    sources = {(row["source"], row["campaign"]) for row in acq["sources"]}
+    assert ("reddit", "real-pnl") in sources
+    assert "campaigns" not in acq
 
 
 def test_learn_route_signup_opens_learn(monkeypatch):
@@ -1125,11 +1108,11 @@ def _cookie_value(client, name):
     return cookie.value
 
 
-def _origin(acq, source):
-    for row in acq.get("origins") or []:
-        if row["source"] == source:
-            return row
-    return {"visitors": 0, "signups": 0, "rate": 0.0}
+def _mark_count(acq, kind, key, field):
+    for cell in acq.get(kind) or []:
+        if cell.get(field) == key:
+            return int(cell.get("count") or 0)
+    return 0
 
 
 def _counted_page_views(visit_id) -> int:
@@ -1189,11 +1172,27 @@ def test_bot_user_agents_internal_ip_and_opt_out(monkeypatch):
     monkeypatch.setattr("app.client_ip.real_client_ip", lambda: "203.0.113.5")
     with app.test_request_context("/pricing"):
         assert request_is_internal() is True
+    monkeypatch.delenv("ADMIN_USERS", raising=False)
+    monkeypatch.delenv("INTERNAL_USERS", raising=False)
+    from app.funnel import human_traffic_sql, internal_usernames, is_internal_account
+    names = internal_usernames()
+    sql = human_traffic_sql()
+    for name in (
+        "cameron",
+        "cameron3",
+        "happycameron",
+        "testingcameron",
+        "testingcameron1",
+    ):
+        assert name in names
+        assert f"'{name}'" in sql
+    assert "demo" not in names
+    assert "owner_hit" in sql
+    assert is_internal_account("cameron3") is True
+    assert is_internal_account("happycameron") is True
+    assert is_internal_account("demo") is False
     monkeypatch.setenv("ADMIN_USERS", "cameron")
-    from app.funnel import human_traffic_sql, internal_usernames
     assert "cameron" in internal_usernames()
-    assert "testingcameron" in human_traffic_sql()
-    assert "'cameron'" in human_traffic_sql()
 
 
 def test_log_event_flags_headless_chrome(monkeypatch):
@@ -1216,17 +1215,33 @@ def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
         sqls.append(sql)
         return []
 
+    monkeypatch.delenv("ADMIN_USERS", raising=False)
+    monkeypatch.delenv("INTERNAL_USERS", raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://funnel-test")
     monkeypatch.setattr("app.db.fetch_all", _fetch_all)
     from app.funnel import build_acquisition, build_admin_analytics
-    build_acquisition("7d")
+    built = build_acquisition("7d")
+    assert built["visitors"] == 0
+    assert [cell["mark"] for cell in built["scroll"]] == ["25", "50", "75", "100"]
     build_admin_analytics()
     blob = "\n".join(sqls)
     assert "COALESCE(is_bot, FALSE) = FALSE" in blob
     assert "client_beacon IS DISTINCT FROM FALSE" in blob
     assert "funnel_internal_visits" in blob
-    assert "testingcameron" in blob
-    assert "ELSE 'Direct'" in blob
+    assert "owner_hit" in blob
+    assert "bot_hit" in blob
+    assert "'testingcameron'" in blob
+    assert "'cameron3'" in blob
+    assert "'happycameron'" in blob
+    assert "'cameron'" in blob
+    assert "/go/real-pnl" in blob
+    assert "scroll_depth" in blob
+    assert "time_on_page" in blob
+    assert "percentile_disc" in blob
+    assert "utm_campaign = 'real-pnl'" in blob
+    assert "lesson_started" not in blob
+    assert "broker_connected" not in blob
+    assert "ELSE 'Direct'" not in blob
 
 
 def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
@@ -1236,10 +1251,11 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
     from app.funnel import backfill_bot_user_agents, build_acquisition, log_event
 
     before = build_acquisition("7d")
-    before_reddit = _origin(before, "reddit / real-pnl")
-    before_direct = _origin(before, "Direct")
-    before_youtube = _origin(before, "www.youtube.com")
+    before_visitors = before["visitors"]
+    before_signups = before["signups"]
     before_filtered = before["filtered_out"]
+    before_scroll = _mark_count(before, "scroll", "50", "mark")
+    before_time = _mark_count(before, "time", "15", "bucket")
 
     human = app.test_client()
     human.get(
@@ -1251,6 +1267,16 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
         json={"event": "client_seen", "path": "/go/real-pnl", "detail": "1"},
     )
     assert seen.status_code == 200
+    depth = human.post(
+        "/funnel/beacon",
+        json={"event": "scroll_depth", "path": "/go/real-pnl", "detail": "50"},
+    )
+    assert depth.status_code == 200
+    dwell = human.post(
+        "/funnel/beacon",
+        json={"event": "time_on_page", "path": "/go/real-pnl", "detail": "15"},
+    )
+    assert dwell.status_code == 200
     human_visit = fetch_one(
         """
         SELECT visit_id FROM funnel_events
@@ -1362,8 +1388,11 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
         json={"event": "client_seen", "path": "/learn", "detail": "1"},
     )
     mid = build_acquisition("7d")
-    assert _origin(mid, "Direct")["visitors"] == before_direct["visitors"] + 1
-    assert _origin(mid, "www.youtube.com")["visitors"] == before_youtube["visitors"] + 1
+    assert mid["visitors"] == before_visitors + 1
+    assert mid["signups"] == before_signups + 1
+    assert _mark_count(mid, "scroll", "50", "mark") == before_scroll + 1
+    assert _mark_count(mid, "time", "15", "bucket") == before_time + 1
+    assert mid["filtered_out"] == before_filtered
 
     legacy_bot = uuid.uuid4().hex
     legacy_human = uuid.uuid4().hex
@@ -1395,14 +1424,36 @@ def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
     assert _counted_page_views(legacy_human) == 1
 
     after = build_acquisition("7d")
-    reddit = _origin(after, "reddit / real-pnl")
-    assert reddit["visitors"] == before_reddit["visitors"] + 1
-    assert reddit["signups"] == before_reddit["signups"] + 1
-    assert reddit["rate"] == round(100.0 * reddit["signups"] / reddit["visitors"], 1)
-    # The legacy row has no user agent, so it stays in Direct.
-    assert _origin(after, "Direct")["visitors"] == before_direct["visitors"] + 2
-    # Bot, no beacon, internal query, and the backfilled headless row.
-    assert after["filtered_out"] >= before_filtered + 4
+    assert after["visitors"] == before_visitors + 1
+    assert after["signups"] == before_signups + 1
+    assert after["signup_rate"] == round(
+        100.0 * after["signups"] / after["visitors"], 1,
+    )
+    assert _mark_count(after, "scroll", "50", "mark") == before_scroll + 1
+
+    headless = app.test_client()
+    headless.get(
+        "/go/real-pnl?utm_source=reddit&utm_campaign=real-pnl",
+        headers={"User-Agent": "Mozilla/5.0 HeadlessChrome/120.0.0.0"},
+    )
+    headless.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/go/real-pnl", "detail": "1"},
+    )
+    headless.post(
+        "/funnel/beacon",
+        json={"event": "scroll_depth", "path": "/go/real-pnl", "detail": "50"},
+    )
+    quiet_ad = app.test_client()
+    quiet_ad.get(
+        "/go/real-pnl",
+        headers={"User-Agent": _MOZILLA},
+    )
+    dropped = build_acquisition("7d")
+    assert dropped["visitors"] == before_visitors + 1
+    assert _mark_count(dropped, "scroll", "50", "mark") == before_scroll + 1
+    # Headless page view and the page view that never ran JavaScript.
+    assert dropped["filtered_out"] >= before_filtered + 2
 
 
 def test_testingcameron_login_removes_that_visitor(monkeypatch):
@@ -1447,3 +1498,153 @@ def test_testingcameron_login_removes_that_visitor(monkeypatch):
         "SELECT reason FROM funnel_internal_visits WHERE visit_id = %s",
         (visit_id,),
     )["reason"] == "account"
+
+
+def test_time_on_page_beacon_rejects_unknown_buckets():
+    client = app.test_client()
+    bad = client.post(
+        "/funnel/beacon",
+        json={"event": "time_on_page", "path": "/go/real-pnl", "detail": "10"},
+    )
+    assert bad.status_code == 400
+    missing = client.post(
+        "/funnel/beacon",
+        json={"event": "time_on_page", "path": "/go/real-pnl"},
+    )
+    assert missing.status_code == 400
+    for detail in ("5", "15", "30", "60", "120", "300"):
+        ok = client.post(
+            "/funnel/beacon",
+            json={
+                "event": "time_on_page",
+                "path": "/go/real-pnl",
+                "detail": detail,
+            },
+        )
+        assert ok.status_code == 200, detail
+
+
+def test_owner_accounts_do_not_count_on_real_pnl(monkeypatch):
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    from app.db import execute, fetch_one
+    from app.funnel import build_acquisition
+    from app.models import User
+
+    monkeypatch.delenv("ADMIN_USERS", raising=False)
+    monkeypatch.delenv("INTERNAL_USERS", raising=False)
+    for name in ("cameron3", "happycameron"):
+        execute(
+            """
+            INSERT INTO users (username, password_hash)
+            VALUES (%s, 'x')
+            ON CONFLICT (username) DO NOTHING
+            """,
+            (name,),
+        )
+    cameron3 = fetch_one(
+        "SELECT id FROM users WHERE username = 'cameron3'"
+    )["id"]
+    happy = fetch_one(
+        "SELECT id FROM users WHERE username = 'happycameron'"
+    )["id"]
+    before = build_acquisition("7d")
+
+    linked = uuid.uuid4().hex
+    execute(
+        """
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot,
+             landing, utm_campaign, utm_source)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', TRUE, FALSE,
+             'real-pnl', 'real-pnl', 'reddit')
+        """,
+        (linked,),
+    )
+    execute(
+        """
+        INSERT INTO funnel_events
+            (event, visit_id, user_id, path, landing, utm_campaign, is_bot)
+        VALUES
+            ('signup_completed', %s, %s, '/signup', 'real-pnl', 'real-pnl', FALSE)
+        """,
+        (linked, happy),
+    )
+    assert fetch_one(
+        "SELECT 1 AS n FROM funnel_internal_visits WHERE visit_id = %s",
+        (linked,),
+    ) is None
+    assert _counted_page_views(linked) == 0
+
+    owned_scroll = uuid.uuid4().hex
+    execute(
+        """
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot)
+        VALUES ('page_view', %s, '/go/real-pnl', TRUE, FALSE)
+        """,
+        (owned_scroll,),
+    )
+    execute(
+        """
+        INSERT INTO funnel_events
+            (event, visit_id, user_id, path, detail, is_bot)
+        VALUES ('scroll_depth', %s, %s, '/go/real-pnl', '50', FALSE)
+        """,
+        (owned_scroll, cameron3),
+    )
+    assert _counted_page_views(owned_scroll) == 0
+
+    other = app.test_client()
+    other.get("/go/learn", headers={"User-Agent": _MOZILLA})
+    other.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/go/learn", "detail": "1"},
+    )
+
+    prior = fetch_one("SELECT COALESCE(MAX(id), 0) AS id FROM funnel_events")["id"]
+    client = app.test_client()
+    client.get("/go/real-pnl", headers={"User-Agent": _MOZILLA})
+    client.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/go/real-pnl", "detail": "1"},
+    )
+    live = fetch_one(
+        """
+        SELECT visit_id FROM funnel_events
+         WHERE id > %s
+           AND event = 'page_view' AND path = '/go/real-pnl'
+         ORDER BY id DESC LIMIT 1
+        """,
+        (prior,),
+    )["visit_id"]
+    assert _counted_page_views(live) == 1
+
+    class _Owner:
+        id = cameron3
+        username = "cameron3"
+        is_active = True
+        is_anonymous = False
+        is_authenticated = True
+
+        def get_id(self):
+            return str(cameron3)
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda uid: _Owner()))
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(cameron3)
+        sess["_fresh"] = True
+    client.get("/go/real-pnl", headers={"User-Agent": _MOZILLA})
+    assert _counted_page_views(live) == 0
+    assert fetch_one(
+        "SELECT reason FROM funnel_internal_visits WHERE visit_id = %s",
+        (live,),
+    )["reason"] == "account"
+
+    after = build_acquisition("7d")
+    assert after["visitors"] == before["visitors"]
+    assert after["signups"] == before["signups"]
+    assert _mark_count(after, "scroll", "50", "mark") == _mark_count(
+        before, "scroll", "50", "mark",
+    )
