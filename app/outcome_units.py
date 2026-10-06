@@ -985,7 +985,24 @@ def _combine_structures(left, right) -> dict:
         qty = abs(float(left.get("quantity") or right.get("quantity") or 0))
     except (TypeError, ValueError):
         qty = 0.0
-    return {"pnl": pnl, "quantity": qty, "vertical": True, "legs": []}
+    return {
+        "pnl": pnl,
+        "quantity": qty,
+        "vertical": True,
+        "legs": [],
+        "_record_incomplete": (
+            _record_unit_incomplete(left) or _record_unit_incomplete(right)
+        ),
+    }
+
+
+def _record_unit_incomplete(row) -> bool:
+    if row.get("_record_incomplete"):
+        return True
+    return any(
+        isinstance(leg, dict) and leg.get("_record_incomplete")
+        for leg in (row.get("legs") or [])
+    )
 
 
 def option_record_from_fills(trades, tenant_ids=None) -> dict:
@@ -1020,7 +1037,7 @@ def option_record_from_fills(trades, tenant_ids=None) -> dict:
         grouped.setdefault((tenant, account, symbol), []).append(trade)
 
     built = []
-    tainted = set()
+    incomplete = []
     for (tenant, account, symbol), fills in grouped.items():
         opened_qty = 0.0
         closed_qty = 0.0
@@ -1048,19 +1065,30 @@ def option_record_from_fills(trades, tenant_ids=None) -> dict:
                 saw_close = True
                 closed_qty += qty
         parsed = parse_occ(symbol)
-        cluster = (
-            tenant,
-            account,
-            _vertical_root(parsed["root"]),
-            open_date,
-            _expiry_iso(parsed),
-        )
         if saw_close and not saw_open:
             continue
         if not saw_open:
             continue
         if abs(opened_qty - closed_qty) > 1e-6:
-            tainted.add(cluster)
+            # Keep an open placeholder in structure matching so only its
+            # likely spread/condor is suppressed. The old cluster-wide
+            # taint also deleted independent completed structures sharing
+            # this account, root, open date, and expiry.
+            incomplete.append({
+                "type": "option",
+                "strategy": "Call Spread" if parsed["cp"] == "C" else "Put Spread",
+                "direction": "Sold" if sto_qty >= bto_qty and sto_qty > 0 else "Bought",
+                "trade_symbol": symbol,
+                "tenant_id": tenant,
+                "account": account,
+                "open_date": open_date,
+                "quantity": opened_qty,
+                "pnl": 0.0,
+                "status": "Open",
+                "close_type": "Open",
+                "raw_trades": [],
+                "_record_incomplete": True,
+            })
             continue
         direction = "Sold" if sto_qty >= bto_qty and sto_qty > 0 else "Bought"
         built.append({
@@ -1078,19 +1106,16 @@ def option_record_from_fills(trades, tenant_ids=None) -> dict:
             "raw_trades": fills,
         })
 
+    # Match every completed structure before incomplete placeholders. This
+    # prevents an unrelated open contract from stealing a completed leg.
+    built.extend(incomplete)
     units = []
     by_cluster: dict[tuple, list] = {}
     for row in group_vertical_spreads(built):
         cluster = _contract_cluster(row)
-        if cluster in tainted:
-            continue
-        if str(row.get("close_type") or "") == "Open":
-            continue
         by_cluster.setdefault(cluster, []).append(row)
 
     for cluster, members in by_cluster.items():
-        if cluster in tainted:
-            continue
         calls = [row for row in members if _contract_cp(row) == "C"]
         puts = [row for row in members if _contract_cp(row) == "P"]
         if calls and puts:
@@ -1103,6 +1128,8 @@ def option_record_from_fills(trades, tenant_ids=None) -> dict:
 
     winners = losers = zeros = 0
     for unit in units:
+        if _record_unit_incomplete(unit):
+            continue
         try:
             pnl = round(float(unit.get("pnl") or 0), 2)
         except (TypeError, ValueError):

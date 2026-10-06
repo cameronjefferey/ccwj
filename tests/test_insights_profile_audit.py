@@ -277,6 +277,36 @@ def test_option_record_from_fills_groups_and_drops_edge_cases():
     assert scoped["losers"] == 1
 
 
+def test_partial_contract_does_not_drop_independent_completed_spread():
+    day = date(2026, 9, 28)
+    expiry = "261016"
+    short = _occ("SPX", expiry, "C", 5000)
+    long = _occ("SPX", expiry, "C", 5010)
+    unrelated_partial = _occ("SPX", expiry, "C", 5200)
+    fills = [
+        _fill(day, "SPX", "option_sell_to_open", short, 1, 150),
+        _fill(day, "SPX", "option_buy_to_open", long, 1, -40),
+        _fill(date(2026, 10, 16), "SPX", "option_expired", short, 1, 0),
+        _fill(date(2026, 10, 16), "SPX", "option_expired", long, 1, 0),
+        _fill(day, "SPX", "option_sell_to_open", unrelated_partial, 2, 200),
+        _fill(
+            date(2026, 10, 1),
+            "SPX",
+            "option_buy_to_close",
+            unrelated_partial,
+            1,
+            -50,
+        ),
+    ]
+
+    assert option_record_from_fills(fills) == {
+        "winners": 1,
+        "losers": 0,
+        "zeros": 0,
+        "decided": 1,
+    }
+
+
 def test_profile_contract_record_comes_from_fills_not_per_leg_fingerprint():
     from tests.test_trader_story import _BOOK_SUMMARY, _BOOK_TRADES, _book
     novel = compose_novel(_book(), _BOOK_TRADES)
