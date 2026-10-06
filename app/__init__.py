@@ -242,6 +242,14 @@ def _friendly_time_filter(value):
 app.add_template_filter(_friendly_time_filter, name="friendly_time")
 
 
+def _sync_status_label_filter(row):
+    from app.linked_accounts import sync_status_label
+    return sync_status_label(row)
+
+
+app.add_template_filter(_sync_status_label_filter, name="sync_status_label")
+
+
 def _parse_iso_date(value):
     """First 10 characters as a date, or None when it is not ISO."""
     if value is None or value == "":

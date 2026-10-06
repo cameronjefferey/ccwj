@@ -1729,17 +1729,17 @@
             <div class="alert alert-light border d-flex align-items-center justify-content-between gap-3 mt-3 mb-3 py-2" role="alert">
                 <div class="small">
                     <strong>{{ plan_status.days_left }} day{{ 's' if plan_status.days_left != 1 }} of full access left.</strong>
-                    <span class="text-muted">After {{ plan_status.frozen_on }} your mirror freezes &mdash; everything stays readable, updates stop.</span>
+                    <span class="text-muted">{% if plan_status.frozen_on %}Updates stop {{ plan_status.frozen_on | human_date }}. {% endif %}After that every page stays readable and daily updates stop.</span>
                 </div>
                 <a href="{{ url_for('pricing') }}" class="btn btn-sm btn-outline-primary flex-shrink-0">See plans</a>
             </div>
             {% elif plan_status.state == 'frozen' %}
             <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
                 <div>
-                    <strong>Your mirror stopped updating on {{ plan_status.frozen_on }}.</strong>
+                    <strong>Your mirror stopped updating{% if plan_status.frozen_on %} on {{ plan_status.frozen_on | human_date }}{% endif %}.</strong>
                     <div class="small mt-1">
                         Everything you see is as of that date. Your broker connection stays in place until
-                        {{ plan_status.disconnect_on }} ({{ plan_status.disconnect_in_days }} day{{ 's' if plan_status.disconnect_in_days != 1 }}) &mdash;
+                        {{ plan_status.disconnect_on | human_date }} ({{ plan_status.disconnect_in_days }} day{{ 's' if plan_status.disconnect_in_days != 1 }}) &mdash;
                         subscribe before then and syncing resumes instantly.
                     </div>
                 </div>
@@ -1756,7 +1756,7 @@
             {% elif plan_status.state == 'grace_expired' %}
             <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mt-3 mb-3" role="alert">
                 <div>
-                    <strong>Your trial ended and your broker connection was removed on {{ plan_status.disconnect_on }}.</strong>
+                    <strong>Your trial ended and your broker connection was removed{% if plan_status.disconnect_on %} on {{ plan_status.disconnect_on | human_date }}{% endif %}.</strong>
                     <div class="small mt-1">
                         Your history is preserved and stays readable. Subscribe and reconnect your broker
                         to pick up where you left off.
@@ -1787,8 +1787,8 @@
                         <div class="small mt-1">
                             We haven&rsquo;t been able to sync
                             <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code>
-                            {% if c.stale_days and c.stale_days > 0 %}for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}since today{% endif %} &mdash;
-                            your data is frozen until you reconnect.
+                            {% if c.stale_days and c.stale_days > 0 %}for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}since today{% endif %}.
+                            New trades won't show up until you reconnect.
                         </div>
                     {% endif %}
                 {% else %}
@@ -1806,7 +1806,7 @@
                         {% endfor %}
                     </ul>
                 {% endif %}
-                <a class="btn btn-sm btn-warning mt-2" href="{{ url_for('snaptrade_accounts_page') }}">Manage brokerages</a>
+                <a class="btn btn-sm btn-warning mt-2" href="{{ url_for('snaptrade_accounts_page') }}">Open accounts to reconnect</a>
             </div>
         </div>
         {% endif %}
@@ -1999,6 +1999,15 @@
         })();
 
         // Broker "Sync now" — show loading state until redirect
+        document.querySelectorAll('form[data-submit-once]').forEach(function (form) {
+            form.addEventListener('submit', function () {
+                var btn = form.querySelector('button[type="submit"]');
+                if (!btn || btn.disabled) return;
+                btn.disabled = true;
+                btn.setAttribute('aria-busy', 'true');
+            });
+        });
+
         document.querySelectorAll('form.snaptrade-sync-form').forEach(function(form) {
             form.addEventListener('submit', function() {
                 var btn = form.querySelector('button[type="submit"]');

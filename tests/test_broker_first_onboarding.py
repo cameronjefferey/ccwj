@@ -107,9 +107,12 @@ def test_get_started_without_broker_asks_where_to_start(monkeypatch):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "Where do you want to start?" in html
-    assert "Connect an Alpaca paper account" in html
-    assert "See how I trade" in html
+    assert "Open Practice" in html
+    assert "Connect my brokerage" in html
+    assert "does not open that account" in html
+    assert "Connect an Alpaca paper account" not in html
     assert 'action="/get-started/paper"' in html
+    assert 'data-submit-once' in html
     assert "https://app.alpaca.markets/signup" in html
     assert "path=broker" in html
     assert "I'll do this later" in html

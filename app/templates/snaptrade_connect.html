@@ -15,8 +15,11 @@
     }
     .portal-card h1 { font-size: 1.55rem; font-weight: 700; margin-bottom: .75rem; }
     .portal-card li { margin-bottom: .55rem; }
+    .portal-card { min-width: 0; overflow-wrap: break-word; word-break: normal; }
     @media (max-width: 576px) {
         .portal-card { padding: 1.25rem 1rem; }
+        .portal-card .btn { min-height: 44px; width: 100%; }
+        .portal-card form { flex-direction: column; align-items: stretch; }
     }
 </style>
 {% endblock %}
@@ -35,7 +38,7 @@
                 <li><strong>Timing.</strong> {% include "_broker_sync_timing.html" %}</li>
                 <li><strong>Cancel returns here.</strong> Closing the SnapTrade window without picking a brokerage does not connect anything.</li>
             </ul>
-            <form method="POST" action="{{ url_for('snaptrade_connect') }}" class="d-flex flex-wrap gap-2 align-items-center">
+            <form method="POST" action="{{ url_for('snaptrade_connect') }}" data-submit-once class="d-flex flex-wrap gap-2 align-items-center">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="portal_confirmed" value="1">
                 {% if return_to %}

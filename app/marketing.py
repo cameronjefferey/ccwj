@@ -3,8 +3,8 @@
 Everything here is either logged-out surface (landing, pricing, FAQ,
 privacy/terms, sitemap/robots, feature pages), lightweight infra
 (healthz probes, ping), or the pre-data onboarding flow (get-started,
-feedback, onboarding survey, Pro waitlist). None of it reads the
-warehouse beyond get-started's single has-data COUNT(*).
+feedback, onboarding survey, Pro waitlist). Get-started asks whether
+any linked tenant already has positions or an account balance.
 
 Extracted verbatim from app/routes.py (routes.py refactor, Aug 2026).
 Routes register on import via @app.route — endpoint names unchanged.
@@ -17,11 +17,9 @@ from flask_login import login_required, current_user
 
 from app import app
 from app.extensions import limiter
-from app.bigquery_client import get_bigquery_client
 from app.models import get_tenant_ids_for_user
 from app.learn_catalog import sitemap_paths as _learn_sitemap_paths
 from app.learn_replay import sitemap_paths as _replay_sitemap_paths
-from app.tenant_scope import tenant_sql_filter as _tenant_sql_filter
 
 
 # ------------------------------------------------------------------
@@ -692,6 +690,24 @@ def healthz_db():
                 {"Content-Type": "text/plain", "Cache-Control": "no-store"})
 
 
+def onboarding_warehouse_ready(tenant_ids) -> bool:
+    """True when any linked tenant has positions or an account balance.
+
+    Cash-only accounts never appear in ``positions_summary``. Same rule
+    as the data-ready email: a balance row is enough to leave the
+    still-syncing screen.
+    """
+    ids = [t for t in (tenant_ids or []) if t]
+    if not ids:
+        return False
+    try:
+        from app.cache_ops import warehouse_tenants_present
+        return bool(warehouse_tenants_present(ids))
+    except Exception as exc:
+        app.logger.warning("get_started warehouse check failed: %s", exc)
+        return False
+
+
 @app.route("/get-started/paper", methods=["POST"])
 @login_required
 def get_started_paper():
@@ -723,26 +739,11 @@ def get_started():
     tenant_ids = get_tenant_ids_for_user(current_user.id) or []
     has_uploaded = len(tenant_ids) > 0
 
-    # Check if data is actually available in BigQuery. We swallow the
-    # exception so a transient BQ outage doesn't break the onboarding
-    # page (the user can still see step 1/2/3 and the "refresh to check"
-    # link), but the failure is logged so the operator can spot a
-    # genuinely stuck pipeline. AGENTS.md flagged the silent pass as
-    # known debt — replace with a logged warning.
-    has_data = False
-    if has_uploaded:
-        try:
-            client = get_bigquery_client()
-            where = _tenant_sql_filter(tenant_ids)
-            check_q = f"SELECT COUNT(*) AS cnt FROM `ccwj-dbt.analytics.positions_summary` {where}"
-            from app.query_cache import cached_query_df
-            result = cached_query_df(client, check_q, label="get_started_has_data")
-            has_data = int(result.iloc[0]["cnt"]) > 0 if not result.empty else False
-        except Exception as exc:
-            app.logger.warning(
-                "get_started has_data check failed for user_id=%s: %s",
-                current_user.id, exc,
-            )
+    # Positions OR account balances. A cash-only account never appears in
+    # positions_summary; the data-ready email already treats a balance row
+    # as "Overview can show this." A BQ miss stays False so the page keeps
+    # the still-syncing copy instead of claiming the account is ready.
+    has_data = onboarding_warehouse_ready(tenant_ids)
 
     snaptrade_enabled = False
     snaptrade_connected = False
