@@ -755,8 +755,12 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert "aspect-ratio: 1020 / 638" in body
             assert "ht-hero-glow" in hero
             assert "3.75rem 0 2.5rem" in body
-            assert "linear-gradient(to right, #000 62%, transparent 100%)" in body
-            assert "linear-gradient(to bottom, #000 58%, transparent 100%)" in body
+            assert "linear-gradient(to right, #000 24%, rgba(0,0,0,.962) 33.5%" in body
+            assert "linear-gradient(to bottom, #000 16%, rgba(0,0,0,.962) 26.5%" in body
+            assert "clip-path: inset(0 round 0.9rem)" in body
+            assert "height: 44px" in body
+            assert ".ht-band.ht-pricing-mini" in body
+            assert ".ht-position-video { order: -1; }" in body
             assert "rgba(91,140,255, calc(var(--a) * 1))" in body
             assert os.path.getsize(lottie_path) < 6_000_000
             nav = body.split("<nav", 1)[1].split("</nav>", 1)[0]
@@ -778,7 +782,7 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert "mute=1" in body
             assert "pauseVideo" in body
             assert "playVideo" in body
-            assert body.count('class="ht-band-break"') == 3
+            assert body.count('class="ht-band-break"') == 5
             overview_at = body.index("Every trade day on one line")
             catch_at = body.index("Here's what you'd catch with HappyTrader")
             positions_at = body.index("See every position's full story")
@@ -789,6 +793,11 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             break_last = body.index('class="ht-band-break"', break_mid + 1)
             assert overview_at < break_at < catch_at
             assert positions_at < break_mid < strategies_at < break_last < how_at
+            proof_at = body.index('aria-label="How the trial works"')
+            pricing_at = body.index('aria-label="Pricing"')
+            faq_at = body.index('aria-label="FAQ"')
+            assert proof_at < body.index('class="ht-band-break"', proof_at) < pricing_at
+            assert pricing_at < body.index('class="ht-band-break"', pricing_at) < faq_at
             story = body.split('aria-label="See every position\'s full story"', 1)[1].split("</section>", 1)[0]
             assert "ht-frame-short" not in story
             assert "ht-frame-hero" not in story
