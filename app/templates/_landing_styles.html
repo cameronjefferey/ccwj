@@ -975,8 +975,11 @@
     }
 
     /* /go/real-pnl. Desktop is the approved layout: copy on the left,
-       a glowing 16:10 product window on the right (1020×638, the cropped
-       covered-call runs recording). Narrow screens stack. */
+       a 16:10 product window on the right (1020×638, the cropped
+       covered-call runs recording). The window dissolves into the page
+       on its right and bottom. A #5b8cff wash sits behind it, along the
+       left edge and across the top, and fades out before the nav.
+       Narrow screens stack and use a smaller wash. */
     body.ht-public nav.navbar.ht-nav-min .container-fluid {
         display: flex;
         align-items: center;
@@ -984,7 +987,14 @@
         flex-wrap: nowrap;
     }
     body.ht-public nav.navbar.ht-nav-min .btn-auth-nav { font-weight: 650; }
-    .ht-real-pnl .landing-hero { padding: 0.75rem 0 2.5rem; text-align: left; }
+    /* +3rem (48px) over the previous 0.75rem so the headline sits
+       clear of the nav. Clip so the wash cannot paint into the bar. */
+    .ht-real-pnl .landing-hero {
+        padding: 3.75rem 0 2.5rem;
+        text-align: left;
+        position: relative;
+        overflow: clip;
+    }
     /* The feedback button's right gutter is for app tables. This hero
        needs that space for the desktop window. */
     body.ht-public:has(.ht-real-pnl) .ht-page.container-fluid {
@@ -998,8 +1008,9 @@
         align-items: center;
         gap: 2rem;
         padding: 0 1.5rem;
+        position: relative;
     }
-    .ht-real-pnl .ht-hero-text { max-width: 40rem; }
+    .ht-real-pnl .ht-hero-text { max-width: 40rem; position: relative; z-index: 3; }
     .ht-real-pnl .landing-hero h1 {
         font-size: clamp(2.6rem, 4.4vw, 4rem);
         line-height: 1.06;
@@ -1051,6 +1062,8 @@
         width: 100%;
         margin-top: 0;
         position: relative;
+        z-index: 2;
+        isolation: isolate;
     }
     .ht-real-pnl .ht-hero-video::before {
         content: "";
@@ -1062,10 +1075,91 @@
         transform: translate(-50%, -50%);
         background: radial-gradient(closest-side, rgba(91,140,255,.22), rgba(91,140,255,.06) 55%, transparent 75%);
         pointer-events: none;
+        z-index: 0;
+        /* Drop the halo on the right and bottom so the frame can
+           dissolve into plain #0a0e17 instead of a hard blue edge. */
+        -webkit-mask-image:
+            linear-gradient(to right, #000 50%, transparent 90%),
+            linear-gradient(to bottom, #000 50%, transparent 90%);
+        mask-image:
+            linear-gradient(to right, #000 50%, transparent 90%),
+            linear-gradient(to bottom, #000 50%, transparent 90%);
+        -webkit-mask-composite: source-in;
+        mask-composite: intersect;
+    }
+    /* Opaque navy directly behind the picture. The wash is a sibling
+       underneath, so it only remains visible where it sticks out past
+       the frame's left and top. The overhang feathers on the right and
+       bottom, where the picture itself is fading to #0a0e17. */
+    .ht-real-pnl .ht-hero-video::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: -90px;
+        bottom: -90px;
+        background: #0a0e17;
+        z-index: 1;
+        pointer-events: none;
+        -webkit-mask-image:
+            linear-gradient(to right, #000 calc(100% - 90px), transparent 100%),
+            linear-gradient(to bottom, #000 calc(100% - 90px), transparent 100%);
+        mask-image:
+            linear-gradient(to right, #000 calc(100% - 90px), transparent 100%),
+            linear-gradient(to bottom, #000 calc(100% - 90px), transparent 100%);
+        -webkit-mask-composite: source-in;
+        mask-composite: intersect;
+    }
+    .ht-real-pnl .ht-hero-glow {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        overflow: visible;
+    }
+    .ht-real-pnl .ht-glow-blob {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(28px);
+        transform: translate(-50%, -50%);
+        --a: .3;
+        background: radial-gradient(closest-side,
+            rgba(91,140,255, calc(var(--a) * 1))    0%,
+            rgba(91,140,255, calc(var(--a) * .82)) 18%,
+            rgba(91,140,255, calc(var(--a) * .58)) 36%,
+            rgba(91,140,255, calc(var(--a) * .34)) 54%,
+            rgba(91,140,255, calc(var(--a) * .15)) 70%,
+            rgba(91,140,255, calc(var(--a) * .05)) 84%,
+            rgba(91,140,255, 0) 100%);
+    }
+    /* Anchored to the frame, not the viewport, so the wash stays on the
+       left edge and the top as the column width changes. Each blob
+       reaches alpha 0 at its own edge. The upward reach stays inside
+       the hero padding, short of the nav. */
+    .ht-real-pnl .ht-glow-col {
+        left: 0;
+        top: 52%;
+        width: 200px;
+        height: 118%;
+        --a: .42;
+    }
+    .ht-real-pnl .ht-glow-top {
+        left: 46%;
+        top: 14px;
+        width: 92%;
+        height: 150px;
+        --a: .36;
+    }
+    .ht-real-pnl .ht-glow-corner {
+        left: 18px;
+        top: 16px;
+        width: 280px;
+        height: 120px;
+        --a: .34;
     }
     .ht-real-pnl .ht-lottie-hero {
         position: relative;
-        z-index: 1;
+        z-index: 2;
         width: 100%;
         aspect-ratio: 1020 / 638;
         border-radius: 0.9rem;
@@ -1073,6 +1167,18 @@
         box-shadow: 0 0 0 6px rgba(91,140,255,.07), 0 0 60px rgba(91,140,255,.28), 0 30px 80px rgba(0,0,0,.55);
         overflow: hidden;
         background: #0c111c;
+        -webkit-mask-image:
+            linear-gradient(to right, #000 62%, transparent 100%),
+            linear-gradient(to bottom, #000 58%, transparent 100%);
+        mask-image:
+            linear-gradient(to right, #000 62%, transparent 100%),
+            linear-gradient(to bottom, #000 58%, transparent 100%);
+        -webkit-mask-composite: source-in;
+        mask-composite: intersect;
+        -webkit-mask-size: 100% 100%;
+        mask-size: 100% 100%;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
     }
     .ht-real-pnl .ht-lottie-hero .ht-lottie-poster,
     .ht-real-pnl .ht-lottie-hero canvas {
@@ -1198,6 +1304,11 @@
         .ht-real-pnl .ht-hero-video { justify-content: center; }
         .ht-real-pnl .ht-hero-video::before { width: 108%; height: 140%; }
         .ht-real-pnl .ht-lottie-hero { width: min(100%, 860px); margin-inline: auto; }
+        /* The frame sits under the copy. Keep the wash on the frame
+           and out of the headline and buttons above it. */
+        .ht-real-pnl .ht-glow-col { width: 140px; height: 88%; --a: .22; top: 58%; }
+        .ht-real-pnl .ht-glow-top { width: 70%; height: 90px; --a: .18; left: 48%; top: 10px; }
+        .ht-real-pnl .ht-glow-corner { width: 160px; height: 72px; --a: .16; left: 12px; top: 10px; }
     }
     @media (max-width: 959px) {
         .ht-real-pnl .ht-hero-grid,

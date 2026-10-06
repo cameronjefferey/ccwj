@@ -709,7 +709,7 @@ scrolls away. `/go/real-pnl` is the Monday ad page
 (`app/templates/go_real_pnl.html`): left-aligned headline "What did
 your covered calls really make?", side-by-side **Create free account**
 and **Explore live demo**, the free/trial line under the buttons, and
-a looping Lottie of the covered-call runs screen (`app/static/marketing/covered-call-scroll.json`, a 16:10 desktop window of the product UI from Short `u_YWl5fKEjo`) in a glowing frame.
+a looping Lottie of the covered-call runs screen (`app/static/marketing/covered-call-scroll.json`, a 16:10 desktop window of the product UI from Short `u_YWl5fKEjo`). The window fades into the page on the right and bottom. A `#5b8cff` wash sits behind it along the left edge and across the top, and is gone before the nav.
 Below that: the BE cumulative chart, ONON and RKLB catch tabs only,
 a mid CTA, the position story (long-form `VssdUIrHcjs`, the full-length
 pair of the if-held Short, muted and playing only while that section is
