@@ -537,8 +537,8 @@ def human_traffic_sql() -> str:
     any row on that visit is a bot, so a headless page view cannot keep
     a later beacon that omitted the crawler user agent. ``client_beacon``
     is separate: old rows
-    are NULL and still count. A new page view starts FALSE until the
-    browser beacon sets TRUE.
+    are NULL and still count. A new page view or signup start stays
+    FALSE until the browser beacon sets TRUE.
     """
     quoted = ", ".join("'" + name + "'" for name in sorted(internal_usernames()))
     return (
@@ -562,10 +562,19 @@ def human_traffic_sql() -> str:
 
 
 def counted_traffic_sql() -> str:
-    """Human rows. Page views also need a browser beacon (NULL still counts)."""
+    """Human rows. Page views and signup starts need a browser beacon.
+
+    NULL beacons still count (rows from before the beacon column). A new
+    row is inserted FALSE until funnel.js posts ``client_seen``. Signup
+    starts used to count those FALSE rows, so a prefetch, a curl, or a
+    browser that never ran JavaScript looked like someone who opened the
+    form. Completions stay in the count either way: the account exists
+    even when the beacon never arrives.
+    """
     return (
         f"{human_traffic_sql()} "
-        "AND (event <> 'page_view' OR client_beacon IS DISTINCT FROM FALSE)"
+        "AND (event NOT IN ('page_view', 'signup_started') "
+        "OR client_beacon IS DISTINCT FROM FALSE)"
     )
 
 
@@ -1013,7 +1022,15 @@ def _observe(response):
         and _viewer_user_id() is None
     ):
         log_event("page_view", path=path, referrer=clean_referrer(request.referrer))
-    if method == "GET" and path == "/signup" and status == 200:
+    # Same audience as the /signup page view: a logged-out 200. A signed-in
+    # visitor is redirected before this, and a reload of the same visit is
+    # dropped by the first=True dedupe inside log_event.
+    if (
+        method == "GET"
+        and path == "/signup"
+        and status == 200
+        and _viewer_user_id() is None
+    ):
         log_event("signup_started", path=path)
     if (
         method == "GET"

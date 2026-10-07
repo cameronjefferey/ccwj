@@ -121,6 +121,65 @@ def test_log_event_records_a_step_once_per_visit(monkeypatch):
     assert inserts == []
 
 
+def test_counted_traffic_beacons_signup_starts_and_keeps_completions():
+    from app.funnel import counted_traffic_sql
+
+    sql = counted_traffic_sql()
+    assert "NOT IN ('page_view', 'signup_started')" in sql
+    assert "client_beacon IS DISTINCT FROM FALSE" in sql
+    assert "signup_completed" not in sql
+    assert "COALESCE(is_bot, FALSE) = FALSE" in sql
+    assert "funnel_internal_visits" in sql
+    assert "owner_hit" in sql
+    assert "bot_hit" in sql
+
+
+def test_signup_started_only_for_logged_out_get(monkeypatch):
+    from app.funnel import _observe
+
+    calls = []
+    monkeypatch.setattr(
+        "app.funnel.log_event",
+        lambda event, **kwargs: calls.append(event),
+    )
+
+    class _Response:
+        def __init__(self, status):
+            self.status_code = status
+            self.headers = {}
+
+    class _Anon:
+        is_authenticated = False
+        id = None
+
+    class _SignedIn:
+        is_authenticated = True
+        id = 42
+
+    monkeypatch.setattr("flask_login.current_user", _Anon())
+    with app.test_request_context("/signup", method="GET"):
+        _observe(_Response(200))
+    assert calls.count("signup_started") == 1
+    assert "page_view" in calls
+
+    calls.clear()
+    with app.test_request_context("/signup", method="POST"):
+        _observe(_Response(200))
+    assert "signup_started" not in calls
+
+    calls.clear()
+    with app.test_request_context("/signup", method="GET"):
+        _observe(_Response(302))
+    assert "signup_started" not in calls
+
+    calls.clear()
+    monkeypatch.setattr("flask_login.current_user", _SignedIn())
+    with app.test_request_context("/signup", method="GET"):
+        _observe(_Response(200))
+    assert "signup_started" not in calls
+    assert "page_view" not in calls
+
+
 def test_beacon_rejects_identity_fields_and_unknown_events(monkeypatch):
     inserts = []
     _patch_db(monkeypatch, inserts)
@@ -1342,6 +1401,7 @@ def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
     blob = "\n".join(sqls)
     assert "COALESCE(is_bot, FALSE) = FALSE" in blob
     assert "client_beacon IS DISTINCT FROM FALSE" in blob
+    assert "NOT IN ('page_view', 'signup_started')" in blob
     assert "funnel_internal_visits" in blob
     assert "owner_hit" in blob
     assert "bot_hit" in blob
@@ -1424,6 +1484,7 @@ def test_product_report_sql_keeps_the_human_filter(monkeypatch):
     assert "funnel_internal_visits" in blob
     assert "owner_hit" in blob
     assert "bot_hit" in blob
+    assert "NOT IN ('page_view', 'signup_started')" in blob
     assert "'testingcameron1'" in blob
     assert "ELSE 'Direct'" in blob
     # Paid-card path filter stays off this report's page-view totals.
@@ -1698,6 +1759,100 @@ def test_testingcameron_login_removes_that_visitor(monkeypatch):
         "SELECT reason FROM funnel_internal_visits WHERE visit_id = %s",
         (visit_id,),
     )["reason"] == "account"
+
+
+def test_signup_started_ignores_unbeaconed_and_bot_visits():
+    """The product ladder counts a signup start only after the browser beacon.
+
+    A completion with client_beacon FALSE still counts: the account exists.
+    A NULL beacon (rows from before the column) still counts.
+    """
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    from app.db import execute, fetch_one
+    from app.funnel import counted_traffic_sql
+
+    def counted(event, visit_id):
+        row = fetch_one(
+            f"""
+            SELECT COUNT(*)::int AS n
+              FROM funnel_events
+             WHERE event = %s AND visit_id = %s
+               AND {counted_traffic_sql()}
+            """,
+            (event, visit_id),
+        )
+        return int(row["n"] or 0)
+
+    quiet = app.test_client()
+    quiet.get("/signup", headers={"User-Agent": _MOZILLA})
+    started = fetch_one(
+        """
+        SELECT visit_id, client_beacon FROM funnel_events
+         WHERE event = 'signup_started' AND path = '/signup'
+           AND client_beacon IS FALSE
+         ORDER BY id DESC LIMIT 1
+        """
+    )
+    assert started["client_beacon"] is False
+    assert counted("signup_started", started["visit_id"]) == 0
+    assert _counted_page_views(started["visit_id"]) == 0
+
+    seen = quiet.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/signup", "detail": "1"},
+    )
+    assert seen.status_code == 200
+    assert counted("signup_started", started["visit_id"]) == 1
+    quiet.get("/signup", headers={"User-Agent": _MOZILLA})
+    again = fetch_one(
+        """
+        SELECT COUNT(*)::int AS n FROM funnel_events
+         WHERE event = 'signup_started' AND visit_id = %s
+        """,
+        (started["visit_id"],),
+    )
+    assert again["n"] == 1
+
+    bot = app.test_client()
+    bot.get("/signup", headers={"User-Agent": "curl/8.5.0"})
+    bot.post(
+        "/funnel/beacon",
+        json={"event": "client_seen", "path": "/signup", "detail": "1"},
+    )
+    bot_row = fetch_one(
+        """
+        SELECT visit_id FROM funnel_events
+         WHERE event = 'signup_started' AND COALESCE(is_bot, FALSE) = TRUE
+         ORDER BY id DESC LIMIT 1
+        """
+    )
+    assert counted("signup_started", bot_row["visit_id"]) == 0
+
+    done_visit = uuid.uuid4().hex
+    execute(
+        """
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot)
+        VALUES ('signup_completed', %s, '/signup', FALSE, FALSE)
+        """,
+        (done_visit,),
+    )
+    assert counted("signup_completed", done_visit) == 1
+
+    legacy = uuid.uuid4().hex
+    execute(
+        """
+        INSERT INTO funnel_events (event, visit_id, path, is_bot)
+        VALUES ('signup_started', %s, '/signup', FALSE)
+        """,
+        (legacy,),
+    )
+    assert fetch_one(
+        "SELECT client_beacon FROM funnel_events WHERE visit_id = %s",
+        (legacy,),
+    )["client_beacon"] is None
+    assert counted("signup_started", legacy) == 1
 
 
 def test_time_on_page_beacon_rejects_unknown_buckets():
