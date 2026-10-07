@@ -29,6 +29,8 @@ def test_plan_and_view_are_not_served_from_the_process_cache(monkeypatch):
         }
 
     monkeypatch.setattr("app.db.fetch_one", _row)
+    # plan.py binds fetch_one at import. The db patch covers late imports.
+    monkeypatch.setattr("app.plan.fetch_one", _row)
     assert get_user_plan_row(9)["plan"] == "trial"
     assert get_app_view(9) == "full"
     shell_cache.clear()

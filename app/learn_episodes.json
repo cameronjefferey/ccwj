@@ -207,7 +207,7 @@
       "thumbnail": null,
       "vocab": ["Realized", "Unrealized", "Win rate", "Strategy"],
       "chapters": [],
-      "recap": "Realized P&L is the result of contracts that have closed. Unrealized P&L is the mark on contracts that are still open. A high win rate can sit next to a loss when the losing trades are larger than the winners.\n\nThe strategy label is read from the fills. The dollars under that label are the record of what those trades returned. They are not a suggestion of what to trade next.",
+      "recap": "Realized P&L is the result of contracts that have closed. Unrealized P&L is the current value of contracts that are still open. A high win rate can sit next to a loss when the losing trades are larger than the winners.\n\nThe strategy label is read from the fills. The dollars under that label are the record of what those trades returned. They are not a suggestion of what to trade next.",
       "shorts": [
         {"youtube_id": "cvPAAVkCTKg", "title": "80% win rate, still losing money"},
         {"youtube_id": "tdh-qbe96CM", "title": "Realized vs unrealized P&L"},

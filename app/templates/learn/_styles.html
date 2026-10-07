@@ -644,6 +644,14 @@
     }
     .learn-check-actions .btn,
     .learn-check-actions .replay-deeper { width: 100%; margin: 0; }
+    @media (max-width: 576px) {
+        .replay-choice,
+        .replay-continue,
+        .learn-check-choice,
+        .replay-deeper {
+            min-height: 44px;
+        }
+    }
     .learn-marked {
         color: var(--ht-muted);
         font-size: .88rem;

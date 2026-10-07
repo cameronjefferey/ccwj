@@ -42,7 +42,7 @@ decisions:
         label: Close the call
         result_label: Close the call, shares still held
         mode: close
-        explanation: Buying the call back costs more than the premium collected, so the option result is -$220.00. The shares are still held. The combined mark on this day is +$260.00.
+        explanation: Buying the call back costs more than the premium collected, so the option result is -$220.00. The shares are still held. Together, the option and the shares are +$260.00 on this day.
       - id: assigned
         label: Called away
         result_label: Called away at the strike

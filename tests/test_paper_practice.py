@@ -182,6 +182,69 @@ def test_beginner_readout_says_where_the_stock_had_to_go():
     assert "You made money if SPY finished above $770.18" in text
     assert "SPY finished at $766.44" in text
     assert "Therefore the call expired, and the $18 is gone" in text
+    assert "Expires: Wed Sep 30" in text
+
+    early = beginner_trade_sentence({
+        "direction": "Bought",
+        "contracts_bought_to_open": 1,
+        "premium_paid": -18,
+        "option_strike": 770,
+        "option_type": "C",
+        "underlying_symbol": "SPY",
+        "option_expiry": date(2026, 9, 30),
+        "status": "Closed",
+        "close_type": "Closed",
+        "finish_price": 766.44,
+        "net_cash_flow": -8,
+    })
+    assert "Therefore this trade lost $8" in early
+    assert "expired" not in early
+
+    from app.paper_practice import beginner_spread_sentence, group_readout_trades
+    long_leg = {
+        "tenant_id": "snaptrade:paper",
+        "direction": "Bought",
+        "contracts_bought_to_open": 1,
+        "contracts_sold_to_open": 0,
+        "premium_paid": -250,
+        "premium_received": 0,
+        "option_strike": 770,
+        "option_type": "C",
+        "underlying_symbol": "SPY",
+        "option_expiry": date(2026, 10, 16),
+        "open_date": date(2026, 10, 7),
+        "status": "Closed",
+        "close_type": "Closed",
+        "finish_price": 772,
+        "net_cash_flow": -40,
+    }
+    short_leg = {
+        "tenant_id": "snaptrade:paper",
+        "direction": "Sold",
+        "contracts_bought_to_open": 0,
+        "contracts_sold_to_open": 1,
+        "premium_paid": 0,
+        "premium_received": 150,
+        "option_strike": 775,
+        "option_type": "C",
+        "underlying_symbol": "SPY",
+        "option_expiry": date(2026, 10, 16),
+        "open_date": date(2026, 10, 7),
+        "status": "Closed",
+        "close_type": "Closed",
+        "finish_price": 772,
+        "net_cash_flow": 90,
+    }
+    spread = beginner_spread_sentence(long_leg, short_leg)
+    assert "1 SPY call spread, $770 and $775" in spread
+    assert "Expires: Fri Oct 16" in spread
+    assert "You paid $100" in spread
+    assert "You made money if SPY finished above $771" in spread
+    assert "Therefore this trade made $50" in spread
+    assert "expired" not in spread
+    grouped = group_readout_trades([long_leg, short_leg])
+    assert len(grouped) == 1
+    assert grouped[0]["kind"] == "spread"
 
 
 def test_chain_strikes_sit_around_the_price():
@@ -424,8 +487,8 @@ def test_pick_page_uses_lesson_words(monkeypatch):
     assert "ALPACA-PAPER" not in html
     assert "SPY" in html and "QQQ" in html and "SPX" in html
     assert "AAPL" not in html
-    assert 'data-soon="Daily · Sep 29"' in html
-    assert ">Daily · Sep 29<" in html
+    assert 'data-soon="Daily · Tue Sep 29"' in html
+    assert ">Daily · Tue Sep 29<" in html
     assert 'data-contract="SPX pays cash. One contract is $100 per point, not 100 shares."' in html
     assert "Weekly" in html
     assert "Multi-week" in html
@@ -468,7 +531,7 @@ def test_placed_trade_is_the_thing_to_look_at_until_the_value_arrives(monkeypatc
         "cost_label": "$60.00",
         "cash_settled": False,
     })
-    assert receipt["expiry_label"] == "Daily · Sep 30"
+    assert receipt["expiry_label"] == "Daily · Wed Sep 30"
     assert receipt["strike_label"] == "$770"
 
     client = app.test_client()
@@ -839,3 +902,15 @@ def test_practice_callback_returns_to_the_ticket(monkeypatch):
     messages = " ".join(str(item) for item in flashes)
     assert "Paper account connected" in messages
     assert "Connected 1 account" not in messages
+
+
+def test_logged_out_practice_explains_the_next_step():
+    from app import app
+
+    html = app.test_client().get("/practice").get_data(as_text=True)
+    assert "Practice a trade" in html
+    assert "Nothing is placed until you confirm." in html
+    assert 'href="/login?next=/practice"' in html
+    assert ">Sign in<" in html
+    assert ">Create a free account<" in html
+    assert "Review this paper trade" not in html

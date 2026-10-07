@@ -95,7 +95,7 @@ def test_replay_pages_render_the_decision_and_the_checkpoint():
     assert "Try it" in html
     assert "Try a SPY call" in html
     assert "side=call" in html
-    assert ">Go deeper</a>" in html
+    assert ">Watch the lesson</a>" in html
     assert 'href="/learn/calls-and-puts"' in html
     assert "For learning only · not investment advice." in html
     assert "Illustrative prices" in html

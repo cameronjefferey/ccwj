@@ -24,9 +24,10 @@
         <p class="learn-lead">{{ series.subhead }}</p>
         {% if first_episode %}
         <a class="btn btn-primary" id="learn-start" href="{{ url_for('learn_episode', slug=first_episode.slug) }}" data-start-href="{{ url_for('learn_episode', slug=first_episode.slug) }}" data-start-label="Start with Episode 1">Start with Episode 1</a>
-        <p class="learn-playlist"><a href="{{ series.playlist_url }}" target="_blank" rel="noopener">Watch the series on YouTube</a></p>
+        <p class="learn-summary">Then replay a decision, practice that trade with paper money, and open Positions to see the result.</p>
         <p class="learn-playlist"><a class="ht-inline-tap" href="#replays" data-ht-cta="replay">Replay a trade</a></p>
         <p class="learn-playlist"><a href="{{ url_for('paper_practice') }}" data-ht-cta="practice">Practice a trade</a></p>
+        <p class="learn-playlist"><a href="{{ series.playlist_url }}" target="_blank" rel="noopener">Watch the series on YouTube</a></p>
         <p class="learn-progress-line ht-num" id="learn-progress" hidden></p>
         {% endif %}
     </header>
