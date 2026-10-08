@@ -554,6 +554,7 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     assert "try-demo" in body
     assert "37.5%" in body
     assert "tab=paid" in body
+    assert "Since ads launched Oct 5" in body
     assert "Campaign funnel" not in body
     assert "First lesson" not in body
     assert "/go/learn" not in body
@@ -648,6 +649,7 @@ def test_admin_analytics_product_tab_is_separate(monkeypatch):
     assert "Where they went" not in body
     assert "Scroll 50%" not in body
     assert "14 visits on this page were left out" not in body
+    assert "Since ads launched" not in body
 
 
 def test_start_hero_offers_learning_and_the_demo(monkeypatch):
@@ -1419,6 +1421,9 @@ def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
     assert "lesson_started" not in blob
     assert "broker_connected" not in blob
     assert "ELSE 'Direct'" not in blob
+    assert sqls
+    assert all("DATE '2026-10-05'" in sql for sql in sqls)
+    assert all("America/New_York" in sql for sql in sqls)
 
 
 def test_click_target_label_uses_detail_then_path():
@@ -1489,8 +1494,16 @@ def test_product_report_sql_keeps_the_human_filter(monkeypatch):
     assert "ELSE 'Direct'" in blob
     # Paid-card path filter stays off this report's page-view totals.
     assert "path = '/go/real-pnl'" not in blob
+    assert "2026-10-05" not in blob
     empty = build_product_report("nope")
     assert empty["range_key"] == "7d"
+    month = build_product_report("30d")
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    ny_today = datetime.now(ZoneInfo("America/New_York")).date()
+    assert len(month["days"]) == 30
+    assert month["days"][0]["day"] == (ny_today - timedelta(days=29)).isoformat()
+    assert month["days"][-1]["day"] == ny_today.isoformat()
 
 
 def test_acquisition_keeps_beaconed_humans_and_counts_what_was_removed():
@@ -2012,3 +2025,250 @@ def test_owner_accounts_do_not_count_on_real_pnl(monkeypatch):
         before, "scroll", "50", "mark",
     )
     assert _dest_visitors(after, "try-demo") == _dest_visitors(before, "try-demo")
+
+
+def test_paid_day_span_clamps_to_ads_launch():
+    from datetime import date
+
+    from app.funnel import (
+        PAID_CAMPAIGN_START,
+        _RANGE_WHERE,
+        _paid_day_span,
+        _paid_since_label,
+        _paid_window_sql,
+    )
+
+    assert PAID_CAMPAIGN_START == date(2026, 10, 5)
+    assert _paid_since_label() == "Oct 5"
+    launch = date(2026, 10, 8)
+    month = [day.isoformat() for day in _paid_day_span(launch, "30d")]
+    week = [day.isoformat() for day in _paid_day_span(launch, "7d")]
+    assert month[0] == "2026-10-05"
+    assert month[-1] == "2026-10-08"
+    assert "2026-10-02" not in month
+    assert "2026-10-04" not in month
+    assert week[0] == "2026-10-05"
+    assert len(week) == 4
+    assert _paid_day_span(launch, "today") == [launch]
+    # A range that starts after launch is not pulled back to launch day.
+    later = date(2026, 10, 20)
+    assert [day.isoformat() for day in _paid_day_span(later, "7d")][0] == "2026-10-14"
+    assert _paid_day_span(date(2026, 10, 3), "30d") == []
+    assert _paid_day_span(date(2026, 10, 5), "30d") == [date(2026, 10, 5)]
+    for key in ("today", "7d", "30d"):
+        sql = _paid_window_sql(key)
+        assert _RANGE_WHERE[key] in sql
+        assert "DATE '2026-10-05'" in sql
+        assert "America/New_York" in sql
+
+
+def test_paid_acquisition_omits_prelaunch_days(monkeypatch):
+    """By day drops days before the ads launch even if a query returns them."""
+    from datetime import date, datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    sqls = []
+
+    def _fetch_all(sql, params=()):
+        sqls.append(sql)
+        if "to_char" in sql and "path = '/go/real-pnl'" in sql:
+            return [
+                {"day": "2026-10-02", "views": 430, "visitors": 430, "signups": 0},
+                {"day": "2026-10-06", "views": 4, "visitors": 3, "signups": 1},
+            ]
+        if "AS views" in sql and "s25" in sql:
+            return [{
+                "views": 4,
+                "visitors": 3,
+                "s25": 1, "s50": 1, "s75": 0, "s100": 0,
+                "t5": 1, "t15": 1, "t30": 0, "t60": 0, "t120": 0, "t300": 0,
+            }]
+        if (
+            "AS signups" in sql
+            and "GROUP BY" not in sql
+            and "to_char" not in sql
+        ):
+            return [{"signups": 1}]
+        return []
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://funnel-test")
+    monkeypatch.setattr("app.db.fetch_all", _fetch_all)
+    monkeypatch.setattr("app.funnel._analytics_today", lambda: date(2026, 10, 8))
+    from app.funnel import build_acquisition, build_product_report
+
+    built = build_acquisition("30d")
+    days = [row["day"] for row in built["days"]]
+    assert days[0] == "2026-10-05"
+    assert days[-1] == "2026-10-08"
+    assert "2026-10-02" not in days
+    assert built["since_label"] == "Oct 5"
+    assert built["visitors"] == 3
+    assert built["views"] == 4
+    assert built["signups"] == 1
+    oct6 = next(row for row in built["days"] if row["day"] == "2026-10-06")
+    assert oct6["visitors"] == 3
+    assert oct6["signups"] == 1
+    assert sqls
+    assert all("DATE '2026-10-05'" in sql for sql in sqls)
+
+    week = build_acquisition("7d")
+    assert [row["day"] for row in week["days"]][0] == "2026-10-05"
+    assert len(week["days"]) == 4
+
+    monkeypatch.setattr("app.funnel._analytics_today", lambda: date(2026, 10, 20))
+    later = build_acquisition("7d")
+    assert later["days"][0]["day"] == "2026-10-14"
+    assert later["days"][-1]["day"] == "2026-10-20"
+
+    ny_today = datetime.now(ZoneInfo("America/New_York")).date()
+    product = build_product_report("30d")
+    assert len(product["days"]) == 30
+    assert product["days"][0]["day"] == (ny_today - timedelta(days=29)).isoformat()
+
+
+def _device_visitors(acq, device) -> int:
+    for row in acq.get("devices") or []:
+        if row.get("device") == device:
+            return int(row.get("visitors") or 0)
+    return 0
+
+
+def test_paid_tab_excludes_prelaunch_events_and_keeps_launch_day(monkeypatch):
+    """Pre-launch rows stay out of every Paid metric. Launch-day rows count.
+
+    The range predicate is widened so the assertion does not depend on the
+    wall clock. The human filter still applies.
+    """
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    from datetime import date
+
+    from app.db import execute
+    from app.funnel import build_acquisition
+
+    def _at(stamp: str) -> str:
+        return f"(TIMESTAMP '{stamp}' AT TIME ZONE 'America/New_York')"
+
+    def _visit(stamp, *, scroll=False, dwell=False, click=False, signup=False):
+        visit = uuid.uuid4().hex
+        when = _at(stamp)
+        execute(
+            f"""
+            INSERT INTO funnel_events
+                (event, visit_id, path, client_beacon, is_bot,
+                 utm_source, utm_campaign, device, landing, created_at)
+            VALUES
+                ('page_view', %s, '/go/real-pnl', TRUE, FALSE,
+                 'reddit', 'real-pnl', 'desktop', 'real-pnl', {when})
+            """,
+            (visit,),
+        )
+        if scroll:
+            execute(
+                f"""
+                INSERT INTO funnel_events
+                    (event, visit_id, path, detail, is_bot, created_at)
+                VALUES
+                    ('scroll_depth', %s, '/go/real-pnl', '50', FALSE, {when})
+                """,
+                (visit,),
+            )
+        if dwell:
+            execute(
+                f"""
+                INSERT INTO funnel_events
+                    (event, visit_id, path, detail, is_bot, created_at)
+                VALUES
+                    ('time_on_page', %s, '/go/real-pnl', '15', FALSE, {when})
+                """,
+                (visit,),
+            )
+        if click:
+            execute(
+                f"""
+                INSERT INTO funnel_events
+                    (event, visit_id, path, detail, is_bot, created_at)
+                VALUES
+                    ('cta_click', %s, '/go/real-pnl', 'try-demo', FALSE, {when})
+                """,
+                (visit,),
+            )
+        if signup:
+            execute(
+                f"""
+                INSERT INTO funnel_events
+                    (event, visit_id, path, is_bot, landing, utm_campaign, created_at)
+                VALUES
+                    ('signup_completed', %s, '/signup', FALSE,
+                     'real-pnl', 'real-pnl', {when})
+                """,
+                (visit,),
+            )
+        return visit
+
+    from app import funnel as funnel_mod
+
+    # No rolling cutoff, so launch-week rows still match when this runs later.
+    # The ads-launch predicate stays in _paid_window_sql.
+    for key in ("today", "7d", "30d"):
+        monkeypatch.setitem(funnel_mod._RANGE_WHERE, key, "TRUE")
+    monkeypatch.setattr(funnel_mod, "_analytics_today", lambda: date(2026, 10, 8))
+
+    before = build_acquisition("30d")
+    _visit("2026-10-02 15:00:00", scroll=True, dwell=True, click=True, signup=True)
+    _visit("2026-10-04 23:59:59", scroll=True, dwell=True, click=True, signup=True)
+    mid = build_acquisition("30d")
+    assert mid["visitors"] == before["visitors"]
+    assert mid["views"] == before["views"]
+    assert mid["signups"] == before["signups"]
+    assert mid["filtered_out"] == before["filtered_out"]
+    assert _device_visitors(mid, "desktop") == _device_visitors(before, "desktop")
+    assert _mark_count(mid, "scroll", "50", "mark") == _mark_count(
+        before, "scroll", "50", "mark",
+    )
+    assert _mark_count(mid, "time", "15", "bucket") == _mark_count(
+        before, "time", "15", "bucket",
+    )
+    assert _dest_visitors(mid, "try-demo") == _dest_visitors(before, "try-demo")
+    assert "2026-10-02" not in [row["day"] for row in mid["days"]]
+    assert "2026-10-04" not in [row["day"] for row in mid["days"]]
+
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot, created_at)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', TRUE, TRUE,
+             {_at('2026-10-06 12:00:00')})
+        """,
+        (uuid.uuid4().hex,),
+    )
+    _visit("2026-10-05 00:00:00", scroll=True, dwell=True, click=True)
+    _visit("2026-10-06 12:00:00", scroll=True, dwell=True, click=True, signup=True)
+    after = build_acquisition("30d")
+    assert after["visitors"] == before["visitors"] + 2
+    assert after["views"] == before["views"] + 2
+    assert after["signups"] == before["signups"] + 1
+    assert after["filtered_out"] == before["filtered_out"] + 1
+    assert _device_visitors(after, "desktop") == _device_visitors(before, "desktop") + 2
+    assert _mark_count(after, "scroll", "50", "mark") == _mark_count(
+        before, "scroll", "50", "mark",
+    ) + 2
+    assert _mark_count(after, "time", "15", "bucket") == _mark_count(
+        before, "time", "15", "bucket",
+    ) + 2
+    assert _dest_visitors(after, "try-demo") == _dest_visitors(before, "try-demo") + 2
+    by_day = {row["day"]: row for row in after["days"]}
+    assert list(by_day) == [
+        "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08",
+    ]
+    before_day = {row["day"]: row for row in before["days"]}
+    assert by_day["2026-10-05"]["visitors"] == before_day["2026-10-05"]["visitors"] + 1
+    assert by_day["2026-10-06"]["visitors"] == before_day["2026-10-06"]["visitors"] + 1
+    assert by_day["2026-10-06"]["signups"] == before_day["2026-10-06"]["signups"] + 1
+    assert by_day["2026-10-05"]["signups"] == before_day["2026-10-05"]["signups"]
+
+    week = build_acquisition("7d")
+    assert [row["day"] for row in week["days"]][0] == "2026-10-05"
+    assert len(week["days"]) == 4
+    assert week["visitors"] == after["visitors"]
