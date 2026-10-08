@@ -11,6 +11,16 @@
         margin-bottom: 1rem;
     }
     .an-hero h1 { font-size: 1.35rem; font-weight: 700; margin: 0; letter-spacing: 0; }
+    .an-hero h1 .an-since {
+        display: inline-block;
+        margin-left: .55rem;
+        font-size: .78rem;
+        font-weight: 600;
+        color: #8a97b1;
+        letter-spacing: 0;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
     .an-hero p { margin: .35rem 0 0; color: #8a97b1; font-size: .85rem; }
     .an-hero a { color: #5b8cff; }
     .an-card {
@@ -141,7 +151,7 @@
         <a href="{{ url_for('admin_overview') }}">Overview</a>
     </p>
     {% else %}
-    <h1>Acquisition</h1>
+    <h1>Acquisition <span class="an-since">Since ads launched {{ acquisition.since_label|default('Oct 5') }}</span></h1>
     <p>Real people on <span class="font-monospace">/go/real-pnl</span>: who arrived, how far they scrolled, how long the tab stayed open, who signed up, and which buttons they clicked. Bots, headless browsers, test runs, and owner accounts stay out. First-party events only — no email or IP in the rows.
         <a href="{{ url_for('admin_overview') }}">Overview</a>
     </p>

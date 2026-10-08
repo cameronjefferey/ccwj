@@ -768,6 +768,9 @@ removed after. Admin → Analytics is `/admin/analytics`, two tabs.
 `signup_completed` rows whose landing or `utm_campaign` is `real-pnl`,
 and **Where they went** — `cta_click` button labels already logged by
 `funnel.js` on that path, plus a `video_play` row as `video:<id>`.
+Paid counts start on `PAID_CAMPAIGN_START` (2026-10-05, America/New_York,
+the Reddit ads launch). Today / 7 days / 30 days clamp their start to
+that day, and By day does not list earlier days. The Product tab does not.
 **Product** is the wider report that used to sit on this page: visitors
 and top pages, each landing's visitors → CTA → signup → first lesson →
 paper → broker → paid, referrers, and the 30-day step ladder (signups

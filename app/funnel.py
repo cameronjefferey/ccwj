@@ -21,6 +21,7 @@ import re
 import threading
 import time
 import uuid
+from datetime import date, timedelta
 from urllib.parse import urlparse
 
 from flask import current_app, g, has_request_context, request, session
@@ -142,6 +143,17 @@ _TIME_DETAILS = frozenset(bucket for bucket, _label, _key in TIME_BUCKETS)
 # to this campaign. Other /go/* landings stay out of the page.
 REAL_PNL_PATH = "/go/real-pnl"
 REAL_PNL_CAMPAIGN = "real-pnl"
+# Paid tab day buckets. "Today" and By day already cut on this zone.
+_ANALYTICS_TZ = "America/New_York"
+# Reddit ads for /go/real-pnl launched on this calendar day. The Paid
+# tab counts only events on or after it, so pre-launch traffic does not
+# dilute scroll, time-on-page, and signup rates. The boundary is midnight
+# in _ANALYTICS_TZ, the same day cut the page already uses.
+PAID_CAMPAIGN_START = date(2026, 10, 5)
+_MONTHS = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
 FUNNEL_STEPS = (
     ("landing_view", "Landing view"),
     ("demo_start", "Demo start"),
@@ -1439,10 +1451,53 @@ def _real_pnl_signup_sql() -> str:
     )
 
 
+def _paid_since_label() -> str:
+    return f"{_MONTHS[PAID_CAMPAIGN_START.month - 1]} {PAID_CAMPAIGN_START.day}"
+
+
+def _paid_campaign_since_sql() -> str:
+    """Inclusive analytics-zone calendar day of the Reddit ads launch."""
+    return (
+        f"(created_at AT TIME ZONE '{_ANALYTICS_TZ}')::date "
+        f">= DATE '{PAID_CAMPAIGN_START.isoformat()}'"
+    )
+
+
+def _paid_window_sql(range_key: str) -> str:
+    """Range picker, floored at the ads launch.
+
+    Today / 7 days / 30 days keep their existing predicates. Events
+    before PAID_CAMPAIGN_START stay out even when the range starts earlier.
+    """
+    return f"({_RANGE_WHERE[range_key]}) AND {_paid_campaign_since_sql()}"
+
+
+def _analytics_today():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo(_ANALYTICS_TZ)).date()
+
+
+def _paid_day_span(today, range_key: str):
+    """Calendar days in the range, none earlier than the ads launch."""
+    span = _RANGE_DAYS[range_key]
+    start = today - timedelta(days=span - 1)
+    if start < PAID_CAMPAIGN_START:
+        start = PAID_CAMPAIGN_START
+    days = []
+    cursor = start
+    while cursor <= today:
+        days.append(cursor)
+        cursor += timedelta(days=1)
+    return days
+
+
 def _empty_acquisition(range_key="7d") -> dict:
     metrics = _engagement_metrics({}, 0, None)
     return {
         "range_key": range_key,
+        "since_label": _paid_since_label(),
         "visitors": 0,
         "views": 0,
         "signups": 0,
@@ -1466,17 +1521,15 @@ def build_acquisition(range_key=None) -> dict:
     so bots, headless browsers, unbeaconed page views, internal visits,
     and owner or test accounts (including a later login on the same
     visit) stay out. Click rows are the cta_click and video_play events
-    funnel.js already writes for this path.
+    funnel.js already writes for this path. The window is the selected
+    range floored at PAID_CAMPAIGN_START (Reddit ads launch).
     """
-    from datetime import datetime, timedelta
-    from zoneinfo import ZoneInfo
-
     from app.db import fetch_all
 
     range_key = range_key or _range_key()
     if range_key not in _RANGE_WHERE:
         range_key = "7d"
-    window = _RANGE_WHERE[range_key]
+    window = _paid_window_sql(range_key)
     counted = counted_traffic_sql()
     empty = _empty_acquisition(range_key)
     if not _db_ready():
@@ -1524,7 +1577,7 @@ def build_acquisition(range_key=None) -> dict:
         )
         day_rows = fetch_all(
             f"""
-            SELECT to_char(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
+            SELECT to_char(created_at AT TIME ZONE '{_ANALYTICS_TZ}', 'YYYY-MM-DD') AS day,
                    COUNT(*) FILTER (
                        WHERE event = 'page_view' AND path = '{path}'
                    )::int AS views,
@@ -1644,14 +1697,13 @@ def build_acquisition(range_key=None) -> dict:
         }
         for row in day_rows or []
     }
-    today = datetime.now(ZoneInfo("America/New_York")).date()
-    span = _RANGE_DAYS[range_key]
+    today = _analytics_today()
     days = []
-    for offset in range(span - 1, -1, -1):
-        day = (today - timedelta(days=offset)).isoformat()
-        found = by_day.get(day) or {"views": 0, "visitors": 0, "signups": 0}
+    for day in _paid_day_span(today, range_key):
+        key = day.isoformat()
+        found = by_day.get(key) or {"views": 0, "visitors": 0, "signups": 0}
         days.append({
-            "day": day,
+            "day": key,
             "views": found["views"],
             "visitors": found["visitors"],
             "signups": found["signups"],
@@ -1659,6 +1711,7 @@ def build_acquisition(range_key=None) -> dict:
 
     return {
         "range_key": range_key,
+        "since_label": _paid_since_label(),
         "visitors": visitors,
         "views": views,
         "signups": signups,
