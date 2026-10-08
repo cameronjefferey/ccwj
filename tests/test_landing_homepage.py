@@ -135,6 +135,9 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
     assert 'class="ht-stage"' not in html
     assert "ht-text-cta" not in html
     assert "covered-call-scroll.json" in html
+    lottie_tag = html[html.find("lottie.min.js") - 40:html.find("lottie.min.js")]
+    assert "defer" in lottie_tag
+    assert "ht-lottie-poster" in html
     assert "ht-hero-glow" in html
     # Closing band keeps the combined line beside Explore live demo.
     assert "Start your 30-day free trial, no credit card" in html

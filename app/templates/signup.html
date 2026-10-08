@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% include "_funnel_seen.html" %}
+    <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
     <title>Sign Up - HappyTrader</title>
     <meta name="description" content="Create a HappyTrader account. Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage.">
     <meta property="og:title" content="Sign Up - HappyTrader">
@@ -180,6 +182,5 @@
         });
     })();
     </script>
-    <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
 </body>
 </html>

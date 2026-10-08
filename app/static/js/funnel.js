@@ -5,9 +5,13 @@
     var path = location.pathname || "/";
     var sent = {};
 
-    // Marks this cookie as a real browser. Headless clients that never run
-    // this script stay out of Acquisition.
-    post("client_seen", "1");
+    // The inline head snippet posts client_seen before this file downloads.
+    // Pages without that snippet still post once. A second post would only
+    // repeat an UPDATE and spend the beacon rate limit.
+    if (!window.__htClientSeen) {
+        window.__htClientSeen = 1;
+        post("client_seen", "1");
+    }
 
     if (path.indexOf("/learn/") === 0 && path !== "/learn/progress") {
         post("lesson_started", "");
@@ -40,7 +44,17 @@
         });
     }
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("load", onScroll);
+    // scrollHeight forces layout. Doing that inside the load handler
+    // sat on the critical path. Idle (or the next frame) still catches
+    // a short page that is already fully scrolled.
+    window.addEventListener("load", function () {
+        var run = function () { onScroll(); };
+        if (window.requestIdleCallback) {
+            window.requestIdleCallback(run, { timeout: 1500 });
+        } else {
+            window.requestAnimationFrame(run);
+        }
+    });
 
     // Visible time only. Each bucket is sent once (post() dedupes) as the
     // visitor crosses it, and again on hide/unload in case the timer was late.

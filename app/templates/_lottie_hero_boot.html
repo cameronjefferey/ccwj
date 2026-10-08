@@ -1,0 +1,42 @@
+{# Hero loop. The poster stays in the slot until the animation's first
+   frame is ready. defer keeps this file off the parser so funnel.js
+   and DOMContentLoaded are not stuck behind its parse. The inline
+   script runs during parsing, before that deferred file executes, so
+   it starts the loop from the script's load event. #}
+<script defer src="{{ url_for('static', filename='js/lottie.min.js') }}" id="ht-lottie-lib"></script>
+<script>
+(function () {
+    var slot = document.querySelector(".ht-lottie-hero");
+    if (!slot) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    function start() {
+        if (!window.lottie || slot.getAttribute("data-lottie-started")) return;
+        var src = slot.getAttribute("data-lottie-src") || "";
+        if (!src) return;
+        slot.setAttribute("data-lottie-started", "1");
+        var sourceW = parseInt(slot.getAttribute("data-lottie-w") || "1020", 10) || 1020;
+        var cssW = slot.clientWidth || sourceW;
+        var dpr = Math.min(window.devicePixelRatio || 1, sourceW / cssW);
+        if (!(dpr > 0)) dpr = 1;
+        var anim = window.lottie.loadAnimation({
+            container: slot,
+            renderer: "canvas",
+            loop: true,
+            autoplay: true,
+            path: src,
+            rendererSettings: { dpr: dpr, clearCanvas: true }
+        });
+        anim.addEventListener("DOMLoaded", function () {
+            var poster = slot.querySelector(".ht-lottie-poster");
+            if (poster) poster.remove();
+            anim.resize();
+            window.requestAnimationFrame(function () { anim.resize(); });
+        });
+    }
+    if (window.lottie) start();
+    else {
+        var lib = document.getElementById("ht-lottie-lib");
+        if (lib) lib.addEventListener("load", start);
+    }
+})();
+</script>
