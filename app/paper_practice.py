@@ -150,7 +150,7 @@ def spx_level_from_spy(spy_close: float) -> float:
 
 
 def _pill_text(choice) -> str:
-    return f"{choice['label']} · {choice['date'].strftime('%b %-d')}"
+    return f"{choice['label']} · {choice['date'].strftime('%a %b %-d')}"
 
 
 def _ny_now(now=None) -> datetime:
@@ -280,6 +280,8 @@ def practice_receipt(ticket, body=None, tenant_id=None) -> dict:
         bucket = order_status_bucket(raw)
         label = brokerage_status_label(
             raw, execution_price=price, reject_reason=reason,
+            filled_quantity=source.get("filled_quantity") if isinstance(source, dict) else None,
+            total_quantity=source.get("total_quantity") if isinstance(source, dict) else None,
         )
     else:
         bucket = "open"
@@ -305,7 +307,7 @@ def practice_receipt(ticket, body=None, tenant_id=None) -> dict:
         "link_symbol": position_link_symbol(symbol),
         "side": ticket["side"],
         "strike_label": money_strike(ticket["strike"]),
-        "expiry_label": f"{ticket['expiry_label']} · {expiry.strftime('%b %-d')}",
+        "expiry_label": f"{ticket['expiry_label']} · {expiry.strftime('%a %b %-d')}",
         "limit_label": ticket["limit_label"],
         "quantity_label": "1 contract",
         "detail": _order_detail("1 contract", ticket.get("limit_label") or ""),
@@ -340,8 +342,11 @@ SELECT
     c.option_strike,
     c.option_expiry,
     c.status,
+    c.close_type,
     c.premium_paid,
+    c.premium_received,
     c.contracts_bought_to_open,
+    c.contracts_sold_to_open,
     c.net_cash_flow,
     c.open_date,
     p.close_price AS finish_price
@@ -349,11 +354,11 @@ FROM `ccwj-dbt.analytics.int_option_contracts` c
 LEFT JOIN prices p
     ON p.symbol = c.underlying_symbol
    AND p.date = c.option_expiry
-WHERE c.contracts_bought_to_open > 0
+WHERE (c.contracts_bought_to_open > 0 OR c.contracts_sold_to_open > 0)
   {tenant_filter}
   {symbol_filter}
-ORDER BY c.open_date, c.underlying_symbol
-LIMIT 2
+ORDER BY c.open_date, c.underlying_symbol, c.option_strike
+LIMIT 80
 """
 
 
@@ -386,17 +391,149 @@ def _readout_symbol(symbol) -> str:
     return re.sub(r"[^A-Z0-9.]", "", str(symbol or "").upper())[:12]
 
 
-def beginner_trade_sentence(row) -> str | None:
-    """One paper buy, in the shape: made money if X, the stock went to Y, therefore."""
-    direction = str(row.get("direction") or "")
-    if direction.casefold() != "bought":
+def _finite_decimal(raw):
+    if raw is None or str(raw) in ("", "None", "nan", "NaN"):
         return None
     try:
-        contracts = Decimal(str(row.get("contracts_bought_to_open")))
-        paid = abs(Decimal(str(row.get("premium_paid"))))
-        strike = Decimal(str(row.get("option_strike")))
+        amount = Decimal(str(raw))
     except Exception:
         return None
+    if not amount.is_finite():
+        return None
+    return amount
+
+
+def _expiry_phrase(raw) -> str:
+    if hasattr(raw, "strftime"):
+        return f" Expires: {raw.strftime('%a %b %-d')}."
+    return ""
+
+
+def _count_phrase(contracts: Decimal):
+    if contracts == contracts.to_integral_value():
+        return int(contracts)
+    return contracts
+
+
+def _close_kind(row) -> str:
+    return str(row.get("close_type") or "").strip().casefold()
+
+
+def _is_expiry_close(row) -> bool:
+    return _close_kind(row) in {"expired", "expiredotm", "settled at expiry (est.)"}
+
+
+def _is_early_close(row) -> bool:
+    return _close_kind(row) in {"closed", "assigned", "exercised"}
+
+
+def _row_day(raw) -> str:
+    if hasattr(raw, "isoformat"):
+        return raw.isoformat()[:10]
+    return str(raw or "")[:10]
+
+
+def _leg_counts(row) -> tuple[Decimal, Decimal]:
+    bought = _finite_decimal(row.get("contracts_bought_to_open")) or Decimal(0)
+    sold = _finite_decimal(row.get("contracts_sold_to_open")) or Decimal(0)
+    return (bought if bought > 0 else Decimal(0), sold if sold > 0 else Decimal(0))
+
+
+def _leg_is_long(row) -> bool | None:
+    bought, sold = _leg_counts(row)
+    direction = str(row.get("direction") or "").casefold()
+    if direction == "bought" or (bought > 0 and sold == 0):
+        return True
+    if direction == "sold" or (sold > 0 and bought == 0):
+        return False
+    return None
+
+
+def _leg_size(row) -> Decimal | None:
+    bought, sold = _leg_counts(row)
+    long = _leg_is_long(row)
+    size = bought if long else sold
+    return size if long is not None and size > 0 else None
+
+
+def _same_vertical(left, right) -> bool:
+    if str(left.get("tenant_id") or "") != str(right.get("tenant_id") or ""):
+        return False
+    if str(left.get("underlying_symbol") or "").upper() != str(right.get("underlying_symbol") or "").upper():
+        return False
+    if str(left.get("option_type") or "")[:1].upper() != str(right.get("option_type") or "")[:1].upper():
+        return False
+    if _row_day(left.get("option_expiry")) != _row_day(right.get("option_expiry")):
+        return False
+    return _row_day(left.get("open_date")) == _row_day(right.get("open_date"))
+
+
+def group_readout_trades(rows) -> list[dict]:
+    """One vertical is one trade. A leftover contract stays on its own."""
+    pending = [dict(row) for row in rows if isinstance(row, dict)]
+    used = [False] * len(pending)
+    groups = []
+    for index, row in enumerate(pending):
+        if used[index]:
+            continue
+        partner = _nearest_vertical(pending, used, index)
+        used[index] = True
+        if partner is None:
+            groups.append({"kind": "single", "rows": [row]})
+            continue
+        used[partner] = True
+        other = pending[partner]
+        long_row, short_row = (row, other) if _leg_is_long(row) else (other, row)
+        groups.append({"kind": "spread", "rows": [long_row, short_row]})
+    return groups
+
+
+def _nearest_vertical(rows, used, index) -> int | None:
+    row = rows[index]
+    size = _leg_size(row)
+    strike = _finite_decimal(row.get("option_strike"))
+    if _leg_is_long(row) is None or size is None or strike is None:
+        return None
+    best = None
+    best_gap = None
+    for other_index, other in enumerate(rows):
+        if used[other_index] or other_index == index:
+            continue
+        if _leg_is_long(other) is None or _leg_is_long(other) == _leg_is_long(row):
+            continue
+        if not _same_vertical(row, other):
+            continue
+        other_size = _leg_size(other)
+        other_strike = _finite_decimal(other.get("option_strike"))
+        if other_size != size or other_strike is None or other_strike == strike:
+            continue
+        gap = abs(other_strike - strike)
+        if best_gap is None or gap < best_gap:
+            best = other_index
+            best_gap = gap
+    return best
+
+
+def _result_clause(net: Decimal, *, expired_worthless: bool, side: str, paid: Decimal) -> str:
+    if expired_worthless:
+        return f"Therefore the {side} expired, and the {money_spot(paid)} is gone."
+    if net > 0:
+        return f"Therefore this trade made {money_spot(net)}."
+    if net < 0:
+        return f"Therefore this trade lost {money_spot(abs(net))}."
+    return "Therefore this trade broke even."
+
+
+def beginner_trade_sentence(row) -> str | None:
+    """One paper buy, in the shape: made money if X, the stock went to Y, therefore."""
+    if _leg_is_long(row) is not True:
+        return None
+    contracts = _leg_size(row)
+    paid_raw = _finite_decimal(row.get("premium_paid"))
+    strike = _finite_decimal(row.get("option_strike"))
+    if contracts is None or paid_raw is None or strike is None:
+        return None
+    paid = abs(paid_raw)
     if contracts <= 0 or paid <= 0 or strike <= 0:
         return None
     per = paid / (contracts * CONTRACT_SHARES)
@@ -407,46 +544,134 @@ def beginner_trade_sentence(row) -> str | None:
         return None
     line = strike - per if side == "put" else strike + per
     where = "below" if side == "put" else "above"
-    n = int(contracts) if contracts == contracts.to_integral_value() else contracts
-    expiry = row.get("option_expiry")
-    when = ""
-    if hasattr(expiry, "strftime"):
-        when = f", expiring {expiry.strftime('%b %-d')}"
-    bought = (
-        f"You bought {n} {symbol} {side} at {money_spot(strike)}{when}. "
-        f"You made money if {symbol} finished {where} {money_spot(line)}."
-    )
-    finish = row.get("finish_price")
+    n = _count_phrase(contracts)
+    when = _expiry_phrase(row.get("option_expiry"))
     closed = str(row.get("status") or "").casefold() == "closed"
-    try:
-        finish_n = Decimal(str(finish)) if finish is not None and str(finish) not in ("", "None", "nan") else None
-    except Exception:
+    finish_n = _finite_decimal(row.get("finish_price"))
+    if finish_n is not None and finish_n <= 0:
         finish_n = None
-    if finish_n is None or finish_n <= 0:
+    if finish_n is None:
         if closed:
-            return bought + f" We don't have where {symbol} finished."
+            return (
+                f"You bought {n} {symbol} {side} at {money_spot(strike)}.{when} "
+                f"You made money if {symbol} finished {where} {money_spot(line)}. "
+                f"We don't have where {symbol} finished."
+            )
         return (
-            f"You bought {n} {symbol} {side} at {money_spot(strike)}{when}. "
+            f"You bought {n} {symbol} {side} at {money_spot(strike)}.{when} "
             f"You make money if {symbol} finishes {where} {money_spot(line)}. "
             "Therefore this trade is still open."
         )
     went = f"{symbol} finished at {money_spot(finish_n)}."
     made_it = finish_n < line if side == "put" else finish_n > line
-    try:
-        net = Decimal(str(row.get("net_cash_flow")))
-    except Exception:
-        net = Decimal(0)
+    net = _finite_decimal(row.get("net_cash_flow")) or Decimal(0)
+    full_loss = net < 0 and abs(abs(net) - paid) <= Decimal("0.05")
+    named_expiry = _is_expiry_close(row) or (
+        not _is_early_close(row) and not _close_kind(row) and not made_it
+    )
+    expired_worthless = named_expiry and full_loss and not made_it
     if made_it and net > 0:
         therefore = f"Therefore this trade made {money_spot(net)}."
-    elif made_it:
+    elif made_it and net == 0:
         therefore = f"Therefore {symbol} finished {where} {money_spot(line)}."
     else:
-        therefore = f"Therefore the {side} expired, and the {money_spot(paid)} is gone."
+        therefore = _result_clause(
+            net, expired_worthless=expired_worthless, side=side, paid=paid,
+        )
+    bought = (
+        f"You bought {n} {symbol} {side} at {money_spot(strike)}.{when} "
+        f"You made money if {symbol} finished {where} {money_spot(line)}."
+    )
     return f"{bought} {went} {therefore}"
 
 
+def beginner_spread_sentence(long_row, short_row) -> str | None:
+    """One vertical: both strikes, the net paid or collected, and one result."""
+    symbol = str(long_row.get("underlying_symbol") or "").upper()
+    kind = str(long_row.get("option_type") or "")
+    side = "put" if kind[:1].upper() == "P" else "call"
+    contracts = _leg_size(long_row)
+    long_strike = _finite_decimal(long_row.get("option_strike"))
+    short_strike = _finite_decimal(short_row.get("option_strike"))
+    if not symbol or contracts is None or long_strike is None or short_strike is None:
+        return None
+    paid = abs(_finite_decimal(long_row.get("premium_paid")) or Decimal(0))
+    received = abs(_finite_decimal(short_row.get("premium_received")) or Decimal(0))
+    if received == 0:
+        short_net = _finite_decimal(short_row.get("net_cash_flow"))
+        if short_net is not None and short_net > 0:
+            received = short_net
+    net_premium = paid - received
+    if net_premium == 0 or paid == 0:
+        return None
+    debit = net_premium > 0
+    amount = abs(net_premium)
+    per = amount / (contracts * CONTRACT_SHARES)
+    low = min(long_strike, short_strike)
+    high = max(long_strike, short_strike)
+    if side == "call":
+        line = low + per
+        where = "above" if debit else "below"
+    else:
+        line = high - per
+        where = "below" if debit else "above"
+    width_cash = (abs(high - low) * contracts * CONTRACT_SHARES).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP,
+    )
+    n = _count_phrase(contracts)
+    when = _expiry_phrase(long_row.get("option_expiry"))
+    verb = "bought" if debit else "sold"
+    cash_word = "paid" if debit else "collected"
+    bounds = ""
+    if width_cash > amount:
+        max_loss = amount if debit else width_cash - amount
+        max_profit = width_cash - amount if debit else amount
+        bounds = (
+            f" The most you can lose is {money_spot(max_loss)}. "
+            f"The most you can make is {money_spot(max_profit)}."
+        )
+    both_closed = (
+        str(long_row.get("status") or "").casefold() == "closed"
+        and str(short_row.get("status") or "").casefold() == "closed"
+    )
+    opener = (
+        f"You {verb} {n} {symbol} {side} spread, {money_spot(low)} and {money_spot(high)}."
+        f"{when} You {cash_word} {money_spot(amount)}."
+    )
+    if not both_closed:
+        return (
+            f"{opener} You make money if {symbol} finishes {where} {money_spot(line)}."
+            f"{bounds} Therefore this trade is still open."
+        )
+    finish_n = _finite_decimal(long_row.get("finish_price")) or _finite_decimal(short_row.get("finish_price"))
+    went = ""
+    if finish_n is not None and finish_n > 0:
+        went = f" {symbol} finished at {money_spot(finish_n)}."
+    net = (
+        (_finite_decimal(long_row.get("net_cash_flow")) or Decimal(0))
+        + (_finite_decimal(short_row.get("net_cash_flow")) or Decimal(0))
+    )
+    full_loss = debit and net < 0 and abs(abs(net) - amount) <= Decimal("0.05")
+    both_expired = _is_expiry_close(long_row) and _is_expiry_close(short_row)
+    made_it = False
+    if finish_n is not None and finish_n > 0:
+        made_it = finish_n < line if where == "below" else finish_n > line
+    unnamed = not _close_kind(long_row) and not _close_kind(short_row) and not made_it
+    expired_worthless = full_loss and not made_it and (both_expired or unnamed)
+    therefore = _result_clause(
+        net,
+        expired_worthless=expired_worthless,
+        side="spread",
+        paid=amount,
+    )
+    return (
+        f"{opener} You made money if {symbol} finished {where} {money_spot(line)}."
+        f"{went} {therefore}"
+    )
+
+
 def beginner_readouts(tenant_ids, symbol=None) -> list[dict]:
-    """First two bought contracts, and only when this scope is entirely paper.
+    """First two paper trades, verticals counted once, only on an all-paper scope.
 
     A Postgres or warehouse miss returns no readout. It must not 500 the page.
     """
@@ -485,10 +710,16 @@ def _beginner_readouts(tenant_ids, symbol=None) -> list[dict]:
     if frame is None or getattr(frame, "empty", True):
         return []
     out = []
-    for rec in frame.to_dict(orient="records"):
-        text = beginner_trade_sentence(rec)
+    for group in group_readout_trades(frame.to_dict(orient="records")):
+        rows = group["rows"]
+        if group["kind"] == "spread":
+            text = beginner_spread_sentence(rows[0], rows[1])
+        else:
+            text = beginner_trade_sentence(rows[0])
         if text:
-            out.append({"text": text, "symbol": rec.get("underlying_symbol")})
+            out.append({"text": text, "symbol": rows[0].get("underlying_symbol")})
+        if len(out) >= 2:
+            break
     return out
 
 
@@ -583,7 +814,7 @@ def trade_views(
 ) -> dict:
     """Three readings of one paper order. Beginner is the lesson. Brokerage is the ticket."""
     side_name = "Call" if side == "call" else "Put"
-    when = expiry.strftime("%b %-d, %Y")
+    when = expiry.strftime("%a %b %-d")
     if price_note == "live bid/ask":
         price_label = "Live bid/ask"
     elif price_note:
@@ -609,14 +840,14 @@ def trade_views(
         },
         "intermediate": {
             "headline": (
-                f"Buy to open 1 {symbol} {side_name.lower()}, strike {money_strike(strike)}, "
-                f"expiring {when}. Limit {limit_label}."
+                f"Buy to open 1 {symbol} {side_name.lower()}, strike {money_strike(strike)}. "
+                f"Expires: {when}. Limit {limit_label}."
             ),
             "rows": [
                 {"label": "Contracts", "value": "1"},
                 {"label": price_label, "value": limit_label},
                 {"label": "Total cost", "value": cost_label},
-                {"label": "Expiration", "value": when},
+                {"label": "Expires", "value": when},
             ],
             "note": notes["intermediate"],
         },
@@ -655,7 +886,7 @@ def practice_sentence(symbol, side, strike, distance, expiry: date, as_of_label=
         cover = f"One contract is {CONTRACT_SHARES} shares."
     return (
         f"Buy 1 {symbol} {side_word} at {money_strike(strike)}, {where}. "
-        f"It expires {_when_label(expiry)}. {cover} "
+        f"Expires: {_when_label(expiry)}. {cover} "
         f"You are paying for the right to {right}, and you can let it expire."
     )
 
@@ -1279,18 +1510,36 @@ def _order_body(body) -> dict:
     return merged
 
 
+def _qty_text(amount: Decimal) -> str:
+    shown = amount.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return format(shown, "f").rstrip("0").rstrip(".")
+
+
+def _partial_progress(filled, total) -> str:
+    done = _positive_decimal(filled)
+    whole = _positive_decimal(total)
+    if done is None or whole is None or done >= whole:
+        return ""
+    return f"{_qty_text(done)} of {_quantity_phrase(whole, True)}"
+
+
 def brokerage_status_label(
     raw, *, execution_price=None, reject_reason=None, session_open=None,
+    filled_quantity=None, total_quantity=None,
 ) -> str:
     """Brokerage words for one order status.
 
     Accepted and Pending are live-session states. QUEUED, and any still-open
     order while the regular session is closed, is Queued for next session.
+    A partial fill stays Partially filled after the close.
     """
     bucket = order_status_bucket(raw)
     token = _status_token(raw)
     if session_open is None:
         session_open = regular_session_open()
+    if token in {"PARTIAL", "PARTIALLY_FILLED"}:
+        progress = _partial_progress(filled_quantity, total_quantity)
+        return f"Partially filled · {progress}" if progress else "Partially filled"
     if bucket == "filled":
         price = _price_label(execution_price)
         return f"Filled at {price}" if price else "Filled"
@@ -1453,10 +1702,43 @@ def _order_detail(quantity_label, limit_label) -> str:
     return " · ".join(bits)
 
 
+def _option_leg_counts(order) -> list:
+    legs = order.get("legs") if isinstance(order, dict) else None
+    if not isinstance(legs, list):
+        return []
+    counts = []
+    for leg in legs:
+        if not isinstance(leg, dict):
+            continue
+        instrument = leg.get("instrument") or {}
+        is_option = bool(leg.get("option_symbol"))
+        if isinstance(instrument, dict) and str(instrument.get("instrument_type") or "").upper() == "OPTION":
+            is_option = True
+        if not is_option:
+            continue
+        qty = None
+        for key in ("total_quantity", "units", "filled_quantity"):
+            qty = _positive_decimal(leg.get(key))
+            if qty is not None:
+                break
+        if qty is not None:
+            counts.append(qty)
+    return counts
+
+
+def _spread_phrase(amount: Decimal) -> str:
+    unit = "spread" if amount == 1 else "spreads"
+    return f"{_qty_text(amount)} {unit}"
+
+
 def _order_size(order) -> dict:
     option = _is_option_order(order)
-    qty = _order_quantity(order)
-    quantity_label = _quantity_phrase(qty, option) if qty is not None else ""
+    legs = _option_leg_counts(order)
+    if option and len(legs) >= 2 and all(qty == legs[0] for qty in legs):
+        quantity_label = _spread_phrase(legs[0])
+    else:
+        qty = _order_quantity(order)
+        quantity_label = _quantity_phrase(qty, option) if qty is not None else ""
     limit_label = _price_label(order.get("limit_price")) or ""
     return {
         "quantity_label": quantity_label,
@@ -1479,6 +1761,8 @@ def normalize_broker_order(order) -> dict | None:
         "status": bucket,
         "status_label": brokerage_status_label(
             raw, execution_price=price, reject_reason=reason,
+            filled_quantity=order.get("filled_quantity"),
+            total_quantity=order.get("total_quantity"),
         ) if raw else _status_label(bucket, ""),
         "raw_status": raw,
         "symbol": symbol,
@@ -1975,9 +2259,30 @@ def spots_for_practice_page() -> dict:
 
 
 @app.route("/practice", methods=["GET"])
-@login_required
 def paper_practice():
     """The ticket Learn can link to. Prices are today's closes, not a sketch."""
+    if not getattr(current_user, "is_authenticated", False):
+        return render_template(
+            "paper_practice.html",
+            title="Practice a trade",
+            logged_out=True,
+            symbols=[],
+            expiries={},
+            account=None,
+            ticket=None,
+            sent=None,
+            orders=[],
+            open_orders=[],
+            recent_orders=[],
+            orders_error=None,
+            voice="beginner",
+            snaptrade_ready=False,
+            look=False,
+            buying_power_label=None,
+            broker_pending=False,
+            session_note=None,
+            prefill=None,
+        )
     session.pop(LOOK_KEY, None)
     look = False
     placed = (request.args.get("placed") or "") == "1"
@@ -2079,6 +2384,7 @@ def paper_practice():
         broker_pending=broker_pending,
         session_note=session_note,
         prefill=None if confirming or placed else practice_prefill(request.args),
+        logged_out=False,
     )
 
 

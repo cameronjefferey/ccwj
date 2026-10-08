@@ -72,6 +72,10 @@ def test_brokerage_status_words():
     assert order_status_bucket("CANCELED") == "cancelled"
     assert brokerage_status_label("ACCEPTED", session_open=True) == "Accepted"
     assert brokerage_status_label("PENDING", session_open=True) == "Pending"
+    assert brokerage_status_label("PARTIAL", session_open=True) == "Partially filled"
+    assert brokerage_status_label(
+        "PARTIALLY_FILLED", session_open=False, filled_quantity="1", total_quantity="2",
+    ) == "Partially filled · 1 of 2 contracts"
     assert brokerage_status_label("QUEUED", session_open=True) == "Queued for next session"
     assert brokerage_status_label("ACCEPTED", session_open=False) == "Queued for next session"
     assert brokerage_status_label("PENDING", session_open=False) == "Queued for next session"
@@ -82,6 +86,24 @@ def test_brokerage_status_words():
     ) == "Rejected: insufficient buying power"
     assert brokerage_status_label("CANCELED") == "Canceled"
     assert brokerage_status_label("CANCEL_PENDING") == "Cancel requested"
+    from app.paper_practice import normalize_broker_order
+    spread = normalize_broker_order({
+        "brokerage_order_id": "spread-1",
+        "status": "ACCEPTED",
+        "legs": [
+            {
+                "instrument": {"instrument_type": "OPTION"},
+                "option_symbol": {"underlying_symbol": "SPY"},
+                "total_quantity": "1",
+            },
+            {
+                "instrument": {"instrument_type": "OPTION"},
+                "option_symbol": {"underlying_symbol": "SPY"},
+                "total_quantity": "1",
+            },
+        ],
+    })
+    assert spread["quantity_label"] == "1 spread"
 
 
 def test_receipt_uses_the_place_response():

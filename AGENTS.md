@@ -677,6 +677,11 @@ is clicked. Finished cards show a check, not only the word Watched.
 Signing in from `/learn` returns there (`next=`). Each lesson ends with
 a Try it link into `/practice` with the radios already set (a calls
 lesson opens a SPY call). Nothing is placed until the learner confirms.
+A logged-out visit to `/practice` explains paper money and links to sign in
+(`next=/practice`) and create a free account; placing an order stays behind
+login. Practice dates include the weekday (`Expires: Fri Oct 2`). On
+Positions, a paper vertical is one sentence covering both legs, and a
+partial fill says Partially filled even after the close.
 Signed-in accounts other than the shared demo user also keep that blob
 in `learn_progress` so it follows them after signup (`/learn/progress`,
 GET and POST are limited separately so a save is not crowded out by

@@ -101,7 +101,9 @@
         color: var(--ht-muted);
         font-variant-numeric: tabular-nums;
         font-size: .9rem;
+        white-space: nowrap;
     }
+    .pp-card .ht-stat-v { white-space: nowrap; }
     .pp-order .is-open { color: var(--ht-ink); }
     .pp-order .is-filled { color: var(--gain); }
     .pp-order .is-cancel_requested { color: var(--ht-muted); }
@@ -110,13 +112,33 @@
     .pp-order .is-expired { color: var(--loss); }
     @media (max-width: 576px) {
         .pp-card { padding: 1.15rem 1rem; }
-        .pp-card .btn { min-height: 44px; }
+        .pp-card .btn,
+        .pp-choice,
+        .pp-chain button { min-height: 44px; }
         .pp-card form .btn-primary { width: 100%; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
+{% if logged_out %}
+<div class="pp-wrap">
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h1 class="mb-1">Practice a trade</h1>
+        <p class="pp-note mb-3">Paper money. This is practice, not a recommendation and not advice.</p>
+        <div class="pp-card">
+            <p>Sign in to open a practice account, place one call or one put, and see that trade on Positions. Nothing is placed until you confirm.</p>
+            <p class="pp-note">New to the words on the ticket? <a href="{{ url_for('learn_index') }}">Learn Options 101</a> first, then come back here.</p>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <a class="btn btn-primary" href="{{ url_for('login', next='/practice') }}">Sign in</a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('signup') }}">Create a free account</a>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% else %}
 <div class="pp-wrap">
 <div class="row justify-content-center">
     <div class="col-lg-8">
@@ -472,7 +494,7 @@
                                 var cash = contractText.indexOf("cash") >= 0;
                                 var name = voiceNow();
                                 if (name === "brokerage") {
-                                    contract.textContent = cash ? "Cash settled. $100 per point." : "Multiplier 100.";
+                                    contract.textContent = cash ? "SPX pays cash. One contract is $100 per point." : "One contract is 100 shares.";
                                 } else if (name === "intermediate") {
                                     contract.textContent = cash ? "Cash-settled. $100 a point." : "1 contract controls 100 shares.";
                                 } else {
@@ -508,6 +530,7 @@
     </div>
 </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

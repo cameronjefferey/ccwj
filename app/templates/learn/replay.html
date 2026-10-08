@@ -63,7 +63,7 @@
             </div>
             {% if replay.show_shares %}
             <div class="replay-fact">
-                <span class="replay-fact-l">Shares</span>
+                <span class="replay-fact-l">Share result</span>
                 <span class="replay-fact-v ht-num" id="replay-shares">{{ replay.days[0].share_text }}</span>
             </div>
             {% endif %}
@@ -129,7 +129,7 @@
             <h2>Did that make sense?</h2>
             <div class="replay-checkpoint-actions">
                 <button type="button" class="btn btn-primary" id="replay-yes">Yes</button>
-                <a class="replay-deeper" id="replay-deeper" href="{{ replay.deeper_href }}" title="{{ replay.lesson_title }}">Go deeper</a>
+                <a class="replay-deeper" id="replay-deeper" href="{{ replay.deeper_href }}" title="{{ replay.lesson_title }}">Watch the lesson</a>
             </div>
             <p class="replay-saved" id="replay-saved" hidden>Marked done. It shows a check on Options 101.</p>
         </section>
