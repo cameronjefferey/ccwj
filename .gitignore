@@ -25,6 +25,7 @@ profiles.yml
 !dbt/dbt_project.yml
 !app/learn_episodes.json
 !app/static/marketing/covered-call-scroll.json
+!tests/fixtures/demo_mirror_chart_residual.json
 # Agent automation config (no secrets) — see .cursor/hooks/
 !.cursor/hooks.json
 

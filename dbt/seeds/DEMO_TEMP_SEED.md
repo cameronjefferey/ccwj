@@ -18,7 +18,20 @@ The account curve is the bot's balance history **plus** the seed book's full acc
 
 - Opening deposit of $100,000 on 2026-01-02. That is the only cash transfer. Option credits are trading P&L, not deposits.
 - From January through early August the seed sells small 1-lot credit spreads (about $20–$55 of premium each). That raises the win count without parking the gains before the demo's broker connect date.
-- **The climb starts 2026-08-10**, two days after the demo connect date (2026-08-08). Share buys, covered calls, the wheel, and the larger credit spreads are all on or after that date, so the equity curve and the cumulative P&L chart both show them.
+- **Share buys start 2026-08-10**, two days after the demo connect date (2026-08-08). Covered calls, the wheel, and the larger single-name credit spreads are on or after that date.
+- **Summer income spreads** on DIA, IWM, and GLD are added on top of that book. They are $5-wide credit spreads, five contracts, about $1.80–$2.10 of credit, closed early or expired. Two of them lose: a GLD put spread and an IWM call spread, both closed 2026-06-25, which softens the June spike. The rest are put credits. Every one of these contracts is closed by 2026-09-01, so `demo_temp_current.csv` is unchanged. Call and put spreads on these names do not share an expiry. The $100,000 deposit is still the only cash transfer, and the AAPL, AMD, and KO share lots are unchanged.
+- **Combined cumulative P&L** (bot mirror + this seed, same formula as the Accounts chart) stays above the Friday 2026-08-07 close from the next session on. Saturday 2026-08-08 and Saturday 2026-08-15 are not chart points; the table uses the Friday session. Dollars are the chart total.
+
+  | Session | Combined cumulative P&L |
+  | --- | --- |
+  | Fri 2026-08-07 (Aug 8 level) | +$6,248.12 |
+  | Fri 2026-08-14 (Aug 15 session) | +$17,272.25 |
+  | Mon 2026-08-31 | +$15,876.38 |
+  | Tue 2026-09-15 | +$25,329.96 |
+  | Wed 2026-09-30 | +$33,514.83 |
+  | Thu 2026-10-08 (latest) | +$41,471.48 |
+
+  Mid-August still gives back part of the Aug 14 jump (the mirror book's losses that week). The valley stays about $5,000 above the Aug 7 close, and August 31, September 30, and October 8 each finish higher than the checkpoint before.
 - **Covered calls** on AAPL (100 shares bought at the 2026-08-10 close) and AMD (100 shares, same day). Short calls expired above that week's high. One call on each name is still open, expiring 2026-10-16.
 - **A wheel** on KO in the same window: an 88 put sold 2026-08-10 and assigned 2026-08-14, then a 90 call sold 2026-08-17 and assigned 2026-08-21. The shares were called away at a gain.
 - **Credit spreads** on SPY, QQQ, MSFT, NVDA, AMZN, META, GOOGL, and JPM. Call spreads expire the week they are opened. Put spreads expire two weeks later, so the two sides do not share an expiry and do not fuse into an iron condor. A few are closed early for a small loss. Four spreads are still open, expiring 2026-10-16.
@@ -44,6 +57,8 @@ Turning the flag off is enough. Delete the files only when the seed should not b
    - `dbt/tests/demo_temp_current_keeps_mirror.sql`
    - `dbt/tests/demo_temp_off_equals_mirror.sql`
    - `tests/test_demo_temp_seed.py`
+   - `tests/demo_pnl_replay.py`
+   - `tests/fixtures/demo_mirror_chart_residual.json`
    - `dbt/macros/demo_temp_seed_on.sql`
 3. Remove the `{% if demo_temp_seed_on() %}` branches in
    `dbt/models/staging/demo/stg_demo_{history,current,balances}.sql` and
