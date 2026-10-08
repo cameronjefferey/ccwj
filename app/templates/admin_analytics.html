@@ -60,6 +60,15 @@
     }
     .an-num { font-family: "JetBrains Mono", ui-monospace, monospace; text-align: right; }
     .an-note { color: #8a97b1; font-size: .78rem; margin: 0 0 .6rem; }
+    .an-leftout { font-size: .78rem; color: #8a97b1; margin: 0 0 .7rem; }
+    .an-leftout summary { cursor: pointer; }
+    .an-leftout ul { margin: .35rem 0 .25rem 1.1rem; padding: 0; }
+    .an-leftout li { margin: .12rem 0; }
+    .an-leftout .an-ua {
+        white-space: normal;
+        word-break: break-word;
+        max-width: 28rem;
+    }
     .an-ranges { display: flex; gap: .4rem; margin-top: .7rem; flex-wrap: wrap; }
     .an-ranges a {
         color: #e8edf7;
@@ -166,7 +175,48 @@
 {% if acquisition is defined and acquisition %}
 <div class="an-card">
     <h2>/go/real-pnl</h2>
-    <p class="an-note">One visitor is one anonymous cookie that loaded this page. A page view counts once the browser runs JavaScript. Older rows from before that check still count. Signups are accounts created from this landing or the real-pnl campaign. {{ acquisition.filtered_out|default(0) }} visits on this page were left out: bots, crawlers, headless browsers, pages that never ran JavaScript, internal IPs, owner and test accounts, and any visit later tied to one of those accounts.</p>
+    <p class="an-note">One visitor is one anonymous cookie that loaded this page. A page view counts once the browser runs JavaScript. Older rows from before that check still count. Signups are accounts created from this landing or the real-pnl campaign.</p>
+    {% set left = acquisition.left_out|default({}) %}
+    <details class="an-leftout">
+        <summary>{{ acquisition.filtered_out|default(0) }} left out — see why</summary>
+        <ul>
+            <li>Bot <span class="an-num">{{ left.bot|default(0) }}</span></li>
+            <li>Our own traffic <span class="an-num">{{ left.internal|default(0) }}</span></li>
+            <li>Left before tracking loaded <span class="an-num">{{ left.early|default(0) }}</span>
+                <ul>
+                    <li>Reddit/ <span class="an-num">{{ left.early_reddit|default(0) }}</span></li>
+                    <li>Other <span class="an-num">{{ left.early_other|default(0) }}</span></li>
+                </ul>
+            </li>
+        </ul>
+        <p class="an-note">Top left-out browsers</p>
+        {% if left.browsers %}
+        <div class="an-scroll">
+            <table class="an-table">
+                <thead>
+                    <tr>
+                        <th>Browser</th>
+                        <th>Device</th>
+                        <th>Reason</th>
+                        <th class="an-num">Visits</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in left.browsers %}
+                    <tr>
+                        <td class="an-ua">{{ row.user_agent }}</td>
+                        <td>{{ row.device }}</td>
+                        <td>{{ row.reason_label }}</td>
+                        <td class="an-num">{{ row.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="an-note">None in this window.</p>
+        {% endif %}
+    </details>
     <div class="an-funnel">
         <div class="an-step">
             <div class="lbl">Visitors</div>

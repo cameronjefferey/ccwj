@@ -534,6 +534,20 @@ def test_admin_analytics_is_admin_only(monkeypatch):
                     "rate": 37.5,
                 }],
                 "filtered_out": 14,
+                "left_out": {
+                    "bot": 2,
+                    "internal": 1,
+                    "early": 11,
+                    "early_reddit": 8,
+                    "early_other": 3,
+                    "browsers": [{
+                        "user_agent": "Reddit/Version 2024.41.0/Build 1/iOS Version 17.6",
+                        "device": "phone",
+                        "reason": "early",
+                        "reason_label": "Left before tracking loaded",
+                        "count": 8,
+                    }],
+                },
             },
         },
     )
@@ -549,7 +563,18 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     assert "25.0%" in body
     assert "real-pnl" in body
     assert "15s" in body
-    assert "14 visits on this page were left out" in body
+    assert "14 left out — see why" in body
+    assert "visits on this page were left out" not in body
+    assert '<details class="an-leftout">' in body
+    assert '<details class="an-leftout" open' not in body
+    assert ">Bot<" in body or "Bot <span" in body
+    assert "Our own traffic" in body
+    assert "Left before tracking loaded" in body
+    assert "Reddit/" in body
+    assert "Top left-out browsers" in body
+    assert "Reddit/Version 2024.41.0/Build 1/iOS Version 17.6" in body
+    assert "visit_id" not in body
+    assert "rdt_cid" not in body
     assert "Where they went" in body
     assert "try-demo" in body
     assert "37.5%" in body
@@ -648,7 +673,8 @@ def test_admin_analytics_product_tab_is_separate(monkeypatch):
     assert "tab=product" in body
     assert "Where they went" not in body
     assert "Scroll 50%" not in body
-    assert "14 visits on this page were left out" not in body
+    assert "14 left out — see why" not in body
+    assert '<details class="an-leftout">' not in body
     assert "Since ads launched" not in body
 
 
@@ -679,6 +705,7 @@ def test_static_images_are_cached():
     assert "cta_click" in script
     assert "scroll_depth" in script
     assert "client_seen" in script
+    assert "__htClientSeen" in script
     assert "time_on_page" in script
     assert "300" in script
     lottie = client.get("/static/marketing/covered-call-scroll.json")
@@ -721,6 +748,13 @@ def test_device_type_is_coarse_and_drops_the_raw_agent():
     assert device_type("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)") == "phone"
     assert device_type("Mozilla/5.0 (iPad; CPU OS 17_0)") == "tablet"
     assert device_type("Mozilla/5.0 (Windows NT 10.0)") == "desktop"
+    # Bare Reddit in-app string: iOS token, no iPhone / Mobile.
+    assert device_type(
+        "Reddit/Version 2024.41.0/Build 1582345/iOS Version 17.6.1 (Build 21G93)"
+    ) == "phone"
+    assert device_type(
+        "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) Reddit/Version 2024.41.0/iOS 17.5"
+    ) == "tablet"
 
 
 def test_landing_slug_sticks_on_first_touch_and_moves_last_touch():
@@ -1309,6 +1343,28 @@ def test_bot_user_agents_internal_ip_and_opt_out(monkeypatch):
     assert is_bot_user_agent("") is False
     assert is_bot_user_agent(None) is False
     assert is_bot_user_agent("curling iron") is False
+    assert is_bot_user_agent(
+        "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/120.0.0.0 bottom"
+    ) is False
+    assert is_bot_user_agent("both the browser and the page") is False
+    for ua in (
+        # Reddit in-app, Mobile Safari, Chrome Android — humans.
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 "
+        "Reddit/Version 2024.28.0/Build 613471/iOS Version 17.5.1 (Build 21F90)",
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UQ1A.240205.002; wv) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.6367.179 "
+        "Mobile Safari/537.36 Reddit/Version 2024.28.0/Build 613471/Android 14",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 "
+        "Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36",
+        "Reddit/Version 2024.41.0/Build 1582345/iOS Version 17.6.1 (Build 21G93)",
+    ):
+        assert is_bot_user_agent(ua) is False, ua
+        if "Android" in ua or "iPhone" in ua or "/iOS" in ua:
+            assert device_type(ua) == "phone", ua
     for ua in (
         "Mozilla/5.0 HeadlessChrome/120.0.0.0",
         "python-requests/2.32.3",
@@ -1321,6 +1377,23 @@ def test_bot_user_agents_internal_ip_and_opt_out(monkeypatch):
         "facebookexternalhit/1.1",
         "redditbot/1.0",
         "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/17.0 Safari/605.1.15 (Applebot/0.1)",
+        "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+        "Mozilla/5.0 (compatible; Embedly/0.2; +http://support.embed.ly/)",
+        "Snap URL Preview Service; +https://developers.snap.com/robots",
+        "WhatsApp/2.23.20.0",
+        "TelegramBot (like TwitterBot)",
+        "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)",
+        "LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient)",
+        "Slack-ImgProxy (+https://api.slack.com/robots)",
+        "meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)",
+        "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2)",
+        "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0)",
+        "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0)",
+        "Mozilla/5.0 (Linux; Android 5.0) AppleWebKit/537.36 (compatible; Bytespider)",
+        "Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)",
+        "Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)",
         "SomeCrawler/1.0",
         "MySpider/1.0",
     ):
@@ -1418,6 +1491,14 @@ def test_acquisition_sql_drops_bots_and_unbeaconed_page_views(monkeypatch):
     assert "utm_campaign = 'real-pnl'" in blob
     assert "cta_click" in blob
     assert "video_play" in blob
+    assert "THEN 'bot'" in blob
+    assert "THEN 'internal'" in blob
+    assert "THEN 'early'" in blob
+    assert "Reddit/" in blob
+    assert "left(COALESCE(user_agent, ''), 120)" in blob
+    assert "DATE '2026-10-05'" in blob
+    assert "rdt_cid" not in blob
+    assert "email" not in blob
     assert "lesson_started" not in blob
     assert "broker_connected" not in blob
     assert "ELSE 'Direct'" not in blob
@@ -2272,3 +2353,304 @@ def test_paid_tab_excludes_prelaunch_events_and_keeps_launch_day(monkeypatch):
     assert [row["day"] for row in week["days"]][0] == "2026-10-05"
     assert len(week["days"]) == 4
     assert week["visitors"] == after["visitors"]
+
+
+def test_left_out_rows_truncate_the_agent_and_drop_identity_fields():
+    from app.funnel import _left_out_ctes, _left_out_from_rows, _truncate_user_agent
+
+    long_ua = "Reddit/Version 2024.41.0/Build 9/iOS Version 17.6 " + ("A" * 160)
+    shaped = _left_out_from_rows(
+        {
+            "bot": 1,
+            "internal": 2,
+            "early": 3,
+            "early_reddit": 2,
+            "early_other": 1,
+        },
+        [
+            {"user_agent": long_ua, "reason": "early", "n": 4},
+            {"user_agent": None, "reason": "bot", "n": 1, "device": "desktop"},
+            {"user_agent": "curl/8.5.0", "reason": "nope", "n": 9},
+        ],
+    )
+    assert shaped["bot"] == 1
+    assert shaped["early_reddit"] == 2
+    assert len(shaped["browsers"]) == 2
+    reddit = shaped["browsers"][0]
+    assert len(reddit["user_agent"]) == 120
+    assert reddit["user_agent"].startswith("Reddit/Version")
+    assert reddit["device"] == "phone"
+    assert reddit["reason_label"] == "Left before tracking loaded"
+    assert "visit_id" not in reddit
+    assert shaped["browsers"][1]["user_agent"] == "Unknown"
+    assert shaped["browsers"][1]["device"] == "desktop"
+    assert _truncate_user_agent("  short  ") == "short"
+    sql = _left_out_ctes("/go/real-pnl", "(TRUE)")
+    assert "THEN 'bot'" in sql
+    assert "THEN 'internal'" in sql
+    assert "THEN 'early'" in sql
+    assert "funnel_internal_visits" in sql
+    assert "bot_hit" in sql
+    assert "owner_hit" in sql
+    assert "Reddit/" in sql
+    assert "rdt_cid" not in sql
+    assert "email" not in sql
+    assert "ip_address" not in sql
+
+
+def test_client_seen_beacon_is_inline_before_bootstrap():
+    from app.funnel import page_wants_client_beacon
+
+    assert page_wants_client_beacon("/go/real-pnl") is True
+    assert page_wants_client_beacon("/login") is True
+    assert page_wants_client_beacon("/signup") is True
+    assert page_wants_client_beacon("/privacy") is False
+    assert page_wants_client_beacon("/learn/progress") is False
+    assert page_wants_client_beacon("/overview") is False
+
+    client = app.test_client()
+    page = client.get("/go/real-pnl")
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    head, _, rest = body.partition("</head>")
+    assert "window.__htClientSeen = 1" in head
+    assert "navigator.sendBeacon" in head
+    assert "/funnel/beacon" in head
+    assert "keepalive: true" in head
+    assert "client_seen" in head
+    assert "js/funnel.js" in head
+    assert "js/funnel.js" not in rest
+    bundle = "bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+    assert bundle in rest
+    # CSS from the same host loads in <head>. The JS bundle is what
+    # funnel.js used to wait on; that script tag stays after funnel.js.
+    assert body.index("js/funnel.js") < body.index(bundle)
+    assert head.index("client_seen") < head.index("js/funnel.js")
+
+    for path in ("/signup", "/login", "/pricing", "/faq", "/start"):
+        html_body = client.get(path).get_data(as_text=True)
+        assert html_body.find("client_seen") != -1, path
+        assert html_body.find("client_seen") < html_body.find("</head>"), path
+        assert html_body.find("js/funnel.js") < html_body.find(bundle), path
+
+    privacy = client.get("/privacy").get_data(as_text=True)
+    privacy_head = privacy.partition("</head>")[0]
+    assert "client_seen" not in privacy_head
+
+
+def test_signed_in_page_does_not_inline_the_beacon(monkeypatch):
+    from app.models import User
+
+    class _User:
+        is_authenticated = True
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "ada"
+
+        def get_id(self):
+            return "7"
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(lambda uid: _User()))
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "7"
+        sess["_fresh"] = True
+    page = client.get("/pricing")
+    assert page.status_code == 200
+    head = page.get_data(as_text=True).partition("</head>")[0]
+    assert "client_seen" not in head
+
+
+def test_paid_left_out_reasons_respect_launch_and_priority(monkeypatch):
+    """One reason per visit, inside the Paid window. Identity fields stay off."""
+    if not os.environ.get("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    from datetime import date
+
+    from app.db import execute
+    from app.funnel import build_acquisition
+
+    def _at(stamp: str) -> str:
+        return f"(TIMESTAMP '{stamp}' AT TIME ZONE 'America/New_York')"
+
+    def _counts(report):
+        left = report["left_out"]
+        return (
+            report["filtered_out"],
+            left["bot"],
+            left["internal"],
+            left["early"],
+            left["early_reddit"],
+            left["early_other"],
+        )
+
+    reddit_ua = (
+        "Reddit/Version 2024.41.0/Build 1582345/iOS Version 17.6.1 (Build 21G93)"
+    )
+    chrome_ua = (
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36"
+    )
+    long_ua = "OtherBrowser/1.0 " + ("Z" * 180)
+
+    from app import funnel as funnel_mod
+
+    for key in ("today", "7d", "30d"):
+        monkeypatch.setitem(funnel_mod._RANGE_WHERE, key, "TRUE")
+    monkeypatch.setattr(funnel_mod, "_analytics_today", lambda: date(2026, 10, 8))
+    monkeypatch.delenv("ADMIN_USERS", raising=False)
+    monkeypatch.delenv("INTERNAL_USERS", raising=False)
+
+    execute(
+        """
+        INSERT INTO users (username, password_hash)
+        VALUES ('happycameron', 'x')
+        ON CONFLICT (username) DO NOTHING
+        """,
+    )
+    from app.db import fetch_one
+    owner_id = fetch_one(
+        "SELECT id FROM users WHERE username = 'happycameron'"
+    )["id"]
+
+    before = build_acquisition("30d")
+    when = _at("2026-10-06 15:00:00")
+
+    bot_visit = uuid.uuid4().hex
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot, user_agent, device, created_at)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', FALSE, TRUE,
+             'Mozilla/5.0 (compatible; Googlebot/2.1)', 'desktop', {when})
+        """,
+        (bot_visit,),
+    )
+    execute(
+        """
+        INSERT INTO funnel_internal_visits (visit_id, reason)
+        VALUES (%s, 'query')
+        ON CONFLICT (visit_id) DO NOTHING
+        """,
+        (bot_visit,),
+    )
+
+    internal_visit = uuid.uuid4().hex
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot, user_agent, device, created_at)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', FALSE, FALSE,
+             %s, 'desktop', {when})
+        """,
+        (internal_visit, chrome_ua),
+    )
+    execute(
+        """
+        INSERT INTO funnel_internal_visits (visit_id, reason)
+        VALUES (%s, 'cookie')
+        ON CONFLICT (visit_id) DO NOTHING
+        """,
+        (internal_visit,),
+    )
+
+    owner_visit = uuid.uuid4().hex
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, user_id, path, client_beacon, is_bot,
+             user_agent, device, created_at)
+        VALUES
+            ('page_view', %s, %s, '/go/real-pnl', FALSE, FALSE,
+             %s, 'desktop', {when})
+        """,
+        (owner_visit, owner_id, chrome_ua),
+    )
+
+    reddit_visit = uuid.uuid4().hex
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot, user_agent, device, created_at)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', FALSE, FALSE, %s, 'desktop', {when})
+        """,
+        (reddit_visit, reddit_ua),
+    )
+
+    other_visit = uuid.uuid4().hex
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot, user_agent, device, created_at)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', FALSE, FALSE, %s, 'phone', {when})
+        """,
+        (other_visit, long_ua),
+    )
+
+    human_visit = uuid.uuid4().hex
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot, user_agent, device, created_at)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', TRUE, FALSE, %s, 'phone', {when})
+        """,
+        (human_visit, chrome_ua),
+    )
+
+    prelaunch = uuid.uuid4().hex
+    execute(
+        f"""
+        INSERT INTO funnel_events
+            (event, visit_id, path, client_beacon, is_bot, user_agent, device, created_at)
+        VALUES
+            ('page_view', %s, '/go/real-pnl', FALSE, FALSE, %s, 'phone',
+             {_at('2026-10-02 15:00:00')})
+        """,
+        (prelaunch, reddit_ua),
+    )
+
+    after = build_acquisition("30d")
+    assert _counts(after) == (
+        before["filtered_out"] + 5,
+        before["left_out"]["bot"] + 1,
+        before["left_out"]["internal"] + 2,
+        before["left_out"]["early"] + 2,
+        before["left_out"]["early_reddit"] + 1,
+        before["left_out"]["early_other"] + 1,
+    )
+    for row in after["left_out"]["browsers"]:
+        assert set(row) == {"user_agent", "device", "reason", "reason_label", "count"}
+        assert len(row["user_agent"]) <= 120
+
+    from app.db import fetch_all
+    from app.funnel import _left_out_ctes, _left_out_from_rows, _paid_window_sql
+    detail = fetch_all(
+        _left_out_ctes("/go/real-pnl", _paid_window_sql("30d"))
+        + """
+        SELECT left(COALESCE(user_agent, ''), 120) AS user_agent,
+               reason,
+               COUNT(*)::int AS n
+          FROM marked
+         WHERE reason = 'early'
+           AND (user_agent LIKE 'Reddit/Version 2024.41.0/Build 1582345%%'
+                OR user_agent LIKE 'OtherBrowser/1.0 %%')
+         GROUP BY 1, 2
+        """
+    )
+    shaped = _left_out_from_rows({}, detail)
+    by_agent = {row["user_agent"]: row for row in shaped["browsers"]}
+    reddit = next(row for row in by_agent.values() if row["user_agent"].startswith("Reddit/"))
+    assert reddit["device"] == "phone"
+    assert reddit["reason"] == "early"
+    assert reddit["count"] >= 1
+    long_row = next(row for row in by_agent.values() if row["user_agent"].startswith("OtherBrowser/"))
+    assert len(long_row["user_agent"]) == 120
+    assert long_row["device"] == "desktop"
+    assert long_row["reason"] == "early"
+    assert "visit_id" not in detail[0]

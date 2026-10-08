@@ -757,7 +757,17 @@ your dashboard** and do not see the app nav or the broker-data bar.
 `/go/real-pnl` does not show Sign in or Go to your dashboard.
 Logged-out public pages also record page views, CTA clicks, scroll
 depth (25/50/75/100), time on page (visible-time buckets 5, 15, 30,
-60, 120, and 300 seconds), and public video plays. Ad pixels and Conversions API stay off
+60, 120, and 300 seconds), and public video plays. A page view is
+inserted with `client_beacon` FALSE and counts once the browser posts
+`client_seen`. That post is an inline script at the top of `<head>`
+on logged-out funnel pages (`_funnel_seen.html`, same paths as
+`_is_public_path`), using `navigator.sendBeacon` and falling back to
+`fetch` keepalive. The route is CSRF-exempt. `funnel.js` still records
+scroll, time, clicks, and video plays, and it skips `client_seen` when
+the head script already set `window.__htClientSeen`, so a visit does
+not spend the beacon rate limit twice. `funnel.js` is a deferred
+script ahead of the Bootstrap bundle, so scroll tracking does not wait
+on the CDN. A client with JavaScript off never beacons. Ad pixels and Conversions API stay off
 on DNT/GPC, on internal traffic (`?ht_internal=1`, the `ht_internal`
 cookie, internal IPs, owner accounts), and on bot user agents; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds
@@ -787,8 +797,20 @@ cookie), `INTERNAL_IPS`, and owner or test accounts — `cameron`,
 in `funnel_internal_visits`, when any row on that `visit_id` carries
 one of those accounts, or when any row on that visit is a bot, so a
 page view logged before login and a later beacon from a headless
-session do not stay in the count. `demo` stays public. The card shows how many
-`/go/real-pnl` visits were filtered. A stored user agent is backfilled;
+session do not stay in the count. `demo` stays public. The bot pattern
+treats `bot` as the end of a token, so `Googlebot` / `Applebot` /
+`bingbot` / `redditbot` match and a word like `bottom` does not. Preview
+fetchers that never run JavaScript are bots too (`Embedly`, Snap URL
+Preview, WhatsApp, TelegramBot, Discordbot, LinkedInBot, Slack-ImgProxy,
+`meta-externalagent`, GPTBot, ClaudeBot, PerplexityBot, Bytespider,
+AhrefsBot, SemrushBot). Reddit's in-app browser stays human. A bare
+`Reddit/Version …/iOS …` user agent is a phone. On the Paid tab the
+old "N visits were left out" sentence is a collapsed disclosure, same
+launch date and range as the rest of the card: one reason per visit
+(Bot, then Our own traffic, then Left before tracking loaded, with
+`Reddit/` and Other under that last bucket) and the top 15 left-out
+user agents (about 120 characters) with device and reason. The list
+does not show IP, email, click id, or visit id. A stored user agent is backfilled;
 rows that never saved one stay in the count.
 
 ### Trader Profile (`/story`, endpoint `trader_story`)

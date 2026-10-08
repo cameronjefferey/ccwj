@@ -6,6 +6,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {% include "_funnel_seen.html" %}
     {% if title %}
         <title>{{ title }} - HappyTrader</title>
     {% else %}
@@ -1166,6 +1167,7 @@
         }
     </style>
     {% block head %}{% endblock %}
+    <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
     <style>
         /* Page styles that hardcode white tiles load above. These beat them. */
         body .sec-card,
@@ -1926,7 +1928,6 @@
             bootstrap.Toast.getOrCreateInstance(el, { autohide: true, delay: 7000 }).show();
         });
     </script>
-    <script defer src="{{ url_for('static', filename='js/funnel.js') }}"></script>
     {% if not _public_page %}
     <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/term-tips.js') }}"></script>

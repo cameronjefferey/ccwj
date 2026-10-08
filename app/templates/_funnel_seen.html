@@ -1,0 +1,35 @@
+{# client_seen as soon as the parser reaches <head>. Report-only CSP
+   allows 'unsafe-inline' and this site does not set a script nonce.
+   The route is CSRF-exempt; the body matches /funnel/beacon. A client
+   with JavaScript off never runs this, so a real bot still stays
+   unbeaconed. funnel.js skips a second post when this flag is set. #}
+{% if not current_user.is_authenticated and page_wants_client_beacon() %}
+<script>
+(function () {
+    window.__htClientSeen = 1;
+    var path = location.pathname || "/";
+    var body = JSON.stringify({event: "client_seen", path: path, detail: "1"});
+    try {
+        if (navigator.sendBeacon) {
+            var queued = navigator.sendBeacon(
+                "/funnel/beacon",
+                new Blob([body], {type: "application/json"})
+            );
+            if (queued) return;
+        }
+    } catch (e) { /* fetch below */ }
+    var token = "";
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) token = meta.getAttribute("content") || "";
+    try {
+        fetch("/funnel/beacon", {
+            method: "POST",
+            credentials: "same-origin",
+            keepalive: true,
+            headers: {"Content-Type": "application/json", "X-CSRFToken": token},
+            body: body
+        }).catch(function () {});
+    } catch (e) { /* beacon is best-effort */ }
+})();
+</script>
+{% endif %}

@@ -92,15 +92,27 @@ BEACON_EVENTS = frozenset({
     "video_play",
     "client_seen",
 })
-# Case-insensitive. ``bot`` already covers Slackbot, Twitterbot, and
-# redditbot; those names stay in the pattern so a shorter UA still matches.
-# ``curl`` is the whole token or a curl/version string, not a substring of
-# an unrelated word.
+# Case-insensitive. Shared with Postgres ``user_agent ~*`` in
+# ``backfill_bot_user_agents``, so the syntax stays valid in both engines.
+# ``bot`` must end a token (Googlebot, Applebot, bingbot, redditbot) and
+# must not match inside a longer word such as "bottom". Named crawlers
+# stay in the pattern so a shorter UA still matches. ``curl`` is the
+# whole token or a curl/version string. Link-preview and non-JS fetchers
+# that do not say "bot" are listed on their own.
 _BOT_UA_PATTERN = (
-    r"bot|crawler|spider|headlesschrome|python-requests|curl/|"
-    r"(^|[^A-Za-z])curl([^A-Za-z]|$)|"
-    r"playwright|puppeteer|slackbot|twitterbot|facebookexternalhit|redditbot"
+    r"bot(?:[^A-Za-z]|$)|"
+    r"crawler|spider|headlesschrome|python-requests|curl/|"
+    r"(^|[^A-Za-z])curl(?:[^A-Za-z]|$)|"
+    r"playwright|puppeteer|slackbot|twitterbot|facebookexternalhit|redditbot|"
+    r"embedly|snap url preview|whatsapp|telegrambot|discordbot|linkedinbot|"
+    r"slack-imgproxy|meta-externalagent|gptbot|claudebot|perplexitybot|"
+    r"bytespider|ahrefsbot|semrushbot"
 )
+_LEFT_OUT_LABELS = {
+    "bot": "Bot",
+    "internal": "Our own traffic",
+    "early": "Left before tracking loaded",
+}
 _BOT_UA_RE = re.compile(_BOT_UA_PATTERN, re.IGNORECASE)
 ACQ_STEPS = (
     ("visitors", "Visitors"),
@@ -380,13 +392,20 @@ def _apply_landing(ft: dict, lt: dict, incoming: dict) -> bool:
 
 def device_type(user_agent=None) -> str:
     """Coarse device class. The raw user agent is stored for bot filtering
-    and is not shown in the admin tables."""
+    and is not shown in the admin tables.
+
+    A bare Reddit in-app string (``Reddit/Version …/iOS …``) has no
+    iPhone or Mobile token. ``ios`` as its own token is a phone. iPad
+    stays a tablet because that check runs first.
+    """
     if user_agent is None and has_request_context():
         user_agent = request.headers.get("User-Agent") or ""
     ua = (user_agent or "").lower()
     if "ipad" in ua or "tablet" in ua:
         return "tablet"
     if any(tok in ua for tok in ("mobi", "iphone", "android", "phone")):
+        return "phone"
+    if re.search(r"(^|[^a-z])ios([^a-z]|$)", ua):
         return "phone"
     return "desktop"
 
@@ -540,6 +559,22 @@ def _attach_internal_cookie(response):
     return response
 
 
+def _internal_username_sql() -> str:
+    """Quoted username list for the human and left-out filters."""
+    return ", ".join("'" + name + "'" for name in sorted(internal_usernames()))
+
+
+def page_wants_client_beacon(path=None) -> bool:
+    """Logged-out pages that insert a funnel row a browser beacon can mark.
+
+    Same paths as ``_is_public_path``. The inline head script uses this
+    so a bounce does not wait on ``funnel.js``.
+    """
+    if path is None and has_request_context():
+        path = request.path or ""
+    return _is_public_path(path or "")
+
+
 def human_traffic_sql() -> str:
     """Rows that are not bots and not an internal account or visit.
 
@@ -550,9 +585,9 @@ def human_traffic_sql() -> str:
     a later beacon that omitted the crawler user agent. ``client_beacon``
     is separate: old rows
     are NULL and still count. A new page view or signup start stays
-    FALSE until the browser beacon sets TRUE.
+    FALSE until the inline head beacon sets TRUE.
     """
-    quoted = ", ".join("'" + name + "'" for name in sorted(internal_usernames()))
+    quoted = _internal_username_sql()
     return (
         "(COALESCE(is_bot, FALSE) = FALSE "
         "AND (visit_id IS NULL OR NOT EXISTS ("
@@ -577,11 +612,12 @@ def counted_traffic_sql() -> str:
     """Human rows. Page views and signup starts need a browser beacon.
 
     NULL beacons still count (rows from before the beacon column). A new
-    row is inserted FALSE until funnel.js posts ``client_seen``. Signup
-    starts used to count those FALSE rows, so a prefetch, a curl, or a
-    browser that never ran JavaScript looked like someone who opened the
-    form. Completions stay in the count either way: the account exists
-    even when the beacon never arrives.
+    row is inserted FALSE until the inline head script posts
+    ``client_seen`` (``funnel.js`` posts it only when that script did
+    not). Signup starts used to count those FALSE rows, so a prefetch,
+    a curl, or a browser that never ran JavaScript looked like someone
+    who opened the form. Completions stay in the count either way: the
+    account exists even when the beacon never arrives.
     """
     return (
         f"{human_traffic_sql()} "
@@ -1493,6 +1529,129 @@ def _paid_day_span(today, range_key: str):
     return days
 
 
+def _empty_left_out() -> dict:
+    return {
+        "bot": 0,
+        "internal": 0,
+        "early": 0,
+        "early_reddit": 0,
+        "early_other": 0,
+        "browsers": [],
+    }
+
+
+def _truncate_user_agent(value) -> str:
+    """Display form of a stored user agent. No other identity fields."""
+    text = (value or "").replace("\r", " ").replace("\n", " ").strip()
+    if not text:
+        return "Unknown"
+    if len(text) > 120:
+        return text[:120]
+    return text
+
+
+def _left_out_ctes(path: str, window: str) -> str:
+    """One reason per /go/real-pnl page-view visit, in priority order.
+
+    Bot (this row or any bot hit on the visit), then our own traffic
+    (internal-visit stamp or an owner/admin/test username on the visit),
+    then left before tracking loaded (``client_beacon`` FALSE and neither
+    of the above). ``Reddit/`` is a sub-count of that last bucket. The
+    SELECT lists that follow must not project visit id, IP, email, or
+    click id.
+    """
+    quoted = _internal_username_sql()
+    return f"""
+    WITH page_rows AS (
+        SELECT visit_id,
+               created_at,
+               COALESCE(is_bot, FALSE) AS row_bot,
+               client_beacon IS FALSE AS beacon_false,
+               user_agent,
+               COALESCE(NULLIF(device, ''), 'desktop') AS device
+          FROM funnel_events
+         WHERE event = 'page_view'
+           AND path = '{path}'
+           AND visit_id IS NOT NULL
+           AND {window}
+    ),
+    flags AS (
+        SELECT visit_id,
+               BOOL_OR(row_bot) AS row_bot,
+               BOOL_OR(beacon_false) AS beacon_false,
+               BOOL_OR(COALESCE(user_agent, '') LIKE '%%Reddit/%%') AS reddit_app
+          FROM page_rows
+         GROUP BY visit_id
+    ),
+    latest AS (
+        SELECT DISTINCT ON (visit_id)
+               visit_id,
+               user_agent,
+               device
+          FROM page_rows
+         ORDER BY visit_id, created_at DESC
+    ),
+    marked AS (
+        SELECT l.visit_id,
+               l.user_agent,
+               l.device,
+               f.reddit_app,
+               CASE
+                 WHEN f.row_bot OR EXISTS (
+                   SELECT 1 FROM funnel_events bot_hit
+                    WHERE bot_hit.visit_id = f.visit_id
+                      AND COALESCE(bot_hit.is_bot, FALSE)
+                 ) THEN 'bot'
+                 WHEN EXISTS (
+                   SELECT 1 FROM funnel_internal_visits iv
+                    WHERE iv.visit_id = f.visit_id
+                 ) OR EXISTS (
+                   SELECT 1 FROM funnel_events owner_hit
+                     JOIN users u ON u.id = owner_hit.user_id
+                    WHERE owner_hit.visit_id = f.visit_id
+                      AND lower(u.username) IN ({quoted})
+                 ) THEN 'internal'
+                 WHEN f.beacon_false THEN 'early'
+                 ELSE NULL
+               END AS reason
+          FROM flags f
+          JOIN latest l ON l.visit_id = f.visit_id
+    )
+    """
+
+
+def _left_out_from_rows(reason_row, browser_rows) -> dict:
+    """Shape the left-out queries into the Paid disclosure."""
+    reason_row = reason_row or {}
+    bot = int(reason_row.get("bot") or 0)
+    internal = int(reason_row.get("internal") or 0)
+    early = int(reason_row.get("early") or 0)
+    early_reddit = int(reason_row.get("early_reddit") or 0)
+    early_other = int(reason_row.get("early_other") or 0)
+    browsers = []
+    for row in browser_rows or []:
+        reason = (row.get("reason") or "").strip()
+        if reason not in _LEFT_OUT_LABELS:
+            continue
+        raw_ua = row.get("user_agent")
+        ua = raw_ua if isinstance(raw_ua, str) else ""
+        browsers.append({
+            "user_agent": _truncate_user_agent(ua),
+            "device": device_type(ua) if ua else (row.get("device") or "desktop"),
+            "reason": reason,
+            "reason_label": _LEFT_OUT_LABELS[reason],
+            "count": int(row.get("n") or 0),
+        })
+    return {
+        "bot": bot,
+        "internal": internal,
+        "early": early,
+        "early_reddit": early_reddit,
+        "early_other": early_other,
+        "browsers": browsers,
+    }
+
+
 def _empty_acquisition(range_key="7d") -> dict:
     metrics = _engagement_metrics({}, 0, None)
     return {
@@ -1511,6 +1670,7 @@ def _empty_acquisition(range_key="7d") -> dict:
         "devices": [],
         "destinations": [],
         "filtered_out": 0,
+        "left_out": _empty_left_out(),
     }
 
 
@@ -1665,17 +1825,33 @@ def build_acquisition(range_key=None) -> dict:
              LIMIT 40
             """
         )
-        filtered_rows = fetch_all(
+        left_ctes = _left_out_ctes(path, window)
+        reason_rows = fetch_all(
             f"""
-            SELECT COUNT(DISTINCT visit_id)::int AS n
-              FROM funnel_events
-             WHERE event = 'page_view'
-               AND path = '{path}'
-               AND {window}
-               AND NOT (
-                 {human_traffic_sql()}
-                 AND client_beacon IS DISTINCT FROM FALSE
-               )
+            {left_ctes}
+            SELECT COUNT(*) FILTER (WHERE reason = 'bot')::int AS bot,
+                   COUNT(*) FILTER (WHERE reason = 'internal')::int AS internal,
+                   COUNT(*) FILTER (WHERE reason = 'early')::int AS early,
+                   COUNT(*) FILTER (
+                       WHERE reason = 'early' AND reddit_app
+                   )::int AS early_reddit,
+                   COUNT(*) FILTER (
+                       WHERE reason = 'early' AND NOT reddit_app
+                   )::int AS early_other
+              FROM marked
+            """
+        )
+        browser_rows = fetch_all(
+            f"""
+            {left_ctes}
+            SELECT left(COALESCE(user_agent, ''), 120) AS user_agent,
+                   reason,
+                   COUNT(*)::int AS n
+              FROM marked
+             WHERE reason IS NOT NULL
+             GROUP BY 1, 2
+             ORDER BY n DESC, user_agent, reason
+             LIMIT 15
             """
         )
     except Exception as exc:
@@ -1709,6 +1885,7 @@ def build_acquisition(range_key=None) -> dict:
             "signups": found["signups"],
         })
 
+    left_out = _left_out_from_rows((reason_rows or [None])[0], browser_rows)
     return {
         "range_key": range_key,
         "since_label": _paid_since_label(),
@@ -1724,7 +1901,10 @@ def build_acquisition(range_key=None) -> dict:
         "sources": sources or [],
         "devices": devices or [],
         "destinations": _destination_rows(destinations, visitors),
-        "filtered_out": int(((filtered_rows or [{}])[0] or {}).get("n") or 0),
+        "filtered_out": (
+            left_out["bot"] + left_out["internal"] + left_out["early"]
+        ),
+        "left_out": left_out,
     }
 
 
@@ -2110,6 +2290,7 @@ def register(app):
         return jsonify(body), status
 
     guarded = csrf.exempt(limiter.limit("120 per minute; 2000 per hour")(_beacon))
+    app.add_template_global(page_wants_client_beacon, name="page_wants_client_beacon")
     app.add_url_rule(
         "/funnel/beacon",
         endpoint="funnel_beacon",
