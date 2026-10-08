@@ -232,32 +232,5 @@
     watch.observe(section);
 })();
 </script>
-<script src="{{ url_for('static', filename='js/lottie.min.js') }}"></script>
-<script>
-(function () {
-    var slot = document.querySelector(".ht-lottie-hero");
-    if (!slot || !window.lottie) return;
-    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    var src = slot.getAttribute("data-lottie-src") || "";
-    if (!src) return;
-    var sourceW = parseInt(slot.getAttribute("data-lottie-w") || "1020", 10) || 1020;
-    var cssW = slot.clientWidth || sourceW;
-    var dpr = Math.min(window.devicePixelRatio || 1, sourceW / cssW);
-    if (!(dpr > 0)) dpr = 1;
-    var anim = window.lottie.loadAnimation({
-        container: slot,
-        renderer: "canvas",
-        loop: true,
-        autoplay: true,
-        path: src,
-        rendererSettings: { dpr: dpr, clearCanvas: true }
-    });
-    anim.addEventListener("DOMLoaded", function () {
-        var poster = slot.querySelector(".ht-lottie-poster");
-        if (poster) poster.remove();
-        anim.resize();
-        window.requestAnimationFrame(function () { anim.resize(); });
-    });
-})();
-</script>
+{% include "_lottie_hero_boot.html" %}
 {% endblock %}

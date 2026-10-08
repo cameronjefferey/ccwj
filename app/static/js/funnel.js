@@ -44,7 +44,17 @@
         });
     }
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("load", onScroll);
+    // scrollHeight forces layout. Doing that inside the load handler
+    // sat on the critical path. Idle (or the next frame) still catches
+    // a short page that is already fully scrolled.
+    window.addEventListener("load", function () {
+        var run = function () { onScroll(); };
+        if (window.requestIdleCallback) {
+            window.requestIdleCallback(run, { timeout: 1500 });
+        } else {
+            window.requestAnimationFrame(run);
+        }
+    });
 
     // Visible time only. Each bucket is sent once (post() dedupes) as the
     // visitor crosses it, and again on hide/unload in case the timer was late.

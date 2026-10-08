@@ -766,8 +766,13 @@ on logged-out funnel pages (`_funnel_seen.html`, same paths as
 scroll, time, clicks, and video plays, and it skips `client_seen` when
 the head script already set `window.__htClientSeen`, so a visit does
 not spend the beacon rate limit twice. `funnel.js` is a deferred
-script ahead of the Bootstrap bundle, so scroll tracking does not wait
-on the CDN. A client with JavaScript off never beacons. Ad pixels and Conversions API stay off
+script ahead of the Bootstrap bundle and the hero Lottie file (that
+file is `defer` too, on `/` and `/go/real-pnl`), so scroll tracking
+does not wait on either download. The load-time scroll read is
+scheduled with `requestIdleCallback` (`requestAnimationFrame` when
+idle is missing) so it does not measure the page inside that handler.
+Flash toasts wait for `DOMContentLoaded`, after the deferred Bootstrap
+bundle; `defer` on an inline script does not. A client with JavaScript off never beacons. Ad pixels and Conversions API stay off
 on DNT/GPC, on internal traffic (`?ht_internal=1`, the `ht_internal`
 cookie, internal IPs, owner accounts), and on bot user agents; those
 first-party rows still write. `REDDIT_CAPI_TEST_ID`, when set, adds

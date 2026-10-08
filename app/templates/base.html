@@ -1650,8 +1650,9 @@
     {% endif %}
 
     {# Below the navbar so a flash cannot cover Account. The container
-       ignores clicks; only the toast itself does. Bootstrap starts the
-       auto-dismiss timer in the script under the bundle. #}
+       ignores clicks; only the toast itself does. The show call waits
+       for DOMContentLoaded, which is after the deferred Bootstrap
+       bundle. defer on an inline script does not wait. #}
     <div class="toast-container position-fixed end-0 p-3 ht-toast-stack">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -1922,11 +1923,20 @@
     </div>
 
     <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script defer>
-        document.querySelectorAll(".ht-toast-stack .toast").forEach(function (el) {
-            if (!window.bootstrap || !bootstrap.Toast) return;
-            bootstrap.Toast.getOrCreateInstance(el, { autohide: true, delay: 7000 }).show();
-        });
+    <script>
+        (function () {
+            function showToasts() {
+                if (!window.bootstrap || !bootstrap.Toast) return;
+                document.querySelectorAll(".ht-toast-stack .toast").forEach(function (el) {
+                    bootstrap.Toast.getOrCreateInstance(el, { autohide: true, delay: 7000 }).show();
+                });
+            }
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", showToasts);
+            } else {
+                showToasts();
+            }
+        })();
     </script>
     {% if not _public_page %}
     <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>

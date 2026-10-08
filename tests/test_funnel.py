@@ -707,6 +707,9 @@ def test_static_images_are_cached():
     assert "client_seen" in script
     assert "__htClientSeen" in script
     assert "time_on_page" in script
+    assert 'addEventListener("load", onScroll)' not in script
+    assert "requestIdleCallback" in script
+    assert "requestAnimationFrame" in script
     assert "300" in script
     lottie = client.get("/static/marketing/covered-call-scroll.json")
     assert lottie.status_code == 200
@@ -830,6 +833,55 @@ def test_pixel_skips_internal_and_bot_traffic(monkeypatch):
         app.config["REDDIT_CAPI_TOKEN"] = previous_token
 
 
+def test_real_pnl_renders_the_reddit_pixel_for_a_normal_visit():
+    """PageVisit on /go/real-pnl when the pixel id is set.
+
+    ``?ht_internal=1`` and DNT omit the snippet. That is the existing
+    gate, not a missing tag.
+    """
+    previous = app.config.get("REDDIT_PIXEL_ID")
+    app.config["REDDIT_PIXEL_ID"] = "t2_testpixel"
+    try:
+        client = app.test_client()
+        page = client.get("/go/real-pnl")
+        assert page.status_code == 200
+        body = page.get_data(as_text=True)
+        assert "https://www.redditstatic.com/ads/pixel.js" in body
+        assert 'rdt(\'init\', "t2_testpixel")' in body
+        assert '"PageVisit"' in body
+
+        dnt = app.test_client().get("/go/real-pnl", headers={"DNT": "1"})
+        assert "redditstatic.com/ads/pixel.js" not in dnt.get_data(as_text=True)
+
+        internal = app.test_client().get("/go/real-pnl?ht_internal=1")
+        assert "redditstatic.com/ads/pixel.js" not in internal.get_data(as_text=True)
+
+        app.config["REDDIT_PIXEL_ID"] = ""
+        bare = app.test_client().get("/go/real-pnl")
+        assert "redditstatic.com/ads/pixel.js" not in bare.get_data(as_text=True)
+    finally:
+        app.config["REDDIT_PIXEL_ID"] = previous
+
+
+def test_flash_toasts_wait_until_bootstrap_can_run():
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_flashes"] = [("success", "Saved the name")]
+    page = client.get("/pricing")
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    assert "Saved the name" in body
+    assert "ht-toast-stack" in body
+    show_at = body.find("Toast.getOrCreateInstance")
+    bundle_at = body.find("bootstrap.bundle.min.js")
+    assert show_at > 0 and bundle_at > 0
+    assert bundle_at < show_at
+    chunk = body[body.find("function showToasts"):body.find("function showToasts") + 700]
+    assert 'document.readyState === "loading"' in chunk
+    assert 'addEventListener("DOMContentLoaded", showToasts)' in chunk
+    assert "<script defer>" not in body[bundle_at:show_at]
+
+
 def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
     monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
     monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
@@ -926,6 +978,12 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert "covered-call-scroll-poster.webp" in hero
             assert 'aria-label="Covered-call runs scrolling in HappyTrader"' in hero
             assert "lottie.min.js" in body
+            lottie_tag = body[body.find("lottie.min.js") - 40:body.find("lottie.min.js")]
+            assert "defer" in lottie_tag
+            assert 'id="ht-lottie-lib"' in body
+            assert 'addEventListener("load", start)' in body
+            assert 'addEventListener("DOMLoaded"' in body
+            assert "ht-lottie-poster" in body
             assert 'fetchpriority="high"' in hero
             lottie_path = os.path.join(
                 os.path.dirname(__file__),
