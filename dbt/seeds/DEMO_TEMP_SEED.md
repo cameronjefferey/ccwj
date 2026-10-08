@@ -16,15 +16,17 @@ While the flag is on, Demo Account (`demo:demo-account`) is **every bot-mirror t
 
 The account curve is the bot's balance history **plus** the seed book's full account value (cash, including the $100,000 deposit, plus share and option marks). That add is `int_demo_temp_equity_daily`, joined only for `demo:demo-account`.
 
-- Opening deposit of $100,000 on 2026-01-02, then a rising seed book.
-- **Covered calls** on AAPL (200 shares, short calls that expired above the high, one call still open).
-- **A wheel** on KO (cash-secured put assigned, covered calls, shares called away at a gain).
-- **Call spreads** on MSFT and SPY (credit spreads that expired out of the money, plus one MSFT debit spread closed for a gain).
-- **A put spread** on MSFT that is still open and ahead.
+- Opening deposit of $100,000 on 2026-01-02. That is the only cash transfer. Option credits are trading P&L, not deposits.
+- From January through early August the seed sells small 1-lot credit spreads (about $20–$55 of premium each). That raises the win count without parking the gains before the demo's broker connect date.
+- **The climb starts 2026-08-10**, two days after the demo connect date (2026-08-08). Share buys, covered calls, the wheel, and the larger credit spreads are all on or after that date, so the equity curve and the cumulative P&L chart both show them.
+- **Covered calls** on AAPL (100 shares bought at the 2026-08-10 close) and AMD (100 shares, same day). Short calls expired above that week's high. One call on each name is still open, expiring 2026-10-16.
+- **A wheel** on KO in the same window: an 88 put sold 2026-08-10 and assigned 2026-08-14, then a 90 call sold 2026-08-17 and assigned 2026-08-21. The shares were called away at a gain.
+- **Credit spreads** on SPY, QQQ, MSFT, NVDA, AMZN, META, GOOGL, and JPM. Call spreads expire the week they are opened. Put spreads expire two weeks later, so the two sides do not share an expiry and do not fuse into an iron condor. A few are closed early for a small loss. Four spreads are still open, expiring 2026-10-16.
+- **One long call** on NVDA (opened 2026-08-24, closed 2026-09-04) and **one long put** on SPY that expired worthless on 2026-08-13. The put uses a Thursday expiry so it does not pair with a Friday SPY put spread.
 
-Spreads are two legs, same underlying and expiry, different strikes, opened the same day, so HappyTrader classifies each pair as one spread. The wheel's put assignment and the share buy are the same day. AAPL short calls are not paired with a long call, so they stay covered calls.
+Spreads are two legs, same underlying and expiry, different strikes, opened the same day, so HappyTrader classifies each pair as one spread. The wheel's put assignment and the share buy are the same day. AAPL and AMD short calls are not paired with a long call, so they stay covered calls.
 
-Open AAPL shares follow the public close after the snapshot price in the current file (333.63 on 2026-10-06).
+Open AAPL and AMD shares in the current file are marked at the 2026-10-07 close (AAPL 336.67, AMD 645.86). The account curve keeps following the public close after that snapshot.
 
 ## How to delete the files
 

@@ -25,19 +25,16 @@ HISTORY = ROOT / "dbt" / "seeds" / "demo_temp_history.csv"
 CURRENT = ROOT / "dbt" / "seeds" / "demo_temp_current.csv"
 REMOVAL = ROOT / "dbt" / "seeds" / "DEMO_TEMP_SEED.md"
 
-# Public closes used to mark shares. Chosen so each short call in the
-# seed finished out of the money, and so the shares themselves rose.
+# Public closes used to mark shares still held on the sample dates.
+# The book buys AAPL and AMD on 2026-08-10, so earlier dates are cash.
 CLOSES = {
     "AAPL": (
-        (date(2026, 1, 6), 262.36),
-        (date(2026, 5, 15), 300.23),
-        (date(2026, 10, 6), 333.63),
+        (date(2026, 9, 4), 319.97),
+        (date(2026, 10, 7), 336.67),
     ),
-    "KO": (
-        (date(2026, 3, 20), 74.75),
-        (date(2026, 5, 15), 80.82),
-        (date(2026, 7, 17), 81.56),
-        (date(2026, 10, 6), 86.19),
+    "AMD": (
+        (date(2026, 9, 4), 477.57),
+        (date(2026, 10, 7), 645.86),
     ),
 }
 
@@ -117,8 +114,8 @@ def _close_on(symbol: str, day: date) -> float | None:
 
 
 def _book_on(history: list[dict], day: date, snap: dict[str, float]) -> float:
-    """Cash + share marks + option marks, using 2026-10-06 as 'today'."""
-    today = date(2026, 10, 6)
+    """Cash + share marks + option marks, using 2026-10-07 as 'today'."""
+    today = date(2026, 10, 7)
     cash = 0.0
     qty: dict[str, float] = {}
     contracts: dict[str, dict] = {}
@@ -417,16 +414,26 @@ def test_seed_is_demo_only_and_groups_as_several_strategies():
 
 
 def test_demo_account_equity_climbs_across_the_seed():
+    """The deposit sits until August, then the book climbs into October.
+
+    Share buys and the bulk of the option credits are dated on or after
+    2026-08-10, which is after the demo broker connect date (2026-08-08).
+    A May snapshot of the old book is the wrong shape for this seed.
+    """
     history = _rows(HISTORY)
     snap = {
         r["Symbol"]: _num(r["market_value"])
         for r in _rows(CURRENT)
         if _expiry(r["Symbol"])
     }
-    jan = _book_on(history, date(2026, 1, 6), snap)
-    may = _book_on(history, date(2026, 5, 15), snap)
-    oct_ = _book_on(history, date(2026, 10, 6), snap)
-    assert jan == jan  # not NaN
-    assert may > jan + 4000
-    assert oct_ > may + 4000
-    assert oct_ > 110_000
+    aug = _book_on(history, date(2026, 8, 7), snap)
+    sep = _book_on(history, date(2026, 9, 4), snap)
+    oct_ = _book_on(history, date(2026, 10, 7), snap)
+    assert aug == aug  # not NaN
+    # Premium from the small pre-August spreads, before the share buys.
+    assert aug > 104_000
+    # August premium plus the first leg of the AMD/AAPL mark.
+    assert sep > aug + 12_000
+    # September's climb is the large one, and October finishes higher.
+    assert oct_ > sep + 20_000
+    assert oct_ > 160_000

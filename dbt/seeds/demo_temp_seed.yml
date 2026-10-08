@@ -21,7 +21,7 @@ seeds:
   - name: demo_temp_current
     description: >
       Temporary open positions for demo:demo-account, priced at the
-      2026-10-06 close. Stamped in stg_demo_current only.
+      2026-10-07 close. Stamped in stg_demo_current only.
     config:
       column_types:
         Symbol: string
