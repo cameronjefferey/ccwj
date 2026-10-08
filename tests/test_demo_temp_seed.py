@@ -416,9 +416,9 @@ def test_seed_is_demo_only_and_groups_as_several_strategies():
 def test_demo_account_equity_climbs_across_the_seed():
     """The deposit sits until August, then the book climbs into October.
 
-    Share buys and the bulk of the option credits are dated on or after
-    2026-08-10, which is after the demo broker connect date (2026-08-08).
-    A May snapshot of the old book is the wrong shape for this seed.
+    The share buys are dated 2026-08-10, after the demo broker connect
+    date (2026-08-08). Summer credit spreads add cash around that date
+    too. A May snapshot of the old book is the wrong shape for this seed.
     """
     history = _rows(HISTORY)
     snap = {
@@ -437,3 +437,71 @@ def test_demo_account_equity_climbs_across_the_seed():
     # September's climb is the large one, and October finishes higher.
     assert oct_ > sep + 20_000
     assert oct_ > 160_000
+
+
+def test_combined_chart_climbs_after_the_august_connect():
+    """Mirror plus seed, on the account chart's dates, stays above Aug 8.
+
+    The fixture is the live demo chart minus the seed book from before
+    these summer spreads. Share lots are unchanged, so replaying equity
+    and realize-on-close options and adding the residual is the combined
+    series ``_build_account_chart_from_daily_pnl`` would draw.
+    Saturday 2026-08-08 has no point; the level is Friday 2026-08-07.
+    """
+    from tests.demo_pnl_replay import open_option_mtm, replay_totals
+
+    fixture = json.loads(
+        (ROOT / "tests" / "fixtures" / "demo_mirror_chart_residual.json").read_text()
+    )
+    history = _rows(HISTORY)
+    equity = [
+        (
+            row["Date"],
+            row["Action"],
+            row["Symbol"],
+            row["Quantity"],
+            row["Price"],
+        )
+        for row in history
+        if row["Action"] in ("Buy", "Sell") and " " not in (row["Symbol"] or "")
+    ]
+    assert equity == [
+        ("2026-08-10", "Buy", "AAPL", "100", "308.26"),
+        ("2026-08-10", "Buy", "AMD", "100", "469.56"),
+        ("2026-08-14", "Buy", "KO", "100", "88.00"),
+        ("2026-08-21", "Sell", "KO", "100", "90.00"),
+    ]
+    assert abs(open_option_mtm(_rows(CURRENT)) - fixture["open_mtm"]) < 0.01
+
+    seed = replay_totals(
+        history,
+        fixture["dates"],
+        fixture["closes"],
+        open_mtm=fixture["open_mtm"],
+        open_mtm_date=fixture["open_mtm_date"],
+    )
+    combined = [
+        fixture["residual"][i] + seed[i] for i in range(len(fixture["dates"]))
+    ]
+    level_i = max(
+        i for i, day in enumerate(fixture["dates"]) if day <= "2026-08-08"
+    )
+    level = combined[level_i]
+    assert fixture["dates"][level_i] == "2026-08-07"
+    for i, day in enumerate(fixture["dates"]):
+        if day > "2026-08-08":
+            assert combined[i] >= level - 1.0, (day, combined[i], level)
+    assert combined[-1] > level + 15_000
+
+    # August, September, and October each finish higher than the one before.
+    at = {day: combined[i] for i, day in enumerate(fixture["dates"])}
+    assert at["2026-08-31"] > level + 5_000
+    assert at["2026-09-30"] > at["2026-08-31"]
+    assert at["2026-10-08"] > at["2026-09-30"]
+
+    # The June spike still drops, but the two defined-risk losers and the
+    # early-July credits cut that drop by more than $4k versus the live chart.
+    live = fixture["live_total"]
+    i26 = fixture["dates"].index("2026-06-26")
+    i07 = fixture["dates"].index("2026-07-07")
+    assert (live[i26] - live[i07]) - (combined[i26] - combined[i07]) > 4_000

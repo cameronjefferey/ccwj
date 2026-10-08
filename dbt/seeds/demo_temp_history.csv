@@ -1000,6 +1000,10 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-06-15,Sell to Open,MSFT 06/18/2026 410 C,Sell to open,1,0.41,0.65,41.00
 2026-06-15,Sell to Open,NVDA 06/18/2026 220 C,Sell to open,1,0.52,0.65,52.00
 2026-06-15,Sell to Open,QQQ 07/02/2026 702 P,Sell to open,1,0.73,0.65,73.00
+2026-06-15,Buy to Open,GLD 07/17/2026 385 P,Buy to open,4,1.25,2.60,500.00
+2026-06-15,Sell to Open,GLD 07/17/2026 390 P,Sell to open,4,2.85,2.60,1140.00
+2026-06-15,Buy to Open,IWM 07/02/2026 300 C,Buy to open,5,1.05,3.25,525.00
+2026-06-15,Sell to Open,IWM 07/02/2026 295 C,Sell to open,5,2.45,3.25,1225.00
 2026-06-18,Expired,AMZN 06/18/2026 255 C,Expired,1,0.00,0.00,0.00
 2026-06-18,Expired,AMZN 06/18/2026 260 C,Expired,1,0.00,0.00,0.00
 2026-06-18,Expired,GOOGL 06/18/2026 340 P,Expired,1,0.00,0.00,0.00
@@ -1044,8 +1048,16 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-06-22,Sell to Open,QQQ 07/10/2026 734 P,Sell to open,1,9.14,0.65,914.00
 2026-06-22,Sell to Open,SPY 06/26/2026 757 C,Sell to open,1,0.91,0.65,91.00
 2026-06-22,Sell to Open,SPY 07/10/2026 716 P,Sell to open,1,1.27,0.65,127.00
+2026-06-22,Buy to Open,DIA 07/10/2026 495 P,Buy to open,5,0.48,3.25,240.00
+2026-06-22,Sell to Open,DIA 07/10/2026 500 P,Sell to open,5,2.35,3.25,1175.00
+2026-06-22,Buy to Open,IWM 07/10/2026 280 P,Buy to open,5,0.52,3.25,260.00
+2026-06-22,Sell to Open,IWM 07/10/2026 285 P,Sell to open,5,2.50,3.25,1250.00
 2026-06-23,Buy to Close,QQQ 07/10/2026 734 P,Buy to close,1,12.63,0.65,1263.00
 2026-06-23,Sell to Close,QQQ 07/10/2026 729 P,Sell to close,1,9.88,0.65,988.00
+2026-06-25,Buy to Close,GLD 07/17/2026 390 P,Buy to close,4,20.70,2.60,8280.00
+2026-06-25,Sell to Close,GLD 07/17/2026 385 P,Sell to close,4,15.70,2.60,6280.00
+2026-06-25,Buy to Close,IWM 07/02/2026 295 C,Buy to close,5,4.35,3.25,2175.00
+2026-06-25,Sell to Close,IWM 07/02/2026 300 C,Sell to close,5,1.40,3.25,700.00
 2026-06-26,Expired,AMZN 06/26/2026 220 P,Expired,1,0.00,0.00,0.00
 2026-06-26,Expired,AMZN 06/26/2026 225 P,Expired,1,0.00,0.00,0.00
 2026-06-26,Expired,GOOGL 06/26/2026 325 P,Expired,1,0.00,0.00,0.00
@@ -1070,6 +1082,12 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-06-26,Expired,SPY 06/26/2026 713 P,Expired,1,0.00,0.00,0.00
 2026-06-26,Expired,SPY 06/26/2026 757 C,Expired,1,0.00,0.00,0.00
 2026-06-26,Expired,SPY 06/26/2026 762 C,Expired,1,0.00,0.00,0.00
+2026-06-26,Buy to Open,DIA 07/17/2026 495 P,Buy to open,5,0.55,3.25,275.00
+2026-06-26,Sell to Open,DIA 07/17/2026 500 P,Sell to open,5,2.55,3.25,1275.00
+2026-06-26,Buy to Open,IWM 07/17/2026 285 P,Buy to open,5,0.50,3.25,250.00
+2026-06-26,Sell to Open,IWM 07/17/2026 290 P,Sell to open,5,2.40,3.25,1200.00
+2026-06-26,Buy to Open,GLD 07/10/2026 350 P,Buy to open,5,0.60,3.25,300.00
+2026-06-26,Sell to Open,GLD 07/10/2026 355 P,Sell to open,5,2.65,3.25,1325.00
 2026-06-29,Buy to Open,AMZN 07/17/2026 215 P,Buy to open,1,0.28,0.65,28.00
 2026-06-29,Buy to Open,GOOGL 07/02/2026 370 C,Buy to open,1,0.14,0.65,14.00
 2026-06-29,Buy to Open,GOOGL 07/17/2026 325 P,Buy to open,1,0.78,0.65,78.00
@@ -1094,6 +1112,12 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-06-29,Sell to Open,SPY 07/17/2026 718 P,Sell to open,1,1.97,0.65,197.00
 2026-06-30,Buy to Close,SPY 07/02/2026 744 C,Buy to close,1,4.91,0.65,491.00
 2026-06-30,Sell to Close,SPY 07/02/2026 749 C,Sell to close,1,2.27,0.65,227.00
+2026-06-30,Buy to Open,DIA 07/24/2026 500 P,Buy to open,5,0.48,3.25,240.00
+2026-06-30,Sell to Open,DIA 07/24/2026 505 P,Sell to open,5,2.35,3.25,1175.00
+2026-06-30,Buy to Open,IWM 07/24/2026 280 P,Buy to open,5,0.52,3.25,260.00
+2026-06-30,Sell to Open,IWM 07/24/2026 285 P,Sell to open,5,2.50,3.25,1250.00
+2026-06-30,Buy to Open,GLD 07/24/2026 350 P,Buy to open,5,0.55,3.25,275.00
+2026-06-30,Sell to Open,GLD 07/24/2026 355 P,Sell to open,5,2.55,3.25,1275.00
 2026-07-02,Expired,AMZN 07/02/2026 220 P,Expired,1,0.00,0.00,0.00
 2026-07-02,Expired,AMZN 07/02/2026 225 P,Expired,1,0.00,0.00,0.00
 2026-07-02,Expired,GOOGL 07/02/2026 365 C,Expired,1,0.00,0.00,0.00
@@ -1106,6 +1130,10 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-07-02,Expired,QQQ 07/02/2026 702 P,Expired,1,0.00,0.00,0.00
 2026-07-02,Expired,QQQ 07/02/2026 738 C,Expired,1,0.00,0.00,0.00
 2026-07-02,Expired,QQQ 07/02/2026 743 C,Expired,1,0.00,0.00,0.00
+2026-07-02,Buy to Close,DIA 07/10/2026 500 P,Buy to close,5,0.18,3.25,90.00
+2026-07-02,Sell to Close,DIA 07/10/2026 495 P,Sell to close,5,0.05,3.25,25.00
+2026-07-02,Buy to Close,IWM 07/10/2026 285 P,Buy to close,5,0.21,3.25,105.00
+2026-07-02,Sell to Close,IWM 07/10/2026 280 P,Sell to close,5,0.06,3.25,30.00
 2026-07-06,Buy to Open,AMZN 07/10/2026 260 C,Buy to open,1,0.07,0.65,7.00
 2026-07-06,Buy to Open,AMZN 07/24/2026 220 P,Buy to open,1,0.36,0.65,36.00
 2026-07-06,Buy to Open,GOOGL 07/10/2026 385 C,Buy to open,1,0.22,0.65,22.00
@@ -1130,6 +1158,18 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-07-06,Sell to Open,QQQ 07/24/2026 682 P,Sell to open,1,0.80,0.65,80.00
 2026-07-06,Sell to Open,SPY 07/10/2026 764 C,Sell to open,1,0.92,0.65,92.00
 2026-07-06,Sell to Open,SPY 07/24/2026 725 P,Sell to open,1,1.57,0.65,157.00
+2026-07-06,Buy to Close,DIA 07/17/2026 500 P,Buy to close,5,0.22,3.25,110.00
+2026-07-06,Sell to Close,DIA 07/17/2026 495 P,Sell to close,5,0.06,3.25,30.00
+2026-07-06,Buy to Close,IWM 07/17/2026 290 P,Buy to close,5,0.20,3.25,100.00
+2026-07-06,Sell to Close,IWM 07/17/2026 285 P,Sell to close,5,0.05,3.25,25.00
+2026-07-06,Buy to Close,GLD 07/10/2026 355 P,Buy to close,5,0.24,3.25,120.00
+2026-07-06,Sell to Close,GLD 07/10/2026 350 P,Sell to close,5,0.07,3.25,35.00
+2026-07-07,Buy to Close,DIA 07/24/2026 505 P,Buy to close,5,0.18,3.25,90.00
+2026-07-07,Sell to Close,DIA 07/24/2026 500 P,Sell to close,5,0.05,3.25,25.00
+2026-07-07,Buy to Close,IWM 07/24/2026 285 P,Buy to close,5,0.21,3.25,105.00
+2026-07-07,Sell to Close,IWM 07/24/2026 280 P,Sell to close,5,0.06,3.25,30.00
+2026-07-07,Buy to Close,GLD 07/24/2026 355 P,Buy to close,5,0.22,3.25,110.00
+2026-07-07,Sell to Close,GLD 07/24/2026 350 P,Sell to close,5,0.06,3.25,30.00
 2026-07-10,Expired,AMZN 07/10/2026 210 P,Expired,1,0.00,0.00,0.00
 2026-07-10,Expired,AMZN 07/10/2026 215 P,Expired,1,0.00,0.00,0.00
 2026-07-10,Expired,AMZN 07/10/2026 255 C,Expired,1,0.00,0.00,0.00
@@ -1314,6 +1354,10 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-03,Sell to Open,NVDA 08/21/2026 185 P,Sell to open,1,0.56,0.65,56.00
 2026-08-03,Sell to Open,QQQ 08/21/2026 671 P,Sell to open,1,1.82,0.65,182.00
 2026-08-03,Sell to Open,SPY 08/21/2026 734 P,Sell to open,1,1.99,0.65,199.00
+2026-08-03,Buy to Open,DIA 08/14/2026 510 P,Buy to open,5,0.50,3.25,250.00
+2026-08-03,Sell to Open,DIA 08/14/2026 515 P,Sell to open,5,2.40,3.25,1200.00
+2026-08-03,Buy to Open,IWM 08/14/2026 280 P,Buy to open,5,0.60,3.25,300.00
+2026-08-03,Sell to Open,IWM 08/14/2026 285 P,Sell to open,5,2.65,3.25,1325.00
 2026-08-07,Expired,AMZN 08/07/2026 295 C,Expired,1,0.00,0.00,0.00
 2026-08-07,Expired,AMZN 08/07/2026 300 C,Expired,1,0.00,0.00,0.00
 2026-08-07,Expired,GOOGL 08/07/2026 385 C,Expired,1,0.00,0.00,0.00
@@ -1330,6 +1374,12 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-07,Expired,NVDA 08/07/2026 185 P,Expired,1,0.00,0.00,0.00
 2026-08-07,Expired,QQQ 08/07/2026 656 P,Expired,1,0.00,0.00,0.00
 2026-08-07,Expired,QQQ 08/07/2026 661 P,Expired,1,0.00,0.00,0.00
+2026-08-07,Buy to Open,DIA 08/21/2026 515 P,Buy to open,5,0.48,3.25,240.00
+2026-08-07,Sell to Open,DIA 08/21/2026 520 P,Sell to open,5,2.35,3.25,1175.00
+2026-08-07,Buy to Open,IWM 08/21/2026 285 P,Buy to open,5,0.52,3.25,260.00
+2026-08-07,Sell to Open,IWM 08/21/2026 290 P,Sell to open,5,2.50,3.25,1250.00
+2026-08-07,Buy to Open,GLD 08/14/2026 380 P,Buy to open,5,0.55,3.25,275.00
+2026-08-07,Sell to Open,GLD 08/14/2026 385 P,Sell to open,5,2.55,3.25,1275.00
 2026-08-10,Buy,AAPL,Buy 100 shares,100,308.26,0.00,30826.00
 2026-08-10,Buy,AMD,Buy 100 shares,100,469.56,0.00,46956.00
 2026-08-10,Buy to Open,AMZN 08/14/2026 290 C,Buy to open,5,0.39,3.25,195.00
@@ -1366,9 +1416,27 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-10,Sell to Open,QQQ 08/28/2026 717 P,Sell to open,1,8.93,0.65,893.00
 2026-08-10,Sell to Open,SPY 08/14/2026 780 C,Sell to open,4,2.26,2.60,904.00
 2026-08-10,Sell to Open,SPY 08/28/2026 762 P,Sell to open,4,5.07,2.60,2028.00
+2026-08-10,Buy to Close,DIA 08/14/2026 515 P,Buy to close,5,0.20,3.25,100.00
+2026-08-10,Sell to Close,DIA 08/14/2026 510 P,Sell to close,5,0.05,3.25,25.00
+2026-08-10,Buy to Close,IWM 08/14/2026 285 P,Buy to close,5,0.24,3.25,120.00
+2026-08-10,Sell to Close,IWM 08/14/2026 280 P,Sell to close,5,0.07,3.25,35.00
 2026-08-11,Buy to Close,QQQ 08/28/2026 717 P,Buy to close,1,12.34,0.65,1234.00
 2026-08-11,Sell to Close,QQQ 08/28/2026 712 P,Sell to close,1,9.59,0.65,959.00
+2026-08-11,Buy to Close,DIA 08/21/2026 520 P,Buy to close,5,0.18,3.25,90.00
+2026-08-11,Sell to Close,DIA 08/21/2026 515 P,Sell to close,5,0.05,3.25,25.00
+2026-08-11,Buy to Close,IWM 08/21/2026 290 P,Buy to close,5,0.21,3.25,105.00
+2026-08-11,Sell to Close,IWM 08/21/2026 285 P,Sell to close,5,0.06,3.25,30.00
+2026-08-11,Buy to Close,GLD 08/14/2026 385 P,Buy to close,5,0.22,3.25,110.00
+2026-08-11,Sell to Close,GLD 08/14/2026 380 P,Sell to close,5,0.06,3.25,30.00
 2026-08-13,Expired,SPY 08/13/2026 740 P,Expired,1,0.00,0.00,0.00
+2026-08-13,Buy to Open,DIA 09/04/2026 510 P,Buy to open,5,0.50,3.25,250.00
+2026-08-13,Sell to Open,DIA 09/04/2026 515 P,Sell to open,5,2.40,3.25,1200.00
+2026-08-13,Buy to Open,IWM 09/04/2026 285 P,Buy to open,5,0.60,3.25,300.00
+2026-08-13,Sell to Open,IWM 09/04/2026 290 P,Sell to open,5,2.65,3.25,1325.00
+2026-08-13,Buy to Open,GLD 08/21/2026 380 P,Buy to open,5,0.48,3.25,240.00
+2026-08-13,Sell to Open,GLD 08/21/2026 385 P,Sell to open,5,2.35,3.25,1175.00
+2026-08-13,Buy to Open,DIA 09/11/2026 510 P,Buy to open,5,0.52,3.25,260.00
+2026-08-13,Sell to Open,DIA 09/11/2026 515 P,Sell to open,5,2.50,3.25,1250.00
 2026-08-14,Assigned,KO 08/14/2026 88 P,Assigned,1,0.00,0.00,0.00
 2026-08-14,Buy,KO,Buy 100 shares,100,88.00,0.00,8800.00
 2026-08-14,Expired,AAPL 08/14/2026 310 C,Expired,1,0.00,0.00,0.00
@@ -1438,12 +1506,40 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-17,Sell to Open,QQQ 09/04/2026 702 P,Sell to open,5,2.25,3.25,1125.00
 2026-08-17,Sell to Open,SPY 08/21/2026 777 C,Sell to open,3,3.13,1.95,939.00
 2026-08-17,Sell to Open,SPY 09/04/2026 759 P,Sell to open,4,4.28,2.60,1712.00
+2026-08-17,Buy to Open,DIA 09/18/2026 505 P,Buy to open,5,0.55,3.25,275.00
+2026-08-17,Sell to Open,DIA 09/18/2026 510 P,Sell to open,5,2.55,3.25,1275.00
+2026-08-17,Buy to Open,IWM 09/11/2026 285 P,Buy to open,5,0.50,3.25,250.00
+2026-08-17,Sell to Open,IWM 09/11/2026 290 P,Sell to open,5,2.40,3.25,1200.00
+2026-08-17,Buy to Open,GLD 09/04/2026 380 P,Buy to open,5,0.60,3.25,300.00
+2026-08-17,Sell to Open,GLD 09/04/2026 385 P,Sell to open,5,2.65,3.25,1325.00
+2026-08-17,Buy to Open,DIA 09/25/2026 505 P,Buy to open,5,0.48,3.25,240.00
+2026-08-17,Sell to Open,DIA 09/25/2026 510 P,Sell to open,5,2.35,3.25,1175.00
+2026-08-17,Buy to Open,IWM 09/18/2026 285 P,Buy to open,5,0.52,3.25,260.00
+2026-08-17,Sell to Open,IWM 09/18/2026 290 P,Sell to open,5,2.50,3.25,1250.00
 2026-08-18,Buy to Close,NVDA 09/04/2026 220 P,Buy to close,1,7.60,0.65,760.00
 2026-08-18,Sell to Close,NVDA 09/04/2026 215 P,Sell to close,1,4.85,0.65,485.00
+2026-08-18,Buy to Close,DIA 09/04/2026 515 P,Buy to close,5,0.20,3.25,100.00
+2026-08-18,Sell to Close,DIA 09/04/2026 510 P,Sell to close,5,0.05,3.25,25.00
+2026-08-18,Buy to Close,IWM 09/04/2026 290 P,Buy to close,5,0.24,3.25,120.00
+2026-08-18,Sell to Close,IWM 09/04/2026 285 P,Sell to close,5,0.07,3.25,35.00
+2026-08-18,Buy to Close,GLD 08/21/2026 385 P,Buy to close,5,0.18,3.25,90.00
+2026-08-18,Sell to Close,GLD 08/21/2026 380 P,Sell to close,5,0.05,3.25,25.00
+2026-08-18,Buy to Close,DIA 09/11/2026 515 P,Buy to close,5,0.21,3.25,105.00
+2026-08-18,Sell to Close,DIA 09/11/2026 510 P,Sell to close,5,0.06,3.25,30.00
 2026-08-20,Buy to Close,GOOGL 09/04/2026 340 P,Buy to close,1,9.18,0.65,918.00
 2026-08-20,Buy to Close,JPM 09/04/2026 355 P,Buy to close,1,7.20,0.65,720.00
 2026-08-20,Sell to Close,GOOGL 09/04/2026 335 P,Sell to close,1,6.43,0.65,643.00
 2026-08-20,Sell to Close,JPM 09/04/2026 350 P,Sell to close,1,4.52,0.65,452.00
+2026-08-20,Buy to Close,DIA 09/18/2026 510 P,Buy to close,5,0.22,3.25,110.00
+2026-08-20,Sell to Close,DIA 09/18/2026 505 P,Sell to close,5,0.06,3.25,30.00
+2026-08-20,Buy to Close,IWM 09/11/2026 290 P,Buy to close,5,0.20,3.25,100.00
+2026-08-20,Sell to Close,IWM 09/11/2026 285 P,Sell to close,5,0.05,3.25,25.00
+2026-08-20,Buy to Close,GLD 09/04/2026 385 P,Buy to close,5,0.24,3.25,120.00
+2026-08-20,Sell to Close,GLD 09/04/2026 380 P,Sell to close,5,0.07,3.25,35.00
+2026-08-20,Buy to Close,DIA 09/25/2026 510 P,Buy to close,5,0.18,3.25,90.00
+2026-08-20,Sell to Close,DIA 09/25/2026 505 P,Sell to close,5,0.05,3.25,25.00
+2026-08-20,Buy to Close,IWM 09/18/2026 290 P,Buy to close,5,0.21,3.25,105.00
+2026-08-20,Sell to Close,IWM 09/18/2026 285 P,Sell to close,5,0.06,3.25,30.00
 2026-08-21,Assigned,KO 08/21/2026 90 C,Assigned,1,0.00,0.00,0.00
 2026-08-21,Expired,AAPL 08/21/2026 325 C,Expired,1,0.00,0.00,0.00
 2026-08-21,Expired,AMD 08/21/2026 520 C,Expired,1,0.00,0.00,0.00
@@ -1478,6 +1574,18 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-21,Expired,SPY 08/21/2026 777 C,Expired,3,0.00,0.00,0.00
 2026-08-21,Expired,SPY 08/21/2026 782 C,Expired,3,0.00,0.00,0.00
 2026-08-21,Sell,KO,Sell 100 shares,100,90.00,0.00,9000.00
+2026-08-21,Buy to Open,DIA 08/28/2026 510 P,Buy to open,5,0.55,3.25,275.00
+2026-08-21,Sell to Open,DIA 08/28/2026 515 P,Sell to open,5,2.55,3.25,1275.00
+2026-08-21,Buy to Open,IWM 08/28/2026 280 P,Buy to open,5,0.50,3.25,250.00
+2026-08-21,Sell to Open,IWM 08/28/2026 285 P,Sell to open,5,2.40,3.25,1200.00
+2026-08-21,Buy to Open,GLD 08/28/2026 390 P,Buy to open,5,0.60,3.25,300.00
+2026-08-21,Sell to Open,GLD 08/28/2026 395 P,Sell to open,5,2.65,3.25,1325.00
+2026-08-21,Buy to Open,DIA 10/02/2026 510 P,Buy to open,5,0.55,3.25,275.00
+2026-08-21,Sell to Open,DIA 10/02/2026 515 P,Sell to open,5,2.55,3.25,1275.00
+2026-08-21,Buy to Open,IWM 09/25/2026 285 P,Buy to open,5,0.50,3.25,250.00
+2026-08-21,Sell to Open,IWM 09/25/2026 290 P,Sell to open,5,2.40,3.25,1200.00
+2026-08-21,Buy to Open,GLD 09/11/2026 405 P,Buy to open,5,0.60,3.25,300.00
+2026-08-21,Sell to Open,GLD 09/11/2026 410 P,Sell to open,5,2.65,3.25,1325.00
 2026-08-24,Buy to Open,AMZN 08/28/2026 275 C,Buy to open,5,0.24,3.25,120.00
 2026-08-24,Buy to Open,AMZN 09/11/2026 240 P,Buy to open,5,0.68,3.25,340.00
 2026-08-24,Buy to Open,GOOGL 08/28/2026 360 C,Buy to open,5,0.67,3.25,335.00
@@ -1507,6 +1615,14 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-24,Sell to Open,QQQ 09/11/2026 702 P,Sell to open,3,8.52,1.95,2556.00
 2026-08-24,Sell to Open,SPY 08/28/2026 776 C,Sell to open,5,1.00,3.25,500.00
 2026-08-24,Sell to Open,SPY 09/11/2026 756 P,Sell to open,3,6.16,1.95,1848.00
+2026-08-24,Buy to Close,DIA 10/02/2026 515 P,Buy to close,5,0.22,3.25,110.00
+2026-08-24,Sell to Close,DIA 10/02/2026 510 P,Sell to close,5,0.06,3.25,30.00
+2026-08-24,Buy to Close,IWM 09/25/2026 290 P,Buy to close,5,0.20,3.25,100.00
+2026-08-24,Sell to Close,IWM 09/25/2026 285 P,Sell to close,5,0.05,3.25,25.00
+2026-08-24,Buy to Close,GLD 09/11/2026 410 P,Buy to close,5,0.24,3.25,120.00
+2026-08-24,Sell to Close,GLD 09/11/2026 405 P,Sell to close,5,0.07,3.25,35.00
+2026-08-24,Buy to Open,DIA 10/09/2026 505 P,Buy to open,5,0.48,3.25,240.00
+2026-08-24,Sell to Open,DIA 10/09/2026 510 P,Sell to open,5,2.35,3.25,1175.00
 2026-08-28,Expired,AAPL 08/28/2026 325 C,Expired,1,0.00,0.00,0.00
 2026-08-28,Expired,AMD 08/28/2026 500 C,Expired,1,0.00,0.00,0.00
 2026-08-28,Expired,AMZN 08/28/2026 250 P,Expired,5,0.00,0.00,0.00
@@ -1533,6 +1649,12 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-28,Expired,SPY 08/28/2026 762 P,Expired,4,0.00,0.00,0.00
 2026-08-28,Expired,SPY 08/28/2026 776 C,Expired,5,0.00,0.00,0.00
 2026-08-28,Expired,SPY 08/28/2026 781 C,Expired,5,0.00,0.00,0.00
+2026-08-28,Expired,DIA 08/28/2026 515 P,Expired,5,0.00,0.00,0.00
+2026-08-28,Expired,DIA 08/28/2026 510 P,Expired,5,0.00,0.00,0.00
+2026-08-28,Expired,IWM 08/28/2026 285 P,Expired,5,0.00,0.00,0.00
+2026-08-28,Expired,IWM 08/28/2026 280 P,Expired,5,0.00,0.00,0.00
+2026-08-28,Expired,GLD 08/28/2026 395 P,Expired,5,0.00,0.00,0.00
+2026-08-28,Expired,GLD 08/28/2026 390 P,Expired,5,0.00,0.00,0.00
 2026-08-31,Buy to Open,AMZN 09/04/2026 270 C,Buy to open,5,0.45,3.25,225.00
 2026-08-31,Buy to Open,AMZN 09/18/2026 235 P,Buy to open,5,0.44,3.25,220.00
 2026-08-31,Buy to Open,GOOGL 09/04/2026 350 C,Buy to open,5,0.78,3.25,390.00
@@ -1563,6 +1685,8 @@ Date,Action,Symbol,Description,Quantity,Price,fees_and_comm,Amount
 2026-08-31,Sell to Open,QQQ 09/18/2026 699 P,Sell to open,4,4.15,2.60,1660.00
 2026-08-31,Sell to Open,SPY 09/04/2026 775 C,Sell to open,5,1.96,3.25,980.00
 2026-08-31,Sell to Open,SPY 09/18/2026 749 P,Sell to open,5,3.13,3.25,1565.00
+2026-09-01,Buy to Close,DIA 10/09/2026 510 P,Buy to close,5,0.18,3.25,90.00
+2026-09-01,Sell to Close,DIA 10/09/2026 505 P,Sell to close,5,0.05,3.25,25.00
 2026-09-04,Expired,AAPL 09/04/2026 335 C,Expired,1,0.00,0.00,0.00
 2026-09-04,Expired,AMD 09/04/2026 480 C,Expired,1,0.00,0.00,0.00
 2026-09-04,Expired,AMZN 09/04/2026 245 P,Expired,5,0.00,0.00,0.00
