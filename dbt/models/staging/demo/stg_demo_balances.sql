@@ -7,29 +7,77 @@
 /*
     Public demo account balances.
 
-    TEMPORARY: while var('demo_temp_seed') is true, cash is the sum of
-    the temp-seed fills and account_total adds today's position marks
-    from stg_current. That is the same arithmetic as the last day of
-    int_demo_temp_equity_daily once closes match the seed prices.
-    Removal steps: dbt/seeds/DEMO_TEMP_SEED.md.
+    Always the bot mirror's cash and account_total. While
+    demo_temp_seed_on() is true, the seed book's cash (signed fills,
+    including its opening deposit) and its position market value are
+    added onto those two rows. stg_account_balances keeps one row per
+    (tenant, row_type), so the sum has to happen here — two cash rows
+    would drop one.
 
-    The else branch is the bot mirror. See stg_demo_history.sql.
-    Column order/types match broker_balances_rows() / stg_account_balances's
-    `unioned` CTE exactly, including the trailing `src_priority`.
+    The seed figures are read from the seed files, not from stg_history,
+    so mirror fills are not added twice. Flag off = the mirror rows
+    only, with zero seed dollars. See dbt/seeds/DEMO_TEMP_SEED.md.
+
+    Column order/types match broker_balances_rows() / stg_account_balances,
+    including the trailing src_priority.
 */
 
-{% if var('demo_temp_seed', false) %}
+with mirror as (
+    select
+        row_type,
+        market_value
+    from {{ ref('stg_broker_alpaca_balances') }}
+    where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
+      and '{{ var("demo_source_tenant_id", "") }}' != ''
+)
 
-with cash as (
-    select coalesce(sum(amount), 0) as cash_value
-    from {{ ref('stg_history') }}
-    where tenant_id = 'demo:demo-account'
+{% if demo_temp_seed_on() %}
+
+, seed_raw as (
+    select
+        lower(trim(cast(Action as string))) as action_raw,
+        {{ parse_seed_number('Quantity') }} as quantity,
+        {{ parse_seed_number('Price') }} as price,
+        coalesce({{ parse_seed_number('fees_and_comm') }}, 0) as fees,
+        coalesce({{ parse_seed_number('Amount') }}, 0) as amount_raw
+    from {{ ref('demo_temp_history') }}
 ),
 
-positions as (
-    select coalesce(sum(market_value), 0) as market_value
-    from {{ ref('stg_current') }}
-    where tenant_id = 'demo:demo-account'
+seed_cash as (
+    select coalesce(sum(
+        case
+            when action_raw in (
+                'sell to open', 'sell to close', 'buy to open', 'buy to close'
+            )
+             and abs(fees) > 0.005
+             and quantity is not null
+             and price is not null
+             and abs(abs(amount_raw) - abs(quantity) * price * 100) <= 0.05
+            then case
+                when action_raw in ('sell to open', 'sell to close')
+                    then abs(quantity) * price * 100 - abs(fees)
+                else -(abs(quantity) * price * 100 + abs(fees))
+            end
+            when action_raw in ('buy', 'buy to open', 'buy to close')
+                then -abs(amount_raw)
+            when action_raw in ('sell', 'sell to open', 'sell to close')
+                then abs(amount_raw)
+            else amount_raw
+        end
+    ), 0) as cash_value
+    from seed_raw
+),
+
+seed_mv as (
+    select coalesce(sum({{ parse_seed_number('market_value') }}), 0) as market_value
+    from {{ ref('demo_temp_current') }}
+),
+
+totals as (
+    select
+        coalesce(max(if(row_type = 'cash', market_value, null)), 0) as cash_value,
+        coalesce(max(if(row_type = 'account_total', market_value, null)), 0) as account_total
+    from mirror
 )
 
 select
@@ -37,13 +85,14 @@ select
     cast(null as int64)         as user_id,
     'demo:demo-account'         as tenant_id,
     'cash'                      as row_type,
-    cash.cash_value             as market_value,
+    totals.cash_value + seed_cash.cash_value as market_value,
     cast(null as float64)       as cost_basis,
     cast(null as float64)       as unrealized_pnl,
     cast(null as float64)       as unrealized_pnl_pct,
     cast(null as float64)       as percent_of_account,
     1                           as src_priority
-from cash
+from totals
+cross join seed_cash
 
 union all
 
@@ -52,14 +101,15 @@ select
     cast(null as int64)         as user_id,
     'demo:demo-account'         as tenant_id,
     'account_total'             as row_type,
-    cash.cash_value + positions.market_value as market_value,
+    totals.account_total + seed_cash.cash_value + seed_mv.market_value as market_value,
     cast(null as float64)       as cost_basis,
     cast(null as float64)       as unrealized_pnl,
     cast(null as float64)       as unrealized_pnl_pct,
     cast(null as float64)       as percent_of_account,
     1                           as src_priority
-from cash
-cross join positions
+from totals
+cross join seed_cash
+cross join seed_mv
 
 {% else %}
 

@@ -74,47 +74,21 @@ with bal_versions as (
     from {{ ref('snapshot_account_balances_daily') }}
     -- The 'Demo Account' exclusion is LOAD-BEARING and must stay: this SCD2
     -- snapshot still holds legacy versions from the era when the demo was
-    -- fabricated seed data, and it will also collect rows while the
-    -- temporary seed is on. The demo's balance history comes from the
-    -- branch below (the temp equity curve, or the bot mirror when
-    -- demo_temp_seed is false) — never from these snapshot rows.
+    -- fabricated seed data. The demo's balance history is the bot mirror
+    -- copied in the union below — never these snapshot rows. The temporary
+    -- seed, when demo_temp_seed_on(), is added AFTER the daily aggregate
+    -- (snapshot_result), not as a second series here: bal_rows keeps one
+    -- row per tenant and day, so a second curve on the same grain is dropped.
     where account != 'Demo Account'
       and row_type in ('cash', 'account_total')
 
     union all
 
-    {% if var('demo_temp_seed', false) %}
-    -- TEMPORARY demo curve from the made-up seed. One version per day so
-    -- the spine below does not need the bot's SCD2 history. Removal:
-    -- dbt/seeds/DEMO_TEMP_SEED.md.
-    select
-        'Demo Account'      as account,
-        cast(null as int64) as user_id,
-        'demo:demo-account' as tenant_id,
-        'demo:demo-account' as tenant_grain,
-        'account_total'     as row_type,
-        account_value       as market_value,
-        as_of               as valid_from,
-        date_add(as_of, interval 1 day) as valid_to
-    from {{ ref('int_demo_temp_equity_daily') }}
-
-    union all
-
-    select
-        'Demo Account'      as account,
-        cast(null as int64) as user_id,
-        'demo:demo-account' as tenant_id,
-        'demo:demo-account' as tenant_grain,
-        'cash'              as row_type,
-        cash_value          as market_value,
-        as_of               as valid_from,
-        date_add(as_of, interval 1 day) as valid_to
-    from {{ ref('int_demo_temp_equity_daily') }}
-    {% else %}
     -- Demo = relabeled MIRROR of the source tenant's balance history.
     -- Matches the staging-layer mirror (stg_demo_balances) so the demo's
     -- account-value chart reconciles with its positions instead of being
-    -- the synthetic curve int_demo_equity_daily used to emit.
+    -- the synthetic curve int_demo_equity_daily used to emit. Seed dollars
+    -- are not in this branch. See dbt/seeds/DEMO_TEMP_SEED.md.
     select
         'Demo Account'      as account,
         cast(null as int64) as user_id,
@@ -128,7 +102,6 @@ with bal_versions as (
     where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
       and '{{ var("demo_source_tenant_id", "") }}' != ''
       and row_type in ('cash', 'account_total')
-    {% endif %}
 ),
 
 -- One calendar day per row from the earliest snapshot through today.
@@ -258,6 +231,42 @@ by_account_day as (
     group by 1, 2, 3, 4
 ),
 
+{% if demo_temp_seed_on() %}
+-- Seed shares already sit inside stg_current for the demo tenant, so
+-- today's close adjustment would reprice them on top of the seed curve
+-- (which marks those same shares). Subtract that slice back out. The
+-- curve itself is the seed book only — never stg_history for the demo
+-- tenant, which also holds the mirror.
+seed_equity_marks as (
+    select
+        upper(trim(split(cast(Symbol as string), ' ')[safe_offset(0)])) as symbol,
+        {{ parse_seed_number('Quantity') }} as quantity,
+        {{ parse_seed_number('market_value') }} as market_value
+    from {{ ref('demo_temp_current') }}
+    where lower(trim(cast(security_type as string))) = 'equity'
+),
+
+seed_equity_today as (
+    select
+        coalesce(sum(s.market_value), 0) as broker_mv,
+        coalesce(sum(
+            case
+                when c.close_price is not null and c.close_price > 0
+                then s.quantity * c.close_price
+                else s.market_value
+            end
+        ), 0) as close_mv
+    from seed_equity_marks s
+    left join (
+        select symbol, max(close_price) as close_price
+        from {{ ref('stg_daily_prices') }}
+        where date = current_date()
+        group by symbol
+    ) c
+        on c.symbol = s.symbol
+),
+{% endif %}
+
 snapshot_result as (
     select
         b.tenant_id,
@@ -267,16 +276,56 @@ snapshot_result as (
         -- Equity sleeve is the plug so the three sleeves always sum to the
         -- (repriced) account_value. The repricing below shifts account_value
         -- by (close equity MV − broker equity MV); cash/option are untouched.
+        -- Seed account value and cash are added only for demo:demo-account.
         (b.account_value
+            {% if demo_temp_seed_on() %}
+            + case
+                when b.tenant_id = 'demo:demo-account' then
+                    coalesce(s.account_value, 0)
+                    - case
+                        when b.date = current_date()
+                        then coalesce(se.close_mv, 0) - coalesce(se.broker_mv, 0)
+                        else 0
+                      end
+                else 0
+              end
+            {% endif %}
             - coalesce(e.broker_equity_mv, 0)
             + coalesce(e.close_equity_mv, 0))
-            - b.cash_value
+            - (b.cash_value
+                {% if demo_temp_seed_on() %}
+                + case
+                    when b.tenant_id = 'demo:demo-account'
+                    then coalesce(s.cash_value, 0)
+                    else 0
+                  end
+                {% endif %}
+              )
             - coalesce(o.option_value, 0)                            as equity_value,
         coalesce(o.option_value, 0)                                  as option_value,
-        b.cash_value,
+        b.cash_value
+            {% if demo_temp_seed_on() %}
+            + case
+                when b.tenant_id = 'demo:demo-account'
+                then coalesce(s.cash_value, 0)
+                else 0
+              end
+            {% endif %}                                              as cash_value,
         -- account_value snapped to the official close for today's equity
         -- sleeve (no-op on historical days and intraday; see equity CTE).
         b.account_value
+            {% if demo_temp_seed_on() %}
+            + case
+                when b.tenant_id = 'demo:demo-account' then
+                    coalesce(s.account_value, 0)
+                    - case
+                        when b.date = current_date()
+                        then coalesce(se.close_mv, 0) - coalesce(se.broker_mv, 0)
+                        else 0
+                      end
+                else 0
+              end
+            {% endif %}
             - coalesce(e.broker_equity_mv, 0)
             + coalesce(e.close_equity_mv, 0)                         as account_value
     from by_account_day b
@@ -290,12 +339,19 @@ snapshot_result as (
      and (b.user_id is not distinct from e.user_id)
      and (b.tenant_id is not distinct from e.tenant_id)
      and b.date    = e.date
+    {% if demo_temp_seed_on() %}
+    left join {{ ref('int_demo_temp_equity_daily') }} s
+      on b.tenant_id = 'demo:demo-account'
+     and s.as_of = b.date
+    cross join seed_equity_today se
+    {% endif %}
 ),
 
 -- v2 tenant_id is carried natively from staging and is part of the grain
 -- so each physical account keeps its own daily account-value series. The
--- demo rides this same path via the mirror branch in bal_versions — it is
--- no longer a separate synthetic series bolted on here.
+-- demo rides this same path via the mirror branch in bal_versions.
+-- While demo_temp_seed_on(), snapshot_result adds the seed book's
+-- cash and account value on top of that mirror. Flag off adds nothing.
 all_rows as (
     select tenant_id, account, user_id, date, equity_value, option_value, cash_value, account_value
     from snapshot_result

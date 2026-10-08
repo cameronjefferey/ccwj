@@ -59,6 +59,14 @@ concurrency:
 jobs:
   update-performance:
     runs-on: ubuntu-latest
+    env:
+      # Temporary demo seed, added on top of the bot mirror.
+      # Unset or true = mirror plus the made-up book.
+      # false = bot mirror only (no seed rows, no seed equity).
+      # Repository variable, not a code edit: Settings → Secrets and
+      # variables → Actions → Variables → DEMO_TEMP_SEED.
+      # Then re-run this workflow. See dbt/seeds/DEMO_TEMP_SEED.md.
+      DEMO_TEMP_SEED: ${{ vars.DEMO_TEMP_SEED || 'true' }}
 
     steps:
       - name: Checkout code

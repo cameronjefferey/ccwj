@@ -26,13 +26,16 @@ clean-targets:         # directories to be removed by `dbt clean`
 
 
 vars:
-  # TEMPORARY demo book. true = visitors see dbt/seeds/demo_temp_*.csv
-  # (a rising multi-strategy account) instead of the bot mirror below.
-  # Set to false and delete the seed when the bot is worth showing.
-  # Steps: dbt/seeds/DEMO_TEMP_SEED.md.
-  demo_temp_seed: false
+  # TEMPORARY additive demo book. String from DEMO_TEMP_SEED (default
+  # true). Read it only through demo_temp_seed_on() — the string "false"
+  # is truthy in Jinja. true = bot mirror PLUS dbt/seeds/demo_temp_*.csv.
+  # false = bot mirror only, no seed rows and no seed equity.
+  # Flip: GitHub Actions variable DEMO_TEMP_SEED, then re-run
+  # bigquery_update.yml. Steps: dbt/seeds/DEMO_TEMP_SEED.md.
+  demo_temp_seed: "{{ env_var('DEMO_TEMP_SEED', 'true') }}"
 
-  # The public demo MIRROR source, used when demo_temp_seed is false.
+  # The public demo MIRROR source. Always the base of Demo Account.
+  # The temporary seed, when demo_temp_seed_on(), is added on top.
   # Relabeled to the demo's own tenant (`demo:demo-account` / `Demo Account`).
   # This is the EarningsFollower trading bot's Alpaca paper account.
   # Set to '' to ship an empty demo (the mirror models then return no rows).

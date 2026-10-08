@@ -1,15 +1,22 @@
 """Temporary demo book: structure, tenancy, and a rising account.
 
-The warehouse curve is ``int_demo_temp_equity_daily``. This test replays
-the seed with the same cash-sign rules as ``stg_history`` and public
-closes on three dates, so CI can see the climb without BigQuery.
+The warehouse curve is ``int_demo_temp_equity_daily``, added on top of
+the bot mirror. This test replays the seed with the same cash-sign
+rules as ``stg_history`` and public closes on three dates, so CI can
+see the climb without BigQuery.
 
-Removal steps live in ``dbt/seeds/DEMO_TEMP_SEED.md``.
+The off switch is the ``DEMO_TEMP_SEED`` env var (GitHub Actions
+variable on the warehouse job). Flag off compiles to the pure mirror.
+Steps live in ``dbt/seeds/DEMO_TEMP_SEED.md``.
 """
 
 from __future__ import annotations
 
 import csv
+import json
+import os
+import shutil
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -176,24 +183,53 @@ def _book_on(history: list[dict], day: date, snap: dict[str, float]) -> float:
 
 def test_temp_seed_files_and_flag_are_the_only_switch():
     project = (ROOT / "dbt" / "dbt_project.yml").read_text()
-    assert "demo_temp_seed: false" in project
+    assert "env_var('DEMO_TEMP_SEED'" in project
+    workflow = (ROOT / ".github/workflows/bigquery_update.yml").read_text()
+    assert "DEMO_TEMP_SEED:" in workflow
+    assert "vars.DEMO_TEMP_SEED" in workflow
+
     removal = REMOVAL.read_text()
+    assert removal.startswith("# Temporary demo book\n\n## How to turn it off\n")
+    turn_off, _, rest = removal.partition("## What this is")
+    assert "DEMO_TEMP_SEED" in turn_off
+    assert "`false`" in turn_off
+    assert "bigquery_update.yml" in turn_off
     for name in (
         "demo_temp_history.csv",
         "demo_temp_current.csv",
         "DEMO_TEMP_SEED.md",
         "int_demo_temp_equity_daily.sql",
         "demo_temp_equity_climbs.sql",
+        "demo_temp_off_equals_mirror.sql",
+        "demo_temp_history_keeps_mirror.sql",
         "test_demo_temp_seed.py",
         "demo_temp_seed.yml",
         "demo_temp_seed: false",
     ):
-        assert name in removal
+        assert name in rest
 
     history_sql = (ROOT / "dbt/models/staging/demo/stg_demo_history.sql").read_text()
     assert "ref('demo_temp_history')" in history_sql
     assert "demo:demo-account" in history_sql
     assert "ref('stg_broker_alpaca_history')" in history_sql
+    assert "select * from mirror\nunion all\nselect * from seed" in history_sql
+    assert "{% else %}\n\nselect * from mirror\n\n{% endif %}" in history_sql
+
+    equity_sql = (ROOT / "dbt/models/intermediate/int_demo_temp_equity_daily.sql").read_text()
+    assert "ref('demo_temp_history')" in equity_sql
+    assert "ref('stg_history')" not in equity_sql
+    assert "enabled=demo_temp_seed_on()" in equity_sql
+
+    mart_sql = (ROOT / "dbt/models/marts/mart_account_equity_daily.sql").read_text()
+    assert "ref('int_demo_temp_equity_daily')" in mart_sql
+    assert "demo_temp_seed_on()" in mart_sql
+
+    off_test = (ROOT / "dbt/tests/demo_temp_off_equals_mirror.sql").read_text()
+    assert "enabled=not demo_temp_seed_on()" in off_test
+    assert "except distinct" in off_test
+    keeps = (ROOT / "dbt/tests/demo_temp_history_keeps_mirror.sql").read_text()
+    assert "enabled=demo_temp_seed_on()" in keeps
+    assert "mirror_n + seed_n" in keeps
 
     # The seed is not a second ingestion path in the app.
     app_hits = [
@@ -202,6 +238,96 @@ def test_temp_seed_files_and_flag_are_the_only_switch():
         if "demo_temp_history" in p.read_text()
     ]
     assert app_hits == []
+
+
+def test_seed_fill_keys_do_not_collide_with_themselves():
+    keys = []
+    for row in _rows(HISTORY):
+        price = _num(row["Price"])
+        keys.append((
+            row["Date"],
+            row["Action"].strip().lower(),
+            (row["Symbol"] or "").strip().upper(),
+            row["Quantity"].strip(),
+            round(price, 4),
+        ))
+    assert len(keys) == len(set(keys))
+
+
+def _parse_manifest(flag: str) -> dict:
+    dbt = shutil.which("dbt")
+    cmd = [dbt] if dbt else ["python3", "-m", "dbt.cli.main"]
+    target = f"/tmp/dbt-demo-seed-{flag}"
+    env = os.environ.copy()
+    env["DEMO_TEMP_SEED"] = flag
+    subprocess.run(
+        [
+            *cmd,
+            "parse",
+            "--project-dir",
+            str(ROOT / "dbt"),
+            "--profiles-dir",
+            str(ROOT / "dbt"),
+            "--target-path",
+            target,
+        ],
+        check=True,
+        env=env,
+        cwd=ROOT / "dbt",
+    )
+    return json.loads((Path(target) / "manifest.json").read_text())
+
+
+def _node(manifest: dict, unique_id: str) -> dict:
+    if unique_id in manifest["nodes"]:
+        return manifest["nodes"][unique_id]
+    disabled = (manifest.get("disabled") or {}).get(unique_id) or []
+    assert disabled, unique_id
+    return disabled[0]
+
+
+def _deps(manifest: dict, unique_id: str) -> set[str]:
+    return set(_node(manifest, unique_id)["depends_on"]["nodes"])
+
+
+def test_flag_off_graph_is_the_pure_mirror_and_flag_on_adds_the_seed():
+    off = _parse_manifest("false")
+    on = _parse_manifest("true")
+
+    history = "model.ccwj.stg_demo_history"
+    current = "model.ccwj.stg_demo_current"
+    balances = "model.ccwj.stg_demo_balances"
+    equity = "model.ccwj.int_demo_temp_equity_daily"
+    mart = "model.ccwj.mart_account_equity_daily"
+    seed_hist = "seed.ccwj.demo_temp_history"
+    seed_cur = "seed.ccwj.demo_temp_current"
+    alpaca_hist = "model.ccwj.stg_broker_alpaca_history"
+
+    assert _node(off, equity)["config"]["enabled"] is False
+    assert _node(on, equity)["config"]["enabled"] is True
+    off_eq = "test.ccwj.demo_temp_off_equals_mirror"
+    keeps_id = "test.ccwj.demo_temp_history_keeps_mirror"
+    assert _node(off, off_eq)["config"]["enabled"] is True
+    assert _node(on, off_eq)["config"]["enabled"] is False
+    assert _node(off, keeps_id)["config"]["enabled"] is False
+    assert _node(on, keeps_id)["config"]["enabled"] is True
+
+    assert alpaca_hist in _deps(off, history)
+    assert seed_hist not in _deps(off, history)
+    assert seed_hist in _deps(on, history)
+    assert alpaca_hist in _deps(on, history)
+
+    assert seed_cur not in _deps(off, current)
+    assert seed_cur in _deps(on, current)
+    assert seed_hist not in _deps(off, balances)
+    assert seed_cur not in _deps(off, balances)
+    assert seed_hist in _deps(on, balances)
+
+    assert equity not in _deps(off, mart)
+    assert equity in _deps(on, mart)
+    assert "model.ccwj.stg_history" not in _deps(on, equity)
+    assert seed_hist in _deps(on, equity)
+    assert seed_cur in _deps(on, equity)
 
 
 def test_seed_is_demo_only_and_groups_as_several_strategies():

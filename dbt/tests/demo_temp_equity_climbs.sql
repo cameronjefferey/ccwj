@@ -1,4 +1,4 @@
-{{ config(enabled=var('demo_temp_seed', false)) }}
+{{ config(enabled=demo_temp_seed_on()) }}
 
 /*
     Temporary demo book: the account curve must rise, and it must cover

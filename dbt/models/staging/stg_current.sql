@@ -17,9 +17,9 @@
 -- add-a-brokerage procedure. The OSI parse / short-aware recompute /
 -- dedup below are unchanged.
 --
--- The demo branch is stg_demo_current. While var('demo_temp_seed') is
--- true that is the temporary book in dbt/seeds/demo_temp_current.csv;
--- otherwise it is a relabeled mirror of the bot's Alpaca paper account.
+-- The demo branch is stg_demo_current: always a relabeled mirror of the
+-- bot's Alpaca paper account. While demo_temp_seed_on(), seed positions
+-- are summed onto that mirror. Flag off is the mirror only.
 -- See dbt/models/staging/demo/stg_demo_current.sql.
 
 with current_as_strings as (
