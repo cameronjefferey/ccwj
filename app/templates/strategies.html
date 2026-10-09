@@ -145,7 +145,7 @@
         #stratType td.strat-money { white-space: normal; overflow-wrap: normal; }
     }
     /* Dollars stay one figure. The group-count suffix sits on the next
-       line and wraps on spaces, so a long "(100 groups; 23 open)" does
+       line and wraps on spaces, so a long "(100 trades; 23 still open)" does
        not run past the cell. */
     #stratType td.strat-money .strat-amt { white-space: nowrap; }
     #stratType td.strat-money .strat-suffix {
@@ -177,7 +177,7 @@
         </form>
         {% endif %}
     </div>
-    <p class="ov-date">All time</p>
+    <p class="ov-date">All time{% if record_span %} · {{ record_span }}{% endif %}</p>
     <p class="ov-line">How each strategy has done across the whole record.</p>
 </div>
 <!-- /strat-hero -->
@@ -186,7 +186,7 @@
 <div class="strat-pad text-center">
     {% if auth_accounts and auth_accounts|length > 0 %}
     <h2 class="section-header">No strategy data to show yet</h2>
-    <p class="strat-lead mb-3">Your linked accounts are connected. Sync or refresh uploads so trades are classified into strategies here.</p>
+    <p class="strat-lead mb-3">Your linked accounts are connected. After the next sync, each strategy shows up here.</p>
     {% else %}
     <h2 class="section-header">No strategy data yet</h2>
     <p class="strat-lead mb-3">Upload your positions and trade history. Once your trades are classified by strategy, you'll see how each one performs over time.</p>
@@ -218,7 +218,7 @@
     {% if selected_strategy and focus_strategy %}
     <p class="ov-date">{{ focus_strategy.strategy }} <a class="strat-back" href="{{ scoped_url('strategies') }}">All strategies</a></p>
     {% else %}
-    <p class="ov-date">All time</p>
+    <p class="ov-date">All time{% if record_span %} · {{ record_span }}{% endif %}</p>
     {% endif %}
     {% if summary or (selected_strategy and focus_strategy) %}
     <div class="ov-top">
@@ -238,7 +238,7 @@
             <div class="ov-k">{{ term('Win rate') }}</div>
             <div class="ov-big ov-invest">{% if book_wr is not none %}{{ "%.0f"|format(book_wr) }}%{% else %}&mdash;{% endif %}</div>
             {% if selected_strategy and focus_strategy and focus_strategy.win_rate is not none %}
-            <div class="ov-sub">{{ focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L</div>
+            <div class="ov-sub">{{ focus_strategy.num_winners }} win{{ 's' if focus_strategy.num_winners != 1 else '' }}, {{ focus_strategy.num_losers }} loss{{ 'es' if focus_strategy.num_losers != 1 else '' }}</div>
             {% endif %}
         </div>
     </div>
@@ -248,8 +248,10 @@
             {{ focus_strategy.strategy }}.
             {{ focus_strategy.num_trades }} trade{{ 's' if focus_strategy.num_trades != 1 else '' }}
             across <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ focus_strategy.population_label }}</span>.
-            {% if focus_strategy.first_trade_date and focus_strategy.last_trade_date %}
-            Active {{ focus_strategy.first_trade_date }} &mdash; {{ focus_strategy.last_trade_date }}.
+            {% if focus_strategy.record_span %}
+            {{ focus_strategy.record_span }}.
+            {% elif focus_strategy.first_trade_date and focus_strategy.last_trade_date %}
+            {{ focus_strategy.first_trade_date }} &mdash; {{ focus_strategy.last_trade_date }}.
             {% endif %}
             {% if focus_strategy.trend_signal == 'improving' %}Trending up.
             {% elif focus_strategy.trend_signal == 'declining' %}Trending down.
@@ -260,10 +262,29 @@
             How each strategy has done across the whole record.
         {% endif %}
     </p>
+    {% if focus_best_trade or focus_worst_trade %}
+    {% set best = focus_best_trade %}
+    {% set worst = focus_worst_trade %}
+    {% set same_trade = best and worst and best.label == worst.label and best.pnl == worst.pnl %}
+    {% set show_best = best and best.label and not (same_trade and (best.pnl or 0) <= 0) %}
+    {% set show_worst = worst and worst.label and not (same_trade and (worst.pnl or 0) >= 0) %}
+    {% if show_best or show_worst %}
+    <p class="ov-line">
+        {% if show_best %}
+        Best trade {{ best.label }}
+        <span class="{{ 'text-positive' if (best.pnl or 0) > 0 else ('text-negative' if (best.pnl or 0) < 0 else '') }}">{{ money(best.pnl or 0, 0, true) }}</span>.
+        {% endif %}
+        {% if show_worst %}
+        Worst trade {{ worst.label }}
+        <span class="{{ 'text-positive' if (worst.pnl or 0) > 0 else ('text-negative' if (worst.pnl or 0) < 0 else '') }}">{{ money(worst.pnl or 0, 0, true) }}</span>.
+        {% endif %}
+    </p>
+    {% endif %}
+    {% endif %}
     {% if summary %}
     <div class="ov-pills">
         <span class="ov-pill">{{ summary.strategies_count }} strateg{{ 'y' if summary.strategies_count == 1 else 'ies' }}</span>
-        <span class="ov-pill">{{ summary.total_trades }} trades</span>
+        <span class="ov-pill">{{ summary.total_trades }} {{ summary.count_label|default('trades') }}</span>
         {% if book.dividends %}
         <span class="ov-pill" title="Cash dividends. Total return is realized + unrealized + dividends.">Dividends {% if book.dividends > 0 %}+{% endif %}{{ money(book.dividends, 0) }}</span>
         {% endif %}
@@ -311,7 +332,7 @@
             </div>
             <div class="strat-card-stats">
                 <div>
-                    <div class="sc-stat-label">{{ term('Win rate') }}</div>
+                    <div class="sc-stat-label" title="Closed trades only. A result of $0 is neither a win nor a loss.">{{ term('Win rate') }}</div>
                     <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
                 </div>
                 <div>
@@ -322,8 +343,8 @@
                 </div>
                 {% if s.show_avg_hold|default(false) and s.avg_days > 0 %}
                 <div>
-                    <div class="sc-stat-label">Avg hold</div>
-                    <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }}d</div>
+                    <div class="sc-stat-label">Average days held</div>
+                    <div class="sc-stat-value">{{ "%.0f"|format(s.avg_days) }} days</div>
                 </div>
                 {% endif %}
                 {% if s.premium_received %}
@@ -415,7 +436,7 @@
                             {% if r.type == 'Dividends' %}
                             Cash dividends linked to holdings for this strategy
                             {% elif r.type == 'Other' %}
-                            Other classifications (rolls, assigns, misc.)
+                            Other activity that is not a stock round or an option contract
                             {% else %}
                             Equity rounds vs settled option lifecycle
                             {% endif %}
@@ -451,7 +472,7 @@
 <details class="disclosure" id="strat-over-time">
     <summary>
         <span class="section-header">Over time</span>
-        <span class="disclosure-note">Monthly result{% if focus_dte_breakdown %} and {{ term('DTE') }}{% endif %}.</span>
+        <span class="disclosure-note">Monthly result{% if focus_dte_breakdown %} and days to expiration{% endif %}.</span>
     </summary>
     <div class="disclosure-body">
         {% if focus_trend_months and focus_trend_months|length >= 2 %}
@@ -465,10 +486,11 @@
         {% endif %}
         {% if focus_dte_breakdown %}
         <div class="strat-block">
-            <h3 class="section-header">By {{ term('DTE') }}</h3>
+            <h3 class="section-header">By days to expiration</h3>
+            <p class="strat-note">How many days were left when the trade was opened. Win rate is closed trades. A result of $0 is neither.</p>
             {% for d in focus_dte_breakdown %}
             <div class="dte-bar-row">
-                <div class="dte-label">{{ d.dte_bucket }}</div>
+                <div class="dte-label">{{ d.dte_bucket|plain_label }}</div>
                 <div class="dte-bar-track">
                     {% if d.win_rate_pct is not none %}
                     {% set wr_class = 'good' if d.win_rate_pct >= 60 else ('bad' if d.win_rate_pct < 40 else 'mid') %}
@@ -646,8 +668,6 @@
                     ticks: {
                         maxTicksLimit: 4,
                         callback: function(v) {
-                            const sign = v < 0 ? '-' : (v > 0 ? '+' : '');
-                            if (Math.abs(v) >= 1000) return sign + '$' + Math.abs(v / 1000).toFixed(0) + 'k';
                             return window.htMoney(v, 0, true);
                         },
                         font: { size: 11 }

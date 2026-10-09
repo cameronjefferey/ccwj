@@ -62,11 +62,10 @@ STRATEGY_FIT_QUERY = """
 
 # Per-option-contract grain for the DTE / Moneyness slices. Shaped so the
 # matrix builder can consume it identically to the positions_summary path.
-# Win/loss is applied in Python (`annotate_contract_outcomes`) so a closed
-# $0 is neither and an unsettled ITM expiry is not booked as a loss.
-# Settlement-pending rows are dropped here too: a $0 pending contract
-# would otherwise dilute expectancy. underlying_symbol is exposed as
-# `symbol` to keep the per-cell symbol drill-down code path uniform.
+# Rows are grouped into spreads before the matrix sums them. A closed $0
+# is neither a win nor a loss. Settlement pending stays in the read so a
+# spread is not scored while one leg is still waiting; the grouping drops
+# that whole structure. underlying_symbol is exposed as `symbol`.
 STRATEGY_FIT_OPTIONS_QUERY = """
     SELECT
         account,
@@ -74,12 +73,19 @@ STRATEGY_FIT_OPTIONS_QUERY = """
         UPPER(TRIM(underlying_symbol)) AS symbol,
         COALESCE(strategy, 'Other Option') AS strategy,
         status,
+        trade_symbol,
+        direction,
+        open_date,
+        close_date,
+        option_expiry,
+        option_type,
         dte_bucket,
         moneyness_at_open,
         total_pnl,
         num_trades AS num_individual_trades
     FROM `ccwj-dbt.analytics.int_option_trade_kinds`
-    WHERE status != 'Settlement pending'
+    -- Settlement pending stays in this read so a partner leg is still visible.
+    WHERE 1=1
     {tenant_filter}
 """
 
@@ -94,10 +100,10 @@ DIM_FIXED_COL_ORDER = {
 
 # Map dim -> (column field in DataFrame, human label for headers/lede).
 DIM_META = {
-    "sector":     ("sector",            "Sector",     "sectors"),
-    "subsector":  ("subsector",         "Subsector",  "subsectors"),
-    "dte":        ("dte_bucket",        "DTE",        "DTE buckets"),
-    "moneyness":  ("moneyness_at_open", "Moneyness",  "moneyness buckets"),
+    "sector":     ("sector",            "Sector",              "sectors"),
+    "subsector":  ("subsector",         "Subsector",           "subsectors"),
+    "dte":        ("dte_bucket",        "Days to expiration",  "days-to-expiration buckets"),
+    "moneyness":  ("moneyness_at_open", "Opening distance",    "opening-distance buckets"),
 }
 
 
@@ -397,6 +403,7 @@ def _strategy_fit_render_payload(
     selected_account: str,
     insight_ctx: dict,
     error: str | None = None,
+    record_span: str = "",
 ) -> dict:
     """Compose the kwargs to render strategy_fit.html. Centralized so the
     error/empty/data paths share one shape and can't drift."""
@@ -439,6 +446,7 @@ def _strategy_fit_render_payload(
         drill_sector=drill_sector,
         accounts=accounts,
         selected_account=selected_account,
+        record_span=record_span,
         **insight_ctx,
     )
 
@@ -538,6 +546,21 @@ def render_strategy_fit_view():
             )
     from app.sector_labels import apply_sector_labels as _apply_sector_labels
     summary_df = _apply_sector_labels(summary_df)
+    from app.grouped_trades import (
+        attach_sectors, fetch_grouped_book, format_record_span, stamp_grouped_counts,
+    )
+    book_units, book_fills = fetch_grouped_book(client, tenant_filter, tenant_ids)
+    record_span = ""
+    if book_units:
+        attach_sectors(book_units, summary_df)
+        summary_df = stamp_grouped_counts(
+            summary_df, book_units, ("tenant_id", "symbol", "strategy"),
+        )
+        opens = [unit.get("open_date") for unit in book_units if unit.get("open_date")]
+        closes = [unit.get("close_date") for unit in book_units if unit.get("close_date")]
+        record_span = format_record_span(
+            min(opens) if opens else None, max(closes) if closes else None,
+        )
 
     accounts_for_filter = (
         sorted(user_accounts)
@@ -556,6 +579,7 @@ def render_strategy_fit_view():
                 accounts=accounts_for_filter,
                 selected_account=selected_account,
                 insight_ctx=insight_ctx,
+                record_span=record_span,
             ),
         )
 
@@ -566,10 +590,14 @@ def render_strategy_fit_view():
         # can't leak another tenant's contracts into the matrix.
         options_df = _filter_df_by_tenant_ids(options_df, tenant_ids)
         # tenant scope already narrowed to the selected account's tenant_id
-        # Shared with Strategies DTE: pending out, $0 closed is neither,
-        # open marks stay in unrealized and out of the win rate.
-        from app.outcome_units import annotate_contract_outcomes
-        options_df = annotate_contract_outcomes(options_df)
+        # A spread is one trade. Pending structures drop out. A closed $0
+        # is neither a win nor a loss. Open marks stay out of the win rate.
+        from app.grouped_trades import fit_options_frame
+        if "trade_symbol" in options_df.columns and "strategy" in options_df.columns:
+            options_df = fit_options_frame(options_df, book_fills)
+        else:
+            from app.outcome_units import annotate_contract_outcomes
+            options_df = annotate_contract_outcomes(options_df)
 
         for col in ("total_pnl", "realized_pnl", "unrealized_pnl",
                     "num_individual_trades", "num_winners", "num_losers"):
@@ -624,6 +652,7 @@ def render_strategy_fit_view():
             accounts=accounts_for_filter,
             selected_account=selected_account,
             insight_ctx=insight_ctx,
+            record_span=record_span,
         ),
     )
 

@@ -120,6 +120,8 @@ def test_surface_css_for_the_demo_bugs():
     # Premium / W/L clipped at 1280x800.
     assert "@media (min-width: 768px) and (max-width: 1366px)" in positions
     assert positions.count("table-layout: fixed") >= 2
-    assert "fit-col-short" in fit
-    assert "fit-corner-short" in fit
+    assert "fit-col-short" not in fit
+    assert "fit-corner-short" not in fit
+    assert "text-overflow: ellipsis" not in fit
+    assert "Days to expiration" in fit
     assert "max-width: 480px" in fit

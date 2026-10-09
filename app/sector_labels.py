@@ -61,6 +61,25 @@ _ETF_SECTORS = {
     "IBIT": ("Crypto", "Crypto"),
     "FBTC": ("Crypto", "Crypto"),
     "BITO": ("Crypto", "Crypto"),
+    # Cash-settled index roots have no yfinance sector. Weekly aliases
+    # share the parent index so SPX and SPXW land on the same card.
+    "SPX": ("Index", "Index"),
+    "SPXW": ("Index", "Index"),
+    "XSP": ("Index", "Index"),
+    "NDX": ("Index", "Index"),
+    "NDXP": ("Index", "Index"),
+    "RUT": ("Index", "Index"),
+    "RUTW": ("Index", "Index"),
+    "VIX": ("Index", "Index"),
+    "DJX": ("Index", "Index"),
+    "OEX": ("Index", "Index"),
+    "XEO": ("Index", "Index"),
+    "RVX": ("Index", "Index"),
+}
+
+# A ticker that changed names. Used only when the warehouse has no sector.
+_RENAMED_SYMBOLS = {
+    "FB": ("Communication Services", "Communication Services"),
 }
 
 
@@ -112,7 +131,7 @@ def classify_symbol(symbol, sector, subsector=None):
     if not sec_missing:
         sub = UNCLASSIFIED if sub_missing else str(subsector).strip()
         return str(sector).strip(), sub
-    mapped = _ETF_SECTORS.get(sym)
+    mapped = _ETF_SECTORS.get(sym) or _RENAMED_SYMBOLS.get(sym)
     if mapped:
         return mapped
     if sym in CRYPTO_SYMBOLS:

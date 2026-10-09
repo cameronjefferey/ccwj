@@ -135,16 +135,29 @@ WHERE strategy = @strategy
 ORDER BY total_return DESC
 """
 
+# Settlement pending stays in the read. A spread is not a finished trade
+# while any leg is still waiting on a cash settlement; the Python
+# grouping drops that whole structure. Filtering it out here used to
+# leave the other leg looking like its own win.
 DTE_MONEYNESS_QUERY = """
 SELECT
   tenant_id,
+  account,
+  strategy,
+  UPPER(TRIM(underlying_symbol)) AS symbol,
+  trade_symbol,
+  direction,
+  open_date,
+  close_date,
+  option_expiry,
+  option_type,
   dte_bucket,
   status,
   total_pnl,
   num_trades
 FROM `ccwj-dbt.analytics.int_option_trade_kinds`
+-- Settlement pending stays in this read so a partner leg is still visible.
 WHERE strategy = @strategy
-  AND status != 'Settlement pending'
   {tenant_filter}
 """
 
@@ -263,26 +276,57 @@ def roll_strategy_months(trend_df: pd.DataFrame) -> pd.DataFrame:
     return grouped
 
 
-def dte_breakdown(df: pd.DataFrame) -> list:
-    """Closed-contract win rate by days-to-expiration bucket.
+def dte_breakdown(df: pd.DataFrame, fills=None) -> list:
+    """Win rate by days-to-expiration bucket.
 
-    Trade count is fills. Win rate is decided contracts: open marks and
-    a closed $0 are neither, and settlement-pending rows are left out
-    so an unsettled ITM expiry is not a loss.
+    When the frame names the contract, a spread is one trade and the
+    bucket is the short leg's. Without a contract symbol, each row is
+    one trade — a fill count on the row is not a trade. Open marks and
+    a closed $0 are neither a win nor a loss. A structure with any
+    settlement-pending leg is left out.
     """
+    from app.grouped_trades import group_book_trades
     from app.outcome_units import decided_win_loss
 
     if df is None or getattr(df, "empty", True) or "dte_bucket" not in df.columns:
         return []
     work = df.copy()
+    can_group = (
+        "trade_symbol" in work.columns
+        and "strategy" in work.columns
+        and work["trade_symbol"].fillna("").astype(str).str.strip().ne("").any()
+    )
+    if can_group:
+        units = group_book_trades(work.to_dict("records"), fills)
+        buckets: dict[str, dict] = {}
+        for unit in units:
+            if not unit.get("counts_as_trade"):
+                continue
+            bucket = str(unit.get("dte_bucket") or "Unknown")
+            slot = buckets.setdefault(bucket, {
+                "num_trades": 0, "total_pnl": 0.0, "winners": 0, "losers": 0,
+            })
+            slot["num_trades"] += 1
+            slot["total_pnl"] += float(unit.get("pnl") or 0)
+            slot["winners"] += int(unit.get("num_winners") or 0)
+            slot["losers"] += int(unit.get("num_losers") or 0)
+        rows = []
+        for bucket, slot in buckets.items():
+            decided = slot["winners"] + slot["losers"]
+            rows.append({
+                "dte_bucket": bucket,
+                "num_trades": slot["num_trades"],
+                "total_pnl": round(slot["total_pnl"], 2),
+                "win_rate_pct": round(slot["winners"] / decided * 100, 1) if decided else None,
+            })
+        rows.sort(key=lambda r: r["num_trades"], reverse=True)
+        return rows
+
     if "status" in work.columns:
         work = work[work["status"].astype(str) != "Settlement pending"]
     if work.empty:
         return []
     work["total_pnl"] = pd.to_numeric(work["total_pnl"], errors="coerce").fillna(0)
-    if "num_trades" not in work.columns:
-        work["num_trades"] = 1
-    work["num_trades"] = pd.to_numeric(work["num_trades"], errors="coerce").fillna(0)
     rows = []
     for bucket, chunk in work.groupby("dte_bucket", dropna=False):
         winners = losers = 0
@@ -294,7 +338,7 @@ def dte_breakdown(df: pd.DataFrame) -> list:
         decided = winners + losers
         rows.append({
             "dte_bucket": str(bucket),
-            "num_trades": int(chunk["num_trades"].sum()),
+            "num_trades": int(len(chunk)),
             "total_pnl": round(float(chunk["total_pnl"].sum()), 2),
             "win_rate_pct": round(winners / decided * 100, 1) if decided else None,
         })
@@ -318,7 +362,12 @@ def _weighted_avg_days(df: pd.DataFrame) -> dict:
     return out
 
 
-def _focus_breakdown_rows(breakdown_df: pd.DataFrame, dividend_total: float, dividend_events: int):
+def _focus_breakdown_rows(
+    breakdown_df: pd.DataFrame,
+    dividend_total: float,
+    dividend_events: int,
+    count_word: str = "group",
+):
     """Build Breakdown-by-Type rows for the focused strategy drill-in.
     Inputs are tenant-scoped DataFrames / scalars."""
     buckets = {}
@@ -366,9 +415,10 @@ def _focus_breakdown_rows(breakdown_df: pd.DataFrame, dividend_total: float, div
         open_g = int(st["open_groups"])
         suf_parts = []
         if grp > 0:
-            suf_parts.append(f"{grp} {'group' if grp == 1 else 'groups'}")
+            word = count_word if grp == 1 else f"{count_word}s"
+            suf_parts.append(f"{grp} {word}")
         if open_g > 0:
-            suf_parts.append(f"{open_g} open")
+            suf_parts.append(f"{open_g} still open" if count_word == "trade" else f"{open_g} open")
 
         total = round(st["realized"] + st["unrealized"], 2)
         # Options that are only settlement-pending have no counted groups
@@ -425,7 +475,9 @@ def _strategy_concentration(pos_df, top_n=5):
         else "num_trades" if "num_trades" in work.columns
         else None
     )
-    if trade_col:
+    if "grouped_trades" in work.columns:
+        work["grouped_trades"] = pd.to_numeric(work["grouped_trades"], errors="coerce").fillna(0)
+    elif trade_col:
         work[trade_col] = pd.to_numeric(work[trade_col], errors="coerce").fillna(0)
     work["symbol"] = work["symbol"].fillna("").astype(str).str.strip()
     work = work[work["symbol"] != ""]
@@ -437,7 +489,10 @@ def _strategy_concentration(pos_df, top_n=5):
     rows = []
     for sym, chunk in work.groupby("symbol", sort=False):
         pnl = float(chunk["total_return"].sum())
-        trades = int(chunk[trade_col].sum()) if trade_col else 0
+        if "grouped_trades" in chunk.columns:
+            trades = int(chunk["grouped_trades"].max())
+        else:
+            trades = int(chunk[trade_col].sum()) if trade_col else 0
         open_any = (chunk["status"].astype(str) == "Open").any()
         rows.append({
             "symbol": sym,
@@ -540,7 +595,9 @@ def _strategy_narrative(summary, strategies_list, trend_data):
         parts.append(f"{best['strategy']} is improving — win rate trending up.")
     elif declining:
         worst = max(declining, key=lambda s: s.get("num_trades", 0))
-        parts.append(f"{worst['strategy']} is declining — worth reviewing.")
+        parts.append(
+            f"{worst['strategy']} win rate is lower than its prior months."
+        )
     else:
         best = summary.get("best")
         if best and best["total_return"] > 0 and count > 1:
@@ -571,12 +628,12 @@ def _focus_insights(focus_strategy, overall_win_rate, trend_months, dte_data):
     if trend_signal == "improving":
         insights.append({
             "type": "positive",
-            "text": "Win rate is trending up over the last 3 months. Your execution is sharpening.",
+            "text": "Win rate is higher than the prior three months.",
         })
     elif trend_signal == "declining":
         insights.append({
             "type": "negative",
-            "text": "Win rate is trending down over the last 3 months. Conditions or execution may be shifting.",
+            "text": "Win rate is lower than the prior three months.",
         })
 
     # Win rate vs overall
@@ -600,20 +657,24 @@ def _focus_insights(focus_strategy, overall_win_rate, trend_months, dte_data):
                 if bucket_wr is not None and wr is not None:
                     gap = bucket_wr - wr
                     if gap >= 20:
+                        from app.grouped_trades import plain_label
                         insights.append({
                             "type": "positive",
                             "text": (
-                                f"Sweet spot: {bucket['dte_bucket']} trades have a "
-                                f"{bucket_wr:.0f}% win rate ({bucket['num_trades']} trades)."
+                                f"{plain_label(bucket['dte_bucket'])}: {bucket_wr:.0f}% win rate "
+                                f"on {bucket['num_trades']} trades, "
+                                f"{gap:.0f} points above this strategy."
                             ),
                         })
                         break
                     elif gap <= -20:
+                        from app.grouped_trades import plain_label
                         insights.append({
                             "type": "negative",
                             "text": (
-                                f"Weak spot: {bucket['dte_bucket']} trades have a "
-                                f"{bucket_wr:.0f}% win rate ({bucket['num_trades']} trades)."
+                                f"{plain_label(bucket['dte_bucket'])}: {bucket_wr:.0f}% win rate "
+                                f"on {bucket['num_trades']} trades, "
+                                f"{abs(gap):.0f} points below this strategy."
                             ),
                         })
                         break
@@ -701,6 +762,24 @@ def strategies():
         except Exception:
             app.logger.exception("strategy side queries failed")
 
+        from app.grouped_trades import (
+            avg_days_by_strategy,
+            best_and_worst,
+            fetch_grouped_book,
+            format_record_span,
+            grouped_strategies,
+            months_from_units,
+            overlay_breakdown_counts,
+            stamp_grouped_counts,
+            symbol_trade_counts,
+        )
+        book_units, book_fills = fetch_grouped_book(client, tenant_filter, tenant_ids)
+        grouped_names = grouped_strategies(book_units) if book_units else set()
+        if book_units:
+            df = stamp_grouped_counts(
+                df, book_units, ("tenant_id", "strategy"), trade_col="num_trades",
+            )
+
         # Disambiguating label map so several physical accounts sharing a
         # base label (e.g. multiple "Schwab Account"s) read distinctly.
         from app.routes import _tenant_label_map_for_user
@@ -787,13 +866,22 @@ def strategies():
                 "strategy": most_used_row["strategy"],
                 "num_trades": int(most_used_row["num_trades"] or 0),
             },
+            "count_label": "trades" if book_units else "fills",
         }
+        if book_units is not None:
+            span_first = all_by_strategy["first_trade_date"].min() if "first_trade_date" in all_by_strategy.columns else None
+            span_last = all_by_strategy["last_trade_date"].max() if "last_trade_date" in all_by_strategy.columns else None
+            context["record_span"] = format_record_span(span_first, span_last)
 
         # ── Trend data: monthly performance per strategy ──
         # Loaded with the symbol and book queries above. Months are
         # pooled across accounts (winners / decided), not averaged.
         latest_trend = {}
         recent_wr_3m = {}
+        if book_units:
+            grouped_months = months_from_units(book_units)
+            if not grouped_months.empty:
+                trend_df = grouped_months
         rolled_trend = roll_strategy_months(trend_df)
         if not trend_df.empty and "month_start" in trend_df.columns:
             for strat in rolled_trend["strategy"].unique():
@@ -808,6 +896,8 @@ def strategies():
                     recent_wr_3m[strat] = round(float(prior["num_winners"].sum()) / decided * 100, 1)
 
         avg_days_weighted = _weighted_avg_days(df)
+        if book_units:
+            avg_days_weighted.update(avg_days_by_strategy(book_units))
 
         strategies_list = []
         for _, row in all_by_strategy.sort_values("total_return", ascending=False).iterrows():
@@ -876,7 +966,10 @@ def strategies():
                 "trend_signal": "stable" if is_holding else signal,
                 "show_trend": not is_holding,
                 "is_holding": is_holding,
-                "count_label": "fills" if is_holding else "trades",
+                "count_label": "trades" if strat_name in grouped_names else "fills",
+                "record_span": format_record_span(
+                    row.get("first_trade_date"), row.get("last_trade_date"),
+                ),
                 "recent_wr_3m": recent_wr_3m.get(strat_name),
                 "avg_days": round(float(avg_days_weighted.get(strat_name, 0) or 0), 1),
                 "show_avg_hold": (not is_holding) and float(avg_days_weighted.get(strat_name, 0) or 0) > 0,
@@ -943,7 +1036,19 @@ def strategies():
                     if not div_df.empty:
                         div_tot = float(div_df.iloc[0].get("dividend_total") or 0)
                         div_ev = int(div_df.iloc[0].get("dividend_events") or 0)
-                    context["focus_breakdown_rows"] = _focus_breakdown_rows(bdf, div_tot, div_ev)
+                    focus_units = [
+                        unit for unit in (book_units or [])
+                        if unit.get("strategy") == selected_strategy
+                    ]
+                    if focus_units:
+                        bdf = overlay_breakdown_counts(bdf, focus_units)
+                    context["focus_breakdown_rows"] = _focus_breakdown_rows(
+                        bdf, div_tot, div_ev,
+                        count_word="trade" if focus_units else "group",
+                    )
+                    best_trade, worst_trade = best_and_worst(focus_units, strategy=selected_strategy)
+                    context["focus_best_trade"] = best_trade
+                    context["focus_worst_trade"] = worst_trade
                     # Fee drag — informational only, deliberately NOT folded
                     # into the breakdown rows above (broker fees are already
                     # netted into each row's realized_pnl; adding a row here
@@ -969,7 +1074,7 @@ def strategies():
                         job_config=dte_cfg,
                     )
                     dte_df = _filter_df_by_tenant_ids(dte_df, tenant_ids)
-                    context["focus_dte_breakdown"] = dte_breakdown(dte_df)
+                    context["focus_dte_breakdown"] = dte_breakdown(dte_df, book_fills)
                 except Exception:
                     app.logger.exception("strategy DTE breakdown query failed")
 
@@ -1012,6 +1117,12 @@ def strategies():
                     pos_df = cached_query_df(client, pos_query, job_config=job_config)
                     pos_df = _filter_df_by_tenant_ids(pos_df, tenant_ids)
                     if not pos_df.empty:
+                        symbol_counts = symbol_trade_counts(book_units, selected_strategy) if book_units else {}
+                        if symbol_counts and "symbol" in pos_df.columns:
+                            pos_df = pos_df.copy()
+                            pos_df["grouped_trades"] = pos_df["symbol"].map(
+                                lambda symbol: symbol_counts.get(str(symbol).strip(), 0)
+                            )
                         context["focus_concentration"] = _strategy_concentration(pos_df)
                         _apply_focus_symbol_count(
                             context.get("focus_strategy"),

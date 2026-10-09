@@ -278,6 +278,14 @@ def sectors():
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
     df = apply_sector_labels(df)
+    from app.grouped_trades import attach_sectors, best_and_worst, fetch_book_units, stamp_grouped_counts
+    book_units = fetch_book_units(client, tenant_filter, tenant_ids)
+    trades_grouped = bool(book_units)
+    if book_units:
+        attach_sectors(book_units, df)
+        df = stamp_grouped_counts(
+            df, book_units, ("tenant_id", "symbol", "strategy"),
+        )
 
     accounts_for_filter = (
         sorted(user_accounts)
@@ -301,9 +309,30 @@ def sectors():
             },
             accounts=accounts_for_filter,
             selected_account=selected_account,
+            record_span="",
+            count_label="trades",
         )
 
     roll = _sector_rollups(df)
+    from app.grouped_trades import format_record_span
+    span = ""
+    if book_units:
+        opens = [unit.get("open_date") for unit in book_units if unit.get("open_date")]
+        closes = [unit.get("close_date") for unit in book_units if unit.get("close_date")]
+        span = format_record_span(min(opens) if opens else None, max(closes) if closes else None)
+        for row in roll["sector_rows"]:
+            best, worst = best_and_worst(book_units, sector=row.get("sector"))
+            row["best_trade_label"] = best.get("label") if best else ""
+            row["best_trade_pnl"] = best.get("pnl") if best else None
+            row["worst_trade_label"] = worst.get("label") if worst else ""
+            row["worst_trade_pnl"] = worst.get("pnl") if worst else None
+            if best and worst and best.get("label") == worst.get("label") and best.get("pnl") == worst.get("pnl"):
+                if (best.get("pnl") or 0) < 0:
+                    row["best_trade_label"] = ""
+                    row["best_trade_pnl"] = None
+                elif (worst.get("pnl") or 0) > 0:
+                    row["worst_trade_label"] = ""
+                    row["worst_trade_pnl"] = None
     return render_template(
         "sectors.html",
         error=None,
@@ -315,6 +344,8 @@ def sectors():
         kpis=roll["kpis"],
         accounts=accounts_for_filter,
         selected_account=selected_account,
+        record_span=span,
+        count_label="trades" if trades_grouped else "fills",
     )
 
 

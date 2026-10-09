@@ -125,6 +125,14 @@ def _account_label_filter(account_name, tenant_id=None):
 app.add_template_filter(_account_label_filter, name="account_label")
 
 
+def _plain_label_filter(value):
+    from app.grouped_trades import plain_label
+    return plain_label(value)
+
+
+app.add_template_filter(_plain_label_filter, name="plain_label")
+
+
 def _account_mask_filter(raw):
     from app.privacy import mask_secret, privacy_mode_on
     if privacy_mode_on() and raw:

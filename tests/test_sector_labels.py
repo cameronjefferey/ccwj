@@ -24,6 +24,15 @@ def test_etf_and_crypto_fill_a_missing_sector_without_overriding_a_real_one():
     )
     assert classify_symbol("AAPL", "Technology", "Unknown") == ("Technology", UNCLASSIFIED)
     assert classify_symbol("DWAC", "Unknown", None) == (UNCLASSIFIED, UNCLASSIFIED)
+    assert classify_symbol("SPX", None, None) == ("Index", "Index")
+    assert classify_symbol("SPXW", "Unknown", "Unknown") == ("Index", "Index")
+    assert classify_symbol("QQQ", None, None) == ("Technology", "Nasdaq-100")
+    assert classify_symbol("FB", None, None) == (
+        "Communication Services",
+        "Communication Services",
+    )
+    # A real warehouse sector wins over a renamed-ticker fallback.
+    assert classify_symbol("FB", "Technology", "Internet") == ("Technology", "Internet")
 
 
 def test_apply_sector_labels_and_sort_last():

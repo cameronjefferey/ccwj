@@ -59,7 +59,7 @@ def test_dte_ignores_zero_closed_open_and_pending():
     rows = {r["dte_bucket"]: r for r in dte_breakdown(df)}
     short = rows["0-7 DTE"]
     assert short["win_rate_pct"] == 100.0
-    assert short["num_trades"] == 4
+    assert short["num_trades"] == 3
     assert short["total_pnl"] == 60
     assert rows["8-30 DTE"]["win_rate_pct"] == 0.0
 

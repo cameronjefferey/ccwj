@@ -29,20 +29,11 @@
     .sec-block:first-child { border-top: 0; padding-top: 0; }
     .sec-facts { display: flex; flex-wrap: wrap; gap: .45rem .9rem; margin: .35rem 0 .75rem; font-size: .82rem; }
     .sec-facts span { font-variant-numeric: tabular-nums; }
-    .sec-sub {
-        display: grid;
-        grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(4.5rem, auto));
-        gap: .35rem .75rem;
-        align-items: baseline;
-        padding: .45rem 0;
-        border-bottom: 1px solid var(--ht-line);
-        min-width: 0;
-        font-size: .84rem;
-    }
-    .sec-sub:last-child { border-bottom: 0; }
-    .sec-sub a { color: inherit; font-weight: 650; text-decoration: none; overflow-wrap: anywhere; }
-    .sec-sub a:hover { text-decoration: underline; }
-    .sec-sub .n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .sec-subs { overflow-x: auto; max-width: 100%; }
+    .sec-subs table { width: 100%; min-width: 0; font-size: .84rem; }
+    .sec-subs a { color: inherit; font-weight: 650; text-decoration: none; overflow-wrap: break-word; }
+    .sec-subs a:hover { text-decoration: underline; }
+    .sec-subs td.n, .sec-subs th.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
     .sec-empty {
         color: var(--ht-muted); font-size: .85rem; padding: 2rem; text-align: center;
         background: var(--ht-surface); border: 1px solid var(--ht-line); border-radius: 12px;
@@ -64,7 +55,6 @@
         #secTable th:nth-child(7), #secTable td:nth-child(7) { width: 14%; }
         #secTable th:nth-child(8), #secTable td:nth-child(8) { width: 6%; }
     }
-    .sec-subs { overflow-x: auto; }
     .sec-sub-head {
         font-size: .66rem;
         font-weight: 650;
@@ -105,7 +95,20 @@
             overflow-wrap: break-word;
             word-break: normal;
         }
-        .sec-sub { min-width: 26rem; }
+        .sec-subs table {
+            display: table;
+            width: max-content;
+            min-width: 100%;
+        }
+        .sec-subs th:first-child,
+        .sec-subs td:first-child {
+            position: sticky;
+            left: 0;
+            background: var(--ht-surface, #121826);
+            z-index: 1;
+            white-space: normal;
+            max-width: 9.5rem;
+        }
     }
 </style>
 {% endblock %}
@@ -124,7 +127,7 @@
         </form>
         {% endif %}
     </div>
-    <p class="ov-date">All time</p>
+    <p class="ov-date">All time{% if record_span %} · {{ record_span }}{% endif %}</p>
     {% if kpis and (kpis.num_subsectors|default(0)) > 0 %}
     <div class="ov-top">
         <div>
@@ -140,7 +143,7 @@
             <div class="ov-pct {% if kpis.unrealized_pnl > 0 %}pos{% elif kpis.unrealized_pnl < 0 %}neg{% endif %}">{% if kpis.unrealized_pnl > 0 %}+{% endif %}{{ money(kpis.unrealized_pnl, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k">{{ term('Win rate') }}</div>
+            <div class="ov-k" title="Closed trades only. A result of $0 is neither a win nor a loss.">{{ term('Win rate') }}</div>
             <div class="ov-big ov-invest">{{ "{:.0%}".format(kpis.win_rate) }}</div>
         </div>
     </div>
@@ -149,7 +152,7 @@
         <span class="ov-pill">{{ sectors|length }} sector{{ 's' if sectors|length != 1 }}</span>
         <span class="ov-pill">{{ kpis.num_subsectors }} subsector{{ 's' if kpis.num_subsectors != 1 }}</span>
         <span class="ov-pill">{{ kpis.num_symbols }} symbol{{ 's' if kpis.num_symbols != 1 }}</span>
-        {% if kpis.num_trades %}<span class="ov-pill">{{ kpis.num_trades }} trades</span>{% endif %}
+        {% if kpis.num_trades %}<span class="ov-pill">{{ kpis.num_trades }} {{ count_label|default('trades') }}</span>{% endif %}
     </div>
     {% else %}
     <p class="ov-line">How the book breaks down by sector.</p>
@@ -187,7 +190,7 @@
                 <tr>
                     <th>Sector</th>
                     <th class="text-end">Symbols</th>
-                    <th class="text-end">Trades</th>
+                    <th class="text-end">{{ (count_label or 'trades')|capitalize }}</th>
                     <th class="text-end">{{ term('Win rate') }}</th>
                     <th class="text-end">{{ term('Realized') }}</th>
                     <th class="text-end">{{ term('Unrealized') }}</th>
@@ -206,11 +209,11 @@
                         </div>
                     </td>
                     <td data-label="Symbols" class="text-end">{{ s.num_symbols }}</td>
-                    <td data-label="Trades" class="text-end">{{ s.num_trades | int }}</td>
-                    <td data-label="Win rate" class="text-end">
+                    <td data-label="{{ (count_label or 'trades')|capitalize }}" class="text-end">{{ s.num_trades | int }}</td>
+                    <td data-label="Win rate" class="text-end" title="Closed trades only. A result of $0 is neither a win nor a loss.">
                         {% if (s.num_winners + s.num_losers) > 0 %}
                             {{ "{:.0%}".format(s.win_rate) }}
-                            <div class="sec-lead">{{ s.num_winners | int }} / {{ s.num_losers | int }}</div>
+                            <div class="sec-lead">{{ s.num_winners | int }} win{{ 's' if s.num_winners != 1 else '' }}, {{ s.num_losers | int }} loss{{ 'es' if s.num_losers != 1 else '' }}</div>
                         {% else %}—{% endif %}
                     </td>
                     <td data-label="Realized" class="text-end sec-money {{ 'text-positive' if s.realized_pnl > 0 else ('text-negative' if s.realized_pnl < 0 else '') }}">
@@ -258,36 +261,52 @@
                 <span>Dividends {{ money(s.dividend_income, 0) }}</span>
                 {% endif %}
                 {% if s.top_symbol %}
-                <span>Best
+                <span>Best symbol
                     <a href="{{ scoped_url('position_detail', symbol=s.top_symbol) }}">{{ s.top_symbol }}</a>
                     <span class="text-positive">{{ money(s.top_symbol_return or 0, 0, true) }}</span>
                 </span>
                 {% endif %}
                 {% if s.worst_symbol and s.worst_symbol != s.top_symbol and (s.worst_symbol_return or 0) < 0 %}
-                <span>Worst
+                <span>Worst symbol
                     <a href="{{ scoped_url('position_detail', symbol=s.worst_symbol) }}">{{ s.worst_symbol }}</a>
                     <span class="text-negative">{{ money(s.worst_symbol_return or 0, 0, true) }}</span>
+                </span>
+                {% endif %}
+                {% if s.best_trade_label %}
+                <span>Best trade {{ s.best_trade_label }}
+                    <span class="{{ 'text-positive' if (s.best_trade_pnl or 0) > 0 else ('text-negative' if (s.best_trade_pnl or 0) < 0 else '') }}">{{ money(s.best_trade_pnl or 0, 0, true) }}</span>
+                </span>
+                {% endif %}
+                {% if s.worst_trade_label %}
+                <span>Worst trade {{ s.worst_trade_label }}
+                    <span class="{{ 'text-positive' if (s.worst_trade_pnl or 0) > 0 else ('text-negative' if (s.worst_trade_pnl or 0) < 0 else '') }}">{{ money(s.worst_trade_pnl or 0, 0, true) }}</span>
                 </span>
                 {% endif %}
                 <a href="{{ scoped_url('positions', sector=s.sector) }}">View positions</a>
             </div>
             <div class="sec-subs">
-            <div class="sec-sub sec-sub-head">
-                <span>Subsector</span>
-                <span class="n">Symbols</span>
-                <span class="n">Trades</span>
-                <span class="n">{{ term('Win rate') }}</span>
-                <span class="n">Total return</span>
-            </div>
+            <table class="table table-sm align-middle mb-0 ht-stack">
+            <thead>
+            <tr class="sec-sub-head">
+                <th>Subsector</th>
+                <th class="n text-end">Symbols</th>
+                <th class="n text-end">{{ (count_label or 'trades')|capitalize }}</th>
+                <th class="n text-end">{{ term('Win rate') }}</th>
+                <th class="n text-end">Total return</th>
+            </tr>
+            </thead>
+            <tbody>
             {% for r in subs %}
-            <div class="sec-sub">
-                <a href="{{ scoped_url('positions', subsector=r.subsector) }}">{{ r.subsector }}</a>
-                <span class="n" data-label="Symbols">{{ r.num_symbols }}</span>
-                <span class="n" data-label="Trades">{{ r.num_trades | int }}</span>
-                <span class="n" data-label="Win rate">{% if (r.num_winners + r.num_losers) > 0 %}{{ "{:.0%}".format(r.win_rate) }}{% else %}—{% endif %}</span>
-                <span class="n {{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }}" data-label="Total return">{{ money(r.total_pnl, 0, true) }}</span>
-            </div>
+            <tr>
+                <td data-label="Subsector"><a href="{{ scoped_url('positions', subsector=r.subsector) }}">{{ r.subsector }}</a></td>
+                <td class="n text-end" data-label="Symbols">{{ r.num_symbols }}</td>
+                <td class="n text-end" data-label="{{ (count_label or 'trades')|capitalize }}">{{ r.num_trades | int }}</td>
+                <td class="n text-end" data-label="Win rate">{% if (r.num_winners + r.num_losers) > 0 %}{{ "{:.0%}".format(r.win_rate) }}{% else %}—{% endif %}</td>
+                <td class="n text-end {{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }}" data-label="Total return">{{ money(r.total_pnl, 0, true) }}</td>
+            </tr>
             {% endfor %}
+            </tbody>
+            </table>
             </div>
         </section>
         {% endfor %}
