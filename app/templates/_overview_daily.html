@@ -20,6 +20,7 @@
         </button>
         {% endif %}
     </div>
+    <div class="cal-scroll">
     <div class="cal-grid-rolling" id="cal-grid-rolling">
         <div class="cal-rolling-header">Week</div>
         <div class="cal-rolling-header">Mon</div>
@@ -75,6 +76,7 @@
                 {% endif %}
             {% endfor %}
         {% endfor %}
+    </div>
     </div>
     {# Calendar expand is delegated on weekly_review.html so it still works after this fragment is injected. #}
     {% if daily_calendar_no_query_rows %}

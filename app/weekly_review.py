@@ -3449,9 +3449,8 @@ def split_option_day(open_today, prev_open, realized):
 def option_mover_caption(open_impact, closed_impact):
     """Plain label for one option mover row.
 
-    Only a mark change: ``Open contracts, change in value``.
-    Only a close: ``Closed today``.
-    Both: ``+$X open · −$Y closed``.
+    ``+$X open``, ``−$Y closed``, or both joined with a middle dot.
+    Contract size stays on the line above this caption.
     """
     open_v = _option_num(open_impact)
     closed_v = _option_num(closed_impact)
@@ -3463,10 +3462,20 @@ def option_mover_caption(open_impact, closed_impact):
             f"{_signed_option_dollars(closed_v)} closed"
         )
     if has_closed:
-        return "Closed today"
+        return f"{_signed_option_dollars(closed_v)} closed"
     if has_open:
-        return "Open contracts, change in value"
+        return f"{_signed_option_dollars(open_v)} open"
     return ""
+
+
+def _lot_status_caption(status, pnl):
+    """``+$902 closed`` / ``+$976 expired`` for one same-day lot tile."""
+    word = {
+        "Expired": "expired",
+        "Assigned": "assigned",
+        "Exercised": "exercised",
+    }.get(str(status or ""), "closed")
+    return f"{_signed_option_dollars(pnl)} {word}"
 
 
 def _signed_option_dollars(value):
@@ -4149,12 +4158,7 @@ def _same_day_option_lot_tiles(fills_df, anchor):
             })
         if not symbol or not detail_rows:
             continue
-        if status == "Expired":
-            caption = "Expired"
-        elif status in ("Assigned", "Exercised"):
-            caption = status
-        else:
-            caption = "Closed today"
+        caption = _lot_status_caption(status, pnl)
         tiles.append({
             "symbol": symbol,
             "dollar_impact": pnl,
@@ -5223,7 +5227,219 @@ def _group_day_open_and_settle(trade_rows):
         )
         if not merged.get("leg_open_date"):
             merged["leg_open_date"] = opened.get("leg_open_date")
+        # The settlement row copies the close, which has no side. The open
+        # is the side, so a later spread pair can tell short from long.
+        side = _option_fill_side(opened)
+        if side == "short":
+            merged["direction"] = "Sold"
+        elif side == "long":
+            merged["direction"] = "Bought"
         out.append(merged)
+    return out
+
+
+def _option_fill_side(row):
+    """``short`` / ``long`` from warehouse direction, else the fill action.
+
+    Settlement-only rows with no direction stay blank. Guessing short vs
+    long would pair the wrong strikes.
+    """
+    direction = str((row or {}).get("direction") or "").strip()
+    if direction == "Sold":
+        return "short"
+    if direction == "Bought":
+        return "long"
+    action = str((row or {}).get("action") or "")
+    if action in ("option_sell_to_open", "option_buy_to_close"):
+        return "short"
+    if action in ("option_buy_to_open", "option_sell_to_close"):
+        return "long"
+    return ""
+
+
+def _option_fill_phase(row):
+    action = str((row or {}).get("action") or "")
+    if action in _OPEN_OPTION_ACTIONS:
+        return "open"
+    if action in ("option_buy_to_close", "option_sell_to_close"):
+        return "close"
+    if action in _SETTLEMENT_ACTIONS:
+        return "settle"
+    return ""
+
+
+def _occ_identity(trade_symbol):
+    """OSI core plus root and C/P, or None."""
+    parsed = _parse_occ(trade_symbol)
+    if not parsed:
+        return None
+    match = _OSI_RE.match(" ".join(str(trade_symbol or "").split()))
+    if not match:
+        return None
+    out = dict(parsed)
+    out["root"] = match.group("root")
+    out["cp"] = match.group("cp")
+    return out
+
+
+def _spread_leg_meta(row):
+    """Pairing key for one vertical leg, or None when it cannot join a spread."""
+    if not row or row.get("is_roll"):
+        return None
+    phase = _option_fill_phase(row)
+    side = _option_fill_side(row)
+    ident = _occ_identity(row.get("trade_symbol"))
+    if not phase or not side or not ident:
+        return None
+    try:
+        qty = abs(float(row.get("quantity")))
+    except (TypeError, ValueError):
+        return None
+    if qty != qty or qty < 1e-6:
+        return None
+    tid = str(row.get("tenant_id") or "").strip()
+    scope = ("t", tid) if tid else ("a", str(row.get("account") or ""))
+    return {
+        "side": side,
+        "qty": qty,
+        "strike": ident["strike"],
+        "cp": ident["cp"],
+        "expiry": ident["expiry"],
+        "root": ident["root"],
+        "key": (
+            scope,
+            _option_root_match_key(ident["root"]),
+            ident["cp"],
+            ident["expiry"],
+            phase,
+        ),
+    }
+
+
+_SPREAD_SETTLE_RANK = {
+    "option_assigned": 4,
+    "option_exercised": 3,
+    "option_settled_est": 2,
+    "option_expired": 1,
+}
+
+
+def _spread_detail_row(leg):
+    ident = _occ_identity(leg.get("trade_symbol"))
+    if not ident:
+        return None
+    side = _option_fill_side(leg)
+    return {
+        "symbol": ident["root"],
+        "tenant_id": leg.get("tenant_id"),
+        "option_type": ident["cp"],
+        "option_strike": ident["strike"],
+        "option_expiry": ident["expiry"].isoformat(),
+        "quantity": leg.get("quantity"),
+        "direction": "Sold" if side == "short" else "Bought",
+        "trade_symbol": leg.get("trade_symbol"),
+    }
+
+
+def _make_spread_row(a, b):
+    """One trade row for a short leg and its matching long."""
+    short, long = (a, b) if _option_fill_side(a) == "short" else (b, a)
+    phase = _option_fill_phase(short)
+    cash = round(
+        float(short.get("cash_amount") or 0) + float(long.get("cash_amount") or 0),
+        2,
+    )
+    gls = [
+        _finite_or_none(short.get("realized_pnl")),
+        _finite_or_none(long.get("realized_pnl")),
+    ]
+    present = [g for g in gls if g is not None]
+    # Opens have no warehouse G/L (em dash). A duplicate fill stores None
+    # so the contract result is not counted twice; keep the number we have.
+    realized = round(sum(present), 2) if present else None
+    if phase == "open":
+        verb = "Sold spread" if cash >= -0.005 else "Bought spread"
+        action = (
+            "option_sell_to_open" if verb == "Sold spread" else "option_buy_to_open"
+        )
+    elif phase == "close":
+        verb = "Closed spread"
+        action = "option_buy_to_close"
+    else:
+        stronger = max(
+            (short, long),
+            key=lambda r: _SPREAD_SETTLE_RANK.get(str(r.get("action") or ""), 0),
+        )
+        action = str(stronger.get("action") or "option_expired")
+        verb = _DAY_ACTION_VERBS.get(action, "Expired")
+    detail = option_contract_detail([
+        _spread_detail_row(short),
+        _spread_detail_row(long),
+    ])
+    return {
+        "kind": "spread",
+        "is_spread": True,
+        "spread_label": detail,
+        "verb": verb,
+        "verb_short": verb,
+        "action": action,
+        "symbol": short.get("symbol") or long.get("symbol") or "",
+        "trade_symbol": "",
+        "description": "",
+        "quantity": short.get("quantity"),
+        "price": None,
+        "amount": realized,
+        "cash_amount": cash,
+        "realized_pnl": realized,
+        "tenant_id": short.get("tenant_id") or long.get("tenant_id") or "",
+        "account": short.get("account") or long.get("account") or "",
+        "is_option": True,
+        "direction": "Sold" if _option_fill_side(short) == "short" else "Bought",
+        "leg_open_date": short.get("leg_open_date") or long.get("leg_open_date"),
+        "trade_date": short.get("trade_date") or long.get("trade_date"),
+    }
+
+
+def _group_day_spreads(trade_rows):
+    """Pair opposite sides of one vertical into a single trade.
+
+    A same-day short and long of the same call or put, same expiry, same
+    size, different strikes, same account, is one spread. Rolls stay
+    rolls. A 20-lot does not pair with a 10-lot. An iron condor stays a
+    call spread plus a put spread. Settlement rows with no side stay
+    separate rather than guessing short vs long.
+    """
+    if not trade_rows:
+        return trade_rows
+    used = set()
+    out = []
+    for i, row in enumerate(trade_rows):
+        if i in used:
+            continue
+        meta = _spread_leg_meta(row)
+        if not meta:
+            out.append(row)
+            continue
+        match_idx = None
+        for j in range(i + 1, len(trade_rows)):
+            if j in used:
+                continue
+            other = _spread_leg_meta(trade_rows[j])
+            if not other or other["side"] == meta["side"]:
+                continue
+            if other["key"] != meta["key"]:
+                continue
+            if abs(other["qty"] - meta["qty"]) >= 0.01:
+                continue
+            if other["strike"] == meta["strike"]:
+                continue
+            match_idx = j
+            break
+        if match_idx is None:
+            out.append(row)
+            continue
+        used.add(match_idx)
+        out.append(_make_spread_row(row, trade_rows[match_idx]))
     return out
 
 
@@ -7010,7 +7226,14 @@ history_rows AS (
                 'option_buy_to_close', 'option_sell_to_close')
                 THEN o.realized_pnl
             ELSE CAST(NULL AS FLOAT64)
-        END AS realized_pnl
+        END AS realized_pnl,
+        CASE
+            WHEN f.action IN ('option_sell_to_open', 'option_buy_to_close')
+                THEN 'Sold'
+            WHEN f.action IN ('option_buy_to_open', 'option_sell_to_close')
+                THEN 'Bought'
+            ELSE CAST(NULL AS STRING)
+        END AS direction
     FROM fills f
     LEFT JOIN equity_gl e
         ON (f.tenant_id IS NOT DISTINCT FROM e.tenant_id)
@@ -7061,7 +7284,8 @@ settlements AS (
             ELSE 'Call'
         END AS instrument_type,
         option_expiry,
-        realized_pnl
+        realized_pnl,
+        direction
     FROM `ccwj-dbt.analytics.int_option_contracts`
     WHERE realized_close_date = @day
       AND status = 'Closed'
@@ -7103,6 +7327,7 @@ SELECT
     c.tenant_id, c.account, c.user_id, c.trade_date, c.action, c.trade_symbol,
     c.underlying_symbol, c.description, c.quantity, c.price, c.amount,
     c.fees, c.instrument_type, c.option_expiry, c.realized_pnl,
+    c.direction,
     l.open_date AS leg_open_date
 FROM combined c
 LEFT JOIN legs l
@@ -7223,6 +7448,7 @@ def _finite_or_none(val):
 
 _SETTLEMENT_ACTIONS = frozenset({
     "option_expired", "option_assigned", "option_exercised",
+    "option_settled_est",
 })
 
 
@@ -7392,6 +7618,16 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
                 realized = None
             else:
                 seen_option_close_gl.add(option_close_key)
+        direction = ""
+        if "direction" in r.index:
+            raw_dir = r.get("direction")
+            try:
+                if pd.isna(raw_dir):
+                    raw_dir = None
+            except (TypeError, ValueError):
+                pass
+            if raw_dir:
+                direction = str(raw_dir).strip()
         row = {
             "verb": _DAY_ACTION_VERBS.get(action, "Activity"),
             "verb_short": _DAY_ACTION_SHORT.get(
@@ -7409,6 +7645,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
             "tenant_id": tenant_id,
             "account": label_map.get(tenant_id, str(r.get("account") or "")),
             "is_option": action.startswith("option_"),
+            "direction": direction,
             "leg_open_date": _coerce_date(r.get("leg_open_date")),
             "trade_date": trade_date,
         }
@@ -7421,7 +7658,9 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
                 symbols.append(symbol)
         else:
             cash_rows.append(row)
-    grouped = _group_day_open_and_settle(_group_day_rolls(trade_rows))
+    grouped = _group_day_spreads(
+        _group_day_open_and_settle(_group_day_rolls(trade_rows))
+    )
     _attach_fill_tags(grouped, tag_rows)
     net_gl = 0.0
     for row in grouped:
