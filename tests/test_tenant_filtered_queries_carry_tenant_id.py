@@ -56,6 +56,8 @@ FILTERED_QUERIES = [
     ("app.strategies", "STRATEGY_POSITIONS_QUERY"),
     ("app.strategies", "STRATEGY_TYPE_BREAKDOWN_QUERY"),
     ("app.strategies", "DTE_MONEYNESS_QUERY"),
+    ("app.grouped_trades", "CLASSIFICATION_GROUPS_QUERY"),
+    ("app.grouped_trades", "OPTION_FILLS_QUERY"),
     ("app.strategy_fit", "STRATEGY_FIT_QUERY"),
     ("app.strategy_fit", "STRATEGY_FIT_OPTIONS_QUERY"),
     ("app.strategy_fit_insights", "STRATEGY_FIT_QUERY"),

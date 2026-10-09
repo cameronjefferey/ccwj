@@ -30,7 +30,9 @@ def test_strategies_story_order_is_headline_then_cards_then_collapsed_rest():
     assert "position_detail" in PAGE
     assert "population_label" in PAGE
     assert "focus_strategy.num_symbols }} symbol" not in PAGE
-    assert "focus_strategy.num_winners }}W / {{ focus_strategy.num_losers }}L" in PAGE
+    assert "focus_strategy.num_winners }} win" in PAGE
+    assert "focus_strategy.num_losers }} loss" in PAGE
+    assert "}}W / {{ focus_strategy.num_losers }}L" not in PAGE
     assert 'class="ov-date">{{ focus_strategy.strategy }}' in PAGE
     assert "strat-suffix" in PAGE
     assert "scoped_url('positions'" in PAGE
@@ -91,6 +93,9 @@ def test_fit_matrix_is_headline_then_matrix_then_notes():
     switch = Path("app/templates/_strategies_view_switch.html").read_text()
     assert 'aria-label="Strategies view"' in switch
     assert "c.num_trades or c.total_pnl" in FIT
+    assert 'class="ov-date">All time{% if record_span %}' in FIT
+    assert "thead th:not(.row-head)" in FIT
+    assert "text-overflow: clip" in FIT
     assert "_account_scope_filters.html" in FIT
     assert "data-ht-persist-tenants" in FIT
     assert "scope_account_choices|length > 1" in FIT

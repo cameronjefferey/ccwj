@@ -52,6 +52,9 @@ def test_phone_rows_stay_columns_and_desktop_columns_are_not_clipped():
     assert "word-break: normal" in PAGE
     assert "sec-sub-head" in PAGE
     assert "sec-subs" in PAGE
+    assert "min-width: 26rem" not in PAGE
+    assert "Best symbol" in PAGE
+    assert "Best trade" in PAGE
 
 
 def test_account_picker_stays_in_the_page_header():
