@@ -502,7 +502,9 @@ What's working:
   those puts, and calls written while the shares are held. It resets
   when the share count goes to zero. A still-open option counts at
   the premium collected so far and is marked not final. Dividends
-  are not in the figure. The positions table shows the same pair.
+  are not in the figure. The positions table headers are Cost and
+  All-in, each with that definition on the header. On a phone the
+  same figures sit under the symbol.
   Pinned by `tests/test_all_in_cost.py`.
 - Position Detail reads as one story: the hero (total return, then a
   compact row of realized, unrealized, dividends, win rate, and average

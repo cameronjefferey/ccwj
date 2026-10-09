@@ -162,7 +162,7 @@ _ENTRIES = (
     {
         "slug": "cost-per-share",
         "title": "Cost per share",
-        "labels": ("cost/share", "cost per share"),
+        "labels": ("cost/share", "cost per share", "cost"),
         "definition": (
             "Cost per share is the share cost basis divided by the shares still held. "
             "It is the broker's average cost, before option premium."

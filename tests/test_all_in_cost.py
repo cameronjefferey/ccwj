@@ -359,7 +359,10 @@ def test_templates_fold_all_in_into_the_existing_header_and_table():
     assert "pd-allin" in hero
     assert "pos-cost-col" in positions
     assert 'class="pos-costline"' in positions
-    assert "term('Cost/share')" in positions
+    assert "term('Cost')" in positions
+    assert "term('Cost/share')" not in positions
     assert "term('All-in')" in positions
+    wide = positions.split("@media (min-width: 1280px)", 1)[1].split("@media", 1)[0]
+    assert "#symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 8%; }" in wide
     assert 'colspan="14"' in positions
     assert 'colspan="12"' not in positions.split('id="symbolTable"', 1)[1].split("positionsTable", 1)[0]

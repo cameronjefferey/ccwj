@@ -206,24 +206,34 @@
         #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 11%; }
         #symbolTable .pos-cost-col { display: none; }
     }
-    /* Cost/share and All-in sit beside Collected once the table is wide
+    /* Cost and All-in sit beside Collected once the table is wide
        enough. Below that they are a second line under the symbol so a
-       390px row stays Symbol, Total return, Win rate, Fills. */
+       390px row stays Symbol, Total return, Win rate, Fills.
+       Widths sum to 100. Dividends, Unrealized, Strategies, and
+       Collected are single words, so each column is wide enough for
+       the full uppercase label at 1280px. Cost and All-in stay short
+       on purpose; the glossary button is the explanation. */
     @media (min-width: 1280px) {
         #symbolTable .pos-cost-col { display: table-cell; }
         .pos-costline { display: none; }
-        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 7%; }
-        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 7%; }
-        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 10%; }
-        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 8%; }
-        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 9%; }
-        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 8%; }
-        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 8%; }
-        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 6%; }
+        #symbolTable thead th {
+            padding-left: .28rem;
+            padding-right: .28rem;
+            overflow: visible;
+            hyphens: none;
+        }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 6%; }
+        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 9%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 9%; }
+        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 8%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 7%; }
+        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 9%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 8%; }
         #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 5%; }
         #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 5%; }
         #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 5%; }
-        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 7%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 8%; }
         #symbolTable th:nth-child(13), #symbolTable td:nth-child(13) { width: 7%; }
         #symbolTable th:nth-child(14), #symbolTable td:nth-child(14) { width: 8%; }
     }
@@ -749,7 +759,7 @@
                         <th class="sortable" data-sort="num" title="Individual fills.">Fills</th>
                         <th class="sortable" data-sort="num" data-m="hide">W/L</th>
                         <th class="sortable" data-sort="num" data-m="hide" title="Premium received.">{{ term('Collected') }}</th>
-                        <th class="sortable pos-cost-col" data-sort="num" data-m="hide">{{ term('Cost/share') }}</th>
+                        <th class="sortable pos-cost-col" data-sort="num" data-m="hide">{{ term('Cost') }}</th>
                         <th class="sortable pos-cost-col" data-sort="num" data-m="hide">{{ term('All-in') }}</th>
                     </tr>
                 </thead>
