@@ -10,8 +10,8 @@ def _row(sector, subsector, symbol, account="Ira", pnl=10.0):
         "account": account,
         "symbol": symbol,
         "strategy": "Buy and Hold",
-        "total_pnl": pnl,
-        "realized_pnl": pnl,
+        "total_pnl": float(pnl),
+        "realized_pnl": float(pnl),
         "unrealized_pnl": 0.0,
         "total_premium_received": 0.0,
         "total_dividend_income": 0.0,
@@ -46,6 +46,32 @@ def test_subsector_kpi_matches_the_sum_of_the_cards():
     assert roll["kpis"]["num_subsectors"] == card_sum
     assert roll["kpis"]["num_subsectors"] == len(roll["subsector_rows"])
     assert roll["kpis"]["num_subsectors"] != distinct_names
+
+
+def test_sector_hero_unrealized_matches_the_positions_book():
+    """Positions parks a $1 rounding remainder on the largest component.
+
+    Sectors used to round unrealized on its own, so the same book read
+    a dollar apart.
+    """
+    from app.book_totals import hero_book
+
+    df = pd.DataFrame([
+        _row("Technology", "Semiconductors", "NVDA", pnl=0),
+        _row("Energy", "Oil & Gas", "XOM", pnl=0),
+    ])
+    df.loc[0, "realized_pnl"] = 100.4
+    df.loc[0, "unrealized_pnl"] = 200.4
+    df.loc[0, "total_dividend_income"] = 0.4
+    df.loc[1, "realized_pnl"] = 0.2
+    df.loc[1, "unrealized_pnl"] = 0.2
+    df.loc[1, "total_dividend_income"] = 0.2
+    roll = _sector_rollups(df)
+    book = hero_book(df)
+    assert roll["kpis"]["unrealized_pnl"] == book["unrealized"]
+    assert roll["kpis"]["realized_pnl"] == book["realized"]
+    assert roll["kpis"]["total_pnl"] == book["total"]
+    assert roll["kpis"]["unrealized_pnl"] != int(round(float(df["unrealized_pnl"].sum())))
 
 
 def test_strategy_fit_matrix_scroll_and_metric_contract():

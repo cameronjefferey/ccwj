@@ -20,6 +20,7 @@ from app.routes import (
     _tenants_for_scope,
     _user_account_list,
 )
+from app.book_totals import hero_book
 from app.sector_labels import apply_sector_labels, is_unclassified
 
 
@@ -76,10 +77,13 @@ def _sector_rollups(df: pd.DataFrame) -> dict:
     overall_losers = int(df["num_losers"].sum())
     overall_closed = overall_winners + overall_losers
     subsector_pairs = int(df.groupby(["sector", "subsector"], dropna=False).ngroups)
+    # Same whole-dollar book as Positions. Rounding each hero figure on
+    # its own was a dollar off the Positions unrealized number.
+    book = hero_book(df)
     kpis = {
-        "total_pnl": float(df["total_pnl"].sum()),
-        "realized_pnl": float(df["realized_pnl"].sum()),
-        "unrealized_pnl": float(df["unrealized_pnl"].sum()),
+        "total_pnl": book["total"],
+        "realized_pnl": book["realized"],
+        "unrealized_pnl": book["unrealized"],
         "num_subsectors": subsector_pairs,
         "num_symbols": int(df["symbol"].nunique()) if "symbol" in df.columns else 0,
         "num_trades": int(df["num_individual_trades"].sum()),

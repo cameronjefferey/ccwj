@@ -54,6 +54,7 @@
         font-size: 1.15rem; font-weight: 650; line-height: 1.2;
     }
     .sc-stat-label { font-size: .72rem; color: var(--ht-muted); margin-bottom: .2rem; }
+    .sc-stat-sub { font-size: .72rem; color: var(--ht-muted); margin-top: .15rem; }
 
     .month-strip { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; min-width: 0; }
     .month-marks { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -284,7 +285,7 @@
     {% if summary %}
     <div class="ov-pills">
         <span class="ov-pill">{{ summary.strategies_count }} strateg{{ 'y' if summary.strategies_count == 1 else 'ies' }}</span>
-        <span class="ov-pill">{{ summary.total_trades }} {{ summary.count_label|default('trades') }}</span>
+        <span class="ov-pill">{{ summary.total_trades }} {{ (summary.count_label|default('trades'))[:-1] if summary.total_trades == 1 and (summary.count_label|default('trades')).endswith('s') else summary.count_label|default('trades') }}</span>
         {% if book.dividends %}
         <span class="ov-pill" title="Cash dividends. Total return is realized + unrealized + dividends.">Dividends {% if book.dividends > 0 %}+{% endif %}{{ money(book.dividends, 0) }}</span>
         {% endif %}
@@ -316,7 +317,8 @@
                 <div>
                     <div class="strat-card-name">{{ s.strategy or 'Unclassified' }}</div>
                     <div class="strat-card-meta">
-                        {{ s.num_trades }} {{ s.count_label|default('trades') }} &middot;
+                        {% set trade_word = s.count_label|default('trades') %}
+                        {{ s.num_trades }} {{ trade_word[:-1] if s.num_trades == 1 and trade_word.endswith('s') else trade_word }} &middot;
                         <span title="Symbols are unique tickers. Positions are account × symbol rows — the same count the Positions page uses.">{{ s.population_label }}</span>
                         {% if s.is_holding %} &middot; holding{% endif %}
                     </div>
@@ -334,6 +336,9 @@
                 <div>
                     <div class="sc-stat-label" title="Closed trades only. A result of $0 is neither a win nor a loss.">{{ term('Win rate') }}</div>
                     <div class="sc-stat-value">{% if s.win_rate is not none %}{{ "%.0f"|format(s.win_rate) }}%{% else %}&mdash;{% endif %}</div>
+                    {% if (s.num_winners + s.num_losers) > 0 %}
+                    <div class="sc-stat-sub">{{ s.num_winners | int }} win{{ 's' if s.num_winners != 1 else '' }}, {{ s.num_losers | int }} loss{{ 'es' if s.num_losers != 1 else '' }}</div>
+                    {% endif %}
                 </div>
                 <div>
                     <div class="sc-stat-label">Total return</div>
@@ -361,7 +366,7 @@
                 <div class="month-marks">
                     {% for m in s.sparkline %}
                     <span class="month-mark {% if m.pnl > 0 %}up{% elif m.pnl < 0 %}down{% endif %}"
-                          title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {{ money(m.pnl, 0, true) }} ({{ m.trades }} trades{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
+                          title="{{ _mo[m.month[-2:]|int] }} {{ m.month[:4] }}: {{ money(m.pnl, 0, true) }} ({{ m.trades }} trade{{ 's' if m.trades != 1 else '' }}{% if m.win_rate is not none %}, {{ m.win_rate }}% win rate{% endif %})"></span>
                     {% endfor %}
                 </div>
                 <div class="month-latest">
@@ -499,7 +504,7 @@
                 </div>
                 <div class="dte-stats">
                     {% if d.win_rate_pct is not none %}{{ "%.0f"|format(d.win_rate_pct) }}% win{% endif %}
-                    &middot; {{ d.num_trades }} trades
+                    &middot; {{ d.num_trades }} trade{{ 's' if d.num_trades != 1 else '' }}
                     &middot; <span class="{{ 'text-positive' if d.total_pnl >= 0 else 'text-negative' }}">{{ money(d.total_pnl, 0, true) }}</span>
                 </div>
             </div>

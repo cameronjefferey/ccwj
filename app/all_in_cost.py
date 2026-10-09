@@ -12,11 +12,15 @@ current shares (including rolls of that put), or at the share purchase
 when the shares were not assigned. It resets when the share count goes
 to zero.
 
-A still-open option counts at the premium collected so far. That amount
-is not final: the figure uses fill cash, not a live mark. Closed options
-from an earlier cycle stay out. An open contract that is only on the
-broker snapshot (its sale predates the fill tape) counts at the
-snapshot premium.
+A still-open option counts at the premium collected so far, including
+one that was sold while no shares were held and is still open when
+the shares appear. That amount is not final: the figure uses fill
+cash, not a live mark. An option opened during a cycle that later
+went to zero stays out, as do closed options from an earlier cycle.
+An open contract that is only on the broker snapshot (its sale
+predates the fill tape, or the tape's copy of that contract is
+already closed) counts at the snapshot premium, and that closed
+tape copy is not added again.
 
 With no shares and an open cash-secured put (not the short leg of an
 open spread), the figure is an if-assigned price: strike minus net
@@ -190,13 +194,19 @@ def all_in_cost(
 
     ``shares`` is the snapshot quantity the number is divided by. ``cost_basis``
     is the broker equity cost (dollars). When it is missing, the basis is the
-    cash paid for the shares added in this cycle, plus ``opening_basis`` when
-    the broker never reported a cost (an estimate). With no shares and an
+    cash paid for the shares added in this cycle (an assigned put's strike
+    when the share delivery has no price), plus ``opening_basis`` when the
+    broker never reported a cost (an estimate). With no shares and an
     open cash-secured put, returns an if-assigned price instead of None.
     """
     held = _num(shares)
     parsed = _parse_fills(fills, splits=splits, tenant_id=tenant_id, symbol=symbol)
-    _append_snapshot_options(parsed, snapshot_options, tenant_id=tenant_id, symbol=symbol)
+    # Decide snapshot synthesis before replay appends synthetic assignments.
+    _append_snapshot_options(
+        parsed, snapshot_options,
+        tenant_id=tenant_id, symbol=symbol,
+        remaining=_contract_remaining(parsed),
+    )
     if held <= _EPS:
         return _if_assigned_result(parsed, tenant_id=tenant_id, symbol=symbol)
 
@@ -218,16 +228,31 @@ def all_in_cost(
     if episode and episode["origin"] == "put_assignment" and episode["contract"]:
         chain_ids = _assignment_chain(parsed, episode["contract"], episode["start"])
 
-    window = [
-        fill for fill in parsed
-        if _in_premium_window(fill, episode, chain_ids)
-    ]
-    # Snapshot-only opens are not in the fill tape, so the episode date
-    # cannot see them. They are open now, so they count. Tape fills from
-    # a previous cycle stay out — a real flat still resets the cycle.
-    seen = {fill.id for fill in window}
+    # Tape remaining, not the snapshot. A closed call must not be reopened
+    # by the snapshot row and then counted twice (its old credit plus the
+    # snapshot premium).
+    tape_remaining = _contract_remaining(
+        [fill for fill in parsed if not fill.from_snapshot]
+    )
+    tape_open = {contract for contract, qty in tape_remaining.items() if qty > _EPS}
+    # Sold while flat, still open on the tape, and no later flat: it sits
+    # on this lot. A call opened during a cycle that already went to zero
+    # stays out. The snapshot row is included on its own, below.
+    flat_open = _opened_while_flat(parsed, events, _num(opening_shares))
+    window = []
+    seen = set()
     for fill in parsed:
-        if fill.from_snapshot and fill.id not in seen:
+        in_cycle = _in_premium_window(fill, episode, chain_ids)
+        still_open = (
+            fill.contract in flat_open
+            and fill.contract in tape_open
+            and fill.action in _CASH_ACTIONS
+            and not fill.synthetic
+            and not fill.from_snapshot
+        )
+        if fill.id in seen:
+            continue
+        if in_cycle or still_open or fill.from_snapshot:
             window.append(fill)
             seen.add(fill.id)
     groups = _group_fills(window, chain_ids)
@@ -520,12 +545,13 @@ def _is_equity_holding(row):
     return kind in {"", "equity"}
 
 
-def _append_snapshot_options(parsed, snapshot_options, tenant_id=None, symbol=None):
-    """Open option rows whose fills are not in the tape.
+def _append_snapshot_options(parsed, snapshot_options, tenant_id=None, symbol=None, remaining=None):
+    """Open option rows whose fills are not still open on the tape.
 
     A covered call sold before the broker's history window still sits on
-    the snapshot. Its cost basis is the premium. Matching strike and
-    expiry to a tape fill avoids counting that premium twice.
+    the snapshot. Its cost basis is the premium. A tape row for that
+    same contract counts only while the tape still has it open — a
+    closed fill must not hide the live snapshot.
     """
     next_id = 20_000 + len(parsed)
     for row in _records(snapshot_options):
@@ -541,7 +567,7 @@ def _append_snapshot_options(parsed, snapshot_options, tenant_id=None, symbol=No
         if contracts <= _EPS:
             continue
         short = qty < 0
-        if _tape_has_contract(parsed, side, row):
+        if _tape_has_contract(parsed, side, row, remaining or {}):
             continue
         strike = _optional_num(
             row.get("option_strike") if "option_strike" in row else row.get("strike")
@@ -583,7 +609,12 @@ def _snapshot_side(row):
     return None
 
 
-def _tape_has_contract(parsed, side, row):
+def _tape_has_contract(parsed, side, row, remaining):
+    """True when the tape still has this contract open.
+
+    A closed fill at the same strike does not count. The snapshot row is
+    a new open, and its premium has to be included.
+    """
     strike = _optional_num(
         row.get("option_strike") if "option_strike" in row else row.get("strike")
     )
@@ -593,6 +624,8 @@ def _tape_has_contract(parsed, side, row):
         return False
     for fill in parsed:
         if fill.option_type != side:
+            continue
+        if remaining.get(fill.contract, 0.0) <= _EPS:
             continue
         if trade_symbol and str(fill.trade_symbol or "").strip().upper() == trade_symbol:
             return True
@@ -762,6 +795,15 @@ def _parse_fills(fills, splits=None, tenant_id=None, symbol=None):
         strike = _optional_num(row.get("option_strike") if "option_strike" in row else row.get("strike"))
         expiry = _as_date(row.get("option_expiry") or row.get("expiry"))
         trade_symbol = str(row.get("trade_symbol") or "").strip()
+        # The contract symbol is the type. A column that says Call on a
+        # put leg (or is blank) was labeling the whole put spread "Calls".
+        identity = _contract_from_symbol(trade_symbol)
+        if identity is not None:
+            option_type = identity["option_type"]
+            if strike is None:
+                strike = identity["strike"]
+            if expiry is None:
+                expiry = identity["expiry"]
         price = abs(_num(row.get("price")))
         fees = abs(_num(row.get("fees")))
         # A missing amount stays None so the price × multiplier path runs.
@@ -820,10 +862,15 @@ def _replay_shares(fills, opening_shares):
             _apply_option_qty(short_puts, fill)
 
         used = set()
+        assigned_puts = []
         for fill, delta in assignments:
+            if fill.strike is None and fill.option_type == "put":
+                fill.strike = _strike_of(fills, fill.contract)
             match = _match_equity(equities, used, delta, fill.strike)
             if match is not None:
                 used.add(match.id)
+            if fill.option_type == "put":
+                assigned_puts.append(fill)
             origin = _assignment_origin(fill)
             seq += 1
             events.append(_ShareEvent(
@@ -838,14 +885,20 @@ def _replay_shares(fills, opening_shares):
             origin = "share_purchase" if delta > 0 else "share_sale"
             contract = None
             cash_basis = abs(fill.raw_qty) * abs(fill.price) if delta > 0 else 0.0
+            if delta > 0 and cash_basis <= _EPS and fill.amount not in (None, 0):
+                cash_basis = abs(fill.amount)
             if delta > 0:
-                put = _matching_short_put(short_puts, fills, fill)
+                put = _matching_short_put(short_puts, fills, fill, assigned_puts)
                 if put is not None:
                     origin = "put_assignment"
                     contract = put
                     contracts = abs(delta) / _MULTIPLIER
                     short_puts[put] = max(0.0, short_puts[put] - contracts)
-                    cash_basis = abs(delta) * abs(fill.price)
+                    strike = _strike_of(fills, put)
+                    if fill.price > _PRICE_TOL:
+                        cash_basis = abs(delta) * abs(fill.price)
+                    elif strike:
+                        cash_basis = abs(delta) * abs(strike)
                     synthetic_id += 1
                     fills.append(_Fill(
                         id=synthetic_id,
@@ -853,12 +906,12 @@ def _replay_shares(fills, opening_shares):
                         action="option_assigned",
                         qty=contracts,
                         raw_qty=contracts,
-                        price=fill.price,
+                        price=fill.price if fill.price > _PRICE_TOL else (strike or 0.0),
                         fees=0.0,
                         amount=0.0,
                         cash=0.0,
                         option_type="put",
-                        strike=fill.price,
+                        strike=fill.price if fill.price > _PRICE_TOL else strike,
                         expiry=None,
                         trade_symbol="",
                         contract=put,
@@ -889,6 +942,36 @@ def _replay_shares(fills, opening_shares):
             episode = None
             qty = 0.0
     return events, {"qty": qty, "episode": episode}
+
+
+def _opened_while_flat(parsed, events, opening_shares):
+    """Contracts sold or bought while no shares were held, and not since a flat.
+
+    Going back to zero shares ends the previous cycle, including a
+    contract that was opened before that lot. One that was opened while
+    flat and is still open belongs to the shares held now.
+    """
+    events_by_day = defaultdict(list)
+    for event in events:
+        events_by_day[event.date].append(event)
+    opens_by_day = defaultdict(list)
+    for fill in parsed:
+        if fill.synthetic or not fill.contract:
+            continue
+        if fill.action in {"option_sell_to_open", "option_buy_to_open"}:
+            opens_by_day[fill.date].append(fill)
+    qty = _num(opening_shares)
+    opened_flat = set()
+    for day in sorted(set(events_by_day) | set(opens_by_day)):
+        if qty <= _EPS:
+            for fill in opens_by_day[day]:
+                opened_flat.add(fill.contract)
+        for event in events_by_day[day]:
+            qty += event.delta
+            if qty <= _EPS:
+                qty = 0.0
+                opened_flat.clear()
+    return opened_flat
 
 
 def _in_premium_window(fill, episode, chain_ids):
@@ -1143,20 +1226,39 @@ def _apply_option_qty(short_puts, fill):
         short_puts[fill.contract] = max(0.0, short_puts[fill.contract] - qty)
 
 
-def _matching_short_put(short_puts, fills, equity):
-    """Open short put whose strike matches a same-day share buy, when the broker omitted the assignment row."""
+def _matching_short_put(short_puts, fills, equity, assigned_puts=None):
+    """Open short put that delivered these shares, when the broker omitted the assignment row.
+
+    A share buy priced at the strike matches that put. A buy with no
+    price (Schwab often posts the assigned shares at $0) matches the
+    open short put with the same deliverable share count, and the
+    strike is the cost. Puts assigned earlier the same day are included:
+    that row already removed them from the open quantity.
+    """
+    candidates = dict(short_puts)
+    for fill in assigned_puts or []:
+        if fill.option_type != "put" or not fill.contract:
+            continue
+        candidates[fill.contract] = candidates.get(fill.contract, 0.0) + abs(fill.raw_qty)
     contracts = abs(equity.raw_qty) / _MULTIPLIER
+    price_missing = abs(equity.price) <= _PRICE_TOL
     best = None
     best_gap = None
-    for contract, qty in short_puts.items():
+    for contract, qty in candidates.items():
         if qty <= _EPS:
             continue
         strike = _strike_of(fills, contract)
-        if strike is None or abs(strike - equity.price) > _PRICE_TOL:
+        if strike is None:
+            continue
+        if not price_missing and abs(strike - equity.price) > _PRICE_TOL:
             continue
         if abs(qty * _MULTIPLIER - abs(equity.raw_qty)) > _SHARE_TOL and abs(qty - contracts) > 0.02:
             continue
-        gap = abs(strike - equity.price)
+        gap = (
+            abs(qty * _MULTIPLIER - abs(equity.raw_qty))
+            if price_missing
+            else abs(strike - equity.price)
+        )
         if best is None or gap < best_gap:
             best = contract
             best_gap = gap
@@ -1181,7 +1283,9 @@ def _match_equity(equities, used, delta, strike):
             continue
         if abs(abs(equity_delta) - abs(delta)) > _SHARE_TOL:
             continue
-        if abs(fill.price - strike) > _PRICE_TOL:
+        # A blank delivery price is the same assignment. Requiring the
+        # price to equal the strike left those shares unpriced.
+        if abs(fill.price) > _PRICE_TOL and abs(fill.price - strike) > _PRICE_TOL:
             continue
         return fill
     return None
@@ -1242,11 +1346,53 @@ def _option_cash(action, qty, price, fees, amount):
     return round(sign * abs(amount), 2)
 
 
+def _contract_from_symbol(trade_symbol):
+    """OCC or Schwab long-form symbol → type, strike, expiry, and a stable key."""
+    from app.option_formatting import parse_occ
+
+    parsed = parse_occ(trade_symbol)
+    if not parsed:
+        return None
+    cp = str(parsed.get("cp") or "").upper()
+    if cp == "C":
+        option_type = "call"
+    elif cp == "P":
+        option_type = "put"
+    else:
+        return None
+    try:
+        expiry = date(2000 + int(parsed["yy"]), int(parsed["mm"]), int(parsed["dd"]))
+    except (TypeError, ValueError):
+        expiry = None
+    strike = parsed.get("strike")
+    try:
+        strike = float(strike) if strike is not None else None
+    except (TypeError, ValueError):
+        strike = None
+    expiry_key = expiry.isoformat() if expiry else ""
+    strike_key = round(strike, 4) if strike is not None else ""
+    root = str(parsed.get("root") or "").upper()
+    return {
+        "option_type": option_type,
+        "strike": strike,
+        "expiry": expiry,
+        "key": f"{root}|{expiry_key}|{option_type}|{strike_key}",
+    }
+
+
 def _contract_key(option_type, strike, expiry, trade_symbol, index):
     if option_type is None and strike is None and not trade_symbol:
         return None
+    specific = _contract_from_symbol(trade_symbol)
+    if specific and specific.get("key"):
+        return ("occ", specific["key"])
+    # A bare underlying ("BE") on every leg is not a contract id. Strike,
+    # expiry, and type keep the two legs of a spread apart.
+    if option_type and strike is not None:
+        expiry_key = expiry.isoformat() if isinstance(expiry, date) else ""
+        return ("opt", option_type, round(strike, 4), expiry_key)
     if trade_symbol:
-        return ("occ", trade_symbol.upper())
+        return ("occ", str(trade_symbol).upper())
     expiry_key = expiry.isoformat() if isinstance(expiry, date) else ""
     strike_key = round(strike, 4) if strike is not None else None
     return ("opt", option_type or "", strike_key, expiry_key, index if strike is None else 0)

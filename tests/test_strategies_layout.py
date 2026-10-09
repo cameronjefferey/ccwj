@@ -32,6 +32,10 @@ def test_strategies_story_order_is_headline_then_cards_then_collapsed_rest():
     assert "focus_strategy.num_symbols }} symbol" not in PAGE
     assert "focus_strategy.num_winners }} win" in PAGE
     assert "focus_strategy.num_losers }} loss" in PAGE
+    cards = PAGE.split('class="strat-cards"', 1)[1].split('id="strategy-focus"', 1)[0]
+    assert "trade_word[:-1] if s.num_trades == 1" in cards
+    assert "s.num_winners | int }} win" in cards
+    assert "s.num_losers | int }} loss" in cards
     assert "}}W / {{ focus_strategy.num_losers }}L" not in PAGE
     assert 'class="ov-date">{{ focus_strategy.strategy }}' in PAGE
     assert "strat-suffix" in PAGE
