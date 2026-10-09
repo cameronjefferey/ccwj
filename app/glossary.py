@@ -160,6 +160,25 @@ _ENTRIES = (
         ),
     },
     {
+        "slug": "cost-per-share",
+        "title": "Cost per share",
+        "labels": ("cost/share", "cost per share", "cost"),
+        "definition": (
+            "Cost per share is the share cost basis divided by the shares still held. "
+            "It is the broker's average cost, before option premium."
+        ),
+    },
+    {
+        "slug": "all-in-cost",
+        "title": "All-in cost",
+        "labels": ("all-in", "all-in cost"),
+        "definition": (
+            "All-in cost per share is the equity cost per share minus net option premium "
+            "on that stock during the current holding cycle. Premium on an option that is "
+            "still open counts at the cash collected so far and is not final."
+        ),
+    },
+    {
         "slug": "cash-secured-put",
         "title": "Cash-secured put",
         "labels": (

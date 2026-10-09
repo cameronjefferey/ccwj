@@ -109,6 +109,14 @@
             word-break: keep-all;
         }
         .pos-wl-pair { white-space: nowrap; }
+        .pos-costline { display: none; }
+        .pos-costnum {
+            white-space: nowrap;
+            display: inline-block;
+            font-family: "JetBrains Mono", ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+            font-weight: 500;
+        }
         #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 8%; }
         #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
         #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 14%; }
@@ -196,6 +204,38 @@
         #positionsTable th:nth-child(10), #positionsTable td:nth-child(10) { width: 7%; }
         #positionsTable th:nth-child(11), #positionsTable td:nth-child(11) { width: 10%; }
         #positionsTable th:nth-child(13), #positionsTable td:nth-child(13) { width: 11%; }
+        #symbolTable .pos-cost-col { display: none; }
+    }
+    /* Cost and All-in sit beside Collected once the table is wide
+       enough. Below that they are a second line under the symbol so a
+       390px row stays Symbol, Total return, Win rate, Fills.
+       Widths sum to 100. Dividends, Unrealized, Strategies, and
+       Collected are single words, so each column is wide enough for
+       the full uppercase label at 1280px. Cost and All-in stay short
+       on purpose; the glossary button is the explanation. */
+    @media (min-width: 1280px) {
+        #symbolTable .pos-cost-col { display: table-cell; }
+        .pos-costline { display: none; }
+        #symbolTable thead th {
+            padding-left: .28rem;
+            padding-right: .28rem;
+            overflow: visible;
+            hyphens: none;
+        }
+        #symbolTable th:nth-child(1), #symbolTable td:nth-child(1) { width: 6%; }
+        #symbolTable th:nth-child(2), #symbolTable td:nth-child(2) { width: 6%; }
+        #symbolTable th:nth-child(3), #symbolTable td:nth-child(3) { width: 9%; }
+        #symbolTable th:nth-child(4), #symbolTable td:nth-child(4) { width: 9%; }
+        #symbolTable th:nth-child(5), #symbolTable td:nth-child(5) { width: 8%; }
+        #symbolTable th:nth-child(6), #symbolTable td:nth-child(6) { width: 7%; }
+        #symbolTable th:nth-child(7), #symbolTable td:nth-child(7) { width: 9%; }
+        #symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 8%; }
+        #symbolTable th:nth-child(9), #symbolTable td:nth-child(9) { width: 5%; }
+        #symbolTable th:nth-child(10), #symbolTable td:nth-child(10) { width: 5%; }
+        #symbolTable th:nth-child(11), #symbolTable td:nth-child(11) { width: 5%; }
+        #symbolTable th:nth-child(12), #symbolTable td:nth-child(12) { width: 8%; }
+        #symbolTable th:nth-child(13), #symbolTable td:nth-child(13) { width: 7%; }
+        #symbolTable th:nth-child(14), #symbolTable td:nth-child(14) { width: 8%; }
     }
     /* Symbol-table header sticks to the page, under the nav. Not an
        inner 75vh scroller: overflow stays visible so columns are not
@@ -230,6 +270,11 @@
         font-variant-numeric: tabular-nums;
     }
     .pos-acct { display: none; }
+    .pos-allin-note {
+        margin: .4rem 0 0;
+        color: var(--ht-muted);
+        font-size: .75rem;
+    }
     .pos-more-row { display: none; }
     .pos-more {
         margin-top: .25rem;
@@ -269,6 +314,16 @@
             max-width: 100%;
         }
         .pos-acct { display: block; font-weight: 500; font-size: .68rem; color: var(--ht-muted); }
+        #symbolTable .pos-cost-col { display: none; }
+        .pos-costline {
+            display: block;
+            margin-top: .12rem;
+            font-size: .68rem;
+            line-height: 1.35;
+            color: var(--ht-muted);
+            font-weight: 500;
+        }
+        .pos-costnum { display: block; }
         .pos-more-row { display: table-row; }
         .pos-strat-row {
             grid-template-columns: minmax(0, 1fr) max-content;
@@ -704,6 +759,8 @@
                         <th class="sortable" data-sort="num" title="Individual fills.">Fills</th>
                         <th class="sortable" data-sort="num" data-m="hide">W/L</th>
                         <th class="sortable" data-sort="num" data-m="hide" title="Premium received.">{{ term('Collected') }}</th>
+                        <th class="sortable pos-cost-col" data-sort="num" data-m="hide">{{ term('Cost') }}</th>
+                        <th class="sortable pos-cost-col" data-sort="num" data-m="hide">{{ term('All-in') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -715,6 +772,14 @@
                                 {{ row.symbol }}
                             </a>
                             <span class="pos-acct">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</span>
+                            {% if row.equity_per_share is defined and row.equity_per_share is not none %}
+                            <span class="pos-costline">
+                                <span class="pos-costnum">Cost/share {{ money(row.equity_per_share) }}</span>
+                                {% if row.show_all_in %}
+                                <span class="pos-costnum">All-in {{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}</span>
+                                {% endif %}
+                            </span>
+                            {% endif %}
                         </td>
                         <td class="small text-muted" data-label="Subsector"
                             title="{{ row.sector or '' }}{% if row.sector and row.subsector %} / {% endif %}{{ row.subsector or '' }}">
@@ -763,9 +828,26 @@
                         <td data-label="Collected" data-val="{{ row.total_premium_received }}" class="pos-money text-positive">
                             {{ money(row.total_premium_received) }}
                         </td>
+                        <td class="pos-money pos-cost-col" data-label="Cost/share"
+                            data-val="{{ row.equity_per_share if row.equity_per_share is defined and row.equity_per_share is not none else '' }}">
+                            {% if row.equity_per_share is defined and row.equity_per_share is not none %}
+                            {{ money(row.equity_per_share) }}
+                            {% else %}
+                            &mdash;
+                            {% endif %}
+                        </td>
+                        <td class="pos-money pos-cost-col" data-label="All-in"
+                            data-val="{{ row.all_in_per_share if row.show_all_in is defined and row.show_all_in else '' }}"
+                            {% if row.open_options is defined and row.open_options %}title="{{ all_in_open_note }}"{% endif %}>
+                            {% if row.show_all_in is defined and row.show_all_in %}
+                            {{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}
+                            {% else %}
+                            &mdash;
+                            {% endif %}
+                        </td>
                     </tr>
                     <tr class="pos-more-row" data-no-sort data-no-row-nav>
-                        <td colspan="12">
+                        <td colspan="14">
                             <details class="pos-more" data-no-row-nav>
                                 <summary>More</summary>
                                 <dl>
@@ -777,6 +859,8 @@
                                     <dt>Dividends</dt><dd>{% if (row.total_dividend_income or 0) != 0 %}{{ money(row.total_dividend_income) }}{% else %}—{% endif %}</dd>
                                     <dt>W/L</dt><dd>{{ row.num_winners | int }} / {{ row.num_losers | int }}</dd>
                                     <dt>Collected</dt><dd>{% if (row.total_premium_received or 0) != 0 %}{{ money(row.total_premium_received) }}{% else %}—{% endif %}</dd>
+                                    <dt>Cost/share</dt><dd>{% if row.equity_per_share is defined and row.equity_per_share is not none %}{{ money(row.equity_per_share) }}{% else %}—{% endif %}</dd>
+                                    <dt>All-in</dt><dd>{% if row.show_all_in is defined and row.show_all_in %}{{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}{% else %}—{% endif %}</dd>
                                 </dl>
                             </details>
                         </td>
@@ -785,6 +869,9 @@
                 </tbody>
             </table>
         </div>
+        {% if all_in_open_note is defined and all_in_open_note %}
+        <p class="pos-allin-note">* {{ all_in_open_note }}</p>
+        {% endif %}
         <p id="symbolSearchEmpty" class="ht-search-empty text-muted text-center py-4 mb-0 d-none" role="status">
             No results match this search.
         </p>

@@ -1090,6 +1090,15 @@ def positions():
 
     _label_rows(all_rows)
     _label_rows(symbol_rows)
+    all_in_open_note = ""
+    try:
+        from app.all_in_cost import attach_positions_all_in
+        all_in_open_note = attach_positions_all_in(
+            symbol_rows, client, tenant_ids, tenant_filter,
+        )
+    except Exception:
+        app.logger.exception("positions all-in cost failed")
+        all_in_open_note = ""
     _blank_missing_win_rates(all_rows)
     _blank_missing_win_rates(symbol_rows)
     all_rows, sort_key, sort_dir = sort_strategy_detail_rows(all_rows, sort_key, sort_dir)
@@ -1123,6 +1132,7 @@ def positions():
         paper_fills=paper_fills,
         rows=rows,
         symbol_rows=symbol_rows,
+        all_in_open_note=all_in_open_note,
         kpis=kpis,
         strategy_chart=strategy_chart,
         accounts=accounts,
