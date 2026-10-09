@@ -271,13 +271,17 @@ What's working:
  is grouped as one **Rolled** row (`_group_day_rolls`). Pairing keys on
  `tenant_id`. Same-day open + expiry/assignment/exercise of the **same**
  contract is one row (`_group_day_open_and_settle`) — a Friday 0DTE is not
- Sold-to-open plus Expired. Session fills (and Trades this week) can be tagged inline —
+ Sold-to-open plus Expired. Estimated expiry (`option_settled_est`) pairs
+ the same way. A same-day short and long of the same call or put, same
+ expiry and size, different strikes, is one spread (`_group_day_spreads`);
+ a 20-lot does not pair with a 10-lot, and an iron condor stays two spreads.
+ Session fills (and Trades this week) can be tagged inline —
  same `+ tag` control as Position Detail, keyed on the matching chapter
  `open_date` from `int_position_legs`. If this ISO week has no open/close
  groups yet, Overview keeps last week's table so Monday tagging does not
  vanish. Lives in `build_daily_review_batch` as `today_trades` (same
  `trades_as_of` as `moves_as_of`) so the cache warmer replays it.
-- Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). On a phone this stays a table — Account (share of book under the name), Value, Today, 1W, 1M — and only the table scrolls, with Account sticky. The unfinished session is named in the nav strip, not as a blank extra column.
+- Account snapshot row: close / vs prior session (dated, e.g. vs Thu 27) / vs 1w / vs 1m (per-account and total). On a phone this stays a table — Account (share of book under the name), Value, Today, 1 week, 1 month — and only the table scrolls, with Account sticky. The unfinished session is named in the nav strip, not as a blank extra column.
 - Session movers: $ price-impact on currently-held shares for that close
   (`TODAY_MOVES_QUERY` / options / dividends capped at `@as_of` = snapshot cutoff).
   Option rows read `int_option_contract_daily_pnl` (the same realize-on-close
@@ -295,8 +299,8 @@ What's working:
   Multi-day mark changes
   stay on the mart day-delta. The line under the symbol is the contracts
   (`10× 7650/7655C spread`, `20× 7730/7735C spread`, `2× MU 120C`). The
-  other line is `Open contracts, change in value`, `Closed today`,
-  `Expired`, or both dollars when the day mixed a mark change and a close.
+  other line is `+$X open`, `−$Y closed`, `+$Z expired` (or assigned
+  / exercised), or both dollars when the day mixed a mark change and a close.
   `?debug=lots` on `/weekly-review` and `/today` prints one line under
   each option tile for the signed-in account owner: reason, lot sum,
   gap, fee budget, fill count, fill dates, OCC roots, and account

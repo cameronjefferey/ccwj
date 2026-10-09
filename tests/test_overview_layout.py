@@ -97,11 +97,12 @@ def test_session_trades_stay_columns_on_a_phone():
     assert ".tt-table td:nth-child(5)" not in STYLES
     block = STYLES.split("@media (max-width: 640px) {\n        /* A 390px card", 1)[1]
     block = block.split("@media", 1)[0]
-    assert "table-layout: fixed" in block
-    assert "width: 100%" in block
-    assert ".tt-tag { display: none" in block
-    assert ".tt-verb-short { display: inline" in block
-    assert ".tt-px { display: none" in block
+    assert "table-layout: auto" in block
+    assert "min-width: 100%" in block
+    assert "overflow-x: auto" in block
+    assert "text-overflow: ellipsis" not in block
+    assert ".tt-verb-long { display: inline" in block
+    assert ".tt-verb-short { display: none" in block
     assert "td.tt-qty" in block
     assert "position: sticky" not in block
     assert "tt-sym-cell" in PAGE
@@ -109,17 +110,24 @@ def test_session_trades_stay_columns_on_a_phone():
     assert "option_symbol" in PAGE
     assert "tt-verb-short" in PAGE
     assert "tt-tag" in PAGE
+    assert "is_spread" in PAGE
     assert "tt-sym-cell" in TODAY
     assert "tt-qty" in TODAY
+    assert "is_spread" in TODAY
 
 
-def test_heatmap_dollars_shrink_instead_of_clipping():
+def test_heatmap_dollars_scroll_inside_the_card():
+    assert 'class="cal-scroll"' in DAILY
+    scroll = STYLES.split(".cal-scroll {", 1)[1].split("}", 1)[0]
+    assert "overflow-x: auto" in scroll
     rule = STYLES.split(".cal-day .cal-day-pnl {", 1)[1].split("}", 1)[0]
-    assert "clamp(.38rem, 16cqi, .68rem)" in rule
+    assert ".72rem" in rule
+    assert ".38rem" not in rule
     assert "ellipsis" not in rule
     assert "text-overflow" not in rule
     phone = STYLES.split("@media (max-width: 480px)", 1)[1].split("@media", 1)[0]
-    assert "clamp(.38rem, 14cqi, .58rem)" in phone
+    assert ".68rem" in phone
+    assert ".38rem" not in phone
 
 
 def test_today_names_the_dividend_bar_date_when_it_is_not_today():
@@ -132,8 +140,8 @@ def test_snapshot_stays_columns_on_a_phone():
     """Account rows stay a table at phone width. Share of book moves under the name."""
     assert 'class="snapshot-scroll"' in PAGE
     assert 'class="acct-share-phone"' in PAGE
-    assert ">1W<" in PAGE
-    assert ">1M<" in PAGE
+    assert ">1W<" not in PAGE
+    assert ">1M<" not in PAGE
     assert "1 week" in PAGE and "1 month" in PAGE
     phone = STYLES.split("@media (max-width: 720px)", 1)[1].split("@media", 1)[0]
     assert ".snapshot-table { display: flex" not in phone

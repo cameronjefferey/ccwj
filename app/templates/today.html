@@ -129,6 +129,8 @@
                     {% if t.symbol %}<a class="tt-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}
                     {% if t.is_roll %}
                     <div class="tt-muted">{{ t.close_label }} → {{ t.open_label }}</div>
+                    {% elif t.is_spread and t.spread_label %}
+                    <div class="tt-muted">{{ t.spread_label }}</div>
                     {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
                     <div class="tt-muted" title="{{ t.trade_symbol }}">{{ t.trade_symbol|option_symbol }}</div>
                     {% endif %}
@@ -185,7 +187,7 @@
     {% endif %}
     <details class="section-fine" style="margin:.8rem 0 0;">
         <summary>How this is computed</summary>
-        <p>Brokers post today's transactions overnight, so a fill placed this session usually shows up after the next sync. An option that expired or was assigned is listed on that day, not the next morning. The dollar is realized G/L when a warehouse row has matched; otherwise an em dash.</p>
+        <p>Brokers post today's transactions overnight, so a fill placed this session usually shows up after the next sync. An option that expired or was assigned is listed on that day, not the next morning. The dollar is realized G/L when a warehouse row has matched; otherwise an em dash. A same-day short and long of the same call or put, same expiry and size, are one spread.</p>
     </details>
 </div>
 

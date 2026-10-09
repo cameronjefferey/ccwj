@@ -53,11 +53,11 @@
     {% set pos = comp.delta_pct >= 0 %}
     <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{{ "+" if pos else "" }}{{ "%.2f"|format(comp.delta_pct) }}%</div>
     {% if comp.delta is not none %}
-    <div class="ov-sub {% if comp.delta >= 0 %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
+    <div class="ov-sub {% if comp.delta >= 0 %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
     {% endif %}
     {% elif comp and comp.has_data and comp.delta is not none %}
     {% set pos = comp.delta >= 0 %}
-    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
+    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
     {% else %}
     <div class="ov-pct ov-dash">—</div>
     {% endif %}
@@ -191,6 +191,8 @@
                     {% if t.symbol %}<a class="tt-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}
                     {% if t.is_roll %}
                     <div class="tt-muted">{{ t.close_label }} → {{ t.open_label }}</div>
+                    {% elif t.is_spread and t.spread_label %}
+                    <div class="tt-muted">{{ t.spread_label }}</div>
                     {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
                     <div class="tt-muted" title="{{ t.trade_symbol }}">{{ t.trade_symbol|option_symbol }}</div>
                     {% endif %}
@@ -251,9 +253,11 @@
             + open of the same call or put is one roll; the dollar is the
             closed leg's G/L, and a short roll meets the bar on a credit
             (or flat) or a strike that moved in the covered direction
-            (calls up, puts down). Same-day trades appear after the next
-            sync. Option expiry, assignment, and exercise are dated to
-            the expiry session even when the broker posts them on Monday.
+            (calls up, puts down). A same-day short and long of the same
+            call or put, same expiry and size, are one spread. Same-day
+            trades appear after the next sync. Option expiry, assignment,
+            and exercise are dated to the expiry session even when the
+            broker posts them on Monday.
         </p>
     </details>
 </div>
@@ -343,7 +347,7 @@
                         <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
-                    <div class="mover-dollar text-negative">-${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                    <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _mv.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
@@ -391,13 +395,13 @@
     </div>
     {% if comp.delta is not none %}
     <div class="snap-cell-pct {% if comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-        {% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+        {% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
     </div>
     {% endif %}
     {% elif comp and comp.has_data and comp.delta is not none %}
     {% set pos = comp.delta >= 0 %}
     <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
-        {% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}-${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+        {% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
     </div>
     {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
 {% endmacro %}
@@ -432,8 +436,8 @@
             <div class="snap-col-share">Share of book</div>
             <div>Value</div>
             <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date.strftime('%A, %b %-d') }}{% endif %}">Today</div>
-            <div class="snap-col-week"><span class="snap-h-full">1 week</span><span class="snap-h-short">1W</span></div>
-            <div class="snap-col-month"><span class="snap-h-full">1 month</span><span class="snap-h-short">1M</span></div>
+            <div class="snap-col-week">1 week</div>
+            <div class="snap-col-month">1 month</div>
         </div>
         {% for snap in today_snapshots_by_account %}
         <div class="snapshot-table-row">

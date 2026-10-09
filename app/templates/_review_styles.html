@@ -374,7 +374,6 @@
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
     }
-    .snap-h-short { display: none; }
     .acct-share-phone { display: none; }
     .snapshot-scroll { max-width: 100%; }
     .share-cell { display: flex; align-items: center; justify-content: flex-end; gap: .55rem; }
@@ -400,8 +399,8 @@
     .snap-bench span { font-style: normal; }
     @media (max-width: 720px) {
         /* One row per account. Share of book sits under the name so
-           Value / Today / 1W / 1M stay columns. The page does not
-           scroll sideways; only this table does, with Account stuck. */
+           Value / Today / 1 week / 1 month stay columns. The page does
+           not scroll sideways; only this table does, with Account stuck. */
         .snapshot-section { padding: .7rem .5rem; overflow-x: clip; }
         .snapshot-scroll { overflow-x: auto; min-width: 0; }
         .snapshot-table {
@@ -411,8 +410,6 @@
             min-width: 100%;
         }
         .snapshot-table .snap-col-share { display: none; }
-        .snap-h-full { display: none; }
-        .snap-h-short { display: inline; }
         .acct-share-phone {
             display: flex;
             align-items: center;
@@ -452,7 +449,7 @@
     @media (max-width: 700px) { .movers-grid { grid-template-columns: 1fr; } }
     .movers-list { display: flex; flex-direction: column; gap: .35rem; }
     .mover-row {
-        display: grid; grid-template-columns: 4rem 1fr auto;
+        display: grid; grid-template-columns: max-content minmax(0, 1fr) auto;
         gap: .75rem; align-items: center;
         padding: .55rem .65rem;
         min-height: 3.55rem;
@@ -463,11 +460,12 @@
         color: inherit;
     }
     .mover-row:hover { background: var(--ht-hover); color: inherit; text-decoration: none; }
-    .mover-sym { font-weight: 700; font-size: .9rem; }
+    .mover-sym { font-weight: 700; font-size: .9rem; white-space: nowrap; }
     .mover-pct { font-size: .72rem; color: var(--ht-muted); }
     .mover-dollar {
         font-weight: 700; font-size: .9rem;
         font-variant-numeric: tabular-nums; text-align: right;
+        white-space: nowrap;
     }
     .mover-kind {
         font-size: .62rem; font-weight: 700; text-transform: uppercase;
@@ -572,15 +570,19 @@
         flex-wrap: wrap;
         gap: .35rem 1rem; max-width: 36rem; margin-bottom: .5rem;
     }
+    .cal-scroll {
+        overflow-x: auto;
+        max-width: 100%;
+    }
     .cal-grid-rolling {
         display: grid;
-        /* minmax(0, 1fr): a day cell's dollar amount must not set the
-           column's minimum width. Otherwise Mon–Fri plus the week label
-           grow past the phone and the page scrolls sideways. */
-        grid-template-columns: 4.5rem repeat(5, minmax(0, 1fr));
+        /* Dollars stay whole. A wide day scrolls inside this card
+           instead of shrinking the type or scrolling the page. */
+        grid-template-columns: max-content repeat(5, minmax(3.4rem, max-content));
         gap: 4px;
-        max-width: 36rem;
-        width: 100%;
+        width: max-content;
+        min-width: 100%;
+        max-width: none;
     }
     .cal-rolling-header {
         font-size: .6rem; font-weight: 600; text-transform: uppercase;
@@ -600,32 +602,26 @@
         padding: .4rem .25rem;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         min-height: 2.6rem;
-        min-width: 0;
-        overflow: hidden;
-        container-type: inline-size;
+        min-width: 3.4rem;
+        overflow: visible;
         font-variant-numeric: tabular-nums;
     }
     .cal-day .cal-day-num { font-size: .68rem; color: inherit; opacity: .8; line-height: 1; }
     .cal-day .cal-day-pnl {
-        /* Floor stays under .5rem so a five- or six-figure day still
-           fits a phone cell. The amount is never abbreviated. */
-        font-size: clamp(.38rem, 16cqi, .68rem);
+        font-size: .72rem;
         font-weight: 700; margin-top: .15rem; line-height: 1;
-        max-width: 100%; white-space: nowrap;
+        white-space: nowrap;
     }
     @media (max-width: 480px) {
-        .cal-section-head, .cal-grid-rolling { max-width: none; }
-        .cal-grid-rolling {
-            grid-template-columns: 2.4rem repeat(5, minmax(0, 1fr));
-            gap: 3px;
-        }
-        .cal-rolling-header { font-size: .55rem; letter-spacing: .2px; }
+        .cal-section-head { max-width: none; }
+        .cal-grid-rolling { gap: 3px; }
+        .cal-rolling-header { font-size: .68rem; letter-spacing: .2px; }
         .cal-rolling-week-label {
-            font-size: .58rem; letter-spacing: 0; padding-left: 0; line-height: 1.1;
+            font-size: .68rem; letter-spacing: 0; padding-left: 0; line-height: 1.1;
         }
-        .cal-day { padding: .28rem .04rem; min-height: 2.35rem; }
-        .cal-day .cal-day-num { font-size: .6rem; }
-        .cal-day .cal-day-pnl { font-size: clamp(.38rem, 14cqi, .58rem); }
+        .cal-day { padding: .28rem .2rem; min-height: 2.35rem; }
+        .cal-day .cal-day-num { font-size: .62rem; }
+        .cal-day .cal-day-pnl { font-size: .68rem; }
     }
     .cal-day.today { outline: 2px solid var(--color-mirror-ink); }
     /* Time-machine: past cells are links to the day-detail page. */
@@ -730,9 +726,9 @@
     .tt-roll-ok { color: var(--gain); font-size: .75rem; font-weight: 600; }
     .tt-roll-miss { color: #e8c07a; font-size: .75rem; font-weight: 600; }
     .tt-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
-    .tt-verb.buy { background: #eff6ff; color: #1d4ed8; }
-    .tt-verb.sell { background: color-mix(in srgb, var(--loss) 12%, transparent); color: #e8edf7; }
-    .tt-verb.lifecycle { background: rgba(176,107,255,.14); color: #e8edf7; }
+    .tt-verb.buy,
+    .tt-verb.sell,
+    .tt-verb.lifecycle { background: var(--ht-surface-2); color: var(--ht-ink); }
     .tt-sym { font-weight: 700; color: var(--ht-ink); text-decoration: none; }
     .tt-sym:hover { color: var(--color-mirror-ink); }
     .tt-empty { color: var(--ht-faint); font-size: .9rem; padding: .15rem 0; }
@@ -762,48 +758,40 @@
     [data-bs-theme="dark"] .tw-tag-chip { background:rgba(224,181,106,.16); color:var(--color-mirror-ink); }
     [data-bs-theme="dark"] .tw-tag-x { color:var(--color-mirror-ink); }
     @media (max-width: 640px) {
-        /* A 390px card (page pad + section pad) is about 330px inside.
-           A max-content table ran ~23px past that and the sticky dollar
-           column covered the quantity ("1 c", "10"). Fit the row: short
-           verb, ellipsized contract, full qty, full dollars. No sticky
-           overlay. */
-        .breakdown-wrap { overflow-x: hidden; }
+        /* A 390px card scrolls this table sideways. Verbs, contracts,
+           quantity, price, and dollars stay whole. The page itself
+           does not scroll. */
+        .breakdown-wrap { overflow-x: auto; max-width: 100%; }
         .tt-table {
-            width: 100%;
-            table-layout: fixed;
+            width: max-content;
+            min-width: 100%;
+            table-layout: auto;
             font-size: .8rem;
         }
         .tt-table td {
             white-space: nowrap;
-            padding: .35rem .12rem;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .tt-verb { padding: .1rem .32rem; font-size: .66rem; }
-        .tt-verb-long { display: none; }
-        .tt-verb-short { display: inline; }
-        .tt-tag { display: none; }
-        .tt-sticky { width: 4.4rem; }
-        .tt-sym-cell { width: auto; }
-        td.tt-qty { width: 3.4rem; overflow: visible; text-overflow: clip; }
-        td.tt-money {
-            width: 5.7rem;
+            padding: .35rem .28rem;
             overflow: visible;
             text-overflow: clip;
-            min-width: 0;
         }
+        .tt-verb { padding: .1rem .4rem; font-size: .68rem; }
+        .tt-verb-long { display: inline; }
+        .tt-verb-short { display: none; }
+        .tt-sym-cell { max-width: 14rem; }
+        td.tt-qty, td.tt-money { white-space: nowrap; }
         .tt-table td .tt-muted {
             display: block;
-            max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            max-width: 14rem;
         }
-        .tt-px { display: none; }
     }
     [data-bs-theme="dark"] .tt-table td { border-bottom-color: #2e313a; }
-    [data-bs-theme="dark"] .tt-verb.buy { background: #172554; color: #93c5fd; }
-    [data-bs-theme="dark"] .tt-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
+    [data-bs-theme="dark"] .tt-verb.buy,
+    [data-bs-theme="dark"] .tt-verb.sell,
+    [data-bs-theme="dark"] .tt-verb.lifecycle {
+        background: var(--ht-surface-2); color: var(--ht-ink);
+    }
     [data-bs-theme="dark"] .tt-sym { color: var(--ht-ink); }
     [data-bs-theme="dark"] .pill-status.today { background: rgba(96,165,250,.18); color: #93c5fd; }
 
@@ -891,7 +879,7 @@
         background: transparent; border: 0; border-radius: 0;
         border-top: 1px solid rgba(28,35,48,.08);
         min-height: 0; padding: .55rem 0;
-        grid-template-columns: 4.5rem 1fr auto;
+        grid-template-columns: max-content minmax(0, 1fr) auto;
     }
     .ov-mover-col .movers-list { gap: 0; }
     .ov-mover-col .mover-row:first-child { border-top: 0; }

@@ -6,7 +6,7 @@
 {% block content %}
 <style>
     .dd-hero {
-        background: #1a1a2e;
+        background: #121826;
         border-radius: 14px; color: #fff; padding: 1.5rem 1.75rem;
         scroll-margin-top: 4.5rem;
     }
@@ -17,7 +17,7 @@
     .dd-hero .dd-sub { color: #94a3b8; font-size: .9rem; }
     .dd-nav a { color: #cbd5e1; text-decoration: none; font-size: .85rem; }
     .dd-nav a:hover { color: #fff; }
-    .dd-card { border: 0; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+    .dd-card { border: 1px solid var(--ht-line); border-radius: 12px; box-shadow: none; }
     .dd-card h2 { font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; color: var(--ht-label); font-weight: 700; margin-bottom: .85rem; }
     .dd-table { width: 100%; font-size: .9rem; }
     .dd-table td { padding: .45rem .4rem; border-bottom: 1px solid #243049; vertical-align: middle; }
@@ -29,9 +29,9 @@
     .dd-roll-ok { color: var(--gain); font-size: .75rem; font-weight: 600; }
     .dd-roll-miss { color: #e8c07a; font-size: .75rem; font-weight: 600; }
     .dd-verb { font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
-    .dd-verb.buy { background: #eff6ff; color: #1d4ed8; }
-    .dd-verb.sell { background: color-mix(in srgb, var(--loss) 12%, transparent); color: #e8edf7; }
-    .dd-verb.lifecycle { background: rgba(176,107,255,.14); color: #e8edf7; }
+    .dd-verb.buy,
+    .dd-verb.sell,
+    .dd-verb.lifecycle { background: var(--ht-surface-2); color: var(--ht-ink); }
     .dd-sym { font-weight: 700; color: var(--ht-ink); }
     .dd-empty { color: var(--ht-faint); font-size: .9rem; padding: .35rem 0; }
     .dd-card .card-body { overflow-x: auto; }
@@ -40,21 +40,20 @@
         .dd-hero .dd-delta { font-size: 1.6rem; }
         .dd-table { font-size: .84rem; }
         .dd-table td { padding: .4rem .3rem; }
-        /* Fixed layout is the only thing that reliably stops OCC option
-           symbols ("LITE 261120C01100000") pushing the money column
-           off-screen at phone widths — auto layout expands the table to
-           min-content regardless of word-break. */
-        .dd-table { table-layout: fixed; }
-        .dd-table td:first-child { width: 30%; }
-        .dd-table td:last-child { width: 37%; }
-        .dd-table .dd-muted { word-break: break-all; }
+        .dd-table { table-layout: auto; }
+        .dd-table .dd-muted {
+            word-break: normal;
+            overflow-wrap: anywhere;
+        }
         .dd-verb { white-space: normal; }
     }
-    [data-bs-theme="dark"] .dd-card { background: #111a2c; }
+    [data-bs-theme="dark"] .dd-card { background: #121826; }
     [data-bs-theme="dark"] .dd-table td { border-bottom-color: #2e313a; }
-    [data-bs-theme="dark"] .dd-verb.buy { background: #172554; color: #93c5fd; }
-    [data-bs-theme="dark"] .dd-verb.sell { background: #450a0a; color: var(--loss); }
-    [data-bs-theme="dark"] .dd-verb.lifecycle { background: #2e1065; color: #c4b5fd; }
+    [data-bs-theme="dark"] .dd-verb.buy,
+    [data-bs-theme="dark"] .dd-verb.sell,
+    [data-bs-theme="dark"] .dd-verb.lifecycle {
+        background: var(--ht-surface-2); color: var(--ht-ink);
+    }
 </style>
 
 <div class="dd-hero mb-4" id="day-review">
@@ -141,7 +140,7 @@
             <div class="card-body p-3 p-md-4">
                 <h2>Trades that day{% if net_gl %}
                 <span class="dd-muted" style="text-transform:none; letter-spacing:0; font-weight:600; float:right;">
-                    {{ "+" if net_gl > 0 else "-" }}${{ "{:,.0f}".format(net_gl|abs) }} G/L
+                    {{ "+" if net_gl > 0 else "−" }}${{ "{:,.0f}".format(net_gl|abs) }} G/L
                 </span>
                 {% endif %}</h2>
                 {% if trade_rows %}
@@ -155,6 +154,8 @@
                             {% if t.symbol %}<a class="dd-sym" href="{{ scoped_url('position_detail', symbol=t.symbol, tenant=t.tenant_id or none) }}">{{ t.symbol }}</a>{% endif %}
                             {% if t.is_roll %}
                             <div class="dd-muted">{{ t.close_label }} → {{ t.open_label }}</div>
+                            {% elif t.is_spread and t.spread_label %}
+                            <div class="dd-muted">{{ t.spread_label }}</div>
                             {% elif t.is_option and t.trade_symbol and t.trade_symbol != t.symbol %}
                             <div class="dd-muted">{{ t.trade_symbol }}</div>
                             {% endif %}

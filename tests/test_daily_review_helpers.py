@@ -612,7 +612,7 @@ class TestBuildTodayMovers:
         assert row["symbol"] == "SPXW"
         assert row["dollar_impact"] == -3574.44
         assert row["contract_detail"] == "10× 7650/7655C spread"
-        assert row["option_caption"] == "Closed today"
+        assert row["option_caption"] == "−$3,574 closed"
         assert result["options_impact"] == -3574.44
 
     def test_two_oct2_spxw_lots_split_and_include_fees(self):
@@ -705,9 +705,9 @@ class TestBuildTodayMovers:
                 "10× 7730/7735C spread",
             }
             assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
-            assert by_detail["20× 7730/7735C spread"]["option_caption"] == "Closed today"
+            assert by_detail["20× 7730/7735C spread"]["option_caption"] == "+$902 closed"
             assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
-            assert by_detail["10× 7730/7735C spread"]["option_caption"] == "Expired"
+            assert by_detail["10× 7730/7735C spread"]["option_caption"] == "+$976 expired"
             assert result["options_impact"] == 1877.80
             assert all("30×" not in (r.get("contract_detail") or "") for r in spxw)
             assert result["combined_impact"] == 1877.80
@@ -758,9 +758,9 @@ class TestBuildTodayMovers:
             "10× 7730/7735C spread",
         }
         assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
-        assert by_detail["20× 7730/7735C spread"]["option_caption"] == "Closed today"
+        assert by_detail["20× 7730/7735C spread"]["option_caption"] == "+$902 closed"
         assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
-        assert by_detail["10× 7730/7735C spread"]["option_caption"] == "Expired"
+        assert by_detail["10× 7730/7735C spread"]["option_caption"] == "+$976 expired"
         assert impact == 1877.80
         assert "30×" not in " ".join(by_detail)
 
@@ -811,7 +811,7 @@ class TestBuildTodayMovers:
         assert result["winners"] == []
         assert row["dollar_impact"] == -3574.44
         assert row["contract_detail"] == "10× 7650/7655C spread"
-        assert row["option_caption"] == "Closed today"
+        assert row["option_caption"] == "−$3,574 closed"
         # Opening credit versus the width is outside the fee budget.
         assert row["lot_split_reason"] == "total_mismatch"
         assert "gap=" in row["lot_split_detail"]
@@ -856,7 +856,7 @@ class TestBuildTodayMovers:
         row = result["winners"][0]
         assert len(result["winners"]) == 1
         assert row["contract_detail"] == "10× 7730/7735C spread"
-        assert row["option_caption"] == "Expired"
+        assert row["option_caption"] == "+$976 expired"
         assert row["dollar_impact"] == 975.56
         assert result["options_impact"] == 975.56
 
@@ -1009,9 +1009,9 @@ class TestBuildTodayMovers:
             "10× 7730/7735C spread",
         }
         assert by_detail["20× 7730/7735C spread"]["dollar_impact"] == 902.24
-        assert by_detail["20× 7730/7735C spread"]["option_caption"] == "Closed today"
+        assert by_detail["20× 7730/7735C spread"]["option_caption"] == "+$902 closed"
         assert by_detail["10× 7730/7735C spread"]["dollar_impact"] == 975.56
-        assert by_detail["10× 7730/7735C spread"]["option_caption"] == "Expired"
+        assert by_detail["10× 7730/7735C spread"]["option_caption"] == "+$976 expired"
         assert result["options_impact"] == 1877.80
         assert result["as_of"] == "2026-10-02"
         assert all(r["lot_split_reason"] == "split" for r in spxw)
@@ -1130,8 +1130,10 @@ class TestBuildTodayMovers:
             html = app.jinja_env.get_template("weekly_review.html").render(**overview)
         assert "20× 7730/7735C spread" in html
         assert "10× 7730/7735C spread" in html
-        assert "Closed today" in html
-        assert "Expired" in html
+        assert "+$902 closed" in html
+        assert "+$976 expired" in html
+        assert "Closed today" not in html
+        assert "Open contracts, change in value" not in html
         assert "+$902" in html
         assert "+$976" in html
         assert "30×" not in html
@@ -1290,7 +1292,7 @@ class TestBuildTodayMovers:
             None, options_moves_df=pd.DataFrame(), option_fills_df=fills,
         )
         assert len(result["winners"]) == 1
-        assert result["winners"][0]["option_caption"] == "Closed today"
+        assert result["winners"][0]["option_caption"] == "+$987 closed"
         assert result["winners"][0]["symbol"] == "SPY"
         assert result["options_impact"] != 0.0
 
@@ -1328,7 +1330,7 @@ class TestBuildTodayMovers:
             row.get("option_caption")
             for row in result["winners"] + result["losers"]
         ]
-        assert captions.count("Expired") == 1
+        assert captions.count("+$976 expired") == 1
 
     def test_posting_day_opens_of_a_friday_expiry_split(self, caplog):
         """The 10× expired with no close, so nothing caps its open back to Friday.
@@ -1649,7 +1651,7 @@ class TestBuildTodayMovers:
         result = _build_today_movers(None, options_moves_df=opt)
         by_sym = {r["symbol"]: r for r in result["winners"] + result["losers"]}
         assert by_sym["MU"]["contract_detail"] == "2× MU 120C"
-        assert by_sym["MU"]["option_caption"] == "Open contracts, change in value"
+        assert by_sym["MU"]["option_caption"] == "−$40 open"
         assert by_sym["MU"]["dollar_impact"] == -40
         assert by_sym["AAPL"]["option_caption"] == "+$450 open · −$120 closed"
         assert by_sym["AAPL"]["dollar_impact"] == 330
@@ -1748,9 +1750,11 @@ class TestBuildTodayMovers:
         with app.test_request_context("/overview"):
             html = app.jinja_env.get_template("weekly_review.html").render(**overview)
         assert "10× 7650/7655C spread" in html
-        assert "Closed today" in html
+        assert "−$3,574 closed" in html
         assert "2× MU 120C" in html
-        assert "Open contracts, change in value" in html
+        assert "+$80 open" in html
+        assert "Closed today" not in html
+        assert "Open contracts, change in value" not in html
         assert "P&amp;L on contracts" not in html
         assert "Marks + closes" not in html
         assert "$3,574" in html
@@ -1767,8 +1771,10 @@ class TestBuildTodayMovers:
         with app.test_request_context("/today"):
             today_html = app.jinja_env.get_template("today.html").render(**today_ctx)
         assert "10× 7650/7655C spread" in today_html
-        assert "Closed today" in today_html
-        assert "Open contracts, change in value" in today_html
+        assert "−$3,574 closed" in today_html
+        assert "+$80 open" in today_html
+        assert "Closed today" not in today_html
+        assert "Open contracts, change in value" not in today_html
         assert "Marks + closes" not in today_html
 
 
@@ -2786,6 +2792,241 @@ class TestSplitDayFills:
         out = _split_day_fills(pd.DataFrame([sto, expired]))
         assert len(out["trades"]) == 2
 
+    def test_sto_and_estimated_expiry_is_one_row(self):
+        sto = self._row(
+            action="option_sell_to_open",
+            trade_symbol="SPXW  260828C07650000",
+            underlying_symbol="SPXW", quantity=10, price=7.77,
+            amount=7757.78, instrument_type="Call",
+            trade_date=date(2026, 8, 28),
+        )
+        settled = self._row(
+            action="option_settled_est",
+            trade_symbol="SPXW  260828C07650000",
+            underlying_symbol="SPXW", quantity=10, price=None,
+            amount=0.0, realized_pnl=1400.0, instrument_type="Call",
+            trade_date=date(2026, 8, 28),
+            option_expiry=date(2026, 8, 28),
+        )
+        out = _split_day_fills(pd.DataFrame([sto, settled]))
+        assert out["fill_count"] == 2
+        assert out["count"] == 1
+        t = out["trades"][0]
+        assert t["verb"] == "Settled at expiry (est.)"
+        assert t["action"] == "option_settled_est"
+        assert t["price"] is None
+        assert t["amount"] == 1400.0
+        assert t["direction"] == "Sold"
+        assert out["net_gl"] == 1400.0
+
+    def test_monday_estimated_expiry_is_not_a_session_trade(self):
+        df = pd.DataFrame([self._row(
+            trade_date=date(2026, 8, 31),
+            action="option_settled_est",
+            trade_symbol="SPXW  260828C07650000",
+            underlying_symbol="SPXW",
+            quantity=10.0, price=None, amount=0.0,
+            realized_pnl=1400.0,
+            instrument_type="Call",
+            option_expiry=date(2026, 8, 28),
+        )])
+        out = _split_day_fills(df)
+        assert out["count"] == 0
+        assert out["trades"] == []
+        assert out["has_any"] is False
+
+    def test_credit_vertical_is_one_sold_spread(self):
+        df = pd.DataFrame([
+            self._row(
+                action="option_sell_to_open",
+                trade_symbol="SPY   260918C00500000",
+                underlying_symbol="SPY", quantity=2, price=3.0,
+                amount=600.0, instrument_type="Call",
+            ),
+            self._row(
+                action="option_buy_to_open",
+                trade_symbol="SPY   260918C00505000",
+                underlying_symbol="SPY", quantity=2, price=1.0,
+                amount=-200.0, instrument_type="Call",
+            ),
+        ])
+        out = _split_day_fills(df)
+        assert out["fill_count"] == 2
+        assert out["count"] == 1
+        t = out["trades"][0]
+        assert t["is_spread"] is True
+        assert t["verb"] == "Sold spread"
+        assert t["amount"] is None
+        assert t["quantity"] == 2.0
+        assert t["trade_symbol"] == ""
+        assert "500/505C spread" in t["spread_label"]
+        assert out["net_gl"] == 0.0
+
+    def test_debit_vertical_is_one_bought_spread(self):
+        df = pd.DataFrame([
+            self._row(
+                action="option_sell_to_open",
+                trade_symbol="SPY   260918P00400000",
+                underlying_symbol="SPY", quantity=1, price=1.0,
+                amount=100.0, instrument_type="Put",
+            ),
+            self._row(
+                action="option_buy_to_open",
+                trade_symbol="SPY   260918P00395000",
+                underlying_symbol="SPY", quantity=1, price=4.0,
+                amount=-400.0, instrument_type="Put",
+            ),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 1
+        t = out["trades"][0]
+        assert t["verb"] == "Bought spread"
+        assert t["amount"] is None
+        assert "400/395P spread" in t["spread_label"] or "395/400P spread" in t["spread_label"]
+
+    def test_mismatched_spread_size_stays_two_rows(self):
+        df = pd.DataFrame([
+            self._row(
+                action="option_sell_to_open",
+                trade_symbol="SPY   260918C00500000",
+                underlying_symbol="SPY", quantity=20, price=3.0,
+                amount=6000.0, instrument_type="Call",
+            ),
+            self._row(
+                action="option_buy_to_open",
+                trade_symbol="SPY   260918C00505000",
+                underlying_symbol="SPY", quantity=10, price=1.0,
+                amount=-1000.0, instrument_type="Call",
+            ),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 2
+        assert all(not t.get("is_spread") for t in out["trades"])
+
+    def test_vertical_in_two_accounts_stays_two_rows(self):
+        df = pd.DataFrame([
+            self._row(
+                tenant_id="snaptrade:aaa",
+                action="option_sell_to_open",
+                trade_symbol="SPY   260918C00500000",
+                underlying_symbol="SPY", quantity=2, price=3.0,
+                amount=600.0, instrument_type="Call",
+            ),
+            self._row(
+                tenant_id="snaptrade:bbb",
+                action="option_buy_to_open",
+                trade_symbol="SPY   260918C00505000",
+                underlying_symbol="SPY", quantity=2, price=1.0,
+                amount=-200.0, instrument_type="Call",
+            ),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 2
+
+    def test_closed_vertical_sums_realized(self):
+        df = pd.DataFrame([
+            self._row(
+                action="option_buy_to_close",
+                trade_symbol="SPY   260918C00500000",
+                underlying_symbol="SPY", quantity=2, price=1.0,
+                amount=-200.0, realized_pnl=400.0, instrument_type="Call",
+            ),
+            self._row(
+                action="option_sell_to_close",
+                trade_symbol="SPY   260918C00505000",
+                underlying_symbol="SPY", quantity=2, price=0.4,
+                amount=80.0, realized_pnl=-50.0, instrument_type="Call",
+            ),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 1
+        t = out["trades"][0]
+        assert t["verb"] == "Closed spread"
+        assert t["quantity"] == 2.0
+        assert t["amount"] == 350.0
+        assert out["net_gl"] == 350.0
+        assert "500/505C spread" in t["spread_label"]
+
+    def test_same_day_vertical_expiry_is_one_spread(self):
+        day = date(2026, 8, 28)
+        rows = []
+        for action, occ, amount, realized in (
+            ("option_sell_to_open", "SPXW  260828C07650000", 7757.78, None),
+            ("option_buy_to_open", "SPXW  260828C07655000", -6332.22, None),
+            ("option_expired", "SPXW  260828C07650000", 0.0, 500.0),
+            ("option_expired", "SPXW  260828C07655000", 0.0, -200.0),
+        ):
+            rows.append(self._row(
+                action=action, trade_symbol=occ, underlying_symbol="SPXW",
+                quantity=10, price=None if action == "option_expired" else 1.0,
+                amount=amount, realized_pnl=realized, instrument_type="Call",
+                trade_date=day, option_expiry=day,
+            ))
+        out = _split_day_fills(pd.DataFrame(rows))
+        assert out["fill_count"] == 4
+        assert out["count"] == 1
+        t = out["trades"][0]
+        assert t["is_spread"] is True
+        assert t["verb"] == "Expired"
+        assert t["quantity"] == 10.0
+        assert t["amount"] == 300.0
+        assert "7650/7655C spread" in t["spread_label"]
+        assert out["net_gl"] == 300.0
+
+    def test_iron_condor_stays_two_spreads(self):
+        df = pd.DataFrame([
+            self._row(
+                action="option_sell_to_open",
+                trade_symbol="SPY   260918C00500000",
+                underlying_symbol="SPY", quantity=1, amount=200.0,
+                instrument_type="Call",
+            ),
+            self._row(
+                action="option_buy_to_open",
+                trade_symbol="SPY   260918C00505000",
+                underlying_symbol="SPY", quantity=1, amount=-80.0,
+                instrument_type="Call",
+            ),
+            self._row(
+                action="option_sell_to_open",
+                trade_symbol="SPY   260918P00400000",
+                underlying_symbol="SPY", quantity=1, amount=180.0,
+                instrument_type="Put",
+            ),
+            self._row(
+                action="option_buy_to_open",
+                trade_symbol="SPY   260918P00395000",
+                underlying_symbol="SPY", quantity=1, amount=-70.0,
+                instrument_type="Put",
+            ),
+        ])
+        out = _split_day_fills(df)
+        assert out["fill_count"] == 4
+        assert out["count"] == 2
+        assert all(t.get("is_spread") for t in out["trades"])
+        labels = " ".join(t["spread_label"] for t in out["trades"])
+        assert "C spread" in labels
+        assert "P spread" in labels
+
+    def test_settlement_without_side_does_not_guess_a_spread(self):
+        df = pd.DataFrame([
+            self._row(
+                action="option_expired",
+                trade_symbol="SPY   260918C00500000",
+                underlying_symbol="SPY", quantity=1, amount=0.0,
+                realized_pnl=200.0, instrument_type="Call",
+            ),
+            self._row(
+                action="option_expired",
+                trade_symbol="SPY   260918C00505000",
+                underlying_symbol="SPY", quantity=1, amount=0.0,
+                realized_pnl=-80.0, instrument_type="Call",
+            ),
+        ])
+        out = _split_day_fills(df)
+        assert out["count"] == 2
+        assert out["net_gl"] == 120.0
+
     def test_expiry_without_same_day_open_stays_one_row(self):
         expired = self._row(
             action="option_expired",
@@ -3802,6 +4043,16 @@ class TestDayTradesSettlementQuery:
         assert "int_position_legs" in sql
         assert "leg_open_date" in sql
         assert "last_activity_date >= @day" in sql
+
+    def test_projects_direction_so_spreads_can_pair(self):
+        sql = DAY_TRADES_QUERY
+        assert "c.direction" in sql
+        assert "WHEN f.action IN ('option_sell_to_open', 'option_buy_to_close')" in sql
+        assert "THEN 'Sold'" in sql
+        assert "THEN 'Bought'" in sql
+        # Settlements pass the contract side through. History and the
+        # UNION arm must both end on direction or the columns drift.
+        assert "realized_pnl,\n        direction" in sql
 
 
 class TestCoveredCallsWithoutShort:
