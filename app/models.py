@@ -2816,6 +2816,7 @@ def set_snaptrade_brokerage_authorization_id(user_id, snaptrade_account_id, auth
             "WHERE user_id = %s AND snaptrade_account_id = %s",
             (auth_id, user_id, snaptrade_account_id),
         )
+        _forget_shell(user_id)
         return True
     except Exception as exc:
         _log.warning("set_snaptrade_brokerage_authorization_id failed: %s", exc)
@@ -3164,6 +3165,7 @@ def remove_snaptrade_account(user_id, snaptrade_account_id):
         "DELETE FROM snaptrade_accounts WHERE user_id = %s AND snaptrade_account_id = %s",
         (user_id, snaptrade_account_id),
     )
+    _forget_shell(user_id)
 
 
 def list_all_snaptrade_accounts():

@@ -27,6 +27,8 @@ def test_accounts_story_is_connect_then_list_then_sync_notes():
     assert 'id="snaptrade_mgr_sync_all_full"' in ACCOUNTS
     assert "url_for('snaptrade_sync')" in ACCOUNTS
     assert "url_for('snaptrade_disconnect')" in ACCOUNTS
+    assert "Disconnect connection" in ACCOUNTS
+    assert "g.accounts|length > 1" in ACCOUNTS
     assert "url_for('snaptrade_account_nickname')" in ACCOUNTS
     assert "url_for('snaptrade_connect'" in ACCOUNTS
 

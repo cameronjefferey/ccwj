@@ -226,10 +226,10 @@
                         <p class="snaptrade-sync-status small text-body-secondary mt-2 mb-0 d-none">Asking your broker for fresh data, then syncing. This can take a minute — keep this tab open.</p>
                     </form>
                     <form method="POST" action="{{ url_for('snaptrade_disconnect') }}" data-submit-once
-                          onsubmit="return confirm('Disconnect this brokerage account from HappyTrader? Already-synced data is kept.');">
+                          onsubmit="return confirm('{% if g.accounts|length > 1 %}Disconnect this brokerage connection and its {{ g.accounts|length }} linked accounts from HappyTrader?{% else %}Disconnect this brokerage account from HappyTrader?{% endif %} Already-synced data is kept.');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="snaptrade_account_id" value="{{ c.snaptrade_account_id }}">
-                        <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+                        <button type="submit" class="btn btn-sm btn-outline-danger">{% if g.accounts|length > 1 %}Disconnect connection{% else %}Disconnect{% endif %}</button>
                     </form>
                     {% set _is_schwab = c.broker_slug and 'schwab' in c.broker_slug|lower %}
                     {% set _tenant_id = c.tenant_id or ('snaptrade:' ~ c.snaptrade_account_id) %}

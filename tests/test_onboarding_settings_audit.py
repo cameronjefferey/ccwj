@@ -243,14 +243,34 @@ def test_nickname_save_failure_is_not_reported_as_saved(monkeypatch):
     assert "Nickname saved" not in text
 
 
-def test_disconnect_failure_does_not_flash_success_or_the_exception(monkeypatch):
+def test_disconnect_failure_preserves_local_row_and_hides_exception(monkeypatch):
     monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
     monkeypatch.setattr(
         "app.snaptrade.get_snaptrade_user",
         lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
     )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_account",
+        lambda uid, aid: {
+            "snaptrade_account_id": aid,
+            "brokerage_authorization_id": "auth-9",
+        },
+    )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_accounts",
+        lambda uid: [{
+            "snaptrade_account_id": "acct-9",
+            "brokerage_authorization_id": "auth-9",
+        }],
+    )
 
     class _Connections:
+        def list_brokerage_authorizations(self, **kwargs):
+            return [{"id": "auth-9"}]
+
+        def list_brokerage_authorization_accounts(self, **kwargs):
+            return [{"id": "acct-9"}]
+
         def remove_brokerage_authorization(self, **kwargs):
             raise RuntimeError("SnapTrade 403 authorization_id mismatch secret")
 
@@ -272,11 +292,315 @@ def test_disconnect_failure_does_not_flash_success_or_the_exception(monkeypatch)
     assert resp.status_code == 302
     flashes = _flashes(client)
     text = " ".join(msg for _cat, msg in flashes)
-    assert "Removed from HappyTrader" in text
+    assert "nothing was removed from HappyTrader" in text
     assert "Account disconnected" not in text
     assert "403" not in text
     assert "authorization_id mismatch" not in text
-    assert removed == {"uid": 7, "aid": "acct-9"}
+    assert removed == {}
+
+
+def test_disconnect_uses_authorization_id_and_removes_connection_siblings(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_account",
+        lambda uid, aid: {
+            "snaptrade_account_id": aid,
+            "brokerage_authorization_id": "auth-shared",
+        },
+    )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_accounts",
+        lambda uid: [
+            {
+                "snaptrade_account_id": "acct-1",
+                "brokerage_authorization_id": "auth-shared",
+            },
+            {
+                "snaptrade_account_id": "acct-2",
+                "brokerage_authorization_id": None,
+            },
+            {
+                "snaptrade_account_id": "acct-other",
+                "brokerage_authorization_id": "auth-other",
+            },
+        ],
+    )
+
+    revoked = {}
+    cached = []
+
+    class _Connections:
+        def list_brokerage_authorizations(self, **kwargs):
+            return [{"id": "auth-shared"}, {"id": "auth-other"}]
+
+        def list_brokerage_authorization_accounts(self, **kwargs):
+            assert kwargs["authorization_id"] == "auth-shared"
+            return [{"id": "acct-1"}, {"id": "acct-2"}]
+
+        def remove_brokerage_authorization(self, **kwargs):
+            revoked.update(kwargs)
+
+    class _Client:
+        connections = _Connections()
+
+    monkeypatch.setattr("app.snaptrade._get_snaptrade_client", lambda: _Client())
+    monkeypatch.setattr(
+        "app.snaptrade.set_snaptrade_brokerage_authorization_id",
+        lambda uid, aid, auth: cached.append((uid, aid, auth)) or True,
+    )
+    removed = []
+    monkeypatch.setattr(
+        "app.snaptrade.remove_snaptrade_account",
+        lambda uid, aid: removed.append((uid, aid)),
+    )
+
+    client = app.test_client()
+    _login(client, monkeypatch)
+    resp = client.post("/snaptrade/accounts/disconnect", data={
+        "snaptrade_account_id": "acct-1",
+    })
+
+    assert resp.status_code == 302
+    assert revoked["authorization_id"] == "auth-shared"
+    assert cached == [(7, "acct-2", "auth-shared")]
+    assert removed == [(7, "acct-1"), (7, "acct-2")]
+    text = " ".join(msg for _cat, msg in _flashes(client))
+    assert "2 linked accounts were removed" in text
+
+
+def test_disconnect_resolves_an_uncached_authorization_before_revoke(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_account",
+        lambda uid, aid: {
+            "snaptrade_account_id": aid,
+            "brokerage_authorization_id": None,
+        },
+    )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_accounts",
+        lambda uid: [{
+            "snaptrade_account_id": "acct-old",
+            "brokerage_authorization_id": None,
+        }],
+    )
+    calls = {"cached": [], "revoked": []}
+
+    class _AccountInformation:
+        def get_user_account_details(self, **kwargs):
+            assert kwargs["account_id"] == "acct-old"
+            return {"brokerage_authorization": "auth-resolved"}
+
+    class _Connections:
+        def list_brokerage_authorizations(self, **kwargs):
+            return [{"id": "auth-resolved"}]
+
+        def list_brokerage_authorization_accounts(self, **kwargs):
+            return [{"id": "acct-old"}]
+
+        def remove_brokerage_authorization(self, **kwargs):
+            calls["revoked"].append(kwargs["authorization_id"])
+
+    class _Client:
+        account_information = _AccountInformation()
+        connections = _Connections()
+
+    monkeypatch.setattr("app.snaptrade._get_snaptrade_client", lambda: _Client())
+    monkeypatch.setattr(
+        "app.snaptrade.set_snaptrade_brokerage_authorization_id",
+        lambda uid, aid, auth: calls["cached"].append((uid, aid, auth)) or True,
+    )
+    removed = []
+    monkeypatch.setattr(
+        "app.snaptrade.remove_snaptrade_account",
+        lambda uid, aid: removed.append((uid, aid)),
+    )
+
+    client = app.test_client()
+    _login(client, monkeypatch)
+    resp = client.post("/snaptrade/accounts/disconnect", data={
+        "snaptrade_account_id": "acct-old",
+    })
+
+    assert resp.status_code == 302
+    assert calls["cached"] == [(7, "acct-old", "auth-resolved")]
+    assert calls["revoked"] == ["auth-resolved"]
+    assert removed == [(7, "acct-old")]
+
+
+def test_disconnect_cleans_local_rows_when_revoke_response_is_lost(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
+    )
+    row = {
+        "snaptrade_account_id": "acct-1",
+        "brokerage_authorization_id": "auth-1",
+    }
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_account", lambda uid, aid: row,
+    )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_accounts", lambda uid: [row],
+    )
+
+    class _Connections:
+        list_count = 0
+
+        def list_brokerage_authorizations(self, **kwargs):
+            self.list_count += 1
+            if self.list_count == 1:
+                return [{"id": "auth-1"}]
+            return []
+
+        def list_brokerage_authorization_accounts(self, **kwargs):
+            return [{"id": "acct-1"}]
+
+        def remove_brokerage_authorization(self, **kwargs):
+            raise TimeoutError("response lost")
+
+    class _Client:
+        connections = _Connections()
+
+    monkeypatch.setattr("app.snaptrade._get_snaptrade_client", lambda: _Client())
+    removed = []
+    monkeypatch.setattr(
+        "app.snaptrade.remove_snaptrade_account",
+        lambda uid, aid: removed.append((uid, aid)),
+    )
+
+    client = app.test_client()
+    _login(client, monkeypatch)
+    resp = client.post("/snaptrade/accounts/disconnect", data={
+        "snaptrade_account_id": "acct-1",
+    })
+
+    assert resp.status_code == 302
+    assert removed == [(7, "acct-1")]
+    assert "Account disconnected" in " ".join(
+        msg for _cat, msg in _flashes(client)
+    )
+
+
+def test_disconnect_refuses_a_mismatched_cached_authorization(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
+    )
+    row = {
+        "snaptrade_account_id": "acct-stale",
+        "brokerage_authorization_id": "auth-other",
+    }
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_account", lambda uid, aid: row,
+    )
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_accounts", lambda uid: [row],
+    )
+    revoked = []
+
+    class _Connections:
+        def list_brokerage_authorizations(self, **kwargs):
+            return [{"id": "auth-other"}]
+
+        def list_brokerage_authorization_accounts(self, **kwargs):
+            return [{"id": "acct-actually-on-auth"}]
+
+        def remove_brokerage_authorization(self, **kwargs):
+            revoked.append(kwargs["authorization_id"])
+
+    class _Client:
+        connections = _Connections()
+
+    monkeypatch.setattr("app.snaptrade._get_snaptrade_client", lambda: _Client())
+    removed = []
+    monkeypatch.setattr(
+        "app.snaptrade.remove_snaptrade_account",
+        lambda uid, aid: removed.append((uid, aid)),
+    )
+
+    client = app.test_client()
+    _login(client, monkeypatch)
+    resp = client.post("/snaptrade/accounts/disconnect", data={
+        "snaptrade_account_id": "acct-stale",
+    })
+
+    assert resp.status_code == 302
+    assert revoked == []
+    assert removed == []
+    assert "no longer matches" in " ".join(
+        msg for _cat, msg in _flashes(client)
+    )
+
+
+def test_disconnect_rejects_an_account_not_owned_by_the_login(monkeypatch):
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setattr(
+        "app.snaptrade.get_snaptrade_account", lambda uid, aid: None,
+    )
+    client_called = {"value": False}
+    monkeypatch.setattr(
+        "app.snaptrade._get_snaptrade_client",
+        lambda: client_called.update(value=True),
+    )
+    removed = []
+    monkeypatch.setattr(
+        "app.snaptrade.remove_snaptrade_account",
+        lambda uid, aid: removed.append((uid, aid)),
+    )
+
+    client = app.test_client()
+    _login(client, monkeypatch)
+    resp = client.post("/snaptrade/accounts/disconnect", data={
+        "snaptrade_account_id": "someone-elses",
+    })
+
+    assert resp.status_code == 302
+    assert client_called["value"] is False
+    assert removed == []
+    assert "isn't on your login" in " ".join(
+        msg for _cat, msg in _flashes(client)
+    )
+
+
+def test_remove_snaptrade_account_invalidates_shell_cache(monkeypatch):
+    from app import models
+
+    calls = []
+    monkeypatch.setattr(
+        models, "execute",
+        lambda sql, params: calls.append(("execute", params)),
+    )
+    monkeypatch.setattr(
+        models, "_forget_shell",
+        lambda uid: calls.append(("invalidate", uid)),
+    )
+
+    models.remove_snaptrade_account(7, "acct-1")
+
+    assert calls == [
+        ("execute", (7, "acct-1")),
+        ("invalidate", 7),
+    ]
+
+    calls.clear()
+    assert models.set_snaptrade_brokerage_authorization_id(
+        7, "acct-1", "auth-1",
+    ) is True
+    assert calls == [
+        ("execute", ("auth-1", 7, "acct-1")),
+        ("invalidate", 7),
+    ]
 
 
 def test_seed_store_error_is_logged_not_flashed():
@@ -413,16 +737,24 @@ def test_linked_account_row_hides_the_raw_sync_error():
         "holdings_last_successful_sync": "2026-09-30T00:00:00+00:00",
         "last_sync_error": "ValueError: secret internals",
     }
+    sibling = {
+        **account,
+        "snaptrade_account_id": "acct-2",
+        "tenant_id": "snaptrade:acct-2",
+        "display_nickname": "Taxable",
+        "account_number_masked": "5678",
+        "last_sync_error": None,
+    }
     group = {
         "broker_label": "Schwab",
         "authorization_id": "auth-1",
         "needs_reconnect": False,
-        "accounts": [account],
+        "accounts": [account, sibling],
     }
     with app.test_request_context("/snaptrade/accounts"):
         html = render_template(
             "snaptrade_accounts.html",
-            accounts=[account],
+            accounts=[account, sibling],
             connection_groups=[group],
             any_reconnect_needed=False,
             snaptrade_enabled=True,
@@ -431,3 +763,5 @@ def test_linked_account_row_hides_the_raw_sync_error():
     assert "Last sync didn&#39;t finish" in html
     assert "ValueError" not in html
     assert "secret internals" not in html
+    assert "Disconnect this brokerage connection and its 2 linked accounts" in html
+    assert "Disconnect connection" in html

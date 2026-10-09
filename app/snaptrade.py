@@ -1778,12 +1778,89 @@ def snaptrade_account_nickname():
     ))
 
 
+def _remote_authorization_ids(client, snap):
+    """Return a complete set of the user's current authorization UUIDs.
+
+    Disconnect uses this to distinguish a failed revoke from a request whose
+    response was lost after SnapTrade had already completed the deletion.
+    Unexpected shapes raise instead of treating an incomplete response as
+    proof that an authorization is gone.
+    """
+    response = client.connections.list_brokerage_authorizations(
+        user_id=snap["snaptrade_user_id"],
+        user_secret=snap["snaptrade_secret"],
+    )
+    body = _unwrap_body(response)
+    if isinstance(body, dict):
+        rows = body.get("authorizations")
+    elif isinstance(body, list):
+        rows = body
+    else:
+        rows = None
+    if not isinstance(rows, list):
+        raise ValueError("unexpected brokerage authorization list shape")
+
+    ids = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            try:
+                row = row.to_dict()
+            except Exception as exc:
+                raise ValueError(
+                    "unexpected brokerage authorization row shape"
+                ) from exc
+        authorization_id = (row.get("id") or "").strip()
+        if not authorization_id:
+            raise ValueError("brokerage authorization row has no id")
+        ids.add(authorization_id)
+    return ids
+
+
+def _remote_account_ids_for_authorization(client, snap, authorization_id):
+    """Return every account UUID owned by one SnapTrade authorization."""
+    response = client.connections.list_brokerage_authorization_accounts(
+        user_id=snap["snaptrade_user_id"],
+        user_secret=snap["snaptrade_secret"],
+        authorization_id=authorization_id,
+    )
+    body = _unwrap_body(response)
+    if isinstance(body, dict):
+        rows = body.get("accounts")
+    elif isinstance(body, list):
+        rows = body
+    else:
+        rows = None
+    if not isinstance(rows, list):
+        raise ValueError("unexpected brokerage account list shape")
+
+    ids = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            try:
+                row = row.to_dict()
+            except Exception as exc:
+                raise ValueError(
+                    "unexpected brokerage account row shape"
+                ) from exc
+        account_id = (row.get("id") or "").strip()
+        if not account_id:
+            raise ValueError("brokerage account row has no id")
+        ids.add(account_id)
+    return ids
+
+
 @app.route("/snaptrade/accounts/disconnect", methods=["POST"])
 @login_required
 def snaptrade_disconnect():
-    """Disconnect ONE linked broker account. Leaves the user's
-    SnapTrade userId/userSecret in place so they can re-add brokers
-    without re-registering."""
+    """Disconnect the broker authorization that owns one linked account.
+
+    SnapTrade revokes brokerage *authorizations*, not individual account
+    UUIDs. One authorization can contain several accounts, so a successful
+    revoke removes every local account row on that authorization. Local rows
+    are retained when the remote revoke cannot be confirmed; otherwise a
+    still-billable authorization would be hidden from both the user and the
+    next cleanup attempt.
+    """
     blocked = demo_block_writes("disconnecting a brokerage account")
     if blocked:
         return blocked
@@ -1792,36 +1869,205 @@ def snaptrade_disconnect():
         flash("Missing account id.", "warning")
         return redirect(url_for("snaptrade_accounts_page"))
 
+    owned = get_snaptrade_account(current_user.id, snaptrade_account_id)
+    if not owned:
+        flash("That account isn't on your login. Nothing was disconnected.", "warning")
+        return redirect(url_for("snaptrade_accounts_page"))
+
     snap = get_snaptrade_user(current_user.id)
-    client = _get_snaptrade_client()
-    broker_revoke_failed = False
-    if snap and client:
+    try:
+        client = _get_snaptrade_client()
+    except Exception as exc:
+        client = None
+        _log.warning(
+            "SnapTrade client unavailable during disconnect for user_id=%s: %s",
+            current_user.id, exc,
+        )
+    if not snap or not client:
+        flash(
+            "Couldn't reach SnapTrade, so nothing was disconnected. Try again.",
+            "warning",
+        )
+        return redirect(url_for("snaptrade_accounts_page"))
+
+    authorization_id = (
+        owned.get("brokerage_authorization_id") or ""
+    ).strip()
+    prepared_account_ids = set()
+    if not authorization_id:
+        try:
+            detail = client.account_information.get_user_account_details(
+                user_id=snap["snaptrade_user_id"],
+                user_secret=snap["snaptrade_secret"],
+                account_id=snaptrade_account_id,
+            )
+        except Exception as exc:
+            _log.warning(
+                "SnapTrade authorization lookup failed during disconnect "
+                "for user_id=%s account=%s: %s",
+                current_user.id, snaptrade_account_id, exc,
+            )
+            flash(
+                "Couldn't verify this brokerage connection, so nothing was "
+                "disconnected. Try again.",
+                "warning",
+            )
+            return redirect(url_for("snaptrade_accounts_page"))
+        body = _unwrap_body(detail)
+        if isinstance(body, dict):
+            authorization_id = (
+                body.get("brokerage_authorization") or ""
+            ).strip()
+        if not authorization_id:
+            flash(
+                "SnapTrade didn't identify this brokerage connection, so "
+                "nothing was disconnected. Try syncing first.",
+                "warning",
+            )
+            return redirect(url_for("snaptrade_accounts_page"))
+        if not set_snaptrade_brokerage_authorization_id(
+            current_user.id, snaptrade_account_id, authorization_id,
+        ):
+            flash(
+                "Couldn't prepare this brokerage connection for disconnect, "
+                "so nothing was changed. Try again.",
+                "warning",
+            )
+            return redirect(url_for("snaptrade_accounts_page"))
+        prepared_account_ids.add(snaptrade_account_id)
+
+    account_rows = get_snaptrade_accounts(current_user.id) or []
+    try:
+        remote_authorization_ids = _remote_authorization_ids(client, snap)
+    except Exception as exc:
+        _log.warning(
+            "SnapTrade authorization list failed during disconnect for "
+            "user_id=%s account=%s: %s",
+            current_user.id, snaptrade_account_id, exc,
+        )
+        flash(
+            "Couldn't verify this brokerage connection, so nothing was "
+            "disconnected. Try again.",
+            "warning",
+        )
+        return redirect(url_for("snaptrade_accounts_page"))
+
+    if authorization_id in remote_authorization_ids:
+        try:
+            remote_account_ids = _remote_account_ids_for_authorization(
+                client, snap, authorization_id,
+            )
+        except Exception as exc:
+            _log.warning(
+                "SnapTrade connection account list failed during disconnect "
+                "for user_id=%s account=%s: %s",
+                current_user.id, snaptrade_account_id, exc,
+            )
+            flash(
+                "Couldn't verify every account on this brokerage connection, "
+                "so nothing was disconnected. Try again.",
+                "warning",
+            )
+            return redirect(url_for("snaptrade_accounts_page"))
+        if snaptrade_account_id not in remote_account_ids:
+            _log.warning(
+                "Refusing SnapTrade disconnect because account=%s is not on "
+                "authorization=%s for user_id=%s",
+                snaptrade_account_id, authorization_id, current_user.id,
+            )
+            flash(
+                "This account no longer matches that brokerage connection, "
+                "so nothing was disconnected. Sync or reconnect first.",
+                "warning",
+            )
+            return redirect(url_for("snaptrade_accounts_page"))
+    else:
+        # A prior request may have completed remotely but failed locally (or
+        # lost its response). Cached authorization IDs make that retryable.
+        remote_account_ids = set()
+
+    affected_rows = []
+    for row in account_rows:
+        row_account_id = row.get("snaptrade_account_id")
+        row_authorization_id = (
+            row.get("brokerage_authorization_id") or ""
+        ).strip()
+        if (
+            row_account_id == snaptrade_account_id
+            or row_account_id in remote_account_ids
+            or row_authorization_id == authorization_id
+        ):
+            affected_rows.append(row)
+
+    if not affected_rows:
+        affected_rows = [owned]
+
+    # Persist the connection key on every sibling before the destructive API
+    # call. If local cleanup later fails, a retry can still identify all rows
+    # even though SnapTrade no longer has an authorization to enumerate.
+    for row in affected_rows:
+        row_account_id = row["snaptrade_account_id"]
+        if row_account_id in prepared_account_ids:
+            continue
+        if (
+            row.get("brokerage_authorization_id") or ""
+        ).strip() == authorization_id:
+            continue
+        if not set_snaptrade_brokerage_authorization_id(
+            current_user.id, row_account_id, authorization_id,
+        ):
+            flash(
+                "Couldn't prepare this brokerage connection for disconnect, "
+                "so nothing was changed. Try again.",
+                "warning",
+            )
+            return redirect(url_for("snaptrade_accounts_page"))
+
+    if authorization_id in remote_authorization_ids:
         try:
             client.connections.remove_brokerage_authorization(
                 user_id=snap["snaptrade_user_id"],
                 user_secret=snap["snaptrade_secret"],
-                authorization_id=snaptrade_account_id,
+                authorization_id=authorization_id,
             )
         except Exception as exc:
-            # Don't block the local DB cleanup on a SnapTrade error —
-            # we still want the user to be able to remove the row from
-            # our UI. Surface the error in the flash so they know
-            # the broker side may need manual revoke. The exception
-            # text stays in the log.
-            broker_revoke_failed = True
-            _log.warning(
-                "SnapTrade remove_brokerage_authorization failed for user_id=%s account=%s: %s",
-                current_user.id, snaptrade_account_id, exc,
-            )
-            flash(
-                "Removed from HappyTrader. The broker side may need a "
-                "manual revoke from your broker's app if it shows up again.",
-                "warning",
-            )
+            # The delete is synchronous, but a timeout can lose the response
+            # after SnapTrade completed it. Re-list before preserving local
+            # rows; an absent authorization is positive confirmation that
+            # cleanup should continue.
+            try:
+                still_remote = authorization_id in _remote_authorization_ids(
+                    client, snap,
+                )
+            except Exception:
+                still_remote = True
+            if still_remote:
+                _log.warning(
+                    "SnapTrade remove_brokerage_authorization failed for "
+                    "user_id=%s account=%s: %s",
+                    current_user.id, snaptrade_account_id, exc,
+                )
+                flash(
+                    "SnapTrade couldn't disconnect this brokerage, so nothing "
+                    "was removed from HappyTrader. Try again.",
+                    "warning",
+                )
+                return redirect(url_for("snaptrade_accounts_page"))
 
-    remove_snaptrade_account(current_user.id, snaptrade_account_id)
-    if not broker_revoke_failed:
+    for row in affected_rows:
+        remove_snaptrade_account(
+            current_user.id, row["snaptrade_account_id"],
+        )
+
+    count = len(affected_rows)
+    if count == 1:
         flash("Account disconnected.", "success")
+    else:
+        flash(
+            f"Brokerage connection disconnected. {count} linked accounts "
+            "were removed; already-synced data is kept.",
+            "success",
+        )
     return redirect(url_for("snaptrade_accounts_page"))
 
 
