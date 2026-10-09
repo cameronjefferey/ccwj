@@ -60,6 +60,64 @@
         display: flex; flex-wrap: wrap; align-items: center;
         gap: .3rem .65rem; margin-top: .3rem;
     }
+    .pd-allin { margin-top: .35rem; }
+    .pd-allin-pop { max-width: 36rem; }
+    .pd-allin-pop > summary {
+        cursor: pointer;
+        list-style: none;
+        color: #e8edf7;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .78rem;
+        font-weight: 500;
+        line-height: 1.35;
+    }
+    .pd-allin-pop > summary::-webkit-details-marker { display: none; }
+    .pd-allin-acct {
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        color: #8a97b1;
+        margin-right: .35rem;
+    }
+    .pd-allin-body {
+        margin-top: .35rem;
+        padding: .45rem .65rem;
+        background: #0a0e17;
+        border: 1px solid #243049;
+        border-radius: 8px;
+        max-width: 22rem;
+    }
+    .pd-allin-body dl {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: .15rem .75rem;
+        margin: 0;
+    }
+    .pd-allin-body dt {
+        color: #8a97b1;
+        font-weight: 500;
+        font-size: .75rem;
+    }
+    .pd-allin-body dd {
+        margin: 0;
+        text-align: right;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .75rem;
+        white-space: nowrap;
+    }
+    .pd-allin-note {
+        margin: .4rem 0 0;
+        color: #8a97b1;
+        font-size: .72rem;
+        line-height: 1.35;
+    }
+    .pd-allin-plain {
+        color: #e8edf7;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .78rem;
+        font-weight: 500;
+    }
     /* Chip-sized Groups / Account. The shared filter bar is a column
        of wide selects; this page overrides that to a short pill row. */
     .pd-page .pd-hero-scope {
@@ -983,6 +1041,47 @@
                     {% endif %}
                 </span>
                 {% endif %}
+            </div>
+            {% endif %}
+            {% if all_in_costs %}
+            <div class="pd-allin">
+                {% for cost in all_in_costs %}
+                {% if cost.show_all_in %}
+                <details class="pd-allin-pop">
+                    <summary title="{{ cost.hover }}">
+                        {% if all_in_costs|length > 1 and cost.account_label %}
+                        <span class="pd-allin-acct">{{ cost.account_label }}</span>
+                        {% endif %}
+                        <span>Cost/share {{ money(cost.equity_per_share) }}</span>
+                        <span> · All-in {{ money(cost.all_in_per_share) }}{% if cost.open_options %}*{% endif %}</span>
+                    </summary>
+                    <div class="pd-allin-body">
+                        <dl>
+                            <dt>Equity basis</dt>
+                            <dd>{{ money(cost.equity_per_share) }}</dd>
+                            {% for line in cost.lines %}
+                            <dt>{{ line.label }}</dt>
+                            <dd>{% if line.credit %}−{% else %}+{% endif %}{{ money(line.per_share) }}</dd>
+                            {% endfor %}
+                            <dt>All-in</dt>
+                            <dd>{{ money(cost.all_in_per_share) }}</dd>
+                        </dl>
+                        {% if cost.open_options %}
+                        <p class="pd-allin-note">* {{ cost.note }}</p>
+                        {% endif %}
+                    </div>
+                </details>
+                {% else %}
+                <div class="pd-allin-pop">
+                    <div class="pd-allin-plain" title="{{ cost.hover }}">
+                        {% if all_in_costs|length > 1 and cost.account_label %}
+                        <span class="pd-allin-acct">{{ cost.account_label }}</span>
+                        {% endif %}
+                        Cost/share {{ money(cost.equity_per_share) }}
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
             </div>
             {% endif %}
         </div>

@@ -493,6 +493,17 @@ What's working:
   buy and a post-split sale stay in the same units) and says so when a
   split moved them. P&amp;L is unchanged.
   Pinned by `tests/test_covered_call_runs.py`.
+- **All-in cost per share.** For shares still held, the hero shows
+  Cost/share (equity cost basis ÷ shares) and, when option premium
+  changed it, All-in. All-in is that equity basis minus net option
+  premium on the same symbol during the current holding cycle
+  (credits minus debits, after fees). The cycle includes the
+  cash-secured puts that were assigned into the shares, rolls of
+  those puts, and calls written while the shares are held. It resets
+  when the share count goes to zero. A still-open option counts at
+  the premium collected so far and is marked not final. Dividends
+  are not in the figure. The positions table shows the same pair.
+  Pinned by `tests/test_all_in_cost.py`.
 - Position Detail reads as one story: the hero (total return, then a
   compact row of realized, unrealized, dividends, win rate, and average
   days — those three dollars are the headline), then the mirror, then

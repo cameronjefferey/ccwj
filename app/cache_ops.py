@@ -432,6 +432,10 @@ def _warm_one_scope(client, uid, tenant_ids, *, heavy=True, owned_ids=None):
         ),
         tenant_ids,
     )
+    # Same all-in SQL the positions table runs, so the first load is a hit.
+    from app.all_in_cost import all_in_query_sql
+    for _name, _sql in all_in_query_sql(tenant_filter).items():
+        cached_query_df(client, _sql, label=f"warm_all_in_{_name}")
 
     # Accounts performance + the Python chart payload (the 4s walk).
     acct_dfs = _bq_parallel(

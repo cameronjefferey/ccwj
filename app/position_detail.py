@@ -4209,6 +4209,20 @@ def position_detail(symbol):
     except Exception as exc:
         app.logger.warning("beginner readout on %s failed: %s", symbol, exc)
         beginner_trades = []
+    all_in_costs = []
+    try:
+        from app.all_in_cost import position_all_in_costs
+        all_in_costs = position_all_in_costs(
+            trades_pre_leg,
+            covered_call_current,
+            opening_balances,
+            splits_df,
+            label_for=_account_display_for,
+            symbol=symbol,
+        )
+    except Exception:
+        app.logger.exception("all-in cost failed for %s", safe_symbol)
+        all_in_costs = []
     resp = make_response(render_template(
         "position_detail.html",
         title=symbol,
@@ -4258,6 +4272,7 @@ def position_detail(symbol):
         symbol_next_earnings=symbol_next_earnings,
         invariant_warning=invariant_warning,
         opening_balances=opening_balances,
+        all_in_costs=all_in_costs,
         viewer_is_admin=is_admin(current_user.username),
         tabs=tabs,
         active_symbol=symbol,
