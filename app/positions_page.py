@@ -800,8 +800,8 @@ def positions():
         # Even on error, pass the auth account list so the hero can render
         # the right "you have N accounts but couldn't load data" message
         # rather than the generic "no accounts linked" copy.
-        ctx["user_accounts"] = user_accounts or []
-        ctx["view_accounts"] = user_accounts or []
+        ctx["user_accounts"] = user_accounts
+        ctx["view_accounts"] = list(user_accounts) if user_accounts else []
         ctx["title"] = "Positions"
         return render_template("positions.html", **ctx)
 

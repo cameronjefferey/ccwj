@@ -1046,7 +1046,27 @@
             {% if all_in_costs %}
             <div class="pd-allin">
                 {% for cost in all_in_costs %}
-                {% if cost.show_all_in %}
+                {% if cost.if_assigned %}
+                <details class="pd-allin-pop">
+                    <summary title="{{ cost.hover }}">
+                        {% if all_in_costs|length > 1 and cost.account_label %}
+                        <span class="pd-allin-acct">{{ cost.account_label }}</span>
+                        {% endif %}
+                        <span>If assigned {{ money(cost.all_in_per_share) }}*</span>
+                    </summary>
+                    <div class="pd-allin-body">
+                        <dl>
+                            {% for line in cost.lines %}
+                            <dt>{{ line.label }}</dt>
+                            <dd>{% if line.credit is none %}{{ money(line.per_share) }}{% elif line.credit %}−{{ money(line.per_share) }}{% else %}+{{ money(line.per_share) }}{% endif %}</dd>
+                            {% endfor %}
+                            <dt>If assigned</dt>
+                            <dd>{{ money(cost.all_in_per_share) }}</dd>
+                        </dl>
+                        <p class="pd-allin-note">{{ cost.note }}</p>
+                    </div>
+                </details>
+                {% elif cost.show_all_in %}
                 <details class="pd-allin-pop">
                     <summary title="{{ cost.hover }}">
                         {% if all_in_costs|length > 1 and cost.account_label %}
@@ -1061,13 +1081,13 @@
                             <dd>{{ money(cost.equity_per_share) }}</dd>
                             {% for line in cost.lines %}
                             <dt>{{ line.label }}</dt>
-                            <dd>{% if line.credit %}−{% else %}+{% endif %}{{ money(line.per_share) }}</dd>
+                            <dd>{% if line.credit is none %}{{ money(line.per_share) }}{% elif line.credit %}−{{ money(line.per_share) }}{% else %}+{{ money(line.per_share) }}{% endif %}</dd>
                             {% endfor %}
                             <dt>All-in</dt>
                             <dd>{{ money(cost.all_in_per_share) }}</dd>
                         </dl>
-                        {% if cost.open_options %}
-                        <p class="pd-allin-note">* {{ cost.note }}</p>
+                        {% if cost.basis_estimated or cost.open_options %}
+                        <p class="pd-allin-note">{{ cost.note }}</p>
                         {% endif %}
                     </div>
                 </details>

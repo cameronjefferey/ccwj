@@ -501,10 +501,19 @@ What's working:
   cash-secured puts that were assigned into the shares, rolls of
   those puts, and calls written while the shares are held. It resets
   when the share count goes to zero. A still-open option counts at
-  the premium collected so far and is marked not final. Dividends
-  are not in the figure. The positions table headers are Cost and
-  All-in, each with that definition on the header. On a phone the
-  same figures sit under the symbol.
+  the premium collected so far and is marked not final. An open
+  contract that is only on the broker snapshot (its sale predates
+  the fill tape) counts at that snapshot premium. Dividends are not
+  in the figure. With no shares and an open cash-secured put, Cost
+  stays blank and All-in is **If assigned** (strike minus net premium
+  on that put, per share the assignment would deliver). That is not
+  a held cost. A put-spread debit in the current cycle raises All-in
+  and is named in the breakdown; a spread that closed before the
+  shares were bought does not. When the broker cost basis is missing,
+  share cost is inferred from in-cycle buys plus the opening-balance
+  estimate, and the breakdown says so. The positions table headers
+  are Cost and All-in, each with that definition on the header. On a
+  phone the same figures sit under the symbol.
   Pinned by `tests/test_all_in_cost.py`.
 - Position Detail reads as one story: the hero (total return, then a
   compact row of realized, unrealized, dividends, win rate, and average

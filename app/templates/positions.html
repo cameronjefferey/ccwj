@@ -275,6 +275,35 @@
         color: var(--ht-muted);
         font-size: .75rem;
     }
+    /* "If assigned $266.68" is a label plus a figure. The money nowrap
+       rule would clip it, so this cell wraps on the label. */
+    #symbolTable td.pos-ifassigned-cell {
+        white-space: normal;
+    }
+    .pos-ifassigned { display: inline-block; max-width: 6.5rem; }
+    .pos-ifassigned > summary {
+        cursor: pointer;
+        list-style: none;
+        white-space: normal;
+        line-height: 1.15;
+    }
+    .pos-ifassigned > summary::-webkit-details-marker { display: none; }
+    .pos-ifassigned-k {
+        display: block;
+        font-size: .65rem;
+        font-weight: 500;
+        color: var(--ht-muted);
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    }
+    .pos-ifassigned-body {
+        margin-top: .35rem;
+        font-size: .7rem;
+        line-height: 1.3;
+        white-space: normal;
+    }
+    .pos-ifassigned-body dl { margin: 0; }
+    .pos-ifassigned-body dt { color: var(--ht-muted); font-weight: 500; }
+    .pos-ifassigned-body dd { margin: 0 0 .2rem; font-variant-numeric: tabular-nums; }
     .pos-more-row { display: none; }
     .pos-more {
         margin-top: .25rem;
@@ -408,6 +437,9 @@
    wired up. `view_accounts` is the accounts in the CURRENT (filtered)
    view — same grain as the headline KPIs. `accounts` is the data list
    used as a dropdown fallback. #}
+{# Admin account list is None (unscoped warehouse read). That is not the
+   same as a user with zero linked accounts. #}
+{% set _admin_unscoped = user_accounts is none %}
 {% set _auth_acct_count = user_accounts|length if user_accounts else 0 %}
 {% set _view_accts = view_accounts if view_accounts is defined else user_accounts %}
 {% set _view_acct_count = _view_accts|length if _view_accts else 0 %}
@@ -443,7 +475,7 @@
             {% else %}through {{ selected_end_date }}{% endif %}
         {% else %}All time{% endif %}
     </p>
-    {% if kpis and _auth_acct_count > 0 %}
+    {% if kpis and (_admin_unscoped or _auth_acct_count > 0) %}
     <div class="ov-top">
         <div>
             <div class="ov-k">Total return, incl. dividends</div>
@@ -464,7 +496,7 @@
     </div>
     {% endif %}
     <p class="ov-line">
-        {% if _auth_acct_count == 0 %}
+        {% if not _admin_unscoped and _auth_acct_count == 0 %}
             No accounts linked yet.
             <a href="{{ url_for('profile', tab='account') }}#snaptrade-sync" style="color:#e6ebf5;">Connect your broker</a>
             or <a href="{{ url_for('upload') }}" style="color:#e6ebf5;">upload trade history</a>.
@@ -476,7 +508,7 @@
             No positions in this view.
         {% endif %}
     </p>
-    {% if _auth_acct_count > 0 %}
+    {% if _admin_unscoped or _auth_acct_count > 0 %}
     <div class="ov-pills">
         <span class="hero-chip" title="Position rows in this list — one per account × symbol × strategy."><span class="dot open"></span>{{ _open_ct }} open rows</span>
         {% if open_symbol_count is defined and open_symbol_count and open_symbol_count != _open_ct %}
@@ -772,7 +804,11 @@
                                 {{ row.symbol }}
                             </a>
                             <span class="pos-acct">{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</span>
-                            {% if row.equity_per_share is defined and row.equity_per_share is not none %}
+                            {% if row.if_assigned is defined and row.if_assigned %}
+                            <span class="pos-costline">
+                                <span class="pos-costnum">If assigned {{ money(row.all_in_per_share) }}*</span>
+                            </span>
+                            {% elif row.equity_per_share is defined and row.equity_per_share is not none %}
                             <span class="pos-costline">
                                 <span class="pos-costnum">Cost/share {{ money(row.equity_per_share) }}</span>
                                 {% if row.show_all_in %}
@@ -836,11 +872,45 @@
                             &mdash;
                             {% endif %}
                         </td>
-                        <td class="pos-money pos-cost-col" data-label="All-in"
+                        <td class="pos-money pos-cost-col{% if row.if_assigned is defined and row.if_assigned %} pos-ifassigned-cell{% endif %}" data-label="All-in"
                             data-val="{{ row.all_in_per_share if row.show_all_in is defined and row.show_all_in else '' }}"
-                            {% if row.open_options is defined and row.open_options %}title="{{ all_in_open_note }}"{% endif %}>
-                            {% if row.show_all_in is defined and row.show_all_in %}
-                            {{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}
+                            {% if row.all_in_hover is defined and row.all_in_hover %}title="{{ row.all_in_hover }}"{% elif row.open_options is defined and row.open_options %}title="{{ all_in_open_note }}"{% endif %}>
+                            {% if row.if_assigned is defined and row.if_assigned %}
+                            <details class="pos-ifassigned" data-no-row-nav>
+                                <summary>
+                                    <span class="pos-ifassigned-k">If assigned</span>
+                                    {{ money(row.all_in_per_share) }}*
+                                </summary>
+                                <div class="pos-ifassigned-body">
+                                    <dl>
+                                        {% for line in row.all_in_lines %}
+                                        <dt>{{ line.label }}</dt>
+                                        <dd>{% if line.credit is none %}{{ money(line.per_share) }}{% elif line.credit %}−{{ money(line.per_share) }}{% else %}+{{ money(line.per_share) }}{% endif %}</dd>
+                                        {% endfor %}
+                                        <dt>If assigned</dt>
+                                        <dd>{{ money(row.all_in_per_share) }}</dd>
+                                    </dl>
+                                    {% if row.all_in_note %}<p class="pos-allin-note">{{ row.all_in_note }}</p>{% endif %}
+                                </div>
+                            </details>
+                            {% elif row.show_all_in is defined and row.show_all_in %}
+                            <details class="pos-ifassigned" data-no-row-nav>
+                                <summary>{{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}</summary>
+                                <div class="pos-ifassigned-body">
+                                    <dl>
+                                        {% if row.equity_per_share is defined and row.equity_per_share is not none %}
+                                        <dt>Equity basis</dt><dd>{{ money(row.equity_per_share) }}</dd>
+                                        {% endif %}
+                                        {% for line in row.all_in_lines %}
+                                        <dt>{{ line.label }}</dt>
+                                        <dd>{% if line.credit is none %}{{ money(line.per_share) }}{% elif line.credit %}−{{ money(line.per_share) }}{% else %}+{{ money(line.per_share) }}{% endif %}</dd>
+                                        {% endfor %}
+                                        <dt>All-in</dt>
+                                        <dd>{{ money(row.all_in_per_share) }}</dd>
+                                    </dl>
+                                    {% if row.all_in_note %}<p class="pos-allin-note">{{ row.all_in_note }}</p>{% endif %}
+                                </div>
+                            </details>
                             {% else %}
                             &mdash;
                             {% endif %}
@@ -860,7 +930,7 @@
                                     <dt>W/L</dt><dd>{{ row.num_winners | int }} / {{ row.num_losers | int }}</dd>
                                     <dt>Collected</dt><dd>{% if (row.total_premium_received or 0) != 0 %}{{ money(row.total_premium_received) }}{% else %}—{% endif %}</dd>
                                     <dt>Cost/share</dt><dd>{% if row.equity_per_share is defined and row.equity_per_share is not none %}{{ money(row.equity_per_share) }}{% else %}—{% endif %}</dd>
-                                    <dt>All-in</dt><dd>{% if row.show_all_in is defined and row.show_all_in %}{{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}{% else %}—{% endif %}</dd>
+                                    <dt>All-in</dt><dd>{% if row.if_assigned is defined and row.if_assigned %}If assigned {{ money(row.all_in_per_share) }}*{% elif row.show_all_in is defined and row.show_all_in %}{{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}{% else %}—{% endif %}</dd>
                                 </dl>
                             </details>
                         </td>

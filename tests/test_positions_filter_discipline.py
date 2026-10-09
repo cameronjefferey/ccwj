@@ -479,6 +479,30 @@ def test_connected_but_empty_book_shows_data_pending_copy():
     assert "No positions to show yet" in html or "Run a Schwab sync" in html
 
 
+def test_admin_unscoped_book_does_not_say_no_accounts_linked():
+    """Admin `_user_account_list()` is None: an unscoped warehouse read,
+    not "this person has zero linked accounts." The hero used to treat
+    None like [] and say "No accounts linked yet" over a table that
+    already listed Schwab, TD, and Demo. Pre-existing; not introduced
+    by the all-in columns.
+    """
+    book = pd.DataFrame([
+        _summary_row(
+            account="Schwab Account", tenant_id=TENANT_CAMERON, symbol="DDOG",
+            strategy="Cash-Secured Put", status="Open",
+        ),
+        _summary_row(
+            account="TD Direct Investing", tenant_id=TENANT_SARA, symbol="JEPI",
+            strategy="Covered Call", status="Open",
+        ),
+    ])
+    html = _render_with_book(book, accounts=None)
+    assert "No accounts linked yet" not in html
+    assert "Across 2 accounts" in html
+    assert "Schwab Account" in html
+    assert "TD Direct Investing" in html
+
+
 def test_quick_stats_winners_uses_raw_count_not_derived(routed_app):
     """Winners cell on the Quick Stats card must use kpis.num_winners
     directly. Pre-fix it was kpis.total_trades * kpis.win_rate, which
