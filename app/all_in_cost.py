@@ -13,7 +13,15 @@ when the shares were not assigned. It resets when the share count goes
 to zero.
 
 A still-open option counts at the premium collected so far. That amount
-is not final: the figure uses fill cash, not a live mark.
+is not final: the figure uses fill cash, not a live mark. Closed options
+from an earlier cycle stay out. An open contract that is only on the
+broker snapshot (its sale predates the fill tape) counts at the
+snapshot premium.
+
+With no shares and an open cash-secured put (not the short leg of an
+open spread), the figure is an if-assigned price: strike minus net
+premium on that put's roll chain, per share the assignment would
+deliver. That is not a cost of shares held.
 
 Spreads and rolls are one grouped trade. Each fill's cash is counted once.
 """
@@ -28,6 +36,13 @@ from datetime import date, datetime
 OPEN_NOTE = (
     "Open options count at the premium collected so far. "
     "That amount is not final."
+)
+IF_ASSIGNED_NOTE = (
+    "If assigned is not a cost of shares you hold. "
+    "It is the strike minus net premium on this put, per share you would receive."
+)
+ESTIMATED_BASIS_NOTE = (
+    "Share cost is estimated because the broker did not report a cost basis."
 )
 
 _CREDIT = {"option_sell_to_open", "option_sell_to_close"}
@@ -50,9 +65,10 @@ _GROSS_TOL = 0.05
 _BUCKET_LABELS = {
     "puts_before_assignment": "Puts before assignment",
     "calls": "Calls",
+    "put_spreads": "Put spreads",
     "other": "Other options",
 }
-_BUCKET_ORDER = ("puts_before_assignment", "calls", "other")
+_BUCKET_ORDER = ("puts_before_assignment", "calls", "put_spreads", "other")
 
 # Holdings and fills are tenant-scoped. Both project tenant_id so the
 # DataFrame filter does not fail closed. Splits are public market data
@@ -62,11 +78,31 @@ ALL_IN_HOLDINGS_QUERY = """
         tenant_id,
         account,
         underlying_symbol AS symbol,
+        instrument_type,
         quantity,
-        cost_basis
+        cost_basis,
+        option_type,
+        option_strike,
+        option_expiry,
+        trade_symbol
     FROM `ccwj-dbt.analytics.int_enriched_current`
-    WHERE UPPER(TRIM(COALESCE(instrument_type, ''))) = 'EQUITY'
+    WHERE UPPER(TRIM(COALESCE(instrument_type, ''))) IN ('EQUITY', 'CALL', 'PUT')
       AND ABS(COALESCE(quantity, 0)) > 1e-6
+      {tenant_filter}
+"""
+
+# Pre-window share lots. Used only when the broker cost basis is missing.
+# est_amount is a signed cash flow (negative = cash out).
+ALL_IN_OPENINGS_QUERY = """
+    SELECT
+        tenant_id,
+        account,
+        symbol,
+        opening_qty,
+        est_amount,
+        price_source
+    FROM `ccwj-dbt.analytics.int_opening_balances`
+    WHERE COALESCE(opening_qty, 0) > 0.01
       {tenant_filter}
 """
 
@@ -109,6 +145,7 @@ def all_in_query_sql(tenant_filter):
     return {
         "holdings": ALL_IN_HOLDINGS_QUERY.format(tenant_filter=clause),
         "fills": ALL_IN_FILLS_QUERY.format(tenant_filter=clause),
+        "openings": ALL_IN_OPENINGS_QUERY.format(tenant_filter=clause),
     }
 
 
@@ -116,7 +153,7 @@ class _Fill:
     __slots__ = (
         "id", "date", "action", "qty", "raw_qty", "price", "fees", "amount",
         "cash", "option_type", "strike", "expiry", "trade_symbol", "contract",
-        "symbol", "tenant_id", "synthetic",
+        "symbol", "tenant_id", "synthetic", "from_snapshot",
     )
 
     def __init__(self, **kwargs):
@@ -143,7 +180,9 @@ def all_in_cost(
     shares,
     cost_basis=None,
     opening_shares=0.0,
+    opening_basis=0.0,
     splits=None,
+    snapshot_options=None,
     tenant_id=None,
     symbol=None,
 ):
@@ -151,19 +190,27 @@ def all_in_cost(
 
     ``shares`` is the snapshot quantity the number is divided by. ``cost_basis``
     is the broker equity cost (dollars). When it is missing, the basis is the
-    cash paid for the shares added in this cycle. Returns None when no shares
-    are held.
+    cash paid for the shares added in this cycle, plus ``opening_basis`` when
+    the broker never reported a cost (an estimate). With no shares and an
+    open cash-secured put, returns an if-assigned price instead of None.
     """
     held = _num(shares)
-    if held <= _EPS:
-        return None
-
     parsed = _parse_fills(fills, splits=splits, tenant_id=tenant_id, symbol=symbol)
+    _append_snapshot_options(parsed, snapshot_options, tenant_id=tenant_id, symbol=symbol)
+    if held <= _EPS:
+        return _if_assigned_result(parsed, tenant_id=tenant_id, symbol=symbol)
+
     events, replay = _replay_shares(parsed, _num(opening_shares))
-    basis = _num(cost_basis) if cost_basis is not None and _num(cost_basis) > _EPS else 0.0
     episode = replay["episode"]
-    if basis <= _EPS and episode is not None:
-        basis = _infer_basis(events, episode)
+    broker = _num(cost_basis) if cost_basis is not None and _num(cost_basis) > _EPS else 0.0
+    inferred = _infer_basis(events, episode) if episode is not None else 0.0
+    extra = _num(opening_basis) if _num(opening_basis) > _EPS else 0.0
+    if broker > _EPS:
+        basis = broker
+        basis_estimated = False
+    else:
+        basis = inferred + extra
+        basis_estimated = extra > _EPS
     if basis <= _EPS:
         return None
 
@@ -175,6 +222,14 @@ def all_in_cost(
         fill for fill in parsed
         if _in_premium_window(fill, episode, chain_ids)
     ]
+    # Snapshot-only opens are not in the fill tape, so the episode date
+    # cannot see them. They are open now, so they count. Tape fills from
+    # a previous cycle stay out — a real flat still resets the cycle.
+    seen = {fill.id for fill in window}
+    for fill in parsed:
+        if fill.from_snapshot and fill.id not in seen:
+            window.append(fill)
+            seen.add(fill.id)
     groups = _group_fills(window, chain_ids)
     net_premium = round(sum(group["cash"] for group in groups), 2)
     remaining = _contract_remaining(parsed)
@@ -199,9 +254,16 @@ def all_in_cost(
     lines = _allocate_lines(equity_per_share - all_in_per_share, buckets)
     cycle_start = _cycle_start(parsed, episode, chain_ids)
     note = OPEN_NOTE if open_options else ""
+    if basis_estimated:
+        note = f"{ESTIMATED_BASIS_NOTE} {note}".strip()
+    hover = _hover(equity_per_share, all_in_per_share, lines, OPEN_NOTE if open_options else "")
+    if basis_estimated:
+        hover = f"{ESTIMATED_BASIS_NOTE} {hover}"
 
     result = {
         "shares": held,
+        "if_assigned": False,
+        "basis_estimated": basis_estimated,
         "equity_basis": round(basis, 2),
         "equity_per_share": equity_per_share,
         "net_premium": net_premium,
@@ -218,7 +280,7 @@ def all_in_cost(
         "replay_shares": round(replay["qty"], 4),
         "tenant_id": tenant_id,
         "symbol": symbol,
-        "hover": _hover(equity_per_share, all_in_per_share, lines, note),
+        "hover": hover,
     }
     return result
 
@@ -253,20 +315,48 @@ def position_all_in_costs(trades, current, openings, splits, label_for, symbol):
         slot["basis"] += _num(row.get("cost_basis"))
 
     opening_by_tenant = defaultdict(float)
+    opening_basis_by_tenant = defaultdict(float)
     for row in openings or []:
         if not isinstance(row, dict):
             continue
         tenant = str(row.get("tenant_id") or "").strip()
         opening_by_tenant[tenant] += _num(row.get("qty") or row.get("opening_qty"))
+        source = str(row.get("price_source") or "").strip()
+        if source == "broker_cost_basis":
+            continue
+        amount = row.get("est_cost")
+        if amount is None:
+            amount = row.get("est_amount")
+        opening_basis_by_tenant[tenant] += abs(_num(amount))
 
+    current_rows = _records(current)
+    option_rows = [row for row in current_rows if not _is_equity_holding(row)]
     split_rows = _records(splits)
     trade_rows = _records(trades)
+    tenants = set(by_tenant)
+    for row in trade_rows:
+        tenants.add(str(row.get("tenant_id") or "").strip())
+    for row in option_rows:
+        tenants.add(str(row.get("tenant_id") or "").strip())
+
     results = []
-    for tenant, slot in by_tenant.items():
-        if slot["shares"] <= _EPS:
+    for tenant in tenants:
+        slot = by_tenant.get(tenant) or {
+            "shares": 0.0,
+            "basis": 0.0,
+            "account": None,
+            "tenant_id": tenant or None,
+        }
+        if slot["shares"] <= _EPS and not any(
+            _row_matches(row, tenant, symbol) for row in trade_rows
+        ) and not any(_row_matches(row, tenant, symbol) for row in option_rows):
             continue
         tenant_fills = [
             row for row in trade_rows
+            if _row_matches(row, tenant, symbol)
+        ]
+        tenant_options = [
+            row for row in option_rows
             if _row_matches(row, tenant, symbol)
         ]
         basis = slot["basis"] if slot["basis"] > _EPS else None
@@ -275,13 +365,17 @@ def position_all_in_costs(trades, current, openings, splits, label_for, symbol):
             shares=slot["shares"],
             cost_basis=basis,
             opening_shares=opening_by_tenant.get(tenant, 0.0),
+            opening_basis=opening_basis_by_tenant.get(tenant, 0.0),
             splits=_splits_for(symbol, split_rows),
+            snapshot_options=tenant_options,
             tenant_id=slot["tenant_id"],
             symbol=symbol,
         )
         if not result:
             continue
-        account = slot["account"]
+        account = slot.get("account")
+        if account is None and tenant_fills:
+            account = tenant_fills[0].get("account")
         if label_for is not None:
             try:
                 result["account_label"] = label_for(slot["tenant_id"], account)
@@ -306,10 +400,7 @@ def attach_positions_all_in(symbol_rows, client, tenant_ids, tenant_filter):
     from app.tenant_scope import filter_df_by_tenant_ids
 
     for row in symbol_rows or []:
-        row.setdefault("equity_per_share", None)
-        row.setdefault("all_in_per_share", None)
-        row.setdefault("show_all_in", False)
-        row.setdefault("open_options", False)
+        _blank_all_in_fields(row)
 
     if not symbol_rows or client is None:
         return ""
@@ -323,20 +414,34 @@ def attach_positions_all_in(symbol_rows, client, tenant_ids, tenant_filter):
         cached_query_df(client, sql["fills"], label="all_in_fills"),
         tenant_ids,
     )
+    openings = filter_df_by_tenant_ids(
+        cached_query_df(client, sql["openings"], label="all_in_openings"),
+        tenant_ids,
+    )
     # Public split calendar. No tenant column — do not filter it.
     splits = _query_splits(client, cached_query_df, symbol_rows)
-    _stamp_rows(symbol_rows, _records(holdings), _records(fills), splits)
+    _stamp_rows(
+        symbol_rows,
+        _records(holdings),
+        _records(fills),
+        splits,
+        openings=_records(openings),
+    )
     if any(row.get("open_options") for row in symbol_rows):
         return OPEN_NOTE
     return ""
 
 
-def _stamp_rows(symbol_rows, holdings, fills, splits):
+def _stamp_rows(symbol_rows, holdings, fills, splits, openings=None):
     grouped = {}
+    options_by_key = defaultdict(list)
     for row in holdings:
         tenant = str(row.get("tenant_id") or "").strip()
         sym = str(row.get("symbol") or "").strip().upper()
         if not sym:
+            continue
+        if not _is_equity_holding(row):
+            options_by_key[(tenant, sym)].append(row)
             continue
         slot = grouped.setdefault((tenant, sym), {"shares": 0.0, "basis": 0.0})
         slot["shares"] += _num(row.get("quantity"))
@@ -348,25 +453,40 @@ def _stamp_rows(symbol_rows, holdings, fills, splits):
         sym = str(row.get("symbol") or "").strip().upper()
         fills_by_key[(tenant, sym)].append(row)
 
+    opening_basis_by_key = defaultdict(float)
+    for row in openings or []:
+        if not isinstance(row, dict):
+            continue
+        source = str(row.get("price_source") or "").strip()
+        if source == "broker_cost_basis":
+            continue
+        tenant = str(row.get("tenant_id") or "").strip()
+        sym = str(row.get("symbol") or "").strip().upper()
+        amount = row.get("est_cost")
+        if amount is None:
+            amount = row.get("est_amount")
+        opening_basis_by_key[(tenant, sym)] += abs(_num(amount))
+
     for row in symbol_rows:
         tenant = str(row.get("tenant_id") or "").strip()
         sym = str(row.get("symbol") or "").strip().upper()
+        _blank_all_in_fields(row)
         slot = grouped.get((tenant, sym))
-        row["equity_per_share"] = None
-        row["all_in_per_share"] = None
-        row["show_all_in"] = False
-        row["open_options"] = False
-        if not slot or slot["shares"] <= _EPS:
-            continue
         key_fills = fills_by_key.get((tenant, sym), [])
-        opening = _inferred_opening(slot["shares"], key_fills, _splits_for(sym, splits))
-        basis = slot["basis"] if slot["basis"] > _EPS else None
+        key_options = options_by_key.get((tenant, sym), [])
+        shares = slot["shares"] if slot else 0.0
+        if shares <= _EPS and not key_fills and not key_options:
+            continue
+        opening = _inferred_opening(shares, key_fills, _splits_for(sym, splits)) if shares > _EPS else 0.0
+        basis = slot["basis"] if slot and slot["basis"] > _EPS else None
         result = all_in_cost(
             key_fills,
-            shares=slot["shares"],
+            shares=shares,
             cost_basis=basis,
             opening_shares=opening,
+            opening_basis=opening_basis_by_key.get((tenant, sym), 0.0),
             splits=_splits_for(sym, splits),
+            snapshot_options=key_options,
             tenant_id=tenant or None,
             symbol=sym,
         )
@@ -376,6 +496,217 @@ def _stamp_rows(symbol_rows, holdings, fills, splits):
         row["all_in_per_share"] = result["all_in_per_share"]
         row["show_all_in"] = result["show_all_in"]
         row["open_options"] = result["open_options"]
+        row["if_assigned"] = result.get("if_assigned", False)
+        row["basis_estimated"] = result.get("basis_estimated", False)
+        row["all_in_lines"] = result.get("lines") or []
+        row["all_in_hover"] = result.get("hover") or ""
+        row["all_in_note"] = result.get("note") or ""
+
+
+def _blank_all_in_fields(row):
+    row["equity_per_share"] = None
+    row["all_in_per_share"] = None
+    row["show_all_in"] = False
+    row["open_options"] = False
+    row["if_assigned"] = False
+    row["basis_estimated"] = False
+    row["all_in_lines"] = []
+    row["all_in_hover"] = ""
+    row["all_in_note"] = ""
+
+
+def _is_equity_holding(row):
+    kind = str(row.get("instrument_type") or "Equity").strip().lower()
+    return kind in {"", "equity"}
+
+
+def _append_snapshot_options(parsed, snapshot_options, tenant_id=None, symbol=None):
+    """Open option rows whose fills are not in the tape.
+
+    A covered call sold before the broker's history window still sits on
+    the snapshot. Its cost basis is the premium. Matching strike and
+    expiry to a tape fill avoids counting that premium twice.
+    """
+    next_id = 20_000 + len(parsed)
+    for row in _records(snapshot_options):
+        if not isinstance(row, dict) or not _row_matches(row, tenant_id, symbol):
+            continue
+        if _is_equity_holding(row):
+            continue
+        side = _snapshot_side(row)
+        if side is None:
+            continue
+        qty = _num(row.get("quantity"))
+        contracts = abs(qty)
+        if contracts <= _EPS:
+            continue
+        short = qty < 0
+        if _tape_has_contract(parsed, side, row):
+            continue
+        strike = _optional_num(
+            row.get("option_strike") if "option_strike" in row else row.get("strike")
+        )
+        expiry = _as_date(row.get("option_expiry") or row.get("expiry"))
+        trade_symbol = str(row.get("trade_symbol") or "").strip()
+        cash = abs(_num(row.get("cost_basis")))
+        if not short:
+            cash = -cash
+        parsed.append(_Fill(
+            id=next_id,
+            date=date(1970, 1, 1),
+            action="option_sell_to_open" if short else "option_buy_to_open",
+            qty=contracts,
+            raw_qty=contracts,
+            price=0.0,
+            fees=0.0,
+            amount=cash,
+            cash=round(cash, 2),
+            option_type=side,
+            strike=strike,
+            expiry=expiry,
+            trade_symbol=trade_symbol,
+            contract=_contract_key(side, strike, expiry, trade_symbol, next_id),
+            symbol=str(row.get("symbol") or symbol or "").strip().upper(),
+            tenant_id=str(row.get("tenant_id") or tenant_id or "").strip(),
+            synthetic=False,
+            from_snapshot=True,
+        ))
+        next_id += 1
+
+
+def _snapshot_side(row):
+    raw = str(row.get("option_type") or row.get("instrument_type") or "").strip().lower()
+    if raw in {"call", "c"}:
+        return "call"
+    if raw in {"put", "p"}:
+        return "put"
+    return None
+
+
+def _tape_has_contract(parsed, side, row):
+    strike = _optional_num(
+        row.get("option_strike") if "option_strike" in row else row.get("strike")
+    )
+    expiry = _as_date(row.get("option_expiry") or row.get("expiry"))
+    trade_symbol = str(row.get("trade_symbol") or "").strip().upper()
+    if strike is None and not expiry and not trade_symbol:
+        return False
+    for fill in parsed:
+        if fill.option_type != side:
+            continue
+        if trade_symbol and str(fill.trade_symbol or "").strip().upper() == trade_symbol:
+            return True
+        if strike is None or fill.strike is None or abs(fill.strike - strike) > _PRICE_TOL:
+            continue
+        if expiry is not None and fill.expiry is not None and fill.expiry != expiry:
+            continue
+        if expiry is None or fill.expiry is None:
+            continue
+        return True
+    return False
+
+
+def _if_assigned_result(parsed, tenant_id=None, symbol=None):
+    """Effective share price if the open cash-secured put is assigned."""
+    remaining = _contract_remaining(parsed)
+    opened = _primary_open_csp(parsed, remaining)
+    if opened is None or opened.strike is None:
+        return None
+    chain_ids = _assignment_chain(parsed, opened.contract, None)
+    chain_fills = [
+        fill for fill in parsed
+        if fill.id in chain_ids and fill.action in _CASH_ACTIONS and not fill.synthetic
+    ]
+    if not chain_fills:
+        return None
+    groups = _group_fills(chain_fills, chain_ids)
+    for group in groups:
+        group["open"] = True
+    net = round(sum(group["cash"] for group in groups), 2)
+    contracts = remaining.get(opened.contract, 0.0)
+    assigned_shares = contracts * _MULTIPLIER
+    if assigned_shares <= _EPS:
+        return None
+    premium_ps = round(net / assigned_shares, 2)
+    price = round(opened.strike - premium_ps, 2)
+    buckets = {name: 0.0 for name in _BUCKET_ORDER}
+    for group in groups:
+        buckets[group["bucket"]] = round(buckets[group["bucket"]] + group["cash"], 2)
+    lines = [{
+        "bucket": "strike",
+        "label": "Strike",
+        "per_share": round(opened.strike, 2),
+        "credit": None,
+    }]
+    lines.extend(_allocate_lines(premium_ps, buckets))
+    note = f"{IF_ASSIGNED_NOTE} {OPEN_NOTE}"
+    hover_bits = [
+        f"If assigned ${price:,.2f}",
+        "Not a cost of shares held",
+        f"Strike ${opened.strike:,.2f}",
+    ]
+    for line in lines:
+        if line["bucket"] == "strike":
+            continue
+        sign = "−" if line["credit"] else "+"
+        hover_bits.append(f"{line['label']} {sign}${line['per_share']:,.2f}")
+    return {
+        "shares": 0.0,
+        "assigned_shares": assigned_shares,
+        "if_assigned": True,
+        "basis_estimated": False,
+        "equity_basis": None,
+        "equity_per_share": None,
+        "net_premium": net,
+        "net_premium_per_share": premium_ps,
+        "all_in_per_share": price,
+        "has_option_activity": True,
+        "show_all_in": True,
+        "open_options": True,
+        "note": note,
+        "lines": lines,
+        "groups": groups,
+        "buckets": buckets,
+        "cycle_start": None,
+        "replay_shares": 0.0,
+        "tenant_id": tenant_id,
+        "symbol": symbol,
+        "hover": ". ".join(hover_bits) + f". {OPEN_NOTE}",
+    }
+
+
+def _primary_open_csp(parsed, remaining):
+    puts = [fill for fill in parsed if fill.option_type == "put" and not fill.synthetic]
+    by_contract = {}
+    for fill in puts:
+        if fill.action != "option_sell_to_open":
+            continue
+        if remaining.get(fill.contract, 0.0) <= _EPS:
+            continue
+        if _open_long_put_sibling(puts, fill, remaining):
+            continue
+        prev = by_contract.get(fill.contract)
+        if prev is None or (fill.date, fill.id) >= (prev.date, prev.id):
+            by_contract[fill.contract] = fill
+    if not by_contract:
+        return None
+    return sorted(
+        by_contract.values(),
+        key=lambda fill: (fill.expiry or date.max, fill.strike or 0, fill.id),
+    )[0]
+
+
+def _open_long_put_sibling(puts, short, remaining):
+    for fill in puts:
+        if fill.action != "option_buy_to_open":
+            continue
+        if fill.contract == short.contract:
+            continue
+        if fill.expiry != short.expiry:
+            continue
+        if remaining.get(fill.contract, 0.0) > _EPS:
+            return True
+    return False
 
 
 def _inferred_opening(shares, fills, splits):
@@ -673,7 +1004,19 @@ def _group_fills(fills, chain_ids):
         long = candidates[0]
         used.add(short.id)
         used.add(long.id)
-        groups.append(_make_group("spread", [short, long], chain_ids))
+        members = [short, long]
+        # A later close, expiry, or assignment of either leg is the same
+        # spread. Leaving those fills as their own groups named the open
+        # debit "Put spreads" and the close loss "Other options".
+        contracts = {short.contract, long.contract}
+        for fill in fills:
+            if fill.id in used or fill.contract not in contracts:
+                continue
+            if fill.action not in _CLOSE_QTY:
+                continue
+            used.add(fill.id)
+            members.append(fill)
+        groups.append(_make_group("spread", members, chain_ids))
 
     for fill in fills:
         if fill.id in used:
@@ -689,6 +1032,8 @@ def _make_group(kind, fills, chain_ids):
         bucket = "calls"
     elif any(fill.id in chain_ids for fill in fills):
         bucket = "puts_before_assignment"
+    elif kind == "spread" and types == {"put"}:
+        bucket = "put_spreads"
     else:
         bucket = "other"
     return {
