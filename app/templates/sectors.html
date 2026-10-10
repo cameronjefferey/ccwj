@@ -152,7 +152,10 @@
         <span class="ov-pill">{{ sectors|length }} sector{{ 's' if sectors|length != 1 }}</span>
         <span class="ov-pill">{{ kpis.num_subsectors }} subsector{{ 's' if kpis.num_subsectors != 1 }}</span>
         <span class="ov-pill">{{ kpis.num_symbols }} symbol{{ 's' if kpis.num_symbols != 1 }}</span>
-        {% if kpis.num_trades %}<span class="ov-pill">{{ kpis.num_trades }} {{ count_label|default('trades') }}</span>{% endif %}
+        {% if kpis.num_trades %}
+        {% set trade_word = count_label|default('trades') %}
+        <span class="ov-pill">{{ kpis.num_trades }} {{ trade_word[:-1] if kpis.num_trades == 1 and trade_word.endswith('s') else trade_word }}</span>
+        {% endif %}
     </div>
     {% else %}
     <p class="ov-line">How the book breaks down by sector.</p>

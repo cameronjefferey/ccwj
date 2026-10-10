@@ -597,6 +597,223 @@ def test_snapshot_open_call_counts_when_the_sale_is_not_in_the_tape():
     assert result["net_premium"] == 200.00
 
 
+def test_assigned_shares_with_no_priced_buy_still_have_a_cost():
+    """NVDA: covered calls, broker basis missing, shares delivered at $0.
+
+    Schwab posts the assigned shares as a buy with a blank price and no
+    separate assignment row. The open short put's strike is the cost.
+    Partial coverage uses every share held, and every strategy row of
+    that account shares it.
+    """
+    from app.all_in_cost import _stamp_rows
+
+    fills = [
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-05-01",
+              action="option_sell_to_open", option_type="put", option_strike=180,
+              option_expiry="2026-05-15", quantity=1, price=4.00),
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-05-15",
+              action="equity_buy", quantity=100, price=0),
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-06-01",
+              action="equity_buy", quantity=50, price=190),
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-06-02",
+              action="option_sell_to_open", option_type="call", option_strike=200,
+              option_expiry="2026-06-19", quantity=1, price=3.00),
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-06-02",
+              action="option_sell_to_open", option_type="call", option_strike=220,
+              option_expiry="2026-07-17", quantity=1, price=2.00),
+    ]
+    result = all_in_cost(
+        fills, shares=150, cost_basis=0, symbol="NVDA", tenant_id="snaptrade:nvda",
+    )
+    # 100 shares at the 180 strike, 50 bought at 190.
+    # Put credit $400 plus $500 of call premium.
+    assert result is not None
+    assert result["equity_per_share"] == 183.33
+    assert result["all_in_per_share"] == 177.33
+    assert result["buckets"]["calls"] == 500.00
+    assert result["show_all_in"] is True
+
+    rows = [
+        {"tenant_id": "snaptrade:nvda", "symbol": "NVDA",
+         "strategies": "Cash-Secured Put, Covered Call, Partially Covered Call"},
+        {"tenant_id": "snaptrade:nvda", "symbol": "NVDA", "strategies": "Put Spread"},
+    ]
+    holdings = [{
+        "tenant_id": "snaptrade:nvda",
+        "symbol": "NVDA",
+        "instrument_type": "Equity",
+        "quantity": 150,
+        "cost_basis": 0,
+    }]
+    _stamp_rows(rows, holdings, fills, [])
+    assert rows[0]["equity_per_share"] == 183.33
+    assert rows[1]["equity_per_share"] == 183.33
+    assert rows[0]["show_all_in"] is True
+
+
+def test_assignment_symbol_prices_shares_when_the_strike_column_is_blank():
+    """No equity buy at all. The assignment row only has the contract symbol."""
+    fills = [
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-05-01",
+              action="option_sell_to_open", quantity=1, price=4.00,
+              trade_symbol="NVDA 05/15/2026 180.00 P"),
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-05-15",
+              action="option_assigned", quantity=1, price=0,
+              trade_symbol="NVDA 05/15/2026 180.00 P"),
+        _fill(symbol="NVDA", tenant_id="snaptrade:nvda", trade_date="2026-06-02",
+              action="option_sell_to_open", quantity=1, price=3.00,
+              trade_symbol="NVDA 06/19/2026 200.00 C"),
+    ]
+    result = all_in_cost(
+        fills, shares=100, cost_basis=0, symbol="NVDA", tenant_id="snaptrade:nvda",
+    )
+    assert result["equity_per_share"] == 180.00
+    assert result["all_in_per_share"] == 173.00
+    assert result["buckets"]["calls"] == 300.00
+
+
+def test_open_call_sold_before_this_lot_still_counts():
+    """JEPQ: cost is the broker basis, the covered call was sold earlier and is still open.
+
+    The tape has the sale, so the snapshot must not be required, and the
+    sale is before the share purchase that starts this cycle.
+    """
+    fills = [
+        _fill(symbol="JEPQ", tenant_id="snaptrade:jepq", trade_date="2025-11-03",
+              action="option_sell_to_open", option_type="call", option_strike=60,
+              option_expiry="2026-12-18", quantity=1, price=2.00,
+              trade_symbol="JEPQ 12/18/2026 60.00 C"),
+        _fill(symbol="JEPQ", tenant_id="snaptrade:jepq", trade_date="2026-05-01",
+              action="equity_buy", quantity=100, price=57.30),
+    ]
+    result = all_in_cost(
+        fills, shares=100, cost_basis=5730, symbol="JEPQ", tenant_id="snaptrade:jepq",
+    )
+    assert result["equity_per_share"] == 57.30
+    assert result["all_in_per_share"] == 55.30
+    assert result["open_options"] is True
+    assert result["show_all_in"] is True
+    assert result["net_premium"] == 200.00
+
+
+def test_closed_tape_call_does_not_hide_or_double_the_snapshot_open():
+    """Same contract expired on the tape, still short on the snapshot.
+
+    Matching the trade symbol used to skip the snapshot. Counting the
+    expired credit as well as the snapshot premium would double it.
+    """
+    fills = [
+        _fill(symbol="JEPQ", tenant_id="snaptrade:jepq", trade_date="2026-04-01",
+              action="option_sell_to_open", option_type="call", option_strike=60,
+              option_expiry="2026-11-20", quantity=1, price=1.50,
+              trade_symbol="JEPQ 11/20/2026 60.00 C"),
+        _fill(symbol="JEPQ", tenant_id="snaptrade:jepq", trade_date="2026-04-17",
+              action="option_expired", option_type="call", option_strike=60,
+              option_expiry="2026-11-20", quantity=1, price=0,
+              trade_symbol="JEPQ 11/20/2026 60.00 C"),
+        _fill(symbol="JEPQ", tenant_id="snaptrade:jepq", trade_date="2026-05-01",
+              action="equity_buy", quantity=100, price=57.30),
+    ]
+    snapshot = [{
+        "tenant_id": "snaptrade:jepq",
+        "symbol": "JEPQ",
+        "instrument_type": "Call",
+        "option_type": "call",
+        "option_strike": 60,
+        "option_expiry": "2026-11-20",
+        "quantity": -1,
+        "cost_basis": 200,
+        "trade_symbol": "JEPQ 11/20/2026 60.00 C",
+    }]
+    result = all_in_cost(
+        fills, shares=100, cost_basis=5730, symbol="JEPQ",
+        snapshot_options=snapshot, tenant_id="snaptrade:jepq",
+    )
+    assert result["equity_per_share"] == 57.30
+    assert result["all_in_per_share"] == 55.30
+    assert result["open_options"] is True
+    assert result["show_all_in"] is True
+    assert result["net_premium"] == 200.00
+
+
+def test_closed_call_before_the_shares_does_not_change_all_in():
+    fills = [
+        _fill(symbol="JEPQ", trade_date="2025-11-03", action="option_sell_to_open",
+              option_type="call", option_strike=60, option_expiry="2025-11-21",
+              quantity=1, price=2.00, trade_symbol="JEPQ 11/21/2025 60.00 C"),
+        _fill(symbol="JEPQ", trade_date="2025-11-21", action="option_expired",
+              option_type="call", option_strike=60, option_expiry="2025-11-21",
+              quantity=1, price=0, trade_symbol="JEPQ 11/21/2025 60.00 C"),
+        _fill(symbol="JEPQ", trade_date="2026-05-01", action="equity_buy",
+              quantity=100, price=57.30),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=5730, symbol="JEPQ")
+    assert result["equity_per_share"] == 57.30
+    assert result["show_all_in"] is False
+    assert result["net_premium"] == 0
+
+
+def test_put_spread_is_not_labeled_calls_and_sits_beside_real_calls():
+    """BE: put legs whose column says Call, plus a real covered-call credit.
+
+    The contract symbol is a put. The debit is Put spreads, the credit
+    is Calls, and the signs stay opposite.
+    """
+    fills = [
+        _fill(symbol="BE", tenant_id="snaptrade:be", trade_date="2026-06-01",
+              action="equity_buy", quantity=100, price=132.70),
+        _fill(symbol="BE", tenant_id="snaptrade:be", trade_date="2026-06-15",
+              action="option_sell_to_open", option_type="call", quantity=1, price=4.00,
+              trade_symbol="BE 07/17/2026 120.00 P"),
+        _fill(symbol="BE", tenant_id="snaptrade:be", trade_date="2026-06-15",
+              action="option_buy_to_open", option_type="call", quantity=1, price=49.96,
+              trade_symbol="BE 07/17/2026 100.00 P"),
+        _fill(symbol="BE", tenant_id="snaptrade:be", trade_date="2026-06-20",
+              action="option_sell_to_open", option_type="call", quantity=1, price=1.50,
+              trade_symbol="BE 08/21/2026 160.00 C"),
+    ]
+    result = all_in_cost(
+        fills, shares=100, cost_basis=13270, symbol="BE", tenant_id="snaptrade:be",
+    )
+    assert result["equity_per_share"] == 132.70
+    # Put debit $4,596, call credit $150. All-in = 132.70 + 45.96 - 1.50.
+    assert result["buckets"]["put_spreads"] == -4596.00
+    assert result["buckets"]["calls"] == 150.00
+    assert result["all_in_per_share"] == 177.16
+    labels = {line["label"]: line for line in result["lines"]}
+    assert labels["Put spreads"]["per_share"] == 45.96
+    assert labels["Put spreads"]["credit"] is False
+    assert labels["Calls"]["per_share"] == 1.50
+    assert labels["Calls"]["credit"] is True
+    assert "Put spreads +$45.96" in result["hover"]
+    assert "Calls −$1.50" in result["hover"]
+
+
+def test_put_spread_with_only_the_underlying_symbol_is_still_a_put_spread():
+    fills = [
+        _fill(symbol="BE", trade_date="2026-06-01", action="equity_buy",
+              quantity=100, price=132.70, trade_symbol="BE"),
+        _fill(symbol="BE", trade_date="2026-06-15", action="option_sell_to_open",
+              option_type="put", option_strike=120, option_expiry="2026-07-17",
+              quantity=1, price=4.00, trade_symbol="BE"),
+        _fill(symbol="BE", trade_date="2026-06-15", action="option_buy_to_open",
+              option_type="put", option_strike=100, option_expiry="2026-07-17",
+              quantity=1, price=8.00, trade_symbol="BE"),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=13270, symbol="BE")
+    assert result["groups"][0]["kind"] == "spread"
+    assert result["groups"][0]["bucket"] == "put_spreads"
+    assert result["lines"][0]["label"] == "Put spreads"
+
+
+def test_long_call_with_no_shares_stays_blank():
+    fills = [
+        _fill(action="option_buy_to_open", option_type="call", option_strike=200,
+              option_expiry="2026-12-18", quantity=1, price=5.00),
+    ]
+    assert all_in_cost(fills, shares=0, symbol="DDOG") is None
+
+
 def test_templates_fold_all_in_into_the_existing_header_and_table():
     detail = (ROOT / "app/templates/position_detail.html").read_text()
     positions = (ROOT / "app/templates/positions.html").read_text()
