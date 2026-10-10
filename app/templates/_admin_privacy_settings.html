@@ -1,0 +1,31 @@
+{% if admin_privacy and admin_privacy.show and not is_demo_user %}
+<form method="POST" action="{{ url_for('profile', tab='overview') }}" class="mb-3" id="admin-privacy">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="set_admin_privacy">
+    <input type="hidden" name="enabled" value="{{ '0' if admin_privacy.on else '1' }}">
+    <div class="card">
+        <div class="settings-pad">
+            <h2 class="section-header">Private from HappyTrader admins</h2>
+            {% if admin_privacy.on %}
+            <p class="settings-lead">
+                Private from HappyTrader admins: On{% if admin_privacy.since %}, since {{ admin_privacy.since }}{% endif %}.
+                Admins can't see your accounts, balances or trades.
+            </p>
+            <p class="settings-lead">
+                This is a block inside the app. It is not encryption. Someone with
+                direct database access could still read the warehouse. An admin
+                cannot turn this off. Only you can.
+            </p>
+            <button type="submit" class="btn btn-outline-primary">Turn off</button>
+            {% else %}
+            <p class="settings-lead">
+                Private from HappyTrader admins: Off.
+                Turn this on so admins can't see your accounts, balances, or trades.
+                Only you can turn it off.
+            </p>
+            <button type="submit" class="btn btn-primary">Turn on</button>
+            {% endif %}
+        </div>
+    </div>
+</form>
+{% endif %}

@@ -498,11 +498,23 @@ def _inject_feature_flags():
             with stage("history"):
                 history_since = getattr(g, "_history_since", "__unset__")
                 if history_since == "__unset__":
-                    from app.accounts_page import _account_created_for_scope
-                    from app.routes import _tenants_for_scope
-                    history_since = _account_created_for_scope(_tenants_for_scope())
-                    g._history_since = history_since
-    except Exception:
+                    import sys
+                    from werkzeug.exceptions import HTTPException
+                    # The 404 error page renders inside the view's abort.
+                    # Calling scope again would abort a second time and
+                    # turn that 404 into a 500. A normal render still
+                    # denies a private ?tenant= here.
+                    if isinstance(sys.exc_info()[1], HTTPException):
+                        history_since = None
+                    else:
+                        from app.accounts_page import _account_created_for_scope
+                        from app.routes import _tenants_for_scope
+                        history_since = _account_created_for_scope(_tenants_for_scope())
+                        g._history_since = history_since
+    except Exception as exc:
+        from werkzeug.exceptions import HTTPException
+        if isinstance(exc, HTTPException):
+            raise
         history_since = None
 
     account_groups = []

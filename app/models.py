@@ -560,6 +560,15 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_account_group_members_tenant
         ON account_group_members (tenant_id)
         """,
+        # Users who have asked (or been asked) to be private from every
+        # admin. Admins can insert. Only the user can delete their row.
+        """
+        CREATE TABLE IF NOT EXISTS admin_hidden_users (
+            user_id   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            added_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            added_by  INTEGER REFERENCES users(id) ON DELETE SET NULL
+        )
+        """,
     ]
     with get_conn() as conn:
         with conn.cursor() as cur:

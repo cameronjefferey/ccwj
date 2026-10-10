@@ -169,7 +169,9 @@
                     </form>
                 </td>
                 <td data-val="{{ u.accounts|length }}">
-                    {% if u.accounts %}
+                    {% if u.private_from_admin %}
+                        <span class="au-no-accounts">Private</span>
+                    {% elif u.accounts %}
                         {% for acct in u.accounts %}<span class="au-account">{{ acct }}</span>{% endfor %}
                     {% else %}
                         <span class="au-no-accounts">none linked</span>
@@ -177,9 +179,11 @@
                 </td>
                 <td>
                     <div class="au-actions">
+                        {% if not u.private_from_admin %}
                         <a href="{{ url_for('admin_impersonate', username=u.username) }}">Impersonate</a>
                         {% if u.accounts %}
                         <a class="audit" href="{{ url_for('admin_audit', account=u.accounts[0]) }}">Audit</a>
+                        {% endif %}
                         {% endif %}
                         {% if u.id != current_user.id %}
                         <button type="button"

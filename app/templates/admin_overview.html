@@ -290,9 +290,13 @@
         {% for row in broken %}
         <tr>
             <td>
+                {% if row.private_from_admin %}
+                {{ row.username }}
+                {% else %}
                 <a href="{{ url_for('admin_impersonate', username=row.username) }}">{{ row.username }}</a>
+                {% endif %}
             </td>
-            <td>{{ row.account_name }}</td>
+            <td>{% if row.private_from_admin %}Private{% else %}{{ row.account_name }}{% endif %}</td>
             <td>{{ row.broker_slug }}</td>
             <td class="ov-muted">{% if row.connection_broken_at %}{{ row.connection_broken_at.strftime('%b %-d') }}{% else %}—{% endif %}</td>
             <td class="ov-muted">{{ (row.last_sync_error or '—')|truncate(80) }}</td>
@@ -327,7 +331,9 @@
             <td class="ov-muted">{% if row.trial_days is not none %}{{ row.trial_days }}{% else %}—{% endif %}</td>
             <td class="ov-muted">{% if row.signed_up_at %}{{ row.signed_up_at.strftime('%b %-d, %Y') }}{% else %}—{% endif %}</td>
             <td class="text-end">
+                {% if not row.private_from_admin %}
                 <a class="small" href="{{ url_for('admin_impersonate', username=row.username) }}">Impersonate</a>
+                {% endif %}
             </td>
         </tr>
         {% endfor %}

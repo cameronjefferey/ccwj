@@ -180,6 +180,10 @@
         <a {% if tab == 'billing' %}class="active" aria-current="page"{% endif %} href="{{ url_for('profile', tab='billing') }}">Plan &amp; billing</a>
     </nav>
 
+    {% if tab == 'overview' or tab == 'preferences' %}
+    {% include '_admin_privacy_settings.html' %}
+    {% endif %}
+
     {% if tab == 'overview' %}
     <div class="card" id="settings-connections">
         <div class="settings-pad">

@@ -1132,6 +1132,18 @@ open in the last 7 days (ranked unique people then views; bars are views;
 demo excluded;
 logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
+**Private from admins.** `admin_hidden_users` (created in `init_db`)
+hides a friend's book from every admin. Admin → Private accounts can
+add a username or email and lists username plus the date added, with
+no balances. An admin cannot remove someone. The friend turns it on
+or off in Settings, which shows "Private from HappyTrader admins: On,
+since …". Unscoped warehouse reads (`tenant_ids is None`) drop those
+tenants in `tenant_sql_and` / `filter_df_by_tenant_ids`, next to the
+paper exclusion. An admin `?tenant=` / `?tenants=` that names one
+404s. Impersonation and the digest preview 404. The friend's own
+pages, the demo tenant, and admin-owned accounts stay visible. This
+is an application gate, not encryption.
+
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path
 (`POST /get-started/paper`) stores `users.app_view='simple'` and opens

@@ -95,7 +95,7 @@
                 <button type="submit">Mark resolved</button>
                 {% endif %}
             </form>
-            {% if f.username %}
+            {% if f.username and not f.private_from_admin %}
             <a href="{{ url_for('admin_impersonate', username=f.username) }}"
                class="btn btn-sm btn-outline-secondary">Impersonate</a>
             {% endif %}

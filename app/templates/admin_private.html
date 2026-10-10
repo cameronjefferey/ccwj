@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .ap-hero {
+        background: #1a1a2e;
+        color: #fff; padding: 1.4rem 1.6rem; border-radius: 14px;
+        margin-bottom: 1.25rem;
+    }
+    .ap-hero h1 { font-size: 1.4rem; font-weight: 700; margin: 0; }
+    .ap-hero p { margin: .35rem 0 0; color: rgba(255,255,255,.75); font-size: .88rem; max-width: 42rem; }
+    .ap-card {
+        background: #121826; border-radius: 12px;
+        padding: 1.1rem 1.25rem; margin-bottom: 1rem;
+    }
+    .ap-card h2 { font-size: 1rem; font-weight: 700; margin: 0 0 .35rem; }
+    .ap-lead { color: var(--ht-muted); font-size: .85rem; margin: 0 0 .85rem; }
+    .ap-form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+    .ap-form input {
+        padding: .5rem .75rem; border: 1px solid #d6d3d1; border-radius: 8px;
+        font-size: .9rem; min-width: 240px; background: #0a0e17; color: #e8edf7;
+    }
+    .ap-form button {
+        background: #5b8cff; color: #0a0e17; border: 0; border-radius: 8px;
+        padding: .5rem .9rem; font-weight: 700; cursor: pointer;
+    }
+    .ap-table { width: 100%; font-size: .9rem; border-collapse: collapse; }
+    .ap-table th {
+        text-transform: uppercase; font-size: .65rem; letter-spacing: .04em;
+        color: #8a97b1; text-align: left; padding: .55rem .4rem;
+        border-bottom: 1px solid #243049;
+    }
+    .ap-table td { padding: .55rem .4rem; border-bottom: 1px solid #1a2233; }
+    .ap-empty { color: var(--ht-muted); font-size: .85rem; margin: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ap-hero">
+    <h1>Private accounts</h1>
+    <p>Add a username or email. That person is hidden from every admin, including you. You cannot remove them. They turn it off in their own Settings.</p>
+</div>
+
+<div class="ap-card">
+    <h2>Add someone</h2>
+    <p class="ap-lead">This page shows usernames and the date added. It does not show accounts, balances, or trades.</p>
+    <form method="POST" action="{{ url_for('admin_private_accounts') }}" class="ap-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="visually-hidden" for="ap-username">Username or email</label>
+        <input id="ap-username" name="username" type="text" autocomplete="off"
+               placeholder="Username or email" required>
+        <button type="submit">Add</button>
+    </form>
+</div>
+
+<div class="ap-card">
+    <h2>Hidden from admins <span style="color:#8a97b1;font-weight:500;">— {{ hidden_users|length }}</span></h2>
+    {% if hidden_users %}
+    <table class="ap-table">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Added</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in hidden_users %}
+            <tr>
+                <td>@{{ row.username }}</td>
+                <td>{{ row.added_label }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="ap-empty">No one is on this list.</p>
+    {% endif %}
+</div>
+{% endblock %}

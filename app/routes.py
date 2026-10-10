@@ -21,7 +21,7 @@ SQL and/or _filter_df_by_tenant_ids on the frame — see
 .cursor/rules/bigquery-tenant-isolation.mdc.
 """
 
-from flask import g, request, redirect, url_for, flash
+from flask import abort, g, request, redirect, url_for, flash
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_login import current_user
 from app import app
@@ -777,6 +777,40 @@ def _picker_tenant_ids(args, owned_rows, label_map):
     return matched
 
 
+def _deny_hidden_admin_tenants(tenant_ids):
+    """404 when an admin URL names a private-from-admin tenant.
+
+    The demo tenant and the viewer's own accounts are not in the hidden
+    set, so those URLs still resolve. A lookup miss leaves the set empty
+    and does not 404 (same fail-open as the unscoped SQL exclusion).
+    """
+    from app.admin_privacy import hidden_tenant_id_set
+
+    blocked = hidden_tenant_id_set()
+    if not blocked:
+        return
+    if any(tid in blocked for tid in (tenant_ids or [])):
+        abort(404)
+
+
+def _drop_hidden_admin_label_matches(matched):
+    """Drop private tenants from an admin label match.
+
+    A colliding display label can belong to a visible account and a
+    private one. Keep the visible ids. When every match is private,
+    404 instead of rendering that book.
+    """
+    from app.admin_privacy import hidden_tenant_id_set
+
+    blocked = hidden_tenant_id_set()
+    if not blocked or not matched:
+        return matched
+    kept = [tid for tid in matched if tid not in blocked]
+    if matched and not kept:
+        abort(404)
+    return kept
+
+
 def _user_tenant_list():
     """Return tenant_ids the current user may read, or None for admin bypass."""
     if is_admin(current_user.username):
@@ -803,10 +837,14 @@ def _tenants_for_scope(selected_account=None):
          A bare colliding base label still selects all matching tenants
          for backward compatibility. An unknown label still falls back
          to all owned accounts.
-      4. No selection → admin: ``None`` (no SQL filter); user: all owned.
+      4. No selection → admin: ``None`` (no SQL filter, except paper and
+         private-from-admin tenants dropped in ``tenant_sql_and``);
+         user: all owned.
 
     An explicit ``?tenant=`` / ``?tenants=`` that matches nothing the
-    user owns is empty, not the full book.
+    user owns is empty, not the full book. An admin who names a
+    private-from-admin tenant gets 404. The demo tenant and the
+    admin's own accounts are never in that private set.
 
     Alpaca Paper stays out of the default book (no selection, or an
     unknown ``?account=`` label that falls back to every account). Naming
@@ -832,6 +870,7 @@ def _tenants_for_scope(selected_account=None):
         requested_tenant = ""
     if requested_tenant:
         if admin:
+            _deny_hidden_admin_tenants([requested_tenant])
             return _apply_group_scope([requested_tenant], uid, keep_paper=True)
         owned = [
             row["tenant_id"]
@@ -848,9 +887,9 @@ def _tenants_for_scope(selected_account=None):
     requested = _requested_csv_values(None, "tenants")
     if requested:
         if admin:
-            return _apply_group_scope(
-                list(dict.fromkeys(requested)), uid, keep_paper=True,
-            )
+            unique = list(dict.fromkeys(requested))
+            _deny_hidden_admin_tenants(unique)
+            return _apply_group_scope(unique, uid, keep_paper=True)
         owned = [
             row["tenant_id"]
             for row in (get_broker_tenants_for_user(current_user.id) or [])
@@ -884,6 +923,7 @@ def _tenants_for_scope(selected_account=None):
             for row in rows
             if _match_label(row, want)
         ]
+        matched = _drop_hidden_admin_label_matches(matched)
         return _apply_group_scope(sorted(set(matched)), uid, keep_paper=True)
 
     tenants = get_broker_tenants_for_user(current_user.id) or []
