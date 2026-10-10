@@ -595,6 +595,11 @@ def human_traffic_sql() -> str:
     proxy gave up.
     """
     quoted = _internal_username_sql()
+    # Owner and bot visits are uncorrelated sets, hashed once. A direct
+    # ``owner_hit.visit_id = funnel_events.visit_id`` probe is an index
+    # lookup per outer row. On the Product tab that inner scan ran once
+    # per event in the 30-day window, on every aggregate, and the page
+    # sat near the proxy timeout.
     return (
         "(COALESCE(is_bot, FALSE) = FALSE "
         "AND NOT EXISTS ("
@@ -604,14 +609,22 @@ def human_traffic_sql() -> str:
         "SELECT 1 FROM users u WHERE u.id = funnel_events.user_id "
         f"AND lower(u.username) IN ({quoted})) "
         "AND NOT EXISTS ("
-        "SELECT 1 FROM funnel_events owner_hit "
+        "SELECT 1 FROM ("
+        "SELECT DISTINCT owner_hit.visit_id "
+        "FROM funnel_events owner_hit "
         "JOIN users u ON u.id = owner_hit.user_id "
-        "WHERE owner_hit.visit_id = funnel_events.visit_id "
-        f"AND lower(u.username) IN ({quoted})) "
+        "WHERE owner_hit.visit_id IS NOT NULL "
+        f"AND lower(u.username) IN ({quoted})"
+        ") owner_visits "
+        "WHERE owner_visits.visit_id = funnel_events.visit_id) "
         "AND NOT EXISTS ("
-        "SELECT 1 FROM funnel_events bot_hit "
-        "WHERE bot_hit.visit_id = funnel_events.visit_id "
-        "AND COALESCE(bot_hit.is_bot, FALSE) = TRUE))"
+        "SELECT 1 FROM ("
+        "SELECT DISTINCT bot_hit.visit_id "
+        "FROM funnel_events bot_hit "
+        "WHERE bot_hit.visit_id IS NOT NULL "
+        "AND COALESCE(bot_hit.is_bot, FALSE)"
+        ") bot_visits "
+        "WHERE bot_visits.visit_id = funnel_events.visit_id))"
     )
 
 
@@ -1536,6 +1549,26 @@ def _paid_day_span(today, range_key: str):
     return days
 
 
+def left_out_reason_rows(bot, internal, early) -> list[dict]:
+    """One row per reason that actually has visits.
+
+    Bot, our own traffic, and left-before-tracking are a partition: a
+    visit is in exactly one. ``early_reddit`` / ``early_other`` only
+    split the last bucket, so they are not rows — listing them beside
+    the parent counted that bucket twice, and a zero Reddit line still
+    showed.
+    """
+    rows = []
+    for reason, label, count in (
+        ("bot", _LEFT_OUT_LABELS["bot"], int(bot or 0)),
+        ("internal", _LEFT_OUT_LABELS["internal"], int(internal or 0)),
+        ("early", _LEFT_OUT_LABELS["early"], int(early or 0)),
+    ):
+        if count > 0:
+            rows.append({"reason": reason, "label": label, "count": count})
+    return rows
+
+
 def _empty_left_out() -> dict:
     return {
         "bot": 0,
@@ -1543,6 +1576,7 @@ def _empty_left_out() -> dict:
         "early": 0,
         "early_reddit": 0,
         "early_other": 0,
+        "reasons": [],
         "browsers": [],
     }
 
@@ -1665,6 +1699,7 @@ def _left_out_from_rows(reason_row, browser_rows) -> dict:
         "early": early,
         "early_reddit": early_reddit,
         "early_other": early_other,
+        "reasons": left_out_reason_rows(bot, internal, early),
         "browsers": browsers,
     }
 
