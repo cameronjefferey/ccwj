@@ -540,6 +540,11 @@ def test_admin_analytics_is_admin_only(monkeypatch):
                     "early": 11,
                     "early_reddit": 8,
                     "early_other": 3,
+                    "reasons": [
+                        {"reason": "bot", "label": "Bot", "count": 2},
+                        {"reason": "internal", "label": "Our own traffic", "count": 1},
+                        {"reason": "early", "label": "Left before tracking loaded", "count": 11},
+                    ],
                     "browsers": [{
                         "user_agent": "Reddit/Version 2024.41.0/Build 1/iOS Version 17.6",
                         "device": "phone",
@@ -570,6 +575,9 @@ def test_admin_analytics_is_admin_only(monkeypatch):
     assert ">Bot<" in body or "Bot <span" in body
     assert "Our own traffic" in body
     assert "Left before tracking loaded" in body
+    left_html = body.split('class="an-leftout"', 1)[1].split("</details>", 1)[0]
+    assert ">Other<" not in left_html
+    assert "Reddit/ <span" not in left_html
     assert "Reddit/" in body
     assert "Top left-out browsers" in body
     assert "Reddit/Version 2024.41.0/Build 1/iOS Version 17.6" in body
@@ -2512,6 +2520,93 @@ def test_admin_analytics_visit_lookups_are_one_scan():
     plan = "\n".join(str(next(iter(row.values()))) for row in plan_rows)
     # A correlated EXISTS shows up as a SubPlan and is re-run per visit.
     assert "SubPlan" not in plan
+
+
+def test_left_out_reason_rows_sum_to_the_total_once():
+    """Each left-out visit is one reason. The early split is not a second row."""
+    from app.funnel import _left_out_from_rows, left_out_reason_rows
+
+    live = left_out_reason_rows(83, 26, 506)
+    assert [row["count"] for row in live] == [83, 26, 506]
+    assert sum(row["count"] for row in live) == 83 + 26 + 506
+    assert len({row["reason"] for row in live}) == len(live)
+    assert all(row["count"] > 0 for row in live)
+    assert {row["reason"] for row in live} == {"bot", "internal", "early"}
+    assert "Other" not in {row["label"] for row in live}
+    assert not any(row["label"].startswith("Reddit") for row in live)
+
+    # A zero bucket is omitted so it cannot show as an empty label.
+    assert left_out_reason_rows(0, 0, 4) == [{
+        "reason": "early",
+        "label": "Left before tracking loaded",
+        "count": 4,
+    }]
+
+    shaped = _left_out_from_rows(
+        {
+            "bot": 83,
+            "internal": 26,
+            "early": 506,
+            "early_reddit": 0,
+            "early_other": 506,
+        },
+        [],
+    )
+    assert shaped["early_other"] == 506
+    assert sum(row["count"] for row in shaped["reasons"]) == shaped["bot"] + shaped["internal"] + shaped["early"]
+    assert sum(row["count"] for row in shaped["reasons"]) == 615
+    assert len({row["reason"] for row in shaped["reasons"]}) == len(shaped["reasons"])
+
+
+def test_product_tab_visit_lookups_are_one_scan(monkeypatch):
+    """Product aggregates hash owner and bot visits once.
+
+    A correlated probe of funnel_events.visit_id ran once per event in
+    the window, on every Product query. The 30-day aggregates were an
+    index scan with hundreds of thousands of loops.
+    """
+    sqls = []
+
+    def _fetch_all(sql, params=()):
+        sqls.append(sql)
+        if "COUNT(DISTINCT visit_id)::int AS n" in sql and "NOT (" in sql:
+            return [{"n": 0}]
+        if "AS visits" in sql and "AS signups" in sql and "youtube" in sql.lower():
+            return [{"visits": 0, "signups": 0}]
+        return []
+
+    monkeypatch.delenv("ADMIN_USERS", raising=False)
+    monkeypatch.delenv("INTERNAL_USERS", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://funnel-test")
+    monkeypatch.setattr("app.db.fetch_all", _fetch_all)
+    from app.funnel import build_product_report
+
+    built = build_product_report("7d")
+    assert built["filtered_out"] == 0
+    assert sqls
+    for sql in sqls:
+        assert "visit_id IS NULL OR NOT EXISTS" not in sql
+        assert "SELECT DISTINCT owner_hit.visit_id" in sql
+        assert "SELECT DISTINCT bot_hit.visit_id" in sql
+        assert "owner_hit.visit_id = funnel_events.visit_id" not in sql
+        assert "bot_hit.visit_id = funnel_events.visit_id" not in sql
+        assert "owner_visits.visit_id = funnel_events.visit_id" in sql
+        assert "bot_visits.visit_id = funnel_events.visit_id" in sql
+
+    if not os.environ.get("TEST_DATABASE_URL"):
+        return
+    from app.db import fetch_all
+    from app.funnel import counted_traffic_sql
+
+    window = "created_at >= NOW() - INTERVAL '30 days'"
+    plan_rows = fetch_all(
+        "EXPLAIN SELECT COUNT(*) FROM funnel_events WHERE "
+        + window
+        + " AND "
+        + counted_traffic_sql()
+    )
+    plan = "\n".join(str(next(iter(row.values()))) for row in plan_rows)
+    assert "Index Scan using idx_funnel_events_visit on funnel_events owner_hit" not in plan
 
 
 def test_client_seen_beacon_is_inline_before_bootstrap():

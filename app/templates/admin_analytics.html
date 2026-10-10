@@ -180,14 +180,9 @@
     <details class="an-leftout">
         <summary>{{ acquisition.filtered_out|default(0) }} left out — see why</summary>
         <ul>
-            <li>Bot <span class="an-num">{{ left.bot|default(0) }}</span></li>
-            <li>Our own traffic <span class="an-num">{{ left.internal|default(0) }}</span></li>
-            <li>Left before tracking loaded <span class="an-num">{{ left.early|default(0) }}</span>
-                <ul>
-                    <li>Reddit/ <span class="an-num">{{ left.early_reddit|default(0) }}</span></li>
-                    <li>Other <span class="an-num">{{ left.early_other|default(0) }}</span></li>
-                </ul>
-            </li>
+            {% for row in left.reasons|default([]) %}
+            <li>{{ row.label }} <span class="an-num">{{ row.count }}</span></li>
+            {% endfor %}
         </ul>
         <p class="an-note">Top left-out browsers</p>
         {% if left.browsers %}
