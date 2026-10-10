@@ -1139,10 +1139,18 @@ no balances. An admin cannot remove someone. The friend turns it on
 or off in Settings, which shows "Private from HappyTrader admins: On,
 since …". Unscoped warehouse reads (`tenant_ids is None`) drop those
 tenants in `tenant_sql_and` / `filter_df_by_tenant_ids`, next to the
-paper exclusion. An admin `?tenant=` / `?tenants=` that names one
-404s. Impersonation and the digest preview 404. The friend's own
-pages, the demo tenant, and admin-owned accounts stay visible. This
-is an application gate, not encryption.
+paper exclusion. If that list cannot be loaded, those unscoped admin
+reads fail closed to the signed-in admin's own tenants plus the demo
+tenant and flash "Private-account list unavailable, try again". They
+do not fall open to every account. An explicit tenant list (a normal
+user's own scope) is unchanged. The hidden set is cached on `flask.g`
+for the request only; add and remove clear it before the next read,
+and the warehouse cache key is the SQL predicate, so a new id cannot
+reuse the previous result. An admin `?tenant=` / `?tenants=` that names
+one 404s, including any tenant outside the admin's own accounts and
+the demo tenant when the list is down. Impersonation and the digest
+preview 404. The friend's own pages, the demo tenant, and admin-owned
+accounts stay visible. This is an application gate, not encryption.
 
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path

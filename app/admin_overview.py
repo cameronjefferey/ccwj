@@ -381,13 +381,16 @@ def build_admin_overview():
         LIMIT 25
         """
     )
-    from app.admin_privacy import hidden_user_id_set
-    hidden_ids = hidden_user_id_set()
+    from app.admin_privacy import hidden_snapshot, redact_from_admin
+    snap = hidden_snapshot()
+    if snap["available"]:
+        hidden_ids = snap["user_ids"]
+        hidden_sql = _hidden_user_sql(hidden_ids)
+    else:
+        # No symbol paths until we know who is private.
+        hidden_sql = "AND 1 = 0"
     for row in broken:
-        try:
-            private = int(row.get("user_id") or 0) in hidden_ids
-        except (TypeError, ValueError):
-            private = False
+        private = redact_from_admin(row.get("user_id"), row.get("username"))
         row["private_from_admin"] = private
         if private:
             row["account_name"] = None
@@ -443,7 +446,7 @@ def build_admin_overview():
         LIMIT 8
         """.format(
             demo_sql=demo_sql,
-            hidden_sql=_hidden_user_sql(hidden_ids),
+            hidden_sql=hidden_sql,
         ),
         tuple(demo_params),
     )
@@ -542,7 +545,7 @@ def build_admin_overview():
             "trial_days": r.get("trial_days"),
             "signed_up_at": r.get("signed_up_at"),
             "email": r.get("email"),
-            "private_from_admin": int(r.get("id") or 0) in hidden_ids,
+            "private_from_admin": redact_from_admin(r.get("id"), r.get("username")),
         })
 
     last_event = _q1("SELECT MAX(created_at) AS ts FROM usage_events")

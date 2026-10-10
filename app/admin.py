@@ -115,7 +115,15 @@ def admin_digest_preview():
     target = User.get_by_username(username)
     if target is None:
         abort(404)
-    from app.admin_privacy import is_hidden_from_admins
+    from app.admin_privacy import (
+        hidden_snapshot,
+        is_hidden_from_admins,
+        note_privacy_list_unavailable,
+    )
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        abort(404)
     if is_hidden_from_admins(target.id):
         abort(404)
     from app.bigquery_client import get_bigquery_client
@@ -171,10 +179,18 @@ def _block_hidden_user_impersonation():
         return None
     if not getattr(current_user, "is_authenticated", False):
         return None
-    from app.admin_privacy import is_hidden_from_admins
+    from app.admin_privacy import (
+        hidden_snapshot,
+        is_hidden_from_admins,
+        note_privacy_list_unavailable,
+    )
     from app.demo_guard import numeric_user_id
 
     uid = numeric_user_id(getattr(current_user, "id", None))
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        abort(404)
     if uid is not None and is_hidden_from_admins(uid):
         abort(404)
     return None
@@ -214,16 +230,23 @@ def admin_private_accounts():
                 flash(info, "danger")
         return redirect(url_for("admin_private_accounts"))
 
+    from app.admin_privacy import hidden_snapshot, note_privacy_list_unavailable
+
+    snap = hidden_snapshot()
     rows = []
-    for row in list_hidden_users():
-        rows.append({
-            "username": row.get("username") or "",
-            "added_label": format_privacy_since(row.get("added_at")),
-        })
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+    else:
+        for row in list_hidden_users():
+            rows.append({
+                "username": row.get("username") or "",
+                "added_label": format_privacy_since(row.get("added_at")),
+            })
     return render_template(
         "admin_private.html",
         title="Admin: private accounts",
         hidden_users=rows,
+        list_unavailable=not snap["available"],
     )
 
 
@@ -246,7 +269,15 @@ def admin_impersonate(username):
         flash("You can't impersonate yourself.", "warning")
         return redirect(url_for("admin_audit"))
 
-    from app.admin_privacy import is_hidden_from_admins
+    from app.admin_privacy import (
+        hidden_snapshot,
+        is_hidden_from_admins,
+        note_privacy_list_unavailable,
+    )
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        abort(404)
     if is_hidden_from_admins(target.id):
         abort(404)
 
@@ -360,8 +391,19 @@ def admin_audit():
     by_kind_rows = []
 
     if account:
-        from app.admin_privacy import hidden_tenant_id_set
+        from app.admin_privacy import (
+            hidden_snapshot,
+            hidden_tenant_id_set,
+            note_privacy_list_unavailable,
+        )
         from app.db import fetch_all
+
+        snap = hidden_snapshot()
+        if not snap["available"]:
+            # An account-name probe cannot be proven free of a private
+            # book when the list itself did not load.
+            note_privacy_list_unavailable()
+            abort(404)
 
         owners = []
         try:
@@ -559,13 +601,9 @@ def admin_users():
         )
         r["trial_days"] = _days_since(r.get("trial_started_at"))
 
-    from app.admin_privacy import hidden_user_id_set
-    hidden_ids = hidden_user_id_set()
+    from app.admin_privacy import redact_from_admin
     for r in rows:
-        try:
-            private = int(r.get("id") or 0) in hidden_ids
-        except (TypeError, ValueError):
-            private = False
+        private = redact_from_admin(r.get("id"), r.get("username"))
         r["private_from_admin"] = private
         if private:
             # Counts stay. Account names, masks, and any dollar fields do not.
@@ -753,13 +791,9 @@ def admin_feedback():
     show = (request.args.get("show") or "open").strip().lower()
     only_unresolved = show != "all"
     rows = list_feedback(only_unresolved=only_unresolved, limit=200)
-    from app.admin_privacy import hidden_user_id_set
-    hidden_ids = hidden_user_id_set()
+    from app.admin_privacy import redact_from_admin
     for row in rows:
-        try:
-            private = int(row.get("user_id") or 0) in hidden_ids
-        except (TypeError, ValueError):
-            private = False
+        private = redact_from_admin(row.get("user_id"), row.get("username"))
         row["private_from_admin"] = private
         if private:
             # A position URL is a symbol. The message they typed stays;

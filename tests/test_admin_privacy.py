@@ -512,3 +512,155 @@ def test_ops_ping_drops_hidden_account_id(world, monkeypatch):
     )
     assert SECRET_ACCOUNT not in captured["text"]
     assert world["friend"] in captured["text"]
+
+
+def test_unscoped_admin_read_fails_closed_when_hidden_list_errors(world, monkeypatch):
+    """A Postgres error must not turn an admin read into every account."""
+    from flask import get_flashed_messages
+
+    from app.admin_privacy import PRIVACY_LIST_UNAVAILABLE, hidden_snapshot
+    from app.demo_guard import DEMO_TENANT_ID
+    from app.routes import _tenants_for_scope
+    from app.tenant_scope import filter_df_by_tenant_ids, tenant_sql_and
+
+    from app.db import execute
+
+    operator_tid = _link_tenant(world["operator_id"], "ZZOPERATOR-OWN-8841")
+    execute(
+        "INSERT INTO user_accounts (user_id, account_name) VALUES (%s, %s)",
+        (world["operator_id"], "ZZOPERATOR-OWN-8841"),
+    )
+    execute(
+        "INSERT INTO user_accounts (user_id, account_name) VALUES (%s, %s)",
+        (world["visible_id"], SHARED_LABEL),
+    )
+
+    def _boom():
+        raise RuntimeError("postgres down")
+
+    monkeypatch.setattr("app.admin_privacy._load_hidden_snapshot", _boom)
+    app = world["app"]
+    frame = pd.DataFrame([
+        {"tenant_id": world["friend_tid"], "account": SECRET_ACCOUNT, "symbol": SECRET_SYMBOL},
+        {"tenant_id": world["visible_tid"], "account": SHARED_LABEL, "symbol": "SPY"},
+        {"tenant_id": operator_tid, "account": "ZZOPERATOR-OWN-8841", "symbol": "QQQ"},
+        {"tenant_id": DEMO_TENANT_ID, "account": "Demo Account", "symbol": "DIA"},
+    ])
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        snap = hidden_snapshot()
+        assert snap["available"] is False
+        # The failure stays fail-closed for the rest of this request.
+        # It must not be remembered as "nobody is hidden".
+        assert hidden_snapshot()["available"] is False
+        sql = tenant_sql_and(None)
+        assert sql != ""
+        assert "NOT IN" not in sql
+        assert world["friend_tid"] not in sql
+        assert world["visible_tid"] not in sql
+        assert operator_tid in sql
+        assert DEMO_TENANT_ID in sql
+        kept = filter_df_by_tenant_ids(frame, None)
+        assert set(kept["tenant_id"]) == {operator_tid, DEMO_TENANT_ID}
+        assert SECRET_ACCOUNT not in set(kept["account"])
+        assert SECRET_SYMBOL not in set(kept["symbol"])
+        missing = pd.DataFrame({"x": [1, 2]})
+        assert filter_df_by_tenant_ids(missing, None).empty
+        scope = _tenants_for_scope("")
+        assert scope is not None
+        assert operator_tid in scope
+        assert DEMO_TENANT_ID in scope
+        assert world["friend_tid"] not in scope
+        assert world["visible_tid"] not in scope
+        assert PRIVACY_LIST_UNAVAILABLE in get_flashed_messages()
+
+        # A caller's own explicit tenant list does not consult the outage.
+        friend_sql = tenant_sql_and([world["friend_tid"]])
+        assert friend_sql == f"AND tenant_id IN ('{world['friend_tid']}')"
+        friend_kept = filter_df_by_tenant_ids(frame, [world["friend_tid"]])
+        assert list(friend_kept["tenant_id"]) == [world["friend_tid"]]
+
+    with app.test_request_context(f"/positions?tenant={world['friend_tid']}"):
+        _as(app, world["operator_id"])
+        with pytest.raises(NotFound):
+            _tenants_for_scope("")
+        assert PRIVACY_LIST_UNAVAILABLE in get_flashed_messages()
+
+    with app.test_request_context("/positions"):
+        _as(app, world["friend_id"])
+        own = _tenants_for_scope("")
+        assert world["friend_tid"] in own
+        own_sql = tenant_sql_and(own)
+        assert world["friend_tid"] in own_sql
+        assert "1 = 0" not in own_sql
+        own_kept = filter_df_by_tenant_ids(frame, own)
+        assert SECRET_ACCOUNT in set(own_kept["account"])
+
+    http = world["http"]
+    _login(http, world["operator"])
+    users = http.get("/admin/users")
+    body = users.get_data(as_text=True)
+    assert users.status_code == 200
+    assert PRIVACY_LIST_UNAVAILABLE in body
+    assert SECRET_ACCOUNT not in body
+    assert SHARED_LABEL not in body
+    assert "ZZOPERATOR-OWN-8841" in body
+    private = http.get("/admin/private")
+    private_body = private.get_data(as_text=True)
+    assert PRIVACY_LIST_UNAVAILABLE in private_body
+    assert "No one is on this list." not in private_body
+    assert SECRET_ACCOUNT not in private_body
+    audit = http.get(f"/admin/audit?account={SECRET_ACCOUNT}&symbol={SECRET_SYMBOL}")
+    assert audit.status_code == 404
+    assert PRIVACY_LIST_UNAVAILABLE in audit.get_data(as_text=True)
+    assert SECRET_MONEY not in audit.get_data(as_text=True)
+    _logout(http)
+
+    # The outage is not cached into the next request as an empty success.
+    monkeypatch.undo()
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        recovered = hidden_snapshot()
+        assert recovered["available"] is True
+        assert world["friend_tid"] in recovered["tenant_ids"]
+        recovered_sql = tenant_sql_and(None)
+        assert world["friend_tid"] in recovered_sql
+        assert "NOT IN" in recovered_sql
+
+
+def test_add_updates_the_hidden_list_immediately(world, db_conn):
+    """An add in this request is visible before the next request starts.
+
+    The list is cached on flask.g only. Add clears that cache, so the
+    next read in the same request includes the new tenant. The warehouse
+    cache key is the SQL predicate, which changes with the new id.
+    A later request loads from Postgres again; nothing process-wide
+    keeps the previous set.
+    """
+    from app.admin_privacy import add_hidden_user, hidden_snapshot
+    from app.tenant_scope import tenant_sql_and
+
+    other = _unique("priv_fresh")
+    other_id = _create_user(db_conn, other)
+    world["user_ids"].append(other_id)
+    other_tid = _link_tenant(other_id, "ZZFRESH-ACCT-8841")
+    app = world["app"]
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        before = hidden_snapshot()
+        assert before["available"] is True
+        assert other_tid not in before["tenant_ids"]
+        assert world["friend_tid"] in before["tenant_ids"]
+        ok, _info = add_hidden_user(other_id, world["operator_id"])
+        assert ok
+        after = hidden_snapshot()
+        assert other_tid in after["tenant_ids"]
+        sql = tenant_sql_and(None)
+        assert other_tid in sql
+        assert "NOT IN" in sql
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        again = hidden_snapshot()
+        assert again["available"] is True
+        assert other_tid in again["tenant_ids"]
+        assert other_tid in tenant_sql_and(None)

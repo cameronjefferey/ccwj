@@ -54,8 +54,10 @@
 </div>
 
 <div class="ap-card">
-    <h2>Hidden from admins <span style="color:#8a97b1;font-weight:500;">— {{ hidden_users|length }}</span></h2>
-    {% if hidden_users %}
+    <h2>Hidden from admins{% if not list_unavailable %} <span style="color:#8a97b1;font-weight:500;">— {{ hidden_users|length }}</span>{% endif %}</h2>
+    {% if list_unavailable %}
+    <p class="ap-empty">Private-account list unavailable, try again</p>
+    {% elif hidden_users %}
     <table class="ap-table">
         <thead>
             <tr>

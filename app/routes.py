@@ -781,15 +781,29 @@ def _deny_hidden_admin_tenants(tenant_ids):
     """404 when an admin URL names a private-from-admin tenant.
 
     The demo tenant and the viewer's own accounts are not in the hidden
-    set, so those URLs still resolve. A lookup miss leaves the set empty
-    and does not 404 (same fail-open as the unscoped SQL exclusion).
+    set, so those URLs still resolve. When the list cannot be loaded,
+    any tenant that is not the admin's own or the demo tenant 404s.
+    An empty exclusion set from a failed lookup must not let the URL
+    through.
     """
-    from app.admin_privacy import hidden_tenant_id_set
+    from app.admin_privacy import (
+        fail_closed_allow_tenant_ids,
+        hidden_snapshot,
+        note_privacy_list_unavailable,
+    )
 
-    blocked = hidden_tenant_id_set()
+    requested = [tid for tid in (tenant_ids or []) if tid]
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        allow = set(fail_closed_allow_tenant_ids())
+        if any(tid not in allow for tid in requested):
+            abort(404)
+        return
+    blocked = snap["tenant_ids"]
     if not blocked:
         return
-    if any(tid in blocked for tid in (tenant_ids or [])):
+    if any(tid in blocked for tid in requested):
         abort(404)
 
 
@@ -798,12 +812,27 @@ def _drop_hidden_admin_label_matches(matched):
 
     A colliding display label can belong to a visible account and a
     private one. Keep the visible ids. When every match is private,
-    404 instead of rendering that book.
+    404 instead of rendering that book. When the list cannot be loaded,
+    keep only the admin's own tenants and the demo tenant.
     """
-    from app.admin_privacy import hidden_tenant_id_set
+    from app.admin_privacy import (
+        fail_closed_allow_tenant_ids,
+        hidden_snapshot,
+        note_privacy_list_unavailable,
+    )
 
-    blocked = hidden_tenant_id_set()
-    if not blocked or not matched:
+    if not matched:
+        return matched
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        allow = set(fail_closed_allow_tenant_ids())
+        kept = [tid for tid in matched if tid in allow]
+        if not kept:
+            abort(404)
+        return kept
+    blocked = snap["tenant_ids"]
+    if not blocked:
         return matched
     kept = [tid for tid in matched if tid not in blocked]
     if matched and not kept:
@@ -839,7 +868,9 @@ def _tenants_for_scope(selected_account=None):
          to all owned accounts.
       4. No selection → admin: ``None`` (no SQL filter, except paper and
          private-from-admin tenants dropped in ``tenant_sql_and``);
-         user: all owned.
+         user: all owned. If the private-from-admin list cannot be
+         loaded, the admin scope is that admin's own tenants plus the
+         demo tenant, never ``None``.
 
     An explicit ``?tenant=`` / ``?tenants=`` that matches nothing the
     user owns is empty, not the full book. An admin who names a
@@ -902,6 +933,19 @@ def _tenants_for_scope(selected_account=None):
         return _unknown_scope_result()
 
     if admin and not selected:
+        from app.admin_privacy import (
+            fail_closed_allow_tenant_ids,
+            hidden_snapshot,
+            note_privacy_list_unavailable,
+        )
+
+        snap = hidden_snapshot()
+        if not snap["available"]:
+            # None means "every tenant" downstream. During an outage that
+            # would show the private books. Hand back an explicit allow-list
+            # instead: this admin's accounts and the demo tenant.
+            note_privacy_list_unavailable()
+            return _apply_group_scope(fail_closed_allow_tenant_ids(), uid)
         return _apply_group_scope(None, uid)
 
     def _match_label(row, want_lower: str) -> bool:

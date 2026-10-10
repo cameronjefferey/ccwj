@@ -38,22 +38,24 @@ def _demo_tenant_id() -> str:
     return DEMO_TENANT_ID
 
 
+PRIVACY_LIST_UNAVAILABLE = "Private-account list unavailable, try again"
+
+
 def is_hidden_from_admins(user_id) -> bool:
-    """True when this user is on the list. Lookup errors return False."""
+    """True when this user is on the list.
+
+    A lookup error returns True. An admin action that cannot load the
+    list must not open a book it could not classify. This does not
+    flash a message; request handlers that render a page do that.
+    """
     try:
         uid = int(user_id)
     except (TypeError, ValueError):
         return False
-    try:
-        from app.db import fetch_one
-        row = fetch_one(
-            "SELECT 1 AS ok FROM admin_hidden_users WHERE user_id = %s",
-            (uid,),
-        )
-        return row is not None
-    except Exception:
-        _log.exception("admin privacy lookup failed for user_id=%s", uid)
-        return False
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        return True
+    return uid in snap["user_ids"]
 
 
 def hidden_record(user_id):
@@ -191,98 +193,173 @@ def _impersonation_active() -> bool:
 
 
 def _clear_request_cache() -> None:
+    """Drop this request's copy of the list so the next read hits Postgres.
+
+    The cache lives only on ``flask.g``. There is no process-wide or
+    Redis copy. An add or remove in this request is visible to the next
+    ``hidden_snapshot()`` call, and the next request loads again.
+    Warehouse query cache keys include the tenant predicate, so a new
+    exclusion set is a different SQL string and cannot reuse the old rows.
+    """
+    try:
+        from flask import g, has_request_context
+        if has_request_context() and hasattr(g, "_hidden_snapshot"):
+            delattr(g, "_hidden_snapshot")
+    except Exception:
+        pass
+
+
+def note_privacy_list_unavailable() -> None:
+    """Flash the outage sentence once per request."""
+    try:
+        from flask import flash, g, has_request_context
+        if not has_request_context():
+            return
+        if getattr(g, "_privacy_list_noted", False):
+            return
+        g._privacy_list_noted = True
+        flash(PRIVACY_LIST_UNAVAILABLE, "warning")
+    except Exception:
+        _log.exception("could not flash privacy-list outage")
+
+
+def hidden_snapshot() -> dict:
+    """``{available, user_ids, tenant_ids}`` for this request.
+
+    ``available`` is False when Postgres could not answer. That is not
+    an empty list: an empty list means the list loaded and nobody (left
+    after the exemptions) is on it. A failure is remembered for this
+    request only, so one outage does not retry on every query, and the
+    next request tries again. ``add_hidden_user`` / ``remove_hidden_user``
+    clear it immediately.
+    """
+    try:
+        from flask import g, has_request_context
+        if has_request_context() and hasattr(g, "_hidden_snapshot"):
+            return g._hidden_snapshot
+    except Exception:
+        pass
+    try:
+        user_ids, tenant_ids = _load_hidden_snapshot()
+        snap = {
+            "available": True,
+            "user_ids": user_ids,
+            "tenant_ids": tenant_ids,
+        }
+    except Exception:
+        _log.exception("admin privacy list lookup failed")
+        snap = {
+            "available": False,
+            "user_ids": frozenset(),
+            "tenant_ids": frozenset(),
+        }
     try:
         from flask import g, has_request_context
         if has_request_context():
-            g._hidden_tenant_ids = None
-            g._hidden_user_ids = None
+            g._hidden_snapshot = snap
     except Exception:
         pass
+    return snap
 
 
 def hidden_user_id_set() -> set[int]:
-    """User ids on the list. Empty when the lookup fails."""
-    try:
-        from flask import g, has_request_context
-        if has_request_context():
-            cached = getattr(g, "_hidden_user_ids", None)
-            if cached is not None:
-                return cached
-    except Exception:
-        cached = None
-    ids = _load_hidden_user_ids()
-    try:
-        from flask import g, has_request_context
-        if has_request_context():
-            g._hidden_user_ids = ids
-    except Exception:
-        pass
-    return ids
-
-
-def _load_hidden_user_ids() -> set[int]:
-    try:
-        from app.db import fetch_all
-        rows = fetch_all("SELECT user_id FROM admin_hidden_users") or []
-    except Exception:
-        _log.exception("admin privacy user-id lookup failed")
-        return set()
-    out = set()
-    for row in rows:
-        try:
-            out.add(int(row["user_id"]))
-        except (TypeError, ValueError, KeyError):
-            continue
-    return out
+    """User ids on the list. Raises when the list could not be loaded."""
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        raise RuntimeError(PRIVACY_LIST_UNAVAILABLE)
+    return set(snap["user_ids"])
 
 
 def hidden_tenant_id_set() -> set[str]:
     """Tenant ids an admin/unscoped read must drop.
 
     Never includes the demo tenant, an admin's own accounts, or the
-    signed-in viewer's own accounts. Empty when the lookup fails (the
-    same fail-open as the paper-tenant exclusion: a Postgres blip must
-    not blank every admin page). Explicit ``?tenant=`` URLs still 404
-    when this set positively contains the id.
+    signed-in viewer's own accounts. Raises when the list could not be
+    loaded — callers must fail closed instead of treating that as an
+    empty exclusion set.
     """
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        raise RuntimeError(PRIVACY_LIST_UNAVAILABLE)
+    return set(snap["tenant_ids"])
+
+
+def fail_closed_allow_tenant_ids() -> list[str]:
+    """Tenants an unscoped admin read may still show when the list is down.
+
+    The signed-in admin's own accounts, plus the demo tenant. When the
+    admin's own accounts cannot be loaded either, the demo tenant is
+    still the only id. Never an empty predicate that means everyone.
+    """
+    from app.demo_guard import DEMO_TENANT_ID
+    from app.tenant_scope import sanitize_tenant_id
+
+    ids = []
+    demo = sanitize_tenant_id(DEMO_TENANT_ID)
+    if demo:
+        ids.append(demo)
+    viewer = _viewer_id()
+    if viewer is None:
+        return ids
     try:
-        from flask import g, has_request_context
-        if has_request_context():
-            cached = getattr(g, "_hidden_tenant_ids", None)
-            if cached is not None:
-                return cached
+        from app.models import get_tenant_ids_for_user
+        owned = get_tenant_ids_for_user(viewer) or []
     except Exception:
-        pass
-    ids = _load_hidden_tenant_ids()
-    try:
-        from flask import g, has_request_context
-        if has_request_context():
-            g._hidden_tenant_ids = ids
-    except Exception:
-        pass
+        _log.exception("admin own-tenant lookup failed during privacy outage")
+        return ids
+    for tenant_id in owned:
+        cleaned = sanitize_tenant_id(tenant_id)
+        if cleaned and cleaned not in ids:
+            ids.append(cleaned)
     return ids
 
 
-def _load_hidden_tenant_ids() -> set[str]:
+def redact_from_admin(user_id, username=None) -> bool:
+    """True when an admin page should hide this person's book.
+
+    When the list cannot be loaded, everyone except the signed-in admin
+    and the demo user is hidden, and the outage sentence is flashed once.
+    """
+    snap = hidden_snapshot()
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        uid = None
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        if (username or "").strip().lower() == "demo":
+            return False
+        viewer = _viewer_id()
+        return not (viewer is not None and uid == viewer)
+    if uid is None:
+        return False
+    return uid in snap["user_ids"]
+
+
+def _load_hidden_snapshot() -> tuple[frozenset[int], frozenset[str]]:
+    """Load user ids and tenant ids. Raises on a database error."""
+    from app.db import fetch_all
     from app.demo_guard import DEMO_TENANT_ID
     from app.models import is_admin
     from app.tenant_scope import sanitize_tenant_id
 
     viewer = _viewer_id()
-    try:
-        from app.db import fetch_all
-        rows = fetch_all(
-            """
-            SELECT bt.tenant_id, bt.user_id, u.username
-            FROM admin_hidden_users h
-            JOIN broker_tenants bt ON bt.user_id = h.user_id
-            JOIN users u ON u.id = h.user_id
-            """
-        ) or []
-    except Exception:
-        _log.exception("admin privacy tenant lookup failed")
-        return set()
-    out = set()
+    user_rows = fetch_all("SELECT user_id FROM admin_hidden_users") or []
+    user_ids = set()
+    for row in user_rows:
+        try:
+            user_ids.add(int(row["user_id"]))
+        except (TypeError, ValueError, KeyError):
+            continue
+    rows = fetch_all(
+        """
+        SELECT bt.tenant_id, bt.user_id, u.username
+        FROM admin_hidden_users h
+        JOIN broker_tenants bt ON bt.user_id = h.user_id
+        JOIN users u ON u.id = h.user_id
+        """
+    ) or []
+    tenant_ids = set()
     for row in rows:
         tid = sanitize_tenant_id(row.get("tenant_id"))
         if not tid or tid == DEMO_TENANT_ID:
@@ -296,8 +373,8 @@ def _load_hidden_tenant_ids() -> set[str]:
             owner = None
         if viewer is not None and owner == viewer:
             continue
-        out.add(tid)
-    return out
+        tenant_ids.add(tid)
+    return frozenset(user_ids), frozenset(tenant_ids)
 
 
 def find_user_by_username_or_email(raw: str):
