@@ -571,6 +571,58 @@ def test_missing_broker_basis_uses_the_opening_estimate():
     assert "did not report a cost basis" in result["hover"]
 
 
+def test_reopened_lot_does_not_carry_the_pre_history_basis():
+    from app.all_in_cost import _stamp_rows
+
+    fills = [
+        _fill(
+            symbol="XYZ",
+            trade_date="2026-01-05",
+            action="equity_sell",
+            quantity=100,
+            price=60,
+        ),
+        _fill(
+            symbol="XYZ",
+            trade_date="2026-03-02",
+            action="equity_buy",
+            quantity=100,
+            price=100,
+        ),
+    ]
+    result = all_in_cost(
+        fills,
+        shares=100,
+        cost_basis=0,
+        opening_shares=100,
+        opening_basis=5000,
+        symbol="XYZ",
+    )
+    assert result["cycle_start"] == "2026-03-02"
+    assert result["equity_basis"] == 10000.00
+    assert result["equity_per_share"] == 100.00
+    assert result["basis_estimated"] is False
+
+    rows = [{"tenant_id": "snaptrade:ddog", "symbol": "XYZ"}]
+    holdings = [{
+        "tenant_id": "snaptrade:ddog",
+        "symbol": "XYZ",
+        "instrument_type": "Equity",
+        "quantity": 100,
+        "cost_basis": 0,
+    }]
+    openings = [{
+        "tenant_id": "snaptrade:ddog",
+        "symbol": "XYZ",
+        "opening_qty": 100,
+        "est_amount": -5000,
+        "price_source": "market_close",
+    }]
+    _stamp_rows(rows, holdings, fills, [], openings=openings)
+    assert rows[0]["equity_per_share"] == 100.00
+    assert rows[0]["basis_estimated"] is False
+
+
 def test_snapshot_open_call_counts_when_the_sale_is_not_in_the_tape():
     fills = [
         _fill(symbol="JEPQ", trade_date="2026-05-01", action="equity_buy",

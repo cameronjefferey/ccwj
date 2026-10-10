@@ -769,6 +769,7 @@ def strategies():
             format_record_span,
             grouped_strategies,
             months_from_units,
+            overlay_month_counts,
             overlay_breakdown_counts,
             stamp_grouped_counts,
             symbol_trade_counts,
@@ -878,18 +879,29 @@ def strategies():
         # pooled across accounts (winners / decided), not averaged.
         latest_trend = {}
         recent_wr_3m = {}
+        grouped_months = pd.DataFrame()
+        rolled_trend = roll_strategy_months(trend_df)
         if book_units:
             grouped_months = months_from_units(book_units)
             if not grouped_months.empty:
-                trend_df = grouped_months
-        rolled_trend = roll_strategy_months(trend_df)
-        if not trend_df.empty and "month_start" in trend_df.columns:
+                rolled_trend = overlay_month_counts(
+                    rolled_trend, grouped_months,
+                )
+        if not rolled_trend.empty:
+            grouped_month_strategies = set(
+                grouped_months["strategy"].astype(str)
+            ) if not grouped_months.empty else set()
             for strat in rolled_trend["strategy"].unique():
                 strat_rows = rolled_trend[rolled_trend["strategy"] == strat]
-                raw_rows = trend_df[trend_df["strategy"] == strat]
                 if strat_rows.empty:
                     continue
-                latest_trend[strat] = trend_signal_for_strategy(raw_rows)
+                if str(strat) in grouped_month_strategies:
+                    signal_rows = grouped_months[
+                        grouped_months["strategy"] == strat
+                    ]
+                else:
+                    signal_rows = trend_df[trend_df["strategy"] == strat]
+                latest_trend[strat] = trend_signal_for_strategy(signal_rows)
                 prior = strat_rows.iloc[:-1].tail(3)
                 decided = float(prior["num_winners"].sum() + prior["num_losers"].sum()) if not prior.empty else 0
                 if decided:

@@ -204,7 +204,19 @@ def all_in_cost(
     episode = replay["episode"]
     broker = _num(cost_basis) if cost_basis is not None and _num(cost_basis) > _EPS else 0.0
     inferred = _infer_basis(events, episode) if episode is not None else 0.0
-    extra = _num(opening_basis) if _num(opening_basis) > _EPS else 0.0
+    # ``opening_basis`` belongs only to the synthetic pre-history lot.
+    # Once that lot goes flat, _replay_shares starts a new episode; carrying
+    # the old estimate into a later repurchase would count two share bases.
+    # Some direct callers provide the basis without the opening quantity; no
+    # replay episode then means the estimate is the only available share cost.
+    carries_opening_lot = bool(
+        episode is None or episode.get("origin") == "opening_balance"
+    )
+    extra = (
+        _num(opening_basis)
+        if carries_opening_lot and _num(opening_basis) > _EPS
+        else 0.0
+    )
     if broker > _EPS:
         basis = broker
         basis_estimated = False

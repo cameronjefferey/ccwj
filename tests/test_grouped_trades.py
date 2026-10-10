@@ -13,6 +13,7 @@ from app.grouped_trades import (
     format_record_span,
     group_book_trades,
     months_from_units,
+    overlay_month_counts,
     plain_label,
     stamp_grouped_counts,
 )
@@ -105,6 +106,48 @@ def test_iron_condor_is_one_trade_with_the_net_of_all_four_legs():
     months = months_from_units(units)
     assert int(months.iloc[0]["trades_closed"]) == 1
     assert int(months.iloc[0]["num_winners"]) == 1
+
+
+def test_grouped_month_counts_do_not_move_mart_dollars():
+    mart = pd.DataFrame([
+        {
+            "strategy": "Call Spread",
+            "month_start": "2025-01-01",
+            "trades_closed": 1,
+            "num_winners": 1,
+            "num_losers": 0,
+            "total_pnl": 100,
+            "win_rate_pct": 100,
+            "avg_pnl": 100,
+        },
+        {
+            "strategy": "Call Spread",
+            "month_start": "2025-02-01",
+            "trades_closed": 1,
+            "num_winners": 0,
+            "num_losers": 1,
+            "total_pnl": -25,
+            "win_rate_pct": 0,
+            "avg_pnl": -25,
+        },
+    ])
+    grouped = pd.DataFrame([{
+        "strategy": "Call Spread",
+        "month_start": "2025-02-01",
+        "trades_closed": 1,
+        "num_winners": 1,
+        "num_losers": 0,
+        "total_pnl": 75,
+    }])
+    overlaid = overlay_month_counts(mart, grouped)
+    january = overlaid.iloc[0]
+    february = overlaid.iloc[1]
+    assert january["total_pnl"] == 100
+    assert january["trades_closed"] == 0
+    assert pd.isna(january["avg_pnl"])
+    assert february["total_pnl"] == -25
+    assert february["trades_closed"] == 1
+    assert february["num_winners"] == 1
 
 
 def test_strangle_pairs_the_call_and_the_put():
