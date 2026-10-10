@@ -714,6 +714,57 @@ def months_from_units(units) -> pd.DataFrame:
     return frame.sort_values(["strategy", "month_start"]).reset_index(drop=True)
 
 
+def overlay_month_counts(mart_months, grouped_months) -> pd.DataFrame:
+    """Use grouped trade counts without replacing the mart's monthly dollars.
+
+    A structure can close its legs in different months. Its grouped outcome
+    belongs to the final close month, while each leg's realized P&L belongs to
+    the month that leg actually closed. Replacing the mart frame with grouped
+    units moved all dollars to the final month; this overlays only the count
+    fields that grouping owns.
+    """
+    if mart_months is None or getattr(mart_months, "empty", True):
+        return mart_months
+    if grouped_months is None or getattr(grouped_months, "empty", True):
+        return mart_months
+
+    out = mart_months.copy()
+    grouped = grouped_months.copy()
+    out["month_start"] = pd.to_datetime(out["month_start"], errors="coerce")
+    grouped["month_start"] = pd.to_datetime(
+        grouped["month_start"], errors="coerce"
+    )
+    grouped = grouped.dropna(subset=["month_start"])
+    grouped_strategies = set(grouped["strategy"].astype(str))
+    tallies = {
+        (str(row["strategy"]), row["month_start"]): {
+            "trades_closed": int(_num(row.get("trades_closed"))),
+            "num_winners": int(_num(row.get("num_winners"))),
+            "num_losers": int(_num(row.get("num_losers"))),
+        }
+        for _, row in grouped.iterrows()
+    }
+
+    for idx, row in out.iterrows():
+        strategy = str(row.get("strategy") or "")
+        if strategy not in grouped_strategies:
+            continue
+        key = (strategy, row["month_start"])
+        tally = tallies.get(key, {
+            "trades_closed": 0, "num_winners": 0, "num_losers": 0,
+        })
+        for name, value in tally.items():
+            out.at[idx, name] = value
+
+    decided = out["num_winners"] + out["num_losers"]
+    out["win_rate_pct"] = (
+        out["num_winners"] / decided.replace(0, pd.NA) * 100
+    )
+    trades = out["trades_closed"].replace(0, pd.NA)
+    out["avg_pnl"] = out["total_pnl"] / trades
+    return out.sort_values(["strategy", "month_start"]).reset_index(drop=True)
+
+
 def _trend_signal(months) -> str:
     """Same rule as mart_strategy_trend: two prior months, then ±10%."""
     if len(months) < 3:
