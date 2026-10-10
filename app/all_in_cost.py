@@ -207,8 +207,10 @@ def all_in_cost(
     # ``opening_basis`` belongs only to the synthetic pre-history lot.
     # Once that lot goes flat, _replay_shares starts a new episode; carrying
     # the old estimate into a later repurchase would count two share bases.
+    # Some direct callers provide the basis without the opening quantity; no
+    # replay episode then means the estimate is the only available share cost.
     carries_opening_lot = bool(
-        episode and episode.get("origin") == "opening_balance"
+        episode is None or episode.get("origin") == "opening_balance"
     )
     extra = (
         _num(opening_basis)
