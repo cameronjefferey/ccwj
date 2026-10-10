@@ -1480,6 +1480,10 @@ def test_bot_user_agents_internal_ip_and_opt_out(monkeypatch):
     from app.funnel import human_traffic_sql, internal_usernames, is_internal_account
     names = internal_usernames()
     sql = human_traffic_sql()
+    # `visit_id IS NULL OR NOT EXISTS` cannot be hashed. NULL visit ids
+    # already fail the equality, so the OR only inflates the plan.
+    assert "visit_id IS NULL OR NOT EXISTS" not in sql
+    assert "user_id IS NULL OR NOT EXISTS" not in sql
     for name in (
         "cameron",
         "cameron3",
@@ -2450,10 +2454,64 @@ def test_left_out_rows_truncate_the_agent_and_drop_identity_fields():
     assert "funnel_internal_visits" in sql
     assert "bot_hit" in sql
     assert "owner_hit" in sql
+    assert "LEFT JOIN bot_visits" in sql
+    assert "LEFT JOIN owner_visits" in sql
+    assert "EXISTS (" not in sql
     assert "Reddit/" in sql
     assert "rdt_cid" not in sql
     assert "email" not in sql
     assert "ip_address" not in sql
+
+
+def test_admin_analytics_visit_lookups_are_one_scan():
+    """The Paid left-out card must not probe funnel_events once per visit.
+
+    That correlated EXISTS, with no visit_id index, sequential-scanned the
+    table for every /go/real-pnl visit. Two of those queries on the default
+    tab made /admin/analytics sit until the proxy timed out.
+    """
+    import inspect
+
+    from app.funnel import _left_out_ctes, _paid_window_sql, human_traffic_sql
+    from app.models import _migrate_funnel_events
+
+    sql = _left_out_ctes("/go/real-pnl", _paid_window_sql("7d"))
+    assert "EXISTS (" not in sql
+    assert "LEFT JOIN bot_visits" in sql
+    assert "LEFT JOIN owner_visits" in sql
+    assert "bot_hit" in sql
+    assert "owner_hit" in sql
+    human = human_traffic_sql()
+    assert "visit_id IS NULL OR NOT EXISTS" not in human
+    assert "NOT EXISTS (" in human
+
+    migration = inspect.getsource(_migrate_funnel_events)
+    assert "idx_funnel_events_visit" in migration
+    assert "ON funnel_events (visit_id)" in migration
+
+    if not os.environ.get("TEST_DATABASE_URL"):
+        return
+    from app.db import fetch_all, fetch_one
+
+    index = fetch_one(
+        """
+        SELECT indexdef
+          FROM pg_indexes
+         WHERE schemaname = 'public'
+           AND indexname = 'idx_funnel_events_visit'
+        """
+    )
+    assert index is not None
+    assert "visit_id" in (index.get("indexdef") or "")
+
+    plan_rows = fetch_all(
+        "EXPLAIN "
+        + sql
+        + " SELECT COUNT(*) FROM marked"
+    )
+    plan = "\n".join(str(next(iter(row.values()))) for row in plan_rows)
+    # A correlated EXISTS shows up as a SubPlan and is re-run per visit.
+    assert "SubPlan" not in plan
 
 
 def test_client_seen_beacon_is_inline_before_bootstrap():

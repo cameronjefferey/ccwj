@@ -930,6 +930,15 @@ def _migrate_funnel_events():
             ON funnel_events (utm_source, utm_campaign, created_at DESC)
             """
         )
+        # Visit lookups (bot / owner rows on the same cookie) are the
+        # admin-analytics filter. Without this, each visit was a
+        # sequential scan of funnel_events and /admin/analytics hung.
+        execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_funnel_events_visit
+            ON funnel_events (visit_id)
+            """
+        )
         for column, typedef in (
             ("landing", "TEXT"),
             ("variant", "TEXT"),

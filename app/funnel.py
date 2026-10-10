@@ -586,25 +586,32 @@ def human_traffic_sql() -> str:
     is separate: old rows
     are NULL and still count. A new page view or signup start stays
     FALSE until the inline head beacon sets TRUE.
+
+    A NULL ``visit_id`` or ``user_id`` never matches the equality inside
+    these ``NOT EXISTS`` checks, so those rows stay. Do not wrap them in
+    ``visit_id IS NULL OR NOT EXISTS``: that form stops Postgres from
+    hashing the anti-join and prices each analytics aggregate at tens of
+    millions, which is what made ``/admin/analytics`` run until the
+    proxy gave up.
     """
     quoted = _internal_username_sql()
     return (
         "(COALESCE(is_bot, FALSE) = FALSE "
-        "AND (visit_id IS NULL OR NOT EXISTS ("
+        "AND NOT EXISTS ("
         "SELECT 1 FROM funnel_internal_visits iv "
-        "WHERE iv.visit_id = funnel_events.visit_id)) "
-        "AND (user_id IS NULL OR NOT EXISTS ("
+        "WHERE iv.visit_id = funnel_events.visit_id) "
+        "AND NOT EXISTS ("
         "SELECT 1 FROM users u WHERE u.id = funnel_events.user_id "
-        f"AND lower(u.username) IN ({quoted}))) "
-        "AND (visit_id IS NULL OR NOT EXISTS ("
+        f"AND lower(u.username) IN ({quoted})) "
+        "AND NOT EXISTS ("
         "SELECT 1 FROM funnel_events owner_hit "
         "JOIN users u ON u.id = owner_hit.user_id "
         "WHERE owner_hit.visit_id = funnel_events.visit_id "
-        f"AND lower(u.username) IN ({quoted}))) "
-        "AND (visit_id IS NULL OR NOT EXISTS ("
+        f"AND lower(u.username) IN ({quoted})) "
+        "AND NOT EXISTS ("
         "SELECT 1 FROM funnel_events bot_hit "
         "WHERE bot_hit.visit_id = funnel_events.visit_id "
-        "AND COALESCE(bot_hit.is_bot, FALSE) = TRUE)))"
+        "AND COALESCE(bot_hit.is_bot, FALSE) = TRUE))"
     )
 
 
@@ -1559,6 +1566,12 @@ def _left_out_ctes(path: str, window: str) -> str:
     of the above). ``Reddit/`` is a sub-count of that last bucket. The
     SELECT lists that follow must not project visit id, IP, email, or
     click id.
+
+    Bot visits and owner visits are scanned once and joined. A correlated
+    ``EXISTS`` on ``funnel_events.visit_id`` here was a sequential scan
+    per visit (no index, and the probe could not be hashed). Two of those
+    queries on the Paid tab were enough for ``/admin/analytics`` to sit
+    until the proxy timed out with no error page.
     """
     quoted = _internal_username_sql()
     return f"""
@@ -1591,31 +1604,35 @@ def _left_out_ctes(path: str, window: str) -> str:
           FROM page_rows
          ORDER BY visit_id, created_at DESC
     ),
+    bot_visits AS (
+        SELECT DISTINCT bot_hit.visit_id
+          FROM funnel_events bot_hit
+         WHERE bot_hit.visit_id IS NOT NULL
+           AND COALESCE(bot_hit.is_bot, FALSE)
+    ),
+    owner_visits AS (
+        SELECT DISTINCT owner_hit.visit_id
+          FROM funnel_events owner_hit
+          JOIN users u ON u.id = owner_hit.user_id
+         WHERE owner_hit.visit_id IS NOT NULL
+           AND lower(u.username) IN ({quoted})
+    ),
     marked AS (
         SELECT l.visit_id,
                l.user_agent,
                l.device,
                f.reddit_app,
                CASE
-                 WHEN f.row_bot OR EXISTS (
-                   SELECT 1 FROM funnel_events bot_hit
-                    WHERE bot_hit.visit_id = f.visit_id
-                      AND COALESCE(bot_hit.is_bot, FALSE)
-                 ) THEN 'bot'
-                 WHEN EXISTS (
-                   SELECT 1 FROM funnel_internal_visits iv
-                    WHERE iv.visit_id = f.visit_id
-                 ) OR EXISTS (
-                   SELECT 1 FROM funnel_events owner_hit
-                     JOIN users u ON u.id = owner_hit.user_id
-                    WHERE owner_hit.visit_id = f.visit_id
-                      AND lower(u.username) IN ({quoted})
-                 ) THEN 'internal'
+                 WHEN f.row_bot OR bv.visit_id IS NOT NULL THEN 'bot'
+                 WHEN iv.visit_id IS NOT NULL OR ov.visit_id IS NOT NULL THEN 'internal'
                  WHEN f.beacon_false THEN 'early'
                  ELSE NULL
                END AS reason
           FROM flags f
           JOIN latest l ON l.visit_id = f.visit_id
+          LEFT JOIN bot_visits bv ON bv.visit_id = f.visit_id
+          LEFT JOIN funnel_internal_visits iv ON iv.visit_id = f.visit_id
+          LEFT JOIN owner_visits ov ON ov.visit_id = f.visit_id
     )
     """
 
