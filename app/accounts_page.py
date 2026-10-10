@@ -591,11 +591,12 @@ def accounts():
         from app.wealth import render_wealth_view
         return render_wealth_view()
 
+    # Scope first so a private-from-admin ?tenant= URL 404s before BigQuery.
+    selected_account = request.args.get("account", "")
+    display_ids = _tenants_for_scope(selected_account)
     client = get_bigquery_client()
     user_accounts = _user_account_list()
-    selected_account = request.args.get("account", "")
     account_scope_query = _accounts_scope_query(request.args)
-    display_ids = _tenants_for_scope(selected_account)
     # Full owned set in SQL so /accounts and /accounts?tenants=<one> share
     # one warehouse cache entry. Pandas slices to the URL below — filtering
     # must not change one account's P&L.

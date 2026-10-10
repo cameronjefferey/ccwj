@@ -2553,16 +2553,16 @@ def position_detail(symbol):
     # toggle — hero + one review sentence + chart stay up front. Every
     # subsequent visit (same or different symbol) renders fully expanded.
     first_visit = not request.cookies.get("ht_pd_seen")
-    client = get_bigquery_client()
-    user_accounts = _user_account_list()
-
     # Escape symbol for SQL (prevent injection)
     safe_symbol = symbol.replace("'", "''")
 
     # `_tenant_sql_and` scopes by broker-stable `tenant_id`; `?account=`
-    # maps to tenant_ids via `_tenants_for_scope`.
+    # maps to tenant_ids via `_tenants_for_scope`. Resolve that before
+    # the warehouse client so a private-from-admin URL 404s first.
     selected_account = request.args.get("account", "").strip()
     tenant_scope = _tenants_for_scope(selected_account)
+    client = get_bigquery_client()
+    user_accounts = _user_account_list()
     paper_orders = []
     try:
         from app.paper_practice import paper_orders_for_page

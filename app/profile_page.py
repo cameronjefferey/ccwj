@@ -142,6 +142,44 @@ def profile():
         if blocked:
             return blocked
         action = request.form.get("action", "")
+        if action == "set_admin_privacy":
+            from app.admin_privacy import add_hidden_user, remove_hidden_user
+            from app.demo_guard import numeric_user_id
+            from app.models import is_admin
+
+            viewer_id = numeric_user_id(getattr(current_user, "id", None))
+            enabled = (request.form.get("enabled") or "").strip() == "1"
+            if viewer_id is None:
+                flash("Sign in to change this.", "danger")
+            elif is_admin(current_user.username):
+                flash(
+                    "Admin accounts stay visible to other admins.",
+                    "warning",
+                )
+            elif enabled:
+                ok, info = add_hidden_user(viewer_id, viewer_id)
+                if ok:
+                    flash(
+                        "Private from HappyTrader admins is on. "
+                        "Admins can't see your accounts, balances, or trades.",
+                        "success",
+                    )
+                else:
+                    flash(info, "danger")
+            else:
+                if remove_hidden_user(viewer_id, viewer_id):
+                    flash(
+                        "Private from HappyTrader admins is off. "
+                        "You can turn it back on here.",
+                        "success",
+                    )
+                else:
+                    flash(
+                        "Couldn't turn that off. An admin can't do it for you.",
+                        "danger",
+                    )
+            return redirect(url_for("profile", tab="overview"))
+
         if action == "set_email":
             from app.auth import _validate_email
 
@@ -416,6 +454,19 @@ def profile():
         subscribe_offer = None
 
     saved_tz = (profile_row or {}).get("timezone") or "America/New_York"
+    admin_privacy = {"on": False, "since": ""}
+    try:
+        from app.admin_privacy import format_privacy_since, hidden_record
+        from app.models import is_admin as _is_admin_user
+
+        record = hidden_record(current_user.id)
+        admin_privacy = {
+            "on": record is not None,
+            "since": format_privacy_since((record or {}).get("added_at")),
+            "show": not _is_admin_user(getattr(current_user, "username", None)),
+        }
+    except Exception:
+        admin_privacy = {"on": False, "since": "", "show": False}
     return render_template(
         "profile.html",
         title="Settings",
@@ -439,4 +490,5 @@ def profile():
         accent_presets=sorted(_ALLOWED_ACCENTS),
         default_routes=routes,
         default_route_labels=_DEFAULT_ROUTE_LABELS,
+        admin_privacy=admin_privacy,
     )

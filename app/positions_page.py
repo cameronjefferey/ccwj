@@ -744,14 +744,15 @@ def positions():
     bounce = _redirect_if_no_accounts()
     if bounce:
         return bounce
+    # Scope first so a private-from-admin ?tenant= URL 404s before BigQuery.
+    selected_account = request.args.get("account", "")
+    tenant_ids = _tenants_for_scope(selected_account)
     client = get_bigquery_client()
     user_accounts = _user_account_list()
 
     # ------------------------------------------------------------------
     # 1. Read filter params
     # ------------------------------------------------------------------
-    selected_account = request.args.get("account", "")
-    tenant_ids = _tenants_for_scope(selected_account)
     tenant_filter = _tenant_sql_and(tenant_ids)
     selected_strategy = request.args.get("strategy", "")
     # Multi-select status; default is all (current + history) so users see their

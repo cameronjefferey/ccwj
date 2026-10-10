@@ -141,6 +141,15 @@ def compose(kind: str, *, who: str, **extra) -> str:
 
 def notify_event(kind: str, *, user_id=None, username=None, **extra) -> bool:
     """Compose the shared-voice sentence and queue it."""
+    if user_id is not None:
+        try:
+            from app.admin_privacy import is_hidden_from_admins
+            if is_hidden_from_admins(user_id):
+                # Account ids and broker masks are financial identifiers.
+                extra.pop("account_id", None)
+                extra.pop("account", None)
+        except Exception:
+            pass
     who = extra.pop("who", None) or user_label(user_id, username=username)
     text = compose(kind, who=who, **extra)
     return notify(kind, text, username=username)

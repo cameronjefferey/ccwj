@@ -95,6 +95,21 @@ _SKIP_PREFIXES = (
 )
 
 
+def _hidden_user_sql(hidden_ids, col="e.user_id"):
+    """AND-clause dropping private users from a symbol rollup. Empty if none."""
+    ids = []
+    for raw in hidden_ids or []:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return ""
+    listed = ", ".join(str(i) for i in sorted(set(ids)))
+    safe_col = "".join(ch for ch in str(col) if ch.isalnum() or ch in "._")
+    return f"AND {safe_col} NOT IN ({listed})"
+
+
 def _admin_usernames():
     return {
         u.strip().lower()
@@ -357,7 +372,7 @@ def build_admin_overview():
 
     broken = _q(
         """
-        SELECT u.username, a.account_name, a.broker_slug,
+        SELECT u.id AS user_id, u.username, a.account_name, a.broker_slug,
                a.connection_broken_at, a.last_sync_error
         FROM snaptrade_accounts a
         JOIN users u ON u.id = a.user_id
@@ -366,6 +381,20 @@ def build_admin_overview():
         LIMIT 25
         """
     )
+    from app.admin_privacy import hidden_snapshot, redact_from_admin
+    snap = hidden_snapshot()
+    if snap["available"]:
+        hidden_ids = snap["user_ids"]
+        hidden_sql = _hidden_user_sql(hidden_ids)
+    else:
+        # No symbol paths until we know who is private.
+        hidden_sql = "AND 1 = 0"
+    for row in broken:
+        private = redact_from_admin(row.get("user_id"), row.get("username"))
+        row["private_from_admin"] = private
+        if private:
+            row["account_name"] = None
+            row["last_sync_error"] = None
     open_fb = _q1(
         "SELECT COUNT(*) AS n FROM feedback WHERE resolved_at IS NULL"
     )
@@ -402,7 +431,7 @@ def build_admin_overview():
         tuple(demo_params),
     ))
     symbol_rows = _q(
-        f"""
+        """
         SELECT e.path, COUNT(*) AS hits,
                COUNT(DISTINCT e.user_id) AS users
         FROM usage_events e
@@ -411,10 +440,14 @@ def build_admin_overview():
           AND e.endpoint = 'position_detail'
           AND e.path LIKE '/position/%%'
           AND {demo_sql}
+          {hidden_sql}
         GROUP BY e.path
         ORDER BY users DESC, hits DESC
         LIMIT 8
-        """,
+        """.format(
+            demo_sql=demo_sql,
+            hidden_sql=hidden_sql,
+        ),
         tuple(demo_params),
     )
     symbols_7d = []
@@ -512,6 +545,7 @@ def build_admin_overview():
             "trial_days": r.get("trial_days"),
             "signed_up_at": r.get("signed_up_at"),
             "email": r.get("email"),
+            "private_from_admin": redact_from_admin(r.get("id"), r.get("username")),
         })
 
     last_event = _q1("SELECT MAX(created_at) AS ts FROM usage_events")

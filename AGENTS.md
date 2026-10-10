@@ -1132,6 +1132,26 @@ open in the last 7 days (ranked unique people then views; bars are views;
 demo excluded;
 logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
+**Private from admins.** `admin_hidden_users` (created in `init_db`)
+hides a friend's book from every admin. Admin → Private accounts can
+add a username or email and lists username plus the date added, with
+no balances. An admin cannot remove someone. The friend turns it on
+or off in Settings, which shows "Private from HappyTrader admins: On,
+since …". Unscoped warehouse reads (`tenant_ids is None`) drop those
+tenants in `tenant_sql_and` / `filter_df_by_tenant_ids`, next to the
+paper exclusion. If that list cannot be loaded, those unscoped admin
+reads fail closed to the signed-in admin's own tenants plus the demo
+tenant and flash "Private-account list unavailable, try again". They
+do not fall open to every account. An explicit tenant list (a normal
+user's own scope) is unchanged. The hidden set is cached on `flask.g`
+for the request only; add and remove clear it before the next read,
+and the warehouse cache key is the SQL predicate, so a new id cannot
+reuse the previous result. An admin `?tenant=` / `?tenants=` that names
+one 404s, including any tenant outside the admin's own accounts and
+the demo tenant when the list is down. Impersonation and the digest
+preview 404. The friend's own pages, the demo tenant, and admin-owned
+accounts stay visible. This is an application gate, not encryption.
+
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path
 (`POST /get-started/paper`) stores `users.app_view='simple'` and opens

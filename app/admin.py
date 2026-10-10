@@ -115,6 +115,17 @@ def admin_digest_preview():
     target = User.get_by_username(username)
     if target is None:
         abort(404)
+    from app.admin_privacy import (
+        hidden_snapshot,
+        is_hidden_from_admins,
+        note_privacy_list_unavailable,
+    )
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        abort(404)
+    if is_hidden_from_admins(target.id):
+        abort(404)
     from app.bigquery_client import get_bigquery_client
     from app.email_digests_cli import render_weekly_digest_html
     from app.weekly_digest import digest_tenants_for_user
@@ -155,6 +166,90 @@ def admin_analytics():
     )
 
 
+@app.before_request
+def _block_hidden_user_impersonation():
+    """A session already impersonating a private user cannot read their book.
+
+    ``/admin/impersonate/stop`` stays open so the admin can switch back.
+    Starting a new impersonation of a private user is refused below.
+    """
+    if request.endpoint == "admin_impersonate_stop":
+        return None
+    if not session.get(_IMPERSONATOR_KEY):
+        return None
+    if not getattr(current_user, "is_authenticated", False):
+        return None
+    from app.admin_privacy import (
+        hidden_snapshot,
+        is_hidden_from_admins,
+        note_privacy_list_unavailable,
+    )
+    from app.demo_guard import numeric_user_id
+
+    uid = numeric_user_id(getattr(current_user, "id", None))
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        abort(404)
+    if uid is not None and is_hidden_from_admins(uid):
+        abort(404)
+    return None
+
+
+@app.route("/admin/private", methods=["GET", "POST"])
+@_admin_only
+def admin_private_accounts():
+    """Add a user to the private-from-admin list. No remove control.
+
+    The page lists usernames and the date added. It does not show
+    accounts, balances, symbols, or dollar amounts.
+    """
+    from app.admin_privacy import (
+        add_hidden_user,
+        find_user_by_username_or_email,
+        format_privacy_since,
+        list_hidden_users,
+    )
+
+    if request.method == "POST":
+        # Adding is the only write. A remove field is ignored on purpose:
+        # an admin cannot take someone off this list.
+        raw = (request.form.get("username") or "").strip()
+        target = find_user_by_username_or_email(raw)
+        if target is None:
+            flash("No user with that username or email.", "danger")
+        else:
+            ok, info = add_hidden_user(target.id, current_user.id)
+            if ok:
+                flash(
+                    f"@{info} is private from admins. "
+                    "Admins can't see their accounts, balances, or trades.",
+                    "success",
+                )
+            else:
+                flash(info, "danger")
+        return redirect(url_for("admin_private_accounts"))
+
+    from app.admin_privacy import hidden_snapshot, note_privacy_list_unavailable
+
+    snap = hidden_snapshot()
+    rows = []
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+    else:
+        for row in list_hidden_users():
+            rows.append({
+                "username": row.get("username") or "",
+                "added_label": format_privacy_since(row.get("added_at")),
+            })
+    return render_template(
+        "admin_private.html",
+        title="Admin: private accounts",
+        hidden_users=rows,
+        list_unavailable=not snap["available"],
+    )
+
+
 @app.route("/admin/impersonate/<username>", methods=["POST", "GET"])
 @_admin_only
 def admin_impersonate(username):
@@ -173,6 +268,18 @@ def admin_impersonate(username):
     if target.id == current_user.id:
         flash("You can't impersonate yourself.", "warning")
         return redirect(url_for("admin_audit"))
+
+    from app.admin_privacy import (
+        hidden_snapshot,
+        is_hidden_from_admins,
+        note_privacy_list_unavailable,
+    )
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        abort(404)
+    if is_hidden_from_admins(target.id):
+        abort(404)
 
     # Don't nest impersonations — always remember the *original* admin.
     if not session.get(_IMPERSONATOR_KEY):
@@ -283,6 +390,59 @@ def admin_audit():
     linked_users = []
     by_kind_rows = []
 
+    if account:
+        from app.admin_privacy import (
+            hidden_snapshot,
+            hidden_tenant_id_set,
+            note_privacy_list_unavailable,
+        )
+        from app.db import fetch_all
+
+        snap = hidden_snapshot()
+        if not snap["available"]:
+            # An account-name probe cannot be proven free of a private
+            # book when the list itself did not load.
+            note_privacy_list_unavailable()
+            abort(404)
+
+        owners = []
+        try:
+            owners = fetch_all(
+                """
+                SELECT tenant_id, user_id, account_name, display_nickname
+                FROM broker_tenants
+                WHERE account_name = %s OR display_nickname = %s
+                """,
+                (account, account),
+            ) or []
+        except Exception as exc:
+            app.logger.warning("admin_audit owner lookup failed: %s", exc)
+        hidden_tenants = hidden_tenant_id_set()
+        owned_ids = [
+            (row.get("tenant_id") or "").strip()
+            for row in owners
+            if (row.get("tenant_id") or "").strip()
+        ]
+        if owned_ids and all(tid in hidden_tenants for tid in owned_ids):
+            abort(404)
+        if hidden_tenants and symbol:
+            from app.tenant_scope import sanitize_tenant_id
+            safe = [
+                sanitize_tenant_id(tid) for tid in hidden_tenants
+            ]
+            safe = [tid for tid in safe if tid]
+            if safe:
+                quoted = ", ".join(f"'{tid}'" for tid in safe)
+                # Applied below by rewriting the probes. Kept local so a
+                # colliding display label still audits the visible account.
+                _audit_hide_sql = f" AND tenant_id NOT IN ({quoted})"
+            else:
+                _audit_hide_sql = ""
+        else:
+            _audit_hide_sql = ""
+    else:
+        _audit_hide_sql = ""
+
     if account and symbol:
         transactions = _bq_run(
             """
@@ -292,8 +452,9 @@ def admin_audit():
             FROM `ccwj-dbt.analytics.stg_history`
             WHERE account = @account
               AND underlying_symbol = @symbol
+              {hide}
             ORDER BY trade_date, trade_symbol
-            """,
+            """.format(hide=_audit_hide_sql),
             {"account": account, "symbol": symbol},
         )
         legs = _bq_run(
@@ -305,8 +466,9 @@ def admin_audit():
             FROM `ccwj-dbt.analytics.int_strategy_classification`
             WHERE account = @account
               AND symbol = @symbol
+              {hide}
             ORDER BY open_date, trade_symbol
-            """,
+            """.format(hide=_audit_hide_sql),
             {"account": account, "symbol": symbol},
         )
         summary_rows = _bq_run(
@@ -315,7 +477,8 @@ def admin_audit():
             FROM `ccwj-dbt.analytics.positions_summary`
             WHERE account = @account
               AND symbol = @symbol
-            """,
+              {hide}
+            """.format(hide=_audit_hide_sql),
             {"account": account, "symbol": symbol},
         )
         # Higher-level: equity vs option P&L for this (account, symbol).
@@ -343,9 +506,10 @@ def admin_audit():
             FROM `ccwj-dbt.analytics.int_strategy_classification`
             WHERE account = @account
               AND symbol  = @symbol
+              {hide}
             GROUP BY kind
             ORDER BY kind
-            """,
+            """.format(hide=_audit_hide_sql),
             {"account": account, "symbol": symbol},
         )
 
@@ -359,6 +523,12 @@ def admin_audit():
                    ORDER BY u.username""",
                 (account,),
             )
+            from app.admin_privacy import hidden_user_id_set
+            hidden_users = hidden_user_id_set()
+            linked_users = [
+                row for row in (linked_users or [])
+                if int(row.get("id") or 0) not in hidden_users
+            ]
         except Exception as exc:
             app.logger.warning("admin_audit linked_users lookup failed: %s", exc)
 
@@ -430,6 +600,14 @@ def admin_users():
             exempt=(uname == "demo" or uname in admin_usernames),
         )
         r["trial_days"] = _days_since(r.get("trial_started_at"))
+
+    from app.admin_privacy import redact_from_admin
+    for r in rows:
+        private = redact_from_admin(r.get("id"), r.get("username"))
+        r["private_from_admin"] = private
+        if private:
+            # Counts stay. Account names, masks, and any dollar fields do not.
+            r["accounts"] = []
 
     # Price ids so the table can label a subscription monthly vs annual
     # without a Stripe API call per row.
@@ -613,6 +791,14 @@ def admin_feedback():
     show = (request.args.get("show") or "open").strip().lower()
     only_unresolved = show != "all"
     rows = list_feedback(only_unresolved=only_unresolved, limit=200)
+    from app.admin_privacy import redact_from_admin
+    for row in rows:
+        private = redact_from_admin(row.get("user_id"), row.get("username"))
+        row["private_from_admin"] = private
+        if private:
+            # A position URL is a symbol. The message they typed stays;
+            # it is support text, not a warehouse read.
+            row["page_path"] = None
     return render_template(
         "admin_feedback.html",
         title="Admin: feedback",
