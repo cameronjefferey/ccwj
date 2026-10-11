@@ -143,7 +143,12 @@ def profile():
             return blocked
         action = request.form.get("action", "")
         if action == "set_admin_privacy":
-            from app.admin_privacy import add_hidden_user, remove_hidden_user
+            from app.admin_privacy import (
+                NOT_INVITED,
+                enable_own_privacy,
+                hidden_record,
+                remove_hidden_user,
+            )
             from app.demo_guard import numeric_user_id
             from app.models import is_admin
 
@@ -157,7 +162,9 @@ def profile():
                     "warning",
                 )
             elif enabled:
-                ok, info = add_hidden_user(viewer_id, viewer_id)
+                # Does not create an invite. A user an admin never added
+                # is rejected even if they post the form by hand.
+                ok, info = enable_own_privacy(viewer_id)
                 if ok:
                     flash(
                         "Private from HappyTrader admins is on. "
@@ -166,18 +173,19 @@ def profile():
                     )
                 else:
                     flash(info, "danger")
+            elif hidden_record(viewer_id) is None:
+                flash(NOT_INVITED, "danger")
+            elif remove_hidden_user(viewer_id, viewer_id):
+                flash(
+                    "Private from HappyTrader admins is off. "
+                    "You can turn it back on here.",
+                    "success",
+                )
             else:
-                if remove_hidden_user(viewer_id, viewer_id):
-                    flash(
-                        "Private from HappyTrader admins is off. "
-                        "You can turn it back on here.",
-                        "success",
-                    )
-                else:
-                    flash(
-                        "Couldn't turn that off. An admin can't do it for you.",
-                        "danger",
-                    )
+                flash(
+                    "Couldn't turn that off. An admin can't do it for you.",
+                    "danger",
+                )
             return redirect(url_for("profile", tab="overview"))
 
         if action == "set_email":
@@ -454,16 +462,23 @@ def profile():
         subscribe_offer = None
 
     saved_tz = (profile_row or {}).get("timezone") or "America/New_York"
-    admin_privacy = {"on": False, "since": ""}
+    # The card is invite-only. ``show`` is true when an admin has added
+    # this user, including after they turn privacy off, so they can turn
+    # it back on. ``on`` follows ``active``. A lookup error hides the card.
+    admin_privacy = {"on": False, "since": "", "show": False}
     try:
         from app.admin_privacy import format_privacy_since, hidden_record
         from app.models import is_admin as _is_admin_user
 
         record = hidden_record(current_user.id)
+        invited = record is not None
+        active = bool(invited and record.get("active"))
         admin_privacy = {
-            "on": record is not None,
-            "since": format_privacy_since((record or {}).get("added_at")),
-            "show": not _is_admin_user(getattr(current_user, "username", None)),
+            "on": active,
+            "since": format_privacy_since(record.get("added_at")) if active else "",
+            "show": invited and not _is_admin_user(
+                getattr(current_user, "username", None)
+            ),
         }
     except Exception:
         admin_privacy = {"on": False, "since": "", "show": False}

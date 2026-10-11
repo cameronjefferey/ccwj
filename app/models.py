@@ -560,13 +560,18 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_account_group_members_tenant
         ON account_group_members (tenant_id)
         """,
-        # Users who have asked (or been asked) to be private from every
-        # admin. Admins can insert. Only the user can delete their row.
+        # Invite-only private-from-admin list. An admin inserts the row.
+        # ``active`` hides the book. Turning privacy off keeps the row
+        # (``active`` false, ``opted_out_at`` set) so the user can turn
+        # it back on. Admins cannot delete the row. Existing databases
+        # get the columns in ``_migrate_admin_hidden_users_invite``.
         """
         CREATE TABLE IF NOT EXISTS admin_hidden_users (
-            user_id   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            added_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            added_by  INTEGER REFERENCES users(id) ON DELETE SET NULL
+            user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            added_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            added_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            active       BOOLEAN NOT NULL DEFAULT TRUE,
+            opted_out_at TIMESTAMPTZ
         )
         """,
     ]
@@ -601,6 +606,7 @@ def init_db():
     _migrate_insight_messages_table()
     _migrate_account_group_crytpo_typo()
     _migrate_uploads_tenant_id_column()
+    _migrate_admin_hidden_users_invite()
     _backfill_broker_tenant_nicknames_from_snaptrade_accounts()
 
 
@@ -636,6 +642,26 @@ def _backfill_broker_tenant_nicknames_from_snaptrade_accounts():
         )
     except Exception as exc:
         _log.warning("broker_tenants nickname backfill skipped: %s", exc)
+
+
+def _migrate_admin_hidden_users_invite():
+    """Keep an invite after the user turns privacy off.
+
+    ``CREATE TABLE IF NOT EXISTS`` does not add columns to a table that
+    already exists. ``active`` is the hide switch (existing rows stay
+    on). ``opted_out_at`` is when the user turned it off. The row is the
+    invite, so Settings can still offer Turn on.
+    """
+    for ddl in (
+        "ALTER TABLE admin_hidden_users ADD COLUMN IF NOT EXISTS "
+        "active BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE admin_hidden_users ADD COLUMN IF NOT EXISTS "
+        "opted_out_at TIMESTAMPTZ",
+    ):
+        try:
+            execute(ddl)
+        except Exception as exc:
+            _log.warning("admin_hidden_users invite migration skipped: %s", exc)
 
 
 def _migrate_uploads_tenant_id_column():

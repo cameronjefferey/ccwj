@@ -1,9 +1,15 @@
-"""Private-from-admin list.
+"""Private-from-admin list. Invite-only.
 
-A friend (or an admin, adding them) can put a user on ``admin_hidden_users``.
-After that, every admin or unscoped warehouse read drops that user's
-tenants, and an admin cannot take them back off the list. Only the user
-can. This is an application gate, not encryption: someone with warehouse
+An admin adds someone on ``/admin/private``. That inserts a row in
+``admin_hidden_users``. While ``active`` is true, every admin or
+unscoped warehouse read drops that user's tenants. The user can turn it
+off, which sets ``active`` false and ``opted_out_at`` and keeps the row.
+The row is the invite: Settings still shows the card so they can turn
+it back on. Someone with no row does not see the card and cannot turn
+it on. An admin cannot delete the row or turn privacy off. Adding an
+invited user who turned it off turns privacy back on.
+
+This is an application gate, not encryption: someone with warehouse
 or database credentials can still read the rows.
 
 The demo tenant and any account owned by an admin username stay visible.
@@ -39,14 +45,16 @@ def _demo_tenant_id() -> str:
 
 
 PRIVACY_LIST_UNAVAILABLE = "Private-account list unavailable, try again"
+NOT_INVITED = "An admin has to add you to private accounts first."
 
 
 def is_hidden_from_admins(user_id) -> bool:
-    """True when this user is on the list.
+    """True when this user's privacy is on.
 
-    A lookup error returns True. An admin action that cannot load the
-    list must not open a book it could not classify. This does not
-    flash a message; request handlers that render a page do that.
+    An invite with privacy turned off is not hidden. A lookup error
+    returns True. An admin action that cannot load the list must not
+    open a book it could not classify. This does not flash a message;
+    request handlers that render a page do that.
     """
     try:
         uid = int(user_id)
@@ -59,7 +67,11 @@ def is_hidden_from_admins(user_id) -> bool:
 
 
 def hidden_record(user_id):
-    """``{user_id, added_at, added_by}`` or None."""
+    """Invite row, on or off: ``{user_id, added_at, added_by, active, opted_out_at}``.
+
+    None when this user was never added. ``active`` false means they
+    turned privacy off and the invite is still here.
+    """
     try:
         uid = int(user_id)
     except (TypeError, ValueError):
@@ -67,8 +79,8 @@ def hidden_record(user_id):
     try:
         from app.db import fetch_one
         return fetch_one(
-            "SELECT user_id, added_at, added_by FROM admin_hidden_users "
-            "WHERE user_id = %s",
+            "SELECT user_id, added_at, added_by, active, opted_out_at "
+            "FROM admin_hidden_users WHERE user_id = %s",
             (uid,),
         )
     except Exception:
@@ -93,7 +105,11 @@ def format_privacy_since(added_at) -> str:
 
 
 def list_hidden_users():
-    """Username and the date added. No accounts, balances, or symbols."""
+    """Usernames whose privacy is on, and the date added.
+
+    No accounts, balances, or symbols. Invited users who turned it off
+    are ``list_opted_out_invites``.
+    """
     try:
         from app.db import fetch_all
         return fetch_all(
@@ -101,11 +117,34 @@ def list_hidden_users():
             SELECT h.user_id, u.username, h.added_at
             FROM admin_hidden_users h
             JOIN users u ON u.id = h.user_id
+            WHERE h.active IS TRUE
             ORDER BY h.added_at DESC, u.username
             """
         ) or []
     except Exception:
         _log.exception("admin privacy list failed")
+        return []
+
+
+def list_opted_out_invites():
+    """Usernames an admin added who currently have privacy off.
+
+    Username and the date they turned it off. No accounts, balances,
+    or symbols.
+    """
+    try:
+        from app.db import fetch_all
+        return fetch_all(
+            """
+            SELECT h.user_id, u.username, h.added_at, h.opted_out_at
+            FROM admin_hidden_users h
+            JOIN users u ON u.id = h.user_id
+            WHERE h.active IS NOT TRUE
+            ORDER BY h.opted_out_at DESC NULLS LAST, u.username
+            """
+        ) or []
+    except Exception:
+        _log.exception("admin privacy opted-out list failed")
         return []
 
 
@@ -123,7 +162,14 @@ def _target_blocked(user) -> str | None:
 
 
 def add_hidden_user(user_id, added_by) -> tuple[bool, str]:
-    """Put ``user_id`` on the list. Idempotent. Returns (ok, message)."""
+    """Invite ``user_id`` and turn privacy on. Idempotent. Returns (ok, message).
+
+    A new row starts active. Adding someone who is already on leaves
+    ``added_at`` alone. Adding someone who turned it off turns privacy
+    back on and refreshes ``added_at`` so "since" is this on period.
+    This is the admin path. A user turning their own privacy back on
+    uses ``enable_own_privacy``, which does not create an invite.
+    """
     try:
         uid = int(user_id)
     except (TypeError, ValueError):
@@ -141,9 +187,21 @@ def add_hidden_user(user_id, added_by) -> tuple[bool, str]:
         from app.db import execute
         execute(
             """
-            INSERT INTO admin_hidden_users (user_id, added_by)
-            VALUES (%s, %s)
-            ON CONFLICT (user_id) DO NOTHING
+            INSERT INTO admin_hidden_users (user_id, added_by, active)
+            VALUES (%s, %s, TRUE)
+            ON CONFLICT (user_id) DO UPDATE
+            SET active = TRUE,
+                opted_out_at = NULL,
+                added_at = CASE
+                    WHEN admin_hidden_users.active IS TRUE
+                    THEN admin_hidden_users.added_at
+                    ELSE NOW()
+                END,
+                added_by = CASE
+                    WHEN admin_hidden_users.active IS TRUE
+                    THEN admin_hidden_users.added_by
+                    ELSE EXCLUDED.added_by
+                END
             """,
             (uid, adder),
         )
@@ -154,11 +212,57 @@ def add_hidden_user(user_id, added_by) -> tuple[bool, str]:
     return True, user.username
 
 
-def remove_hidden_user(user_id, actor_user_id) -> bool:
-    """Take ``user_id`` off the list. Only that same user may do it.
+def enable_own_privacy(user_id) -> tuple[bool, str]:
+    """Turn privacy on for a user who was already invited.
 
-    An admin actor, a missing actor, and an impersonation session all
-    return False and leave the row in place.
+    Does not create a row. A user with no invite is rejected. An
+    impersonation session is rejected. Returns (ok, message).
+    """
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return False, NOT_INVITED
+    from app.models import User
+    user = User.get_by_id(uid)
+    blocked = _target_blocked(user)
+    if blocked:
+        return False, blocked
+    if _impersonation_active():
+        return False, "Couldn't turn that on. An admin can't do it for you."
+    if hidden_record(uid) is None:
+        return False, NOT_INVITED
+    try:
+        from app.db import execute_returning
+        row = execute_returning(
+            """
+            UPDATE admin_hidden_users
+            SET active = TRUE,
+                opted_out_at = NULL,
+                added_at = CASE
+                    WHEN active IS TRUE THEN added_at
+                    ELSE NOW()
+                END
+            WHERE user_id = %s
+            RETURNING user_id
+            """,
+            (uid,),
+        )
+    except Exception:
+        _log.exception("admin privacy enable failed for user_id=%s", uid)
+        return False, "Couldn't save that. Try again."
+    if not row:
+        return False, NOT_INVITED
+    _clear_request_cache()
+    return True, user.username
+
+
+def remove_hidden_user(user_id, actor_user_id) -> bool:
+    """Turn privacy off for ``user_id``. Only that same user may do it.
+
+    The invite row stays, with ``active`` false and ``opted_out_at`` set,
+    so they can turn it back on. An admin actor, a missing actor, an
+    impersonation session, and a user who was never invited all return
+    False and leave the table unchanged.
     """
     try:
         uid = int(user_id)
@@ -170,13 +274,21 @@ def remove_hidden_user(user_id, actor_user_id) -> bool:
     if _impersonation_active():
         return False
     try:
-        from app.db import execute
-        execute(
-            "DELETE FROM admin_hidden_users WHERE user_id = %s",
+        from app.db import execute_returning
+        row = execute_returning(
+            """
+            UPDATE admin_hidden_users
+            SET active = FALSE,
+                opted_out_at = NOW()
+            WHERE user_id = %s
+            RETURNING user_id
+            """,
             (uid,),
         )
     except Exception:
         _log.exception("admin privacy remove failed for user_id=%s", uid)
+        return False
+    if not row:
         return False
     _clear_request_cache()
     return True
@@ -230,8 +342,8 @@ def hidden_snapshot() -> dict:
     an empty list: an empty list means the list loaded and nobody (left
     after the exemptions) is on it. A failure is remembered for this
     request only, so one outage does not retry on every query, and the
-    next request tries again. ``add_hidden_user`` / ``remove_hidden_user``
-    clear it immediately.
+    next request tries again. ``add_hidden_user`` / ``enable_own_privacy``
+    / ``remove_hidden_user`` clear it immediately.
     """
     try:
         from flask import g, has_request_context
@@ -344,7 +456,11 @@ def _load_hidden_snapshot() -> tuple[frozenset[int], frozenset[str]]:
     from app.tenant_scope import sanitize_tenant_id
 
     viewer = _viewer_id()
-    user_rows = fetch_all("SELECT user_id FROM admin_hidden_users") or []
+    # Inactive invites stay in the table so the user can turn privacy
+    # back on. They are not hidden.
+    user_rows = fetch_all(
+        "SELECT user_id FROM admin_hidden_users WHERE active IS TRUE"
+    ) or []
     user_ids = set()
     for row in user_rows:
         try:
@@ -357,6 +473,7 @@ def _load_hidden_snapshot() -> tuple[frozenset[int], frozenset[str]]:
         FROM admin_hidden_users h
         JOIN broker_tenants bt ON bt.user_id = h.user_id
         JOIN users u ON u.id = h.user_id
+        WHERE h.active IS TRUE
         """
     ) or []
     tenant_ids = set()

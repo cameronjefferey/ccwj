@@ -1132,12 +1132,22 @@ open in the last 7 days (ranked unique people then views; bars are views;
 demo excluded;
 logged-out Home/Pricing/FAQ count). Non-admins get 404.
 
-**Private from admins.** `admin_hidden_users` (created in `init_db`)
-hides a friend's book from every admin. Admin → Private accounts can
-add a username or email and lists username plus the date added, with
-no balances. An admin cannot remove someone. The friend turns it on
-or off in Settings, which shows "Private from HappyTrader admins: On,
-since …". Unscoped warehouse reads (`tenant_ids is None`) drop those
+**Private from admins.** `admin_hidden_users` (created in `init_db`;
+`active` / `opted_out_at` in `_migrate_admin_hidden_users_invite`) is
+invite-only. Admin → Private accounts adds a username or email, which
+inserts the row with `active` true and hides that person's book from
+every admin. The Settings card ("Private from HappyTrader admins")
+shows only when that row exists, on Overview and Preferences. The
+friend can turn it off, which sets `active` false and `opted_out_at`
+and keeps the row, so the card stays ("Off", with Turn on) and they
+can turn it back on. A user with no row does not see the card, and
+`POST set_admin_privacy` with `enabled=1` is rejected. Hidden-from-admin
+filtering applies only while `active` is true. An admin cannot remove
+someone or turn privacy off. Adding an invited user who turned it off
+turns privacy back on and refreshes the "since" date; adding someone
+already on leaves that date. The page lists currently-private
+usernames and, separately, invited users who are off — usernames and
+dates only, no balances. Unscoped warehouse reads (`tenant_ids is None`) drop those
 tenants in `tenant_sql_and` / `filter_df_by_tenant_ids`, next to the
 paper exclusion. If that list cannot be loaded, those unscoped admin
 reads fail closed to the signed-in admin's own tenants plus the demo
