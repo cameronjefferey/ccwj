@@ -201,14 +201,17 @@ def _block_hidden_user_impersonation():
 def admin_private_accounts():
     """Add a user to the private-from-admin list. No remove control.
 
-    The page lists usernames and the date added. It does not show
-    accounts, balances, symbols, or dollar amounts.
+    The page lists usernames whose privacy is on, and the date added.
+    Invited users who turned it off are a separate username list.
+    Neither list shows accounts, balances, symbols, or dollar amounts.
+    Adding someone who turned it off turns privacy back on.
     """
     from app.admin_privacy import (
         add_hidden_user,
         find_user_by_username_or_email,
         format_privacy_since,
         list_hidden_users,
+        list_opted_out_invites,
     )
 
     if request.method == "POST":
@@ -234,6 +237,7 @@ def admin_private_accounts():
 
     snap = hidden_snapshot()
     rows = []
+    invited_off = []
     if not snap["available"]:
         note_privacy_list_unavailable()
     else:
@@ -242,10 +246,16 @@ def admin_private_accounts():
                 "username": row.get("username") or "",
                 "added_label": format_privacy_since(row.get("added_at")),
             })
+        for row in list_opted_out_invites():
+            invited_off.append({
+                "username": row.get("username") or "",
+                "off_label": format_privacy_since(row.get("opted_out_at")),
+            })
     return render_template(
         "admin_private.html",
         title="Admin: private accounts",
         hidden_users=rows,
+        invited_off=invited_off,
         list_unavailable=not snap["available"],
     )
 

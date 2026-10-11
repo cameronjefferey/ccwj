@@ -372,6 +372,7 @@ def test_admin_add_page_shows_username_and_no_money(world):
     assert ">Remove<" not in body
     assert 'name="remove"' not in body
     assert "does not show accounts, balances, or trades" in body
+    assert "Invited, currently off" not in body
 
     added = http.post(
         "/admin/private",
@@ -664,3 +665,169 @@ def test_add_updates_the_hidden_list_immediately(world, db_conn):
         assert again["available"] is True
         assert other_tid in again["tenant_ids"]
         assert other_tid in tenant_sql_and(None)
+
+
+def test_non_invited_user_sees_no_card_and_cannot_enable(world):
+    """A user an admin never added has no card and cannot hide themselves."""
+    from app.admin_privacy import NOT_INVITED, hidden_record, is_hidden_from_admins
+
+    http = world["http"]
+    _login(http, world["visible"])
+    for path in ("/profile", "/profile?tab=preferences"):
+        page = http.get(path)
+        assert page.status_code == 200
+        body = page.get_data(as_text=True)
+        assert "Private from HappyTrader admins" not in body
+        assert "set_admin_privacy" not in body
+        assert 'id="admin-privacy"' not in body
+    posted = http.post(
+        "/profile",
+        data={"action": "set_admin_privacy", "enabled": "1"},
+        follow_redirects=True,
+    )
+    body = posted.get_data(as_text=True)
+    assert posted.status_code == 200
+    assert NOT_INVITED in body
+    assert "Private from HappyTrader admins is on" not in body
+    assert "set_admin_privacy" not in body
+    assert hidden_record(world["visible_id"]) is None
+    assert not is_hidden_from_admins(world["visible_id"])
+    ignored = http.post(
+        "/profile",
+        data={"action": "set_admin_privacy", "enabled": "0"},
+        follow_redirects=True,
+    )
+    assert NOT_INVITED in ignored.get_data(as_text=True)
+    assert hidden_record(world["visible_id"]) is None
+    _logout(http)
+
+
+def test_invited_user_keeps_the_card_after_turning_privacy_off(world):
+    """On, then off, the card stays. They can turn it back on themselves."""
+    from app.admin_privacy import hidden_record, is_hidden_from_admins
+
+    http = world["http"]
+    _login(http, world["friend"])
+    on_page = http.get("/profile")
+    on_body = on_page.get_data(as_text=True)
+    assert "Private from HappyTrader admins: On" in on_body
+    assert "Turn off" in on_body
+    prefs = http.get("/profile?tab=preferences")
+    assert "Private from HappyTrader admins: On" in prefs.get_data(as_text=True)
+
+    off = http.post(
+        "/profile",
+        data={"action": "set_admin_privacy", "enabled": "0"},
+        follow_redirects=True,
+    )
+    off_body = off.get_data(as_text=True)
+    assert off.status_code == 200
+    assert "Private from HappyTrader admins is off." in off_body
+    assert "Private from HappyTrader admins: Off." in off_body
+    assert "An admin added you to private accounts." in off_body
+    assert 'id="admin-privacy"' in off_body
+    assert "Turn on" in off_body
+    assert not is_hidden_from_admins(world["friend_id"])
+    record = hidden_record(world["friend_id"])
+    assert record is not None
+    assert not record["active"]
+    assert record["opted_out_at"] is not None
+
+    again = http.post(
+        "/profile",
+        data={"action": "set_admin_privacy", "enabled": "1"},
+        follow_redirects=True,
+    )
+    again_body = again.get_data(as_text=True)
+    assert "Private from HappyTrader admins: On" in again_body
+    assert "Turn off" in again_body
+    assert is_hidden_from_admins(world["friend_id"])
+    restored = hidden_record(world["friend_id"])
+    assert restored["active"]
+    assert restored["opted_out_at"] is None
+    _logout(http)
+
+
+def test_filtering_applies_only_while_privacy_is_on(world):
+    """An invite with privacy off is not dropped from admin reads."""
+    from app.admin_privacy import (
+        hidden_record,
+        is_hidden_from_admins,
+        list_hidden_users,
+        list_opted_out_invites,
+        redact_from_admin,
+        remove_hidden_user,
+    )
+    from app.tenant_scope import tenant_sql_and
+
+    app = world["app"]
+    http = world["http"]
+    assert remove_hidden_user(world["friend_id"], world["friend_id"])
+    assert not is_hidden_from_admins(world["friend_id"])
+    assert hidden_record(world["friend_id"]) is not None
+
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        sql = tenant_sql_and(None)
+        assert world["friend_tid"] not in sql
+        assert redact_from_admin(world["friend_id"], world["friend"]) is False
+
+    active_names = {row["username"] for row in list_hidden_users()}
+    off_names = {row["username"] for row in list_opted_out_invites()}
+    assert world["friend"] not in active_names
+    assert world["friend"] in off_names
+
+    _login(http, world["operator"])
+    users = http.get("/admin/users")
+    assert SECRET_ACCOUNT in users.get_data(as_text=True)
+    private = http.get("/admin/private")
+    private_body = private.get_data(as_text=True)
+    assert "Invited, currently off" in private_body
+    assert f"@{world['friend']}" in private_body
+    assert SECRET_ACCOUNT not in private_body
+    assert SECRET_SYMBOL not in private_body
+    assert SECRET_MONEY not in private_body
+    assert "••••8841" not in private_body
+
+    # Adding them again turns privacy back on. The "since" date refreshes.
+    before = hidden_record(world["friend_id"])["added_at"]
+    added = http.post(
+        "/admin/private",
+        data={"username": world["friend"]},
+        follow_redirects=True,
+    )
+    assert added.status_code == 200
+    assert is_hidden_from_admins(world["friend_id"])
+    after = hidden_record(world["friend_id"])
+    assert after["active"]
+    assert after["opted_out_at"] is None
+    assert after["added_at"] >= before
+    added_body = added.get_data(as_text=True)
+    assert "Invited, currently off" not in added_body
+    assert SECRET_ACCOUNT not in added_body
+    _logout(http)
+
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        sql = tenant_sql_and(None)
+        assert world["friend_tid"] in sql
+        assert "NOT IN" in sql
+        assert redact_from_admin(world["friend_id"], world["friend"]) is True
+
+    _login(http, world["operator"])
+    hidden_again = http.get("/admin/users")
+    assert SECRET_ACCOUNT not in hidden_again.get_data(as_text=True)
+    _logout(http)
+
+
+def test_admin_readd_of_active_user_keeps_the_since_date(world):
+    from app.admin_privacy import add_hidden_user, hidden_record
+
+    before = hidden_record(world["friend_id"])["added_at"]
+    ok, info = add_hidden_user(world["friend_id"], world["operator_id"])
+    assert ok
+    assert info == world["friend"]
+    after = hidden_record(world["friend_id"])
+    assert after["active"]
+    assert after["added_at"] == before
+    assert after["opted_out_at"] is None

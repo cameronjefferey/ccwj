@@ -38,7 +38,7 @@
 {% block content %}
 <div class="ap-hero">
     <h1>Private accounts</h1>
-    <p>Add a username or email. That person is hidden from every admin, including you. You cannot remove them. They turn it off in their own Settings.</p>
+    <p>Add a username or email. That person is hidden from every admin, including you. You cannot remove them. They turn it off in their own Settings. If they have turned it off, adding them again turns it back on.</p>
 </div>
 
 <div class="ap-card">
@@ -78,4 +78,27 @@
     <p class="ap-empty">No one is on this list.</p>
     {% endif %}
 </div>
+
+{% if invited_off and not list_unavailable %}
+<div class="ap-card">
+    <h2>Invited, currently off <span style="color:#8a97b1;font-weight:500;">— {{ invited_off|length }}</span></h2>
+    <p class="ap-lead">They can turn it back on in Settings. Adding them again turns it on. Usernames and the date they turned it off only — no accounts, balances, or trades.</p>
+    <table class="ap-table">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Turned off</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in invited_off %}
+            <tr>
+                <td>@{{ row.username }}</td>
+                <td>{{ row.off_label }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 {% endblock %}
