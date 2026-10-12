@@ -515,11 +515,18 @@ What's working:
   separate breakdown lines; a put-spread debit in the current cycle
   raises All-in and is named Put spreads. A spread that closed before
   the shares were bought does not. The contract symbol, not a
-  conflicting Call/Put column, decides the bucket. When the broker
-  cost basis is missing, share cost is inferred from in-cycle buys,
-  from the assigned put's strike when the share delivery has no price,
-  plus the opening-balance estimate, and the breakdown says so when
-  the estimate is used. The positions table headers
+  conflicting Call/Put column, decides the bucket.   When the broker
+  cost basis is missing, share cost is the average cost of the shares
+  still held: in-cycle buys, the assigned put's strike when the share
+  delivery has no price and exactly one short put matches, and the
+  opening-balance estimate only while that pre-history lot is still
+  the current episode. A partial sale reduces the estimate in
+  proportion. After the shares go flat, a new buy does not keep the
+  old estimate. The Positions list uses `int_opening_balances.opening_qty`
+  for that pre-history count. The breakdown says so when the estimate
+  is used. Avg P&amp;L on Positions and the strategy rows is the average
+  result of closed trades; a spread counts as one, and open trades
+  are not in the average. The positions table headers
   are Cost and All-in, each with that definition on the header. On a
   phone the same figures sit under the symbol.
   Pinned by `tests/test_all_in_cost.py`.

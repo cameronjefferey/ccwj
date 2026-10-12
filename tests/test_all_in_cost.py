@@ -814,6 +814,141 @@ def test_long_call_with_no_shares_stays_blank():
     assert all_in_cost(fills, shares=0, symbol="DDOG") is None
 
 
+def test_reopened_lot_does_not_carry_the_pre_history_basis():
+    fills = [
+        _fill(trade_date="2026-03-01", action="equity_sell", quantity=100, price=80),
+        _fill(trade_date="2026-03-02", action="equity_buy", quantity=100, price=100),
+    ]
+    result = all_in_cost(
+        fills, shares=100, cost_basis=0,
+        opening_shares=100, opening_basis=5000,
+    )
+    assert result["cycle_start"] == "2026-03-02"
+    assert result["equity_basis"] == 10000
+    assert result["equity_per_share"] == 100
+    assert result["basis_estimated"] is False
+
+    from app.all_in_cost import _stamp_rows
+    rows = [{"tenant_id": "snaptrade:ddog", "symbol": "DDOG", "strategy": "Buy and Hold"}]
+    holdings = [{
+        "tenant_id": "snaptrade:ddog", "symbol": "DDOG",
+        "instrument_type": "Equity", "quantity": 100, "cost_basis": 0,
+    }]
+    openings = [{
+        "tenant_id": "snaptrade:ddog", "symbol": "DDOG",
+        "opening_qty": 100, "est_amount": -5000, "price_source": "window_start",
+    }]
+    _stamp_rows(rows, holdings, fills, [], openings)
+    assert rows[0]["equity_per_share"] == 100
+    assert rows[0]["basis_estimated"] is False
+
+
+def test_partial_sale_removes_the_sold_shares_inferred_basis():
+    fills = [
+        _fill(trade_date="2026-01-02", action="equity_buy", quantity=200, price=100),
+        _fill(trade_date="2026-02-02", action="equity_sell", quantity=100, price=110),
+        _fill(trade_date="2026-02-03", action="option_sell_to_open", option_type="call",
+              option_strike=120, option_expiry="2026-03-20", quantity=1, price=1),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=0)
+    assert result["equity_basis"] == 10000
+    assert result["equity_per_share"] == 100
+    assert result["all_in_per_share"] == 99
+
+
+def test_partial_sale_reduces_an_inferred_opening_basis():
+    fills = [
+        _fill(trade_date="2026-04-01", action="equity_sell", quantity=100, price=60),
+    ]
+    result = all_in_cost(
+        fills, shares=100, cost_basis=0,
+        opening_shares=200, opening_basis=10000,
+    )
+    assert result["equity_basis"] == 5000
+    assert result["equity_per_share"] == 50
+    assert result["basis_estimated"] is True
+
+    from app.all_in_cost import _stamp_rows
+    rows = [{"tenant_id": "snaptrade:ddog", "symbol": "DDOG", "strategy": "Buy and Hold"}]
+    holdings = [{
+        "tenant_id": "snaptrade:ddog", "symbol": "DDOG",
+        "instrument_type": "Equity", "quantity": 100, "cost_basis": 0,
+    }]
+    openings = [{
+        "tenant_id": "snaptrade:ddog", "symbol": "DDOG",
+        "opening_qty": 200, "est_amount": -10000, "price_source": "window_start",
+    }]
+    _stamp_rows(rows, holdings, fills, [], openings)
+    assert rows[0]["equity_per_share"] == 50
+    assert rows[0]["basis_estimated"] is True
+
+
+def test_average_cost_replay_after_a_partial_sale_and_a_new_lot():
+    fills = [
+        _fill(trade_date="2026-01-02", action="equity_buy", quantity=100, price=100),
+        _fill(trade_date="2026-02-02", action="equity_sell", quantity=50, price=110),
+        _fill(trade_date="2026-03-02", action="equity_buy", quantity=50, price=200),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=0)
+    assert result["equity_basis"] == 15000
+    assert result["equity_per_share"] == 150
+
+
+def test_zero_price_assignment_is_not_inferred_from_ambiguous_puts():
+    def puts(first, second):
+        return [
+            _fill(trade_date="2026-05-01", action="option_sell_to_open", option_type="put",
+                  option_strike=first, option_expiry="2026-05-15", quantity=1, price=2),
+            _fill(trade_date="2026-05-01", action="option_sell_to_open", option_type="put",
+                  option_strike=second, option_expiry="2026-06-19", quantity=1, price=3),
+            _fill(trade_date="2026-05-15", action="equity_buy", quantity=100, price=0),
+        ]
+    assert all_in_cost(puts(100, 200), shares=100, cost_basis=0) is None
+    assert all_in_cost(puts(200, 100), shares=100, cost_basis=0) is None
+
+
+def test_same_strike_puts_still_price_a_zero_delivery():
+    fills = [
+        _fill(trade_date="2026-05-01", action="option_sell_to_open", option_type="put",
+              option_strike=180, option_expiry="2026-05-15", quantity=1, price=2),
+        _fill(trade_date="2026-05-01", action="option_sell_to_open", option_type="put",
+              option_strike=180, option_expiry="2026-06-19", quantity=1, price=3),
+        _fill(trade_date="2026-05-15", action="equity_buy", quantity=100, price=0),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=0)
+    assert result["equity_per_share"] == 180
+
+
+def test_equity_fee_is_added_once_when_the_amount_is_gross():
+    gross = _fill(
+        trade_date="2026-01-02", action="equity_buy",
+        quantity=100, price=100, fees=65, amount=-10000,
+    )
+    net = _fill(
+        trade_date="2026-01-02", action="equity_buy",
+        quantity=100, price=100, fees=65, amount=-10065,
+    )
+    fee_only = _fill(
+        trade_date="2026-01-02", action="equity_buy",
+        quantity=100, price=100, fees=65,
+    )
+    assert all_in_cost([gross], shares=100, cost_basis=0)["equity_per_share"] == 100.65
+    assert all_in_cost([net], shares=100, cost_basis=0)["equity_per_share"] == 100.65
+    assert all_in_cost([fee_only], shares=100, cost_basis=0)["equity_per_share"] == 100.65
+
+
+def test_dotted_symbol_keeps_its_cost():
+    fills = [
+        _fill(symbol="BRK.B", tenant_id="snaptrade:brk", trade_date="2026-01-02",
+              action="equity_buy", quantity=10, price=400),
+    ]
+    result = all_in_cost(
+        fills, shares=10, cost_basis=0, symbol="BRK.B", tenant_id="snaptrade:brk",
+    )
+    assert result["symbol"] == "BRK.B"
+    assert result["equity_per_share"] == 400
+
+
 def test_templates_fold_all_in_into_the_existing_header_and_table():
     detail = (ROOT / "app/templates/position_detail.html").read_text()
     positions = (ROOT / "app/templates/positions.html").read_text()
@@ -831,5 +966,8 @@ def test_templates_fold_all_in_into_the_existing_header_and_table():
     assert "If assigned" in positions
     wide = positions.split("@media (min-width: 1280px)", 1)[1].split("@media", 1)[0]
     assert "#symbolTable th:nth-child(8), #symbolTable td:nth-child(8) { width: 8%; }" in wide
+    assert "Average result of closed trades" in positions
+    assert "Unrealized while the leg is open" in detail
+    assert "max-width: 6.5rem" not in positions
     assert 'colspan="14"' in positions
     assert 'colspan="12"' not in positions.split('id="symbolTable"', 1)[1].split("positionsTable", 1)[0]

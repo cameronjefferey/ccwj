@@ -280,7 +280,8 @@
     #symbolTable td.pos-ifassigned-cell {
         white-space: normal;
     }
-    .pos-ifassigned { display: inline-block; max-width: 6.5rem; }
+    .pos-ifassigned { display: inline-block; max-width: none; }
+    .pos-ifassigned-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
     .pos-ifassigned > summary {
         cursor: pointer;
         list-style: none;
@@ -879,7 +880,7 @@
                             <details class="pos-ifassigned" data-no-row-nav>
                                 <summary>
                                     <span class="pos-ifassigned-k">If assigned</span>
-                                    {{ money(row.all_in_per_share) }}*
+                                    <span class="pos-ifassigned-num">{{ money(row.all_in_per_share) }}*</span>
                                 </summary>
                                 <div class="pos-ifassigned-body">
                                     <dl>
@@ -895,7 +896,7 @@
                             </details>
                             {% elif row.show_all_in is defined and row.show_all_in %}
                             <details class="pos-ifassigned" data-no-row-nav>
-                                <summary>{{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}</summary>
+                                <summary><span class="pos-ifassigned-num">{{ money(row.all_in_per_share) }}{% if row.open_options %}*{% endif %}</span></summary>
                                 <div class="pos-ifassigned-body">
                                     <dl>
                                         {% if row.equity_per_share is defined and row.equity_per_share is not none %}
@@ -990,7 +991,10 @@
                         <th class="sortable {% if sort_key == 'win_rate' %}{{ sort_dir }}{% endif %}" data-sort="num">{{ term_link('Win Rate', pos_sort('win_rate')) }}</th>
                         <th class="sortable {% if sort_key == 'trades' %}{{ sort_dir }}{% endif %}" data-sort="num" title="Individual fills."><a href="{{ pos_sort('trades') }}">Fills</a></th>
                         <th class="sortable {% if sort_key == 'wl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('wl') }}">W/L</a></th>
-                        <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a></th>
+                        <th class="sortable {% if sort_key == 'avg_pnl' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"
+                            title="Average result of closed trades. A spread counts as one trade. Open trades are not in this average.">
+                            <a href="{{ pos_sort('avg_pnl') }}">Avg P&amp;L</a>
+                        </th>
                         <th class="sortable {% if sort_key == 'avg_days' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide"><a href="{{ pos_sort('avg_days') }}">Avg days</a></th>
                         <th class="sortable {% if sort_key == 'premium' %}{{ sort_dir }}{% endif %}" data-sort="num" data-m="hide" title="Premium received.">{{ term_link('Collected', pos_sort('premium')) }}</th>
                     </tr>

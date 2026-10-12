@@ -670,6 +670,70 @@ def stamp_grouped_counts(df, units, keys, trade_col="num_individual_trades"):
     return out
 
 
+def overlay_month_counts(mart_months, grouped_months) -> pd.DataFrame:
+    """Keep each month's dollars. Replace the trade counts with grouped trades.
+
+    A spread's legs can close in different months. The mart books each
+    leg's dollars on that leg's close month. Grouped trades book one
+    count on the structure's final close. Counts follow the structure.
+    Dollars stay on the month the mart already used. Call this on a
+    frame that is already one row per strategy and month — stamping a
+    pooled count onto every account row would multiply it.
+    """
+    if mart_months is None or getattr(mart_months, "empty", True):
+        return mart_months
+    if grouped_months is None or getattr(grouped_months, "empty", True):
+        return mart_months
+    if "strategy" not in mart_months.columns or "month_start" not in mart_months.columns:
+        return mart_months
+    out = mart_months.copy()
+    out["_month"] = pd.to_datetime(out["month_start"], errors="coerce").dt.strftime("%Y-%m")
+    grouped = grouped_months.copy()
+    grouped["_month"] = pd.to_datetime(grouped["month_start"], errors="coerce").dt.strftime("%Y-%m")
+    lookup = {}
+    signals = {}
+    for row in grouped.to_dict("records"):
+        strategy = str(row.get("strategy") or "")
+        lookup[(strategy, row.get("_month"))] = row
+        signal = str(row.get("trend_signal") or "").strip()
+        if signal and signal.lower() != "nan":
+            signals[strategy] = signal
+    for idx, row in out.iterrows():
+        strategy = str(row.get("strategy") or "")
+        if strategy not in signals and strategy not in {key[0] for key in lookup}:
+            continue
+        hit = lookup.get((strategy, row.get("_month")))
+        trades = int(hit["trades_closed"]) if hit is not None else 0
+        winners = int(hit["num_winners"]) if hit is not None else 0
+        losers = int(hit["num_losers"]) if hit is not None else 0
+        out.at[idx, "trades_closed"] = trades
+        if "num_winners" in out.columns:
+            out.at[idx, "num_winners"] = winners
+        if "num_losers" in out.columns:
+            out.at[idx, "num_losers"] = losers
+        decided = winners + losers
+        if "win_rate_pct" in out.columns:
+            out.at[idx, "win_rate_pct"] = (winners / decided * 100) if decided else pd.NA
+        try:
+            pnl = float(row.get("total_pnl") or 0)
+        except (TypeError, ValueError):
+            pnl = 0.0
+        avg_col = "avg_pnl" if "avg_pnl" in out.columns else (
+            "avg_pnl_per_trade" if "avg_pnl_per_trade" in out.columns else None
+        )
+        if avg_col:
+            out.at[idx, avg_col] = (pnl / trades) if trades else pd.NA
+    if "trend_signal" in out.columns:
+        for strategy, signal in signals.items():
+            mask = out["strategy"].astype(str) == strategy
+            if not bool(mask.any()):
+                continue
+            last = pd.to_datetime(out.loc[mask, "month_start"], errors="coerce").max()
+            last_mask = mask & (pd.to_datetime(out["month_start"], errors="coerce") == last)
+            out.loc[last_mask, "trend_signal"] = signal
+    return out.drop(columns=["_month"])
+
+
 def months_from_units(units) -> pd.DataFrame:
     """Closed trades by strategy and close month, pooled across accounts."""
     columns = [

@@ -3229,7 +3229,22 @@ def position_detail(symbol):
             first_trade = ""
             last_trade = ""
 
-        avg_days_val = float(summary_df["avg_days_in_trade"].mean()) if not summary_df.empty else 0.0
+        if summary_df.empty or "avg_days_in_trade" not in summary_df.columns:
+            avg_days_val = 0.0
+        else:
+            days = pd.to_numeric(summary_df["avg_days_in_trade"], errors="coerce")
+            weights = (
+                pd.to_numeric(summary_df["num_trade_groups"], errors="coerce").fillna(0)
+                if "num_trade_groups" in summary_df.columns
+                else pd.Series(1.0, index=summary_df.index)
+            )
+            usable = days.notna() & weights.gt(0)
+            if bool(usable.any()):
+                avg_days_val = float((days[usable] * weights[usable]).sum() / weights[usable].sum())
+            elif days.notna().any():
+                avg_days_val = float(days.mean())
+            else:
+                avg_days_val = 0.0
         if pd.isna(avg_days_val):
             avg_days_val = 0.0
         if (not closed_legs_pre_leg.empty) and "days_in_trade" in closed_legs_pre_leg.columns:

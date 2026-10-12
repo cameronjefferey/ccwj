@@ -211,7 +211,9 @@ unit_counts AS (
         strategy,
         COUNTIF(unit_closed AND ROUND(unit_pnl, 2) > 0) AS num_winners,
         COUNTIF(unit_closed AND ROUND(unit_pnl, 2) < 0) AS num_losers,
-        COUNTIF(unit_closed AND ROUND(unit_pnl, 2) != 0) AS num_decided
+        COUNTIF(unit_closed AND ROUND(unit_pnl, 2) != 0) AS num_decided,
+        COUNTIF(unit_closed) AS num_closed_units,
+        SUM(IF(unit_closed, unit_pnl, 0)) AS closed_unit_pnl
     FROM outcome_units
     GROUP BY 1, 2, 3, 4, 5
 ),
@@ -282,15 +284,18 @@ strategy_summary AS (
         SUM(c.num_trades) AS num_individual_trades,  -- DRIPs excluded in int_equity_sessions
         MAX(COALESCE(uc.num_winners, 0)) AS num_winners,
         MAX(COALESCE(uc.num_losers, 0)) AS num_losers,
+        MAX(COALESCE(uc.num_closed_units, 0)) AS num_closed_units,
 
         SAFE_DIVIDE(
             MAX(COALESCE(uc.num_winners, 0)),
             NULLIF(MAX(COALESCE(uc.num_decided, 0)), 0)
         ) AS win_rate,
 
+        -- Same closed-trade average as positions_summary. A spread is
+        -- one trade. $0 stays in the denominator. Open trades are out.
         SAFE_DIVIDE(
-            SUM(CASE WHEN c.status = 'Closed' THEN c.total_pnl ELSE 0 END),
-            NULLIF(COUNTIF(c.status = 'Closed'), 0)
+            MAX(COALESCE(uc.closed_unit_pnl, 0)),
+            NULLIF(MAX(COALESCE(uc.num_closed_units, 0)), 0)
         ) AS avg_pnl_per_trade,
 
         ROUND(AVG(c.days_in_trade), 1) AS avg_days_in_trade,
@@ -411,6 +416,7 @@ final AS (
         wa.num_individual_trades,
         wa.num_winners,
         wa.num_losers,
+        wa.num_closed_units,
         ROUND(wa.win_rate, 4) AS win_rate,
         ROUND(wa.avg_pnl_per_trade, 2) AS avg_pnl_per_trade,
         wa.avg_days_in_trade,
@@ -570,12 +576,167 @@ def _strategy_chart_rows(filtered):
 POSITIONS_TAG_STRAT_QUERY = """
     SELECT
         tenant_id, account, user_id, symbol, strategy, status,
-        open_date, close_date, days_in_trade,
+        open_date, close_date, option_expiry, trade_symbol, days_in_trade,
         total_pnl, realized_pnl, unrealized_pnl,
         num_trades, premium_received, premium_paid, is_winner
     FROM `ccwj-dbt.analytics.int_strategy_classification`
     WHERE 1=1 {tenant_filter}
 """
+
+
+def strategy_rollup_frame(filtered):
+    """Account × strategy rows for the Positions strategy table.
+
+    Average P&L weights by ``num_closed_units`` when the warehouse has
+    rebuilt that column, so a two-leg spread counts once. Before that
+    column exists, each symbol row is one unweighted average. Average
+    days weight by ``num_trade_groups`` when that column is present.
+    """
+    if filtered is None or getattr(filtered, "empty", True):
+        return filtered.iloc[0:0].copy() if filtered is not None else pd.DataFrame()
+    work = filtered.copy()
+    avg_vals = (
+        pd.to_numeric(work["avg_pnl_per_trade"], errors="coerce")
+        if "avg_pnl_per_trade" in work.columns
+        else pd.Series(pd.NA, index=work.index, dtype="Float64")
+    )
+    if "num_closed_units" in work.columns:
+        avg_w = pd.to_numeric(work["num_closed_units"], errors="coerce").fillna(0)
+    else:
+        avg_w = avg_vals.notna().astype(float)
+    avg_w = avg_w.where(avg_vals.notna(), 0).fillna(0)
+    days_vals = (
+        pd.to_numeric(work["avg_days_in_trade"], errors="coerce")
+        if "avg_days_in_trade" in work.columns
+        else pd.Series(pd.NA, index=work.index, dtype="Float64")
+    )
+    if "num_trade_groups" in work.columns:
+        days_w = pd.to_numeric(work["num_trade_groups"], errors="coerce").fillna(0)
+    else:
+        days_w = days_vals.notna().astype(float)
+    days_w = days_w.where(days_vals.notna(), 0).fillna(0)
+    work["_avg_mass"] = avg_vals.fillna(0) * avg_w
+    work["_avg_w"] = avg_w
+    work["_days_mass"] = days_vals.fillna(0) * days_w
+    work["_days_w"] = days_w
+    grain = (
+        (["tenant_id"] if "tenant_id" in work.columns else [])
+        + ["account", "strategy"]
+    )
+    strat_agg = (
+        work.groupby(grain, dropna=False)
+        .agg(
+            status=("status", lambda xs: "Open" if (xs == "Open").any() else "Closed"),
+            total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            total_premium_received=("total_premium_received", "sum"),
+            total_dividend_income=("total_dividend_income", "sum"),
+            total_return=("total_return", "sum"),
+            num_individual_trades=("num_individual_trades", "sum"),
+            num_winners=("num_winners", "sum"),
+            num_losers=("num_losers", "sum"),
+            _avg_mass=("_avg_mass", "sum"),
+            _avg_w=("_avg_w", "sum"),
+            _days_mass=("_days_mass", "sum"),
+            _days_w=("_days_w", "sum"),
+        )
+        .reset_index()
+    )
+    strat_agg["avg_pnl_per_trade"] = strat_agg["_avg_mass"] / strat_agg["_avg_w"].replace(0, pd.NA)
+    strat_agg["avg_days_in_trade"] = strat_agg["_days_mass"] / strat_agg["_days_w"].replace(0, pd.NA)
+    return strat_agg.drop(columns=["_avg_mass", "_avg_w", "_days_mass", "_days_w"])
+
+
+def _rollup_classification_rows(sc):
+    """Roll classification rows to the positions grain.
+
+    Winners, losers, and average P&L use one outcome per spread. A
+    closed $0 stays in the average and out of the win rate.
+    """
+    from app.outcome_units import closed_outcome_units
+
+    grain = ["tenant_id", "account", "user_id", "symbol", "strategy"]
+    for col in grain:
+        if col not in sc.columns:
+            sc = sc.copy()
+            sc[col] = None
+    def _grain_key(row):
+        parts = []
+        for col in grain:
+            value = row.get(col) if hasattr(row, "get") else None
+            try:
+                if value is None or pd.isna(value):
+                    parts.append("")
+                    continue
+            except (TypeError, ValueError):
+                pass
+            parts.append(str(value))
+        return tuple(parts)
+
+    records = sc.to_dict("records")
+    buckets = {}
+    order = []
+    for row in records:
+        key = _grain_key(row)
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(row)
+    outcome = {}
+    for key in order:
+        units = closed_outcome_units(buckets[key])
+        closed_n = len(units)
+        outcome[key] = {
+            "num_winners": sum(1 for unit in units if unit["pnl"] > 0),
+            "num_losers": sum(1 for unit in units if unit["pnl"] < 0),
+            "num_closed_units": closed_n,
+            "avg_pnl_per_trade": round(sum(unit["pnl"] for unit in units) / closed_n, 2) if closed_n else 0.0,
+        }
+
+    for c in ["total_pnl", "realized_pnl", "unrealized_pnl",
+              "premium_received", "premium_paid", "num_trades", "days_in_trade"]:
+        if c in sc.columns:
+            sc[c] = pd.to_numeric(sc[c], errors="coerce").fillna(0)
+    _closed = sc["status"].astype(str).eq("Closed")
+    sc["_open_cnt"] = (~_closed).astype(int)
+    sc["_premium_paid_abs"] = sc["premium_paid"].abs()
+    grouped = (
+        sc.groupby(grain, dropna=False)
+        .agg(
+            total_pnl=("total_pnl", "sum"),
+            realized_pnl=("realized_pnl", "sum"),
+            unrealized_pnl=("unrealized_pnl", "sum"),
+            total_premium_received=("premium_received", "sum"),
+            total_premium_paid=("_premium_paid_abs", "sum"),
+            num_trade_groups=("total_pnl", "size"),
+            num_individual_trades=("num_trades", "sum"),
+            _open_cnt=("_open_cnt", "sum"),
+            avg_days_in_trade=("days_in_trade", "mean"),
+        )
+        .reset_index()
+    )
+    grouped["status"] = grouped["_open_cnt"].gt(0).map({True: "Open", False: "Closed"})
+    extras = []
+    for _, row in grouped.iterrows():
+        key = _grain_key(row)
+        extras.append(outcome.get(key, {
+            "num_winners": 0, "num_losers": 0,
+            "num_closed_units": 0, "avg_pnl_per_trade": 0.0,
+        }))
+    extra_df = pd.DataFrame(extras)
+    for col in extra_df.columns:
+        grouped[col] = extra_df[col].to_numpy()
+    _n_closed = grouped["num_winners"] + grouped["num_losers"]
+    _denom = _n_closed.where(_n_closed > 0, 1)
+    grouped["win_rate"] = (grouped["num_winners"] / _denom).where(_n_closed > 0, pd.NA)
+    grouped["total_dividend_income"] = 0.0
+    grouped["dividend_count"] = 0
+    grouped["total_return"] = grouped["total_pnl"].round(2)
+    for c in ["total_pnl", "realized_pnl", "unrealized_pnl",
+              "total_premium_received", "total_premium_paid", "avg_days_in_trade"]:
+        grouped[c] = grouped[c].round(2)
+    return grouped.drop(columns=["_open_cnt"])
 
 
 def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
@@ -668,55 +829,9 @@ def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
         return empty
 
     # 4) Coerce + roll up to the positions_summary grain
-    #    (tenant, account, user_id, symbol, strategy).
-    for c in ["total_pnl", "realized_pnl", "unrealized_pnl",
-              "premium_received", "premium_paid", "num_trades", "days_in_trade"]:
-        if c in sc.columns:
-            sc[c] = pd.to_numeric(sc[c], errors="coerce").fillna(0)
-    # $0 and NULL are neither. astype(bool) turns NULL into True.
-    _closed = sc["status"].astype(str).eq("Closed")
-    _win_flag = sc["is_winner"].eq(True)
-    _loss_flag = sc["is_winner"].eq(False)
-    sc["_win_closed"] = (_win_flag & _closed).astype(int)
-    sc["_los_closed"] = (_loss_flag & _closed).astype(int)
-    sc["_open_cnt"] = (~_closed).astype(int)
-    sc["_closed_pnl"] = sc["total_pnl"].where(_closed, 0.0)
-    sc["_premium_paid_abs"] = sc["premium_paid"].abs()
-
-    grouped = (
-        sc.groupby(["tenant_id", "account", "user_id", "symbol", "strategy"],
-                   dropna=False)
-        .agg(
-            total_pnl=("total_pnl", "sum"),
-            realized_pnl=("realized_pnl", "sum"),
-            unrealized_pnl=("unrealized_pnl", "sum"),
-            total_premium_received=("premium_received", "sum"),
-            total_premium_paid=("_premium_paid_abs", "sum"),
-            num_trade_groups=("total_pnl", "size"),
-            num_individual_trades=("num_trades", "sum"),
-            num_winners=("_win_closed", "sum"),
-            num_losers=("_los_closed", "sum"),
-            _closed_pnl=("_closed_pnl", "sum"),
-            _open_cnt=("_open_cnt", "sum"),
-            avg_days_in_trade=("days_in_trade", "mean"),
-        )
-        .reset_index()
-    )
-
-    _n_closed = grouped["num_winners"] + grouped["num_losers"]
-    _denom = _n_closed.where(_n_closed > 0, 1)
-    grouped["status"] = grouped["_open_cnt"].gt(0).map({True: "Open", False: "Closed"})
-    grouped["win_rate"] = (grouped["num_winners"] / _denom).where(_n_closed > 0, pd.NA)
-    grouped["avg_pnl_per_trade"] = (
-        (grouped["_closed_pnl"] / _denom).where(_n_closed > 0, 0.0).round(2)
-    )
-    grouped["total_dividend_income"] = 0.0
-    grouped["dividend_count"] = 0
-    grouped["total_return"] = grouped["total_pnl"].round(2)
-    for c in ["total_pnl", "realized_pnl", "unrealized_pnl",
-              "total_premium_received", "total_premium_paid", "avg_days_in_trade"]:
-        grouped[c] = grouped[c].round(2)
-    grouped = grouped.drop(columns=["_closed_pnl", "_open_cnt"])
+    #    (tenant, account, user_id, symbol, strategy). A spread is one
+    #    outcome, matching the mart.
+    grouped = _rollup_classification_rows(sc)
 
     # 5) Attach sector/subsector from the mart frame (per tenant + symbol).
     meta_cols = [c for c in ["sector", "subsector"]
@@ -1040,28 +1155,7 @@ def positions():
     if not filtered.empty:
         # Same tenant_id grain as the symbol rollup above so each physical
         # account's strategy line is distinct (see _sym_grain comment).
-        _strat_grain = (
-            (["tenant_id"] if "tenant_id" in filtered.columns else [])
-            + ["account", "strategy"]
-        )
-        strat_agg = (
-            filtered.groupby(_strat_grain)
-            .agg(
-                status=("status", lambda xs: "Open" if (xs == "Open").any() else "Closed"),
-                total_pnl=("total_pnl", "sum"),
-                realized_pnl=("realized_pnl", "sum"),
-                unrealized_pnl=("unrealized_pnl", "sum"),
-                total_premium_received=("total_premium_received", "sum"),
-                total_dividend_income=("total_dividend_income", "sum"),
-                total_return=("total_return", "sum"),
-                num_individual_trades=("num_individual_trades", "sum"),
-                num_winners=("num_winners", "sum"),
-                num_losers=("num_losers", "sum"),
-                avg_pnl_per_trade=("avg_pnl_per_trade", "mean"),
-                avg_days_in_trade=("avg_days_in_trade", "mean"),
-            )
-            .reset_index()
-        )
+        strat_agg = strategy_rollup_frame(filtered)
         closed_ct = strat_agg["num_winners"] + strat_agg["num_losers"]
         strat_agg["win_rate"] = strat_agg["num_winners"] / closed_ct.replace(0, pd.NA)
         all_rows = strat_agg.to_dict(orient="records")
