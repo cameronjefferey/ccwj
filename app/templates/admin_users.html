@@ -48,6 +48,11 @@
     .au-actions a:hover { background: #075985; }
     .au-actions a.audit { background: #1c1917; }
     .au-actions a.audit:hover { background: #292524; }
+    .au-actions a.activity {
+        background: transparent; color: #5b8cff;
+        border: 1px solid rgba(91,140,255,.55); padding: .15rem .6rem;
+    }
+    .au-actions a.activity:hover { background: rgba(91,140,255,.15); color: #5b8cff; }
     .au-actions button.au-delete {
         background: #b91c1c; color: #fff; padding: .2rem .65rem;
         border: 0; border-radius: 999px; font-size: .72rem; font-weight: 700;
@@ -180,6 +185,7 @@
                 <td>
                     <div class="au-actions">
                         {% if not u.private_from_admin %}
+                        <a class="activity" href="{{ url_for('admin_user_activity', user_id=u.id) }}">Activity</a>
                         <a href="{{ url_for('admin_impersonate', username=u.username) }}">Impersonate</a>
                         {% if u.accounts %}
                         <a class="audit" href="{{ url_for('admin_audit', account=u.accounts[0]) }}">Audit</a>

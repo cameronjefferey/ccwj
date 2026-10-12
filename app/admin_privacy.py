@@ -307,9 +307,11 @@ def _impersonation_active() -> bool:
 def _clear_request_cache() -> None:
     """Drop this request's copy of the list so the next read hits Postgres.
 
-    The cache lives only on ``flask.g``. There is no process-wide or
+    The warehouse snapshot cache lives only on ``flask.g``. There is no
     Redis copy. An add or remove in this request is visible to the next
     ``hidden_snapshot()`` call, and the next request loads again.
+    The in-app page-view skip list is a separate process-local cache;
+    this also drops that copy so a newly private user is not logged.
     Warehouse query cache keys include the tenant predicate, so a new
     exclusion set is a different SQL string and cannot reuse the old rows.
     """
@@ -319,6 +321,11 @@ def _clear_request_cache() -> None:
             delattr(g, "_hidden_snapshot")
     except Exception:
         pass
+    try:
+        from app.funnel import clear_hidden_user_cache
+        clear_hidden_user_cache()
+    except Exception:
+        _log.exception("could not clear app-page privacy cache")
 
 
 def note_privacy_list_unavailable() -> None:

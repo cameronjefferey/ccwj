@@ -1126,6 +1126,9 @@ is the spend gate. Add a model by appending a catalog row.
 broken connections, open feedback, 7-day page use (`usage_events` — logged
 from authenticated HTML navigations only, no query strings), broker mix,
 weekly signups, newest people. Drill-downs stay at `/admin/users`,
+`/admin/users/<id>/activity` (signup date, first and last touch, then a
+chronological timeline of pre-signup visit events, milestones, and
+in-app `app_page_view`s — Pacific time, no balances),
 `/admin/audit`, `/admin/feedback`. Postgres-only so it still loads when
 the warehouse is unhappy. Page views (`usage_events`) rank what people
 open in the last 7 days (ranked unique people then views; bars are views;
