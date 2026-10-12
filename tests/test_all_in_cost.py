@@ -571,6 +571,97 @@ def test_missing_broker_basis_uses_the_opening_estimate():
     assert "did not report a cost basis" in result["hover"]
 
 
+def test_partial_sale_removes_the_sold_shares_inferred_basis():
+    fills = [
+        _fill(symbol="XYZ", trade_date="2026-01-02", action="equity_buy",
+              quantity=200, price=100),
+        _fill(symbol="XYZ", trade_date="2026-02-02", action="equity_sell",
+              quantity=100, price=110),
+        _fill(symbol="XYZ", trade_date="2026-02-03",
+              action="option_sell_to_open", option_type="call",
+              option_strike=120, option_expiry="2026-03-20",
+              quantity=1, price=1),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=0, symbol="XYZ")
+
+    assert result["equity_basis"] == 10000.00
+    assert result["equity_per_share"] == 100.00
+    assert result["all_in_per_share"] == 99.00
+
+
+def test_partial_sale_reduces_an_inferred_opening_basis():
+    from app.all_in_cost import _stamp_rows
+
+    fills = [
+        _fill(symbol="XYZ", tenant_id="snaptrade:xyz",
+              trade_date="2026-02-02", action="equity_sell",
+              quantity=100, price=60),
+    ]
+    result = all_in_cost(
+        fills,
+        shares=100,
+        cost_basis=0,
+        opening_shares=200,
+        opening_basis=10000,
+        symbol="XYZ",
+    )
+
+    assert result["equity_basis"] == 5000.00
+    assert result["equity_per_share"] == 50.00
+    assert result["basis_estimated"] is True
+
+    rows = [{"tenant_id": "snaptrade:xyz", "symbol": "XYZ"}]
+    holdings = [{
+        "tenant_id": "snaptrade:xyz",
+        "symbol": "XYZ",
+        "instrument_type": "Equity",
+        "quantity": 100,
+        "cost_basis": 0,
+    }]
+    openings = [{
+        "tenant_id": "snaptrade:xyz",
+        "symbol": "XYZ",
+        "opening_qty": 200,
+        "est_amount": -10000,
+        "price_source": "market_close",
+    }]
+    _stamp_rows(rows, holdings, fills, [], openings=openings)
+    assert rows[0]["equity_per_share"] == 50.00
+    assert rows[0]["basis_estimated"] is True
+
+
+def test_zero_price_assignment_is_not_inferred_from_ambiguous_puts():
+    put_100 = _fill(
+        symbol="XYZ", trade_date="2026-01-02",
+        action="option_sell_to_open", option_type="put",
+        option_strike=100, option_expiry="2026-02-20",
+        quantity=1, price=2,
+    )
+    put_200 = _fill(
+        symbol="XYZ", trade_date="2026-01-02",
+        action="option_sell_to_open", option_type="put",
+        option_strike=200, option_expiry="2026-02-20",
+        quantity=1, price=3,
+    )
+    delivery = _fill(
+        symbol="XYZ", trade_date="2026-02-20",
+        action="equity_buy", quantity=100, price=0,
+    )
+
+    assert all_in_cost(
+        [put_100, put_200, delivery],
+        shares=100,
+        cost_basis=0,
+        symbol="XYZ",
+    ) is None
+    assert all_in_cost(
+        [put_200, put_100, delivery],
+        shares=100,
+        cost_basis=0,
+        symbol="XYZ",
+    ) is None
+
+
 def test_snapshot_open_call_counts_when_the_sale_is_not_in_the_tape():
     fills = [
         _fill(symbol="JEPQ", trade_date="2026-05-01", action="equity_buy",

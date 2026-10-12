@@ -518,8 +518,11 @@ What's working:
   conflicting Call/Put column, decides the bucket. When the broker
   cost basis is missing, share cost is inferred from in-cycle buys,
   from the assigned put's strike when the share delivery has no price,
-  plus the opening-balance estimate, and the breakdown says so when
-  the estimate is used. The positions table headers
+  plus the opening-balance estimate. Partial sales remove their
+  proportional average-cost basis. A zero-price share delivery is
+  matched to a put only when the compatible contract is unambiguous;
+  otherwise Cost stays blank rather than choosing a strike by row order.
+  The breakdown says so when an estimate is used. The positions table headers
   are Cost and All-in, each with that definition on the header. On a
   phone the same figures sit under the symbol.
   Pinned by `tests/test_all_in_cost.py`.

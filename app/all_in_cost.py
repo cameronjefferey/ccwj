@@ -213,14 +213,34 @@ def all_in_cost(
     events, replay = _replay_shares(parsed, _num(opening_shares))
     episode = replay["episode"]
     broker = _num(cost_basis) if cost_basis is not None and _num(cost_basis) > _EPS else 0.0
-    inferred = _infer_basis(events, episode) if episode is not None else 0.0
-    extra = _num(opening_basis) if _num(opening_basis) > _EPS else 0.0
+    opening_basis_value = (
+        _num(opening_basis) if _num(opening_basis) > _EPS else 0.0
+    )
+    # Opening estimates participate in the same average-cost replay as fills.
+    # Keeping them separate would leave the full pre-history basis behind
+    # after a partial sale.
+    carries_opening_lot = bool(
+        episode and episode.get("origin") == "opening_balance"
+    )
+    inferred = (
+        _infer_basis(
+            events,
+            episode,
+            opening_shares=_num(opening_shares) if carries_opening_lot else 0.0,
+            opening_basis=opening_basis_value if carries_opening_lot else 0.0,
+        )
+        if episode is not None
+        else 0.0
+    )
+    # Preserve the standalone opening estimate path. Resetting this after a
+    # flat/reopen cycle is handled separately from partial-sale accounting.
+    extra = 0.0 if carries_opening_lot else opening_basis_value
     if broker > _EPS:
         basis = broker
         basis_estimated = False
     else:
         basis = inferred + extra
-        basis_estimated = extra > _EPS
+        basis_estimated = opening_basis_value > _EPS
     if basis <= _EPS:
         return None
 
@@ -478,15 +498,19 @@ def _stamp_rows(symbol_rows, holdings, fills, splits, openings=None):
         sym = str(row.get("symbol") or "").strip().upper()
         fills_by_key[(tenant, sym)].append(row)
 
+    opening_qty_by_key = defaultdict(float)
     opening_basis_by_key = defaultdict(float)
     for row in openings or []:
         if not isinstance(row, dict):
             continue
+        tenant = str(row.get("tenant_id") or "").strip()
+        sym = str(row.get("symbol") or "").strip().upper()
+        opening_qty_by_key[(tenant, sym)] += _num(
+            row.get("qty") or row.get("opening_qty")
+        )
         source = str(row.get("price_source") or "").strip()
         if source == "broker_cost_basis":
             continue
-        tenant = str(row.get("tenant_id") or "").strip()
-        sym = str(row.get("symbol") or "").strip().upper()
         amount = row.get("est_cost")
         if amount is None:
             amount = row.get("est_amount")
@@ -502,7 +526,11 @@ def _stamp_rows(symbol_rows, holdings, fills, splits, openings=None):
         shares = slot["shares"] if slot else 0.0
         if shares <= _EPS and not key_fills and not key_options:
             continue
-        opening = _inferred_opening(shares, key_fills, _splits_for(sym, splits)) if shares > _EPS else 0.0
+        opening = opening_qty_by_key.get((tenant, sym), 0.0)
+        if opening <= _EPS and shares > _EPS:
+            opening = _inferred_opening(
+                shares, key_fills, _splits_for(sym, splits)
+            )
         basis = slot["basis"] if slot and slot["basis"] > _EPS else None
         result = all_in_cost(
             key_fills,
@@ -1169,19 +1197,40 @@ def _cycle_start(fills, episode, chain_ids):
     return episode["start"]
 
 
-def _infer_basis(events, episode):
-    total = 0.0
+def _infer_basis(
+    events,
+    episode,
+    *,
+    opening_shares=0.0,
+    opening_basis=0.0,
+):
+    """Average-cost basis still attached to the active share episode.
+
+    Purchases add their cash basis. A reduction removes the same fraction
+    of basis as shares sold, so a partial sale cannot leave the sold shares'
+    cost attached to the remaining lot. Synthetic opening shares and their
+    estimate enter the same replay when this is the pre-history episode.
+    """
+    qty = max(_num(opening_shares), 0.0)
+    basis = max(_num(opening_basis), 0.0)
     start = episode.get("start") if episode else None
     origin = episode.get("origin") if episode else None
     for event in events:
-        if event.delta <= _EPS or event.cash_basis <= 0:
-            continue
         if origin != "opening_balance" and start is not None and event.date < start:
             continue
         if origin != "opening_balance" and start is None:
             continue
-        total += event.cash_basis
-    return round(total, 2)
+        if event.delta > _EPS:
+            qty += event.delta
+            basis += max(_num(event.cash_basis), 0.0)
+            continue
+        if event.delta >= -_EPS or qty <= _EPS:
+            continue
+        sold = min(abs(event.delta), qty)
+        remaining = max(qty - sold, 0.0)
+        basis *= remaining / qty
+        qty = remaining
+    return round(basis, 2)
 
 
 def _hover(equity, all_in, lines, note):
@@ -1242,8 +1291,7 @@ def _matching_short_put(short_puts, fills, equity, assigned_puts=None):
         candidates[fill.contract] = candidates.get(fill.contract, 0.0) + abs(fill.raw_qty)
     contracts = abs(equity.raw_qty) / _MULTIPLIER
     price_missing = abs(equity.price) <= _PRICE_TOL
-    best = None
-    best_gap = None
+    ranked = []
     for contract, qty in candidates.items():
         if qty <= _EPS:
             continue
@@ -1259,10 +1307,20 @@ def _matching_short_put(short_puts, fills, equity, assigned_puts=None):
             if price_missing
             else abs(strike - equity.price)
         )
-        if best is None or gap < best_gap:
-            best = contract
-            best_gap = gap
-    return best
+        ranked.append((gap, contract))
+    if not ranked:
+        return None
+    best_gap = min(gap for gap, _contract in ranked)
+    best = [
+        contract
+        for gap, contract in ranked
+        if abs(gap - best_gap) <= _EPS
+    ]
+    # A zero-price delivery can match several equal-sized puts at different
+    # strikes. Choosing the first dict row makes basis depend on fill order.
+    # Explicit assignment evidence can identify the contract; without it,
+    # leave the basis unavailable rather than inventing a strike.
+    return best[0] if len(best) == 1 else None
 
 
 def _strike_of(fills, contract):
