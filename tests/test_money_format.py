@@ -21,6 +21,12 @@ def test_fmt_money_sign_sits_in_front_of_the_dollar():
     assert fmt_money(float("nan")) == "—"
     assert "$-" not in fmt_money(-1)
     assert "$-" not in fmt_money(-1234.5, 2, signed=True)
+    assert fmt_money(-0.0) == "$0.00"
+    assert fmt_money(-1e-17) == "$0.00"
+    assert fmt_money(-0.004) == "$0.00"
+    assert fmt_money(-0.004, signed=True) == "$0.00"
+    assert fmt_money(0.01) == "$0.01"
+    assert fmt_money(1_000_000_000) == "$1,000,000,000.00"
 
 
 @pytest.mark.parametrize("value", [-0.4, -0.5, -1, -1234.56, 0, 10])

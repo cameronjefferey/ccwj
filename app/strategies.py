@@ -769,6 +769,7 @@ def strategies():
             format_record_span,
             grouped_strategies,
             months_from_units,
+            overlay_month_counts,
             overlay_breakdown_counts,
             stamp_grouped_counts,
             symbol_trade_counts,
@@ -878,15 +879,20 @@ def strategies():
         # pooled across accounts (winners / decided), not averaged.
         latest_trend = {}
         recent_wr_3m = {}
-        if book_units:
-            grouped_months = months_from_units(book_units)
-            if not grouped_months.empty:
-                trend_df = grouped_months
+        grouped_months = months_from_units(book_units) if book_units else pd.DataFrame()
         rolled_trend = roll_strategy_months(trend_df)
+        if not grouped_months.empty:
+            rolled_trend = overlay_month_counts(rolled_trend, grouped_months)
+        grouped_names_with_months = (
+            set(grouped_months["strategy"].astype(str)) if not grouped_months.empty else set()
+        )
         if not trend_df.empty and "month_start" in trend_df.columns:
             for strat in rolled_trend["strategy"].unique():
                 strat_rows = rolled_trend[rolled_trend["strategy"] == strat]
-                raw_rows = trend_df[trend_df["strategy"] == strat]
+                if str(strat) in grouped_names_with_months:
+                    raw_rows = grouped_months[grouped_months["strategy"].astype(str) == str(strat)]
+                else:
+                    raw_rows = trend_df[trend_df["strategy"] == strat]
                 if strat_rows.empty:
                     continue
                 latest_trend[strat] = trend_signal_for_strategy(raw_rows)

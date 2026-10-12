@@ -193,11 +193,15 @@ def all_in_cost(
     """Cost per share for one currently held stock lot.
 
     ``shares`` is the snapshot quantity the number is divided by. ``cost_basis``
-    is the broker equity cost (dollars). When it is missing, the basis is the
-    cash paid for the shares added in this cycle (an assigned put's strike
-    when the share delivery has no price), plus ``opening_basis`` when the
-    broker never reported a cost (an estimate). With no shares and an
-    open cash-secured put, returns an if-assigned price instead of None.
+    is the broker equity cost (dollars). When it is missing, the basis is
+    the average cost of the shares still in this cycle (an assigned put's
+    strike when the share delivery has no price, and only when that put
+    is unambiguous). ``opening_basis`` is added only while the current
+    episode is still the pre-history lot, or when there are no fills.
+    A partial sale reduces that basis in proportion. A lot that went
+    flat and was bought again does not keep the old estimate. With no
+    shares and an open cash-secured put, returns an if-assigned price
+    instead of None.
     """
     held = _num(shares)
     parsed = _parse_fills(fills, splits=splits, tenant_id=tenant_id, symbol=symbol)
@@ -213,14 +217,30 @@ def all_in_cost(
     events, replay = _replay_shares(parsed, _num(opening_shares))
     episode = replay["episode"]
     broker = _num(cost_basis) if cost_basis is not None and _num(cost_basis) > _EPS else 0.0
-    inferred = _infer_basis(events, episode) if episode is not None else 0.0
-    extra = _num(opening_basis) if _num(opening_basis) > _EPS else 0.0
+    opening_basis_value = _num(opening_basis) if _num(opening_basis) > _EPS else 0.0
+    # The pre-history estimate belongs only to the lot that was already
+    # held when the tape starts. A later repurchase, after the shares
+    # went flat, is priced from its own fills. With no fills at all, the
+    # estimate is the whole basis (the position page's mid-history case).
+    carries_opening_lot = bool(episode and episode.get("origin") == "opening_balance")
+    standalone_opening = episode is None and opening_basis_value > _EPS
+    inferred = (
+        _infer_basis(
+            events,
+            episode,
+            opening_shares=_num(opening_shares) if carries_opening_lot else 0.0,
+            opening_basis=opening_basis_value if carries_opening_lot else 0.0,
+        )
+        if episode is not None
+        else 0.0
+    )
+    extra = opening_basis_value if standalone_opening else 0.0
     if broker > _EPS:
         basis = broker
         basis_estimated = False
     else:
         basis = inferred + extra
-        basis_estimated = extra > _EPS
+        basis_estimated = (carries_opening_lot and opening_basis_value > _EPS) or standalone_opening
     if basis <= _EPS:
         return None
 
@@ -479,18 +499,25 @@ def _stamp_rows(symbol_rows, holdings, fills, splits, openings=None):
         fills_by_key[(tenant, sym)].append(row)
 
     opening_basis_by_key = defaultdict(float)
+    opening_qty_by_key = {}
     for row in openings or []:
         if not isinstance(row, dict):
             continue
+        tenant = str(row.get("tenant_id") or "").strip()
+        sym = str(row.get("symbol") or "").strip().upper()
+        key = (tenant, sym)
+        qty_raw = row.get("opening_qty")
+        if qty_raw is None:
+            qty_raw = row.get("qty")
+        if qty_raw is not None and _num(qty_raw) > _EPS:
+            opening_qty_by_key[key] = opening_qty_by_key.get(key, 0.0) + _num(qty_raw)
         source = str(row.get("price_source") or "").strip()
         if source == "broker_cost_basis":
             continue
-        tenant = str(row.get("tenant_id") or "").strip()
-        sym = str(row.get("symbol") or "").strip().upper()
         amount = row.get("est_cost")
         if amount is None:
             amount = row.get("est_amount")
-        opening_basis_by_key[(tenant, sym)] += abs(_num(amount))
+        opening_basis_by_key[key] += abs(_num(amount))
 
     for row in symbol_rows:
         tenant = str(row.get("tenant_id") or "").strip()
@@ -502,7 +529,17 @@ def _stamp_rows(symbol_rows, holdings, fills, splits, openings=None):
         shares = slot["shares"] if slot else 0.0
         if shares <= _EPS and not key_fills and not key_options:
             continue
-        opening = _inferred_opening(shares, key_fills, _splits_for(sym, splits)) if shares > _EPS else 0.0
+        # Prefer the mart's opening share count. Re-inferring from
+        # (shares − replay) clamps a pre-window sale to zero and then
+        # applies the full opening basis to the wrong quantity. Infer
+        # only when the mart did not send a quantity.
+        mart_opening = opening_qty_by_key.get((tenant, sym))
+        if mart_opening is not None and mart_opening > _EPS:
+            opening = mart_opening
+        elif shares > _EPS:
+            opening = _inferred_opening(shares, key_fills, _splits_for(sym, splits))
+        else:
+            opening = 0.0
         basis = slot["basis"] if slot and slot["basis"] > _EPS else None
         result = all_in_cost(
             key_fills,
@@ -884,9 +921,7 @@ def _replay_shares(fills, opening_shares):
             delta = _equity_delta(fill)
             origin = "share_purchase" if delta > 0 else "share_sale"
             contract = None
-            cash_basis = abs(fill.raw_qty) * abs(fill.price) if delta > 0 else 0.0
-            if delta > 0 and cash_basis <= _EPS and fill.amount not in (None, 0):
-                cash_basis = abs(fill.amount)
+            cash_basis = _equity_cash_basis(fill) if delta > 0 else 0.0
             if delta > 0:
                 put = _matching_short_put(short_puts, fills, fill, assigned_puts)
                 if put is not None:
@@ -1169,19 +1204,64 @@ def _cycle_start(fills, episode, chain_ids):
     return episode["start"]
 
 
-def _infer_basis(events, episode):
-    total = 0.0
-    start = episode.get("start") if episode else None
-    origin = episode.get("origin") if episode else None
+def _equity_cash_basis(fill):
+    """Dollars paid for these shares. Cash is split-invariant.
+
+    Prefer the broker amount when it is present. If that amount matches
+    price times the fill quantity within five cents and a fee is listed
+    separately, add the fee once. An amount that already includes the
+    fee is left alone. Quantity is today's units; the cash uses the
+    fill's own share count, not the split-adjusted quantity.
+    """
+    gross = abs(fill.raw_qty) * abs(fill.price)
+    fees = abs(fill.fees or 0)
+    amount = fill.amount
+    if amount is not None and abs(amount) > _EPS:
+        paid = abs(amount)
+        if gross > _EPS and abs(paid - gross) <= 0.05 and fees > _EPS:
+            return round(paid + fees, 2)
+        return round(paid, 2)
+    if gross > _EPS:
+        return round(gross + fees, 2)
+    return 0.0
+
+
+def _infer_basis(events, episode, opening_shares=0.0, opening_basis=0.0):
+    """Average-cost basis of the shares still in this episode.
+
+    Purchases add cash. A sale removes the same fraction of the basis
+    as the fraction of shares sold, so a partial sale does not leave
+    the whole purchase on the remaining lot. The opening estimate
+    enters this replay only while the current episode is still that
+    pre-history lot.
+    """
+    if episode is None:
+        return 0.0
+    start = episode.get("start")
+    origin = episode.get("origin")
+    basis = 0.0
+    qty = 0.0
+    if origin == "opening_balance":
+        qty = _num(opening_shares)
+        if qty > _EPS and _num(opening_basis) > _EPS:
+            basis = _num(opening_basis)
     for event in events:
-        if event.delta <= _EPS or event.cash_basis <= 0:
-            continue
         if origin != "opening_balance" and start is not None and event.date < start:
             continue
         if origin != "opening_balance" and start is None:
             continue
-        total += event.cash_basis
-    return round(total, 2)
+        if event.delta > _EPS:
+            if event.cash_basis > 0:
+                basis += event.cash_basis
+            qty += event.delta
+        elif event.delta < -_EPS and qty > _EPS:
+            sold = min(abs(event.delta), qty)
+            basis -= basis * (sold / qty)
+            qty -= sold
+            if qty <= _EPS:
+                qty = 0.0
+                basis = 0.0
+    return round(max(basis, 0.0), 2)
 
 
 def _hover(equity, all_in, lines, note):
@@ -1242,8 +1322,7 @@ def _matching_short_put(short_puts, fills, equity, assigned_puts=None):
         candidates[fill.contract] = candidates.get(fill.contract, 0.0) + abs(fill.raw_qty)
     contracts = abs(equity.raw_qty) / _MULTIPLIER
     price_missing = abs(equity.price) <= _PRICE_TOL
-    best = None
-    best_gap = None
+    ranked = []
     for contract, qty in candidates.items():
         if qty <= _EPS:
             continue
@@ -1259,10 +1338,20 @@ def _matching_short_put(short_puts, fills, equity, assigned_puts=None):
             if price_missing
             else abs(strike - equity.price)
         )
-        if best is None or gap < best_gap:
-            best = contract
-            best_gap = gap
-    return best
+        ranked.append((gap, strike, contract))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (item[0], item[2]))
+    top_gap = ranked[0][0]
+    tied = [item for item in ranked if abs(item[0] - top_gap) <= 1e-9]
+    if price_missing:
+        strikes = {round(item[1], 4) for item in tied}
+        # Two short puts of the same size, different strikes, and a $0
+        # share delivery: either strike would be a guess. Same strike
+        # twice is still that strike.
+        if len(strikes) != 1:
+            return None
+    return tied[0][2]
 
 
 def _strike_of(fills, contract):

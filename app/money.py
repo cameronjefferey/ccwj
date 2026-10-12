@@ -52,8 +52,14 @@ def fmt_money(v, decimals=2, signed=False):
     if places < 0:
         places = 0
     spec = "{:,.%df}" % places
+    magnitude = spec.format(abs(f))
+    zero = spec.format(0.0)
+    # -0.0 and a value that rounds to zero both print as an unsigned $0.
+    # "{:,.2f}".format(-0.0) is "-0.00", which would show as $-0.00.
+    if magnitude == zero:
+        return "$" + zero
     if f < 0:
-        return "-$" + spec.format(-f)
+        return "-$" + magnitude
     if signed and f > 0:
-        return "+$" + spec.format(f)
-    return "$" + spec.format(f)
+        return "+$" + magnitude
+    return "$" + magnitude

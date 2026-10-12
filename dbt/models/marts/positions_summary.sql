@@ -71,7 +71,11 @@ unit_counts as (
         strategy,
         countif(unit_closed and round(unit_pnl, 2) > 0) as num_winners,
         countif(unit_closed and round(unit_pnl, 2) < 0) as num_losers,
-        countif(unit_closed and round(unit_pnl, 2) != 0) as num_decided
+        countif(unit_closed and round(unit_pnl, 2) != 0) as num_decided,
+        -- Closed units, including a $0 result. The average uses this
+        -- count so a two-leg spread is one trade, not two.
+        countif(unit_closed) as num_closed_units,
+        sum(if(unit_closed, unit_pnl, 0)) as closed_unit_pnl
     from outcome_units
     group by 1, 2, 3, 4, 5
 ),
@@ -115,6 +119,7 @@ strategy_summary as (
         sum(c.num_trades) as num_individual_trades,
         max(coalesce(uc.num_winners, 0)) as num_winners,
         max(coalesce(uc.num_losers, 0)) as num_losers,
+        max(coalesce(uc.num_closed_units, 0)) as num_closed_units,
 
         -- Win rate over decided outcomes only ($0 is neither).
         safe_divide(
@@ -122,10 +127,12 @@ strategy_summary as (
             nullif(max(coalesce(uc.num_decided, 0)), 0)
         ) as win_rate,
 
-        -- Average P&L per closed trade group
+        -- Average result of closed trades. A spread is one trade.
+        -- $0 closed units stay in the denominator. Open trades are out.
+        -- MAX because the unit_counts join fans out one row per leg.
         safe_divide(
-            sum(case when c.status = 'Closed' then c.total_pnl else 0 end),
-            nullif(countif(c.status = 'Closed'), 0)
+            max(coalesce(uc.closed_unit_pnl, 0)),
+            nullif(max(coalesce(uc.num_closed_units, 0)), 0)
         ) as avg_pnl_per_trade,
 
         -- Duration
@@ -252,6 +259,7 @@ final as (
         wad.num_individual_trades,
         wad.num_winners,
         wad.num_losers,
+        wad.num_closed_units,
         round(wad.win_rate, 4)          as win_rate,
         round(wad.avg_pnl_per_trade, 2) as avg_pnl_per_trade,
         wad.avg_days_in_trade,

@@ -342,6 +342,43 @@ def test_best_and_worst_use_the_sector_on_the_grouped_trade():
     assert energy_best["symbol"] == "XOM"
 
 
+def test_grouped_month_counts_do_not_move_mart_dollars():
+    import pandas as pd
+
+    from app.grouped_trades import overlay_month_counts
+
+    mart = pd.DataFrame([
+        {
+            "strategy": "Call Spread", "month_start": "2026-01-01",
+            "trades_closed": 1, "num_winners": 1, "num_losers": 0,
+            "total_pnl": 100, "win_rate_pct": 100, "avg_pnl": 100,
+            "trend_signal": "stable",
+        },
+        {
+            "strategy": "Call Spread", "month_start": "2026-02-01",
+            "trades_closed": 1, "num_winners": 0, "num_losers": 1,
+            "total_pnl": -25, "win_rate_pct": 0, "avg_pnl": -25,
+            "trend_signal": "stable",
+        },
+    ])
+    grouped = pd.DataFrame([
+        {
+            "strategy": "Call Spread", "month_start": "2026-02-01",
+            "trades_closed": 1, "num_winners": 1, "num_losers": 0,
+            "total_pnl": 75, "trend_signal": "improving",
+        },
+    ])
+    out = overlay_month_counts(mart, grouped)
+    january = out[out["month_start"].astype(str).str.startswith("2026-01")].iloc[0]
+    february = out[out["month_start"].astype(str).str.startswith("2026-02")].iloc[0]
+    assert january["total_pnl"] == 100
+    assert int(january["trades_closed"]) == 0
+    assert february["total_pnl"] == -25
+    assert int(february["trades_closed"]) == 1
+    assert int(february["num_winners"]) == 1
+    assert february["trend_signal"] == "improving"
+
+
 def test_plain_labels_and_the_record_span():
     assert plain_label("0-7 DTE") == "0–7 days"
     assert plain_label("ITM") == "In the money"

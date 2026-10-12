@@ -1335,7 +1335,7 @@
                     <th class="pd-num pd-opt pd-desk" data-m="hide">Days</th>
                     <th class="pd-num" data-m="hide">Cost</th>
                     <th class="pd-num" data-m="hide" title="Market value, or proceeds if closed">Value</th>
-                    <th class="pd-num">P&amp;L</th>
+                    <th class="pd-num" title="Unrealized while the leg is open. Realized after it closes.">P&amp;L</th>
                     <th class="pd-num pd-ifheld" title="P&amp;L if held to expiration. A dash means that does not apply.">If held</th>
                     <th class="pd-num">Return</th>
                 </tr>
@@ -2066,7 +2066,7 @@
                 </dd>
             </div>
             <div>
-                <dt>Avg P&amp;L</dt>
+                <dt title="Average result of closed trades. A spread counts as one trade. Open trades are not in this average.">Avg P&amp;L</dt>
                 <dd class="{{ 'text-positive' if r.avg_pnl_per_trade >= 0 else 'text-negative' }}">{{ money(r.avg_pnl_per_trade) }}</dd>
             </div>
             <div>
