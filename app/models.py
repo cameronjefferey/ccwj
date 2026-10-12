@@ -965,6 +965,14 @@ def _migrate_funnel_events():
             ON funnel_events (visit_id)
             """
         )
+        # Per-user timelines and the "which visits belong to this user"
+        # lookup. Anonymous pre-signup rows stay on idx_funnel_events_visit.
+        execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_funnel_events_user_created
+            ON funnel_events (user_id, created_at DESC)
+            """
+        )
         for column, typedef in (
             ("landing", "TEXT"),
             ("variant", "TEXT"),

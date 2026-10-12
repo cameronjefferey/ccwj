@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .ua-top {
+        display: flex; justify-content: space-between; align-items: baseline;
+        gap: .75rem; margin: 0 0 .35rem;
+    }
+    .ua-top h1 { font-size: 1.15rem; font-weight: 700; margin: 0; color: var(--ht-ink); }
+    .ua-top a { font-size: .78rem; font-weight: 700; color: #5b8cff; text-decoration: none; }
+    .ua-meta {
+        display: flex; flex-wrap: wrap; gap: .35rem .9rem;
+        font-size: .8rem; color: var(--ht-muted); margin: 0 0 .55rem;
+    }
+    .ua-meta strong { color: var(--ht-ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+    .ua-touch {
+        font-size: .78rem; color: var(--ht-muted); margin: 0 0 .15rem;
+    }
+    .ua-touch b { color: var(--ht-label); font-weight: 650; }
+    .ua-pages {
+        font-size: .78rem; color: var(--ht-ink); margin: .35rem 0 .7rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .ua-pages span { color: var(--ht-muted); }
+    .ua-session { margin: 0 0 .7rem; }
+    .ua-session h2 {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+        color: var(--ht-muted); font-weight: 700; margin: 0 0 .2rem;
+    }
+    .ua-event {
+        display: grid;
+        grid-template-columns: 4.6rem 7.2rem minmax(0, 1fr) auto;
+        gap: .35rem .6rem; align-items: baseline;
+        padding: .18rem 0; border-top: 1px solid rgba(138,151,177,.18);
+        font-size: .8rem;
+    }
+    .ua-time { font-variant-numeric: tabular-nums; color: var(--ht-muted); }
+    .ua-kind { color: var(--ht-label); }
+    .ua-path {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: .75rem; color: var(--ht-ink);
+        overflow-wrap: anywhere;
+    }
+    .ua-detail { color: #5b8cff; font-variant-numeric: tabular-nums; }
+    .ua-empty { color: var(--ht-muted); font-size: .85rem; margin: .4rem 0 0; }
+    .ua-note { color: var(--ht-muted); font-size: .72rem; margin: .2rem 0 .6rem; }
+    @media (max-width: 640px) {
+        .ua-event { grid-template-columns: 4.2rem minmax(0, 1fr); }
+        .ua-kind { grid-column: 2; }
+        .ua-path { grid-column: 1 / -1; }
+        .ua-detail { grid-column: 2; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ua-top">
+    <h1>@{{ activity.username }} <span style="font-weight:500;color:var(--ht-muted);">activity</span></h1>
+    <a href="{{ url_for('admin_users') }}">All users</a>
+</div>
+<p class="ua-meta">
+    <span>Signed up <strong>{{ activity.signed_up }}</strong></span>
+    <span><strong>{{ activity.pages_viewed }}</strong> pages viewed</span>
+    <span>Last seen <strong>{{ activity.last_seen }}</strong></span>
+</p>
+<p class="ua-touch"><b>First touch</b> {{ activity.first_touch }}</p>
+<p class="ua-touch"><b>Last touch</b> {{ activity.last_touch }}</p>
+{% if activity.top_pages %}
+<p class="ua-pages">
+    Top pages
+    {% for page in activity.top_pages %}
+        <span>{{ page.path }}</span> {{ page.count }}{% if not loop.last %} ·{% endif %}
+    {% endfor %}
+</p>
+{% endif %}
+{% if activity.truncated %}
+<p class="ua-note">Latest {{ activity.event_limit }} events.</p>
+{% endif %}
+{% if activity.sessions %}
+    {% for session in activity.sessions %}
+    <section class="ua-session">
+        <h2>{{ session.label }} · {{ session.count }}</h2>
+        {% for event in session.events %}
+        <div class="ua-event" data-event="{{ event.event }}" data-path="{{ event.path }}" data-detail="{{ event.detail }}">
+            <span class="ua-time">{{ event.time }}</span>
+            <span class="ua-kind">{{ event.kind }}</span>
+            {% if event.path %}<span class="ua-path">{{ event.path }}</span>{% else %}<span></span>{% endif %}
+            {% if event.detail %}<span class="ua-detail">{{ event.detail }}</span>{% endif %}
+        </div>
+        {% endfor %}
+    </section>
+    {% endfor %}
+{% else %}
+<p class="ua-empty">No page views yet.</p>
+{% endif %}
+{% endblock %}

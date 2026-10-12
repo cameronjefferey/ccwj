@@ -75,11 +75,31 @@ EVENTS = {
     # pixel is off. detail carries a CTA name, a scroll mark, a time
     # bucket, or a video id.
     "page_view": {"first": False, "reddit": None},
+    # Signed-in HTML navigations. First-party only: no Reddit pixel,
+    # and not a once-per-user milestone. Rapid reloads of the same path
+    # collapse in log_event.
+    "app_page_view": {"first": False, "reddit": None},
     "cta_click": {"first": False, "reddit": None},
     "scroll_depth": {"first": False, "reddit": None},
     "time_on_page": {"first": False, "reddit": None},
     "video_play": {"first": False, "reddit": None},
 }
+# Same path reloaded inside this window is one in-app page view.
+APP_PAGE_DEDUPE_MINUTES = 10
+# Newest events kept on the admin timeline. One extra row detects truncation.
+ACTIVITY_EVENT_LIMIT = 1000
+_ACTIVITY_PAGE_EVENTS = frozenset({"page_view", "app_page_view"})
+_ACTIVITY_DETAIL_EVENTS = frozenset({
+    "cta_click", "scroll_depth", "time_on_page", "video_play",
+})
+_SESSION_GAP_MINUTES = 30
+# Process-local copy of active private-from-admin user ids. A page view
+# must not query this list on every request. Fail closed when the read
+# fails: skip the log rather than record someone we could not classify.
+_HIDDEN_IDS_TTL_S = 60.0
+_HIDDEN_IDS_BACKOFF_S = 5.0
+_hidden_ids_cache = {"until": 0.0, "ids": None}
+
 # The browser beacon may only name these. Paid and signup stay server-side.
 # client_seen is not a countable row — it marks the visit's rows as a browser.
 BEACON_EVENTS = frozenset({
@@ -746,29 +766,48 @@ def _already(event: str, user_id, visit_id) -> bool:
     return bool(row)
 
 
-def _recent_same(event: str, visit_id: str, path: str, detail: str, hours: int) -> bool:
+def _recent_same(
+    event: str,
+    visit_id: str,
+    path: str,
+    detail: str,
+    hours: int,
+    *,
+    minutes: int = 0,
+) -> bool:
+    """True when this visit already logged the same event recently.
+
+    ``minutes`` wins over ``hours`` so a short reload window can reuse
+    the same lookup. The window value is an integer, never caller SQL.
+    """
     from app.db import fetch_one
     if not visit_id:
         return False
+    if minutes:
+        unit = " minutes"
+        window = str(int(minutes))
+    else:
+        unit = " hours"
+        window = str(int(hours))
     if detail:
         row = fetch_one(
             """
             SELECT 1 FROM funnel_events
              WHERE event = %s AND visit_id = %s AND path = %s AND detail = %s
-               AND created_at > NOW() - (%s || ' hours')::interval
+               AND created_at > NOW() - (%s || %s)::interval
              LIMIT 1
             """,
-            (event, visit_id, path, detail, str(int(hours))),
+            (event, visit_id, path, detail, window, unit),
         )
     else:
         row = fetch_one(
             """
             SELECT 1 FROM funnel_events
              WHERE event = %s AND visit_id = %s AND path = %s
-               AND created_at > NOW() - (%s || ' hours')::interval
+               AND created_at > NOW() - (%s || %s)::interval
              LIMIT 1
             """,
-            (event, visit_id, path, str(int(hours))),
+            (event, visit_id, path, window, unit),
         )
     return bool(row)
 
@@ -811,6 +850,10 @@ def log_event(
         if event == "landing_view" and _recent_same(event, visit_id, path, "", 12):
             return None
         if event == "page_view" and _recent_same(event, visit_id, path, "", 1):
+            return None
+        if event == "app_page_view" and _recent_same(
+            event, visit_id, path, "", 0, minutes=APP_PAGE_DEDUPE_MINUTES,
+        ):
             return None
         if event in ("cta_click", "scroll_depth", "time_on_page", "video_play") and _recent_same(
             event, visit_id, path, detail, 12,
@@ -1135,6 +1178,185 @@ def _observe(response):
     if method == "POST" and path == "/billing/checkout" and status in (302, 303):
         if "stripe.com" in loc:
             log_event("checkout_started", path=path)
+    _maybe_log_app_page_view(response)
+
+
+_APP_PAGE_SKIP_PREFIXES = (
+    "/static",
+    "/healthz",
+    "/funnel/",
+    "/api/",
+    "/internal/",
+    "/webhooks/",
+    "/admin",
+)
+_APP_PAGE_SKIP_EXACT = frozenset({
+    "/version",
+    "/favicon.ico",
+    "/sw.js",
+    "/robots.txt",
+    "/overview/below",
+    "/offline",
+})
+_APP_PAGE_SKIP_ENDPOINTS = frozenset({
+    "overview_below",
+    "healthz",
+    "healthz_db",
+    "version",
+    "funnel_beacon",
+})
+
+
+def clear_hidden_user_cache() -> None:
+    """Drop the process-local private-user id cache. Next log reloads it."""
+    _hidden_ids_cache["until"] = 0.0
+    _hidden_ids_cache["ids"] = None
+
+
+def _hidden_user_ids():
+    """Active private-from-admin ids, or None when the list could not be read.
+
+    None is fail-closed: the caller skips the page view. A successful
+    empty set means nobody is private. The result is reused for a minute
+    so ordinary navigations do not query.
+    """
+    now = time.monotonic()
+    slot = _hidden_ids_cache
+    if now < slot["until"]:
+        return slot["ids"]
+    if not _db_ready():
+        slot["ids"] = None
+        slot["until"] = now + _HIDDEN_IDS_BACKOFF_S
+        return None
+    try:
+        from app.db import fetch_all
+        rows = fetch_all(
+            "SELECT user_id FROM admin_hidden_users WHERE active IS TRUE"
+        ) or []
+        ids = frozenset(
+            int(row["user_id"])
+            for row in rows
+            if row.get("user_id") is not None
+        )
+    except Exception as exc:
+        _log.warning("app page view privacy list skipped: %s", exc)
+        slot["ids"] = None
+        slot["until"] = now + _HIDDEN_IDS_BACKOFF_S
+        return None
+    slot["ids"] = ids
+    slot["until"] = now + _HIDDEN_IDS_TTL_S
+    return ids
+
+
+def viewer_is_hidden_from_admins(user_id) -> bool:
+    """True when this signed-in user must not be logged, including on error."""
+    ids = _hidden_user_ids()
+    if ids is None:
+        return True
+    try:
+        return int(user_id) in ids
+    except (TypeError, ValueError):
+        return True
+
+
+def _response_header(response, name: str) -> str:
+    headers = getattr(response, "headers", None)
+    if headers is None or not hasattr(headers, "get"):
+        return ""
+    return headers.get(name) or ""
+
+
+def _is_app_page_load(response) -> bool:
+    """Signed-in GET 200 HTML document. Partials, APIs, and admin stay out."""
+    if not has_request_context():
+        return False
+    if request.method != "GET":
+        return False
+    if getattr(response, "status_code", None) != 200:
+        return False
+    if _response_header(response, "Location"):
+        return False
+    path = request.path or ""
+    if path in _APP_PAGE_SKIP_EXACT or path.startswith("/sitemap"):
+        return False
+    if any(path.startswith(prefix) for prefix in _APP_PAGE_SKIP_PREFIXES):
+        return False
+    endpoint = request.endpoint or ""
+    if (
+        not endpoint
+        or endpoint.startswith("static")
+        or endpoint.startswith("admin")
+        or endpoint.endswith("_fragment")
+        or "fragment" in endpoint
+        or endpoint in _APP_PAGE_SKIP_ENDPOINTS
+    ):
+        return False
+    if (request.headers.get("X-Requested-With") or "") == "XMLHttpRequest":
+        return False
+    if request.headers.get("HX-Request") or request.headers.get("HX-Boosted"):
+        return False
+    if request.headers.get("X-HT-Full") == "1":
+        return False
+    purpose = (
+        request.headers.get("Sec-Purpose") or request.headers.get("Purpose") or ""
+    ).lower()
+    if "prefetch" in purpose:
+        return False
+    dest = (request.headers.get("Sec-Fetch-Dest") or "").lower()
+    if dest and dest != "document":
+        return False
+    accept = request.headers.get("Accept") or ""
+    if accept.startswith("application/json"):
+        return False
+    ctype = _response_header(response, "Content-Type").split(";")[0].strip().lower()
+    if not ctype:
+        ctype = (getattr(response, "mimetype", None) or "").split(";")[0].strip().lower()
+    if ctype != "text/html":
+        return False
+    if _response_header(response, "Content-Disposition").lower().startswith("attachment"):
+        return False
+    return True
+
+
+def _impersonation_active() -> bool:
+    try:
+        return bool(session.get("_impersonator_id"))
+    except Exception:
+        return True
+
+
+def _app_page_audience_skipped() -> bool:
+    """Admin, owner, test, demo, private, opted-out, and impersonated sessions."""
+    if tracking_opt_out():
+        return True
+    if _impersonation_active():
+        return True
+    username = (_viewer_username() or "").strip()
+    if not username or username.lower() == "demo":
+        return True
+    if is_internal_account(username):
+        return True
+    user_id = _viewer_user_id()
+    if user_id is None:
+        return True
+    if viewer_is_hidden_from_admins(user_id):
+        return True
+    return False
+
+
+def _maybe_log_app_page_view(response) -> None:
+    """One app_page_view for a real signed-in HTML navigation. Never raises."""
+    try:
+        if not _is_app_page_load(response) or _app_page_audience_skipped():
+            return
+        path = (request.path or "").split("?", 1)[0][:300]
+        if not path.startswith("/"):
+            return
+        # Empty referrer: do not copy the acquisition referrer onto every
+        # in-app hit, and do not keep a same-site URL that may hold a query.
+        log_event("app_page_view", path=path, referrer="")
+    except Exception as exc:
+        _log.warning("app page view skipped: %s", exc)
 
 
 def _mark_client_beacon() -> None:
@@ -2327,6 +2549,253 @@ def build_admin_analytics() -> dict:
         "tab": "paid",
         "acquisition": build_acquisition(),
         "product": None,
+    }
+
+
+def _as_pt(moment):
+    """Aware America/Los_Angeles datetime. Naive values are treated as UTC."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    if moment is None:
+        return None
+    if not isinstance(moment, datetime):
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(ZoneInfo("America/Los_Angeles"))
+
+
+def format_pt(moment, *, with_date=True, with_zone=True) -> str:
+    """Compact Pacific time. The zone label is PT for both PST and PDT."""
+    local = _as_pt(moment)
+    if local is None:
+        return ""
+    hour = local.hour % 12 or 12
+    ampm = "a" if local.hour < 12 else "p"
+    clock = f"{hour}:{local.minute:02d}{ampm}"
+    if not with_date:
+        return f"{clock} PT" if with_zone else clock
+    stamp = f"{_MONTHS[local.month - 1]} {local.day}, {clock}"
+    return f"{stamp} PT" if with_zone else stamp
+
+
+def format_pt_date(moment) -> str:
+    """Calendar date in Pacific time, for signup."""
+    local = _as_pt(moment)
+    if local is None:
+        return ""
+    return f"{_MONTHS[local.month - 1]} {local.day}, {local.year}"
+
+
+def _touch_line(source, campaign, landing) -> str:
+    parts = []
+    for value in (source, campaign, landing):
+        text = (value or "").strip()
+        if text and text not in parts:
+            parts.append(text)
+    return " · ".join(parts) if parts else "—"
+
+
+def _activity_detail(event: str, detail) -> str:
+    text = (detail or "").strip()
+    if not text or event not in _ACTIVITY_DETAIL_EVENTS:
+        return ""
+    if event == "scroll_depth":
+        return f"{text}%"
+    if event == "time_on_page":
+        for bucket, label, _key in TIME_BUCKETS:
+            if text == bucket:
+                return label
+        return text
+    return text
+
+
+def _activity_kind(event: str) -> str:
+    labels = {
+        "page_view": "Page",
+        "app_page_view": "In app",
+        "landing_view": "Landing",
+        "cta_click": "Click",
+        "scroll_depth": "Scroll",
+        "time_on_page": "Time on page",
+        "video_play": "Video",
+    }
+    if event in labels:
+        return labels[event]
+    for key, label in FUNNEL_STEPS:
+        if key == event:
+            return label
+    return (event or "Event").replace("_", " ")
+
+
+def group_activity_sessions(events: list[dict]) -> list[dict]:
+    """Split a chronological list on visit changes and quiet gaps.
+
+    A new visit id starts a session. The same visit also starts a session
+    after ``_SESSION_GAP_MINUTES`` with no events. Events missing a visit
+    id stay with the current session until the time gap splits them.
+    """
+    from datetime import timedelta
+    gap = timedelta(minutes=_SESSION_GAP_MINUTES)
+    sessions = []
+    current = None
+    prev = None
+    for event in events:
+        split = current is None
+        if prev is not None and not split:
+            created = event.get("created_at")
+            previous = prev.get("created_at")
+            if created is not None and previous is not None and (created - previous) > gap:
+                split = True
+            else:
+                prev_visit = prev.get("visit_id") or ""
+                this_visit = event.get("visit_id") or ""
+                if prev_visit and this_visit and prev_visit != this_visit:
+                    split = True
+        if split:
+            current = {"events": []}
+            sessions.append(current)
+        current["events"].append(event)
+        prev = event
+    return sessions
+
+
+def _activity_event_sql() -> str:
+    """Newest events for one user, chronological, bots excluded.
+
+    Two index reads, not a per-row EXISTS: this user's own rows
+    (``user_id``), plus anonymous rows on visit ids that user already
+    owns (``visit_id``). Another user's rows on a shared browser cookie
+    stay out — ``user_id IS NULL`` is the pre-signup half.
+    """
+    limit = int(ACTIVITY_EVENT_LIMIT) + 1
+    return f"""
+        WITH tied AS (
+            SELECT id, created_at, event, visit_id, path, detail,
+                   is_bot, user_agent
+            FROM funnel_events
+            WHERE user_id = %s
+            UNION ALL
+            SELECT id, created_at, event, visit_id, path, detail,
+                   is_bot, user_agent
+            FROM funnel_events
+            WHERE user_id IS NULL
+              AND visit_id IN (
+                  SELECT visit_id
+                  FROM funnel_events
+                  WHERE user_id = %s
+                    AND visit_id IS NOT NULL
+              )
+        ),
+        clean AS (
+            SELECT id, created_at, event, visit_id, path, detail
+            FROM tied
+            WHERE COALESCE(is_bot, FALSE) = FALSE
+              AND (user_agent IS NULL OR user_agent !~* %s)
+        )
+        SELECT id, created_at, event, visit_id, path, detail
+        FROM (
+            SELECT id, created_at, event, visit_id, path, detail
+            FROM clean
+            ORDER BY created_at DESC, id DESC
+            LIMIT {limit}
+        ) recent
+        ORDER BY created_at ASC, id ASC
+    """
+
+
+def load_user_activity(user_id: int) -> dict | None:
+    """Signup, attribution, and a chronological timeline. No money fields.
+
+    None when the user row is gone. Private-from-admin is enforced by
+    the route before this runs.
+    """
+    from app.db import fetch_all, fetch_one
+    user = fetch_one(
+        """
+        SELECT u.id,
+               u.username,
+               up.created_at AS signed_up_at,
+               u.acquisition_source,
+               u.acquisition_campaign,
+               u.acquisition_landing,
+               u.acquisition_lt_source,
+               u.acquisition_lt_campaign,
+               u.acquisition_lt_landing
+        FROM users u
+        LEFT JOIN user_profiles up ON up.user_id = u.id
+        WHERE u.id = %s
+        """,
+        (int(user_id),),
+    )
+    if not user:
+        return None
+    rows = fetch_all(
+        _activity_event_sql(),
+        (int(user_id), int(user_id), _BOT_UA_PATTERN),
+    ) or []
+    truncated = len(rows) > ACTIVITY_EVENT_LIMIT
+    if truncated:
+        rows = rows[1:]
+    events = []
+    for row in rows:
+        event = row.get("event") or ""
+        created = row.get("created_at")
+        events.append({
+            "id": row.get("id"),
+            "created_at": created,
+            "event": event,
+            "visit_id": row.get("visit_id") or "",
+            "path": row.get("path") or "",
+            "detail": _activity_detail(event, row.get("detail")),
+            "kind": _activity_kind(event),
+            "time": format_pt(created, with_date=False, with_zone=False),
+            "stamp": format_pt(created),
+        })
+    page_rows = [event for event in events if event["event"] in _ACTIVITY_PAGE_EVENTS]
+    counts = {}
+    for event in page_rows:
+        path = event["path"] or "/"
+        counts[path] = counts.get(path, 0) + 1
+    top_pages = [
+        {"path": path, "count": count}
+        for path, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+    ]
+    signed_at = user.get("signed_up_at")
+    if signed_at is None:
+        for event in events:
+            if event["event"] == "signup_completed":
+                signed_at = event["created_at"]
+                break
+    last = events[-1]["created_at"] if events else None
+    sessions = []
+    for group in group_activity_sessions(events):
+        first = group["events"][0]
+        sessions.append({
+            "label": first["stamp"],
+            "count": len(group["events"]),
+            "events": group["events"],
+        })
+    return {
+        "user_id": int(user["id"]),
+        "username": user.get("username") or "",
+        "signed_up": format_pt_date(signed_at) or "—",
+        "first_touch": _touch_line(
+            user.get("acquisition_source"),
+            user.get("acquisition_campaign"),
+            user.get("acquisition_landing"),
+        ),
+        "last_touch": _touch_line(
+            user.get("acquisition_lt_source"),
+            user.get("acquisition_lt_campaign"),
+            user.get("acquisition_lt_landing"),
+        ),
+        "pages_viewed": len(page_rows),
+        "top_pages": top_pages,
+        "last_seen": format_pt(last) or "—",
+        "sessions": sessions,
+        "truncated": truncated,
+        "event_limit": ACTIVITY_EVENT_LIMIT,
     }
 
 

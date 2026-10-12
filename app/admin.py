@@ -22,6 +22,10 @@ Four features live here:
        row for a given (account, symbol). Lets the admin verify whether
        the app is showing the truth, without having to first impersonate.
 
+5. /admin/users/<id>/activity
+       Chronological first-party timeline for one signup: pre-signup
+       visit events, milestones, and in-app page views. No balances.
+
 Everything here is gated by app.models.is_admin(). Non-admins get a 404
 (not 403) so the existence of these routes is not advertised.
 """
@@ -630,6 +634,37 @@ def admin_users():
         admin_usernames=admin_usernames,
         stripe_monthly_price=price_id("monthly"),
         stripe_annual_price=price_id("annual"),
+    )
+
+
+@app.route("/admin/users/<int:user_id>/activity", methods=["GET"])
+@_admin_only
+def admin_user_activity(user_id):
+    """What this signup looked at. No balances, positions, or P&L.
+
+    A user whose privacy is on 404s. If the private-account list cannot
+    be loaded, every activity page 404s rather than guessing.
+    """
+    from app.admin_privacy import (
+        hidden_snapshot,
+        is_hidden_from_admins,
+        note_privacy_list_unavailable,
+    )
+    from app.funnel import load_user_activity
+
+    snap = hidden_snapshot()
+    if not snap["available"]:
+        note_privacy_list_unavailable()
+        abort(404)
+    if is_hidden_from_admins(user_id):
+        abort(404)
+    activity = load_user_activity(user_id)
+    if activity is None:
+        abort(404)
+    return render_template(
+        "admin_user_activity.html",
+        title=f"Admin: @{activity['username']}",
+        activity=activity,
     )
 
 
