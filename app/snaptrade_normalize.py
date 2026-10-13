@@ -1089,6 +1089,31 @@ def flatten_order_legs(orders: Iterable[Mapping]) -> list:
     return flat
 
 
+def _order_equity_symbol(order: Mapping) -> tuple[str, str]:
+    """Ticker and company name from an equity order.
+
+    SnapTrade documents ``universal_symbol`` as an object or null. A
+    Vanguard-shaped payload can send the ticker as a bare string (or omit
+    the object). Calling ``.get`` on that string raises AttributeError and
+    fails the whole account sync. A string is the ticker; anything else
+    that is not a mapping contributes no symbol.
+    """
+    usym = order.get("universal_symbol")
+    if isinstance(usym, str):
+        ticker = usym.strip()
+        return _crypto_pair_base(ticker), ticker
+    if not isinstance(usym, Mapping):
+        return "", ""
+    raw = usym.get("raw_symbol") or usym.get("symbol") or ""
+    if isinstance(raw, Mapping):
+        raw = raw.get("raw_symbol") or raw.get("symbol") or ""
+    ticker = _crypto_pair_base(str(raw or "").strip())
+    desc = usym.get("description")
+    if not isinstance(desc, str):
+        desc = ""
+    return ticker, desc.strip()
+
+
 def orders_to_history_df(
     orders: Iterable[Mapping],
     *,
@@ -1160,7 +1185,13 @@ def orders_to_history_df(
 
         action = str(order.get("action") or "").strip().upper()
         option_symbol = order.get("option_symbol")
-        is_option = bool(option_symbol)
+        # A string here is not a contract object. The old ``bool(...)`` check
+        # then called ``.get`` inside the OSI builder's callers and, on the
+        # equity branch, ``.get`` on ``universal_symbol``. Skip the row.
+        if option_symbol and not isinstance(option_symbol, Mapping):
+            continue
+        is_option = isinstance(option_symbol, Mapping)
+        company = ""
 
         if is_option:
             # Options: emit ONLY when the action explicitly disambiguates
@@ -1193,18 +1224,16 @@ def orders_to_history_df(
             else:
                 # Unknown action verb. Activities will catch this trade
                 # eventually — better to skip than guess.
+                ticker, _company = _order_equity_symbol(order)
                 _log.warning(
                     "snaptrade_normalize: dropping order with unknown action %r "
                     "for symbol %r — will be picked up via activities later",
                     action,
-                    ((order.get("universal_symbol") or {}).get("raw_symbol")),
+                    ticker,
                 )
                 continue
 
-            usym = order.get("universal_symbol") or {}
-            sym_str = _crypto_pair_base(
-                usym.get("raw_symbol") or usym.get("symbol") or ""
-            )
+            sym_str, company = _order_equity_symbol(order)
             if not sym_str:
                 continue
 
@@ -1284,7 +1313,7 @@ def orders_to_history_df(
             if estimated_fee:
                 description = f"{description} {ESTIMATED_FEE_MARK}"
         else:
-            description = ((order.get("universal_symbol") or {}).get("description") or sym_str).strip()
+            description = (company or sym_str).strip()
 
         rows.append({
             "Account": account_name,

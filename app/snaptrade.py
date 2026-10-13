@@ -3385,7 +3385,18 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # a missing/odd timestamp never flags. Runs only AFTER the disabled gate
     # (which raises first when disabled is True), so this catches the
     # complementary case the disabled flag silently passes.
-    if SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0:
+    if SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0 and _holdings_unavailable(account_summary):
+        # Vanguard employer plans (and any account SnapTrade marks
+        # holdings_unavailable) ship an old last_successful_sync because the
+        # brokerage cannot be read — not because the login is dead. Do not
+        # take the reconnect path. Activities, orders, and the account total
+        # are still usable; empty positions are expected.
+        app.logger.info(
+            "SnapTrade holdings unavailable for account=%s (snaptrade_id=%s); "
+            "not treating an old last_successful_sync as a broken connection",
+            account_name, snaptrade_account_id,
+        )
+    elif SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0:
         stale_days = _holdings_stale_days(account_summary, today=end_date)
         if stale_days is not None and stale_days >= SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
             raise _SnapTradeAuthError(
@@ -4114,13 +4125,43 @@ def _holdings_last_successful_sync(account_summary):
     return dt.date() if dt is not None else None
 
 
+def _holdings_unavailable(account_summary) -> bool:
+    """True when the brokerage cannot supply holdings for this account.
+
+    SnapTrade sets ``sync_status.holdings.holdings_unavailable`` for accounts
+    whose broker system cannot be read. Their docs name Vanguard
+    employer-sponsored retirement plans. The same object often carries a
+    years-old ``last_successful_sync`` (the published example is 2024-06-28).
+    That timestamp means holdings cannot be refreshed, not that a live
+    connection is serving a stalled cache. Flagging it ``connection_broken``
+    on the first sync sends the user to reconnect a connection that is not
+    broken.
+    """
+    if not isinstance(account_summary, dict):
+        return False
+    sync_status = account_summary.get("sync_status")
+    if not isinstance(sync_status, dict):
+        return False
+    holdings = sync_status.get("holdings")
+    if not isinstance(holdings, dict):
+        return False
+    value = holdings.get("holdings_unavailable")
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() == "true"
+
+
 def _holdings_stale_days(account_summary, *, today=None):
     """Days since SnapTrade last refreshed holdings from the broker.
 
-    Returns ``None`` when the freshness signal is unavailable or in the future
-    — ``None`` means "change nothing", so a missing/odd timestamp never
-    false-flags a healthy connection (mirrors the ``disabled`` helper's
-    None-is-safe philosophy)."""
+    Returns ``None`` when the freshness signal is unavailable, in the future,
+    or when ``holdings_unavailable`` is set — ``None`` means "change nothing",
+    so a missing/odd timestamp never false-flags a healthy connection (mirrors
+    the ``disabled`` helper's None-is-safe philosophy). An unavailable holdings
+    feed is not a stalled cache; see ``_holdings_unavailable``.
+    """
+    if _holdings_unavailable(account_summary):
+        return None
     last = _holdings_last_successful_sync(account_summary)
     if last is None:
         return None

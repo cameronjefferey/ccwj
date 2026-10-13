@@ -101,7 +101,7 @@ def _wire(monkeypatch):
         lambda user_id: calls["trial_started"].append(user_id),
     )
 
-    def _fake_batch(entries, *, commit_message):
+    def _fake_batch(entries, *, commit_message, skipped=None):
         calls["batch"].append({"entries": list(entries), "message": commit_message})
         return True, None, "sha123", False, len(entries)
 
@@ -485,6 +485,45 @@ def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
     uid, account_id, error = _wire["sync_attempts"][0]
     assert (uid, account_id) == (14, "new-account")
     assert error.startswith("seed_write_failed:")
+
+
+def test_one_skipped_account_does_not_fail_the_cron(_wire, monkeypatch):
+    """A Vanguard (or any) frame that the batch refuses must not exit 1
+    or stamp seed_write_failed on the accounts that did land.
+    """
+    rows = [
+        _row(9, "a1", "Schwab Account"),
+        _row(21, "vang", "Vanguard Account", first_done=False),
+    ]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+
+    def _fake_sync(user_id, row, **kwargs):
+        res = _ok(row["account_name"], user_id, f"snaptrade:{row['snaptrade_account_id']}")
+        res["frames"]["snapshot_account_id"] = row["snaptrade_account_id"]
+        return res
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
+
+    def _fake_batch(entries, *, commit_message, skipped=None):
+        _wire["batch"].append({"entries": list(entries), "message": commit_message})
+        if skipped is not None:
+            skipped.append({
+                "user_id": 21,
+                "snapshot_account_id": "vang",
+                "error": "poison frame",
+            })
+        return True, None, "sha123", False, 1
+
+    monkeypatch.setattr(_upload, "merge_and_push_seeds_batch", _fake_batch)
+    monkeypatch.setattr(
+        _models, "snaptrade_snapshot_generation_is_current", lambda *a, **k: True,
+    )
+
+    assert cli.main() == 0
+    failures = [row for row in _wire["sync_attempts"] if row[2]]
+    assert failures == [(21, "vang", "seed_write_failed:poison frame")]
+    assert 9 in _wire["trial_started"]
+    assert 21 not in _wire["trial_started"]
 
 
 def test_unconfigured_seed_store_fails_cron_and_records_each_account(

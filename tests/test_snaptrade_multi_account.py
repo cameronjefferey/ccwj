@@ -1265,6 +1265,60 @@ def test_run_sync_raises_on_stale_holdings(monkeypatch):
     assert "stale" in ei.value.endpoint
 
 
+def test_holdings_unavailable_is_not_a_stale_connection():
+    """Vanguard employer plans set holdings_unavailable and keep an old
+    last_successful_sync. That is not a stalled cache."""
+    summary = {
+        "sync_status": {
+            "holdings": {
+                "initial_sync_completed": True,
+                "last_successful_sync": "2024-06-28T18:42:46.561Z",
+                "holdings_unavailable": True,
+            }
+        }
+    }
+    assert _snap._holdings_unavailable(summary) is True
+    assert _snap._holdings_stale_days(summary, today=date(2026, 10, 13)) is None
+    # The same timestamp without the flag is the stale backstop.
+    stale_only = {
+        "sync_status": {
+            "holdings": {"last_successful_sync": "2024-06-28T18:42:46.561Z"}
+        }
+    }
+    assert _snap._holdings_stale_days(stale_only, today=date(2026, 10, 13)) >= 4
+
+
+def test_run_sync_does_not_flag_unavailable_holdings(monkeypatch):
+    """A new Vanguard connection must not be marked broken on first sync
+    just because SnapTrade cannot read that plan's holdings."""
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {
+                "holdings": {
+                    "initial_sync_completed": True,
+                    "last_successful_sync": "2024-06-28T18:42:46.561Z",
+                    "holdings_unavailable": True,
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+    sentinel = RuntimeError("reached normalize")
+    monkeypatch.setattr(
+        _snap, "activities_to_history_df",
+        lambda *a, **k: (_ for _ in ()).throw(sentinel),
+    )
+    acc_row = {
+        "snaptrade_account_id": "vang",
+        "account_name": "Vanguard Account",
+        "broker_slug": "vanguard",
+    }
+    with pytest.raises(RuntimeError) as ei:
+        _snap._run_sync(21, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60)
+    assert ei.value is sentinel
+
+
 def test_run_sync_does_not_flag_fresh_holdings(monkeypatch):
     """A connection SnapTrade refreshed today must NOT trip the backstop — it
     proceeds past the staleness gate into normalize/push (which we stub out by
