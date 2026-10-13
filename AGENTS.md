@@ -508,10 +508,11 @@ What's working:
   broker snapshot (its sale predates the fill tape, or the tape's
   copy is already closed) counts at that snapshot premium, and the
   closed tape copy is not added again. Dividends are not in the
-  figure. With no shares and an open cash-secured put, Cost stays
-  blank and All-in is **If assigned**
-  (strike minus net premium on that put, per share the assignment
-  would deliver). That is not a held cost. Calls and put spreads are
+  figure. With no shares and exactly one open cash-secured put chain,
+  Cost stays blank and All-in is **If assigned** (strike minus net
+  premium on that put, per share the assignment would deliver).
+  Multiple independent open puts leave that single-price figure blank
+  instead of choosing one contract. That is not a held cost. Calls and put spreads are
   separate breakdown lines; a put-spread debit in the current cycle
   raises All-in and is named Put spreads. A spread that closed before
   the shares were bought does not. The contract symbol, not a
