@@ -808,6 +808,52 @@ def test_open_call_sold_before_this_lot_still_counts():
     assert result["net_premium"] == 200.00
 
 
+def test_option_opened_after_same_day_flat_counts_on_the_next_lot():
+    """A sell-to-zero and STO share one date, then shares return later."""
+    fills = [
+        _fill(
+            symbol="QQQ",
+            tenant_id="snaptrade:qqq",
+            trade_date="2026-10-05",
+            action="equity_sell",
+            quantity=100,
+            price=110,
+        ),
+        _fill(
+            symbol="QQQ",
+            tenant_id="snaptrade:qqq",
+            trade_date="2026-10-05",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-11-20",
+            quantity=1,
+            price=2.00,
+        ),
+        _fill(
+            symbol="QQQ",
+            tenant_id="snaptrade:qqq",
+            trade_date="2026-10-07",
+            action="equity_buy",
+            quantity=100,
+            price=95,
+        ),
+    ]
+
+    result = all_in_cost(
+        fills,
+        shares=100,
+        cost_basis=9500,
+        opening_shares=100,
+        symbol="QQQ",
+        tenant_id="snaptrade:qqq",
+    )
+    assert result["equity_per_share"] == 95
+    assert result["net_premium"] == 200
+    assert result["all_in_per_share"] == 93
+    assert result["show_all_in"] is True
+
+
 def test_closed_tape_call_does_not_hide_or_double_the_snapshot_open():
     """Same contract expired on the tape, still short on the snapshot.
 

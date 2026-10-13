@@ -1066,10 +1066,26 @@ def _opened_while_flat(parsed, events, opening_shares):
     qty = _num(opening_shares)
     opened_flat = set()
     for day in sorted(set(events_by_day) | set(opens_by_day)):
+        # Share events have dates but no reliable intraday timestamp.
+        # Use the same deterministic convention as _replay_shares:
+        # reductions happen before additions. Put that day's option opens
+        # at the flat boundary between them, so a sell-to-zero followed by
+        # an STO can carry into shares established on a later day.
+        reductions = [
+            event for event in events_by_day[day] if event.delta < -_EPS
+        ]
+        additions = [
+            event for event in events_by_day[day] if event.delta >= -_EPS
+        ]
+        for event in reductions:
+            qty += event.delta
+            if qty <= _EPS:
+                qty = 0.0
+                opened_flat.clear()
         if qty <= _EPS:
             for fill in opens_by_day[day]:
                 opened_flat.add(fill.contract)
-        for event in events_by_day[day]:
+        for event in additions:
             qty += event.delta
             if qty <= _EPS:
                 qty = 0.0
