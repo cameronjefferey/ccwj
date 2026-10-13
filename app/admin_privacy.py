@@ -184,7 +184,7 @@ def add_hidden_user(user_id, added_by) -> tuple[bool, str]:
     except (TypeError, ValueError):
         adder = None
     try:
-        from app.db import execute
+        from app.db import commit_request_transaction, execute
         execute(
             """
             INSERT INTO admin_hidden_users (user_id, added_by, active)
@@ -205,6 +205,9 @@ def add_hidden_user(user_id, added_by) -> tuple[bool, str]:
             """,
             (uid, adder),
         )
+        # Durable before the redirect. A nested request transaction would
+        # otherwise roll back when the request socket closes.
+        commit_request_transaction()
     except Exception:
         _log.exception("admin privacy add failed for user_id=%s", uid)
         return False, "Couldn't save that. Try again."
@@ -501,14 +504,49 @@ def _load_hidden_snapshot() -> tuple[frozenset[int], frozenset[str]]:
     return frozenset(user_ids), frozenset(tenant_ids)
 
 
+def _match_username(name: str):
+    """Exact username, then the one account whose name differs only by case.
+
+    ``users.username`` is case-sensitive, so two accounts can share a
+    spelling. More than one case-insensitive match is ambiguous and
+    returns None. The caller flashes that instead of hiding the wrong
+    person.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    from app.models import User
+    exact = User.get_by_username(name)
+    if exact is not None:
+        return exact
+    from app.db import fetch_all
+    rows = fetch_all(
+        "SELECT id, username, password_hash, email FROM users "
+        "WHERE lower(username) = lower(%s)",
+        (name,),
+    ) or []
+    if len(rows) != 1:
+        return None
+    return User._from_row(rows[0])
+
+
 def find_user_by_username_or_email(raw: str):
-    """Resolve an admin add-form value. ``@`` means email, else username."""
+    """Resolve an admin add-form value.
+
+    A single leading ``@`` is a username handle (the signup ping is
+    ``@Name``). Any other ``@`` is an email, matched without regard to
+    case. Usernames match exactly first, then case-insensitively when
+    that spelling belongs to one account. Blank input returns None.
+    """
     text = (raw or "").strip()
     if not text:
         return None
     from app.models import User
+    # @handle from a signup ping. One leading @ and no other @.
+    if text.startswith("@") and text.count("@") == 1:
+        return _match_username(text[1:])
     if "@" in text:
         found = User.get_by_email(text)
         if found is not None:
             return found
-    return User.get_by_username(text.lstrip("@"))
+    return _match_username(text)

@@ -118,6 +118,30 @@ def close_request_connection() -> None:
         pass
 
 
+def commit_request_transaction() -> None:
+    """Commit this request's open transaction, if one is still open.
+
+    ``get_conn`` does not commit when the call joins a transaction that
+    an earlier query on the same socket already started. Closing the
+    socket at the end of the request then rolls that work back, so a
+    write can return success and still be gone after the redirect.
+    A connection that is already idle (the write committed itself) is
+    left alone. Outside a request there is no shared socket.
+    """
+    if getattr(_local, "request_ident", None) != threading.get_ident():
+        return
+    conn = getattr(_local, "conn", None)
+    if conn is None or getattr(conn, "closed", False):
+        return
+    try:
+        status = conn.info.transaction_status
+    except Exception:
+        return
+    if status != TransactionStatus.INTRANS:
+        return
+    conn.commit()
+
+
 def _request_connection():
     """The open connection for this request thread, or None to open a private one."""
     try:
