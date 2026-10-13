@@ -50,6 +50,21 @@ from app.models import User, is_admin
 
 
 _IMPERSONATOR_KEY = "_impersonator_id"
+_PRIVATE_ADD_NOTICE = "_admin_private_notice"
+
+
+def _private_add_notice(category: str, message: str) -> None:
+    """Tell the admin what the add did, on the page and as a flash.
+
+    The toast is hidden until Bootstrap runs. A submit that only flashed
+    looked like a reload with no error when that script did not show it.
+    The next GET of this page prints ``message`` in the form card.
+    """
+    flash(message, category)
+    session[_PRIVATE_ADD_NOTICE] = {
+        "category": category,
+        "message": message,
+    }
 
 
 def _fmt_money(v, decimals=2, signed=False):
@@ -221,20 +236,31 @@ def admin_private_accounts():
     if request.method == "POST":
         # Adding is the only write. A remove field is ignored on purpose:
         # an admin cannot take someone off this list.
+        # The field name is ``username`` — the same name as the input in
+        # admin_private.html. A missing or blank value used to fall
+        # through the lookup, flash only inside a toast, and look like
+        # the page had simply reloaded.
         raw = (request.form.get("username") or "").strip()
-        target = find_user_by_username_or_email(raw)
-        if target is None:
-            flash("No user with that username or email.", "danger")
+        if not raw:
+            _private_add_notice(
+                "danger", "Enter a username or email.",
+            )
         else:
-            ok, info = add_hidden_user(target.id, current_user.id)
-            if ok:
-                flash(
-                    f"@{info} is private from admins. "
-                    "Admins can't see their accounts, balances, or trades.",
-                    "success",
+            target = find_user_by_username_or_email(raw)
+            if target is None:
+                _private_add_notice(
+                    "danger", "No user with that username or email.",
                 )
             else:
-                flash(info, "danger")
+                ok, info = add_hidden_user(target.id, current_user.id)
+                if ok:
+                    _private_add_notice(
+                        "success",
+                        f"@{info} is private from admins. "
+                        "Admins can't see their accounts, balances, or trades.",
+                    )
+                else:
+                    _private_add_notice("danger", info)
         return redirect(url_for("admin_private_accounts"))
 
     from app.admin_privacy import hidden_snapshot, note_privacy_list_unavailable
@@ -255,12 +281,16 @@ def admin_private_accounts():
                 "username": row.get("username") or "",
                 "off_label": format_privacy_since(row.get("opted_out_at")),
             })
+    notice = session.pop(_PRIVATE_ADD_NOTICE, None)
+    if not isinstance(notice, dict) or not (notice.get("message") or "").strip():
+        notice = None
     return render_template(
         "admin_private.html",
         title="Admin: private accounts",
         hidden_users=rows,
         invited_off=invited_off,
         list_unavailable=not snap["available"],
+        add_notice=notice,
     )
 
 

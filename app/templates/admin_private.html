@@ -32,6 +32,12 @@
     }
     .ap-table td { padding: .55rem .4rem; border-bottom: 1px solid #1a2233; }
     .ap-empty { color: var(--ht-muted); font-size: .85rem; margin: 0; }
+    .ap-notice {
+        margin: 0 0 .85rem; padding: .55rem .75rem; border-radius: 8px;
+        font-size: .9rem;
+    }
+    .ap-notice.ok { background: rgba(91,140,255,.16); color: #e8edf7; }
+    .ap-notice.bad { background: rgba(240,85,109,.16); color: #ffc9d2; }
 </style>
 {% endblock %}
 
@@ -44,6 +50,9 @@
 <div class="ap-card">
     <h2>Add someone</h2>
     <p class="ap-lead">This page shows usernames and the date added. It does not show accounts, balances, or trades.</p>
+    {% if add_notice %}
+    <p class="ap-notice {{ 'ok' if add_notice.category == 'success' else 'bad' }}" role="alert">{{ add_notice.message }}</p>
+    {% endif %}
     <form method="POST" action="{{ url_for('admin_private_accounts') }}" class="ap-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="visually-hidden" for="ap-username">Username or email</label>

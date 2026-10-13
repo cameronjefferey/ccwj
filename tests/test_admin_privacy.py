@@ -831,3 +831,104 @@ def test_admin_readd_of_active_user_keeps_the_since_date(world):
     assert after["active"]
     assert after["added_at"] == before
     assert after["opted_out_at"] is None
+
+
+def _notice_chunk(body: str, kind: str) -> str:
+    """The form-card notice, not the Bootstrap toast (that stays hidden)."""
+    marker = f'class="ap-notice {kind}"'
+    assert marker in body
+    start = body.index(marker)
+    return body[start:start + 800]
+
+
+def test_fresh_signup_without_broker_can_be_added(world, db_conn):
+    """A just-signed-up user can be added, and the row survives the redirect.
+
+    No broker account and no verified email. The admin can use the stored
+    username, an @handle, a different case, or the email. The result is
+    printed in the form card. Settings then shows the card On.
+    """
+    from app.db import fetch_one
+
+    http = world["http"]
+    signups = []
+    for _label in ("exact", "handle", "mixed", "mail"):
+        name = "Qq" + uuid.uuid4().hex[:10]
+        email = f"{name}@Example.com"
+        uid = _create_user(db_conn, name, email)
+        world["user_ids"].append(uid)
+        verified = fetch_one(
+            "SELECT email_verified_at FROM users WHERE id = %s",
+            (uid,),
+        )
+        assert verified["email_verified_at"] is None
+        tenants = fetch_one(
+            "SELECT COUNT(*) AS n FROM broker_tenants WHERE user_id = %s",
+            (uid,),
+        )
+        assert int(tenants["n"]) == 0
+        signups.append({"name": name, "email": email, "id": uid})
+
+    _login(http, world["operator"])
+    form = http.get("/admin/private").get_data(as_text=True)
+    assert 'method="POST"' in form
+    assert 'class="ap-form"' in form
+    assert 'name="username"' in form
+    assert 'action="/admin/private"' in form
+
+    typed = [
+        signups[0]["name"],
+        "@" + signups[1]["name"],
+        signups[2]["name"].swapcase(),
+        signups[3]["email"].lower(),
+    ]
+    assert typed[2] != signups[2]["name"]
+    assert typed[3] != signups[3]["email"]
+    for person, raw in zip(signups, typed):
+        added = http.post(
+            "/admin/private",
+            data={"username": raw},
+            follow_redirects=True,
+        )
+        assert added.status_code == 200
+        body = added.get_data(as_text=True)
+        chunk = _notice_chunk(body, "ok")
+        assert "is private from admins" in chunk
+        assert f"@{person['name']}" in chunk
+        assert f"@{person['name']}" in body
+        # A new connection. A request that rolled back on close is empty.
+        saved = fetch_one(
+            "SELECT active, opted_out_at FROM admin_hidden_users "
+            "WHERE user_id = %s",
+            (person["id"],),
+        )
+        assert saved is not None
+        assert saved["active"] is True
+        assert saved["opted_out_at"] is None
+
+    blank = http.post(
+        "/admin/private",
+        data={"username": "   "},
+        follow_redirects=True,
+    )
+    assert "Enter a username or email." in _notice_chunk(
+        blank.get_data(as_text=True), "bad",
+    )
+    missing = http.post(
+        "/admin/private",
+        data={"username": "nosuch_" + uuid.uuid4().hex},
+        follow_redirects=True,
+    )
+    assert "No user with that username or email." in _notice_chunk(
+        missing.get_data(as_text=True), "bad",
+    )
+    _logout(http)
+
+    for person in signups:
+        _login(http, person["name"])
+        profile = http.get("/profile")
+        assert profile.status_code == 200
+        assert "Private from HappyTrader admins: On" in profile.get_data(
+            as_text=True,
+        )
+        _logout(http)
