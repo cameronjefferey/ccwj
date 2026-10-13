@@ -31,7 +31,12 @@
     Invariant (enforced by dbt test): at most one Open leg per
     (tenant_id, account, user_id, symbol). The merge algorithm guarantees
     this by construction — every still-open interval extends to today, and
-    any other interval that touches today gets merged in.
+    any other interval that touches today gets merged in — ONLY when the
+    walk order is a single total order. Same-day open contracts (a spread,
+    an iron condor) share open_date, close_date=current_date(), and source,
+    so ordering the running-max window and the leg-sequence window
+    independently on that key lets them break the tie differently and
+    emit two Open legs. Both windows follow `rn`, assigned once.
 
     leg_id: sequential 1..N per (tenant_id, user_id, account, symbol)
     ordered by open_date. Bookmarked URLs from the previous mart shape
@@ -141,6 +146,7 @@ all_intervals as (
         account,
         user_id,
         symbol,
+        interval_key,
         open_date,
         close_date,
         source,
@@ -166,12 +172,22 @@ all_intervals as (
 -- unbounded preceding and 1 preceding); any interval that opens on or
 -- before that date is part of the same continuous chapter, anything
 -- opening later kicks off a fresh leg.
+--
+-- `rn` is the only order the later windows may use. (open_date,
+-- close_date, source) is not unique: every still-open leg of a same-day
+-- spread shares those three values. BigQuery breaks that tie
+-- independently per window function, so the running-max window can put
+-- contract A first (is_new_leg=1, the rest 0) while the leg-sequence
+-- window sums a 0-flag contract first and gives it the previous leg.
+-- Both contracts are Open, and position_legs_at_most_one_open_per_symbol
+-- fails. row_number() assigns rn once; ordering both windows by rn
+-- keeps the break flag and the sequence on the same row.
 ordered as (
     select
         *,
         row_number() over (
             partition by tenant_id, user_id, account, symbol
-            order by open_date, close_date, source
+            order by open_date, close_date, source, interval_key
         ) as rn
     from all_intervals
 ),
@@ -181,7 +197,7 @@ with_running_max as (
         *,
         max(close_date) over (
             partition by tenant_id, user_id, account, symbol
-            order by open_date, close_date, source
+            order by rn
             rows between unbounded preceding and 1 preceding
         ) as prev_max_close
     from ordered
@@ -199,13 +215,15 @@ with_break_flag as (
 ),
 
 -- Cumulative count of breaks = leg sequence number per partition.
--- Stable across rebuilds because the underlying sort is deterministic.
+-- Order by rn (not the date key) so this sum walks the same rows the
+-- break flag was computed on. interval_key inside rn keeps the walk
+-- stable across rebuilds for a given set of contracts.
 with_leg_seq as (
     select
         *,
         sum(is_new_leg) over (
             partition by tenant_id, user_id, account, symbol
-            order by open_date, close_date, source
+            order by rn
             rows between unbounded preceding and current row
         ) as leg_seq
     from with_break_flag
