@@ -67,9 +67,12 @@ flow; the cron does not need it. ``--intraday`` can also be enabled via
 
 Exit codes:
   0  — at least one connection synced (or there were no connections to sync).
+       One account whose seed frames cannot be merged is recorded on that
+       account and does not fail the run when a sibling synced.
   1  — there are connections in the DB but every one failed (auth errors,
-       network errors, sync exceptions). Render flags the run red, so a
-       system-wide problem is visible without cross-referencing GitHub.
+       network errors, sync exceptions), or the shared seed write failed.
+       Render flags the run red, so a system-wide problem is visible
+       without cross-referencing GitHub.
 """
 import os
 import sys
@@ -79,6 +82,37 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Minimal Flask app context for DB access
 os.environ.setdefault("FLASK_APP", "app:app")
+
+
+def _skipped_account_pairs(skipped):
+    """``(user_id, snaptrade_account_id)`` pairs a batch merge refused.
+
+    Entries without an account id cannot be recorded against one row, so
+    they are omitted. A non-numeric user id is omitted the same way.
+    """
+    pairs = set()
+    for item in skipped or []:
+        account_id = item.get("snapshot_account_id")
+        if not account_id:
+            continue
+        try:
+            user_id = int(item.get("user_id"))
+        except (TypeError, ValueError):
+            continue
+        pairs.add((user_id, account_id))
+    return pairs
+
+
+def _skipped_account_errors(skipped):
+    """Map ``(user_id, account_id)`` to the merge error string."""
+    errors = {}
+    for item in skipped or []:
+        pairs = _skipped_account_pairs([item])
+        if not pairs:
+            continue
+        pair = next(iter(pairs))
+        errors[pair] = str(item.get("error") or "seed merge skipped")
+    return errors
 
 
 def _notify_connection_dropped(user_id, snaptrade_account_id, row, *, seen=None):
@@ -422,6 +456,7 @@ def main():
     pushed_note = ""
     batch_failed = False
     batch_error = None
+    skipped_accounts = []
     durable_batch_account_ids = set()
     batch_generations = {
         (int(entry["user_id"]), entry.get("snapshot_account_id")):
@@ -447,6 +482,7 @@ def main():
             try:
                 ok, err, _sha, no_changes, n_pushed = merge_and_push_seeds_batch(
                     batch_entries, commit_message=commit_message,
+                    skipped=skipped_accounts,
                 )
             except Exception as exc:
                 ok, err, no_changes, n_pushed = False, str(exc), False, 0
@@ -459,6 +495,12 @@ def main():
                 batch_error = str(err or "unknown batch write error")
                 pushed_note = f", batched push FAILED: {str(err)[:160]}"
                 print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
+            skipped_pairs = _skipped_account_pairs(skipped_accounts)
+            if skipped_accounts and ok:
+                pushed_note += (
+                    f", {len(skipped_pairs)} account(s) skipped "
+                    "(seed merge)"
+                )
             if ok:
                 # A newer per-account fetch may have started while this cron
                 # was collecting deferred frames. The batch writer drops that
@@ -468,22 +510,31 @@ def main():
                 for entry in batch_entries:
                     account_id = entry.get("snapshot_account_id")
                     generation = entry.get("snapshot_generation")
-                    entry_user_id = int(entry["user_id"])
+                    try:
+                        entry_user_id = int(entry["user_id"])
+                    except (TypeError, ValueError):
+                        continue
+                    if (entry_user_id, account_id) in skipped_pairs:
+                        continue
                     if generation is None:
                         # History-only entries intentionally carry no snapshot
                         # generation. Older test/dry-run producers may also
                         # omit the account id; preserve their prior bookkeeping.
                         if account_id:
-                            durable_batch_account_ids.add(
-                                (entry_user_id, account_id)
-                            )
+                            pair = (entry_user_id, account_id)
+                            if pair not in skipped_pairs:
+                                durable_batch_account_ids.add(pair)
                         else:
                             durable_batch_account_ids.update(
                                 pair for pair in batch_account_ids
                                 if pair[0] == entry_user_id
+                                and pair not in skipped_pairs
                             )
-                    elif snaptrade_snapshot_generation_is_current(
-                        entry_user_id, account_id, generation,
+                    elif (
+                        (entry_user_id, account_id) not in skipped_pairs
+                        and snaptrade_snapshot_generation_is_current(
+                            entry_user_id, account_id, generation,
+                        )
                     ):
                         pair = (entry_user_id, account_id)
                         durable_batch_account_ids.add(pair)
@@ -547,6 +598,36 @@ def main():
                 )
         succeeded = max(0, succeeded - len(batch_account_ids))
         errors += len(batch_account_ids)
+    elif skipped_accounts:
+        # One account's frames failed to merge. The other accounts' rows
+        # were written. Record the miss on that account only — do not fail
+        # the cron or stamp seed_write_failed on the siblings.
+        skipped_errors = _skipped_account_errors(skipped_accounts)
+        for failed_user_id, failed_account_id in skipped_pairs:
+            detail = skipped_errors.get(
+                (failed_user_id, failed_account_id), "seed merge skipped",
+            )
+            sync_error = f"seed_write_failed:{detail}"[:500]
+            try:
+                record_snaptrade_sync_attempt(
+                    failed_user_id, failed_account_id, error=sync_error,
+                    snapshot_generation=batch_generations.get(
+                        (failed_user_id, failed_account_id)
+                    ),
+                )
+            except Exception as exc:
+                print(
+                    "WARNING: could not record per-account seed skip for "
+                    f"user {failed_user_id} ({failed_account_id}): {exc}",
+                    file=sys.stderr,
+                )
+            print(
+                f"User {failed_user_id} ({failed_account_id}): "
+                f"seed merge skipped: {detail}",
+                file=sys.stderr,
+            )
+        succeeded = max(0, succeeded - len(skipped_pairs))
+        errors += len(skipped_pairs)
 
     mode = (
         "intraday poll" if intraday

@@ -2104,6 +2104,56 @@ def test_intraday_history_only_reruns_are_noop_when_no_new_fills(monkeypatch):
     assert ok2 and nc2 is True            # identical re-poll → no change → no build
 
 
+def test_batch_skips_one_poison_account_and_writes_the_rest(monkeypatch):
+    """One account whose merge raises must not discard the other accounts
+    or fail the batch. That was the intraday cron's exit-1 path: any
+    exception inside the fold marked every account seed_write_failed.
+    """
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    real = _upload._merge_seed_with_existing
+
+    def _boom(path, account_name, new_df, seed_columns, **kwargs):
+        if kwargs.get("tenant_id") == TENANT_SCHWAB_5167:
+            raise RuntimeError("poison frame")
+        return real(path, account_name, new_df, seed_columns, **kwargs)
+
+    monkeypatch.setattr(_upload, "_merge_seed_with_existing", _boom)
+    skipped = []
+    ok, err, _sha, no_changes, n_pushed = _upload.merge_and_push_seeds_batch(
+        _sample_entries(), commit_message="intraday", skipped=skipped,
+    )
+    assert ok, err
+    assert no_changes is False
+    assert n_pushed == 2
+    assert len(skipped) == 1
+    assert skipped[0]["tenant_id"] == TENANT_SCHWAB_5167
+    current = pd.read_csv(io.StringIO(store.files[_upload.CURRENT_PATH]))
+    symbols = set(current["Symbol"].astype(str))
+    assert symbols == {"AAPL", "TSLA"}
+    history = pd.read_csv(io.StringIO(store.files[_upload.HISTORY_PATH]))
+    assert set(history["Symbol"].astype(str)) == {"AAPL"}
+
+
+def test_batch_bad_user_id_does_not_abort_siblings(monkeypatch):
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    entries = _sample_entries()
+    entries[1]["user_id"] = "demo-session:not-a-user"
+    entries[1]["snapshot_account_id"] = "bad"
+    skipped = []
+    ok, err, _sha, _no_changes, n_pushed = _upload.merge_and_push_seeds_batch(
+        entries, commit_message="intraday", skipped=skipped,
+    )
+    assert ok, err
+    assert n_pushed == 2
+    assert len(skipped) == 1
+    assert skipped[0]["snapshot_account_id"] == "bad"
+    current = pd.read_csv(io.StringIO(store.files[_upload.CURRENT_PATH]))
+    assert "MSFT" not in set(current["Symbol"].astype(str))
+    assert "AAPL" in set(current["Symbol"].astype(str))
+
+
 def test_asts_estimated_fee_close_collapses_onto_the_real_fill():
     """8 opened, one real buy-to-close, one estimated-fee buy-to-close.
 

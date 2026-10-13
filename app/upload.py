@@ -2387,7 +2387,7 @@ def merge_and_push_seeds(
 
 
 @_serialized_seed_write
-def merge_and_push_seeds_batch(entries, *, commit_message):
+def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
     """Merge SEVERAL accounts' frames into the seed store and write them in a
     SINGLE batch (one changed write = one dispatch = one dbt build).
 
@@ -2415,6 +2415,11 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     Returns ``(ok, err_message, build_marker or None, no_changes,
     pushed_entry_count)``. Caller must verify ``_upload_github_config_ok()``
     first (same contract as ``merge_and_push_seeds``).
+
+    ``skipped`` — optional list. Account-shaped failures (a poison frame,
+    a non-numeric ``user_id``) are appended here and the rest of the batch
+    is still written. A shared seed read/parse failure (``SeedFetchError``)
+    still fails the whole call: that is the store, not one account.
     """
     valid = []
     from app.models import snaptrade_snapshot_generation_is_current
@@ -2457,44 +2462,120 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
     if not valid:
         return True, None, None, True, 0
 
-    # Normalize every entry up front → {path: [(account_name, tenant_id, df, cols), ...]}
-    # preserving entry order, so each path folds accounts in the same sequence
-    # the per-account pushes used.
+    # Normalize every entry up front. One account's bad frame or user id
+    # must not abort the siblings — the intraday cron used to return 1 and
+    # stamp seed_write_failed on every account in the batch.
     from collections import OrderedDict
-    per_path = OrderedDict()  # path -> list of (account_name, tenant_id_str, df, cols)
-    prepared_counts = []      # (entry, history_rows, current_rows)
+    skipped_out = skipped if isinstance(skipped, list) else []
+    failed_keys = set()
+
+    def _entry_key(entry):
+        return (
+            entry.get("user_id"),
+            entry.get("snapshot_account_id"),
+            str(entry.get("tenant_id") or "").strip(),
+        )
+
+    def _skip(entry, exc):
+        key = _entry_key(entry)
+        if key in failed_keys:
+            return
+        failed_keys.add(key)
+        app.logger.warning(
+            "SnapTrade seed merge skipped account=%s user_id=%s tenant=%s: %s",
+            entry.get("account_name"), entry.get("user_id"),
+            entry.get("tenant_id"), exc,
+        )
+        skipped_out.append({
+            "user_id": entry.get("user_id"),
+            "snapshot_account_id": entry.get("snapshot_account_id"),
+            "tenant_id": entry.get("tenant_id"),
+            "account_name": entry.get("account_name"),
+            "error": str(exc),
+        })
+
+    prepared = []  # (entry, user_id_int, tenant_id_str, specs, history_rows, current_rows)
     for e in valid:
         from app.demo_guard import numeric_user_id
         user_id_int = numeric_user_id(e["user_id"])
         if user_id_int is None:
-            return False, "user_id is required.", None, False, 0
-        tenant_id_str = str(e["tenant_id"]).strip()
-        specs, hr, cr = _normalize_account_seed_frames(
-            e["account_name"], e.get("history_df"), e["current_df"],
-            user_id_int=user_id_int, tenant_id_str=tenant_id_str,
-            skip_history=bool(e.get("skip_history")), balances_df=e.get("balances_df"),
-        )
-        prepared_counts.append((e, hr, cr))
-        for path, prepared_df, seed_columns in specs:
-            per_path.setdefault(path, []).append(
-                (e["account_name"], tenant_id_str, prepared_df, seed_columns)
-            )
-
-    # Fold each path once, in the canonical seed order (history, current,
-    # balances), fetching the stored seed a single time and threading the
-    # running merged CSV through each account.
-    path_contents = []
-    for path in (HISTORY_PATH, CURRENT_PATH, BALANCE_SEED_PATH):
-        contributions = per_path.get(path)
-        if not contributions:
+            _skip(e, ValueError("user_id is required."))
             continue
-        content = _get_file_content(path)  # single fetch per file for the whole batch
-        for account_name, tenant_id_str, prepared_df, seed_columns in contributions:
-            content = _merge_seed_with_existing(
-                path, account_name, prepared_df, seed_columns,
-                tenant_id=tenant_id_str, existing_content=content,
+        tenant_id_str = str(e["tenant_id"]).strip()
+        try:
+            specs, hr, cr = _normalize_account_seed_frames(
+                e["account_name"], e.get("history_df"), e["current_df"],
+                user_id_int=user_id_int, tenant_id_str=tenant_id_str,
+                skip_history=bool(e.get("skip_history")),
+                balances_df=e.get("balances_df"),
             )
-        path_contents.append((path, content))
+        except Exception as exc:
+            _skip(e, exc)
+            continue
+        prepared.append((e, user_id_int, tenant_id_str, specs, hr, cr))
+
+    if not prepared:
+        # Every entry was account-shaped bad data. The seed store itself
+        # was not touched, so this is not a system-wide write outage.
+        return True, None, None, True, 0
+
+    def _fold(rows):
+        """Merge ``rows`` onto the stored seeds. Returns
+        ``(path_contents, newly_failed)``. ``SeedFetchError`` propagates:
+        a shared seed that cannot be read must fail the whole batch.
+        """
+        per_path = OrderedDict()
+        for entry, _uid, tenant_id_str, specs, _hr, _cr in rows:
+            for path, prepared_df, seed_columns in specs:
+                per_path.setdefault(path, []).append(
+                    (entry, entry["account_name"], tenant_id_str, prepared_df, seed_columns)
+                )
+        path_contents = []
+        newly_failed = []
+        for path in (HISTORY_PATH, CURRENT_PATH, BALANCE_SEED_PATH):
+            contributions = per_path.get(path)
+            if not contributions:
+                continue
+            content = _get_file_content(path)  # single fetch per file
+            for entry, account_name, tenant_id_str, prepared_df, seed_columns in contributions:
+                if _entry_key(entry) in failed_keys:
+                    continue
+                try:
+                    content = _merge_seed_with_existing(
+                        path, account_name, prepared_df, seed_columns,
+                        tenant_id=tenant_id_str, existing_content=content,
+                    )
+                except SeedFetchError:
+                    raise
+                except Exception as exc:
+                    newly_failed.append((entry, exc))
+                    continue
+            path_contents.append((path, content))
+        return path_contents, newly_failed
+
+    path_contents, newly_failed = _fold(prepared)
+    if newly_failed:
+        for entry, exc in newly_failed:
+            _skip(entry, exc)
+        # A history merge can succeed before the positions merge throws.
+        # Rebuild from the original seeds without those accounts so the
+        # commit is not a half-written book.
+        kept = [row for row in prepared if _entry_key(row[0]) not in failed_keys]
+        if not kept:
+            return True, None, None, True, 0
+        path_contents, again = _fold(kept)
+        if again:
+            for entry, exc in again:
+                _skip(entry, exc)
+            return False, str(again[0][1]), None, False, 0
+
+    prepared_counts = [
+        (row[0], row[4], row[5])
+        for row in prepared
+        if _entry_key(row[0]) not in failed_keys
+    ]
+    if not prepared_counts:
+        return True, None, None, True, 0
 
     try:
         ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
@@ -2504,18 +2585,30 @@ def merge_and_push_seeds_batch(entries, *, commit_message):
         return False, str(exc), None, False, 0
 
     # Per-account bookkeeping (idempotent), matching the single-push path.
+    # A bookkeeping miss on one account must not report the write — which
+    # already landed — as a failure of every sibling.
     from app.demo_guard import numeric_user_id
     for e, hr, cr in prepared_counts:
         uid = numeric_user_id(e["user_id"])
         if uid is None:
-            return False, "user_id is required.", None, False, 0
-        add_account_for_user(uid, e["account_name"])
-        record_upload(
-            uid, e["account_name"], hr, cr,
-            tenant_id=e.get("tenant_id"),
-        )
+            _skip(e, ValueError("user_id is required."))
+            continue
+        try:
+            add_account_for_user(uid, e["account_name"])
+            record_upload(
+                uid, e["account_name"], hr, cr,
+                tenant_id=e.get("tenant_id"),
+            )
+        except Exception as exc:
+            # The seed write already landed. A bookkeeping miss must not
+            # look like the account's rows were dropped.
+            app.logger.exception(
+                "Seed bookkeeping failed after a successful write "
+                "account=%s user_id=%s: %s",
+                e.get("account_name"), uid, exc,
+            )
 
-    return True, None, head_sha, no_changes, len(valid)
+    return True, None, head_sha, no_changes, len(prepared_counts)
 
 
 @_serialized_seed_write

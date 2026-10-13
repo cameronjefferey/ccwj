@@ -1167,6 +1167,61 @@ def test_orders_df_minimal_description_for_dedup_with_activities():
     assert "98" not in desc and "Bought" not in desc and "@" not in desc
 
 
+def test_orders_string_universal_symbol_is_a_ticker_not_a_crash():
+    """A bare-string ``universal_symbol`` (not the documented object) must
+    not raise. That AttributeError used to fail the whole account inside
+    ``_run_sync`` — the shape to expect from an unmodeled broker payload.
+    """
+    order = {
+        "status": "EXECUTED",
+        "action": "BUY",
+        "universal_symbol": "VTI",
+        "option_symbol": None,
+        "filled_quantity": "3",
+        "execution_price": "250.10",
+        "time_executed": "2026-10-12T23:05:00Z",
+    }
+    df = orders_to_history_df(
+        [order], account_name="Vanguard Account", user_id=21,
+        tenant_id="snaptrade:vanguard",
+    )
+    assert list(df["Symbol"]) == ["VTI"]
+    assert list(df["Action"]) == ["Buy"]
+    assert list(df["Description"]) == ["VTI"]
+
+
+def test_orders_unknown_action_with_string_symbol_does_not_raise():
+    order = {
+        "status": "EXECUTED",
+        "action": "REINVEST",
+        "universal_symbol": "VTI",
+        "filled_quantity": "1",
+        "execution_price": "250",
+        "time_executed": "2026-10-12T23:05:00Z",
+    }
+    df = orders_to_history_df(
+        [order], account_name="Vanguard Account", user_id=21,
+        tenant_id="snaptrade:vanguard",
+    )
+    assert df.empty
+
+
+def test_orders_null_symbol_is_skipped():
+    order = {
+        "status": "EXECUTED",
+        "action": "BUY",
+        "universal_symbol": None,
+        "filled_quantity": "1",
+        "execution_price": "10",
+        "time_executed": "2026-10-12T23:05:00Z",
+    }
+    df = orders_to_history_df(
+        [order], account_name="Vanguard Account", user_id=21,
+        tenant_id="snaptrade:vanguard",
+    )
+    assert df.empty
+
+
 # ---------------------------------------------------------------------------
 # Crypto classification (Coinbase via SnapTrade)
 # ---------------------------------------------------------------------------
