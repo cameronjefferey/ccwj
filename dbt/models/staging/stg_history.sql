@@ -338,12 +338,24 @@ amount_signed as (
 
 -- Pair tickers (BTC-USD, BTCUSD) collapse onto the bare crypto symbol
 -- the snapshot already uses, so fills join the holding. See
--- macros/crypto_pair_base.sql. Options keep their OSI trade_symbol.
+-- macros/crypto_pair_base.sql. Option spellings collapse to one
+-- compact OCC trade_symbol BEFORE est_fee_matched. That match keys
+-- the stock root, and occ_underlying_symbol() made every spelling
+-- share that root — an estimated open on compact OCC was dropped as
+-- the shadow of a long-form statement, and the leftover close became
+-- an opened_before_history fragment (coach Other Option, absent from
+-- classification). Same contract id keeps the close with the open.
 crypto_norm as (
     select
         a.* except (trade_symbol, underlying_symbol),
         case
-            when a.instrument_type in ('Call', 'Put') then a.trade_symbol
+            when a.instrument_type in ('Call', 'Put') then {{ canonical_option_trade_symbol(
+                'a.trade_symbol',
+                'coalesce(cu.symbol, a.underlying_symbol)',
+                'a.option_expiry',
+                'a.option_strike',
+                'a.option_type'
+            ) }}
             else coalesce(ct.symbol, a.trade_symbol)
         end as trade_symbol,
         coalesce(cu.symbol, a.underlying_symbol) as underlying_symbol
