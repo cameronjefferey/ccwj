@@ -158,7 +158,7 @@ cleaned as (
 
         trim(symbol) as trade_symbol,
 
-        trim(split(sym_trim, ' ')[safe_offset(0)]) as underlying_symbol,
+        {{ occ_underlying_symbol('sym_trim', 'sym_upper') }} as underlying_symbol,
 
         coalesce(
             safe.parse_date('%m/%d/%Y', nullif(split(sym_trim, ' ')[safe_offset(1)], '')),
