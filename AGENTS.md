@@ -608,7 +608,10 @@ stock lot + a naked short call splits into Covered Call (equity) AND Naked Call
 detects diagonals (`Diagonal Call/Put Spread` — live longer-dated long cover
 outside PMCC windows), straddles/strangles, pairs verticals by lifetime overlap
 (not just ±7d legging), and folds <25-share tracker lots (was ≤1) into the
-dominant option strategy. Regression tests:
+dominant option strategy. The fold counts every overlapping contract
+on `int_option_contracts`, including a close that opened before the
+broker window; those rows stay out of strategy tags (no cost basis).
+Regression tests:
 `dbt/tests/no_unexplained_negative_running_equity_qty.sql`,
 `dbt/tests/covered_call_has_coverage_at_write.sql`,
 `dbt/tests/tracker_lot_folds_into_option_strategy.sql`. When adding a new
