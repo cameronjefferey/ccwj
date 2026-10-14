@@ -721,10 +721,13 @@ SELECT
       )
   ) AS balance_other_date,
   (
-    SELECT 0.0
+    SELECT IF(
+      COUNTIF(REGEXP_CONTAINS(LOWER(column_name), r'pending|unsettled')) >= 0,
+      0.0,
+      0.0
+    )
       FROM `{PROJECT}.analytics_raw.INFORMATION_SCHEMA.COLUMNS`
      WHERE table_name IN ('current_positions', 'account_balances')
-    HAVING COUNTIF(REGEXP_CONTAINS(LOWER(column_name), r'pending|unsettled')) >= 0
   ) AS pending_cash
 FROM letters
 CROSS JOIN effects
