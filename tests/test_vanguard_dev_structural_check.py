@@ -29,6 +29,8 @@ def test_dev_profile_must_be_analytics_dev():
 
 def test_debug_log_refuses_prod_schema():
     assert_debug_schema("Connection:\n  schema: analytics_dev\n  location: us\n")
+    stamped = "\x1b[0m03:53:44  Connection:\n\x1b[0m03:53:44    schema: analytics_dev\n"
+    assert_debug_schema(stamped)
     with pytest.raises(SystemExit):
         assert_debug_schema("  schema: analytics\n")
     with pytest.raises(SystemExit):

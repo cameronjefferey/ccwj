@@ -24,7 +24,8 @@ RAW_DATASET = "analytics_raw"
 FORBIDDEN_DATASETS = frozenset({"analytics", "analytics_raw", "analytics_backups"})
 
 _DATASET_RE = re.compile(r"(?m)^[ \t]*dataset:[ \t]*([A-Za-z0-9_]+)[ \t]*$")
-_SCHEMA_RE = re.compile(r"(?m)^[ \t]*schema:[ \t]*([A-Za-z0-9_]+)[ \t]*$")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_DEBUG_STAMP_RE = re.compile(r"^\s*\d{2}:\d{2}:\d{2}\s+")
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-")
 _KEEP_RE = re.compile(
     r"(Done\.|Failure in |Error in |Database Error|Completed with |"
@@ -50,7 +51,19 @@ def assert_dev_profile(text: str) -> None:
 
 
 def assert_debug_schema(text: str) -> None:
-    schemas = _SCHEMA_RE.findall(text)
+    """Read the target schema from `dbt debug`.
+
+    dbt 1.9 prefixes every line with a timestamp and an ANSI reset, so a
+    raw ``^schema:`` search misses ``schema: analytics_dev`` and would
+    refuse a dev build that is already pointed at the right dataset.
+    """
+    cleaned = _ANSI_RE.sub("", text)
+    schemas = []
+    for line in cleaned.splitlines():
+        body = _DEBUG_STAMP_RE.sub("", line).strip()
+        match = re.match(r"schema:\s*([A-Za-z0-9_]+)\s*$", body)
+        if match:
+            schemas.append(match.group(1))
     if DEV_DATASET not in schemas:
         raise SystemExit("refusing dbt debug: schema analytics_dev was not reported")
     if any(name in FORBIDDEN_DATASETS for name in schemas):
