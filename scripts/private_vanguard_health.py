@@ -722,8 +722,8 @@ SELECT
   ) AS balance_other_date,
   (
     SELECT IF(
-      COUNTIF(REGEXP_CONTAINS(LOWER(column_name), r'pending|unsettled')) >= 0,
-      0.0,
+      COUNTIF(REGEXP_CONTAINS(LOWER(column_name), r'pending|unsettled')) > 0,
+      1.0,
       0.0
     )
       FROM `{PROJECT}.analytics_raw.INFORMATION_SCHEMA.COLUMNS`
