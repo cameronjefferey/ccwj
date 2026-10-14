@@ -36,6 +36,33 @@ def test_compose_prompt_includes_run_and_guardrails():
     assert "Do NOT weaken" in text
 
 
+def test_compose_prompt_forbids_merging_and_pushing_to_master():
+    text = och.compose_prompt(
+        name="Update Daily Position Performance",
+        event="workflow_dispatch",
+        branch="master",
+        url="https://github.com/cameronjefferey/ccwj/actions/runs/33132317666",
+        sha="d9e8893",
+        repo="cameronjefferey/ccwj",
+    )
+    lowered = text.lower()
+    assert "never merge" in lowered
+    assert "never push to master" in lowered
+    assert "do not merge" in lowered
+    assert "not a draft" in lowered
+    assert "wait for ci" in lowered
+    assert "Ship" in text
+    assert "notify_kind=ready" in text
+    assert "root_cause" in text
+    # The instructions that landed d9e8893 on master without a review.
+    assert "merge the pr" not in lowered
+    assert "after merge" not in lowered
+    assert "re-run the failed workflow on master" not in lowered
+    assert "--ref master" not in lowered
+    assert "squash is fine" not in lowered
+    assert "attempt 1 of 2" in lowered
+
+
 def test_compose_launch_body_opens_a_pr_off_master():
     body = och.compose_launch_body(
         name="Update Daily Position Performance",

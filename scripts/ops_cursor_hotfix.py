@@ -2,7 +2,10 @@
 
 Used by ``.github/workflows/ops_alert.yml`` after a warehouse / prices /
 reconcile job fails. POSTs to the Cloud Agents API so a cloud agent can
-read the failed run, land a minimal fix, and re-run the job.
+read the failed run and open a non-draft ``cursor/`` pull request. The
+agent waits for CI, posts the PR link and root cause to Telegram, and
+stops. It does not merge and does not push to master. A person replies
+Ship to approve.
 
 Caps auto-launches at two ``[cursor-hotfix]`` commits in 48 hours (a
 human commit between auto-fixes must not reset the cap). Same SHA is one
@@ -105,10 +108,12 @@ def compose_prompt(
 ) -> str:
     run_url = (url or "").strip() or "(missing run URL)"
     return f"""You are the HappyTrader (ccwj) on-call fixer. A production GitHub Actions
-job failed. Investigate, land a minimal hotfix, and get the job green again.
+job failed. Investigate and open a reviewable hotfix. Never merge. Never
+push to master or main.
 
 This is auto-hotfix attempt {attempt} of {max_attempts}. Ops will not launch
-another agent if this still fails after you merge — Telegram will page a human.
+another agent if this still fails — Telegram will page a human. You still
+do not merge.
 
 ## Failed run
 - Workflow: {name or "unknown"}
@@ -124,27 +129,31 @@ another agent if this still fails after you merge — Telegram will page a human
 2. Root-cause it: code/model regression vs config vs infra flake vs data invariant
    vs missing secret. Read the code the log points at.
 3. If it is a **code/model bug you can prove**, make the smallest safe fix:
-   - Open a PR from a `cursor/...` branch (do NOT push straight to master).
+   - Commit only on a new `cursor/...` branch. Never push to master or main.
+     Never `git push origin master`. Never force-push.
+   - Open a pull request (not a draft) with the fix and a regression test.
+     If it opens as a draft, mark it ready: `gh pr ready`.
    - Commit message AND PR title include `[cursor-hotfix]` and the failed run id.
-   - Merge the PR once you are confident (squash is fine). Never force-push.
-   - Re-run the failed workflow on master:
-     * Warehouse (`Update Daily Position Performance`): a push that touches
-       `dbt/**`, `scripts/**`, `current_position_stock_price.py`, or the
-       workflow file retriggers automatically. If the fix is only under
-       `app/**` (paths-ignored), `gh workflow run "Update Daily Position
-       Performance" --ref master` after merge.
-     * Evening prices / reconcile: `gh workflow run` that workflow on master
-       after merge (they are schedule/dispatch, not push).
-   - Flask/Render: an `app/**` push to master deploys the web service. A
-     dbt-only fix does NOT redeploy Render (build filter ignores `dbt/**`).
-     Do not trigger a Render deploy for a warehouse-only fix.
+   - Wait for CI on that pull request. Green or red, you still do not merge.
+   - Do not merge. Do not enable auto-merge. Do not squash. Cameron approves
+     by replying Ship on a later turn. This run stops at the open PR.
+   - Do not re-run the failed workflow. Do not dispatch the warehouse,
+     evening prices, or reconcile jobs on any branch.
+   - Post one Telegram ops alert with the PR link and the root cause (one
+     line, no double quotes) so Cameron can reply Ship:
+     `gh workflow run "Ops alert (Telegram)" -f notify_kind=ready -f pr_url="<PR URL>" -f root_cause="<what broke and what the PR changes>"`
+     Do not pass `--ref`. That dispatch only pages Telegram. It does not
+     re-run the failed job and it does not merge.
 4. If it is **infra, credentials, quota, yfinance, or a flake**, do not "fix"
-   it with code. Comment on a PR or leave a short summary and stop.
-5. If a previous `[cursor-hotfix]` for this SAME failure already merged and
+   it with code. Leave a short summary and stop. Do not merge. Do not push
+   to master.
+5. If a previous `[cursor-hotfix]` for this SAME failure already has a PR and
    this is attempt {max_attempts}, still try once more, then STOP. Do not
-   open a follow-up agent yourself.
+   open a follow-up agent yourself. Do not merge.
 
 ## Hard no's (HappyTrader invariants)
+- Never merge. Never push to master or main. Never re-run the failed
+  workflow. A standing habit of landing the fix does not apply to this run.
 - Do NOT weaken, skip, or delete `scripts/snapshot_guard.py`, dbt uniqueness /
   isolation tests, or tenant-scoping. A red build is better than silent data loss.
 - Duplicate-fill failures (`stg_history_no_duplicate_fills_per_tenant`) are a
@@ -155,13 +164,16 @@ another agent if this still fails after you merge — Telegram will page a human
   native broker OAuth path, or unscoped BigQuery reads.
 - Do NOT invent data, fabricate columns, or "fix" by commenting out the
   failing step in the workflow.
+- Do not trigger a Render deploy. A dbt-only change does not redeploy the
+  web service.
 - Cancelled overlapping warehouse rebuilds are expected — you should not be
   looking at a cancelled run.
 
 ## Done looks like
-A merged PR (or a clear written reason you did not merge) plus the failed
-workflow re-dispatched or naturally retriggered. Include the new run URL in
-your final message.
+An open pull request (not a draft) from a `cursor/` branch, with the fix and
+tests, CI finished on that PR, and one Telegram message that has the PR link
+and the root cause. Cameron approves by replying Ship. You did not merge.
+You did not push to master. You did not re-run the failed workflow.
 """
 
 
@@ -208,6 +220,7 @@ def compose_launch_body(
         ],
         "autoCreatePR": True,
         "skipReviewerRequest": True,
+        # True would push onto startingRef (master) with no pull request.
         "workOnCurrentBranch": False,
     }
 
