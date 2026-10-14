@@ -256,6 +256,321 @@ def warehouse_report_line(*, complete: bool, staged, balance) -> str:
     return "FAIL"
 
 
+# Shares of (staged book − balance). Fractions are computed in the
+# warehouse query; this function only turns those fractions into
+# percents. It never sees a dollar amount, a ticker, or an id.
+_GAP_ORDER = (
+    "duplicate_or_missing_account",
+    "money_market_both",
+    "money_market_neither",
+    "options_valuation",
+    "fractional",
+    "price_date",
+)
+_GAP_LOG_ORDER = (
+    "price_date",
+    "money_market_both",
+    "money_market_neither",
+    "fractional",
+    "duplicate_or_missing_account",
+    "options_valuation",
+)
+_GAP_LINE = re.compile(
+    r"^(price_date|money_market_both|money_market_neither|fractional"
+    r"|duplicate_or_missing_account|options_valuation)=[0-9]+%$"
+)
+
+# One aggregate row: a 0/1 flag and one fraction per cause. Inner
+# amounts stay in the query. A cause is offered only when removing it
+# moves the staged book toward the balance, and in the same direction.
+_GAP_SQL = f"""
+WITH tenants AS (
+  SELECT DISTINCT tenant_id
+    FROM (
+      SELECT tenant_id, account
+        FROM `{PROJECT}.{PROD_DATASET}.stg_history`
+      UNION ALL
+      SELECT tenant_id, account
+        FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+      UNION ALL
+      SELECT tenant_id, account
+        FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+    )
+   WHERE tenant_id IS NOT NULL
+     AND tenant_id != 'demo:demo-account'
+     AND lower(split(trim(cast(account AS STRING)), ' ')[SAFE_OFFSET(0)]) = 'vanguard'
+),
+held AS (
+  SELECT
+    c.market_value AS mv,
+    c.quantity AS qty,
+    c.current_price AS px,
+    c.cost_basis AS cost,
+    c.instrument_type AS kind,
+    lower(coalesce(c.description, '')) AS descr,
+    lower(coalesce(c.security_type_raw, '')) AS stype,
+    c.trade_symbol AS symbol
+  FROM `{PROJECT}.{PROD_DATASET}.stg_current` c
+  JOIN tenants t ON t.tenant_id = c.tenant_id
+),
+closes AS (
+  SELECT symbol, close_price
+    FROM (
+      SELECT
+        trim(symbol) AS symbol,
+        close_price,
+        row_number() OVER (PARTITION BY trim(symbol) ORDER BY `date` DESC) AS rn
+      FROM `{PROJECT}.{PROD_DATASET}.stg_daily_prices`
+      WHERE trim(symbol) IN (
+        SELECT DISTINCT symbol FROM held WHERE kind = 'Equity' AND symbol IS NOT NULL
+      )
+    )
+   WHERE rn = 1
+),
+held_flag AS (
+  SELECT
+    h.mv,
+    h.qty,
+    h.px,
+    cl.close_price AS cls,
+    (
+      h.kind NOT IN ('Call', 'Put')
+      AND (
+        strpos(h.descr, 'money market') > 0
+        OR strpos(h.stype, 'money market') > 0
+        OR (
+          h.px IS NOT NULL
+          AND abs(h.px - 1) <= 0.02
+          AND (
+            h.cost IS NULL
+            OR h.qty IS NULL
+            OR h.qty = 0
+            OR abs(safe_divide(h.cost, h.qty) - 1) <= 0.02
+          )
+        )
+      )
+    ) AS is_mm,
+    h.kind IN ('Call', 'Put') AS is_opt
+  FROM held h
+  LEFT JOIN closes cl ON cl.symbol = h.symbol
+),
+broker AS (
+  SELECT
+    safe_cast(trim(replace(replace(replace(
+      cast(market_value AS STRING), '$', ''), ',', ''), ' ', '')) AS FLOAT64) AS mv,
+    lower(trim(coalesce(cast(Symbol AS STRING), ''))) AS symbol,
+    lower(trim(coalesce(cast(security_type AS STRING), ''))) AS stype
+  FROM `{PROJECT}.{PROD_DATASET}.stg_broker_vanguard_current`
+  WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+),
+books AS (
+  SELECT
+    t.tenant_id,
+    (
+      SELECT any_value(lower(trim(cast(account AS STRING))))
+        FROM (
+          SELECT account
+            FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+           WHERE tenant_id = t.tenant_id
+          UNION ALL
+          SELECT account
+            FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+           WHERE tenant_id = t.tenant_id
+        )
+    ) AS label,
+    (
+      SELECT SUM(market_value)
+        FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+       WHERE tenant_id = t.tenant_id
+    ) AS held,
+    (
+      SELECT SUM(market_value)
+        FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+       WHERE tenant_id = t.tenant_id
+         AND row_type = 'cash'
+    ) AS cash,
+    (
+      SELECT SUM(market_value)
+        FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+       WHERE tenant_id = t.tenant_id
+         AND row_type = 'account_total'
+    ) AS total
+  FROM tenants t
+),
+ranked AS (
+  SELECT
+    ifnull(held, 0) + ifnull(cash, 0) AS staged,
+    held,
+    total,
+    count(*) OVER (PARTITION BY coalesce(label, tenant_id)) AS label_n,
+    row_number() OVER (
+      PARTITION BY coalesce(label, tenant_id)
+      ORDER BY abs(ifnull(total, 0)) DESC
+    ) AS rn
+  FROM books
+),
+measures AS (
+  SELECT
+    (SELECT ifnull(SUM(mv), 0) FROM held_flag) AS held_mv,
+    (SELECT ifnull(SUM(cash), 0) FROM books) AS cash_mv,
+    (SELECT SUM(total) FROM books) AS total_mv,
+    (SELECT ifnull(SUM(IF(is_mm, mv, 0)), 0) FROM held_flag) AS mm_held,
+    (SELECT ifnull(SUM(IF(
+        symbol NOT IN ('account total', 'positions total')
+        AND stype IN ('cash and money market', ''),
+        mv, 0)), 0) FROM broker) AS missed_mv,
+    (SELECT ifnull(SUM(IF(
+        symbol NOT IN ('account total', 'positions total')
+        AND stype NOT IN ('cash and money market', ''),
+        mv, 0)), 0) FROM broker) AS raw_held,
+    (SELECT ifnull(SUM(IF(is_opt, mv, 0)), 0) FROM held_flag) AS opt_stored,
+    (SELECT ifnull(SUM(IF(is_opt, qty * px * 100, 0)), 0) FROM held_flag) AS opt_x100,
+    (SELECT ifnull(SUM(IF(is_opt, qty * px, 0)), 0) FROM held_flag) AS opt_x1,
+    (SELECT ifnull(SUM(IF(NOT is_opt AND NOT is_mm, mv - qty * px, 0)), 0)
+       FROM held_flag) AS frac_mv,
+    (SELECT ifnull(SUM(IF(
+        NOT is_opt AND NOT is_mm AND cls IS NOT NULL,
+        mv - qty * cls, 0)), 0) FROM held_flag) AS close_mv,
+    (SELECT nullif(SUM(IF(symbol = 'account total', mv, 0)), 0) FROM broker) AS pos_total,
+    (SELECT
+        ifnull(SUM(IF(label_n > 1 AND rn > 1, staged - ifnull(total, 0), 0)), 0)
+        + ifnull(SUM(IF(total IS NULL, staged, 0)), 0)
+        + ifnull(SUM(IF(held IS NULL AND total IS NOT NULL, -total, 0)), 0)
+       FROM ranked) AS account_mv
+),
+scored AS (
+  SELECT
+    held_mv + cash_mv - total_mv AS gap,
+    IF(mm_held > 0 AND cash_mv + 1 >= mm_held, mm_held, 0) AS mm_both_mv,
+    -missed_mv AS mm_neither_mv,
+    opt_stored - opt_x100 AS opt_x100_mv,
+    opt_stored - opt_x1 AS opt_x1_mv,
+    frac_mv,
+    close_mv,
+    IF(pos_total IS NULL, NULL, pos_total - total_mv) AS snap_mv,
+    account_mv + (held_mv - raw_held) AS dup_mv
+  FROM measures
+  WHERE total_mv IS NOT NULL
+)
+SELECT
+  IF(gap IS NULL OR abs(gap) <= 1, 0, 1) AS has_gap,
+  CASE
+    WHEN gap IS NULL OR abs(gap) <= 1 OR dup_mv IS NULL THEN 0
+    WHEN abs(gap - dup_mv) < abs(gap) AND dup_mv / gap > 0 THEN dup_mv / gap
+    ELSE 0
+  END AS duplicate_or_missing_account,
+  CASE
+    WHEN gap IS NULL OR abs(gap) <= 1 THEN 0
+    WHEN abs(gap - mm_both_mv) < abs(gap) AND mm_both_mv / gap > 0 THEN mm_both_mv / gap
+    ELSE 0
+  END AS money_market_both,
+  CASE
+    WHEN gap IS NULL OR abs(gap) <= 1 THEN 0
+    WHEN abs(gap - mm_neither_mv) < abs(gap) AND mm_neither_mv / gap > 0
+      THEN mm_neither_mv / gap
+    ELSE 0
+  END AS money_market_neither,
+  CASE
+    WHEN gap IS NULL OR abs(gap) <= 1 THEN 0
+    WHEN abs(gap - opt_x1_mv) <= abs(gap - opt_x100_mv)
+         AND abs(gap - opt_x1_mv) < abs(gap)
+         AND opt_x1_mv / gap > 0
+      THEN opt_x1_mv / gap
+    WHEN abs(gap - opt_x100_mv) < abs(gap) AND opt_x100_mv / gap > 0
+      THEN opt_x100_mv / gap
+    ELSE 0
+  END AS options_valuation,
+  CASE
+    WHEN gap IS NULL OR abs(gap) <= 1 OR frac_mv IS NULL THEN 0
+    WHEN abs(gap - frac_mv) < abs(gap) AND frac_mv / gap > 0 THEN frac_mv / gap
+    ELSE 0
+  END AS fractional,
+  CASE
+    WHEN gap IS NULL OR abs(gap) <= 1 THEN 0
+    WHEN snap_mv IS NOT NULL
+         AND abs(gap - snap_mv) < abs(gap)
+         AND snap_mv / gap > 0
+         AND (
+           close_mv IS NULL
+           OR NOT (abs(gap - close_mv) < abs(gap) AND close_mv / gap > 0)
+           OR abs(gap - snap_mv) <= abs(gap - close_mv)
+         )
+      THEN snap_mv / gap
+    WHEN close_mv IS NOT NULL
+         AND abs(gap - close_mv) < abs(gap)
+         AND close_mv / gap > 0
+      THEN close_mv / gap
+    ELSE 0
+  END AS price_date
+FROM scored
+"""
+
+
+def _finite(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number or number in (float("inf"), float("-inf")):
+        return 0.0
+    return number
+
+
+def attribute_fractions(fracs, *, has_gap: bool) -> dict:
+    """Signed-free percents of the gap. They sum to 100 when a gap exists.
+
+    Each fraction is the share of the gap that cause would remove.
+    The closest fit is taken first. A leftover no listed cause absorbs
+    is the position marks and the balance total not sharing one clock.
+    """
+    if not has_gap:
+        return {name: 0 for name in _GAP_ORDER}
+    remaining = 1.0
+    assigned = {name: 0.0 for name in _GAP_ORDER}
+    unused = {name: _finite((fracs or {}).get(name)) for name in _GAP_ORDER}
+    for _ in range(len(_GAP_ORDER)):
+        if remaining <= 0.02:
+            break
+        scored = []
+        for index, name in enumerate(_GAP_ORDER):
+            fraction = unused[name]
+            if fraction <= 0:
+                continue
+            if fraction > remaining * 1.5 and abs(fraction - remaining) > 0.5 * remaining:
+                unused[name] = 0.0
+                continue
+            scored.append((abs(fraction - remaining), index, name, fraction))
+        if not scored:
+            break
+        scored.sort()
+        _dist, _index, name, fraction = scored[0]
+        if abs(fraction - remaining) <= max(0.02, 0.15 * remaining) or (
+            remaining < fraction <= remaining * 1.5
+        ):
+            take = remaining
+        elif fraction < remaining:
+            take = fraction
+        else:
+            unused[name] = 0.0
+            continue
+        assigned[name] += take
+        remaining -= take
+        unused[name] = 0.0
+    if remaining > 0.02:
+        assigned["price_date"] += remaining
+    raw = {name: assigned[name] * 100.0 for name in _GAP_ORDER}
+    rounded = {name: int(round(raw[name])) for name in _GAP_ORDER}
+    drift = 100 - sum(rounded.values())
+    if drift:
+        host = max(_GAP_ORDER, key=lambda name: (abs(rounded[name]), abs(raw[name])))
+        rounded[host] += drift
+    return rounded
+
+
+def gap_lines(percents) -> list[str]:
+    return [f"{name}={int(percents[name])}%" for name in _GAP_LOG_ORDER]
+
+
 def format_report(report) -> list[str]:
     def flag(ok) -> str:
         return "PASS" if ok else "FAIL"
@@ -696,6 +1011,60 @@ def _fill_report(report) -> None:
     report.update(rendered)
 
 
+def run_gap_lines() -> list[str]:
+    """Read prod analytics only. Returns one percent line per cause."""
+    os.environ.pop("BQ_DATASET", None)
+    if not statement_is_read(_GAP_SQL):
+        raise RuntimeError("read-only")
+    _install_bq_guard()
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT)
+    rows = list(client.query(_GAP_SQL, location="US").result())
+    if len(rows) != 1:
+        raise RuntimeError("read-only")
+    row = rows[0]
+    has_gap = int(row["has_gap"] or 0) == 1
+    fracs = {name: _finite(row[name]) for name in _GAP_ORDER}
+    return gap_lines(attribute_fractions(fracs, has_gap=has_gap))
+
+
+def _print_gap() -> int:
+    lines = None
+    reason = ""
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        try:
+            lines = run_gap_lines()
+        except Exception as exc:
+            errors = getattr(exc, "errors", None)
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                reason = str(errors[0].get("reason") or "")
+            else:
+                reason = type(exc).__name__
+    if reason and not re.fullmatch(r"[A-Za-z0-9_]+", reason):
+        reason = ""
+    if (
+        not lines
+        or len(lines) != len(_GAP_LOG_ORDER)
+        or any(not _GAP_LINE.match(line) for line in lines)
+    ):
+        suffix = f" {reason}" if reason else ""
+        print(f"breakdown=FAIL{suffix}", flush=True)
+        return 1
+    total = 0
+    any_share = False
+    for line in lines:
+        pct = int(line.rsplit("=", 1)[1][:-1])
+        total += pct
+        any_share = any_share or pct > 0
+    if any_share and total != 100:
+        print("breakdown=FAIL", flush=True)
+        return 1
+    print("\n".join(lines), flush=True)
+    return 0
+
+
 def run_warehouse() -> str:
     """Read prod analytics only. Returns one flag line."""
     os.environ.pop("BQ_DATASET", None)
@@ -723,9 +1092,11 @@ def run_warehouse() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    del argv
+    args = list(sys.argv[1:] if argv is None else argv)
     sys.tracebacklimit = 0
     logging.disable(logging.CRITICAL)
+    if "--gap" in args:
+        return _print_gap()
     line = "FAIL"
     sink = io.StringIO()
     with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):

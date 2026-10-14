@@ -8,11 +8,15 @@ from pathlib import Path
 
 from scripts.private_vanguard_health import (
     _ACCOUNTS_SQL,
+    _GAP_LINE,
+    _GAP_SQL,
     _HIDDEN_VANGUARD_SQL,
     _WAREHOUSE_LINE,
     _WAREHOUSE_SQL,
+    attribute_fractions,
     connections_ok,
     format_report,
+    gap_lines,
     holdings_is_fresh,
     is_vanguard,
     reconcile_line,
@@ -29,7 +33,7 @@ _LINE = re.compile(
 
 
 def test_statements_are_prod_reads():
-    for sql in (_HIDDEN_VANGUARD_SQL, _ACCOUNTS_SQL, _WAREHOUSE_SQL):
+    for sql in (_HIDDEN_VANGUARD_SQL, _ACCOUNTS_SQL, _WAREHOUSE_SQL, _GAP_SQL):
         assert statement_is_read(sql)
     assert "ccwj-dbt.analytics.stg_history" in _WAREHOUSE_SQL
     assert "ccwj-dbt.analytics.stg_current" in _WAREHOUSE_SQL
@@ -41,6 +45,10 @@ def test_statements_are_prod_reads():
     assert "= 'vanguard'" in _WAREHOUSE_SQL
     assert "@tenants" not in _WAREHOUSE_SQL
     assert "admin_hidden_users" not in _WAREHOUSE_SQL
+    assert "ccwj-dbt.analytics.stg_broker_vanguard_current" in _GAP_SQL
+    assert "analytics_dev" not in _GAP_SQL
+    assert "analytics_raw" not in _GAP_SQL
+    assert "@tenants" not in _GAP_SQL
     assert statement_is_read("SELECT updated_at FROM users")
     assert statement_is_read("SELECT 1 -- do not update the row")
     assert not statement_is_read("UPDATE snaptrade_accounts SET connection_broken_at = NULL")
@@ -191,9 +199,51 @@ def test_workflow_is_dispatch_only():
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "github.head_ref == 'cursor/private-vanguard-health-631a'" in ci
     ci_health = ci.split("private-health:", 1)[1]
-    assert "scripts/private_vanguard_health.py" in ci_health
+    assert "scripts/private_vanguard_health.py --gap" in ci_health
     assert "analytics_dev" not in ci_health
     assert "BQ_DATASET" not in ci_health
     assert "DATABASE_URL" not in ci_health
     assert "SNAPTRADE" not in ci_health
     assert "secret-manager" not in ci_health
+
+
+def _shares(**kwargs):
+    base = {name: 0.0 for name in (
+        "duplicate_or_missing_account",
+        "money_market_both",
+        "money_market_neither",
+        "options_valuation",
+        "fractional",
+        "price_date",
+    )}
+    base.update(kwargs)
+    return base
+
+
+def test_gap_lines_are_category_percents_only():
+    exact = attribute_fractions(_shares(money_market_both=1.0), has_gap=True)
+    lines = gap_lines(exact)
+    assert lines[1] == "money_market_both=100%"
+    assert all(_GAP_LINE.match(line) for line in lines)
+    assert sum(int(line.split("=")[1][:-1]) for line in lines) == 100
+    assert "$" not in " ".join(lines)
+
+    timing = attribute_fractions(_shares(), has_gap=True)
+    assert timing["price_date"] == 100
+    assert sum(timing.values()) == 100
+
+    stacked = attribute_fractions(
+        _shares(money_market_both=0.4, options_valuation=0.6),
+        has_gap=True,
+    )
+    assert stacked["money_market_both"] == 40
+    assert stacked["options_valuation"] == 60
+    assert stacked["price_date"] == 0
+
+    priced = attribute_fractions(_shares(price_date=1.0), has_gap=True)
+    assert priced["price_date"] == 100
+    assert priced["money_market_both"] == 0
+
+    quiet = attribute_fractions(_shares(money_market_both=1.0), has_gap=False)
+    assert quiet == {name: 0 for name in quiet}
+    assert not statement_is_read("SELECT symbol, tenant_id FROM t; DROP TABLE t")
