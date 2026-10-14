@@ -24,6 +24,8 @@ name: Mirror prod warehouse into analytics_dev
 #
 # Triggers:
 #   - workflow_call from bigquery_update.yml and prices_refresh.yml
+#     (clone). CI on the Vanguard branch calls the same workflow with
+#     dbt_build=true (dev build only).
 #   - workflow_dispatch for a manual mirror, or a dev-dataset dbt build
 
 on:
@@ -35,16 +37,22 @@ on:
         type: boolean
         default: false
   workflow_call:
+    inputs:
+      dbt_build:
+        description: Build this ref into analytics_dev from prod raw seeds. Does not write prod.
+        type: boolean
+        required: false
+        default: false
 
 # Separate from the prod warehouse group. A dev build must not share
 # bq-dev-mirror with the clone job or a prod mirror can cancel it.
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && (inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || github.ref_name == 'cursor/vanguard-staging-031b') && 'bq-dev-dbt' || 'bq-dev-mirror' }}
+  group: ${{ (inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'cursor/vanguard-staging-031b')) && 'bq-dev-dbt' || 'bq-dev-mirror' }}
   cancel-in-progress: true
 
 jobs:
   mirror:
-    if: ${{ github.event_name == 'workflow_call' || (github.event_name == 'workflow_dispatch' && inputs.dbt_build != true && github.event.inputs.dbt_build != 'true' && github.ref_name != 'cursor/vanguard-staging-031b') }}
+    if: ${{ (github.event_name == 'workflow_call' && inputs.dbt_build != true) || (github.event_name == 'workflow_dispatch' && inputs.dbt_build != true && github.event.inputs.dbt_build != 'true' && github.ref_name != 'cursor/vanguard-staging-031b') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -73,7 +81,7 @@ jobs:
           BQ_DATASET: analytics_dev
 
   dbt-dev:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || github.ref_name == 'cursor/vanguard-staging-031b') }}
+    if: ${{ inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'cursor/vanguard-staging-031b') }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:

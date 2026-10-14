@@ -65,3 +65,13 @@ jobs:
 
       - name: Run pytest
         run: python -m pytest tests/ -q --tb=short
+
+  # Validates the Vanguard staging branch against prod raw seeds in
+  # analytics_dev. Other pull requests skip it. The called workflow
+  # refuses a prod dataset and does not rewrite raw seeds.
+  vanguard-dev-dbt:
+    if: github.event_name == 'pull_request' && github.head_ref == 'cursor/vanguard-staging-031b'
+    uses: ./.github/workflows/dev_mirror.yml
+    secrets: inherit
+    with:
+      dbt_build: true
