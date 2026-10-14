@@ -38,27 +38,68 @@ FROM snaptrade_accounts
 WHERE user_id = %s
 """
 
+# Vanguard partition is the account label's first token, the same rule as
+# the per-broker staging models. Tenants are discovered here. No id is
+# passed in, and the outer select returns only aggregates.
 _WAREHOUSE_SQL = f"""
-WITH ids AS (
-  SELECT tenant FROM UNNEST(@tenants) AS tenant
+WITH labeled AS (
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_history`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+),
+tenants AS (
+  SELECT DISTINCT tenant_id
+    FROM labeled
+   WHERE tenant_id IS NOT NULL
+     AND tenant_id != 'demo:demo-account'
+     AND lower(split(trim(cast(account AS STRING)), ' ')[SAFE_OFFSET(0)]) = 'vanguard'
+),
+per_tenant AS (
+  SELECT
+    (SELECT COUNT(*)
+       FROM `{PROJECT}.{PROD_DATASET}.stg_history` h
+      WHERE h.tenant_id = t.tenant_id) AS history_n,
+    (SELECT COUNT(*)
+       FROM `{PROJECT}.{PROD_DATASET}.stg_current` c
+      WHERE c.tenant_id = t.tenant_id) AS current_n,
+    (SELECT COUNT(*)
+       FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances` b
+      WHERE b.tenant_id = t.tenant_id
+        AND b.row_type = 'account_total'
+        AND b.market_value IS NOT NULL) AS total_n,
+    (SELECT SUM(c.market_value)
+       FROM `{PROJECT}.{PROD_DATASET}.stg_current` c
+      WHERE c.tenant_id = t.tenant_id) AS position_value,
+    (SELECT SUM(b.market_value)
+       FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances` b
+      WHERE b.tenant_id = t.tenant_id
+        AND b.row_type = 'cash') AS cash_value,
+    (SELECT SUM(b.market_value)
+       FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances` b
+      WHERE b.tenant_id = t.tenant_id
+        AND b.row_type = 'account_total') AS account_total
+  FROM tenants t
 )
 SELECT
-  (SELECT COUNT(DISTINCT h.tenant_id)
-     FROM `{PROJECT}.{PROD_DATASET}.stg_history` h
-     JOIN ids ON h.tenant_id = ids.tenant) AS history_n,
-  (SELECT COUNT(DISTINCT c.tenant_id)
-     FROM `{PROJECT}.{PROD_DATASET}.stg_current` c
-     JOIN ids ON c.tenant_id = ids.tenant) AS current_n,
-  (SELECT COUNT(DISTINCT b.tenant_id)
-     FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances` b
-     JOIN ids ON b.tenant_id = ids.tenant
-    WHERE b.row_type = 'account_total'
-      AND b.market_value IS NOT NULL) AS balance_n,
-  (SELECT SUM(b.market_value)
-     FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances` b
-     JOIN ids ON b.tenant_id = ids.tenant
-    WHERE b.row_type = 'account_total') AS staged_total
+  COUNT(*) AS tenant_n,
+  COUNTIF(
+    history_n > 0
+    AND current_n > 0
+    AND total_n > 0
+    AND position_value IS NOT NULL
+    AND account_total IS NOT NULL
+  ) AS complete_n,
+  SUM(position_value + IFNULL(cash_value, 0)) AS staged_book,
+  SUM(account_total) AS balance_book
+FROM per_tenant
 """
+
+_WAREHOUSE_LINE = re.compile(r"^(PASS|FAIL|FAIL off by about [1-9][0-9]*%)$")
 
 
 def _code_only(sql: str) -> str:
@@ -201,6 +242,18 @@ def warehouse_status(*, complete: bool, staged, live) -> str:
     if not complete:
         return "FAIL"
     return reconcile_line(staged, live)
+
+
+def warehouse_report_line(*, complete: bool, staged, balance) -> str:
+    """PASS, or FAIL, or FAIL with a coarse percent. No dollar amount."""
+    if not complete:
+        return "FAIL"
+    status = reconcile_line(staged, balance)
+    if status == "PASS":
+        return "PASS"
+    if isinstance(status, str) and status.startswith("off by about "):
+        return f"FAIL {status}"
+    return "FAIL"
 
 
 def format_report(report) -> list[str]:
@@ -643,30 +696,47 @@ def _fill_report(report) -> None:
     report.update(rendered)
 
 
+def run_warehouse() -> str:
+    """Read prod analytics only. Returns one flag line."""
+    os.environ.pop("BQ_DATASET", None)
+    if not statement_is_read(_WAREHOUSE_SQL):
+        return "FAIL"
+    _install_bq_guard()
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT)
+    rows = list(client.query(_WAREHOUSE_SQL, location="US").result())
+    if len(rows) != 1:
+        return "FAIL"
+    row = rows[0]
+    tenant_n = int(row["tenant_n"] or 0)
+    complete_n = int(row["complete_n"] or 0)
+    complete = tenant_n > 0 and complete_n == tenant_n
+    line = warehouse_report_line(
+        complete=complete,
+        staged=row["staged_book"],
+        balance=row["balance_book"],
+    )
+    if not _WAREHOUSE_LINE.match(line):
+        return "FAIL"
+    return line
+
+
 def main(argv: list[str] | None = None) -> int:
     del argv
     sys.tracebacklimit = 0
     logging.disable(logging.CRITICAL)
-    report = _blank_report()
+    line = "FAIL"
     sink = io.StringIO()
     with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
         try:
-            report = run()
+            line = run_warehouse()
         except Exception:
-            pass
-    for line in format_report(report):
-        print(line, flush=True)
-    if not (os.environ.get("DATABASE_URL") or "").strip():
-        print(f"secret_manager={_LAST_SECRET_STATUS}", flush=True)
-    ok = (
-        report.get("connections")
-        and report.get("privacy")
-        and report.get("warehouse") == "PASS"
-        and report.get("positions")
-        and report.get("overview")
-        and report.get("settings")
-    )
-    return 0 if ok else 1
+            line = "FAIL"
+    if not _WAREHOUSE_LINE.match(line):
+        line = "FAIL"
+    print(line, flush=True)
+    return 0 if line == "PASS" else 1
 
 
 if __name__ == "__main__":

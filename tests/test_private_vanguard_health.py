@@ -9,6 +9,7 @@ from pathlib import Path
 from scripts.private_vanguard_health import (
     _ACCOUNTS_SQL,
     _HIDDEN_VANGUARD_SQL,
+    _WAREHOUSE_LINE,
     _WAREHOUSE_SQL,
     connections_ok,
     format_report,
@@ -16,6 +17,7 @@ from scripts.private_vanguard_health import (
     is_vanguard,
     reconcile_line,
     statement_is_read,
+    warehouse_report_line,
     warehouse_status,
 )
 
@@ -34,6 +36,11 @@ def test_statements_are_prod_reads():
     assert "ccwj-dbt.analytics.stg_account_balances" in _WAREHOUSE_SQL
     assert "analytics_dev" not in _WAREHOUSE_SQL
     assert "analytics_raw" not in _WAREHOUSE_SQL
+    assert "row_type = 'cash'" in _WAREHOUSE_SQL
+    assert "row_type = 'account_total'" in _WAREHOUSE_SQL
+    assert "= 'vanguard'" in _WAREHOUSE_SQL
+    assert "@tenants" not in _WAREHOUSE_SQL
+    assert "admin_hidden_users" not in _WAREHOUSE_SQL
     assert statement_is_read("SELECT updated_at FROM users")
     assert statement_is_read("SELECT 1 -- do not update the row")
     assert not statement_is_read("UPDATE snaptrade_accounts SET connection_broken_at = NULL")
@@ -94,6 +101,12 @@ def test_reconcile_line_has_no_dollars():
     assert reconcile_line(None, 10) == "FAIL"
     assert warehouse_status(complete=False, staged=10, live=10) == "FAIL"
     assert warehouse_status(complete=True, staged=10, live=10) == "PASS"
+    assert warehouse_report_line(complete=False, staged=10, balance=10) == "FAIL"
+    assert warehouse_report_line(complete=True, staged=10, balance=10) == "PASS"
+    mismatch = warehouse_report_line(complete=True, staged=50, balance=100)
+    assert mismatch == "FAIL off by about 50%"
+    assert _WAREHOUSE_LINE.match(mismatch)
+    assert "$" not in mismatch
 
 
 def test_vanguard_match_is_broker_not_a_nickname_fragment():
@@ -181,3 +194,6 @@ def test_workflow_is_dispatch_only():
     assert "scripts/private_vanguard_health.py" in ci_health
     assert "analytics_dev" not in ci_health
     assert "BQ_DATASET" not in ci_health
+    assert "DATABASE_URL" not in ci_health
+    assert "SNAPTRADE" not in ci_health
+    assert "secret-manager" not in ci_health
