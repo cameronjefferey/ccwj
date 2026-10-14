@@ -162,3 +162,9 @@ def test_workflow_is_dispatch_only():
     assert "analytics_dev" not in health
     assert "dbt build" not in health
     assert "dev_clone_prod.py" not in health
+    ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    assert "github.head_ref == 'cursor/private-vanguard-health-631a'" in ci
+    ci_health = ci.split("private-health:", 1)[1]
+    assert "scripts/private_vanguard_health.py" in ci_health
+    assert "analytics_dev" not in ci_health
+    assert "BQ_DATASET" not in ci_health
