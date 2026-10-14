@@ -1,5 +1,26 @@
 -- Per-broker account-balances adapter: Fidelity (via SnapTrade).
--- Dual-source (account_balances seed + legacy current_positions cash/total
--- rows). Thin passthrough today; add Fidelity-specific balance quirks HERE.
--- Unioned into stg_account_balances.
-{{ broker_balances_rows('fidelity') }}
+-- Dual-source, same as the other brokers: account_balances seed
+-- (src_priority 1) plus legacy current_positions cash / account-total
+-- rows (src_priority 2). stg_account_balances dedups on
+-- (coalesce(tenant_id, account), row_type), keeping priority 1.
+--
+-- Explicit projection:
+--   account, user_id, tenant_id, row_type, market_value, cost_basis,
+--   unrealized_pnl, unrealized_pnl_pct, percent_of_account, src_priority
+
+with fidelity_balances as (
+    {{ broker_balances_rows('fidelity') }}
+)
+
+select
+    account,
+    user_id,
+    tenant_id,
+    row_type,
+    market_value,
+    cost_basis,
+    unrealized_pnl,
+    unrealized_pnl_pct,
+    percent_of_account,
+    src_priority
+from fidelity_balances

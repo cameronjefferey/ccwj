@@ -65,3 +65,13 @@ jobs:
 
       - name: Run pytest
         run: python -m pytest tests/ -q --tb=short
+
+  # One analytics_dev build for the Fidelity pre-onboard audit. Reads prod
+  # raw seeds, writes analytics_dev only. Removed after that run so later
+  # pushes on this branch do not rebuild the dev dataset.
+  fidelity-dev-dbt:
+    if: github.event_name == 'pull_request' && github.head_ref == 'cursor/fidelity-preonboard-facf'
+    uses: ./.github/workflows/dev_mirror.yml
+    secrets: inherit
+    with:
+      dbt_build: true
