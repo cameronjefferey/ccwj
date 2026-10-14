@@ -2003,8 +2003,8 @@ def test_broken_transition_is_generation_fenced(monkeypatch):
     assert calls[0][1] == (7, "abc", 9)
 
 
-def test_cron_account_rows_include_disabled_debounce_state(monkeypatch):
-    """The next cron run must see the prior pending disabled signal."""
+def test_cron_account_rows_include_sync_health_state(monkeypatch):
+    """The cron needs both debounce and connection-age health metadata."""
     queries = []
     monkeypatch.setattr(
         _models, "fetch_all",
@@ -2014,6 +2014,10 @@ def test_cron_account_rows_include_disabled_debounce_state(monkeypatch):
     assert _models.list_all_snaptrade_accounts() == []
     assert len(queries) == 1
     assert "last_sync_error" in queries[0]
+    # _run_sync compares the broker's holdings timestamp with the time this
+    # grant was connected. Without created_at the nightly cron falsely marks
+    # a new account broken even though manual and webhook syncs do not.
+    assert "created_at" in queries[0]
 
 
 # ---------------------------------------------------------------------------

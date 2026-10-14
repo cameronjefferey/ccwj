@@ -3230,7 +3230,7 @@ def list_all_snaptrade_accounts():
         "SELECT user_id, id, snaptrade_account_id, tenant_id, "
         "institution_account_id, broker_slug, "
         "account_number_masked, account_name, display_nickname, "
-        "first_sync_completed, last_sync_error, connection_broken_at "
+        "first_sync_completed, last_sync_error, connection_broken_at, created_at "
         "FROM snaptrade_accounts ORDER BY user_id, created_at",
     )
 
