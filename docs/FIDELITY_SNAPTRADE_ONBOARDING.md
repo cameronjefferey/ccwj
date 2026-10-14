@@ -44,21 +44,32 @@ live `institution_name` on the first connect.
 **Symbols.** Documented as an object or null. A bare string is also accepted
 (the same coerce used for Vanguard). A mutual fund such as FXAIX is Equity.
 Options arrive as an `option_symbol` object (underlying, expiry, strike,
-call/put). Long-form option text is promoted to OCC. `units` is the share
-count. `fractional_units` is deprecated. A remainder strictly between 0 and 1
-is added to a whole-share `units` (12 and 0.25 is 12.25). The same number in
-both fields is stored once. A `fractional_units` of 1 or more is not added.
+call/put). Long-form option text is promoted to OCC. `units` is the only
+share count. SnapTrade's `fractional_units` is ignored completely, including
+when `units` is null. Example: units 12 and fractional_units 0.25 stores 12.
+units 40 and fractional_units 1.44 stores 40. The same number in both fields
+stays that number because only `units` is read.
 
 **Core position.** Money-market funds are included in cash and also returned
 as positions with `cash_equivalent: true`. SnapTrade warns that adding those
 positions on top of cash double-counts the account. SPAXX and FDRXX are the
-usual Fidelity names, but the code trusts the flag, not the ticker. When the
+usual Fidelity names, but the code does not hardcode those tickers. When the
 flag is true the snapshot security type is `Cash and Money Market`.
 `stg_current` drops that type, so it is not a holding. Share buys, sells, and
 reinvestment companion buys of that symbol are not written on a sync that
 still sees the flagged position. Dividends and interest on it are kept.
 Buys already stored from an earlier sync are not deleted (the dedup key
-does not remove rows). When the flag is false the symbol stays Equity.
+does not remove rows).
+
+An unflagged money-market fund (type text, or a price within two cents of
+$1) is dropped the same way only when the broker cash balance already
+includes it. Example: cash $5,200 already includes a $1,000 fund, stock
+market value is $8,000, and the account total is $13,200. That total matches
+cash plus the stock, so the fund is not a second holding. Example the other
+way: cash $4,200 does not include the $1,000 fund, stock is $8,000, and the
+same $13,200 total only matches if the fund stays a holding. A missing
+account total keeps the fund as a holding. A market-priced mutual fund
+(example FXAIX at $200) is never treated as cash.
 
 **Activities the sync keeps.**
 
@@ -72,8 +83,10 @@ does not remove rows). When the flag is false the symbol stays Equity.
 | CONTRIBUTION, DEPOSIT, INTERNAL_CASH_TRANSFER_IN | Deposit |
 | WITHDRAWAL, INTERNAL_CASH_TRANSFER_OUT | Withdrawal |
 | OPTIONEXPIRATION / OPTIONASSIGNMENT / OPTIONEXERCISE | Expired / Assigned / Exchange or Exercise |
+| DISTRIBUTION with a ticker | Cash Dividend. No companion Buy |
+| DISTRIBUTION with no ticker | Withdrawal |
 
-**Activities the sync drops.** TRANSFER, share JOURNAL, DISTRIBUTION, SPLIT,
+**Activities the sync drops.** TRANSFER, share JOURNAL, SPLIT,
 EXTERNAL_ASSET_TRANSFER_IN / OUT, and any type SnapTrade has not mapped.
 Fidelity orders that 403 are ignored. That 403 does not mark the connection
 broken. A disabled brokerage authorization is the broken signal.
@@ -117,34 +130,39 @@ allow-list and the partition exclusivity test. Current positions were
 (mutual funds, a flagged core position, options, fractional shares) has not
 been seen in production data yet.
 
-## Decisions that need Cameron
+## Decisions Cameron made
 
-All dollars are examples, not a customer's book.
+All dollars are examples, not a customer's book. The mapping lives on PR
+#285 and this branch is rebased onto that commit.
 
-1. **Flag false on SPAXX / FDRXX.** Keep it as Equity. A $1,000 settlement
-   fund with `cash_equivalent` false can show both as a holding and inside
-   cash. When the broker sends an account total, that total is what the
-   balance row uses.
+1. **DISTRIBUTION.** A ticker means income (Cash Dividend). No ticker means
+   a cash withdrawal. Example: a $40 DISTRIBUTION on FXAIX is a dividend of
+   +$40. A $40 DISTRIBUTION with no symbol is a withdrawal of −$40. Neither
+   is dropped, and neither becomes a Buy.
 
-2. **DISTRIBUTION stays dropped.** A $40 fund distribution (symbol set) and
-   a $40 retirement cash-out (no symbol) look the same in the type string.
-   Mapping either one without a live sample would book the other wrong.
+2. **Share transfers stay off the tape.** TRANSFER and
+   EXTERNAL_ASSET_TRANSFER_IN are not fills. Shares that are still held are
+   priced at the broker's cost (`int_opening_balances`). Example: 10 shares
+   still held, broker cost $500, inferred opening cash −$500. A transfer that
+   arrived and was fully sold before the first snapshot can still be missing
+   from realized P&L until a CSV fills the buy.
 
-3. **Share transfers stay dropped.** TRANSFER and EXTERNAL_ASSET_TRANSFER_IN
-   / OUT are not cash and not a priced fill. Example: 10 shares arrive with
-   no cash, then are sold inside the window. Opening-balance inference
-   recovers the shares that are still held. A transfer that arrived and was
-   fully sold before the first snapshot can be missing from realized P&L
-   until a CSV fills the buy.
+3. **`fractional_units` is ignored.** Only `units` is stored. Example: units
+   12 and fractional_units 0.25 stores 12. units 40 and fractional_units 1.44
+   stores 40. A null `units` does not fall through to the deprecated field.
 
-4. **`fractional_units` of 1 or more is not added to `units`.** SnapTrade
-   deprecated the field. Example: units 40 and fractional_units 1.44 stores
-   40. units 12 and fractional_units 0.25 stores 12.25. The same number in
-   both fields stays that number.
+4. **Unflagged money-market fund.** If the broker cash balance already
+   includes it, it is not also a holding. Otherwise it stays a holding.
+   Example: cash $5,200 includes a $1,000 fund, stock is $8,000, total
+   $13,200 — the fund is cash. Cash $4,200, same fund and stock, same total
+   — the fund stays a holding and its cost is in the account cost basis.
+
+## Still open
 
 5. **Confirm the live institution name on first connect.** If it is not a
    Fidelity* first word, the rows miss this partition. Do not add an alias
-   until that string is seen.
+   until that string is seen. The example to watch for is `National Financial
+   Services`.
 
 6. **Fees stay labeled ADR Mgmt Fee.** A $1.25 Fidelity fee uses that seed
    action on purpose. Renaming it would split the dedup key and duplicate

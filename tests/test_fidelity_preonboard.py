@@ -17,6 +17,7 @@ from app.snaptrade_normalize import (
     cash_equivalent_symbols,
     orders_to_history_df,
     positions_to_current_df,
+    symbols_already_in_cash,
 )
 
 TENANT = "snaptrade:fidelity-fixture"
@@ -114,30 +115,117 @@ def test_fidelity_core_sweep_is_not_an_equity_lot_when_flagged():
     assert float(reported_total["unrealized_pnl"]) == 5000
 
 
-def test_fidelity_sweep_buy_is_kept_when_the_flag_is_false():
-    """Example: $1000 settlement fund with cash_equivalent false stays Equity."""
-    pos = {
+def test_fidelity_unflagged_money_market_is_not_double_counted():
+    """Example numbers. cash_equivalent false is not enough to drop SPAXX.
+
+    Cash $5,200 already includes the $1,000 fund. Stock market value
+    $8,000, cost $7,000. Account total $13,200 matches cash plus the
+    stock, so the fund is not a second holding and its buy is skipped.
+    A $4 dividend on it stays.
+
+    Cash $4,200 does not include the fund. The same total only matches
+    if the fund is a holding, so the buy stays and cost basis is $8,000.
+    """
+    fund = {
         "symbol": {"raw_symbol": "SPAXX", "symbol": "SPAXX"},
         "units": 1000,
         "price": 1,
         "market_value": 1000,
         "cost_basis": 1000,
         "cash_equivalent": False,
+        "description": "Fidelity Government Money Market",
     }
-    assert cash_equivalent_symbols([pos]) == set()
-    current = positions_to_current_df(
-        [pos], account_name=ACCOUNT, user_id=21, tenant_id=TENANT,
+    stock = {
+        "symbol": "AAPL",
+        "units": 80,
+        "price": 100,
+        "market_value": 8000,
+        "cost_basis": 7000,
+        "cash_equivalent": False,
+    }
+    positions = [fund, stock]
+    assert cash_equivalent_symbols(positions) == set()
+
+    included = symbols_already_in_cash(
+        positions,
+        balances=[{"cash": 5200}],
+        account_summary={"balance": {"total": {"amount": 13200}}},
     )
-    assert current.iloc[0]["security_type"] == "Equity"
-    history = activities_to_history_df(
+    assert included == {"SPAXX"}
+    current = positions_to_current_df(
+        positions,
+        account_name=ACCOUNT,
+        user_id=21,
+        tenant_id=TENANT,
+        already_in_cash=included,
+    )
+    kinds = dict(zip(current["Symbol"], current["security_type"]))
+    assert kinds["SPAXX"] == "Cash and Money Market"
+    assert kinds["AAPL"] == "Equity"
+    included_bal = balances_to_balance_df(
+        account_summary={"balance": {"total": {"amount": 13200}}},
+        balances=[{"cash": 5200}],
+        positions=positions,
+        account_name=ACCOUNT,
+        user_id=21,
+        tenant_id=TENANT,
+        already_in_cash=included,
+    )
+    included_total = included_bal.loc[
+        included_bal["row_type"] == "account_total"
+    ].iloc[0]
+    assert float(included_total["market_value"]) == 13200
+    assert float(included_total["cost_basis"]) == 7000
+    skipped = activities_to_history_df(
+        [
+            _act("BUY", "SPAXX", units=1000, price=1, amount=1000),
+            _act("DIVIDEND", "SPAXX", units=1000, price=1, amount=4),
+        ],
+        account_name=ACCOUNT,
+        user_id=21,
+        tenant_id=TENANT,
+        cash_equivalent_symbols=included,
+    )
+    assert list(skipped["Action"]) == ["Cash Dividend"]
+    assert float(skipped.iloc[0]["Amount"]) == 4
+
+    separate = symbols_already_in_cash(
+        positions,
+        balances=[{"cash": 4200}],
+        account_summary={"balance": {"total": {"amount": 13200}}},
+    )
+    assert separate == set()
+    held = positions_to_current_df(
+        positions,
+        account_name=ACCOUNT,
+        user_id=21,
+        tenant_id=TENANT,
+        already_in_cash=separate,
+    )
+    held_kinds = dict(zip(held["Symbol"], held["security_type"]))
+    assert held_kinds["SPAXX"] == "Equity"
+    separate_bal = balances_to_balance_df(
+        account_summary={"balance": {"total": {"amount": 13200}}},
+        balances=[{"cash": 4200}],
+        positions=positions,
+        account_name=ACCOUNT,
+        user_id=21,
+        tenant_id=TENANT,
+        already_in_cash=separate,
+    )
+    separate_total = separate_bal.loc[
+        separate_bal["row_type"] == "account_total"
+    ].iloc[0]
+    assert float(separate_total["cost_basis"]) == 8000
+    kept = activities_to_history_df(
         [_act("BUY", "SPAXX", units=1000, price=1, amount=1000)],
         account_name=ACCOUNT,
         user_id=21,
         tenant_id=TENANT,
-        cash_equivalent_symbols=cash_equivalent_symbols([pos]),
+        cash_equivalent_symbols=separate,
     )
-    assert list(history["Action"]) == ["Buy"]
-    assert history.iloc[0]["Symbol"] == "SPAXX"
+    assert list(kept["Action"]) == ["Buy"]
+    assert kept.iloc[0]["Symbol"] == "SPAXX"
 
 
 def test_fidelity_activity_shapes_string_object_fund_option_and_sweep():
@@ -165,6 +253,7 @@ def test_fidelity_activity_shapes_string_object_fund_option_and_sweep():
         _act("CONTRIBUTION", None, units=0, price=0, amount=500),
         _act("WITHDRAWAL", None, units=0, price=0, amount=40),
         _act("TRANSFER", "AAPL", units=10, price=0, amount=0),
+        _act("DISTRIBUTION", "FXAIX", units=10, price=4, amount=40),
         _act("DISTRIBUTION", None, units=0, price=0, amount=40),
         _act("EXTERNAL_ASSET_TRANSFER_IN", "AAPL", units=10, price=0, amount=0),
         {
@@ -217,6 +306,16 @@ def test_fidelity_activity_shapes_string_object_fund_option_and_sweep():
     assert list(spaxx_rows["Action"]) == ["Cash Dividend", "Cash Dividend"]
     fx_buys = df[(df["Symbol"] == "FXAIX") & (df["Action"] == "Buy")]
     assert len(fx_buys) == 2  # the share buy plus the reinvestment companion
+    fx_income = df[
+        (df["Symbol"] == "FXAIX")
+        & (df["Action"] == "Cash Dividend")
+        & (df["Amount"].astype(float) == 40)
+    ]
+    assert len(fx_income) == 1
+    withdrawals = df[df["Action"] == "Withdrawal"]
+    assert len(withdrawals) == 2
+    assert set(float(amount) for amount in withdrawals["Amount"]) == {-40.0}
+    assert ("Buy", "AAPL") not in list(zip(actions, symbols))
     assert "Credit Interest" in actions
     assert "ADR Mgmt Fee" in actions
     assert "Deposit" in actions
@@ -259,8 +358,9 @@ def test_fidelity_orders_skip_a_flagged_sweep_and_keep_a_string_ticker():
 
 
 def test_fidelity_mutual_fund_fractional_and_option_snapshot():
-    """units 12 and fractional_units 0.25 is 12.25. units 40 and
-    fractional_units 1.44 stays 40. A call is an option, not a fund.
+    """fractional_units is ignored. units 12 and fractional_units 0.25
+    stores 12. units 40 and fractional_units 1.44 stores 40. A call is
+    an option, not a fund.
     """
     rows = positions_to_current_df(
         [
@@ -299,7 +399,7 @@ def test_fidelity_mutual_fund_fractional_and_option_snapshot():
     by_type = {row["security_type"]: row for _, row in rows.iterrows()}
     fund = rows[rows["Symbol"] == "FXAIX"].iloc[0]
     assert fund["security_type"] == "Equity"
-    assert float(fund["Quantity"]) == 12.25
+    assert float(fund["Quantity"]) == 12
     sweep = rows[rows["Symbol"] == "FDRXX"].iloc[0]
     assert sweep["security_type"] == "Cash and Money Market"
     assert float(sweep["Quantity"]) == 40
