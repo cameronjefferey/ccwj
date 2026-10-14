@@ -96,4 +96,4 @@ jobs:
       - name: Read-only warehouse flag
         env:
           GOOGLE_CLOUD_PROJECT: ccwj-dbt
-        run: python -W ignore scripts/private_vanguard_health.py --narrow
+        run: python -W ignore scripts/private_vanguard_health.py --fields

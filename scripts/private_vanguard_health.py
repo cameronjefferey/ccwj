@@ -735,6 +735,205 @@ CROSS JOIN overall o
 CROSS JOIN vintage
 """
 
+# What the account total includes that holdings plus cash do not.
+# Letters match the narrow check (tenant_id order). A reconciling
+# account is omitted. Each share is that field's dollars divided by
+# this account's (account total − holdings − cash). Buying power is
+# not a stored column; the sync keeps only ``cash`` off each balance
+# row, so that line is zero when the column is absent.
+_FIELD_CATS = (
+    "total_above_cash_and_holdings",
+    "money_market_or_sweep",
+    "blank_security",
+    "mutual_fund",
+    "option_positions",
+    "other_dropped",
+)
+_FIELD_LINE = re.compile(
+    r"^account_[A-H]_(total_above_cash_and_holdings|money_market_or_sweep"
+    r"|blank_security|mutual_fund|option_positions|other_dropped)=-?[0-9]+%$"
+    r"|^buying_power=-?[0-9]+%$"
+)
+_FIELDS_SQL = f"""
+WITH labeled AS (
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_history`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+),
+tenants AS (
+  SELECT DISTINCT tenant_id
+    FROM labeled
+   WHERE tenant_id IS NOT NULL
+     AND tenant_id != 'demo:demo-account'
+     AND lower(split(trim(cast(account AS STRING)), ' ')[SAFE_OFFSET(0)]) = 'vanguard'
+),
+held AS (
+  SELECT tenant_id, SUM(market_value) AS held_mv
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+   GROUP BY tenant_id
+),
+cash_rows AS (
+  SELECT tenant_id, SUM(market_value) AS cash_mv
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+     AND row_type = 'cash'
+   GROUP BY tenant_id
+),
+total_rows AS (
+  SELECT tenant_id, SUM(market_value) AS account_total
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+     AND row_type = 'account_total'
+   GROUP BY tenant_id
+),
+books AS (
+  SELECT
+    t.tenant_id,
+    IFNULL(b.account_total, 0) - IFNULL(h.held_mv, 0) - IFNULL(c.cash_mv, 0) AS shortfall
+  FROM tenants t
+  LEFT JOIN held h ON h.tenant_id = t.tenant_id
+  LEFT JOIN cash_rows c ON c.tenant_id = t.tenant_id
+  LEFT JOIN total_rows b ON b.tenant_id = t.tenant_id
+),
+lettered AS (
+  SELECT
+    ROW_NUMBER() OVER (ORDER BY tenant_id) AS n,
+    tenant_id,
+    shortfall
+  FROM books
+),
+raw_rows AS (
+  SELECT
+    NULLIF(TRIM(tenant_id), '') AS tenant_id,
+    REGEXP_REPLACE(UPPER(TRIM(CAST(Symbol AS STRING))), r'\\s+', '') AS sym_key,
+    LOWER(TRIM(COALESCE(CAST(Symbol AS STRING), ''))) AS sym_label,
+    LOWER(TRIM(COALESCE(CAST(Description AS STRING), ''))) AS desc_label,
+    LOWER(TRIM(COALESCE(CAST(security_type AS STRING), ''))) AS stype,
+    SAFE_CAST(NULLIF(TRIM(CAST(Quantity AS STRING)), '') AS FLOAT64) AS qty,
+    SAFE_CAST(NULLIF(TRIM(CAST(Price AS STRING)), '') AS FLOAT64) AS price,
+    SAFE_CAST(TRIM(REPLACE(REPLACE(REPLACE(
+      COALESCE(CAST(market_value AS STRING), ''), '$', ''), ',', ''), ' ', '')) AS FLOAT64) AS mv
+  FROM `{PROJECT}.{PROD_DATASET}.stg_broker_vanguard_current`
+  WHERE NULLIF(TRIM(tenant_id), '') IN (
+    SELECT tenant_id FROM lettered WHERE ABS(shortfall) > 1
+  )
+),
+bucketed AS (
+  SELECT
+    tenant_id,
+    sym_key,
+    mv,
+    qty,
+    price,
+    CASE
+      WHEN sym_label IN ('account total', 'positions total') THEN 'total_line'
+      WHEN stype = 'cash and money market'
+        OR STRPOS(stype, 'money market') > 0
+        OR STRPOS(stype, 'sweep') > 0
+        OR STRPOS(stype, 'settlement') > 0
+        OR STRPOS(desc_label, 'money market') > 0
+        OR STRPOS(desc_label, 'sweep') > 0
+        OR STRPOS(desc_label, 'settlement') > 0
+        THEN 'mm'
+      WHEN stype = '' THEN 'blank'
+      WHEN STRPOS(stype, 'mutual') > 0 THEN 'mutual'
+      WHEN stype = 'option'
+        OR REGEXP_CONTAINS(sym_key, r'\\d{{6}}[CP]\\d{{8}}')
+        THEN 'option'
+      ELSE 'other'
+    END AS bucket
+  FROM raw_rows
+),
+staged AS (
+  SELECT
+    tenant_id,
+    REGEXP_REPLACE(UPPER(TRIM(CAST(trade_symbol AS STRING))), r'\\s+', '') AS sym_key
+  FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+  WHERE tenant_id IN (SELECT tenant_id FROM lettered WHERE ABS(shortfall) > 1)
+  GROUP BY tenant_id, sym_key
+),
+dropped AS (
+  SELECT b.tenant_id, b.bucket, SUM(b.mv) AS mv
+  FROM bucketed b
+  LEFT JOIN staged s
+    ON s.tenant_id = b.tenant_id AND s.sym_key = b.sym_key
+  WHERE b.bucket != 'total_line'
+    AND s.sym_key IS NULL
+  GROUP BY b.tenant_id, b.bucket
+),
+option_delta AS (
+  SELECT
+    c.tenant_id,
+    SUM(IFNULL(c.quantity, 0) * IFNULL(c.current_price, 0) * 100 - IFNULL(c.market_value, 0)) AS mv
+  FROM `{PROJECT}.{PROD_DATASET}.stg_current` c
+  WHERE c.tenant_id IN (SELECT tenant_id FROM lettered WHERE ABS(shortfall) > 1)
+    AND c.instrument_type IN ('Call', 'Put')
+  GROUP BY c.tenant_id
+),
+parts AS (
+  SELECT
+    l.n,
+    l.shortfall,
+    IFNULL(MAX(IF(d.bucket = 'mm', d.mv, NULL)), 0) AS mm,
+    IFNULL(MAX(IF(d.bucket = 'blank', d.mv, NULL)), 0) AS blank,
+    IFNULL(MAX(IF(d.bucket = 'mutual', d.mv, NULL)), 0) AS mutual,
+    IFNULL(MAX(IF(d.bucket = 'option', d.mv, NULL)), 0) + IFNULL(MAX(o.mv), 0) AS opt,
+    IFNULL(MAX(IF(d.bucket = 'other', d.mv, NULL)), 0) AS other
+  FROM lettered l
+  LEFT JOIN dropped d ON d.tenant_id = l.tenant_id
+  LEFT JOIN option_delta o ON o.tenant_id = l.tenant_id
+  GROUP BY l.n, l.shortfall
+),
+scored AS (
+  SELECT
+    n,
+    IF(ABS(shortfall) <= 1, NULL, IF(shortfall > 1, 1.0, 0.0)) AS above,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(mm, shortfall)) AS mm,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(blank, shortfall)) AS blank,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(mutual, shortfall)) AS mutual,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(opt, shortfall)) AS opt,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(other, shortfall)) AS other
+  FROM parts
+)
+SELECT
+  MAX(IF(n = 1, above, NULL)) AS a_above,
+  MAX(IF(n = 1, mm, NULL)) AS a_mm,
+  MAX(IF(n = 1, blank, NULL)) AS a_blank,
+  MAX(IF(n = 1, mutual, NULL)) AS a_mutual,
+  MAX(IF(n = 1, opt, NULL)) AS a_opt,
+  MAX(IF(n = 1, other, NULL)) AS a_other,
+  MAX(IF(n = 2, above, NULL)) AS b_above,
+  MAX(IF(n = 2, mm, NULL)) AS b_mm,
+  MAX(IF(n = 2, blank, NULL)) AS b_blank,
+  MAX(IF(n = 2, mutual, NULL)) AS b_mutual,
+  MAX(IF(n = 2, opt, NULL)) AS b_opt,
+  MAX(IF(n = 2, other, NULL)) AS b_other,
+  MAX(IF(n = 3, above, NULL)) AS c_above,
+  MAX(IF(n = 3, mm, NULL)) AS c_mm,
+  MAX(IF(n = 3, blank, NULL)) AS c_blank,
+  MAX(IF(n = 3, mutual, NULL)) AS c_mutual,
+  MAX(IF(n = 3, opt, NULL)) AS c_opt,
+  MAX(IF(n = 3, other, NULL)) AS c_other,
+  MAX(IF(n = 4, above, NULL)) AS d_above,
+  MAX(IF(n = 4, mm, NULL)) AS d_mm,
+  MAX(IF(n = 4, blank, NULL)) AS d_blank,
+  MAX(IF(n = 4, mutual, NULL)) AS d_mutual,
+  MAX(IF(n = 4, opt, NULL)) AS d_opt,
+  MAX(IF(n = 4, other, NULL)) AS d_other,
+  (
+    SELECT IF(COUNTIF(LOWER(column_name) = 'buying_power') > 0, 1.0, 0.0)
+      FROM `{PROJECT}.analytics_raw.INFORMATION_SCHEMA.COLUMNS`
+     WHERE table_name IN ('current_positions', 'account_balances')
+  ) AS buying_power
+FROM scored
+"""
+
 
 def _safe_hint(message: str) -> str:
     """A query-planner phrase with quoted text and amounts removed."""
@@ -853,6 +1052,61 @@ def narrow_lines_ok(lines) -> bool:
     if letters != list(_NARROW_LETTERS[: len(letters)]):
         return False
     return [line.split("=", 1)[0] for line in categories] == list(_NARROW_CATS)
+
+
+_FIELD_LETTERS = "ABCD"
+_FIELD_KEYS = (
+    ("above", "total_above_cash_and_holdings"),
+    ("mm", "money_market_or_sweep"),
+    ("blank", "blank_security"),
+    ("mutual", "mutual_fund"),
+    ("opt", "option_positions"),
+    ("other", "other_dropped"),
+)
+
+
+def field_lines(values) -> list[str]:
+    """One block per account whose total is not holdings plus cash.
+
+    A null ``above`` column is an account that reconciles, or that does
+    not exist. Buying power is last. It is a stored-column flag, not a
+    dollar share of a live payload.
+    """
+    values = values or {}
+    lines = []
+    for letter in _FIELD_LETTERS:
+        prefix = letter.lower()
+        if values.get(f"{prefix}_above") is None:
+            continue
+        for key, cat in _FIELD_KEYS:
+            lines.append(
+                f"account_{letter}_{cat}={_pct(values.get(f'{prefix}_{key}'))}%"
+            )
+    lines.append(f"buying_power={_pct(values.get('buying_power'))}%")
+    return lines
+
+
+def field_lines_ok(lines) -> bool:
+    if not lines or not lines[-1].startswith("buying_power="):
+        return False
+    if any(not _FIELD_LINE.match(line) for line in lines):
+        return False
+    body = lines[:-1]
+    width = len(_FIELD_CATS)
+    if len(body) % width != 0:
+        return False
+    letters = []
+    for offset in range(0, len(body), width):
+        block = body[offset:offset + width]
+        names = [line.split("=", 1)[0] for line in block]
+        letter = names[0].split("_", 2)[1]
+        expected = [f"account_{letter}_{cat}" for cat in _FIELD_CATS]
+        if names != expected:
+            return False
+        letters.append(letter)
+    if letters != sorted(letters) or len(letters) != len(set(letters)):
+        return False
+    return all(letter in _FIELD_LETTERS for letter in letters)
 
 
 def format_report(report) -> list[str]:
@@ -1311,6 +1565,48 @@ def run_narrow_lines() -> list[str]:
     return narrow_lines({key: row[key] for key in row.keys()})
 
 
+def run_field_lines() -> list[str]:
+    """Read prod analytics only. One share line per cash-like field."""
+    os.environ.pop("BQ_DATASET", None)
+    if not statement_is_read(_FIELDS_SQL):
+        raise RuntimeError("read-only")
+    _install_bq_guard()
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT)
+    rows = list(client.query(_FIELDS_SQL, location="US").result())
+    if len(rows) != 1:
+        raise RuntimeError("read-only")
+    row = rows[0]
+    return field_lines({key: row[key] for key in row.keys()})
+
+
+def _print_fields() -> int:
+    lines = None
+    reason = ""
+    hint = ""
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        try:
+            lines = run_field_lines()
+        except Exception as exc:
+            errors = getattr(exc, "errors", None)
+            hint = ""
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                reason = str(errors[0].get("reason") or "")
+                hint = _safe_hint(str(errors[0].get("message") or ""))
+            else:
+                reason = type(exc).__name__
+    if reason and not re.fullmatch(r"[A-Za-z0-9_]+", reason):
+        reason = ""
+    if not field_lines_ok(lines):
+        suffix = " ".join(part for part in (reason, hint) if part)
+        print(f"breakdown=FAIL{(' ' + suffix) if suffix else ''}", flush=True)
+        return 1
+    print("\n".join(lines), flush=True)
+    return 0
+
+
 def _print_narrow() -> int:
     lines = None
     reason = ""
@@ -1415,6 +1711,8 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     sys.tracebacklimit = 0
     logging.disable(logging.CRITICAL)
+    if "--fields" in args:
+        return _print_fields()
     if "--narrow" in args:
         return _print_narrow()
     if "--gap" in args:

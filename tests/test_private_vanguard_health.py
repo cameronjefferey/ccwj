@@ -11,6 +11,8 @@ from scripts.private_vanguard_health import (
     _GAP_LINE,
     _GAP_SQL,
     _HIDDEN_VANGUARD_SQL,
+    _FIELD_CATS,
+    _FIELDS_SQL,
     _NARROW_CATS,
     _NARROW_SQL,
     _WAREHOUSE_LINE,
@@ -21,6 +23,8 @@ from scripts.private_vanguard_health import (
     gap_lines,
     holdings_is_fresh,
     is_vanguard,
+    field_lines,
+    field_lines_ok,
     narrow_lines,
     narrow_lines_ok,
     reconcile_line,
@@ -37,7 +41,14 @@ _LINE = re.compile(
 
 
 def test_statements_are_prod_reads():
-    for sql in (_HIDDEN_VANGUARD_SQL, _ACCOUNTS_SQL, _WAREHOUSE_SQL, _GAP_SQL, _NARROW_SQL):
+    for sql in (
+        _HIDDEN_VANGUARD_SQL,
+        _ACCOUNTS_SQL,
+        _WAREHOUSE_SQL,
+        _GAP_SQL,
+        _NARROW_SQL,
+        _FIELDS_SQL,
+    ):
         assert statement_is_read(sql)
     assert "ccwj-dbt.analytics.stg_history" in _WAREHOUSE_SQL
     assert "ccwj-dbt.analytics.stg_current" in _WAREHOUSE_SQL
@@ -203,7 +214,7 @@ def test_workflow_is_dispatch_only():
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "github.head_ref == 'cursor/private-vanguard-health-631a'" in ci
     ci_health = ci.split("private-health:", 1)[1]
-    assert "scripts/private_vanguard_health.py --narrow" in ci_health
+    assert "scripts/private_vanguard_health.py --fields" in ci_health
     assert "analytics_dev" not in ci_health
     assert "BQ_DATASET" not in ci_health
     assert "DATABASE_URL" not in ci_health
@@ -306,3 +317,50 @@ def test_narrow_sql_is_one_read_and_prints_shares_only():
     assert not narrow_lines_ok(["account_B=100%", "account_A=0%"] + [
         f"{name}=0%" for name in _NARROW_CATS
     ])
+
+
+def test_fields_sql_is_one_read_and_prints_shares_only():
+    assert statement_is_read(_FIELDS_SQL)
+    assert "ccwj-dbt.analytics.stg_broker_vanguard_current" in _FIELDS_SQL
+    assert "INFORMATION_SCHEMA.COLUMNS" in _FIELDS_SQL
+    assert "buying_power" in _FIELDS_SQL
+    assert "analytics_dev" not in _FIELDS_SQL
+    assert "analytics_raw_dev" not in _FIELDS_SQL
+    assert "analytics_raw" not in _GAP_SQL
+    assert "@tenants" not in _FIELDS_SQL
+    projection = _FIELDS_SQL.rsplit("SELECT", 1)[1].split("FROM scored", 1)[0].lower()
+    for banned in ("tenant_id", "symbol", "market_value", "quantity", "description", "$"):
+        assert banned not in projection
+    lines = field_lines({
+        "a_above": 1.0,
+        "a_mm": 1.0,
+        "a_blank": 0.0,
+        "a_mutual": 0.0,
+        "a_opt": 0.0,
+        "a_other": 0.0,
+        "b_above": None,
+        "c_above": 1.0,
+        "c_mm": 0.0,
+        "c_blank": 0.0,
+        "c_mutual": 0.0,
+        "c_opt": 0.4,
+        "c_other": 0.0,
+        "buying_power": 0.0,
+    })
+    assert "account_A_money_market_or_sweep=100%" in lines
+    assert "account_A_total_above_cash_and_holdings=100%" in lines
+    assert all(not line.startswith("account_B") for line in lines)
+    assert "account_C_option_positions=40%" in lines
+    assert lines[-1] == "buying_power=0%"
+    assert field_lines_ok(lines)
+    assert [line.split("=", 1)[0] for line in lines if line.startswith("account_A")] == [
+        f"account_A_{cat}" for cat in _FIELD_CATS
+    ]
+    assert "$" not in " ".join(lines)
+    swapped = [
+        "account_B_total_above_cash_and_holdings=100%",
+        *[f"account_B_{cat}=0%" for cat in _FIELD_CATS[1:]],
+        *[f"account_A_{cat}=0%" for cat in _FIELD_CATS],
+        "buying_power=0%",
+    ]
+    assert not field_lines_ok(swapped)
