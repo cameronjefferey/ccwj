@@ -105,6 +105,38 @@ def parse_occ(symbol):
     }
 
 
+_OCC_ROOT_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
+
+
+def canonical_occ_trade_symbol(symbol):
+    """Compact OCC id shared by every spelling of one contract.
+
+    Mirrors ``canonical_option_trade_symbol`` in dbt. Compact OCC,
+    space-padded OSI, and Schwab long form collapse to one symbol so a
+    close cannot be left on a spelling that no longer has its open.
+    Anything that is not an option comes back unchanged.
+    """
+    if symbol is None:
+        return ""
+    text = str(symbol).strip()
+    parsed = parse_occ(text)
+    if not parsed:
+        return text
+    root = str(parsed["root"]).upper()
+    if _OCC_ROOT_RE.match(root) is None:
+        return text
+    try:
+        strike_raw = int(round(float(parsed["strike"]) * 1000))
+    except (TypeError, ValueError):
+        return text
+    if strike_raw < 0:
+        return text
+    return (
+        f"{root}{parsed['yy']}{int(parsed['mm']):02d}{int(parsed['dd']):02d}"
+        f"{parsed['cp']}{strike_raw:08d}"
+    )
+
+
 _SPREAD_STRIKES = re.compile(
     r"\$(\d+(?:\.\d+)?)\s*/\s*\$(\d+(?:\.\d+)?)([CP])\s*$"
 )

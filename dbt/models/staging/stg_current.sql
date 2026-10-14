@@ -186,12 +186,20 @@ cleaned as (
 ),
 
 -- Pair tickers (BTC-USD) collapse onto the bare crypto symbol history
--- uses after the same rewrite in stg_history. Options keep OSI symbols.
+-- uses after the same rewrite in stg_history. Option holdings use the
+-- same compact OCC trade_symbol as history so a long-form fill and a
+-- padded snapshot row are one contract (see canonical_option_trade_symbol).
 crypto_norm as (
     select
         c.* except (trade_symbol, underlying_symbol),
         case
-            when c.instrument_type in ('Call', 'Put') then c.trade_symbol
+            when c.instrument_type in ('Call', 'Put') then {{ canonical_option_trade_symbol(
+                'c.trade_symbol',
+                'coalesce(cu.symbol, c.underlying_symbol)',
+                'c.option_expiry',
+                'c.option_strike',
+                'c.option_type'
+            ) }}
             else coalesce(ct.symbol, c.trade_symbol)
         end as trade_symbol,
         coalesce(cu.symbol, c.underlying_symbol) as underlying_symbol

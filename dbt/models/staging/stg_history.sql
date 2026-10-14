@@ -340,12 +340,24 @@ amount_signed as (
 
 -- Pair tickers (BTC-USD, BTCUSD) collapse onto the bare crypto symbol
 -- the snapshot already uses, so fills join the holding. See
--- macros/crypto_pair_base.sql. Options keep their OSI trade_symbol.
+-- macros/crypto_pair_base.sql. Option spellings collapse to one
+-- compact OCC trade_symbol BEFORE est_fee_matched. That match keys
+-- the stock root, and occ_underlying_symbol() made every spelling
+-- share that root — an estimated open on compact OCC was dropped as
+-- the shadow of a long-form statement, and the leftover close became
+-- an opened_before_history fragment (coach Other Option, absent from
+-- classification). Same contract id keeps the close with the open.
 crypto_norm as (
     select
         a.* except (trade_symbol, underlying_symbol),
         case
-            when a.instrument_type in ('Call', 'Put') then a.trade_symbol
+            when a.instrument_type in ('Call', 'Put') then {{ canonical_option_trade_symbol(
+                'a.trade_symbol',
+                'coalesce(cu.symbol, a.underlying_symbol)',
+                'a.option_expiry',
+                'a.option_strike',
+                'a.option_type'
+            ) }}
             else coalesce(ct.symbol, a.trade_symbol)
         end as trade_symbol,
         coalesce(cu.symbol, a.underlying_symbol) as underlying_symbol
@@ -602,10 +614,10 @@ est_fee_shadow as (
 -- Run 37090194526: BE 03/06/26 165C buy-to-close, 10 @ 0.042, amounts
 -- -42.92 and -42.12. The raw dates still differ, so upload dedup keeps
 -- both (rewriting the seed date is what inserted the twin). Collapse
--- here, after the date rewrite. Blank-price rows stay put — distinct
--- expiries share an empty Symbol and must not fuse. Estimated-fee
--- shadows (different price or a one-day posting lag) are already
--- flagged and left out of this rank.
+-- here, after the date rewrite. Rows with a blank symbol stay out of
+-- this rank — distinct expiries share an empty Symbol and must not
+-- fuse. Estimated-fee shadows (different price or a one-day posting
+-- lag) are already flagged and left out of this rank.
 fill_ranked as (
     select
         d.* except (drop_est_fee_shadow),
@@ -632,6 +644,39 @@ fill_ranked as (
       and not d.drop_est_fee_shadow
 ),
 
+-- Settlements (expired / assigned / exercised) usually have a blank
+-- price, so fill_ranked never sees them, and the upload dedup skips
+-- them too: a blank symbol must not fuse distinct events. Once every
+-- spelling is one compact trade_symbol, two copies of the same
+-- settlement share that symbol and both survive. The duplicate-fill
+-- test then counts the contract twice (warehouse run 38612292022).
+-- Collapse the check-1 grain when the symbol is present. A blank
+-- symbol still passes through below.
+blank_price_ranked as (
+    select
+        d.* except (drop_est_fee_shadow),
+        row_number() over (
+            -- FLOAT64 is not allowed in a window PARTITION BY. Cast
+            -- the check-1 grain the same way fill_ranked casts price.
+            partition by
+                d.tenant_id,
+                d.trade_date,
+                d.action,
+                d.trade_symbol,
+                cast(d.quantity as string),
+                cast(d.amount as string)
+            order by
+                d.fee_adjusted asc,
+                length(coalesce(d.description, '')) desc,
+                abs(d.amount) asc,
+                d.amount asc
+        ) as _blank_rank
+    from est_fee_shadow d
+    where d.trade_symbol is not null
+      and d.price is null
+      and not d.drop_est_fee_shadow
+),
+
 history_rows as (
     select * except (_fill_rank)
     from fill_ranked
@@ -639,9 +684,15 @@ history_rows as (
 
     union all
 
+    select * except (_blank_rank)
+    from blank_price_ranked
+    where _blank_rank = 1
+
+    union all
+
     select * except (drop_est_fee_shadow)
     from est_fee_shadow
-    where (trade_symbol is null or price is null)
+    where trade_symbol is null
       and not drop_est_fee_shadow
 )
 

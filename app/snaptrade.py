@@ -3391,7 +3391,8 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # a missing/odd timestamp never flags. Runs only AFTER the disabled gate
     # (which raises first when disabled is True), so this catches the
     # complementary case the disabled flag silently passes.
-    if SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0 and _holdings_unavailable(account_summary):
+    holdings_unavailable = _holdings_unavailable(account_summary)
+    if SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0 and holdings_unavailable:
         # Vanguard employer plans (and any account SnapTrade marks
         # holdings_unavailable) ship an old last_successful_sync because the
         # brokerage cannot be read — not because the login is dead. Do not
@@ -3511,6 +3512,13 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         tenant_id=tenant_id,
         already_in_cash=inside_cash,
     )
+    # `holdings_unavailable` means SnapTrade could not read this brokerage's
+    # holdings; an empty response is not an authoritative zero-position
+    # snapshot. Current-position seed merges replace the tenant wholesale, so
+    # writing that empty frame would erase the last known holdings. Activities
+    # and account balances remain usable, but preserve current positions until
+    # a later sync returns an available holdings feed.
+    current_snapshot_df = None if holdings_unavailable else current_df
     balances_df = balances_to_balance_df(
         account_summary=account_summary,
         balances=balances,
@@ -3548,7 +3556,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "account_name": account_name,
             "tenant_id": tenant_id,
             "history_df": None if skip_history else history_df,
-            "current_df": None if push_history_only else current_df,
+            "current_df": None if push_history_only else current_snapshot_df,
             "balances_df": None if push_history_only else balances_df,
             "push_history_only": push_history_only,
             "skip_history": skip_history,
@@ -3616,7 +3624,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         ok, err, _hr, _cr, github_head_sha, github_no_changes = merge_and_push_seeds(
             account_name,
             history_df,
-            None if push_history_only else current_df,
+            None if push_history_only else current_snapshot_df,
             commit_message=commit_msg,
             user_id=user_id,
             tenant_id=tenant_id,
