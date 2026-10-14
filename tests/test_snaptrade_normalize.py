@@ -10,6 +10,7 @@ NO network calls, NO Postgres. Pure-data tests so they run in <1s.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -21,6 +22,7 @@ from app.snaptrade_normalize import (
     orders_to_history_df,
     positions_to_current_df,
     snaptrade_symbol_to_osi,
+    symbols_already_in_cash,
 )
 from app.upload import (
     BALANCE_SEED_COLUMNS,
@@ -87,12 +89,11 @@ def test_action_map_captures_unambiguous_cash_movements():
 
 
 def test_action_map_still_drops_ambiguous_or_share_movements():
-    """TRANSFER / JOURNAL can be SHARE transfers (not cash), DISTRIBUTION is
-    ambiguous (fund distribution income vs. account withdrawal), and SPLIT is
-    handled out-of-band by current_position_stock_price.py + stg_split_events.
-    Mislabeling TRANSFER / DISTRIBUTION / SPLIT as cash flow would corrupt
-    the net-deposits number, so they stay dropped (None). Cash-only JOURNAL
-    is promoted at read time, not via this map."""
+    """TRANSFER and share JOURNAL stay off this map. SPLIT is handled
+    out-of-band by current_position_stock_price.py + stg_split_events.
+    DISTRIBUTION and cash-only JOURNAL are resolved at read time: a
+    DISTRIBUTION with a ticker is a dividend, and one without is a
+    withdrawal. They are not given a single map label."""
     for cash_kind in ("TRANSFER", "JOURNAL", "DISTRIBUTION", "SPLIT", "STOCKSPLIT"):
         assert SNAPTRADE_ACTIVITY_TO_ACTION[cash_kind] is None
 
@@ -905,11 +906,13 @@ def test_current_df_cash_equivalent_is_a_sweep_not_a_holding():
     assert abs(float(row["Quantity"]) * float(row["Price"]) - float(row["market_value"])) <= 0.01
 
 
-def test_current_df_fractional_remainder_is_added_once():
-    """units=12 and fractional_units=0.25 is 12.25 shares.
+def test_current_df_ignores_deprecated_fractional_units():
+    """``fractional_units`` is deprecated. Only ``units`` is stored.
 
-    Alpaca sends the same number in both fields (covered by the
-    Alpaca payload test) and must stay 1, not 2.
+    Example: units 12 and fractional_units 0.25 stores 12, not 12.25.
+    units 40 and fractional_units 1.44 stores 40. A null units does
+    not fall through to the deprecated field. Alpaca sends the same
+    number in both fields and stays that number.
     """
     pos = {
         "symbol": "FUNDX",
@@ -923,9 +926,261 @@ def test_current_df_fractional_remainder_is_added_once():
         tenant_id=TENANT_SNAPTRADE,
     )
     row = df.iloc[0]
-    assert float(row["Quantity"]) == 12.25
-    assert abs(float(row["market_value"]) - 12.25 * 80) <= 0.01
-    assert abs(float(row["cost_bases"]) - 12.25 * 70) <= 0.01
+    assert float(row["Quantity"]) == 12
+    assert abs(float(row["market_value"]) - 12 * 80) <= 0.01
+    assert abs(float(row["cost_bases"]) - 12 * 70) <= 0.01
+
+    doubled = {
+        "symbol": "CASHX",
+        "units": 40,
+        "fractional_units": 1.44,
+        "price": 1,
+        "average_purchase_price": 1,
+    }
+    doubled_df = positions_to_current_df(
+        [doubled], account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert float(doubled_df.iloc[0]["Quantity"]) == 40
+
+    missing_units = {
+        "symbol": "FUNDX",
+        "units": None,
+        "fractional_units": 0.25,
+        "price": 80,
+    }
+    missing_df = positions_to_current_df(
+        [missing_units], account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert float(missing_df.iloc[0]["Quantity"]) == 0
+
+
+def test_distribution_with_a_ticker_is_income_and_without_is_a_withdrawal():
+    """Example dollars. A $40 fund distribution (ticker set) is a dividend.
+    A $40 cash-out with no ticker is a withdrawal. Neither is dropped.
+    """
+    df = activities_to_history_df(
+        [
+            {
+                "type": "DISTRIBUTION",
+                "symbol": "FUNDX",
+                "units": 10,
+                "price": 4,
+                "amount": 40,
+                "trade_date": "2026-04-01",
+            },
+            {
+                "type": "DISTRIBUTION",
+                "symbol": None,
+                "units": 0,
+                "price": 0,
+                "amount": 40,
+                "trade_date": "2026-04-02",
+            },
+        ],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert list(df["Action"]) == ["Cash Dividend", "Withdrawal"]
+    assert list(df["Symbol"]) == ["FUNDX", ""]
+    assert float(df.iloc[0]["Amount"]) == 40
+    assert float(df.iloc[1]["Amount"]) == -40
+    assert list(df["Action"]).count("Buy") == 0
+
+
+def test_share_transfer_in_stays_off_the_tape_and_opening_cost_uses_broker_basis():
+    """A share transfer has no cash price, so it is not written as a fill.
+
+    A still-held deficit is priced at the broker's cost per share
+    (int_opening_balances). Example: 10 shares are still held and the
+    broker cost on those shares is $500, so the inferred opening cash
+    is -$500.
+    """
+    df = activities_to_history_df(
+        [
+            {
+                "type": "TRANSFER",
+                "symbol": "FUNDX",
+                "units": 10,
+                "price": 50,
+                "amount": 0,
+                "trade_date": "2026-03-02",
+            },
+            {
+                "type": "EXTERNAL_ASSET_TRANSFER_IN",
+                "symbol": "FUNDX",
+                "units": 10,
+                "price": 50,
+                "amount": 0,
+                "trade_date": "2026-03-02",
+            },
+        ],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert df.empty
+    sql = (
+        Path(__file__).resolve().parents[1]
+        / "dbt/models/intermediate/int_opening_balances.sql"
+    ).read_text()
+    assert "broker_cost_basis" in sql
+    assert "-n.opening_qty * safe_divide(n.current_cost_basis, n.current_qty)" in sql
+    opening_qty, current_qty, current_cost_basis = 10, 10, 500
+    assert -opening_qty * (current_cost_basis / current_qty) == -500
+
+
+def _money_market(symbol, market_value, *, flagged=False, price=1.0):
+    return {
+        "symbol": symbol,
+        "units": market_value,
+        "price": price,
+        "market_value": market_value,
+        "average_purchase_price": 1.0,
+        "cost_basis": market_value,
+        "cash_equivalent": flagged,
+    }
+
+
+def test_unflagged_money_market_is_not_a_holding_when_cash_already_includes_it():
+    """Example: cash $5,200 already includes a $1,000 settlement fund.
+    Stock market value is $8,000. Account total $13,200 matches cash
+    plus the stock, so the fund is not a second holding.
+    """
+    fund = _money_market("CASHX", 1000, flagged=False)
+    stock = {
+        "symbol": "STOCK",
+        "units": 80,
+        "price": 100,
+        "market_value": 8000,
+        "cost_basis": 7000,
+        "cash_equivalent": False,
+    }
+    positions = [fund, stock]
+    balances = [{"cash": 5200}]
+    summary = {"balance": {"total": {"amount": 13200}}}
+    inside = symbols_already_in_cash(
+        positions, balances=balances, account_summary=summary,
+    )
+    assert inside == {"CASHX"}
+    current = positions_to_current_df(
+        positions, account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE, already_in_cash=inside,
+    )
+    kinds = dict(zip(current["Symbol"], current["security_type"]))
+    assert kinds["CASHX"] == "Cash and Money Market"
+    assert kinds["STOCK"] == "Equity"
+    bal = balances_to_balance_df(
+        account_summary=summary, balances=balances, positions=positions,
+        account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE, already_in_cash=inside,
+    )
+    total = bal[bal["row_type"] == "account_total"].iloc[0]
+    assert float(total["market_value"]) == 13200
+    assert float(total["cost_basis"]) == 7000
+
+
+def test_unflagged_money_market_stays_a_holding_when_cash_does_not_include_it():
+    """Example: cash $4,200 does not include the $1,000 fund. Stock is
+    $8,000. Account total $13,200 only matches if the fund is a holding.
+    """
+    fund = _money_market("CASHX", 1000, flagged=False)
+    stock = {
+        "symbol": "STOCK",
+        "units": 80,
+        "price": 100,
+        "market_value": 8000,
+        "cost_basis": 7000,
+        "cash_equivalent": False,
+    }
+    positions = [fund, stock]
+    balances = [{"cash": 4200}]
+    summary = {"balance": {"total": {"amount": 13200}}}
+    inside = symbols_already_in_cash(
+        positions, balances=balances, account_summary=summary,
+    )
+    assert inside == set()
+    current = positions_to_current_df(
+        positions, account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE, already_in_cash=inside,
+    )
+    kinds = dict(zip(current["Symbol"], current["security_type"]))
+    assert kinds["CASHX"] == "Equity"
+    assert kinds["STOCK"] == "Equity"
+    bal = balances_to_balance_df(
+        account_summary=summary, balances=balances, positions=positions,
+        account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE, already_in_cash=inside,
+    )
+    total = bal[bal["row_type"] == "account_total"].iloc[0]
+    assert float(total["cost_basis"]) == 8000
+
+
+def test_unflagged_money_market_stays_a_holding_when_the_total_is_missing():
+    """Without an account total we cannot prove the cash balance includes
+    the fund, so the fund stays a holding.
+    """
+    fund = _money_market("CASHX", 1000, flagged=False)
+    inside = symbols_already_in_cash(
+        [fund], balances=[{"cash": 5200}], account_summary={},
+    )
+    assert inside == set()
+    current = positions_to_current_df(
+        [fund], account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE, already_in_cash=inside,
+    )
+    assert current.iloc[0]["security_type"] == "Equity"
+
+
+def test_priced_mutual_fund_is_not_treated_as_cash():
+    """A fund at a market price is not a money-market sweep, even when
+    the account total happens to match cash alone.
+    """
+    fund = {
+        "symbol": "FUNDX",
+        "units": 10,
+        "price": 80,
+        "market_value": 800,
+        "cost_basis": 700,
+        "cash_equivalent": False,
+    }
+    inside = symbols_already_in_cash(
+        [fund],
+        balances=[{"cash": 1000}],
+        account_summary={"balance": {"total": {"amount": 1000}}},
+    )
+    assert inside == set()
+
+
+def test_buy_of_a_fund_already_in_cash_is_not_an_equity_lot():
+    """Example: a $1,000 sweep buy is skipped. A $4 dividend on it stays."""
+    df = activities_to_history_df(
+        [
+            {
+                "type": "BUY",
+                "symbol": "CASHX",
+                "units": 1000,
+                "price": 1,
+                "amount": -1000,
+                "trade_date": "2026-04-01",
+            },
+            {
+                "type": "DIVIDEND",
+                "symbol": "CASHX",
+                "units": 1000,
+                "amount": 4,
+                "trade_date": "2026-04-02",
+            },
+        ],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+        cash_equivalent_symbols={"CASHX"},
+    )
+    assert list(df["Action"]) == ["Cash Dividend"]
+    assert float(df.iloc[0]["Amount"]) == 4
 
 
 def test_current_df_string_occ_option_holding():

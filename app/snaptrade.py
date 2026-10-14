@@ -78,6 +78,7 @@ from app.snaptrade_normalize import (
     orders_to_history_df,
     positions_to_current_df,
     recent_option_fee_rates,
+    symbols_already_in_cash,
 )
 from app.utils import demo_block_writes, safe_internal_next
 from app.plan import plan_block_writes
@@ -3444,14 +3445,24 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # https://docs.snaptrade.com/demo/get-transactions for the lag
     # acknowledgment. Real bug repro: 2026-05-14 NVDA trade visible in
     # orders 2 min after execution but absent from activities for hours.
+    # Holdings SnapTrade already counts inside cash: the cash_equivalent
+    # flag, plus an unflagged money-market fund when the reported account
+    # total matches without that fund. Share buys of those symbols are
+    # not equity lots. Dividends and interest stay.
+    held_for_cash = list(positions or []) + list(option_holdings or [])
+    inside_cash = symbols_already_in_cash(
+        held_for_cash, balances=balances, account_summary=account_summary,
+    )
     activities_df = activities_to_history_df(
         activities, account_name=account_name, user_id=user_id,
         tenant_id=tenant_id,
+        cash_equivalent_symbols=inside_cash,
     )
     orders_df = orders_to_history_df(
         orders, account_name=account_name, user_id=user_id,
         tenant_id=tenant_id,
         fee_rates=recent_option_fee_rates(activities_df),
+        cash_equivalent_symbols=inside_cash,
     )
     import pandas as pd
     # Concat only the non-empty frames — pandas deprecates concatenating
@@ -3495,9 +3506,10 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # _fetch_option_holdings — so an open option leg lands in the snapshot
     # instead of only the trade-history feed.
     current_df = positions_to_current_df(
-        list(positions or []) + list(option_holdings or []),
+        held_for_cash,
         account_name=account_name, user_id=user_id,
         tenant_id=tenant_id,
+        already_in_cash=inside_cash,
     )
     balances_df = balances_to_balance_df(
         account_summary=account_summary,
@@ -3506,6 +3518,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
         account_name=account_name,
         user_id=user_id,
         tenant_id=tenant_id,
+        already_in_cash=inside_cash,
     )
 
     skip_history = history_df is None or history_df.empty
