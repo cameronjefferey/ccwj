@@ -851,6 +851,47 @@ def _tag_scoped_positions_df(client, tenant_ids, tenant_filter, tag_rows,
     return grouped
 
 
+def _blank_positions_frame():
+    """Zero-row positions_summary shape.
+
+    A successful empty BigQuery result already has these columns. An
+    unparameterized ``pd.DataFrame()`` (no columns) is what a hard query
+    failure looks like when it does not raise. Reading ``df["account"]``
+    on that frame is a 500. A Vanguard book with no holdings should show
+    the empty-state copy instead.
+    """
+    return pd.DataFrame(columns=[
+        "tenant_id", "account", "user_id", "symbol", "strategy", "status",
+        "total_pnl", "trade_only_pnl", "realized_pnl", "unrealized_pnl",
+        "total_premium_received", "total_premium_paid",
+        "num_trade_groups", "num_individual_trades",
+        "num_winners", "num_losers", "win_rate",
+        "avg_pnl_per_trade", "avg_days_in_trade",
+        "first_trade_date", "last_trade_date",
+        "total_dividend_income", "dividend_count", "total_return",
+        "sector", "subsector",
+    ])
+
+
+def _positions_frame_or_blank(df):
+    """Keep a real result. Replace None or a column-less empty frame."""
+    if df is None or not hasattr(df, "columns"):
+        return _blank_positions_frame()
+    if "account" not in df.columns:
+        if getattr(df, "empty", True):
+            return _blank_positions_frame()
+        out = df.copy()
+        out["account"] = pd.NA
+        for col in (
+            "strategy", "symbol", "num_winners", "num_losers",
+            "total_premium_received", "num_individual_trades",
+        ):
+            if col not in out.columns:
+                out[col] = pd.NA
+        return out
+    return df
+
+
 @app.route("/positions")
 @login_required
 @limiter.limit("120 per minute; 2000 per hour")
@@ -933,7 +974,7 @@ def positions():
     # this back below the coercion. See
     # .cursor/rules/bigquery-tenant-isolation.mdc.
     # ------------------------------------------------------------------
-    df = _filter_df_by_tenant_ids(df, tenant_ids)
+    df = _positions_frame_or_blank(_filter_df_by_tenant_ids(df, tenant_ids))
 
     # ------------------------------------------------------------------
     # 4. Clean up types (now safe — frame is tenant-scoped)

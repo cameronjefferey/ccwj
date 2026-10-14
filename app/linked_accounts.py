@@ -29,6 +29,14 @@ def sync_status_label(row):
     """
     row = row or {}
     if row.get("connection_broken_at"):
+        # A holdings timestamp from before this connection is not a revoked
+        # login. The badge must not say reconnect for that case.
+        try:
+            from app.snaptrade import _holdings_cache_false_reconnect
+            if _holdings_cache_false_reconnect(row):
+                return "Sync will retry"
+        except Exception:
+            pass
         return "Reconnect needed"
     err = str(row.get("last_sync_error") or "").strip()
     if err.startswith("connection_broken_pending:"):

@@ -1319,6 +1319,94 @@ def test_run_sync_does_not_flag_unavailable_holdings(monkeypatch):
     assert ei.value is sentinel
 
 
+def test_run_sync_does_not_flag_holdings_timestamp_before_connect(monkeypatch):
+    """A Vanguard last_successful_sync from before this grant is not a stall.
+
+    SnapTrade often reports a years-old holdings timestamp (their published
+    example is 2024-06-28) on a connection created today, with or without
+    holdings_unavailable. A one-day-old connection cannot be a four-day
+    stalled cache. The banner phrase "stale for 1 day" is days since we
+    set connection_broken_at, not that holdings lag.
+    """
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {
+                "holdings": {"last_successful_sync": "2024-06-28T18:42:46.561Z"}
+            }
+        },
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+    sentinel = RuntimeError("reached normalize")
+    monkeypatch.setattr(
+        _snap, "activities_to_history_df",
+        lambda *a, **k: (_ for _ in ()).throw(sentinel),
+    )
+    acc_row = {
+        "snaptrade_account_id": "vang",
+        "account_name": "Vanguard Account",
+        "broker_slug": "vanguard",
+        "created_at": datetime(2026, 10, 12, 22, 40, tzinfo=timezone.utc),
+    }
+    with pytest.raises(RuntimeError) as ei:
+        _snap._run_sync(21, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60)
+    assert ei.value is sentinel
+
+
+def test_connection_attention_hides_young_stale_holdings_flag():
+    """The reconnect banner stays down when we flagged a brand-new grant
+    only because holdings last_successful_sync looked old."""
+    row = {
+        "snaptrade_account_id": "vang",
+        "account_name": "Vanguard Account",
+        "display_nickname": "Roth",
+        "broker_slug": "vanguard",
+        "connection_broken_at": datetime(2026, 10, 12, 23, 5, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 10, 12, 22, 40, tzinfo=timezone.utc),
+        "last_sync_error": (
+            "connection_broken:sync_status.holdings.last_successful_sync[stale]"
+        ),
+    }
+    assert _snap._connection_attention(row, today=date(2026, 10, 13)) is None
+    groups = _snap._group_accounts_by_connection([row])
+    assert groups[0]["needs_reconnect"] is False
+    assert groups[0]["accounts"][0]["holdings_cache_false_reconnect"] is True
+
+
+def test_connection_attention_keeps_real_broken_login():
+    """An auth failure on a young connection is still a reconnect."""
+    row = {
+        "snaptrade_account_id": "vang",
+        "account_name": "Vanguard Account",
+        "broker_slug": "vanguard",
+        "connection_broken_at": datetime(2026, 10, 12, 23, 5, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 10, 12, 22, 40, tzinfo=timezone.utc),
+        "last_sync_error": "connection_broken:list_brokerage_authorizations.disabled",
+    }
+    att = _snap._connection_attention(row, today=date(2026, 10, 13))
+    assert att is not None
+    assert att["kind"] == "stale"
+    assert att["stale_days"] == 1
+
+
+def test_connection_attention_keeps_in_connection_holdings_stall():
+    """Schwab-style stall: the timestamp stopped advancing after connect."""
+    row = {
+        "snaptrade_account_id": "abc",
+        "account_name": "Schwab Account",
+        "broker_slug": "schwab",
+        "connection_broken_at": datetime(2026, 6, 19, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "holdings_last_successful_sync": date(2026, 6, 12),
+        "last_sync_error": (
+            "connection_broken:sync_status.holdings.last_successful_sync[stale]"
+        ),
+    }
+    att = _snap._connection_attention(row, today=date(2026, 6, 19))
+    assert att is not None
+    assert att["stale_days"] == 0
+
+
 def test_run_sync_does_not_flag_fresh_holdings(monkeypatch):
     """A connection SnapTrade refreshed today must NOT trip the backstop — it
     proceeds past the staleness gate into normalize/push (which we stub out by
