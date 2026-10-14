@@ -68,6 +68,19 @@ def compose_hotfix_started(
     return "\n\n".join(line for line in lines if line)
 
 
+def compose_hotfix_ready(*, pr_url: str, root_cause: str = "") -> str:
+    """PR is open and waiting. Cameron replies Ship; nothing is merged yet."""
+    cause = " ".join((root_cause or "").split())
+    lines = ["HappyTrader — a hotfix is ready to review."]
+    if cause:
+        lines.append(cause)
+    link = _labeled("Pull request:", pr_url)
+    if link:
+        lines.append(link)
+    lines.append("Reply Ship to approve.")
+    return "\n\n".join(lines)
+
+
 def compose_hotfix_merged(
     *,
     name: str,
@@ -126,6 +139,7 @@ def compose_message(
     agent_url: str = "",
     kind: str = "",
     hotfix_skip: str = "",
+    root_cause: str = "",
 ) -> str:
     # event/branch stay in the signature (workflow env) but are not
     # dumped into the ping — workflow_dispatch / master is noise.
@@ -133,6 +147,8 @@ def compose_message(
     k = (kind or "").strip().lower()
     if k == "started":
         return compose_hotfix_started(name=name, agent_url=agent_url, url=url)
+    if k == "ready":
+        return compose_hotfix_ready(pr_url=url, root_cause=root_cause)
     if k == "merged":
         return compose_hotfix_merged(name=name, pr_url=url, branch=branch)
     if (conclusion or "").strip().lower() == "test":
@@ -187,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         agent_url=os.environ.get("ALERT_AGENT_URL") or "",
         kind=os.environ.get("ALERT_KIND") or "",
         hotfix_skip=os.environ.get("ALERT_HOTFIX_SKIP") or "",
+        root_cause=os.environ.get("ALERT_ROOT_CAUSE") or "",
     )
     try:
         send_telegram(text, token=token, chat_id=chat_id)
