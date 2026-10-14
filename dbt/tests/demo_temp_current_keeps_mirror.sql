@@ -2,19 +2,23 @@
 
 /*
     Flag on: each demo position's quantity is the bot mirror's quantity
-    plus the seed file's quantity for that symbol. A shared ticker is
-    summed, not dropped. Disabled when DEMO_TEMP_SEED is off.
+    plus the seed file's quantity for that contract. A shared contract
+    is summed, not dropped. The seed file is long form and the mirror
+    is OCC; both sides use the compact id stg_current writes.
+    Disabled when DEMO_TEMP_SEED is off.
 */
 
 with demo as (
-    select upper(trim(trade_symbol)) as symbol, sum(quantity) as qty
+    select {{ canonical_option_symbol_text('trade_symbol') }} as symbol,
+           sum(quantity) as qty
     from {{ ref('stg_current') }}
     where tenant_id = 'demo:demo-account'
     group by 1
 ),
 
 mirror as (
-    select upper(trim(trade_symbol)) as symbol, sum(quantity) as qty
+    select {{ canonical_option_symbol_text('trade_symbol') }} as symbol,
+           sum(quantity) as qty
     from {{ ref('stg_current') }}
     where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
     group by 1
@@ -22,7 +26,7 @@ mirror as (
 
 seed as (
     select
-        upper(trim(cast(Symbol as string))) as symbol,
+        {{ canonical_option_symbol_text('Symbol') }} as symbol,
         sum({{ parse_seed_number('Quantity') }}) as qty
     from {{ ref('demo_temp_current') }}
     group by 1
