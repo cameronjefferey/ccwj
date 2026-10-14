@@ -141,6 +141,19 @@ def test_run_keeps_flags_set_before_an_error(monkeypatch):
     assert report["positions"] is False
 
 
+def test_secret_error_status_has_no_detail():
+    from scripts.private_vanguard_health import _status_from_error
+
+    class NotFound(Exception):
+        pass
+
+    class PermissionDenied(Exception):
+        pass
+
+    assert _status_from_error(NotFound("projects/x/secrets/name")) == "miss"
+    assert _status_from_error(PermissionDenied("no")) == "denied"
+
+
 def test_select_for_update_is_not_a_read():
     assert not statement_is_read("SELECT id FROM users FOR UPDATE")
 

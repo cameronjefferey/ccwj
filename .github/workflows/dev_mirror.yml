@@ -192,5 +192,4 @@ jobs:
           HAPPYTRADER_SKIP_DB_INIT: "1"
           RATELIMIT_ENABLED: "false"
           WTF_CSRF_ENABLED: "false"
-          SECRET_KEY: read-only-health-check
         run: python -W ignore scripts/private_vanguard_health.py

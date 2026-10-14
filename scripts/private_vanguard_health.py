@@ -382,27 +382,46 @@ def _block_production_writes() -> None:
 
 
 _SECRET_MANAGER_MISSING = False
+_LAST_SECRET_STATUS = "skip"
+
+
+def _status_from_error(exc: BaseException) -> str:
+    """Coarse Secret Manager result. The exception text is never used."""
+    if type(exc).__name__ == "NotFound":
+        return "miss"
+    return "denied"
 
 
 def _secret_text(name: str) -> str:
     """Read one allow-listed secret. Empty when Secret Manager is unavailable."""
-    global _SECRET_MANAGER_MISSING
-    if _SECRET_MANAGER_MISSING:
+    global _SECRET_MANAGER_MISSING, _LAST_SECRET_STATUS
+    if _LAST_SECRET_STATUS == "denied" or _SECRET_MANAGER_MISSING:
+        if _SECRET_MANAGER_MISSING:
+            _LAST_SECRET_STATUS = "unavailable"
         return ""
     try:
         from google.cloud import secretmanager
     except Exception:
         _SECRET_MANAGER_MISSING = True
+        _LAST_SECRET_STATUS = "unavailable"
         return ""
-    project = (os.environ.get("GOOGLE_CLOUD_PROJECT") or PROJECT).strip()
+    project = (
+        os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("GCLOUD_PROJECT")
+        or PROJECT
+    ).strip()
     if not project or not name:
+        _LAST_SECRET_STATUS = "unavailable"
         return ""
     try:
         client = secretmanager.SecretManagerServiceClient()
         path = f"projects/{project}/secrets/{name}/versions/latest"
         resp = client.access_secret_version(name=path)
-        return (resp.payload.data or b"").decode("utf-8").strip()
-    except Exception:
+        text = (resp.payload.data or b"").decode("utf-8").strip()
+        _LAST_SECRET_STATUS = "hit" if text else "miss"
+        return text
+    except Exception as exc:
+        _LAST_SECRET_STATUS = _status_from_error(exc)
         return ""
 
 
@@ -412,9 +431,24 @@ def _hydrate_env() -> None:
     Never prints the value. Missing names stay empty.
     """
     aliases = {
-        "DATABASE_URL": ("DATABASE_URL", "PROD_DATABASE_URL", "database-url", "prod-database-url"),
-        "SNAPTRADE_CLIENT_ID": ("SNAPTRADE_CLIENT_ID", "snaptrade-client-id"),
-        "SNAPTRADE_CONSUMER_KEY": ("SNAPTRADE_CONSUMER_KEY", "snaptrade-consumer-key"),
+        "DATABASE_URL": (
+            "DATABASE_URL",
+            "PROD_DATABASE_URL",
+            "database-url",
+            "prod-database-url",
+            "happytrader-database-url",
+            "ccwj-database-url",
+        ),
+        "SNAPTRADE_CLIENT_ID": (
+            "SNAPTRADE_CLIENT_ID",
+            "snaptrade-client-id",
+            "SNAPTRADE_CLIENT_SECRET",
+        ),
+        "SNAPTRADE_CONSUMER_KEY": (
+            "SNAPTRADE_CONSUMER_KEY",
+            "snaptrade-consumer-key",
+            "snaptrade-client-secret",
+        ),
     }
     for target, names in aliases.items():
         current = ""
@@ -622,6 +656,8 @@ def main(argv: list[str] | None = None) -> int:
             pass
     for line in format_report(report):
         print(line, flush=True)
+    if not (os.environ.get("DATABASE_URL") or "").strip():
+        print(f"secret_manager={_LAST_SECRET_STATUS}", flush=True)
     ok = (
         report.get("connections")
         and report.get("privacy")
