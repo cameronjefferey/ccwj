@@ -1319,6 +1319,45 @@ def test_run_sync_does_not_flag_unavailable_holdings(monkeypatch):
     assert ei.value is sentinel
 
 
+def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatch):
+    """An unreadable holdings feed is unknown, not an empty portfolio.
+
+    The current-position merge replaces the tenant wholesale whenever it
+    receives a non-None frame. Keep that frame out of both deferred and inline
+    writers so a temporary unavailable response cannot erase prior holdings.
+    """
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {
+                "holdings": {
+                    "last_successful_sync": "2024-06-28T18:42:46.561Z",
+                    "holdings_unavailable": True,
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+
+    res = _snap._run_sync(
+        21,
+        object(),
+        snap=_SNAP,
+        acc_row={
+            "snaptrade_account_id": "vang",
+            "account_name": "Vanguard Account",
+            "broker_slug": "vanguard",
+        },
+        lookback_days=60,
+        defer_push=True,
+    )
+
+    assert res["deferred"] is True
+    assert res["push_history_only"] is False
+    assert res["current_rows"] == 0
+    assert res["current_df"] is None
+
+
 def test_run_sync_does_not_flag_holdings_timestamp_before_connect(monkeypatch):
     """A Vanguard last_successful_sync from before this grant is not a stall.
 
@@ -2003,8 +2042,8 @@ def test_broken_transition_is_generation_fenced(monkeypatch):
     assert calls[0][1] == (7, "abc", 9)
 
 
-def test_cron_account_rows_include_disabled_debounce_state(monkeypatch):
-    """The next cron run must see the prior pending disabled signal."""
+def test_cron_account_rows_include_sync_health_state(monkeypatch):
+    """The cron needs both debounce and connection-age health metadata."""
     queries = []
     monkeypatch.setattr(
         _models, "fetch_all",
@@ -2014,6 +2053,10 @@ def test_cron_account_rows_include_disabled_debounce_state(monkeypatch):
     assert _models.list_all_snaptrade_accounts() == []
     assert len(queries) == 1
     assert "last_sync_error" in queries[0]
+    # _run_sync compares the broker's holdings timestamp with the time this
+    # grant was connected. Without created_at the nightly cron falsely marks
+    # a new account broken even though manual and webhook syncs do not.
+    assert "created_at" in queries[0]
 
 
 # ---------------------------------------------------------------------------
