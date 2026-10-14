@@ -3,9 +3,8 @@
 Read-only audit for a new private Fidelity connection. No customer figures.
 Example dollars below are made up.
 
-This work sits on PR #285 (Vanguard's own staging partition and the shared
-SnapTrade normalize fixes). Until that PR merges, this branch contains those
-commits.
+This work sits on master, which already includes PR #285 (Vanguard's own
+staging partition and the shared SnapTrade normalize fixes).
 
 ## How a Fidelity account is routed
 
@@ -132,8 +131,8 @@ been seen in production data yet.
 
 ## Decisions Cameron made
 
-All dollars are examples, not a customer's book. The mapping lives on PR
-#285 and this branch is rebased onto that commit.
+All dollars are examples, not a customer's book. The mapping shipped in
+PR #285 and is already on master.
 
 1. **DISTRIBUTION.** A ticker means income (Cash Dividend). No ticker means
    a cash withdrawal. Example: a $40 DISTRIBUTION on FXAIX is a dividend of
