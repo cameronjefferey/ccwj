@@ -477,6 +477,8 @@ def _load_hidden_snapshot() -> tuple[frozenset[int], frozenset[str]]:
             user_ids.add(int(row["user_id"]))
         except (TypeError, ValueError, KeyError):
             continue
+    # Joined live. A brokerage linked after the invite is hidden on the
+    # next request; tenant ids are not copied at add time.
     rows = fetch_all(
         """
         SELECT bt.tenant_id, bt.user_id, u.username
