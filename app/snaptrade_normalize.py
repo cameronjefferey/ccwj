@@ -170,8 +170,13 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
     # Dividends — fold every flavor into the CSV-export "Cash Dividend"
     # label that stg_history maps to internal ``dividend``.
     "DIVIDEND": "Cash Dividend",
+    "SUBSTITUTE_DIVIDEND": "Cash Dividend",  # Payment in lieu. Same income bucket.
     "STOCK_DIVIDEND": "Cash Dividend",
-    "REI": "Cash Dividend",  # Dividend reinvestment — treated as a div event for P&L.
+    # REI is a dividend that bought more shares. The dividend row stays a
+    # Cash Dividend (so a re-sync dedups against rows already stored that
+    # way). When units × price matches the cash amount, a companion Buy
+    # is added so the new shares are not left to the opening-balance guess.
+    "REI": "Cash Dividend",
     # Interest / fees
     "INTEREST": "Credit Interest",
     "FEE": "ADR Mgmt Fee",
@@ -344,6 +349,157 @@ def _safe_float(value, default=0.0) -> float:
     except (TypeError, ValueError):
         pass
     return default
+
+
+def _number_missing(value) -> bool:
+    """True when a SnapTrade numeric field was omitted or blank.
+
+    An explicit 0 is present. Mutual-fund NAVs often arrive as null
+    rather than zero; treating null as zero books the whole cost basis
+    as a loss.
+    """
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return not _is_finite_number(value)
+
+
+def _coerce_symbol_obj(symbol) -> dict:
+    """SnapTrade documents ``symbol`` / ``universal_symbol`` as an object or null.
+
+    Vanguard-shaped payloads can send the ticker as a bare string. A
+    string has no ``.get``; coercing it here keeps one account's sync
+    from raising, and keeps the ticker.
+    """
+    if isinstance(symbol, str):
+        ticker = symbol.strip()
+        if not ticker:
+            return {}
+        return {"raw_symbol": ticker, "symbol": ticker, "description": ticker}
+    if isinstance(symbol, Mapping):
+        return dict(symbol)
+    return {}
+
+
+def _attach_option_symbol(symbol_obj: Mapping, option_symbol) -> dict:
+    """Fold a top-level option contract into the symbol object.
+
+    Activities and positions sometimes leave ``symbol`` null and put the
+    contract on ``option_symbol``. A string there is OCC text, not a
+    mapping — parse it instead of calling ``.get`` on the string.
+    """
+    base = dict(symbol_obj) if isinstance(symbol_obj, Mapping) else {}
+    if base.get("option_symbol"):
+        return base
+    if isinstance(option_symbol, str):
+        parsed = _option_symbol_from_text(option_symbol)
+        if parsed:
+            base["option_symbol"] = parsed
+        return base
+    if isinstance(option_symbol, Mapping):
+        base["option_symbol"] = option_symbol
+    return base
+
+
+def _position_quantity(pos: Mapping) -> float:
+    """Share count, including a fractional mutual-fund lot.
+
+    ``units`` is the position size when SnapTrade sends it (Alpaca sends
+    the same number in ``fractional_units``). When ``units`` is a whole
+    number and ``fractional_units`` is a remainder strictly between 0 and
+    1, add that remainder. A null ``units`` falls through to
+    ``fractional_units``.
+    """
+    units_raw = pos.get("units")
+    frac_raw = pos.get("fractional_units")
+    has_units = _is_finite_number(units_raw)
+    has_frac = _is_finite_number(frac_raw)
+    units = _safe_float(units_raw, 0.0) if has_units else 0.0
+    frac = _safe_float(frac_raw, 0.0) if has_frac else 0.0
+    if not has_units:
+        return frac
+    if not has_frac or abs(frac) < 1e-12:
+        return units
+    whole = abs(units - round(units)) < 1e-9
+    if whole and abs(frac) < 1.0 - 1e-9 and abs(frac - units) > 1e-9:
+        if units == 0:
+            return frac
+        sign = -1.0 if units < 0 else 1.0
+        return units + sign * abs(frac)
+    return units
+
+
+def _is_cash_equivalent(pos: Mapping) -> bool:
+    """True when SnapTrade already counts this holding in cash.
+
+    Money-market sweeps (a settlement fund) set ``cash_equivalent``.
+    The account-total and cash rows already include those dollars, so
+    the position must not also be an equity lot.
+    """
+    value = pos.get("cash_equivalent")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == 1
+    return str(value or "").strip().lower() in {"true", "1", "yes"}
+
+
+def _reinvestment_is_share_purchase(units: float, price: float, amount: float) -> bool:
+    """True when a REI/stock-dividend row's units are shares bought.
+
+    SnapTrade's ``units`` on a plain DIVIDEND is often the shares that
+    received the cash, not shares purchased. A reinvestment agrees with
+    the cash: units × price ≈ |amount|. A share-balance in ``units``
+    (price × a large lot, tiny cash) does not, and must not become a buy.
+    """
+    if units == 0 or price <= 0 or amount == 0:
+        return False
+    gross = abs(units * price)
+    amt = abs(amount)
+    return abs(gross - amt) <= max(1.0, 0.02 * amt)
+
+
+def _same_day_buy_already_present(
+    activity_list: Sequence[Mapping],
+    sym_str: str,
+    trade_date: str,
+    units: float,
+) -> bool:
+    """True when this batch already has a Buy of the same shares.
+
+    Some brokers emit REI and a separate BUY for one reinvestment.
+    Adding a companion Buy on top of that BUY would count the shares
+    twice. Match on symbol, date, and quantity; price can differ by
+    a rounding cent and still be the same lot.
+    """
+    target_qty = abs(units)
+    if not sym_str or not trade_date or target_qty == 0:
+        return False
+    for other in activity_list:
+        if not isinstance(other, Mapping):
+            continue
+        if str(other.get("type") or "").strip().upper() != "BUY":
+            continue
+        other_obj = _attach_option_symbol(
+            _coerce_symbol_obj(other.get("symbol")),
+            other.get("option_symbol"),
+        )
+        if _is_option(other_obj):
+            continue
+        if _underlying_from_symbol(other_obj) != sym_str:
+            continue
+        other_date = _format_date_mdy(
+            other.get("trade_date")
+            or other.get("settlement_date")
+            or other.get("date")
+        )
+        if other_date != trade_date:
+            continue
+        other_units = abs(_safe_float(other.get("units"), 0.0))
+        if abs(other_units - target_qty) <= max(1e-4, 0.001 * target_qty):
+            return True
+    return False
 
 
 def _is_cash_only_journal(act: Mapping) -> bool:
@@ -758,7 +914,6 @@ def activities_to_history_df(
         if action_label is None:
             continue
 
-        symbol_obj = act.get("symbol") or {}
         # SnapTrade (Schwab via SnapTrade) ships OPTION activities with
         # ``symbol: null`` and the structured contract at the ACTIVITY top
         # level (``act["option_symbol"]``), NOT nested under ``symbol``.
@@ -767,12 +922,12 @@ def activities_to_history_df(
         # stg_history can't recognize it as an option — the entire option
         # lane silently vanished from the warehouse (hundreds of contracts
         # per account). See broker-sync-safety "Bugs we've shipped".
-        if not isinstance(symbol_obj, Mapping):
-            symbol_obj = {}
-        if not symbol_obj.get("option_symbol") and isinstance(
-            act.get("option_symbol"), Mapping
-        ):
-            symbol_obj = {**symbol_obj, "option_symbol": act["option_symbol"]}
+        # A bare-string ticker (Vanguard-shaped) is coerced before that
+        # fold so ``.get`` is never called on a str.
+        symbol_obj = _attach_option_symbol(
+            _coerce_symbol_obj(act.get("symbol")),
+            act.get("option_symbol"),
+        )
         is_option = _is_option(symbol_obj)
         if is_option:
             sym_str = snaptrade_symbol_to_osi(symbol_obj)
@@ -875,6 +1030,33 @@ def activities_to_history_df(
             "fees_and_comm": fees if fees else "",
             "Amount": amount_signed,
         })
+        # Companion share purchase for a reinvestment. The Cash Dividend
+        # row above is unchanged so it dedups with rows already stored
+        # from before this split. The Buy is a different Action, so it
+        # does not collapse into the dividend. Fees stay on the dividend
+        # row only.
+        if (
+            atype in {"REI", "STOCK_DIVIDEND"}
+            and not is_option
+            and sym_str
+            and _reinvestment_is_share_purchase(units, price, amount_f)
+            and not _same_day_buy_already_present(
+                activity_list, sym_str, trade_date, units,
+            )
+        ):
+            rows.append({
+                "Account": account_name,
+                "user_id": user_id_int,
+                "tenant_id": tenant_id_str,
+                "Date": trade_date,
+                "Action": "Buy",
+                "Symbol": sym_str,
+                "Description": description,
+                "Quantity": abs(units),
+                "Price": price,
+                "fees_and_comm": "",
+                "Amount": -abs(amount_f),
+            })
 
     df = pd.DataFrame(rows, columns=HISTORY_SEED_COLUMNS)
     return df
@@ -1367,18 +1549,16 @@ def positions_to_current_df(
     for pos in positions or ():
         if not isinstance(pos, Mapping):
             continue
-        symbol_obj = pos.get("symbol") or {}
         # Mirror the activities path: SnapTrade can ship an OPTION holding
         # with ``symbol: null`` and the structured contract at the position
         # top level (``pos["option_symbol"]``). Fold it in so open option
         # legs aren't silently dropped (same root cause as the historical
-        # option-activity bug — see broker-sync-safety).
-        if not isinstance(symbol_obj, Mapping):
-            symbol_obj = {}
-        if not symbol_obj.get("option_symbol") and isinstance(
-            pos.get("option_symbol"), Mapping
-        ):
-            symbol_obj = {**symbol_obj, "option_symbol": pos["option_symbol"]}
+        # option-activity bug — see broker-sync-safety). A bare-string
+        # ticker is coerced the same way activities are.
+        symbol_obj = _attach_option_symbol(
+            _coerce_symbol_obj(pos.get("symbol")),
+            pos.get("option_symbol"),
+        )
         is_option = _is_option(symbol_obj)
         if is_option:
             sym_str = snaptrade_symbol_to_osi(symbol_obj)
@@ -1387,8 +1567,10 @@ def positions_to_current_df(
         if not sym_str:
             continue
 
-        units = _safe_float(pos.get("units"), 0.0)
-        price = _safe_float(pos.get("price"), 0.0)
+        units = _position_quantity(pos)
+        raw_price = pos.get("price")
+        price_missing = _number_missing(raw_price)
+        price = 0.0 if price_missing else _safe_float(raw_price, 0.0)
 
         # Option contracts represent 100 shares of the underlying, but the
         # two SnapTrade per-unit fields on ``OptionsPosition`` are in
@@ -1419,10 +1601,22 @@ def positions_to_current_df(
         # because qty * price - 0 != 0. Always derive from the fields
         # that DO exist; keep the get for forward-compat in case a
         # different broker through SnapTrade does ship it.
-        market_value = _safe_float(
-            pos.get("market_value"),
-            _safe_float(pos.get("equity"), units * price * contract_mult),
-        )
+        raw_mv = pos.get("market_value")
+        if _number_missing(raw_mv):
+            raw_mv = pos.get("equity")
+        mv_missing = _number_missing(raw_mv)
+        # Explicit 0 is a real zero (a worthless quote). A missing price
+        # AND a missing market value is "no NAV yet": leave market value
+        # at 0 so the close-based ladder can fill from daily prices, and
+        # do not book unrealized as market_value − cost (that is a
+        # phantom loss of the whole cost basis).
+        if not mv_missing:
+            market_value = _safe_float(raw_mv, 0.0)
+        elif not price_missing:
+            market_value = units * price * contract_mult
+        else:
+            market_value = 0.0
+        quote_missing = price_missing and mv_missing
 
         # cost_basis: prefer broker-supplied total, else derive from
         # average_purchase_price * units. No `cost_basis` field on Alpaca
@@ -1467,12 +1661,14 @@ def positions_to_current_df(
             gl_dollar = round(_safe_float(open_pnl_raw, 0.0), 4)
             if cost_basis:
                 gl_percent = round(100.0 * gl_dollar / abs(cost_basis), 4)
-        elif cost_basis:
+        elif cost_basis and not quote_missing:
             # Short options carry a positive cost_basis (premium received)
             # and a negative market_value (cost to buy back), so unrealized
             # P&L is market_value + cost_basis. Longs (and equities) net
             # market_value - cost_basis. Mirrors stg_current's short-aware
             # recompute so the seed value agrees before dbt even runs.
+            # Skipped when the quote itself is missing: 0 − cost is not a
+            # reported loss.
             if is_option and units < 0:
                 gl_dollar = round(market_value + cost_basis, 4)
             else:
@@ -1481,6 +1677,13 @@ def positions_to_current_df(
 
         if is_option:
             security_type = "Option"
+        elif _is_cash_equivalent(pos):
+            # Settlement / money-market sweeps. stg_current drops this
+            # security_type from holdings. The cash balance row already
+            # includes the dollars (SnapTrade counts cash_equivalent in
+            # cash). A priority-2 cash line is still emitted from this
+            # row for accounts whose balance payload omitted cash.
+            security_type = "Cash and Money Market"
         elif _is_crypto(symbol_obj):
             # ``Cryptocurrency`` is the broker-corroborated crypto marker
             # (SnapTrade type.code, or whitelist ONLY when the broker gave

@@ -352,6 +352,195 @@ def test_history_df_internal_cash_transfer_maps_to_deposit_and_withdrawal():
     assert float(wd.iloc[0]["Amount"]) == -200.0
 
 
+def _fund_symbol(ticker="FUNDX"):
+    return {
+        "raw_symbol": ticker,
+        "symbol": ticker,
+        "description": "Example open-end fund",
+        "type": {"code": "oef", "description": "Open-Ended Fund"},
+    }
+
+
+def test_history_df_string_symbol_is_a_ticker():
+    """A bare-string ticker must not raise, and must keep the symbol."""
+    df = activities_to_history_df(
+        [{
+            "type": "BUY",
+            "symbol": "FUNDX",
+            "units": 2,
+            "price": 50,
+            "amount": -100,
+            "trade_date": "2026-05-11",
+        }],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert len(df) == 1
+    assert df.iloc[0]["Symbol"] == "FUNDX"
+    assert df.iloc[0]["Action"] == "Buy"
+    assert float(df.iloc[0]["Amount"]) == -100
+
+
+def test_history_df_rei_matching_cash_emits_dividend_and_buy():
+    """Example numbers, not a customer book.
+
+    A reinvestment of 2 shares at $50 is $100 of dividend income and a
+    $100 share purchase. The dividend row stays Cash Dividend so a
+    later sync dedups against rows already stored that way.
+    """
+    df = activities_to_history_df(
+        [{
+            "type": "REI",
+            "symbol": _fund_symbol(),
+            "units": 2,
+            "price": 50,
+            "amount": 100,
+            "trade_date": "2026-05-11",
+            "description": "Dividend reinvestment",
+        }],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert list(df["Action"]) == ["Cash Dividend", "Buy"]
+    div, buy = df.iloc[0], df.iloc[1]
+    assert div["Symbol"] == "FUNDX"
+    assert float(div["Quantity"]) == 2
+    assert float(div["Price"]) == 50
+    assert float(div["Amount"]) == 100
+    assert buy["Symbol"] == "FUNDX"
+    assert float(buy["Quantity"]) == 2
+    assert float(buy["Price"]) == 50
+    assert float(buy["Amount"]) == -100
+    assert buy["fees_and_comm"] == ""
+
+
+def test_history_df_rei_share_balance_does_not_invent_a_buy():
+    """Example numbers. units=400 is the lot that received $10, not
+    400 shares bought at $50. That must stay a dividend only.
+    """
+    df = activities_to_history_df(
+        [{
+            "type": "REI",
+            "symbol": "FUNDX",
+            "units": 400,
+            "price": 50,
+            "amount": 10,
+            "trade_date": "2026-05-11",
+        }],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert list(df["Action"]) == ["Cash Dividend"]
+    assert float(df.iloc[0]["Amount"]) == 10
+
+
+def test_history_df_plain_dividend_does_not_emit_a_buy():
+    """DIVIDEND units are the shares that received the cash."""
+    df = activities_to_history_df(
+        [{
+            "type": "DIVIDEND",
+            "symbol": "FUNDX",
+            "units": 400,
+            "price": 50,
+            "amount": 10,
+            "trade_date": "2026-05-11",
+        }],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert list(df["Action"]) == ["Cash Dividend"]
+
+
+def test_history_df_rei_skips_companion_when_same_day_buy_exists():
+    """Example numbers. REI plus a BUY of the same 2 shares is one lot."""
+    df = activities_to_history_df(
+        [
+            {
+                "type": "REI",
+                "symbol": "FUNDX",
+                "units": 2,
+                "price": 50,
+                "amount": 100,
+                "trade_date": "2026-05-11",
+            },
+            {
+                "type": "BUY",
+                "symbol": "FUNDX",
+                "units": 2,
+                "price": 50.01,
+                "amount": -100,
+                "trade_date": "2026-05-11",
+            },
+        ],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    buys = df[df["Action"] == "Buy"]
+    divs = df[df["Action"] == "Cash Dividend"]
+    assert len(divs) == 1
+    assert len(buys) == 1
+    assert float(buys.iloc[0]["Amount"]) == -100
+
+
+def test_history_df_substitute_dividend_is_income():
+    df = activities_to_history_df(
+        [{
+            "type": "SUBSTITUTE_DIVIDEND",
+            "symbol": "FUNDX",
+            "amount": 15,
+            "trade_date": "2026-05-11",
+        }],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert df.iloc[0]["Action"] == "Cash Dividend"
+    assert float(df.iloc[0]["Amount"]) == 15
+
+
+def test_history_df_fee_is_cash_out():
+    df = activities_to_history_df(
+        [{
+            "type": "FEE",
+            "amount": 3.5,
+            "trade_date": "2026-05-11",
+            "description": "Account fee",
+        }],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert df.iloc[0]["Action"] == "ADR Mgmt Fee"
+    assert float(df.iloc[0]["Amount"]) == -3.5
+
+
+def test_history_df_occ_string_option_symbol():
+    df = activities_to_history_df(
+        [{
+            "type": "SELL",
+            "description": "Sell to open",
+            "option_type": "SELL_TO_OPEN",
+            "symbol": None,
+            "option_symbol": "FUNDX 260618C00100000",
+            "units": 1,
+            "price": 1.25,
+            "amount": 125,
+            "trade_date": "2026-05-11",
+        }],
+        account_name="Vanguard Account",
+        user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    assert len(df) == 1
+    assert df.iloc[0]["Action"] == "Sell to Open"
+    assert df.iloc[0]["Symbol"] == "FUNDX 260618C00100000"
+
+
 def test_history_df_emits_osi_for_options():
     """Option activities emit the canonical OSI string in Symbol.
     SnapTrade collapses every option open/close to BUY/SELL on the
@@ -666,6 +855,98 @@ def test_current_df_falls_back_to_broker_price_when_market_value_missing():
     }
     df = positions_to_current_df([pos], account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE)
     assert float(df.iloc[0]["Price"]) == 53.00
+
+
+def test_current_df_null_nav_does_not_book_cost_as_a_loss():
+    """Example numbers. A missing NAV is not a $0 quote.
+
+    Market value stays 0 so the close-based price ladder can fill it.
+    Unrealized stays blank instead of market_value − cost.
+    """
+    pos = {
+        "symbol": _fund_symbol("FUNDX"),
+        "units": 10,
+        "price": None,
+        "market_value": None,
+        "average_purchase_price": 40,
+        "cash_equivalent": False,
+    }
+    df = positions_to_current_df(
+        [pos], account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    row = df.iloc[0]
+    assert row["Symbol"] == "FUNDX"
+    assert row["security_type"] == "Equity"
+    assert float(row["Quantity"]) == 10
+    assert float(row["market_value"]) == 0
+    assert float(row["cost_bases"]) == 400
+    assert row["gain_or_loss_dollat"] == ""
+
+
+def test_current_df_cash_equivalent_is_a_sweep_not_a_holding():
+    """Example numbers. A settlement fund SnapTrade already counts in
+    cash must not also be an equity lot.
+    """
+    pos = {
+        "symbol": {"raw_symbol": "CASHX", "symbol": "CASHX", "description": "Settlement fund"},
+        "units": 1000,
+        "price": 1,
+        "cash_equivalent": True,
+    }
+    df = positions_to_current_df(
+        [pos], account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    row = df.iloc[0]
+    assert row["security_type"] == "Cash and Money Market"
+    assert float(row["Quantity"]) == 1000
+    assert float(row["market_value"]) == 1000
+    assert abs(float(row["Quantity"]) * float(row["Price"]) - float(row["market_value"])) <= 0.01
+
+
+def test_current_df_fractional_remainder_is_added_once():
+    """units=12 and fractional_units=0.25 is 12.25 shares.
+
+    Alpaca sends the same number in both fields (covered by the
+    Alpaca payload test) and must stay 1, not 2.
+    """
+    pos = {
+        "symbol": "FUNDX",
+        "units": 12,
+        "fractional_units": 0.25,
+        "price": 80,
+        "average_purchase_price": 70,
+    }
+    df = positions_to_current_df(
+        [pos], account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    row = df.iloc[0]
+    assert float(row["Quantity"]) == 12.25
+    assert abs(float(row["market_value"]) - 12.25 * 80) <= 0.01
+    assert abs(float(row["cost_bases"]) - 12.25 * 70) <= 0.01
+
+
+def test_current_df_string_occ_option_holding():
+    pos = {
+        "symbol": None,
+        "option_symbol": "FUNDX 260618C00100000",
+        "units": 1,
+        "price": 1.25,
+        "average_purchase_price": 150,
+    }
+    df = positions_to_current_df(
+        [pos], account_name="Vanguard Account", user_id=9,
+        tenant_id=TENANT_SNAPTRADE,
+    )
+    row = df.iloc[0]
+    assert row["security_type"] == "Option"
+    assert row["Symbol"] == "FUNDX 260618C00100000"
+    # price is per share; market value is price × 100 × contracts.
+    assert abs(float(row["market_value"]) - 125) <= 0.01
+    # average_purchase_price is per contract, not ×100 again.
+    assert abs(float(row["cost_bases"]) - 150) <= 0.01
 
 
 def test_current_df_alpaca_snaptrade_real_payload_shape():
