@@ -13,6 +13,7 @@ from scripts.vanguard_dev_structural_check import (
     assert_debug_schema,
     assert_dev_profile,
     is_safe_action_label,
+    result_exit,
     scrub_dbt_line,
 )
 
@@ -73,10 +74,42 @@ def test_allow_list_reads_the_vanguard_schema_yml():
 def test_structural_sql_is_select_only_against_dev_and_raw_reads():
     sql = _structural_sql()
     _assert_select_only(sql)
+    assert "stg_broker_vanguard_history" in sql
     assert "ccwj-dbt.analytics_dev." in sql
     assert "ccwj-dbt.analytics_raw.account_balances" in sql
     assert "ccwj-dbt.analytics." not in sql
     assert "INSERT" not in sql.upper()
+    assert "'absent'" not in sql
+
+
+def test_fidelity_structural_sql_is_absent_when_raw_is_empty():
+    sql = _structural_sql("fidelity")
+    _assert_select_only(sql)
+    assert "stg_broker_fidelity_history" in sql
+    assert "stg_broker_vanguard_history" not in sql
+    assert "ccwj-dbt.analytics_raw.trade_history" in sql
+    assert "ccwj-dbt.analytics_raw.current_positions" in sql
+    assert "'absent'" in sql
+    assert "cash and money market" in sql
+    assert "ccwj-dbt.analytics." not in sql
+    assert "INSERT" not in sql.upper()
+
+
+def test_fidelity_allow_list_stops_before_balance_row_types():
+    labels = allowed_actions(
+        (ROOT / "dbt/models/staging/brokers/_stg_broker_fidelity.yml").read_text(),
+        broker="fidelity",
+    )
+    assert "Buy" in labels
+    assert "Cash Dividend" in labels
+    assert "cash" not in {label.casefold() for label in labels}
+    assert "account_total" not in {label.casefold() for label in labels}
+
+
+def test_result_exit_treats_absent_as_success():
+    assert result_exit({"history_rows_gt_0": "absent", "current_rows_gt_0": "pass"}) == 0
+    assert result_exit({"history_rows_gt_0": "fail"}) == 1
+    assert result_exit({"history_null_symbol": "1.000"}) == 0
 
 
 def test_dev_mirror_workflow_builds_dev_and_does_not_write_prod():
@@ -91,8 +124,13 @@ def test_dev_mirror_workflow_builds_dev_and_does_not_write_prod():
     assert "dev_clone_prod.py --dest analytics_dev" in steps
     assert "workflow_call" in text
     assert "dbt_build:" in text
+    assert "--broker fidelity" in steps
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "vanguard-dev-dbt" not in ci
+    # The one-shot analytics_dev build for this branch already ran
+    # (Actions run 38590557268, commit 97ab3a63). Later pushes must not
+    # rebuild the dev dataset.
+    assert "fidelity-dev-dbt" not in ci
     assert "profiles.dev.yml" not in ci
     for forbidden in (
         "snapshot_guard",

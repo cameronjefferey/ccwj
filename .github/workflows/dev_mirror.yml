@@ -143,3 +143,11 @@ jobs:
       - name: Unknown Vanguard action labels
         if: failure()
         run: python scripts/vanguard_dev_structural_check.py --unknown-actions
+
+      - name: Structural Fidelity checks
+        if: success()
+        run: python scripts/vanguard_dev_structural_check.py --broker fidelity
+
+      - name: Unknown Fidelity action labels
+        if: failure()
+        run: python scripts/vanguard_dev_structural_check.py --broker fidelity --unknown-actions
