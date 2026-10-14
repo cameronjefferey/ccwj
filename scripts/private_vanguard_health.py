@@ -520,8 +520,8 @@ FROM scored
 # one dollar, matched on a space-stripped symbol so an OCC pad is not
 # a missing row and a duplicate. The balance date is whether the two
 # raw tables were written on different New York dates. Pending cash is
-# not summed: the loaded balance schema has no such column, so its
-# share stays zero.
+# not summed. Its share is 100 only when a pending or unsettled column
+# exists, and 0 when the loaded tables have no such column.
 _NARROW_LETTERS = "ABCDEFGH"
 _NARROW_CATS = (
     "holdings_missing_from_staging",
