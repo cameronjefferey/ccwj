@@ -127,11 +127,10 @@ def test_dev_mirror_workflow_builds_dev_and_does_not_write_prod():
     assert "--broker fidelity" in steps
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "vanguard-dev-dbt" not in ci
-    # One-shot dev build for this branch. The job must stay gated on the
-    # branch name. A later commit removes it so analytics_dev is not
-    # rebuilt on every push.
-    assert "fidelity-dev-dbt" in ci
-    assert "cursor/fidelity-preonboard-facf" in ci
+    # The one-shot analytics_dev build for this branch already ran
+    # (Actions run 38590557268, commit 97ab3a63). Later pushes must not
+    # rebuild the dev dataset.
+    assert "fidelity-dev-dbt" not in ci
     assert "profiles.dev.yml" not in ci
     for forbidden in (
         "snapshot_guard",

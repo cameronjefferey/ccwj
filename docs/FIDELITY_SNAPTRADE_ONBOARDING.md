@@ -105,6 +105,18 @@ ids. Zero raw Fidelity rows print `absent`. Raw rows that missed the Fidelity
 adapter or the union print `fail`. A core-sweep-only snapshot does not fail
 the holdings union, because `stg_current` drops `Cash and Money Market`.
 
+The one-shot build on 2026-10-14
+([run 38590557268](https://github.com/cameronjefferey/ccwj/actions/runs/38590557268),
+commit `97ab3a63`) wrote `analytics_dev` only. dbt finished with one warning,
+`option_close_qty_does_not_exceed_open`, the same warn-severity test as the
+Vanguard dev build, and zero errors. Fidelity history and balances were
+present, routed into the adapters and the unions, and the account-total
+check passed. Every Fidelity schema test passed, including the action
+allow-list and the partition exclusivity test. Current positions were
+`absent`: the raw seed has no Fidelity holdings rows, so a live snapshot
+(mutual funds, a flagged core position, options, fractional shares) has not
+been seen in production data yet.
+
 ## Decisions that need Cameron
 
 All dollars are examples, not a customer's book.
