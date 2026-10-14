@@ -1319,6 +1319,45 @@ def test_run_sync_does_not_flag_unavailable_holdings(monkeypatch):
     assert ei.value is sentinel
 
 
+def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatch):
+    """An unreadable holdings feed is unknown, not an empty portfolio.
+
+    The current-position merge replaces the tenant wholesale whenever it
+    receives a non-None frame. Keep that frame out of both deferred and inline
+    writers so a temporary unavailable response cannot erase prior holdings.
+    """
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {
+                "holdings": {
+                    "last_successful_sync": "2024-06-28T18:42:46.561Z",
+                    "holdings_unavailable": True,
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+
+    res = _snap._run_sync(
+        21,
+        object(),
+        snap=_SNAP,
+        acc_row={
+            "snaptrade_account_id": "vang",
+            "account_name": "Vanguard Account",
+            "broker_slug": "vanguard",
+        },
+        lookback_days=60,
+        defer_push=True,
+    )
+
+    assert res["deferred"] is True
+    assert res["push_history_only"] is False
+    assert res["current_rows"] == 0
+    assert res["current_df"] is None
+
+
 def test_run_sync_does_not_flag_holdings_timestamp_before_connect(monkeypatch):
     """A Vanguard last_successful_sync from before this grant is not a stall.
 
