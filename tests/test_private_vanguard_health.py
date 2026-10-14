@@ -11,6 +11,8 @@ from scripts.private_vanguard_health import (
     _GAP_LINE,
     _GAP_SQL,
     _HIDDEN_VANGUARD_SQL,
+    _NARROW_CATS,
+    _NARROW_SQL,
     _WAREHOUSE_LINE,
     _WAREHOUSE_SQL,
     attribute_fractions,
@@ -19,6 +21,8 @@ from scripts.private_vanguard_health import (
     gap_lines,
     holdings_is_fresh,
     is_vanguard,
+    narrow_lines,
+    narrow_lines_ok,
     reconcile_line,
     statement_is_read,
     warehouse_report_line,
@@ -33,7 +37,7 @@ _LINE = re.compile(
 
 
 def test_statements_are_prod_reads():
-    for sql in (_HIDDEN_VANGUARD_SQL, _ACCOUNTS_SQL, _WAREHOUSE_SQL, _GAP_SQL):
+    for sql in (_HIDDEN_VANGUARD_SQL, _ACCOUNTS_SQL, _WAREHOUSE_SQL, _GAP_SQL, _NARROW_SQL):
         assert statement_is_read(sql)
     assert "ccwj-dbt.analytics.stg_history" in _WAREHOUSE_SQL
     assert "ccwj-dbt.analytics.stg_current" in _WAREHOUSE_SQL
@@ -199,7 +203,7 @@ def test_workflow_is_dispatch_only():
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "github.head_ref == 'cursor/private-vanguard-health-631a'" in ci
     ci_health = ci.split("private-health:", 1)[1]
-    assert "scripts/private_vanguard_health.py --gap" in ci_health
+    assert "scripts/private_vanguard_health.py --narrow" in ci_health
     assert "analytics_dev" not in ci_health
     assert "BQ_DATASET" not in ci_health
     assert "DATABASE_URL" not in ci_health
@@ -259,3 +263,46 @@ def test_gap_lines_are_category_percents_only():
     quiet = attribute_fractions(_shares(money_market_both=1.0), has_gap=False)
     assert quiet == {name: 0 for name in quiet}
     assert not statement_is_read("SELECT symbol, tenant_id FROM t; DROP TABLE t")
+
+
+def test_narrow_sql_is_one_read_and_prints_shares_only():
+    assert statement_is_read(_NARROW_SQL)
+    assert "ccwj-dbt.analytics.stg_broker_vanguard_current" in _NARROW_SQL
+    assert "ccwj-dbt.analytics_raw.__TABLES__" in _NARROW_SQL
+    assert "INFORMATION_SCHEMA.COLUMNS" in _NARROW_SQL
+    assert "analytics_dev" not in _NARROW_SQL
+    assert "analytics_raw_dev" not in _NARROW_SQL
+    assert "account total" in _NARROW_SQL
+    assert "positions total" in _NARROW_SQL
+    assert "@tenants" not in _NARROW_SQL
+    body = _NARROW_SQL.split("letters.a AS a", 1)[1].split("FROM letters", 1)[0].lower()
+    for banned in ("tenant_id", "symbol", "market_value", "quantity", "$"):
+        assert banned not in body
+    assert re.search(r"\bas account\b", _NARROW_SQL.lower()) is None
+    lines = narrow_lines({
+        "a": 1.0,
+        "b": 0.0,
+        "c": None,
+        "holdings_missing_from_staging": -0.25,
+        "holdings_extra_in_staging": 0.0,
+        "qty_or_price_differs": 0.25,
+        "balance_other_vintage": 1.0,
+        "balance_other_date": 0.0,
+        "pending_cash": 0.0,
+    })
+    assert lines[0] == "account_A=100%"
+    assert lines[1] == "account_B=0%"
+    assert all(not line.startswith("account_C") for line in lines)
+    assert "holdings_missing_from_staging=-25%" in lines
+    assert "qty_or_price_differs=25%" in lines
+    assert "balance_other_vintage=100%" in lines
+    assert "balance_other_date=0%" in lines
+    assert "pending_cash=0%" in lines
+    assert narrow_lines_ok(lines)
+    assert [line.split("=", 1)[0] for line in lines if not line.startswith("account_")] == list(
+        _NARROW_CATS
+    )
+    assert "$" not in " ".join(lines)
+    assert not narrow_lines_ok(["account_B=100%", "account_A=0%"] + [
+        f"{name}=0%" for name in _NARROW_CATS
+    ])

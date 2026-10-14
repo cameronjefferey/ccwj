@@ -513,6 +513,225 @@ SELECT
 FROM scored
 """
 
+# Shares of the same book gap (staged holdings + cash − account total).
+# Account letters follow tenant_id order and are not names. A letter
+# whose column is null is an account that does not exist. Holding
+# shares are the dollar effect inside accounts that miss by more than
+# one dollar, matched on a space-stripped symbol so an OCC pad is not
+# a missing row and a duplicate. The balance date is whether the two
+# raw tables were written on different New York dates. Pending cash is
+# not summed: the loaded balance schema has no such column, so its
+# share stays zero.
+_NARROW_LETTERS = "ABCDEFGH"
+_NARROW_CATS = (
+    "holdings_missing_from_staging",
+    "holdings_extra_in_staging",
+    "qty_or_price_differs",
+    "balance_other_vintage",
+    "balance_other_date",
+    "pending_cash",
+)
+_NARROW_ACCOUNT_LINE = re.compile(r"^account_[A-H]=-?[0-9]+%$")
+_NARROW_CAT_LINE = re.compile(
+    r"^(holdings_missing_from_staging|holdings_extra_in_staging|qty_or_price_differs"
+    r"|balance_other_vintage|balance_other_date|pending_cash)=-?[0-9]+%$"
+)
+_NARROW_SQL = f"""
+WITH labeled AS (
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_history`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+),
+tenants AS (
+  SELECT DISTINCT tenant_id
+    FROM labeled
+   WHERE tenant_id IS NOT NULL
+     AND tenant_id != 'demo:demo-account'
+     AND lower(split(trim(cast(account AS STRING)), ' ')[SAFE_OFFSET(0)]) = 'vanguard'
+),
+held AS (
+  SELECT tenant_id, SUM(market_value) AS held_mv
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+   GROUP BY tenant_id
+),
+cash_rows AS (
+  SELECT tenant_id, SUM(market_value) AS cash_mv
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+     AND row_type = 'cash'
+   GROUP BY tenant_id
+),
+total_rows AS (
+  SELECT tenant_id, SUM(market_value) AS account_total
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+     AND row_type = 'account_total'
+   GROUP BY tenant_id
+),
+books AS (
+  SELECT
+    t.tenant_id,
+    IFNULL(h.held_mv, 0) + IFNULL(c.cash_mv, 0) - IFNULL(b.account_total, 0) AS gap,
+    b.account_total AS account_total
+  FROM tenants t
+  LEFT JOIN held h ON h.tenant_id = t.tenant_id
+  LEFT JOIN cash_rows c ON c.tenant_id = t.tenant_id
+  LEFT JOIN total_rows b ON b.tenant_id = t.tenant_id
+),
+overall AS (
+  SELECT SUM(gap) AS gap FROM books
+),
+lettered AS (
+  SELECT
+    ROW_NUMBER() OVER (ORDER BY b.tenant_id) AS n,
+    IF(
+      o.gap IS NULL OR ABS(o.gap) <= 1,
+      0,
+      SAFE_DIVIDE(b.gap, o.gap)
+    ) AS share
+  FROM books b
+  CROSS JOIN overall o
+),
+letters AS (
+  SELECT
+    MAX(IF(n = 1, share, NULL)) AS a,
+    MAX(IF(n = 2, share, NULL)) AS b,
+    MAX(IF(n = 3, share, NULL)) AS c,
+    MAX(IF(n = 4, share, NULL)) AS d,
+    MAX(IF(n = 5, share, NULL)) AS e,
+    MAX(IF(n = 6, share, NULL)) AS f,
+    MAX(IF(n = 7, share, NULL)) AS g,
+    MAX(IF(n = 8, share, NULL)) AS h
+  FROM lettered
+),
+failing AS (
+  SELECT tenant_id FROM books WHERE ABS(gap) > 1
+),
+raw_rows AS (
+  SELECT
+    NULLIF(TRIM(tenant_id), '') AS tenant_id,
+    REGEXP_REPLACE(UPPER(TRIM(CAST(Symbol AS STRING))), r'\\s+', '') AS sym_key,
+    LOWER(TRIM(COALESCE(CAST(Symbol AS STRING), ''))) AS sym_label,
+    LOWER(TRIM(COALESCE(CAST(security_type AS STRING), ''))) AS sec_type,
+    SAFE_CAST(NULLIF(TRIM(CAST(Quantity AS STRING)), '') AS FLOAT64) AS qty,
+    SAFE_CAST(NULLIF(TRIM(CAST(Price AS STRING)), '') AS FLOAT64) AS price,
+    SAFE_CAST(TRIM(REPLACE(REPLACE(REPLACE(
+      COALESCE(CAST(market_value AS STRING), ''), '$', ''), ',', ''), ' ', '')) AS FLOAT64) AS mv
+  FROM `{PROJECT}.{PROD_DATASET}.stg_broker_vanguard_current`
+  WHERE NULLIF(TRIM(tenant_id), '') IN (SELECT tenant_id FROM failing)
+),
+raw_hold AS (
+  SELECT
+    tenant_id,
+    sym_key,
+    SUM(qty) AS qty,
+    SAFE_DIVIDE(SUM(qty * price), SUM(qty)) AS price,
+    SUM(mv) AS mv
+  FROM raw_rows
+  WHERE sec_type NOT IN ('cash and money market', '')
+    AND sym_label NOT IN ('account total', 'positions total')
+    AND sym_key != ''
+  GROUP BY tenant_id, sym_key
+),
+stg_hold AS (
+  SELECT
+    tenant_id,
+    REGEXP_REPLACE(UPPER(TRIM(CAST(trade_symbol AS STRING))), r'\\s+', '') AS sym_key,
+    SUM(quantity) AS qty,
+    SAFE_DIVIDE(SUM(quantity * current_price), SUM(quantity)) AS price,
+    SUM(market_value) AS mv
+  FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+  WHERE tenant_id IN (SELECT tenant_id FROM failing)
+  GROUP BY tenant_id, sym_key
+),
+paired AS (
+  SELECT
+    r.sym_key AS raw_key,
+    s.sym_key AS stg_key,
+    r.qty AS raw_qty,
+    s.qty AS stg_qty,
+    r.price AS raw_px,
+    s.price AS stg_px,
+    r.mv AS raw_mv,
+    s.mv AS stg_mv
+  FROM raw_hold r
+  FULL OUTER JOIN stg_hold s
+    ON r.tenant_id = s.tenant_id
+   AND r.sym_key = s.sym_key
+),
+effects AS (
+  SELECT
+    SUM(IF(stg_key IS NULL, -IFNULL(raw_mv, 0), 0)) AS missing_dollars,
+    SUM(IF(raw_key IS NULL, IFNULL(stg_mv, 0), 0)) AS extra_dollars,
+    SUM(IF(
+      raw_key IS NOT NULL AND stg_key IS NOT NULL AND (
+        ABS(IFNULL(stg_qty, 0) - IFNULL(raw_qty, 0)) > 1e-4
+        OR ABS(IFNULL(stg_px, 0) - IFNULL(raw_px, 0)) > 0.01
+        OR ABS(IFNULL(stg_mv, 0) - IFNULL(raw_mv, 0)) > 1
+      ),
+      IFNULL(stg_mv, 0) - IFNULL(raw_mv, 0),
+      0
+    )) AS diff_dollars
+  FROM paired
+),
+file_totals AS (
+  SELECT tenant_id, SUM(mv) AS file_total
+    FROM raw_rows
+   WHERE sym_label = 'account total'
+   GROUP BY tenant_id
+),
+vintage AS (
+  SELECT SUM(
+    IF(f.file_total IS NOT NULL, f.file_total - IFNULL(b.account_total, 0), 0)
+  ) AS dollars
+  FROM books b
+  LEFT JOIN file_totals f ON f.tenant_id = b.tenant_id
+  WHERE ABS(b.gap) > 1
+)
+SELECT
+  letters.a AS a,
+  letters.b AS b,
+  letters.c AS c,
+  letters.d AS d,
+  letters.e AS e,
+  letters.f AS f,
+  letters.g AS g,
+  letters.h AS h,
+  IF(o.gap IS NULL OR ABS(o.gap) <= 1, 0, SAFE_DIVIDE(effects.missing_dollars, o.gap))
+    AS holdings_missing_from_staging,
+  IF(o.gap IS NULL OR ABS(o.gap) <= 1, 0, SAFE_DIVIDE(effects.extra_dollars, o.gap))
+    AS holdings_extra_in_staging,
+  IF(o.gap IS NULL OR ABS(o.gap) <= 1, 0, SAFE_DIVIDE(effects.diff_dollars, o.gap))
+    AS qty_or_price_differs,
+  IF(o.gap IS NULL OR ABS(o.gap) <= 1, 0, SAFE_DIVIDE(vintage.dollars, o.gap))
+    AS balance_other_vintage,
+  (
+    SELECT IF(COUNT(DISTINCT d) > 1, 1.0, 0.0)
+      FROM (
+        SELECT DATE(TIMESTAMP_MILLIS(last_modified_time), 'America/New_York') AS d
+          FROM `{PROJECT}.analytics_raw.__TABLES__`
+         WHERE table_id IN ('current_positions', 'account_balances')
+           AND last_modified_time IS NOT NULL
+      )
+  ) AS balance_other_date,
+  (
+    SELECT 0.0
+      FROM `{PROJECT}.analytics_raw.INFORMATION_SCHEMA.COLUMNS`
+     WHERE table_name IN ('current_positions', 'account_balances')
+    HAVING COUNTIF(REGEXP_CONTAINS(LOWER(column_name), r'pending|unsettled')) >= 0
+  ) AS pending_cash
+FROM letters
+CROSS JOIN effects
+CROSS JOIN overall o
+CROSS JOIN vintage
+"""
+
 
 def _safe_hint(message: str) -> str:
     """A query-planner phrase with quoted text and amounts removed."""
@@ -593,6 +812,44 @@ def attribute_fractions(fracs, *, has_gap: bool) -> dict:
 
 def gap_lines(percents) -> list[str]:
     return [f"{name}={int(percents[name])}%" for name in _GAP_LOG_ORDER]
+
+
+def _pct(value) -> int:
+    return int(round(_finite(value) * 100.0))
+
+
+def narrow_lines(values) -> list[str]:
+    """Account letters plus category shares. Null letters are omitted."""
+    values = values or {}
+    lines = []
+    for letter in _NARROW_LETTERS:
+        key = letter.lower()
+        if values.get(key) is None:
+            continue
+        lines.append(f"account_{letter}={_pct(values.get(key))}%")
+    for name in _NARROW_CATS:
+        lines.append(f"{name}={_pct(values.get(name))}%")
+    return lines
+
+
+def narrow_lines_ok(lines) -> bool:
+    if not lines:
+        return False
+    accounts = []
+    categories = []
+    for line in lines:
+        if line.startswith("account_"):
+            if categories or not _NARROW_ACCOUNT_LINE.match(line):
+                return False
+            accounts.append(line)
+        elif not _NARROW_CAT_LINE.match(line):
+            return False
+        else:
+            categories.append(line)
+    letters = [line.split("=", 1)[0].split("_", 1)[1] for line in accounts]
+    if letters != list(_NARROW_LETTERS[: len(letters)]):
+        return False
+    return [line.split("=", 1)[0] for line in categories] == list(_NARROW_CATS)
 
 
 def format_report(report) -> list[str]:
@@ -1035,6 +1292,48 @@ def _fill_report(report) -> None:
     report.update(rendered)
 
 
+def run_narrow_lines() -> list[str]:
+    """Read prod analytics only. One share line per account letter and cause."""
+    os.environ.pop("BQ_DATASET", None)
+    if not statement_is_read(_NARROW_SQL):
+        raise RuntimeError("read-only")
+    _install_bq_guard()
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT)
+    rows = list(client.query(_NARROW_SQL, location="US").result())
+    if len(rows) != 1:
+        raise RuntimeError("read-only")
+    row = rows[0]
+    return narrow_lines({key: row[key] for key in row.keys()})
+
+
+def _print_narrow() -> int:
+    lines = None
+    reason = ""
+    hint = ""
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        try:
+            lines = run_narrow_lines()
+        except Exception as exc:
+            errors = getattr(exc, "errors", None)
+            hint = ""
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                reason = str(errors[0].get("reason") or "")
+                hint = _safe_hint(str(errors[0].get("message") or ""))
+            else:
+                reason = type(exc).__name__
+    if reason and not re.fullmatch(r"[A-Za-z0-9_]+", reason):
+        reason = ""
+    if not narrow_lines_ok(lines):
+        suffix = " ".join(part for part in (reason, hint) if part)
+        print(f"breakdown=FAIL{(' ' + suffix) if suffix else ''}", flush=True)
+        return 1
+    print("\n".join(lines), flush=True)
+    return 0
+
+
 def run_gap_lines() -> list[str]:
     """Read prod analytics only. Returns one percent line per cause."""
     os.environ.pop("BQ_DATASET", None)
@@ -1113,6 +1412,8 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     sys.tracebacklimit = 0
     logging.disable(logging.CRITICAL)
+    if "--narrow" in args:
+        return _print_narrow()
     if "--gap" in args:
         return _print_gap()
     line = "FAIL"
