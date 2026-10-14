@@ -63,6 +63,15 @@ def test_sync_status_label_never_echoes_the_stored_error():
         "connection_broken_at": "2026-10-01",
         "last_sync_error": raw,
     }) == "Reconnect needed"
+    from datetime import datetime as _dt
+    _now = _dt.now()
+    assert sync_status_label({
+        "connection_broken_at": _now,
+        "created_at": _now,
+        "last_sync_error": (
+            "connection_broken:sync_status.holdings.last_successful_sync[stale]"
+        ),
+    }) == "Sync will retry"
     assert sync_status_label({
         "last_sync_error": "connection_broken:activities",
         "first_sync_completed": True,

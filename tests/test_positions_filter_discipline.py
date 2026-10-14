@@ -456,6 +456,20 @@ def test_zero_auth_accounts_shows_onboarding_copy():
     assert "No accounts linked yet" in html
 
 
+def test_columnless_empty_book_does_not_500():
+    """A schemaless empty frame must not KeyError on ``df["account"]``.
+
+    BigQuery's empty result includes the SELECT columns and already
+    renders the pending copy. ``pd.DataFrame()`` with no columns is the
+    shape a failed read leaves behind when it does not raise. A Vanguard
+    user with no holdings was hitting the styled 500 page under the
+    reconnect banner.
+    """
+    html = _render_with_book(pd.DataFrame(), accounts=["Roth"])
+    assert "No positions to show yet" in html
+    assert "Something went wrong" not in html
+
+
 def test_connected_but_empty_book_shows_data_pending_copy():
     """A user with linked Schwab accounts but no positions yet (e.g. brand
     new connection that hasn't synced) must NOT be told to 'connect
