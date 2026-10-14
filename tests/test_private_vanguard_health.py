@@ -220,6 +220,18 @@ def _shares(**kwargs):
     return base
 
 
+def test_query_hint_drops_quoted_text_and_amounts():
+    from scripts.private_vanguard_health import _safe_hint
+
+    assert _safe_hint("Unrecognized name: description at [12:3]") == (
+        "Unrecognized name: description at [12:3]"
+    )
+    assert _safe_hint("Syntax error: Expected \")\" but got \"$\" at [4:8]") == ""
+    assert _safe_hint("No matching signature for function foo at [9:1]") == (
+        "No matching signature for function foo at [9:1]"
+    )
+
+
 def test_gap_lines_are_category_percents_only():
     exact = attribute_fractions(_shares(money_market_both=1.0), has_gap=True)
     lines = gap_lines(exact)

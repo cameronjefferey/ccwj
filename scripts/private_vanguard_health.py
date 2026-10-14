@@ -363,39 +363,46 @@ broker AS (
   FROM `{PROJECT}.{PROD_DATASET}.stg_broker_vanguard_current`
   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
 ),
+labels AS (
+  SELECT tenant_id, lower(trim(cast(account AS STRING))) AS label
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+  UNION ALL
+  SELECT tenant_id, lower(trim(cast(account AS STRING))) AS label
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+),
+label_one AS (
+  SELECT tenant_id, any_value(label) AS label
+    FROM labels
+   GROUP BY tenant_id
+),
+held_sums AS (
+  SELECT tenant_id, SUM(market_value) AS held
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+   GROUP BY tenant_id
+),
+balance_sums AS (
+  SELECT
+    tenant_id,
+    SUM(IF(row_type = 'cash', market_value, NULL)) AS cash,
+    SUM(IF(row_type = 'account_total', market_value, NULL)) AS total
+  FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+  WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+  GROUP BY tenant_id
+),
 books AS (
   SELECT
     t.tenant_id,
-    (
-      SELECT any_value(lower(trim(cast(account AS STRING))))
-        FROM (
-          SELECT account
-            FROM `{PROJECT}.{PROD_DATASET}.stg_current`
-           WHERE tenant_id = t.tenant_id
-          UNION ALL
-          SELECT account
-            FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
-           WHERE tenant_id = t.tenant_id
-        )
-    ) AS label,
-    (
-      SELECT SUM(market_value)
-        FROM `{PROJECT}.{PROD_DATASET}.stg_current`
-       WHERE tenant_id = t.tenant_id
-    ) AS held,
-    (
-      SELECT SUM(market_value)
-        FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
-       WHERE tenant_id = t.tenant_id
-         AND row_type = 'cash'
-    ) AS cash,
-    (
-      SELECT SUM(market_value)
-        FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
-       WHERE tenant_id = t.tenant_id
-         AND row_type = 'account_total'
-    ) AS total
+    l.label,
+    h.held,
+    b.cash,
+    b.total
   FROM tenants t
+  LEFT JOIN label_one l ON l.tenant_id = t.tenant_id
+  LEFT JOIN held_sums h ON h.tenant_id = t.tenant_id
+  LEFT JOIN balance_sums b ON b.tenant_id = t.tenant_id
 ),
 ranked AS (
   SELECT
@@ -437,6 +444,7 @@ measures AS (
         + ifnull(SUM(IF(total IS NULL, staged, 0)), 0)
         + ifnull(SUM(IF(held IS NULL AND total IS NOT NULL, -total, 0)), 0)
        FROM ranked) AS account_mv
+  FROM (SELECT 1 AS _one)
 ),
 scored AS (
   SELECT
@@ -504,6 +512,22 @@ SELECT
   END AS price_date
 FROM scored
 """
+
+
+def _safe_hint(message: str) -> str:
+    """A query-planner phrase with quoted text and amounts removed."""
+    if "$" in (message or ""):
+        return ""
+    line = (message or "").split("\n", 1)[0]
+    line = re.sub(r"'[^']*'", "", line)
+    line = re.sub(r'"[^"]*"', "", line)
+    line = re.sub(r"\b\d+\.\d+\b", "", line)
+    line = re.sub(r"\s+", " ", line).strip()
+    if not line or len(line) > 140:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9_ :,.\[\]()\-]+", line):
+        return ""
+    return line
 
 
 def _finite(value) -> float:
@@ -1032,14 +1056,17 @@ def run_gap_lines() -> list[str]:
 def _print_gap() -> int:
     lines = None
     reason = ""
+    hint = ""
     sink = io.StringIO()
     with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
         try:
             lines = run_gap_lines()
         except Exception as exc:
             errors = getattr(exc, "errors", None)
+            hint = ""
             if isinstance(errors, list) and errors and isinstance(errors[0], dict):
                 reason = str(errors[0].get("reason") or "")
+                hint = _safe_hint(str(errors[0].get("message") or ""))
             else:
                 reason = type(exc).__name__
     if reason and not re.fullmatch(r"[A-Za-z0-9_]+", reason):
@@ -1049,8 +1076,8 @@ def _print_gap() -> int:
         or len(lines) != len(_GAP_LOG_ORDER)
         or any(not _GAP_LINE.match(line) for line in lines)
     ):
-        suffix = f" {reason}" if reason else ""
-        print(f"breakdown=FAIL{suffix}", flush=True)
+        suffix = " ".join(part for part in (reason, hint) if part)
+        print(f"breakdown=FAIL{(' ' + suffix) if suffix else ''}", flush=True)
         return 1
     total = 0
     any_share = False
