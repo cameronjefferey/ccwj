@@ -1,8 +1,8 @@
 """Early-brokerage cohort: first users of a SnapTrade broker we haven't modeled.
 
-SnapTrade can connect ~20 brokerages. Dedicated dbt adapters exist only for
-schwab / alpaca / fidelity / interactive (IBKR); everything else flows
-through ``stg_broker_other_*``. The first ``EARLY_BROKER_USER_CAP`` users
+SnapTrade can connect ~20 brokerages. Dedicated dbt adapters exist for
+schwab / alpaca / fidelity / interactive (IBKR) / vanguard; everything
+else flows through ``stg_broker_other_*``. The first ``EARLY_BROKER_USER_CAP`` users
 who connect an unmodeled brokerage get a thank-you note and six months
 of HappyTrader Pro free (Stripe Checkout ``trial_period_days``, Pro
 price only — this Stripe account is shared with sibling products, so we
@@ -18,7 +18,9 @@ import os
 import re
 
 # Must stay aligned with dbt/macros/broker_slug_from_account.sql known_brokers().
-MODELED_BROKER_KEYS = frozenset({"schwab", "alpaca", "fidelity", "interactive"})
+MODELED_BROKER_KEYS = frozenset({
+    "schwab", "alpaca", "fidelity", "interactive", "vanguard",
+})
 EARLY_BROKER_USER_CAP = 10
 EARLY_BROKER_TRIAL_DAYS_DEFAULT = 180
 

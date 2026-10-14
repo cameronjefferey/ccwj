@@ -30,7 +30,7 @@
          leave the catch-all and the parity count drops).
     The ``_other_`` catch-all keeps any not-yet-modeled broker's rows
     flowing through in the meantime, so steps 2-4 never lose data.
-    Modeled today: schwab, alpaca, fidelity, interactive (IBKR).
+    Modeled today: schwab, alpaca, fidelity, interactive (IBKR), vanguard.
 #}
 
 {#-
@@ -54,7 +54,7 @@
 {% macro known_brokers() -%}
     {#- Slugs are the lowercased first token of the account label, so IBKR
         (label "Interactive Brokers ...") classifies as 'interactive'. -#}
-    {{ return(['schwab', 'alpaca', 'fidelity', 'interactive']) }}
+    {{ return(['schwab', 'alpaca', 'fidelity', 'interactive', 'vanguard']) }}
 {%- endmacro %}
 
 

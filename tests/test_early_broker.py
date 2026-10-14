@@ -28,11 +28,14 @@ def test_broker_key_normalizes_institution_names():
 
 
 def test_modeled_set_matches_dbt_known_brokers():
-    assert MODELED_BROKER_KEYS == {"schwab", "alpaca", "fidelity", "interactive"}
+    assert MODELED_BROKER_KEYS == {
+        "schwab", "alpaca", "fidelity", "interactive", "vanguard",
+    }
     assert is_modeled_broker("Fidelity")
     assert is_modeled_broker("Charles Schwab")
+    assert is_modeled_broker("Vanguard")
+    assert is_modeled_broker("Vanguard Account")
     assert not is_modeled_broker("Robinhood")
-    assert not is_modeled_broker("Vanguard")
     assert not is_modeled_broker("Wealthsimple")
 
 
@@ -82,6 +85,7 @@ def test_stamp_skips_modeled_brokers(monkeypatch):
     assert maybe_stamp_early_broker_cohort(1, "acc-1", "Fidelity") is False
     assert maybe_stamp_early_broker_cohort(1, "acc-1", "Alpaca") is False
     assert maybe_stamp_early_broker_cohort(1, "acc-1", "Interactive Brokers") is False
+    assert maybe_stamp_early_broker_cohort(1, "acc-1", "Vanguard") is False
     assert called == []
 
 

@@ -46,6 +46,8 @@ with trade_history_as_strings as (
     union all
     select * from {{ ref('stg_broker_interactive_history') }}
     union all
+    select * from {{ ref('stg_broker_vanguard_history') }}
+    union all
     select * from {{ ref('stg_broker_other_history') }}
 ),
 

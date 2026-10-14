@@ -170,8 +170,13 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
     # Dividends — fold every flavor into the CSV-export "Cash Dividend"
     # label that stg_history maps to internal ``dividend``.
     "DIVIDEND": "Cash Dividend",
+    "SUBSTITUTE_DIVIDEND": "Cash Dividend",  # Payment in lieu. Same income bucket.
     "STOCK_DIVIDEND": "Cash Dividend",
-    "REI": "Cash Dividend",  # Dividend reinvestment — treated as a div event for P&L.
+    # REI is a dividend that bought more shares. The dividend row stays a
+    # Cash Dividend (so a re-sync dedups against rows already stored that
+    # way). When units × price matches the cash amount, a companion Buy
+    # is added so the new shares are not left to the opening-balance guess.
+    "REI": "Cash Dividend",
     # Interest / fees
     "INTEREST": "Credit Interest",
     "FEE": "ADR Mgmt Fee",
@@ -201,8 +206,9 @@ SNAPTRADE_ACTIVITY_TO_ACTION: dict[str, Optional[str]] = {
     #   JOURNAL             — share journals stay dropped; cash-only journals
     #                         (no ticker, non-zero amount) are promoted at
     #                         read time to Deposit/Withdrawal.
-    #   DISTRIBUTION        — could be a fund/cap-gains distribution (income)
-    #                         OR a retirement account withdrawal (cash out).
+    #   DISTRIBUTION        — resolved at read time, not dropped: a ticker
+    #                         is income (Cash Dividend); no ticker is a
+    #                         cash withdrawal.
     "TRANSFER": None,
     "JOURNAL": None,
     "DISTRIBUTION": None,
@@ -344,6 +350,356 @@ def _safe_float(value, default=0.0) -> float:
     except (TypeError, ValueError):
         pass
     return default
+
+
+def _number_missing(value) -> bool:
+    """True when a SnapTrade numeric field was omitted or blank.
+
+    An explicit 0 is present. Mutual-fund NAVs often arrive as null
+    rather than zero; treating null as zero books the whole cost basis
+    as a loss.
+    """
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return not _is_finite_number(value)
+
+
+def _coerce_symbol_obj(symbol) -> dict:
+    """SnapTrade documents ``symbol`` / ``universal_symbol`` as an object or null.
+
+    Vanguard-shaped payloads can send the ticker as a bare string. A
+    string has no ``.get``; coercing it here keeps one account's sync
+    from raising, and keeps the ticker.
+    """
+    if isinstance(symbol, str):
+        ticker = symbol.strip()
+        if not ticker:
+            return {}
+        return {"raw_symbol": ticker, "symbol": ticker, "description": ticker}
+    if isinstance(symbol, Mapping):
+        return dict(symbol)
+    return {}
+
+
+def _promote_option_text(symbol_obj: Mapping, original) -> dict:
+    """A Schwab long-form contract sent as a string is an option, not a ticker.
+
+    ``SPXW 10/01/2026 7650.00 C`` must become an OCC symbol so fee netting
+    and dedup still see the same contract. A plain fund ticker does not
+    match and stays an equity symbol.
+    """
+    base = dict(symbol_obj) if isinstance(symbol_obj, Mapping) else {}
+    if base.get("option_symbol"):
+        return base
+    text = original if isinstance(original, str) else str(base.get("raw_symbol") or "")
+    osi = _osi_from_broker_text(text)
+    if not osi:
+        return base
+    parsed = _option_symbol_from_text(osi)
+    if not parsed:
+        return base
+    base["option_symbol"] = parsed
+    base["raw_symbol"] = osi
+    return base
+
+
+def _attach_option_symbol(symbol_obj: Mapping, option_symbol) -> dict:
+    """Fold a top-level option contract into the symbol object.
+
+    Activities and positions sometimes leave ``symbol`` null and put the
+    contract on ``option_symbol``. A string there is OCC text, not a
+    mapping — parse it instead of calling ``.get`` on the string.
+    """
+    base = dict(symbol_obj) if isinstance(symbol_obj, Mapping) else {}
+    if base.get("option_symbol"):
+        return base
+    if isinstance(option_symbol, str):
+        parsed = _option_symbol_from_text(option_symbol)
+        if parsed:
+            base["option_symbol"] = parsed
+        return base
+    if isinstance(option_symbol, Mapping):
+        base["option_symbol"] = option_symbol
+    return base
+
+
+def _position_quantity(pos: Mapping) -> float:
+    """Share count from ``units`` only.
+
+    SnapTrade's ``fractional_units`` is deprecated. A remainder in that
+    field is ignored, including when ``units`` is null. The same number
+    in both fields is stored once because only ``units`` is read.
+    """
+    units_raw = pos.get("units")
+    if not _is_finite_number(units_raw):
+        return 0.0
+    return _safe_float(units_raw, 0.0)
+
+
+def _is_cash_equivalent(pos: Mapping) -> bool:
+    """True when SnapTrade's flag says this holding is already in cash.
+
+    Money-market sweeps set ``cash_equivalent``. An unflagged money-market
+    fund is decided separately: it is cash only when the broker cash
+    balance already includes it (see ``symbols_already_in_cash``).
+    """
+    value = pos.get("cash_equivalent")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == 1
+    return str(value or "").strip().lower() in {"true", "1", "yes"}
+
+
+_MONEY_MARKET_TYPE_CODES = frozenset({
+    "MMF", "MM", "MONEYMARKET", "MONEY_MARKET", "CASH_EQUIVALENT",
+})
+
+
+def _position_symbol_obj(pos: Mapping) -> dict:
+    return _promote_option_text(
+        _attach_option_symbol(
+            _coerce_symbol_obj(pos.get("symbol")),
+            pos.get("option_symbol"),
+        ),
+        pos.get("symbol"),
+    )
+
+
+def _activity_ticker(act: Mapping) -> str:
+    """Ticker or OCC symbol on an activity. Blank when the row is cash."""
+    symbol_obj = _promote_option_text(
+        _attach_option_symbol(
+            _coerce_symbol_obj(act.get("symbol")),
+            act.get("option_symbol"),
+        ),
+        act.get("symbol"),
+    )
+    if _is_option(symbol_obj):
+        return snaptrade_symbol_to_osi(symbol_obj).strip().upper()
+    return _underlying_from_symbol(symbol_obj).strip().upper()
+
+
+def _equity_ticker(symbol_obj: Mapping) -> str:
+    if _is_option(symbol_obj):
+        return ""
+    return _underlying_from_symbol(symbol_obj).strip().upper()
+
+
+def _type_code_and_description(symbol_obj: Mapping) -> tuple[str, str]:
+    codes: list[str] = []
+    descs: list[str] = []
+    for candidate in (
+        symbol_obj.get("symbol") if isinstance(symbol_obj.get("symbol"), Mapping) else None,
+        symbol_obj,
+    ):
+        if not isinstance(candidate, Mapping):
+            continue
+        type_block = candidate.get("type")
+        if isinstance(type_block, Mapping):
+            codes.append(str(type_block.get("code") or "").strip().upper())
+            descs.append(str(type_block.get("description") or "").strip().upper())
+        elif isinstance(type_block, str) and type_block.strip():
+            codes.append(type_block.strip().upper())
+    return " ".join(codes), " ".join(descs)
+
+
+def _is_money_market_fund(pos: Mapping, symbol_obj: Mapping) -> bool:
+    """A settlement / money-market fund, not a market-priced mutual fund.
+
+    The type block wins when SnapTrade names it. Otherwise a stable $1
+    NAV (price and, when present, average cost within two cents of $1)
+    nominates the position. A fund at a real market price does not.
+    Nomination is not enough to drop the holding — cash has to already
+    include the dollars.
+    """
+    if _is_option(symbol_obj) or _is_crypto(symbol_obj):
+        return False
+    code, desc = _type_code_and_description(symbol_obj)
+    compact = re.sub(r"[\s_\-]", "", code)
+    if compact in {re.sub(r"[\s_\-]", "", item) for item in _MONEY_MARKET_TYPE_CODES}:
+        return True
+    if "MONEYMARKET" in compact or "MONEY MARKET" in desc:
+        return True
+    price = pos.get("price")
+    if _number_missing(price) or abs(_safe_float(price, 0.0) - 1.0) > 0.02:
+        return False
+    avg = pos.get("average_purchase_price")
+    if not _number_missing(avg) and abs(_safe_float(avg, 0.0) - 1.0) > 0.02:
+        return False
+    return True
+
+
+def _quoted_market_value(pos: Mapping, symbol_obj: Mapping) -> float:
+    raw_mv = pos.get("market_value")
+    if _number_missing(raw_mv):
+        raw_mv = pos.get("equity")
+    if not _number_missing(raw_mv):
+        return _safe_float(raw_mv, 0.0)
+    price = pos.get("price")
+    if _number_missing(price):
+        return 0.0
+    units = _position_quantity(pos)
+    mult = 100.0 if _is_option(symbol_obj) else 1.0
+    return units * _safe_float(price, 0.0) * mult
+
+
+def _reported_cash_and_total(balances, account_summary) -> tuple[float, float | None]:
+    """Broker cash, and the account total when the summary actually sent one.
+
+    A missing total is None, not zero. An explicit zero stays zero.
+    """
+    cash = 0.0
+    if isinstance(balances, Iterable) and not isinstance(balances, (str, bytes, Mapping)):
+        for bal in balances:
+            if isinstance(bal, Mapping):
+                cash += _safe_float(bal.get("cash"), 0.0)
+    if not cash and isinstance(account_summary, Mapping):
+        balance_block = account_summary.get("balance")
+        nested = balance_block.get("cash") if isinstance(balance_block, Mapping) else None
+        cash = _safe_float(nested, _safe_float(account_summary.get("cash"), 0.0))
+
+    if not isinstance(account_summary, Mapping):
+        return cash, None
+    balance_block = account_summary.get("balance")
+    if not isinstance(balance_block, Mapping):
+        return cash, None
+    total_block = balance_block.get("total")
+    if isinstance(total_block, Mapping) and _is_finite_number(total_block.get("amount")):
+        return cash, _safe_float(total_block.get("amount"), 0.0)
+    if _is_finite_number(total_block):
+        return cash, _safe_float(total_block, 0.0)
+    return cash, None
+
+
+def _sweep_symbol_set(symbols: Iterable[str] | None) -> set[str]:
+    return {
+        str(symbol).strip().upper()
+        for symbol in (symbols or ())
+        if str(symbol).strip()
+    }
+
+
+def cash_equivalent_symbols(positions: Iterable[Mapping] | None) -> set[str]:
+    """Tickers whose SnapTrade position has ``cash_equivalent`` true."""
+    symbols: set[str] = set()
+    for pos in positions or ():
+        if not isinstance(pos, Mapping) or not _is_cash_equivalent(pos):
+            continue
+        ticker = _equity_ticker(_position_symbol_obj(pos))
+        if ticker:
+            symbols.add(ticker)
+    return symbols
+
+
+def symbols_already_in_cash(
+    positions: Iterable[Mapping] | None,
+    *,
+    balances=None,
+    account_summary=None,
+) -> set[str]:
+    """Tickers that must not also be equity holdings.
+
+    A ``cash_equivalent`` flag is always in this set. An unflagged
+    money-market fund joins it only when cash plus the other holdings
+    already match the reported account total — the fund's dollars are
+    inside cash, and adding the position would count them twice.
+    When the total is missing, or the total only matches if the fund is
+    included, the fund stays a holding.
+    """
+    flagged: set[str] = set()
+    candidates: list[tuple[str, float]] = []
+    other_mv = 0.0
+    for pos in positions or ():
+        if not isinstance(pos, Mapping):
+            continue
+        symbol_obj = _position_symbol_obj(pos)
+        ticker = _equity_ticker(symbol_obj)
+        mv = _quoted_market_value(pos, symbol_obj)
+        if _is_cash_equivalent(pos):
+            if ticker:
+                flagged.add(ticker)
+            continue
+        if ticker and _is_money_market_fund(pos, symbol_obj):
+            candidates.append((ticker, mv))
+            continue
+        other_mv += mv
+
+    if not candidates:
+        return flagged
+    cash, total = _reported_cash_and_total(balances, account_summary)
+    if total is None:
+        return flagged
+    fund_mv = sum(mv for _ticker, mv in candidates)
+    without_fund = cash + other_mv
+    with_fund = without_fund + fund_mv
+    tolerance = max(1.0, 0.002 * abs(total))
+    already_inside = (
+        abs(without_fund - total) <= tolerance
+        and abs(with_fund - total) > tolerance
+    )
+    if not already_inside:
+        return flagged
+    return flagged | {ticker for ticker, _mv in candidates if ticker}
+
+
+def _reinvestment_is_share_purchase(units: float, price: float, amount: float) -> bool:
+    """True when a REI/stock-dividend row's units are shares bought.
+
+    SnapTrade's ``units`` on a plain DIVIDEND is often the shares that
+    received the cash, not shares purchased. A reinvestment agrees with
+    the cash: units × price ≈ |amount|. A share-balance in ``units``
+    (price × a large lot, tiny cash) does not, and must not become a buy.
+    """
+    if units == 0 or price <= 0 or amount == 0:
+        return False
+    gross = abs(units * price)
+    amt = abs(amount)
+    return abs(gross - amt) <= max(1.0, 0.02 * amt)
+
+
+def _same_day_buy_already_present(
+    activity_list: Sequence[Mapping],
+    sym_str: str,
+    trade_date: str,
+    units: float,
+) -> bool:
+    """True when this batch already has a Buy of the same shares.
+
+    Some brokers emit REI and a separate BUY for one reinvestment.
+    Adding a companion Buy on top of that BUY would count the shares
+    twice. Match on symbol, date, and quantity; price can differ by
+    a rounding cent and still be the same lot.
+    """
+    target_qty = abs(units)
+    if not sym_str or not trade_date or target_qty == 0:
+        return False
+    for other in activity_list:
+        if not isinstance(other, Mapping):
+            continue
+        if str(other.get("type") or "").strip().upper() != "BUY":
+            continue
+        other_obj = _attach_option_symbol(
+            _coerce_symbol_obj(other.get("symbol")),
+            other.get("option_symbol"),
+        )
+        if _is_option(other_obj):
+            continue
+        if _underlying_from_symbol(other_obj) != sym_str:
+            continue
+        other_date = _format_date_mdy(
+            other.get("trade_date")
+            or other.get("settlement_date")
+            or other.get("date")
+        )
+        if other_date != trade_date:
+            continue
+        other_units = abs(_safe_float(other.get("units"), 0.0))
+        if abs(other_units - target_qty) <= max(1e-4, 0.001 * target_qty):
+            return True
+    return False
 
 
 def _is_cash_only_journal(act: Mapping) -> bool:
@@ -702,6 +1058,7 @@ def activities_to_history_df(
     account_name: str,
     user_id,
     tenant_id: str,
+    cash_equivalent_symbols: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Build a HISTORY_SEED_COLUMNS DataFrame from a list of SnapTrade
     activity objects.
@@ -719,6 +1076,7 @@ def activities_to_history_df(
     rows: list[dict] = []
     user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
+    sweep_symbols = _sweep_symbol_set(cash_equivalent_symbols)
     activity_list = [act for act in (activities or ()) if isinstance(act, Mapping)]
     linked_fees = _linked_fee_amounts(activity_list)
 
@@ -735,6 +1093,9 @@ def activities_to_history_df(
         if action_label is None and atype == "JOURNAL" and _is_cash_only_journal(act):
             amt = _safe_float(act.get("amount"), 0.0)
             action_label = "Deposit" if amt >= 0 else "Withdrawal"
+        if action_label is None and atype == "DISTRIBUTION":
+            # A ticker is fund income. No ticker is cash leaving the account.
+            action_label = "Cash Dividend" if _activity_ticker(act) else "Withdrawal"
         if atype in _CASH_SETTLEMENT_TYPES or action_label == "__UNKNOWN__":
             settled = _resolve_cash_settlement_action(
                 broker_description, option_type, amount_preview,
@@ -758,7 +1119,6 @@ def activities_to_history_df(
         if action_label is None:
             continue
 
-        symbol_obj = act.get("symbol") or {}
         # SnapTrade (Schwab via SnapTrade) ships OPTION activities with
         # ``symbol: null`` and the structured contract at the ACTIVITY top
         # level (``act["option_symbol"]``), NOT nested under ``symbol``.
@@ -767,12 +1127,15 @@ def activities_to_history_df(
         # stg_history can't recognize it as an option — the entire option
         # lane silently vanished from the warehouse (hundreds of contracts
         # per account). See broker-sync-safety "Bugs we've shipped".
-        if not isinstance(symbol_obj, Mapping):
-            symbol_obj = {}
-        if not symbol_obj.get("option_symbol") and isinstance(
-            act.get("option_symbol"), Mapping
-        ):
-            symbol_obj = {**symbol_obj, "option_symbol": act["option_symbol"]}
+        # A bare-string ticker (Vanguard-shaped) is coerced before that
+        # fold so ``.get`` is never called on a str.
+        symbol_obj = _promote_option_text(
+            _attach_option_symbol(
+                _coerce_symbol_obj(act.get("symbol")),
+                act.get("option_symbol"),
+            ),
+            act.get("symbol"),
+        )
         is_option = _is_option(symbol_obj)
         if is_option:
             sym_str = snaptrade_symbol_to_osi(symbol_obj)
@@ -862,6 +1225,15 @@ def activities_to_history_df(
         if is_option and action_label not in ("Expired", "Assigned", "Exchange or Exercise"):
             amount_signed = _net_option_cash(amount_signed, units, price, fees)
 
+        # A fund already inside the cash balance is not an equity lot.
+        # Dividends and interest on it stay. They are income, not shares.
+        if (
+            not is_option
+            and action_label in {"Buy", "Sell", "Sell Short"}
+            and sym_str.strip().upper() in sweep_symbols
+        ):
+            continue
+
         rows.append({
             "Account": account_name,
             "user_id": user_id_int,
@@ -875,6 +1247,34 @@ def activities_to_history_df(
             "fees_and_comm": fees if fees else "",
             "Amount": amount_signed,
         })
+        # Companion share purchase for a reinvestment. The Cash Dividend
+        # row above is unchanged so it dedups with rows already stored
+        # from before this split. The Buy is a different Action, so it
+        # does not collapse into the dividend. Fees stay on the dividend
+        # row only.
+        if (
+            atype in {"REI", "STOCK_DIVIDEND"}
+            and not is_option
+            and sym_str
+            and _reinvestment_is_share_purchase(units, price, amount_f)
+            and sym_str.strip().upper() not in sweep_symbols
+            and not _same_day_buy_already_present(
+                activity_list, sym_str, trade_date, units,
+            )
+        ):
+            rows.append({
+                "Account": account_name,
+                "user_id": user_id_int,
+                "tenant_id": tenant_id_str,
+                "Date": trade_date,
+                "Action": "Buy",
+                "Symbol": sym_str,
+                "Description": description,
+                "Quantity": abs(units),
+                "Price": price,
+                "fees_and_comm": "",
+                "Amount": -abs(amount_f),
+            })
 
     df = pd.DataFrame(rows, columns=HISTORY_SEED_COLUMNS)
     return df
@@ -1121,6 +1521,7 @@ def orders_to_history_df(
     user_id,
     tenant_id: str,
     fee_rates: Optional[Mapping] = None,
+    cash_equivalent_symbols: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Build a HISTORY_SEED_COLUMNS DataFrame from SnapTrade's
     ``get_user_account_recent_orders`` endpoint.
@@ -1171,6 +1572,7 @@ def orders_to_history_df(
     rows: list[dict] = []
     user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
+    sweep_symbols = _sweep_symbol_set(cash_equivalent_symbols)
 
     for order in flatten_order_legs(orders):
         if not isinstance(order, Mapping):
@@ -1235,6 +1637,8 @@ def orders_to_history_df(
 
             sym_str, company = _order_equity_symbol(order)
             if not sym_str:
+                continue
+            if sym_str.strip().upper() in sweep_symbols:
                 continue
 
         # Date: orders carry ISO-8601 UTC ``time_executed``; the
@@ -1345,6 +1749,7 @@ def positions_to_current_df(
     account_name: str,
     user_id,
     tenant_id: str,
+    already_in_cash: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Build a CURRENT_SEED_COLUMNS DataFrame from SnapTrade positions.
 
@@ -1363,22 +1768,24 @@ def positions_to_current_df(
     rows: list[dict] = []
     user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
+    inside_cash = _sweep_symbol_set(already_in_cash)
 
     for pos in positions or ():
         if not isinstance(pos, Mapping):
             continue
-        symbol_obj = pos.get("symbol") or {}
         # Mirror the activities path: SnapTrade can ship an OPTION holding
         # with ``symbol: null`` and the structured contract at the position
         # top level (``pos["option_symbol"]``). Fold it in so open option
         # legs aren't silently dropped (same root cause as the historical
-        # option-activity bug — see broker-sync-safety).
-        if not isinstance(symbol_obj, Mapping):
-            symbol_obj = {}
-        if not symbol_obj.get("option_symbol") and isinstance(
-            pos.get("option_symbol"), Mapping
-        ):
-            symbol_obj = {**symbol_obj, "option_symbol": pos["option_symbol"]}
+        # option-activity bug — see broker-sync-safety). A bare-string
+        # ticker is coerced the same way activities are.
+        symbol_obj = _promote_option_text(
+            _attach_option_symbol(
+                _coerce_symbol_obj(pos.get("symbol")),
+                pos.get("option_symbol"),
+            ),
+            pos.get("symbol"),
+        )
         is_option = _is_option(symbol_obj)
         if is_option:
             sym_str = snaptrade_symbol_to_osi(symbol_obj)
@@ -1387,8 +1794,10 @@ def positions_to_current_df(
         if not sym_str:
             continue
 
-        units = _safe_float(pos.get("units"), 0.0)
-        price = _safe_float(pos.get("price"), 0.0)
+        units = _position_quantity(pos)
+        raw_price = pos.get("price")
+        price_missing = _number_missing(raw_price)
+        price = 0.0 if price_missing else _safe_float(raw_price, 0.0)
 
         # Option contracts represent 100 shares of the underlying, but the
         # two SnapTrade per-unit fields on ``OptionsPosition`` are in
@@ -1419,10 +1828,22 @@ def positions_to_current_df(
         # because qty * price - 0 != 0. Always derive from the fields
         # that DO exist; keep the get for forward-compat in case a
         # different broker through SnapTrade does ship it.
-        market_value = _safe_float(
-            pos.get("market_value"),
-            _safe_float(pos.get("equity"), units * price * contract_mult),
-        )
+        raw_mv = pos.get("market_value")
+        if _number_missing(raw_mv):
+            raw_mv = pos.get("equity")
+        mv_missing = _number_missing(raw_mv)
+        # Explicit 0 is a real zero (a worthless quote). A missing price
+        # AND a missing market value is "no NAV yet": leave market value
+        # at 0 so the close-based ladder can fill from daily prices, and
+        # do not book unrealized as market_value − cost (that is a
+        # phantom loss of the whole cost basis).
+        if not mv_missing:
+            market_value = _safe_float(raw_mv, 0.0)
+        elif not price_missing:
+            market_value = units * price * contract_mult
+        else:
+            market_value = 0.0
+        quote_missing = price_missing and mv_missing
 
         # cost_basis: prefer broker-supplied total, else derive from
         # average_purchase_price * units. No `cost_basis` field on Alpaca
@@ -1467,12 +1888,14 @@ def positions_to_current_df(
             gl_dollar = round(_safe_float(open_pnl_raw, 0.0), 4)
             if cost_basis:
                 gl_percent = round(100.0 * gl_dollar / abs(cost_basis), 4)
-        elif cost_basis:
+        elif cost_basis and not quote_missing:
             # Short options carry a positive cost_basis (premium received)
             # and a negative market_value (cost to buy back), so unrealized
             # P&L is market_value + cost_basis. Longs (and equities) net
             # market_value - cost_basis. Mirrors stg_current's short-aware
             # recompute so the seed value agrees before dbt even runs.
+            # Skipped when the quote itself is missing: 0 − cost is not a
+            # reported loss.
             if is_option and units < 0:
                 gl_dollar = round(market_value + cost_basis, 4)
             else:
@@ -1481,6 +1904,14 @@ def positions_to_current_df(
 
         if is_option:
             security_type = "Option"
+        elif _is_cash_equivalent(pos) or sym_str.strip().upper() in inside_cash:
+            # Settlement / money-market sweeps. stg_current drops this
+            # security_type from holdings. The cash balance already
+            # includes the dollars, either because SnapTrade set
+            # cash_equivalent or because the account total matches
+            # without this fund. A priority-2 cash line can still be
+            # read from this row when the balance payload omitted cash.
+            security_type = "Cash and Money Market"
         elif _is_crypto(symbol_obj):
             # ``Cryptocurrency`` is the broker-corroborated crypto marker
             # (SnapTrade type.code, or whitelist ONLY when the broker gave
@@ -1529,6 +1960,7 @@ def balances_to_balance_df(
     account_name: str,
     user_id,
     tenant_id: str,
+    already_in_cash: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Two rows for account_balances.csv (cash + account_total).
 
@@ -1542,42 +1974,29 @@ def balances_to_balance_df(
     user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
 
-    cash = 0.0
-    if isinstance(balances, Iterable):
-        for bal in balances:
-            if not isinstance(bal, Mapping):
-                continue
-            cash += _safe_float(bal.get("cash"), 0.0)
-
-    if not cash and isinstance(account_summary, Mapping):
-        cash = _safe_float(
-            (account_summary.get("balance") or {}).get("cash") if isinstance(account_summary.get("balance"), Mapping) else None,
-            _safe_float(account_summary.get("cash"), 0.0),
-        )
-
-    total = 0.0
+    cash, reported_total = _reported_cash_and_total(balances, account_summary)
     # Distinguish an explicitly reported $0 account from an absent/malformed
     # summary.  A real zero still needs balance rows: otherwise the seed merge
     # cannot clear a prior non-zero balance, and the every-tenant onboarding
     # readiness check can never observe a legitimately empty account.
-    has_explicit_total = False
-    if isinstance(account_summary, Mapping):
-        balance_block = account_summary.get("balance")
-        if isinstance(balance_block, Mapping):
-            total_block = balance_block.get("total")
-            if isinstance(total_block, Mapping):
-                raw_total = total_block.get("amount")
-                if _is_finite_number(raw_total):
-                    total = _safe_float(raw_total, 0.0)
-                    has_explicit_total = True
-            elif _is_finite_number(total_block):
-                total = _safe_float(total_block, 0.0)
-                has_explicit_total = True
+    has_explicit_total = reported_total is not None
+    total = reported_total if reported_total is not None else 0.0
+    if already_in_cash is None:
+        inside_cash = symbols_already_in_cash(
+            positions, balances=balances, account_summary=account_summary,
+        )
+    else:
+        inside_cash = _sweep_symbol_set(already_in_cash)
 
     pos_mv = 0.0
     pos_cb = 0.0
     for pos in positions or ():
         if not isinstance(pos, Mapping):
+            continue
+        # Dollars already in cash must not also be stock market value
+        # or stock cost. That double-counts a settlement fund.
+        ticker = _equity_ticker(_position_symbol_obj(pos))
+        if (ticker and ticker in inside_cash) or _is_cash_equivalent(pos):
             continue
         pos_mv += _safe_float(pos.get("market_value"), 0.0)
         pos_cb += _safe_float(pos.get("cost_basis"), 0.0)
