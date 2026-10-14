@@ -934,6 +934,194 @@ SELECT
 FROM scored
 """
 
+# Individual bonds versus bond funds, as shares of each account's
+# shortfall (account total − holdings − cash). A CUSIP-shaped symbol
+# is nine letters or digits and contains a digit. Bond-fund text is a
+# description that names a bond and also a fund or ETF; those rows are
+# already inside holdings. The par-quote line is the extra value if a
+# CUSIP-shaped row's price were percent of a 1,000 face (stored value
+# times ten). Letters match the other checks. A reconciling account
+# is omitted.
+_BOND_CATS = (
+    "cusip_shaped_holding",
+    "individual_bond_text_holding",
+    "par_quote_times_ten",
+    "cusip_or_bond_dropped",
+    "bond_fund_already_in_holdings",
+)
+_BOND_LINE = re.compile(
+    r"^account_[A-D]_(cusip_shaped_holding|individual_bond_text_holding"
+    r"|par_quote_times_ten|cusip_or_bond_dropped"
+    r"|bond_fund_already_in_holdings)=-?[0-9]+%$"
+)
+_BONDS_SQL = f"""
+WITH labeled AS (
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_history`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+  UNION ALL
+  SELECT tenant_id, account
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+),
+tenants AS (
+  SELECT DISTINCT tenant_id
+    FROM labeled
+   WHERE tenant_id IS NOT NULL
+     AND tenant_id != 'demo:demo-account'
+     AND lower(split(trim(cast(account AS STRING)), ' ')[SAFE_OFFSET(0)]) = 'vanguard'
+),
+held AS (
+  SELECT tenant_id, SUM(market_value) AS held_mv
+    FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+   GROUP BY tenant_id
+),
+cash_rows AS (
+  SELECT tenant_id, SUM(market_value) AS cash_mv
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+     AND row_type = 'cash'
+   GROUP BY tenant_id
+),
+total_rows AS (
+  SELECT tenant_id, SUM(market_value) AS account_total
+    FROM `{PROJECT}.{PROD_DATASET}.stg_account_balances`
+   WHERE tenant_id IN (SELECT tenant_id FROM tenants)
+     AND row_type = 'account_total'
+   GROUP BY tenant_id
+),
+books AS (
+  SELECT
+    t.tenant_id,
+    IFNULL(b.account_total, 0) - IFNULL(h.held_mv, 0) - IFNULL(c.cash_mv, 0) AS shortfall
+  FROM tenants t
+  LEFT JOIN held h ON h.tenant_id = t.tenant_id
+  LEFT JOIN cash_rows c ON c.tenant_id = t.tenant_id
+  LEFT JOIN total_rows b ON b.tenant_id = t.tenant_id
+),
+lettered AS (
+  SELECT
+    ROW_NUMBER() OVER (ORDER BY tenant_id) AS n,
+    tenant_id,
+    shortfall
+  FROM books
+),
+staged_rows AS (
+  SELECT
+    tenant_id,
+    REGEXP_REPLACE(UPPER(TRIM(CAST(trade_symbol AS STRING))), r'\\s+', '') AS sym_key,
+    LOWER(TRIM(COALESCE(CAST(description AS STRING), ''))) AS desc_label,
+    market_value AS mv
+  FROM `{PROJECT}.{PROD_DATASET}.stg_current`
+  WHERE tenant_id IN (SELECT tenant_id FROM lettered WHERE ABS(shortfall) > 1)
+),
+staged_flags AS (
+  SELECT
+    tenant_id,
+    mv,
+    REGEXP_CONTAINS(sym_key, r'^[0-9A-Z]{{9}}$')
+      AND REGEXP_CONTAINS(sym_key, r'[0-9]') AS cusip_shaped,
+    REGEXP_CONTAINS(desc_label, r'\\b(bond|bonds|note|notes|treasury|debenture|municipal|fixed income)\\b')
+      AND NOT REGEXP_CONTAINS(desc_label, r'\\b(etf|fund|index)\\b') AS individual_text,
+    REGEXP_CONTAINS(desc_label, r'\\b(bond|bonds|treasury)\\b')
+      AND REGEXP_CONTAINS(desc_label, r'\\b(etf|fund|index)\\b') AS bond_fund
+  FROM staged_rows
+),
+staged_parts AS (
+  SELECT
+    tenant_id,
+    SUM(IF(cusip_shaped, mv, 0)) AS cusip_mv,
+    SUM(IF(individual_text, mv, 0)) AS text_mv,
+    SUM(IF(cusip_shaped, mv, 0)) * 9 AS par_extra,
+    SUM(IF(bond_fund, mv, 0)) AS fund_mv
+  FROM staged_flags
+  GROUP BY tenant_id
+),
+raw_rows AS (
+  SELECT
+    NULLIF(TRIM(tenant_id), '') AS tenant_id,
+    REGEXP_REPLACE(UPPER(TRIM(CAST(Symbol AS STRING))), r'\\s+', '') AS sym_key,
+    LOWER(TRIM(COALESCE(CAST(Symbol AS STRING), ''))) AS sym_label,
+    LOWER(TRIM(COALESCE(CAST(Description AS STRING), ''))) AS desc_label,
+    SAFE_CAST(TRIM(REPLACE(REPLACE(REPLACE(
+      COALESCE(CAST(market_value AS STRING), ''), '$', ''), ',', ''), ' ', '')) AS FLOAT64) AS mv
+  FROM `{PROJECT}.{PROD_DATASET}.stg_broker_vanguard_current`
+  WHERE NULLIF(TRIM(tenant_id), '') IN (
+    SELECT tenant_id FROM lettered WHERE ABS(shortfall) > 1
+  )
+),
+staged_keys AS (
+  SELECT tenant_id, sym_key
+  FROM staged_rows
+  GROUP BY tenant_id, sym_key
+),
+dropped_parts AS (
+  SELECT
+    r.tenant_id,
+    SUM(r.mv) AS mv
+  FROM raw_rows r
+  LEFT JOIN staged_keys s
+    ON s.tenant_id = r.tenant_id AND s.sym_key = r.sym_key
+  WHERE s.sym_key IS NULL
+    AND r.sym_label NOT IN ('account total', 'positions total')
+    AND (
+      (REGEXP_CONTAINS(r.sym_key, r'^[0-9A-Z]{{9}}$') AND REGEXP_CONTAINS(r.sym_key, r'[0-9]'))
+      OR (
+        REGEXP_CONTAINS(r.desc_label, r'\\b(bond|bonds|note|notes|treasury|debenture|municipal|fixed income)\\b')
+        AND NOT REGEXP_CONTAINS(r.desc_label, r'\\b(etf|fund|index)\\b')
+      )
+    )
+  GROUP BY r.tenant_id
+),
+parts AS (
+  SELECT
+    l.n,
+    l.shortfall,
+    IFNULL(s.cusip_mv, 0) AS cusip_mv,
+    IFNULL(s.text_mv, 0) AS text_mv,
+    IFNULL(s.par_extra, 0) AS par_extra,
+    IFNULL(d.mv, 0) AS dropped_mv,
+    IFNULL(s.fund_mv, 0) AS fund_mv
+  FROM lettered l
+  LEFT JOIN staged_parts s ON s.tenant_id = l.tenant_id
+  LEFT JOIN dropped_parts d ON d.tenant_id = l.tenant_id
+),
+scored AS (
+  SELECT
+    n,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(cusip_mv, shortfall)) AS cusip_mv,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(text_mv, shortfall)) AS text_mv,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(par_extra, shortfall)) AS par_extra,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(dropped_mv, shortfall)) AS dropped_mv,
+    IF(ABS(shortfall) <= 1, NULL, SAFE_DIVIDE(fund_mv, shortfall)) AS fund_mv
+  FROM parts
+)
+SELECT
+  MAX(IF(n = 1, cusip_mv, NULL)) AS a_cusip,
+  MAX(IF(n = 1, text_mv, NULL)) AS a_text,
+  MAX(IF(n = 1, par_extra, NULL)) AS a_par,
+  MAX(IF(n = 1, dropped_mv, NULL)) AS a_dropped,
+  MAX(IF(n = 1, fund_mv, NULL)) AS a_fund,
+  MAX(IF(n = 2, cusip_mv, NULL)) AS b_cusip,
+  MAX(IF(n = 2, text_mv, NULL)) AS b_text,
+  MAX(IF(n = 2, par_extra, NULL)) AS b_par,
+  MAX(IF(n = 2, dropped_mv, NULL)) AS b_dropped,
+  MAX(IF(n = 2, fund_mv, NULL)) AS b_fund,
+  MAX(IF(n = 3, cusip_mv, NULL)) AS c_cusip,
+  MAX(IF(n = 3, text_mv, NULL)) AS c_text,
+  MAX(IF(n = 3, par_extra, NULL)) AS c_par,
+  MAX(IF(n = 3, dropped_mv, NULL)) AS c_dropped,
+  MAX(IF(n = 3, fund_mv, NULL)) AS c_fund,
+  MAX(IF(n = 4, cusip_mv, NULL)) AS d_cusip,
+  MAX(IF(n = 4, text_mv, NULL)) AS d_text,
+  MAX(IF(n = 4, par_extra, NULL)) AS d_par,
+  MAX(IF(n = 4, dropped_mv, NULL)) AS d_dropped,
+  MAX(IF(n = 4, fund_mv, NULL)) AS d_fund
+FROM scored
+"""
+
 
 def _safe_hint(message: str) -> str:
     """A query-planner phrase with quoted text and amounts removed."""
@@ -1101,6 +1289,55 @@ def field_lines_ok(lines) -> bool:
         names = [line.split("=", 1)[0] for line in block]
         letter = names[0].split("_", 2)[1]
         expected = [f"account_{letter}_{cat}" for cat in _FIELD_CATS]
+        if names != expected:
+            return False
+        letters.append(letter)
+    if letters != sorted(letters) or len(letters) != len(set(letters)):
+        return False
+    return all(letter in _FIELD_LETTERS for letter in letters)
+
+
+_BOND_KEYS = (
+    ("cusip", "cusip_shaped_holding"),
+    ("text", "individual_bond_text_holding"),
+    ("par", "par_quote_times_ten"),
+    ("dropped", "cusip_or_bond_dropped"),
+    ("fund", "bond_fund_already_in_holdings"),
+)
+
+
+def bond_lines(values) -> list[str]:
+    """Bond-shaped rows as a share of each account's own shortfall.
+
+    A null cusip column means the account reconciles or does not exist.
+    """
+    values = values or {}
+    lines = []
+    for letter in _FIELD_LETTERS:
+        prefix = letter.lower()
+        if values.get(f"{prefix}_cusip") is None:
+            continue
+        for key, cat in _BOND_KEYS:
+            lines.append(
+                f"account_{letter}_{cat}={_pct(values.get(f'{prefix}_{key}'))}%"
+            )
+    return lines
+
+
+def bond_lines_ok(lines) -> bool:
+    if not lines:
+        return False
+    width = len(_BOND_CATS)
+    if len(lines) % width != 0:
+        return False
+    if any(not _BOND_LINE.match(line) for line in lines):
+        return False
+    letters = []
+    for offset in range(0, len(lines), width):
+        block = lines[offset:offset + width]
+        names = [line.split("=", 1)[0] for line in block]
+        letter = names[0].split("_", 2)[1]
+        expected = [f"account_{letter}_{cat}" for cat in _BOND_CATS]
         if names != expected:
             return False
         letters.append(letter)
@@ -1565,6 +1802,48 @@ def run_narrow_lines() -> list[str]:
     return narrow_lines({key: row[key] for key in row.keys()})
 
 
+def run_bond_lines() -> list[str]:
+    """Read prod analytics only. Bond-shaped rows as shares of each shortfall."""
+    os.environ.pop("BQ_DATASET", None)
+    if not statement_is_read(_BONDS_SQL):
+        raise RuntimeError("read-only")
+    _install_bq_guard()
+    from google.cloud import bigquery
+
+    client = bigquery.Client(project=PROJECT)
+    rows = list(client.query(_BONDS_SQL, location="US").result())
+    if len(rows) != 1:
+        raise RuntimeError("read-only")
+    row = rows[0]
+    return bond_lines({key: row[key] for key in row.keys()})
+
+
+def _print_bonds() -> int:
+    lines = None
+    reason = ""
+    hint = ""
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        try:
+            lines = run_bond_lines()
+        except Exception as exc:
+            errors = getattr(exc, "errors", None)
+            hint = ""
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+                reason = str(errors[0].get("reason") or "")
+                hint = _safe_hint(str(errors[0].get("message") or ""))
+            else:
+                reason = type(exc).__name__
+    if reason and not re.fullmatch(r"[A-Za-z0-9_]+", reason):
+        reason = ""
+    if not bond_lines_ok(lines):
+        suffix = " ".join(part for part in (reason, hint) if part)
+        print(f"breakdown=FAIL{(' ' + suffix) if suffix else ''}", flush=True)
+        return 1
+    print("\n".join(lines), flush=True)
+    return 0
+
+
 def run_field_lines() -> list[str]:
     """Read prod analytics only. One share line per cash-like field."""
     os.environ.pop("BQ_DATASET", None)
@@ -1711,6 +1990,8 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     sys.tracebacklimit = 0
     logging.disable(logging.CRITICAL)
+    if "--bonds" in args:
+        return _print_bonds()
     if "--fields" in args:
         return _print_fields()
     if "--narrow" in args:

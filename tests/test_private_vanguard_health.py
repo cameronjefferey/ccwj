@@ -11,6 +11,8 @@ from scripts.private_vanguard_health import (
     _GAP_LINE,
     _GAP_SQL,
     _HIDDEN_VANGUARD_SQL,
+    _BOND_CATS,
+    _BONDS_SQL,
     _FIELD_CATS,
     _FIELDS_SQL,
     _NARROW_CATS,
@@ -23,6 +25,8 @@ from scripts.private_vanguard_health import (
     gap_lines,
     holdings_is_fresh,
     is_vanguard,
+    bond_lines,
+    bond_lines_ok,
     field_lines,
     field_lines_ok,
     narrow_lines,
@@ -48,6 +52,7 @@ def test_statements_are_prod_reads():
         _GAP_SQL,
         _NARROW_SQL,
         _FIELDS_SQL,
+        _BONDS_SQL,
     ):
         assert statement_is_read(sql)
     assert "ccwj-dbt.analytics.stg_history" in _WAREHOUSE_SQL
@@ -214,7 +219,7 @@ def test_workflow_is_dispatch_only():
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "github.head_ref == 'cursor/private-vanguard-health-631a'" in ci
     ci_health = ci.split("private-health:", 1)[1]
-    assert "scripts/private_vanguard_health.py --fields" in ci_health
+    assert "scripts/private_vanguard_health.py --bonds" in ci_health
     assert "analytics_dev" not in ci_health
     assert "BQ_DATASET" not in ci_health
     assert "DATABASE_URL" not in ci_health
@@ -364,3 +369,38 @@ def test_fields_sql_is_one_read_and_prints_shares_only():
         "buying_power=0%",
     ]
     assert not field_lines_ok(swapped)
+
+
+def test_bonds_sql_is_one_read_and_prints_shares_only():
+    assert statement_is_read(_BONDS_SQL)
+    assert "ccwj-dbt.analytics.stg_current" in _BONDS_SQL
+    assert "ccwj-dbt.analytics.stg_broker_vanguard_current" in _BONDS_SQL
+    assert "analytics_dev" not in _BONDS_SQL
+    assert "analytics_raw_dev" not in _BONDS_SQL
+    assert "@tenants" not in _BONDS_SQL
+    projection = _BONDS_SQL.rsplit("SELECT", 1)[1].split("FROM scored", 1)[0].lower()
+    for banned in ("tenant_id", "symbol", "description", "market_value", "quantity", "$"):
+        assert banned not in projection
+    lines = bond_lines({
+        "a_cusip": 0.0,
+        "a_text": 0.0,
+        "a_par": 1.0,
+        "a_dropped": 0.0,
+        "a_fund": 0.2,
+        "b_cusip": None,
+        "c_cusip": 0.0,
+        "c_text": 0.0,
+        "c_par": 0.0,
+        "c_dropped": 0.0,
+        "c_fund": 0.0,
+    })
+    assert "account_A_par_quote_times_ten=100%" in lines
+    assert "account_A_bond_fund_already_in_holdings=20%" in lines
+    assert all(not line.startswith("account_B") for line in lines)
+    assert "account_C_cusip_shaped_holding=0%" in lines
+    assert bond_lines_ok(lines)
+    assert [line.split("=", 1)[0] for line in lines if line.startswith("account_A")] == [
+        f"account_A_{cat}" for cat in _BOND_CATS
+    ]
+    assert "$" not in " ".join(lines)
+    assert not bond_lines_ok(["account_C_cusip_shaped_holding=0%"])
