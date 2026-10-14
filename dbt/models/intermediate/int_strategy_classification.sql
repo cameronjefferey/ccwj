@@ -145,15 +145,6 @@ equity_options_summary as (
                  and oc.open_date <= case when e.status = 'Open' then current_date() else e.last_trade_date end
             then oc.trade_symbol
         end) as num_protective_puts,
-        -- ANY option contract on this underlying overlapping the session
-        -- (regardless of type/direction). Powers the "price-tracker" fold:
-        -- a nominal equity lot held alongside options is part of the option
-        -- play, not a standalone Buy and Hold. See equity_classified.
-        count(distinct case
-            when oc.open_date >= e.open_date
-                 and oc.open_date <= case when e.status = 'Open' then current_date() else e.last_trade_date end
-            then oc.trade_symbol
-        end) as num_option_contracts,
         -- Days of the session during which at least one sold call was live
         -- (summed per contract, so overlapping calls can exceed the session
         -- length — fine for a ratio threshold). Powers the >= 30% coverage
@@ -178,6 +169,35 @@ equity_options_summary as (
         and (e.user_id is not distinct from oc.user_id)
         and (e.tenant_id is not distinct from oc.tenant_id)
         and e.symbol = oc.underlying_symbol
+    group by 1, 2, 3, 4, 5
+),
+
+-- Any option on this underlying whose open falls inside the session,
+-- including closes that opened before the broker window. Those rows
+-- stay out of strategy tags (no cost basis) but they ARE the overlap
+-- tracker_lot_folds_into_option_strategy checks. The filtered
+-- option_contracts CTE above hid them, so a <25-share lot next to a
+-- compact-OCC contract stayed Buy and Hold (run 38501719134, 3 rows)
+-- once underlying_symbol became the root.
+session_any_option as (
+    select
+        e.tenant_id,
+        e.account,
+        e.user_id,
+        e.symbol,
+        e.session_id,
+        count(distinct oc.trade_symbol) as num_option_contracts
+    from equity_sessions e
+    join {{ ref('int_option_contracts') }} oc
+        on e.account = oc.account
+        and (e.user_id is not distinct from oc.user_id)
+        and (e.tenant_id is not distinct from oc.tenant_id)
+        and e.symbol = oc.underlying_symbol
+        and oc.open_date >= e.open_date
+        and oc.open_date <= case
+            when e.status = 'Open' then current_date()
+            else e.last_trade_date
+        end
     group by 1, 2, 3, 4, 5
 ),
 
@@ -803,7 +823,7 @@ equity_classified as (
                     and aeq.symbol is null
                     and coalesce(bss.broker_says_crypto, 0) = 0
                     and coalesce(bss.broker_says_equity, 0) = 0
-                    and coalesce(eos.num_option_contracts, 0) = 0
+                    and coalesce(sao.num_option_contracts, 0) = 0
                  )
                 then 'Crypto'
             when efa.session_id is not null and eos.num_sold_calls > 0
@@ -847,7 +867,7 @@ equity_classified as (
             -- < 25-share lot can never cover a call (needs 100), so this
             -- cannot swallow a genuine covered-call session.
             when coalesce(e.max_quantity_held, 0) < 25
-                 and coalesce(eos.num_option_contracts, 0) > 0
+                 and coalesce(sao.num_option_contracts, 0) > 0
                 then coalesce(dos.dominant_strategy, 'Long Call')
 
             else 'Buy and Hold'
@@ -869,6 +889,12 @@ equity_classified as (
         and (e.tenant_id is not distinct from eos.tenant_id)
         and e.symbol = eos.symbol
         and e.session_id = eos.session_id
+    left join session_any_option sao
+        on e.account = sao.account
+        and (e.user_id is not distinct from sao.user_id)
+        and (e.tenant_id is not distinct from sao.tenant_id)
+        and e.symbol = sao.symbol
+        and e.session_id = sao.session_id
     left join write_covered_calls_on_session wcc
         on e.account = wcc.account
         and (e.user_id is not distinct from wcc.user_id)
