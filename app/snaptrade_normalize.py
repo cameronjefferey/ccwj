@@ -382,6 +382,28 @@ def _coerce_symbol_obj(symbol) -> dict:
     return {}
 
 
+def _promote_option_text(symbol_obj: Mapping, original) -> dict:
+    """A Schwab long-form contract sent as a string is an option, not a ticker.
+
+    ``SPXW 10/01/2026 7650.00 C`` must become an OCC symbol so fee netting
+    and dedup still see the same contract. A plain fund ticker does not
+    match and stays an equity symbol.
+    """
+    base = dict(symbol_obj) if isinstance(symbol_obj, Mapping) else {}
+    if base.get("option_symbol"):
+        return base
+    text = original if isinstance(original, str) else str(base.get("raw_symbol") or "")
+    osi = _osi_from_broker_text(text)
+    if not osi:
+        return base
+    parsed = _option_symbol_from_text(osi)
+    if not parsed:
+        return base
+    base["option_symbol"] = parsed
+    base["raw_symbol"] = osi
+    return base
+
+
 def _attach_option_symbol(symbol_obj: Mapping, option_symbol) -> dict:
     """Fold a top-level option contract into the symbol object.
 
@@ -924,9 +946,12 @@ def activities_to_history_df(
         # per account). See broker-sync-safety "Bugs we've shipped".
         # A bare-string ticker (Vanguard-shaped) is coerced before that
         # fold so ``.get`` is never called on a str.
-        symbol_obj = _attach_option_symbol(
-            _coerce_symbol_obj(act.get("symbol")),
-            act.get("option_symbol"),
+        symbol_obj = _promote_option_text(
+            _attach_option_symbol(
+                _coerce_symbol_obj(act.get("symbol")),
+                act.get("option_symbol"),
+            ),
+            act.get("symbol"),
         )
         is_option = _is_option(symbol_obj)
         if is_option:
@@ -1555,9 +1580,12 @@ def positions_to_current_df(
         # legs aren't silently dropped (same root cause as the historical
         # option-activity bug — see broker-sync-safety). A bare-string
         # ticker is coerced the same way activities are.
-        symbol_obj = _attach_option_symbol(
-            _coerce_symbol_obj(pos.get("symbol")),
-            pos.get("option_symbol"),
+        symbol_obj = _promote_option_text(
+            _attach_option_symbol(
+                _coerce_symbol_obj(pos.get("symbol")),
+                pos.get("option_symbol"),
+            ),
+            pos.get("symbol"),
         )
         is_option = _is_option(symbol_obj)
         if is_option:
