@@ -77,6 +77,31 @@ def test_compose_hotfix_started():
     assert "FAILED" not in text
 
 
+def test_compose_hotfix_ready_includes_cause_and_ship():
+    text = ot.compose_hotfix_ready(
+        pr_url="https://github.com/cameronjefferey/ccwj/pull/280",
+        root_cause="OCC roots were read as tickers.\nThe fix maps them back.",
+    )
+    assert text.startswith("HappyTrader — a hotfix is waiting. Reply Ship to approve.")
+    assert "OCC roots were read as tickers. The fix maps them back." in text
+    assert "Pull request:" in text
+    assert "pull/280" in text
+    assert "the hotfix is live" not in text
+    bare = ot.compose_message(
+        name="Ops alert",
+        conclusion="test",
+        event="workflow_dispatch",
+        branch="master",
+        url="https://github.com/cameronjefferey/ccwj/actions/runs/1",
+        kind="ready",
+        root_cause="flake, no code change",
+    )
+    assert "Reply Ship" in bare
+    assert "Link:" in bare
+    assert "test ping" not in bare.lower()
+    assert "actions/runs/1" in bare
+
+
 def test_compose_hotfix_merged():
     text = ot.compose_hotfix_merged(
         name="[cursor-hotfix] Collapse CSV vs SnapTrade date-padding history dupes",

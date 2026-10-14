@@ -1,9 +1,13 @@
 name: Ops alert (Telegram)
 
 # Phone ping when a data-pipeline job actually FAILS, then launch a Cursor
-# cloud agent to investigate, land a hotfix PR, merge, and re-run the job.
-# Follow-up Telegrams: "hotfix started" when the agent launches, "hotfix
-# merged" when a cursor/* PR lands on master. Auto-agents are capped at
+# cloud agent to investigate and open a ready-for-review hotfix PR. The
+# agent does not merge, does not push to master, and does not re-run the
+# failed workflow. After CI it dispatches this workflow with review_pr_url
+# and review_root_cause; Telegram asks Cameron to reply Ship.
+# Follow-up Telegrams: "hotfix started" when the agent launches, "waiting"
+# when that review ping arrives, and "hotfix merged" only after a person
+# merges a cursor/* PR. Auto-agents are capped at
 # TWO [cursor-hotfix] commits in 48 hours (not consecutive-from-tip —
 # a human commit between auto-fixes used to reset the streak and spawn
 # a third agent). Skip if a Hotfix agent for this job is already ACTIVE.
@@ -63,6 +67,14 @@ on:
         description: "Failed Actions run URL to hotfix (leave empty for a Telegram test ping only)"
         required: false
         type: string
+      review_pr_url:
+        description: "Hotfix PR URL (or failed-run URL). Sends Telegram only; does not launch an agent or re-run the failed job."
+        required: false
+        type: string
+      review_root_cause:
+        description: "One-line root cause included in the Ship review ping."
+        required: false
+        type: string
 
 jobs:
   alert:
@@ -84,7 +96,8 @@ jobs:
       # An empty dispatch is the Telegram test ping and must not spawn an agent.
       - name: Launch Cursor hotfix agent
         id: cursor
-        if: github.event_name == 'workflow_run' || inputs.failed_run_url != ''
+        # A review ping (review_pr_url) must not launch another agent.
+        if: github.event_name == 'workflow_run' || (inputs.failed_run_url != '' && inputs.review_pr_url == '')
         continue-on-error: true
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
@@ -105,9 +118,11 @@ jobs:
           ALERT_CONCLUSION: ${{ github.event.workflow_run.conclusion || (inputs.failed_run_url != '' && 'failure') || 'test' }}
           ALERT_EVENT: ${{ github.event.workflow_run.event || 'workflow_dispatch' }}
           ALERT_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
-          ALERT_URL: ${{ github.event.workflow_run.html_url || inputs.failed_run_url || format('{0}/{1}/actions', github.server_url, github.repository) }}
+          ALERT_URL: ${{ inputs.review_pr_url || github.event.workflow_run.html_url || inputs.failed_run_url || format('{0}/{1}/actions', github.server_url, github.repository) }}
           ALERT_AGENT_URL: ${{ steps.cursor.outputs.agent_url }}
           ALERT_HOTFIX_SKIP: ${{ steps.cursor.outputs.skip_reason }}
+          ALERT_KIND: ${{ inputs.review_pr_url != '' && 'ready' || '' }}
+          ALERT_ROOT_CAUSE: ${{ inputs.review_root_cause }}
         run: python scripts/ops_telegram.py
 
       - name: Send Telegram hotfix-started

@@ -2,7 +2,9 @@
 
 Used by ``.github/workflows/ops_alert.yml`` after a warehouse / prices /
 reconcile job fails. POSTs to the Cloud Agents API so a cloud agent can
-read the failed run, land a minimal fix, and re-run the job.
+read the failed run and open a ready-for-review pull request. The agent
+does not merge and does not push to master. Cameron approves from the
+Telegram ping by replying Ship.
 
 Caps auto-launches at two ``[cursor-hotfix]`` commits in 48 hours (a
 human commit between auto-fixes must not reset the cap). Same SHA is one
@@ -37,6 +39,13 @@ HOTFIX_WINDOW = "48 hours ago"
 SKIP_RETRIES_EXHAUSTED = "retries_exhausted"
 SKIP_IN_FLIGHT = "hotfix_in_flight"
 HOTFIX_NAME_PREFIX = "Hotfix:"
+# Cloud Agents API: workOnCurrentBranch true pushes onto repos[].startingRef.
+# These alerts pass master as that ref (d9e8893 landed there with no review).
+# autoCreatePR opens the PR. The API has no draft/ready switch and no flag
+# that blocks a later merge — the prompt marks the PR ready and forbids both
+# the merge and any re-run of the failed workflow on master.
+AUTO_CREATE_PR = True
+WORK_ON_CURRENT_BRANCH = False
 
 
 def agent_id_for_failure(*, sha: str = "", run_id: str = "") -> str:
@@ -105,10 +114,11 @@ def compose_prompt(
 ) -> str:
     run_url = (url or "").strip() or "(missing run URL)"
     return f"""You are the HappyTrader (ccwj) on-call fixer. A production GitHub Actions
-job failed. Investigate, land a minimal hotfix, and get the job green again.
+job failed. Investigate and open a minimal hotfix pull request. Stop for a human.
 
-This is auto-hotfix attempt {attempt} of {max_attempts}. Ops will not launch
-another agent if this still fails after you merge — Telegram will page a human.
+This is auto-hotfix attempt {attempt} of {max_attempts}. The launcher will not
+start another agent once this window is full. You do not merge. You do not
+re-run the failed job.
 
 ## Failed run
 - Workflow: {name or "unknown"}
@@ -124,25 +134,39 @@ another agent if this still fails after you merge — Telegram will page a human
 2. Root-cause it: code/model regression vs config vs infra flake vs data invariant
    vs missing secret. Read the code the log points at.
 3. If it is a **code/model bug you can prove**, make the smallest safe fix:
-   - Open a PR from a `cursor/...` branch (do NOT push straight to master).
+   - Work on a new `cursor/...` branch. Never push to master, main, or the
+     failed run's branch. `workOnCurrentBranch` is false so commits stay off
+     the starting ref; do not push that ref yourself.
    - Commit message AND PR title include `[cursor-hotfix]` and the failed run id.
-   - Merge the PR once you are confident (squash is fine). Never force-push.
-   - Re-run the failed workflow on master:
-     * Warehouse (`Update Daily Position Performance`): a push that touches
-       `dbt/**`, `scripts/**`, `current_position_stock_price.py`, or the
-       workflow file retriggers automatically. If the fix is only under
-       `app/**` (paths-ignored), `gh workflow run "Update Daily Position
-       Performance" --ref master` after merge.
-     * Evening prices / reconcile: `gh workflow run` that workflow on master
-       after merge (they are schedule/dispatch, not push).
-   - Flask/Render: an `app/**` push to master deploys the web service. A
-     dbt-only fix does NOT redeploy Render (build filter ignores `dbt/**`).
-     Do not trigger a Render deploy for a warehouse-only fix.
+   - Open a pull request into master. It must be ready for review, not a draft.
+     If it opens as a draft, run `gh pr ready` on that pull request.
+   - Add a regression test that fails on the old behavior.
+   - Wait until CI on that pull request has finished. If you caused a red check,
+     fix it on the same branch and wait again.
+   - Stop when CI has finished. Do not merge. A green check is not approval.
+   - Do not re-run the failed workflow on master. Do not dispatch the warehouse
+     rebuild, the evening price refresh, or the warehouse reconcile audit.
+     Those start when master changes. You must not change master.
+   - Flask/Render deploys only after a human lands an `app/**` change on
+     master. A dbt-only fix does not redeploy Render. Do not trigger a deploy.
 4. If it is **infra, credentials, quota, yfinance, or a flake**, do not "fix"
-   it with code. Comment on a PR or leave a short summary and stop.
-5. If a previous `[cursor-hotfix]` for this SAME failure already merged and
+   it with code. Leave a short summary and stop after the Telegram ping.
+5. If a previous `[cursor-hotfix]` for this SAME failure already exists and
    this is attempt {max_attempts}, still try once more, then STOP. Do not
    open a follow-up agent yourself.
+
+## Telegram
+After CI has finished, or when you are stopping with no code change, send
+one ops ping. This is the only workflow you may dispatch. It notifies
+Cameron. It does not launch an agent and it does not rebuild anything.
+
+    gh workflow run "Ops alert (Telegram)" \\
+      -f review_pr_url="PR_URL" \\
+      -f review_root_cause="ONE_LINE"
+
+PR_URL is the pull request URL, or the failed run URL when you opened no PR.
+ONE_LINE is the root cause and the change, a single line under 500 characters.
+The ping says to reply Ship. Then stop. Do not merge.
 
 ## Hard no's (HappyTrader invariants)
 - Do NOT weaken, skip, or delete `scripts/snapshot_guard.py`, dbt uniqueness /
@@ -157,11 +181,12 @@ another agent if this still fails after you merge — Telegram will page a human
   failing step in the workflow.
 - Cancelled overlapping warehouse rebuilds are expected — you should not be
   looking at a cancelled run.
+- Never push to master. Do not merge.
 
 ## Done looks like
-A merged PR (or a clear written reason you did not merge) plus the failed
-workflow re-dispatched or naturally retriggered. Include the new run URL in
-your final message.
+An open, ready-for-review pull request on a `cursor/` branch (or a written
+reason you opened none), CI finished, and one Telegram ping with the link
+and the root cause. Master is unchanged.
 """
 
 
@@ -206,9 +231,10 @@ def compose_launch_body(
                 "startingRef": starting_ref,
             }
         ],
-        "autoCreatePR": True,
+        "autoCreatePR": AUTO_CREATE_PR,
+        # Ship on Telegram is the approval. Do not also request a GitHub review.
         "skipReviewerRequest": True,
-        "workOnCurrentBranch": False,
+        "workOnCurrentBranch": WORK_ON_CURRENT_BRANCH,
     }
 
 

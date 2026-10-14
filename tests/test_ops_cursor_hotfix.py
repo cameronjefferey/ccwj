@@ -36,6 +36,63 @@ def test_compose_prompt_includes_run_and_guardrails():
     assert "Do NOT weaken" in text
 
 
+def test_compose_prompt_has_no_merge_instruction_and_forbids_master_push():
+    """The launched agent must not be told to merge or to land on master.
+
+    d9e8893 reached master because the old prompt said to merge and then
+    re-run the failed workflow there.
+    """
+    text = och.compose_prompt(
+        name="Update Daily Position Performance",
+        event="workflow_dispatch",
+        branch="master",
+        url="https://github.com/cameronjefferey/ccwj/actions/runs/38499020109",
+        sha="d9e8893",
+        repo="cameronjefferey/ccwj",
+        attempt=2,
+    )
+    lowered = text.lower()
+    assert "never push to master" in lowered
+    assert "do not merge" in lowered
+    assert "you do not merge" in lowered
+    for phrase in (
+        "merge the pr",
+        "merge once",
+        "after you merge",
+        "after merge",
+        "squash is fine",
+        "re-run the failed workflow on master:",
+        "re-dispatched",
+        "naturally retriggered",
+        "gh pr merge",
+        "--ref master",
+    ):
+        assert phrase not in lowered, phrase
+    leftover = []
+    for raw in text.splitlines():
+        low = raw.lower()
+        if "merge" not in low:
+            continue
+        if "do not merge" in low or "you do not merge" in low:
+            continue
+        if "merge/dedup" in low or "_merge_seed_with_existing" in low:
+            continue
+        leftover.append(raw)
+    assert leftover == []
+    assert "not a draft" in lowered
+    assert "gh pr ready" in lowered
+    assert "reply ship" in lowered
+    assert 'gh workflow run "ops alert (telegram)"' in lowered
+    assert 'gh workflow run "update daily position performance"' not in lowered
+    assert "do not dispatch the warehouse" in lowered
+    assert "do not re-run the failed workflow on master" in lowered
+
+
+def test_launch_flags_open_a_pr_and_refuse_the_starting_ref():
+    assert och.AUTO_CREATE_PR is True
+    assert och.WORK_ON_CURRENT_BRANCH is False
+
+
 def test_compose_launch_body_opens_a_pr_off_master():
     body = och.compose_launch_body(
         name="Update Daily Position Performance",
@@ -50,6 +107,7 @@ def test_compose_launch_body_opens_a_pr_off_master():
     )
     assert body["autoCreatePR"] is True
     assert body["workOnCurrentBranch"] is False
+    assert body["workOnCurrentBranch"] is och.WORK_ON_CURRENT_BRANCH
     assert body["skipReviewerRequest"] is True
     assert body["repos"][0]["startingRef"] == "master"
     assert body["agentId"] == och.agent_id_for_failure(sha="abc", run_id="1")
