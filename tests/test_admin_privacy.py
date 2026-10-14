@@ -932,3 +932,404 @@ def test_fresh_signup_without_broker_can_be_added(world, db_conn):
             as_text=True,
         )
         _logout(http)
+
+
+class _HtmlResponse:
+    def __init__(self):
+        self.status_code = 200
+        self.headers = {"Content-Type": "text/html; charset=utf-8"}
+        self.mimetype = "text/html"
+
+
+def _signup_fresh(http, username: str, email: str):
+    """POST /signup with zero broker accounts. Returns the new user id."""
+    resp = http.post(
+        "/signup",
+        data={
+            "username": username,
+            "password": "testpass123",
+            "email": email,
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 303), resp.get_data(as_text=True)[:800]
+    location = resp.headers.get("Location") or ""
+    assert "/get-started" in location, location
+    from app.models import User
+    user = User.get_by_username(username)
+    assert user is not None
+    return int(user.id)
+
+
+def _attach_vanguard(db_conn, user_id: int, tenant_id: str, account_name: str, *, broken: bool):
+    """Mirror what a SnapTrade connect writes after the privacy invite."""
+    broken_at = "NOW()" if broken else "NULL"
+    error = f"{account_name}-SYNC-ERR" if broken else None
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO user_accounts (user_id, account_name) VALUES (%s, %s)",
+            (user_id, account_name),
+        )
+        cur.execute(
+            f"""
+            INSERT INTO snaptrade_accounts
+                (user_id, snaptrade_account_id, tenant_id, broker_slug,
+                 account_name, display_nickname, account_number_masked,
+                 connection_broken_at, last_sync_error)
+            VALUES (%s, %s, %s, 'vanguard', %s, %s, '••••late', {broken_at}, %s)
+            """,
+            (
+                user_id,
+                uuid.uuid4().hex,
+                tenant_id,
+                account_name,
+                account_name,
+                error,
+            ),
+        )
+    db_conn.commit()
+
+
+def test_tenants_linked_after_privacy_add_stay_hidden(world, db_conn):
+    """Signup, invite with zero accounts, then link brokerages.
+
+    The hide list stores a user id. Tenant ids are joined from
+    ``broker_tenants`` on each read, so a Vanguard account created
+    after /admin/private — and a second account after that — is
+    excluded the same way as one that existed at add time.
+    """
+    from app.admin_privacy import (
+        format_privacy_since,
+        hidden_record,
+        hidden_snapshot,
+        is_hidden_from_admins,
+    )
+    from app import _shell_account_scope
+    from app.funnel import _observe, clear_hidden_user_cache, viewer_is_hidden_from_admins
+    from app.routes import _tenants_for_scope
+    from app.tenant_scope import filter_df_by_tenant_ids, tenant_sql_and
+
+    app = world["app"]
+    http = world["http"]
+    late_name = _unique("priv_late")
+    late_email = f"{late_name}@example.com"
+    mail_name = _unique("priv_mail")
+    mail_email = f"{mail_name}@example.com"
+    first_account = "ZZLATE-VANGUARD-8841"
+    second_account = "ZZLATE-SECOND-8841"
+    mail_account = "ZZEMAIL-VANGUARD-8841"
+    late_symbol = "ZZ" + uuid.uuid4().hex[:6].upper()
+    late_note = f"late vanguard note {uuid.uuid4().hex[:8]}"
+
+    late_id = _signup_fresh(http, late_name, late_email)
+    world["user_ids"].append(late_id)
+    started = http.get("/get-started")
+    assert started.status_code == 200
+    bare = http.get("/profile")
+    assert bare.status_code == 200
+    assert "Private from HappyTrader admins" not in bare.get_data(as_text=True)
+    _logout(http)
+
+    clear_hidden_user_cache()
+    assert viewer_is_hidden_from_admins(late_id) is False
+
+    _login(http, world["operator"])
+    added = http.post(
+        "/admin/private",
+        data={"username": late_name},
+        follow_redirects=True,
+    )
+    assert added.status_code == 200
+    assert f"@{late_name} is private from admins" in added.get_data(as_text=True)
+    assert is_hidden_from_admins(late_id)
+    # The add drops the process-local page-view cache filled above.
+    assert viewer_is_hidden_from_admins(late_id) is True
+    _logout(http)
+
+    _login(http, late_name)
+    early = http.get("/profile")
+    early_body = early.get_data(as_text=True)
+    since = format_privacy_since(hidden_record(late_id)["added_at"])
+    assert "Private from HappyTrader admins: On" in early_body
+    assert f"since {since}" in early_body
+    assert first_account not in early_body
+    prefs = http.get("/profile?tab=preferences")
+    assert f"since {since}" in prefs.get_data(as_text=True)
+    _logout(http)
+
+    mail_id = _signup_fresh(http, mail_name, mail_email)
+    world["user_ids"].append(mail_id)
+    _logout(http)
+    _login(http, world["operator"])
+    by_email = http.post(
+        "/admin/private",
+        data={"username": mail_email},
+        follow_redirects=True,
+    )
+    assert by_email.status_code == 200
+    assert f"@{mail_name} is private from admins" in by_email.get_data(as_text=True)
+    assert is_hidden_from_admins(mail_id)
+    _logout(http)
+
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        before_tenants = set(hidden_snapshot()["tenant_ids"])
+        assert late_id in hidden_snapshot()["user_ids"]
+        assert mail_id in hidden_snapshot()["user_ids"]
+
+    first_tid = _link_tenant(late_id, first_account)
+    mail_tid = _link_tenant(mail_id, mail_account)
+    _attach_vanguard(db_conn, late_id, first_tid, first_account, broken=True)
+    _attach_vanguard(db_conn, mail_id, mail_tid, mail_account, broken=False)
+    with db_conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO feedback (user_id, username, body, page_path)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (late_id, late_name, late_note, f"/position/{late_symbol}"),
+        )
+        cur.execute(
+            """
+            INSERT INTO usage_events (user_id, endpoint, path, status_code)
+            VALUES (%s, 'position_detail', %s, 200)
+            """,
+            (late_id, f"/position/{late_symbol}"),
+        )
+    db_conn.commit()
+
+    frame = pd.DataFrame([
+        {"tenant_id": first_tid, "account": first_account, "symbol": late_symbol},
+        {"tenant_id": mail_tid, "account": mail_account, "symbol": "SPY"},
+        {
+            "tenant_id": world["visible_tid"],
+            "account": SHARED_LABEL,
+            "symbol": "QQQ",
+        },
+    ])
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        after = hidden_snapshot()
+        assert after["available"] is True
+        assert first_tid in after["tenant_ids"]
+        assert mail_tid in after["tenant_ids"]
+        assert first_tid not in before_tenants
+        assert mail_tid not in before_tenants
+        sql = tenant_sql_and(None)
+        assert "NOT IN" in sql
+        assert first_tid in sql
+        assert mail_tid in sql
+        kept = filter_df_by_tenant_ids(frame, None)
+        assert first_account not in set(kept["account"])
+        assert mail_account not in set(kept["account"])
+        assert world["visible_tid"] in set(kept["tenant_id"])
+        # An unscoped admin read stays open and drops the private tenants
+        # in SQL. Naming the account label is the 404.
+        assert _tenants_for_scope("") is None
+        with pytest.raises(NotFound):
+            _tenants_for_scope(first_account)
+    with app.test_request_context(f"/positions?tenant={first_tid}"):
+        _as(app, world["operator_id"])
+        with pytest.raises(NotFound):
+            _tenants_for_scope("")
+    with app.test_request_context(
+        f"/strategies?tenants={first_tid},{world['visible_tid']}"
+    ):
+        _as(app, world["operator_id"])
+        with pytest.raises(NotFound):
+            _tenants_for_scope("")
+
+    with app.test_request_context("/positions"):
+        _as(app, late_id)
+        own = _tenants_for_scope("")
+        assert first_tid in own
+        own_sql = tenant_sql_and(own)
+        assert first_tid in own_sql
+        assert "NOT IN" not in own_sql
+        own_kept = filter_df_by_tenant_ids(frame, own)
+        assert first_account in set(own_kept["account"])
+        friend_choices = _shell_account_scope()[5]
+        # The header picker lists this user's own tenants. A label with a
+        # digit run is shown as "Unnamed account"; the tenant id is the check.
+        assert first_tid in {row["tenant_id"] for row in friend_choices}
+
+    with app.test_request_context("/overview"):
+        _as(app, world["operator_id"])
+        admin_choices = _shell_account_scope()[5]
+        assert first_tid not in {row["tenant_id"] for row in admin_choices}
+        assert mail_tid not in {row["tenant_id"] for row in admin_choices}
+
+    # A second brokerage, linked after the first one was already hidden.
+    second_tid = _link_tenant(late_id, second_account)
+    _attach_vanguard(db_conn, late_id, second_tid, second_account, broken=False)
+    with app.test_request_context("/positions"):
+        _as(app, world["operator_id"])
+        snap = hidden_snapshot()
+        assert second_tid in snap["tenant_ids"]
+        assert second_tid in tenant_sql_and(None)
+        with pytest.raises(NotFound):
+            _tenants_for_scope(second_account)
+    with app.test_request_context(f"/positions?tenant={second_tid}"):
+        _as(app, world["operator_id"])
+        with pytest.raises(NotFound):
+            _tenants_for_scope("")
+    with app.test_request_context("/positions"):
+        _as(app, late_id)
+        assert second_tid in _tenants_for_scope("")
+
+    _login(http, world["operator"])
+    for path in AUDITED_PATHS:
+        resp = http.get(_with_tenant(path, first_tid), follow_redirects=False)
+        assert resp.status_code == 404, path
+        body = resp.get_data(as_text=True)
+        assert first_account not in body
+        assert second_account not in body
+        assert mail_account not in body
+    both = http.get(
+        f"/positions?tenants={first_tid},{second_tid}",
+        follow_redirects=False,
+    )
+    assert both.status_code == 404
+    assert first_account not in both.get_data(as_text=True)
+    labeled = http.get(
+        f"/positions?account={first_account}",
+        follow_redirects=False,
+    )
+    # 404 before any warehouse read. The typed account label is echoed
+    # in the page's own URL, so the status is the check.
+    assert labeled.status_code == 404
+    assert "total_pnl" not in labeled.get_data(as_text=True)
+
+    users = http.get("/admin/users")
+    users_body = users.get_data(as_text=True)
+    assert users.status_code == 200
+    assert late_name in users_body
+    assert mail_name in users_body
+    assert "Private" in users_body
+    assert first_account not in users_body
+    assert second_account not in users_body
+    assert mail_account not in users_body
+    assert f"/admin/users/{late_id}/activity" not in users_body
+    assert f"/admin/users/{mail_id}/activity" not in users_body
+    assert f"/admin/impersonate/{late_name}" not in users_body
+    assert f"/admin/impersonate/{mail_name}" not in users_body
+
+    activity = http.get(f"/admin/users/{late_id}/activity")
+    assert activity.status_code == 404
+    assert late_name not in activity.get_data(as_text=True)
+    assert first_account not in activity.get_data(as_text=True)
+    mail_activity = http.get(f"/admin/users/{mail_id}/activity")
+    assert mail_activity.status_code == 404
+
+    impersonate = http.get(f"/admin/impersonate/{late_name}")
+    assert impersonate.status_code == 404
+    preview = http.get(
+        f"/admin/digest-preview?user={late_name}&week=2026-10-05",
+    )
+    assert preview.status_code == 404
+    assert first_account not in preview.get_data(as_text=True)
+
+    private = http.get("/admin/private")
+    private_body = private.get_data(as_text=True)
+    assert f"@{late_name}" in private_body
+    assert f"@{mail_name}" in private_body
+    assert since in private_body
+    assert first_account not in private_body
+    assert second_account not in private_body
+    assert mail_account not in private_body
+    assert "does not show accounts, balances, or trades" in private_body
+
+    overview = http.get("/admin")
+    overview_body = overview.get_data(as_text=True)
+    assert overview.status_code == 200
+    assert first_account not in overview_body
+    assert f"{first_account}-SYNC-ERR" not in overview_body
+    assert f"/position/{late_symbol}" not in overview_body
+    assert late_symbol not in overview_body
+    assert f"/admin/impersonate/{late_name}" not in overview_body
+    assert "Private" in overview_body
+
+    feedback = http.get("/admin/feedback")
+    fb = feedback.get_data(as_text=True)
+    assert late_note in fb
+    assert f"/position/{late_symbol}" not in fb
+
+    analytics = http.get("/admin/analytics")
+    assert analytics.status_code == 200
+    analytics_body = analytics.get_data(as_text=True)
+    assert first_account not in analytics_body
+    assert mail_account not in analytics_body
+    assert late_symbol not in analytics_body
+    assert late_name not in analytics_body
+    assert mail_name not in analytics_body
+    assert late_email not in analytics_body
+    _logout(http)
+
+    _login(http, late_name)
+    page = http.get("/profile")
+    body = page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert "Private from HappyTrader admins: On" in body
+    assert f"since {since}" in body
+    assert first_account in body
+    assert second_account in body
+    assert mail_account not in body
+    _logout(http)
+
+    # Page views from before the invite (signup, get-started) are
+    # expected. The skip starts once privacy is on.
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM funnel_events WHERE user_id = ANY(%s) AND event = 'app_page_view'",
+            ([late_id, mail_id],),
+        )
+    db_conn.commit()
+    clear_hidden_user_cache()
+    with app.test_request_context("/overview"):
+        _as(app, world["visible_id"])
+        _observe(_HtmlResponse())
+    with app.test_request_context("/positions"):
+        _as(app, late_id)
+        _observe(_HtmlResponse())
+    with app.test_request_context("/strategies"):
+        _as(app, mail_id)
+        _observe(_HtmlResponse())
+    from app.db import fetch_all
+    visible_rows = fetch_all(
+        """
+        SELECT event FROM funnel_events
+        WHERE user_id = %s AND event = 'app_page_view'
+        """,
+        (world["visible_id"],),
+    )
+    late_rows = fetch_all(
+        """
+        SELECT event FROM funnel_events
+        WHERE user_id = %s AND event = 'app_page_view'
+        """,
+        (late_id,),
+    )
+    mail_rows = fetch_all(
+        """
+        SELECT event FROM funnel_events
+        WHERE user_id = %s AND event = 'app_page_view'
+        """,
+        (mail_id,),
+    )
+    assert len(visible_rows) == 1
+    assert late_rows == []
+    assert mail_rows == []
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM funnel_events WHERE user_id = ANY(%s)",
+            ([world["visible_id"], late_id, mail_id],),
+        )
+        cur.execute(
+            "DELETE FROM feedback WHERE user_id = ANY(%s) OR body = %s",
+            ([late_id, mail_id], late_note),
+        )
+        cur.execute(
+            "DELETE FROM usage_events WHERE user_id = ANY(%s)",
+            ([late_id, mail_id],),
+        )
+    db_conn.commit()
