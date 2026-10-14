@@ -45,7 +45,9 @@ def test_expiry_date_cap_collapses_the_check2_fill_grain():
     Run 37090194526: the same BE buy-to-close survived upload dedup
     (raw dates differ) and then shared a trade_date, so
     stg_history_no_duplicate_fills_per_tenant check 2 failed. Blank
-    prices stay out of this collapse — distinct expiries have no Symbol.
+    prices stay out of this rank — a blank symbol must not fuse
+    distinct events. Same-contract blank-price rows collapse later
+    in blank_price_ranked, after the symbol rewrite.
     """
     sql = _STG.read_text()
     assert "fill_ranked as (" in sql

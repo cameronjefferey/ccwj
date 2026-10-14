@@ -9,8 +9,9 @@
 
     Always the bot mirror. While demo_temp_seed_on() is true, seed
     positions in dbt/seeds/demo_temp_current.csv are added. The same
-    symbol is one row: quantity, market value, and cost are summed, so
-    a shared ticker does not drop the mirror lot at stg_current's
+    contract is one row: quantity, market value, and cost are summed
+    on the compact option id (long form and OCC are one symbol), so
+    a shared contract does not drop the mirror lot at stg_current's
     (tenant, symbol) dedup and does not double-count it.
 
     Flag off = the mirror select only. See dbt/seeds/DEMO_TEMP_SEED.md.
@@ -104,7 +105,7 @@ with mirror as (
 
 summed as (
     select
-        upper(trim(Symbol)) as symbol_key,
+        {{ canonical_option_symbol_text('Symbol') }} as symbol_key,
         sum({{ parse_seed_number('Quantity') }}) as quantity,
         sum({{ parse_seed_number('market_value') }}) as market_value,
         sum({{ parse_seed_number('cost_bases') }}) as cost_bases,

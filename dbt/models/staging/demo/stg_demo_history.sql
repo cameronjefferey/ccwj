@@ -16,9 +16,11 @@
     How to turn the seed off without a code edit: dbt/seeds/DEMO_TEMP_SEED.md.
 
     A seed fill that would land on the same stg_history dedup grain as a
-    mirror fill (tenant, date, action, symbol, quantity, price@4dp) has
-    its price moved by one cent and its amount scaled with it, so the
-    mirror row is kept and the seed row is kept. No collision, no bump.
+    mirror fill (tenant, date, action, canonical option id, quantity,
+    price@4dp) has its price moved by one cent and its amount scaled
+    with it, so the mirror row is kept and the seed row is kept. The
+    id is the compact contract, not the raw spelling: stg_history
+    rewrites both before that dedup. No collision, no bump.
 
     ── Why a mirror and not shared tenancy ──────────────────────────────
     Postgres ``broker_tenants.tenant_id`` is a PRIMARY KEY (app/models.py),
@@ -78,7 +80,7 @@ with mirror as (
         cast(Amount as string)                  as Amount,
         {{ parse_seed_date('Date') }}           as _d,
         lower(trim(cast(Action as string)))     as _a,
-        upper(trim(cast(Symbol as string)))     as _s,
+        {{ canonical_option_symbol_text('Symbol') }} as _s,
         {{ parse_seed_number('Quantity') }}     as _q,
         {{ parse_seed_number('Price') }}        as _p,
         {{ parse_seed_number('Amount') }}       as _amt
@@ -89,7 +91,7 @@ mirror_keys as (
     select
         {{ parse_seed_date('Date') }}           as _d,
         lower(trim(Action))                     as _a,
-        upper(trim(Symbol))                     as _s,
+        {{ canonical_option_symbol_text('Symbol') }} as _s,
         {{ parse_seed_number('Quantity') }}     as _q,
         round({{ parse_seed_number('Price') }}, 4) as _p
     from mirror
