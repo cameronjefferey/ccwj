@@ -241,8 +241,8 @@ def test_gap_lines_are_category_percents_only():
     assert "$" not in " ".join(lines)
 
     timing = attribute_fractions(_shares(), has_gap=True)
-    assert timing["price_date"] == 100
-    assert sum(timing.values()) == 100
+    assert timing["price_date"] == 0
+    assert sum(timing.values()) == 0
 
     stacked = attribute_fractions(
         _shares(money_market_both=0.4, options_valuation=0.6),

@@ -544,8 +544,9 @@ def attribute_fractions(fracs, *, has_gap: bool) -> dict:
     """Signed-free percents of the gap. They sum to 100 when a gap exists.
 
     Each fraction is the share of the gap that cause would remove.
-    The closest fit is taken first. A leftover no listed cause absorbs
-    is the position marks and the balance total not sharing one clock.
+    The closest fit is taken first. A remainder no measured cause
+    absorbs stays unassigned, so a zero price-date fraction is not
+    relabeled as timing.
     """
     if not has_gap:
         return {name: 0 for name in _GAP_ORDER}
@@ -580,12 +581,11 @@ def attribute_fractions(fracs, *, has_gap: bool) -> dict:
         assigned[name] += take
         remaining -= take
         unused[name] = 0.0
-    if remaining > 0.02:
-        assigned["price_date"] += remaining
     raw = {name: assigned[name] * 100.0 for name in _GAP_ORDER}
     rounded = {name: int(round(raw[name])) for name in _GAP_ORDER}
+    # Only absorb a rounding point. An unexplained remainder stays unassigned.
     drift = 100 - sum(rounded.values())
-    if drift:
+    if drift and abs(drift) <= 2 and any(rounded.values()):
         host = max(_GAP_ORDER, key=lambda name: (abs(rounded[name]), abs(raw[name])))
         rounded[host] += drift
     return rounded
@@ -1078,15 +1078,6 @@ def _print_gap() -> int:
     ):
         suffix = " ".join(part for part in (reason, hint) if part)
         print(f"breakdown=FAIL{(' ' + suffix) if suffix else ''}", flush=True)
-        return 1
-    total = 0
-    any_share = False
-    for line in lines:
-        pct = int(line.rsplit("=", 1)[1][:-1])
-        total += pct
-        any_share = any_share or pct > 0
-    if any_share and total != 100:
-        print("breakdown=FAIL", flush=True)
         return 1
     print("\n".join(lines), flush=True)
     return 0
