@@ -24,8 +24,7 @@ name: Mirror prod warehouse into analytics_dev
 #
 # Triggers:
 #   - workflow_call from bigquery_update.yml and prices_refresh.yml
-#     (clone). CI on the Vanguard branch calls the same workflow with
-#     dbt_build=true (dev build only).
+#     (clone). A caller that passes dbt_build runs the dev build instead.
 #   - workflow_dispatch for a manual mirror, or a dev-dataset dbt build
 
 on:

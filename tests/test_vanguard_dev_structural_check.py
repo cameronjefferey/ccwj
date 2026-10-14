@@ -90,9 +90,10 @@ def test_dev_mirror_workflow_builds_dev_and_does_not_write_prod():
     assert "BQ_DATASET: analytics_dev" in steps
     assert "dev_clone_prod.py --dest analytics_dev" in steps
     assert "workflow_call" in text
+    assert "dbt_build:" in text
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
-    assert "github.head_ref == 'cursor/vanguard-staging-031b'" in ci
-    assert "dbt_build: true" in ci
+    assert "vanguard-dev-dbt" not in ci
+    assert "profiles.dev.yml" not in ci
     for forbidden in (
         "snapshot_guard",
         "repair_history_fill_dedup",
