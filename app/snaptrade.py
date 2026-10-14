@@ -1734,7 +1734,12 @@ def _group_accounts_by_connection(rows):
         # Fill in the first known auth id for the group (used for reconnect).
         if auth_id and not g["authorization_id"]:
             g["authorization_id"] = auth_id
-        if r.get("connection_broken_at"):
+        cache_false = _holdings_cache_false_reconnect(r)
+        r["holdings_cache_false_reconnect"] = cache_false
+        # A holdings timestamp from before this connection is not a revoked
+        # login. Keep the row, but do not demand a reconnect for the group
+        # unless some other account on the grant is actually broken.
+        if r.get("connection_broken_at") and not cache_false:
             g["needs_reconnect"] = True
         g["accounts"].append(r)
     from app.privacy import sort_rows_by_masked_label
@@ -3397,8 +3402,25 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             account_name, snaptrade_account_id,
         )
     elif SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0:
-        stale_days = _holdings_stale_days(account_summary, today=end_date)
-        if stale_days is not None and stale_days >= SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
+        raw_stale_days = _holdings_stale_days(account_summary, today=end_date)
+        stale_days = _holdings_stall_days(
+            account_summary,
+            connected_on=acc_row.get("created_at"),
+            today=end_date,
+        )
+        if raw_stale_days is not None and stale_days is None:
+            # The timestamp predates THIS connection. SnapTrade is reporting
+            # a historical cache date, not a stall of the grant we just
+            # opened. Flagging it sends the user to reconnect a login that
+            # is not dead (Vanguard, Oct 2026: four new accounts, banner
+            # "stale for 1 day" the evening after connect).
+            app.logger.info(
+                "SnapTrade holdings last_successful_sync predates connection "
+                "for account=%s (snaptrade_id=%s, %s days on the timestamp); "
+                "not marking the login broken",
+                account_name, snaptrade_account_id, raw_stale_days,
+            )
+        elif stale_days is not None and stale_days >= SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
             raise _SnapTradeAuthError(
                 "sync_status.holdings.last_successful_sync[stale]",
                 RuntimeError(
@@ -4151,6 +4173,64 @@ def _holdings_unavailable(account_summary) -> bool:
     return str(value or "").strip().lower() == "true"
 
 
+def _holdings_stall_days(account_summary, *, connected_on=None, today=None):
+    """Days since holdings refreshed, or None when that must not flag the login.
+
+    ``None`` covers the same cases as ``_holdings_stale_days`` plus a
+    ``last_successful_sync`` that falls before ``connected_on``. A date from
+    before this SnapTrade grant is historical cache, not evidence the grant
+    stalled. A one-day Vanguard lag on a connection that already exists does
+    not reach the threshold either — that comparison stays in the caller.
+    """
+    days = _holdings_stale_days(account_summary, today=today)
+    if days is None:
+        return None
+    last = _holdings_last_successful_sync(account_summary)
+    connected = _as_date(connected_on)
+    if last is not None and connected is not None and last < connected:
+        return None
+    return days
+
+
+def _holdings_cache_false_reconnect(acc_row, *, today=None) -> bool:
+    """True when ``connection_broken_at`` was our holdings-timestamp backstop
+    on a grant that cannot yet be a stalled cache.
+
+    The banner's "stale for N days" is calendar days since we set
+    ``connection_broken_at``, not SnapTrade's holdings age. A new Vanguard
+    connection flagged on the first sync (old ``last_successful_sync``, or
+    one that predates ``created_at``) matches this. A later sync that no
+    longer raises clears the flag; until that sync, the banner must not
+    tell the user the login was revoked.
+
+    A missing ``created_at`` does not match — the real Schwab stall (a
+    timestamp that stopped advancing during a long-lived connection) keeps
+    the reconnect banner.
+    """
+    if not isinstance(acc_row, dict):
+        return False
+    err = str(acc_row.get("last_sync_error") or "")
+    if "last_successful_sync[stale]" not in err:
+        return False
+    today = today or date.today()
+    created = _as_date(acc_row.get("created_at"))
+    if created is None:
+        return False
+    if (today - created).days < SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
+        return True
+    last = _as_date(acc_row.get("holdings_last_successful_sync"))
+    return last is not None and last < created
+
+
+@app.template_filter("holdings_cache_false_reconnect")
+def _holdings_cache_false_reconnect_filter(acc_row):
+    """Template twin of ``_holdings_cache_false_reconnect``. Never raises."""
+    try:
+        return _holdings_cache_false_reconnect(acc_row or {})
+    except Exception:
+        return False
+
+
 def _holdings_stale_days(account_summary, *, today=None):
     """Days since SnapTrade last refreshed holdings from the broker.
 
@@ -4199,6 +4279,8 @@ def _connection_attention(acc_row, *, today=None):
 
     broken_on = _as_date(acc_row.get("connection_broken_at"))
     if broken_on is not None:
+        if _holdings_cache_false_reconnect(acc_row, today=today):
+            return None
         stale_days = max(0, (today - broken_on).days)
         return {**base, "kind": "stale", "stale_days": stale_days, "expires_in_days": None}
 

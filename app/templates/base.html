@@ -1807,7 +1807,7 @@
                             {% if c.kind == 'expiring' %}
                                 {% if c.expires_in_days > 0 %}expires in {{ c.expires_in_days }} day{{ 's' if c.expires_in_days != 1 }}{% else %}expiring now{% endif %}
                             {% else %}
-                                {% if c.stale_days and c.stale_days > 0 %}stale for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}just stopped syncing{% endif %}
+                                {% if c.stale_days and c.stale_days > 0 %}paused for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}just stopped syncing{% endif %}
                             {% endif %}
                         </li>
                         {% endfor %}

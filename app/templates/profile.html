@@ -199,7 +199,7 @@
             {% set _ns_st_o = namespace(any_first_pending=false, any_broken=false) %}
             {% for a in _snaptrade_accounts %}
                 {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
-                {% if a.connection_broken_at %}{% set _ns_st_o.any_broken = true %}{% endif %}
+                {% if a.connection_broken_at and not (a | holdings_cache_false_reconnect) %}{% set _ns_st_o.any_broken = true %}{% endif %}
             {% endfor %}
             {% if _ns_st_o.any_broken %}
             <p class="settings-lead">A broker connection needs reconnecting. New trades won't come in until you reconnect.</p>
@@ -539,7 +539,7 @@
             {% set _ns = namespace(any_first_pending=false, any_broken=false) %}
             {% for a in _snaptrade_accounts %}
                 {% if not a.first_sync_completed %}{% set _ns.any_first_pending = true %}{% endif %}
-                {% if a.connection_broken_at %}{% set _ns.any_broken = true %}{% endif %}
+                {% if a.connection_broken_at and not (a | holdings_cache_false_reconnect) %}{% set _ns.any_broken = true %}{% endif %}
             {% endfor %}
             {% set _any_first_pending_st = _ns.any_first_pending %}
             {% if _ns.any_broken %}

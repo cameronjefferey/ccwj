@@ -200,7 +200,9 @@
                         <button type="submit" class="btn btn-sm btn-outline-secondary nick-save" disabled>Save</button>
                     </form>
                     <div class="acct-meta">
-                        {% if c.connection_broken_at %}
+                        {% if c.holdings_cache_false_reconnect %}
+                        <span class="needs-reconnect-note">Holdings cache is older than this connection. Sync retries on its own — reconnect is not required.</span>
+                        {% elif c.connection_broken_at %}
                         <span class="needs-reconnect-note">Paused — reconnect above</span>
                         {% elif c.holdings_last_successful_sync %}
                         <div class="freshness"

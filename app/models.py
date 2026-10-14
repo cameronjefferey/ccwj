@@ -2844,7 +2844,7 @@ def get_snaptrade_account(user_id, snaptrade_account_id):
         "account_name, display_nickname, first_sync_completed, last_sync_at, "
         "holdings_last_successful_sync, "
         "last_sync_error, connection_broken_at, brokerage_authorization_id, "
-        "last_force_refresh_at, early_broker_cohort "
+        "last_force_refresh_at, early_broker_cohort, created_at "
         "FROM snaptrade_accounts WHERE user_id = %s AND snaptrade_account_id = %s",
         (user_id, snaptrade_account_id),
     )

@@ -13,8 +13,10 @@
 
     Fails (returns rows) if any equity session with < 25 shares that has at
     least one overlapping option contract is still classified 'Buy and Hold'
-    (or 'Crypto' — a tracker is neither). Standalone tiny lots with NO
-    options are out of scope (they legitimately stay Buy and Hold).
+    (or 'Crypto' — a tracker is neither). The overlap includes contracts
+    opened before the broker window (int_option_contracts, not the
+    strategy-tag subset). Standalone tiny lots with NO options are out of
+    scope (they legitimately stay Buy and Hold).
 #}
 
 with equity_strat as (
