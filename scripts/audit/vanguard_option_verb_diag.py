@@ -292,7 +292,15 @@ def _verbs_sql() -> str:
             countif(r.verb in ('buy', 'sell')) > 0
                 and countif(r.verb in ('buy', 'sell'))
                     = countif(r.verb in ('buy', 'sell') and r.desc_blank)
-                as desc_all_blank
+                as desc_all_blank,
+            min(if(
+                r.verb = 'buy' and r.trade_date < c.close_date and (r.opt_px or r.eq_px),
+                r.trade_date, null
+            )) as first_buy,
+            min(if(
+                r.verb = 'sell' and r.trade_date < c.close_date and (r.opt_px or r.eq_px),
+                r.trade_date, null
+            )) as first_sell
         from cohort c
         join raw_rows r
             on r.tenant_id = c.tenant_id
@@ -415,8 +423,108 @@ def _verbs_sql() -> str:
             where h.tenant_id = kinded.tenant_id
               and (h.trade_symbol = kinded.canon or h.trade_symbol = kinded.trade_symbol)
               and h.action in ('option_buy_to_open', 'option_sell_to_open')
-        )) as staged_already_open
+        )) as staged_already_open,
+        countif(
+            sell_like > {tol} and buy_like > {tol} and first_buy < first_sell
+        ) as both_buy_earlier,
+        countif(
+            sell_like > {tol} and buy_like > {tol} and first_sell < first_buy
+        ) as both_sell_earlier,
+        countif(
+            sell_like > {tol} and buy_like > {tol} and first_buy = first_sell
+        ) as both_same_day,
+        countif(
+            sell_like > {tol} and buy_like > {tol}
+            and first_buy < first_sell
+            and abs(buy_like - (sell_like + contracts_closed)) <= {tol}
+        ) as both_long_partial,
+        countif(
+            sell_like > {tol} and buy_like > {tol}
+            and first_sell < first_buy
+            and abs(sell_like - (buy_like + contracts_closed)) <= {tol}
+        ) as both_short_partial,
+        countif(
+            sell_like > {tol} and buy_like > {tol}
+            and first_buy < first_sell
+            and abs(buy_like - sell_like) <= {tol}
+            and abs(buy_like - (sell_like + contracts_closed)) > {tol}
+        ) as both_long_same_qty,
+        countif(
+            sell_like > {tol} and buy_like > {tol}
+            and first_sell < first_buy
+            and abs(sell_like - buy_like) <= {tol}
+            and abs(sell_like - (buy_like + contracts_closed)) > {tol}
+        ) as both_short_same_qty,
+        countif(
+            sell_like > {tol} and buy_like > {tol}
+            and first_buy < first_sell
+            and abs(buy_like - contracts_closed) <= {tol}
+            and abs(buy_like - sell_like) > {tol}
+            and abs(buy_like - (sell_like + contracts_closed)) > {tol}
+        ) as both_long_matches_expiry,
+        countif(
+            sell_like > {tol} and buy_like > {tol}
+            and not (
+                (first_buy < first_sell and (
+                    abs(buy_like - (sell_like + contracts_closed)) <= {tol}
+                    or abs(buy_like - sell_like) <= {tol}
+                    or abs(buy_like - contracts_closed) <= {tol}
+                ))
+                or (first_sell < first_buy and (
+                    abs(sell_like - (buy_like + contracts_closed)) <= {tol}
+                    or abs(sell_like - buy_like) <= {tol}
+                ))
+                or first_buy = first_sell
+                or first_buy is null
+                or first_sell is null
+            )
+        ) as both_other
     from kinded
+    """
+
+
+def _book_sql() -> str:
+    """All Vanguard option rows staged as equity verbs, not only the 105."""
+    return f"""
+    with verbs as (
+        select
+            h.tenant_id,
+            h.trade_symbol,
+            countif(h.action = 'equity_buy') as n_buy,
+            countif(h.action = 'equity_sell') as n_sell,
+            countif(h.action = 'equity_sell_short') as n_short
+        from {DS}.stg_history h
+        where h.instrument_type in ('Call', 'Put')
+          and lower(split(trim(coalesce(h.account, '')), ' ')[safe_offset(0)]) = 'vanguard'
+          and h.action in ('equity_buy', 'equity_sell', 'equity_sell_short')
+        group by 1, 2
+    ),
+    status as (
+        select
+            tenant_id,
+            trade_symbol,
+            max(status) as status
+        from {DS}.int_option_contracts
+        where lower(split(trim(coalesce(account, '')), ' ')[safe_offset(0)]) = 'vanguard'
+        group by 1, 2
+    )
+    select
+        count(*) as symbols,
+        countif(n_buy > 0 and n_sell = 0 and n_short = 0) as only_buy,
+        countif(n_sell > 0 and n_buy = 0 and n_short = 0) as only_sell,
+        countif(n_short > 0 and n_buy = 0 and n_sell = 0) as only_short,
+        countif(n_buy > 0 and n_sell > 0) as both_buy_and_sell,
+        countif(n_short > 0 and (n_buy > 0 or n_sell > 0)) as short_with_other,
+        countif(n_sell > 0 and n_buy = 0 and n_short = 0 and s.status = 'Open') as only_sell_open,
+        countif(n_sell > 0 and n_buy = 0 and n_short = 0 and s.status = 'Closed') as only_sell_closed,
+        countif(n_buy > 0 and n_sell = 0 and n_short = 0 and s.status = 'Open') as only_buy_open,
+        countif(n_buy > 0 and n_sell = 0 and n_short = 0 and s.status = 'Closed') as only_buy_closed,
+        countif(n_buy > 0 and n_sell > 0 and s.status = 'Open') as both_open,
+        countif(n_buy > 0 and n_sell > 0 and s.status = 'Closed') as both_closed
+    from verbs v
+    left join status s
+        on v.tenant_id = s.tenant_id
+       and v.trade_symbol = s.trade_symbol
     """
 
 
@@ -424,6 +532,7 @@ def queries():
     return [
         ("population", _population_sql()),
         ("verbs", _verbs_sql()),
+        ("book", _book_sql()),
     ]
 
 

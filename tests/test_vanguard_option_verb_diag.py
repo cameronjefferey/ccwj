@@ -40,7 +40,7 @@ def test_every_statement_is_a_select():
         assert "delete " not in low
         if name == "verbs":
             verbs = sql
-    assert names == ["population", "verbs"]
+    assert names == ["population", "verbs", "book"]
     for kind in ALL_KINDS:
         assert f"'{kind}'" in verbs
     case = verbs[verbs.find("end as kind") - 2500:verbs.find("end as kind")]
