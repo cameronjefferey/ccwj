@@ -17,6 +17,8 @@ def test_every_statement_is_a_select():
         "siblings",
         "raw_opens",
         "simulate",
+        "fills",
+        "raw_actions",
     ]
 
 

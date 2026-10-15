@@ -140,23 +140,23 @@ def queries():
             "tables",
             f"""
             select
-                max(if(table_name = 'mart_coaching_signals',
+                max(if(table_id = 'mart_coaching_signals',
                        timestamp_diff(current_timestamp(), timestamp_millis(last_modified_time), hour),
                        null)) as coach_age_hours,
-                max(if(table_name = 'int_strategy_classification',
+                max(if(table_id = 'int_strategy_classification',
                        timestamp_diff(current_timestamp(), timestamp_millis(last_modified_time), hour),
                        null)) as class_age_hours,
-                max(if(table_name = 'int_option_contracts',
+                max(if(table_id = 'int_option_contracts',
                        timestamp_diff(current_timestamp(), timestamp_millis(last_modified_time), hour),
                        null)) as contracts_age_hours,
-                max(if(table_name = 'stg_history',
+                max(if(table_id = 'stg_history',
                        timestamp_diff(current_timestamp(), timestamp_millis(last_modified_time), hour),
                        null)) as history_age_hours,
-                max(if(table_name = 'int_option_exit_analysis',
+                max(if(table_id = 'int_option_exit_analysis',
                        timestamp_diff(current_timestamp(), timestamp_millis(last_modified_time), hour),
                        null)) as exit_age_hours
-            from {DS}.INFORMATION_SCHEMA.TABLES
-            where table_name in (
+            from {DS}.__TABLES__
+            where table_id in (
                 'mart_coaching_signals',
                 'int_strategy_classification',
                 'int_option_contracts',
@@ -449,6 +449,115 @@ def queries():
             from keys k
             left join coach c using (tkey, strategy)
             left join pos p using (tkey, strategy)
+            """,
+        ),
+        (
+            "fills",
+            f"""
+            with {_EXTRAS},
+            staged as (
+                select
+                    h.tenant_id,
+                    h.trade_symbol,
+                    h.user_id,
+                    countif(h.action = 'option_sell_to_open') as sto,
+                    countif(h.action = 'option_buy_to_open') as bto,
+                    countif(h.action = 'option_sell_to_close') as stc,
+                    countif(h.action = 'option_buy_to_close') as btc,
+                    countif(h.action = 'option_expired') as expired,
+                    countif(h.action = 'option_assigned') as assigned,
+                    countif(h.action = 'option_exercised') as exercised,
+                    countif(h.action in ('equity_buy', 'equity_sell', 'equity_sell_short')) as equity_verb,
+                    countif(h.action = 'other') as other_action,
+                    count(*) as rows
+                from {DS}.stg_history h
+                where h.instrument_type in ('Call', 'Put')
+                group by 1, 2, 3
+            )
+            select
+                count(*) as extra_rows,
+                countif(close_date < date '2026-01-01') as closed_before_2026,
+                countif(close_date >= date '2026-01-01' and close_date < date '2026-07-01') as closed_2026_h1,
+                countif(close_date >= date '2026-07-01' and close_date < date '2026-10-01') as closed_2026_q3,
+                countif(close_date >= date '2026-10-01' and close_date < date '2026-10-13') as closed_early_oct,
+                countif(close_date >= date '2026-10-13') as closed_since_oct13,
+                countif(coalesce(s.sto, 0) + coalesce(s.bto, 0) > 0) as has_option_open,
+                countif(coalesce(s.btc, 0) + coalesce(s.stc, 0) > 0) as has_option_close,
+                countif(coalesce(s.expired, 0) > 0) as has_expired,
+                countif(coalesce(s.assigned, 0) > 0) as has_assigned,
+                countif(coalesce(s.exercised, 0) > 0) as has_exercised,
+                countif(coalesce(s.equity_verb, 0) > 0) as has_equity_verb,
+                countif(coalesce(s.other_action, 0) > 0) as has_other_action,
+                countif(s.trade_symbol is null) as no_staged_fill,
+                countif(
+                    lower(split(trim(coalesce(e.account, '')), ' ')[safe_offset(0)]) = 'vanguard'
+                    and close_date >= date '2026-10-13'
+                ) as vanguard_closed_since_oct13,
+                countif(
+                    lower(split(trim(coalesce(e.account, '')), ' ')[safe_offset(0)]) = 'vanguard'
+                    and close_date < date '2026-10-01'
+                ) as vanguard_closed_before_oct
+            from extras e
+            left join staged s
+                on s.tenant_id = e.tenant_id
+                and s.trade_symbol = e.trade_symbol
+                and s.user_id is not distinct from e.user_id
+            """,
+        ),
+        (
+            "raw_actions",
+            f"""
+            with {_EXTRAS},
+            raw_rows as (
+                select
+                    nullif(trim(cast(r.tenant_id as string)), '') as tenant_id,
+                    {raw_canon} as canon,
+                    case lower(trim(cast(r.Action as string)))
+                        when 'sell to open' then 'sto'
+                        when 'buy to open' then 'bto'
+                        when 'sell to close' then 'stc'
+                        when 'buy to close' then 'btc'
+                        when 'expired' then 'expired'
+                        when 'assigned' then 'assigned'
+                        when 'exchange or exercise' then 'exercised'
+                        when 'buy' then 'buy'
+                        when 'sell' then 'sell'
+                        when 'sell short' then 'sell_short'
+                        else 'other'
+                    end as act
+                from {RAW}.trade_history r
+            )
+            select
+                count(*) as extra_rows,
+                countif(exists (
+                    select 1 from raw_rows o
+                    where o.tenant_id = e.tenant_id and o.canon = e.canon
+                )) as any_raw,
+                countif(exists (
+                    select 1 from raw_rows o
+                    where o.tenant_id = e.tenant_id and o.canon = e.canon and o.act in ('sto', 'bto')
+                )) as raw_sto_bto,
+                countif(exists (
+                    select 1 from raw_rows o
+                    where o.tenant_id = e.tenant_id and o.canon = e.canon and o.act in ('buy', 'sell', 'sell_short')
+                )) as raw_equity_verb,
+                countif(exists (
+                    select 1 from raw_rows o
+                    where o.tenant_id = e.tenant_id and o.canon = e.canon and o.act = 'expired'
+                )) as raw_expired,
+                countif(exists (
+                    select 1 from raw_rows o
+                    where o.tenant_id = e.tenant_id and o.canon = e.canon and o.act in ('stc', 'btc')
+                )) as raw_close,
+                countif(exists (
+                    select 1 from raw_rows o
+                    where o.tenant_id = e.tenant_id and o.canon = e.canon and o.act = 'other'
+                )) as raw_other_action,
+                countif(not exists (
+                    select 1 from raw_rows o
+                    where o.tenant_id = e.tenant_id
+                )) as tenant_missing_from_raw
+            from extras e
             """,
         ),
     ]
