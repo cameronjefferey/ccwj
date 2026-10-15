@@ -45,13 +45,15 @@ on:
 
 # Separate from the prod warehouse group. A dev build must not share
 # bq-dev-mirror with the clone job or a prod mirror can cancel it.
+# The private health ref uses its own group so a dispatch cannot cancel
+# a mirror, and the mirror cannot cancel the health check.
 concurrency:
-  group: ${{ (inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'cursor/vanguard-staging-031b')) && 'bq-dev-dbt' || 'bq-dev-mirror' }}
-  cancel-in-progress: true
+  group: ${{ github.ref_name == 'cursor/private-vanguard-health-631a' && 'private-vanguard-health' || ((inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'cursor/vanguard-staging-031b')) && 'bq-dev-dbt' || 'bq-dev-mirror') }}
+  cancel-in-progress: ${{ github.ref_name != 'cursor/private-vanguard-health-631a' }}
 
 jobs:
   mirror:
-    if: ${{ (github.event_name == 'workflow_call' && inputs.dbt_build != true) || (github.event_name == 'workflow_dispatch' && inputs.dbt_build != true && github.event.inputs.dbt_build != 'true' && github.ref_name != 'cursor/vanguard-staging-031b') }}
+    if: ${{ (github.event_name == 'workflow_call' && inputs.dbt_build != true) || (github.event_name == 'workflow_dispatch' && inputs.dbt_build != true && github.event.inputs.dbt_build != 'true' && github.ref_name != 'cursor/vanguard-staging-031b' && github.ref_name != 'cursor/private-vanguard-health-631a') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -80,7 +82,7 @@ jobs:
           BQ_DATASET: analytics_dev
 
   dbt-dev:
-    if: ${{ inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'cursor/vanguard-staging-031b') }}
+    if: ${{ github.ref_name != 'cursor/private-vanguard-health-631a' && (inputs.dbt_build == true || github.event.inputs.dbt_build == 'true' || (github.event_name == 'workflow_dispatch' && github.ref_name == 'cursor/vanguard-staging-031b')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -151,3 +153,35 @@ jobs:
       - name: Unknown Fidelity action labels
         if: failure()
         run: python scripts/vanguard_dev_structural_check.py --broker fidelity --unknown-actions
+
+  # Read-only health flags for the private account. Runs only when this
+  # branch is dispatched. A new workflow file cannot be started until it
+  # is on the default branch, and this change must not be merged. The
+  # mirror and dev-build jobs above do not run for this ref.
+  private-health:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'cursor/private-vanguard-health-631a' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.DBT_KEYFILE_JSON }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q "google-cloud-bigquery==3.30.0"
+
+      - name: Read-only warehouse flag
+        env:
+          GOOGLE_CLOUD_PROJECT: ccwj-dbt
+        run: python -W ignore scripts/private_vanguard_health.py

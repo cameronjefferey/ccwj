@@ -65,3 +65,35 @@ jobs:
 
       - name: Run pytest
         run: python -m pytest tests/ -q --tb=short
+
+  # Read-only production flags for one private account. This job runs only
+  # for this branch's pull request: a workflow that is not on the default
+  # branch cannot be dispatched, and this change must not be merged. It
+  # does not run on any other pull request or on master.
+  private-health:
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'cursor/private-vanguard-health-631a' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.DBT_KEYFILE_JSON }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q "google-cloud-bigquery==3.30.0"
+
+      - name: Read-only warehouse flag
+        env:
+          GOOGLE_CLOUD_PROJECT: ccwj-dbt
+        run: python -W ignore scripts/private_vanguard_health.py --bonds
