@@ -65,3 +65,34 @@ jobs:
 
       - name: Run pytest
         run: python -m pytest tests/ -q --tb=short
+
+  # Read-only replay for this branch only. SELECT against the warehouse.
+  # Simulates the Vanguard verb map plus the CHECK 12 coach filter.
+  # No dbt build and no seed write.
+  vanguard-check12-replay:
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'cursor/vanguard-option-buy-sell-open-481a' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.DBT_KEYFILE_JSON }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q "google-cloud-bigquery==3.30.0"
+
+      - name: Replay CHECK 12 after the verb map
+        env:
+          GOOGLE_CLOUD_PROJECT: ccwj-dbt
+        run: python -W ignore scripts/audit/vanguard_check12_replay.py

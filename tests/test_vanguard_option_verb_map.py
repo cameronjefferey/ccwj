@@ -1,8 +1,9 @@
-"""Vanguard option Buy/Sell becomes an open and a close in staging.
+"""Vanguard option Buy/Sell follows whichever verb comes first.
 
-Synthetic rows stand in for warehouse fills. A Vanguard call or put
-stored as an equity verb is promoted only when that contract has no
-option open already. A Sell is the later close, not a second open.
+Synthetic rows stand in for warehouse fills. The first equity verb on
+a contract (date, then seed sequence) is the open. A later verb in the
+other direction is the close. The rule applies only to a Vanguard call
+or put that has no option open already.
 """
 from pathlib import Path
 
@@ -11,47 +12,9 @@ _STG = (
     / "dbt" / "models" / "staging" / "stg_history.sql"
 )
 
-# The staging CASE. The test fails if the model drifts from the rows below.
-_CASE = """
-            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
-             and c.instrument_type in ('Call', 'Put')
-             and c.trade_symbol is not null
-             and c.action in ('equity_buy', 'equity_sell')
-             and not coalesce(sib.has_option_open, false)
-            then case c.action
-                when 'equity_buy' then 'option_buy_to_open'
-                when 'equity_sell' then 'option_sell_to_close'
-            end
-"""
-
 
 def _slug(account: str) -> str:
     return (account or "").strip().split(" ")[0].lower()
-
-
-def remap(rows: list[dict]) -> list[str]:
-    """Same decision as ``vanguard_option_verbs`` in stg_history."""
-    opens = set()
-    for row in rows:
-        if row["action"] in ("option_buy_to_open", "option_sell_to_open"):
-            opens.add(_key(row))
-    out = []
-    for row in rows:
-        action = row["action"]
-        if (
-            _slug(row["account"]) == "vanguard"
-            and row["instrument_type"] in ("Call", "Put")
-            and row.get("trade_symbol")
-            and action in ("equity_buy", "equity_sell")
-            and _key(row) not in opens
-        ):
-            action = (
-                "option_buy_to_open"
-                if action == "equity_buy"
-                else "option_sell_to_close"
-            )
-        out.append(action)
-    return out
 
 
 def _key(row: dict):
@@ -63,6 +26,58 @@ def _key(row: dict):
     )
 
 
+def remap(rows: list[dict]) -> list[str]:
+    """Same decision as ``vanguard_option_verbs`` in stg_history."""
+    opens = set()
+    for row in rows:
+        if row["action"] in ("option_buy_to_open", "option_sell_to_open"):
+            opens.add(_key(row))
+
+    first = {}
+    for index, row in enumerate(rows):
+        if not _eligible(row) or _key(row) in opens:
+            continue
+        rank = (
+            row.get("trade_date") is None,
+            row.get("trade_date") or "",
+            row.get("seq") is None,
+            row.get("seq") if row.get("seq") is not None else 0,
+            index,
+        )
+        previous = first.get(_key(row))
+        if previous is None or rank < previous[0]:
+            first[_key(row)] = (rank, row["action"])
+
+    out = []
+    for row in rows:
+        action = row["action"]
+        if _eligible(row) and _key(row) not in opens:
+            opener = first[_key(row)][1]
+            if opener == "equity_buy":
+                action = (
+                    "option_buy_to_open"
+                    if action == "equity_buy"
+                    else "option_sell_to_close"
+                )
+            else:
+                action = (
+                    "option_sell_to_open"
+                    if action == "equity_sell"
+                    else "option_buy_to_close"
+                )
+        out.append(action)
+    return out
+
+
+def _eligible(row: dict) -> bool:
+    return (
+        _slug(row["account"]) == "vanguard"
+        and row["instrument_type"] in ("Call", "Put")
+        and row.get("trade_symbol")
+        and row["action"] in ("equity_buy", "equity_sell")
+    )
+
+
 def _row(**overrides) -> dict:
     base = {
         "tenant_id": "t1",
@@ -71,29 +86,79 @@ def _row(**overrides) -> dict:
         "instrument_type": "Call",
         "trade_symbol": "SYN260101C00010000",
         "action": "equity_buy",
+        "trade_date": "2026-01-02",
+        "seq": 1,
     }
     base.update(overrides)
     return base
 
 
-def test_sql_case_matches_the_synthetic_rule():
+def test_sql_is_order_aware_and_drops_the_sequence_column():
     sql = _STG.read_text()
-    assert _CASE in sql
-    assert "vanguard_option_verbs as (" in sql
+    assert "order by c.trade_date nulls last, c._row_seq nulls last" in sql
+    assert "f.first_action = 'equity_buy'" in sql
+    assert "when 'equity_buy' then 'option_buy_to_open'" in sql
+    assert "else 'option_sell_to_close'" in sql
+    assert "f.first_action = 'equity_sell'" in sql
+    assert "when 'equity_sell' then 'option_sell_to_open'" in sql
+    assert "else 'option_buy_to_close'" in sql
+    assert "not coalesce(g.has_option_open, false)" in sql
+    assert "c.* except (_row_seq, action)" in sql
     assert "from vanguard_option_verbs c" in sql
-    assert "logical_or(\n                action in ('option_buy_to_open', 'option_sell_to_open')" in sql
+    # The final table does not publish seed order.
+    tail = sql[sql.rfind("select\n    account, user_id"):]
+    assert "_row_seq" not in tail
 
 
 def test_vanguard_buy_on_a_call_is_an_open():
     assert remap([_row()]) == ["option_buy_to_open"]
 
 
-def test_vanguard_sell_after_the_buy_is_a_close():
+def test_buy_then_sell_is_a_long_partial_close():
     rows = [
-        _row(action="equity_buy"),
-        _row(action="equity_sell"),
+        _row(action="equity_buy", trade_date="2026-01-02", seq=1),
+        _row(action="equity_sell", trade_date="2026-01-15", seq=2),
+        _row(action="equity_buy", trade_date="2026-01-20", seq=3),
     ]
-    assert remap(rows) == ["option_buy_to_open", "option_sell_to_close"]
+    assert remap(rows) == [
+        "option_buy_to_open",
+        "option_sell_to_close",
+        "option_buy_to_open",
+    ]
+
+
+def test_sell_then_buy_is_a_short_open():
+    rows = [
+        _row(action="equity_sell", trade_date="2026-01-02", seq=1, instrument_type="Put"),
+        _row(action="equity_buy", trade_date="2026-01-20", seq=2, instrument_type="Put"),
+        _row(action="equity_sell", trade_date="2026-01-22", seq=3, instrument_type="Put"),
+    ]
+    assert remap(rows) == [
+        "option_sell_to_open",
+        "option_buy_to_close",
+        "option_sell_to_open",
+    ]
+
+
+def test_same_day_order_follows_sequence_not_the_verb():
+    short_first = [
+        _row(action="equity_sell", trade_date="2026-01-02", seq=1),
+        _row(action="equity_buy", trade_date="2026-01-02", seq=2),
+    ]
+    long_first = [
+        _row(action="equity_buy", trade_date="2026-01-02", seq=1),
+        _row(action="equity_sell", trade_date="2026-01-02", seq=2),
+    ]
+    assert remap(short_first) == ["option_sell_to_open", "option_buy_to_close"]
+    assert remap(long_first) == ["option_buy_to_open", "option_sell_to_close"]
+
+
+def test_a_dated_fill_beats_an_undated_one():
+    rows = [
+        _row(action="equity_sell", trade_date=None, seq=1),
+        _row(action="equity_buy", trade_date="2026-01-02", seq=2),
+    ]
+    assert remap(rows) == ["option_sell_to_close", "option_buy_to_open"]
 
 
 def test_vanguard_stock_buy_stays_an_equity_verb():
@@ -106,12 +171,17 @@ def test_other_broker_option_buy_stays_an_equity_verb():
     assert remap([_row(account="Schwab Account")]) == ["equity_buy"]
 
 
-def test_buy_beside_an_existing_option_open_is_left_alone():
+def test_verbs_beside_an_existing_option_open_are_left_alone():
     rows = [
-        _row(action="option_buy_to_open"),
-        _row(action="equity_buy"),
+        _row(action="option_sell_to_open", trade_date="2026-01-01", seq=1),
+        _row(action="equity_sell", trade_date="2026-01-02", seq=2),
+        _row(action="equity_buy", trade_date="2026-01-03", seq=3),
     ]
-    assert remap(rows) == ["option_buy_to_open", "equity_buy"]
+    assert remap(rows) == [
+        "option_sell_to_open",
+        "equity_sell",
+        "equity_buy",
+    ]
 
 
 def test_a_different_contract_still_promotes():
