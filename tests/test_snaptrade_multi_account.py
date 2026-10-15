@@ -1358,6 +1358,42 @@ def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatc
     assert res["current_df"] is None
 
 
+@pytest.mark.parametrize(
+    ("all_positions", "expected_preserve"),
+    [
+        (None, ("Bond",)),
+        ([], ()),
+    ],
+)
+def test_run_sync_distinguishes_unavailable_from_empty_all_positions(
+    monkeypatch, all_positions, expected_preserve,
+):
+    """A failed supplemental read preserves old bonds; an authoritative
+    empty list removes them on the next current-position snapshot."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {"holdings": {"last_successful_sync": fresh}}
+        },
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_all_positions", lambda *a, **k: all_positions,
+    )
+    res = _snap._run_sync(
+        9,
+        object(),
+        snap=_SNAP,
+        acc_row={
+            "snaptrade_account_id": "abc",
+            "account_name": "Schwab Account",
+        },
+        lookback_days=60,
+        defer_push=True,
+    )
+    assert res["preserve_current_security_types"] == expected_preserve
+
+
 def test_run_sync_does_not_flag_holdings_timestamp_before_connect(monkeypatch):
     """A Vanguard last_successful_sync from before this grant is not a stall.
 
@@ -1726,7 +1762,7 @@ def test_fetch_positions_still_raises_auth_error_on_403():
     assert exc_info.value.endpoint == "get_user_account_positions"
 
 
-def test_fetch_all_positions_403_returns_empty_and_does_not_raise():
+def test_fetch_all_positions_403_returns_unavailable_and_does_not_raise():
     """positions/all is best-effort. A 403 must not mark the connection
     broken. Classic ``get_user_account_positions`` still raises."""
 
@@ -1740,16 +1776,16 @@ def test_fetch_all_positions_403_returns_empty_and_does_not_raise():
             def get_all_account_positions(**_):
                 raise _ApiException()
 
-    assert _snap._fetch_all_positions(_Boom, "u", "s", "acc") == []
+    assert _snap._fetch_all_positions(_Boom, "u", "s", "acc") is None
 
 
-def test_fetch_all_positions_missing_method_returns_empty():
+def test_fetch_all_positions_missing_method_returns_unavailable():
     class _Client:
         class account_information:
             pass
 
-    assert _snap._fetch_all_positions(_Client, "u", "s", "acc") == []
-    assert _snap._fetch_all_positions(object(), "u", "s", "acc") == []
+    assert _snap._fetch_all_positions(_Client, "u", "s", "acc") is None
+    assert _snap._fetch_all_positions(object(), "u", "s", "acc") is None
 
 
 def test_fetch_all_positions_unwraps_results_and_drops_a_bare_wrapper():
@@ -1778,8 +1814,10 @@ def test_fetch_all_positions_unwraps_results_and_drops_a_bare_wrapper():
     )
     assert len(rows) == 1
     assert rows[0]["instrument"]["kind"] == "bond"
-    assert _snap._fetch_all_positions(_Client({"results": "nope"}), "u", "s", "acc") == []
-    assert _snap._fetch_all_positions(_Client({"unexpected": 1}), "u", "s", "acc") == []
+    assert _snap._fetch_all_positions(_Client({"results": []}), "u", "s", "acc") == []
+    assert _snap._positions_all_rows([]) == []
+    assert _snap._fetch_all_positions(_Client({"results": "nope"}), "u", "s", "acc") is None
+    assert _snap._fetch_all_positions(_Client({"unexpected": 1}), "u", "s", "acc") is None
 
 
 def test_activities_timeout_logs_step_endpoint_and_status(caplog):
