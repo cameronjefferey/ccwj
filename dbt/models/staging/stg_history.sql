@@ -223,6 +223,49 @@ cleaned as (
     from osi_split
 ),
 
+-- Vanguard option fills arrive as Buy / Sell. The action CASE above
+-- stores those as equity verbs, so a call or put with no Buy to Open
+-- looks opened-before-history and its P&L is booked at zero. On a
+-- Vanguard account the Buy is the open and a later Sell on that same
+-- contract is the close (a partial sale before expiry, not a short
+-- open). Promote them only when this contract has no option open
+-- already: a second Buy beside Buy to Open would add the premium
+-- twice. Fee netting below then sees option actions. Stock buys stay
+-- equity verbs, and other brokers stay on the labels they already send.
+vanguard_option_verbs as (
+    select
+        c.* except (action),
+        case
+            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
+             and c.instrument_type in ('Call', 'Put')
+             and c.trade_symbol is not null
+             and c.action in ('equity_buy', 'equity_sell')
+             and not coalesce(sib.has_option_open, false)
+            then case c.action
+                when 'equity_buy' then 'option_buy_to_open'
+                when 'equity_sell' then 'option_sell_to_close'
+            end
+            else c.action
+        end as action
+    from cleaned c
+    left join (
+        select
+            tenant_id,
+            user_id,
+            account,
+            trade_symbol,
+            logical_or(
+                action in ('option_buy_to_open', 'option_sell_to_open')
+            ) as has_option_open
+        from cleaned
+        group by 1, 2, 3, 4
+    ) sib
+        on sib.tenant_id is not distinct from c.tenant_id
+       and sib.user_id is not distinct from c.user_id
+       and sib.account is not distinct from c.account
+       and sib.trade_symbol is not distinct from c.trade_symbol
+),
+
 -- An estimated order fee copied onto a cash settlement (description
 -- still contains "est. fee") nets 10 × 16.45 × 100 = 16,450 into
 -- 16,462.22. The next rebuild puts the statement cash back and zeros
@@ -249,7 +292,7 @@ fee_guard as (
                 )
             )
         ) as drop_estimated_fee
-    from cleaned c
+    from vanguard_option_verbs c
 ),
 
 amount_signed as (
