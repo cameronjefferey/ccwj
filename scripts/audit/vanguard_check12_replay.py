@@ -298,6 +298,13 @@ def emit(key: str, value) -> None:
     print(line)
 
 
+def _mismatch_failed(value) -> bool:
+    """Zero is a clean replay. None is not."""
+    if value is None:
+        return True
+    return int(value) != 0
+
+
 def main() -> int:
     from google.cloud import bigquery
 
@@ -325,7 +332,7 @@ def main() -> int:
             continue
         for key, value in rows[0].items():
             emit(f"{name}_{key}", value)
-        if int(rows[0]["mismatch_after"] or -1) != 0:
+        if _mismatch_failed(rows[0]["mismatch_after"]):
             failed += 1
     return 1 if failed else 0
 

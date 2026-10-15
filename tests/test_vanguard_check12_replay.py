@@ -1,6 +1,7 @@
 """The CHECK 12 replay is a select, and it does not print identities."""
 from scripts.audit.vanguard_check12_replay import (
     _LINE,
+    _mismatch_failed,
     assert_select_only,
     emit,
     queries,
@@ -23,6 +24,12 @@ def test_replay_is_one_select():
     assert "option_buy_to_open" in sql
     assert "option_sell_to_open" in sql
     assert "mismatch_after" in sql
+
+
+def test_a_zero_mismatch_is_success():
+    assert _mismatch_failed(0) is False
+    assert _mismatch_failed(None) is True
+    assert _mismatch_failed(-1) is True
 
 
 def test_emit_drops_account_ids(capsys):
