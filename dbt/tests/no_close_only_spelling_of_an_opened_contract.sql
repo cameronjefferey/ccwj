@@ -4,11 +4,11 @@
     Compact OCC, space-padded OSI, and Schwab long form of the same
     contract must not survive as two rows. The failure mode: the close
     stays on one spelling with no opening fill (opened_before_history,
-    dropped from int_strategy_classification) while the open stays on
-    the other spelling. int_option_exit_analysis still counts the close
-    and labels it Other Option, so mart_coaching_signals.total_closed
-    runs ahead of classified closed contracts. CHECK 12, run
-    38531276167.
+    dropped from int_strategy_classification and from the coach) while
+    the open stays on the other spelling. The close is then invisible
+    to strategy tags and to CHECK 12, and the open is a different
+    contract. CHECK 12, run 38531276167, was this shape until the
+    symbol id was unified; the test still catches a split.
 
     A genuine pre-window close — no opening fill on any spelling — is
     not this bug and is not returned.

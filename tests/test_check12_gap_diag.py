@@ -8,7 +8,7 @@ def test_every_statement_is_a_select():
         names.append(name)
         assert_select_only(sql)
         assert "{{" not in sql
-        assert "{0,5}" in sql or name in {"tables", "check12", "simulate"}
+        assert "{0,5}" in sql or name in {"tables", "check12", "simulate", "grain"}
     assert names == [
         "tables",
         "spellings",
@@ -17,7 +17,7 @@ def test_every_statement_is_a_select():
         "siblings",
         "raw_opens",
         "simulate",
-        "fills",
+        "grain",
         "raw_actions",
     ]
 

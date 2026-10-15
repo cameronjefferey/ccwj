@@ -452,56 +452,92 @@ def queries():
             """,
         ),
         (
-            "fills",
+            "grain",
             f"""
-            with {_EXTRAS},
-            staged as (
+            with classified as (
                 select
-                    h.tenant_id,
-                    h.trade_symbol,
-                    h.user_id,
-                    countif(h.action = 'option_sell_to_open') as sto,
-                    countif(h.action = 'option_buy_to_open') as bto,
-                    countif(h.action = 'option_sell_to_close') as stc,
-                    countif(h.action = 'option_buy_to_close') as btc,
-                    countif(h.action = 'option_expired') as expired,
-                    countif(h.action = 'option_assigned') as assigned,
-                    countif(h.action = 'option_exercised') as exercised,
-                    countif(h.action in ('equity_buy', 'equity_sell', 'equity_sell_short')) as equity_verb,
-                    countif(h.action = 'other') as other_action,
-                    count(*) as rows
-                from {DS}.stg_history h
-                where h.instrument_type in ('Call', 'Put')
-                group by 1, 2, 3
+                    account,
+                    user_id,
+                    tenant_id,
+                    trade_symbol,
+                    strategy,
+                    status
+                from {DS}.int_strategy_classification
+                where trade_group_type = 'option_contract'
+            ),
+            kept as (
+                select
+                    oc.account,
+                    oc.user_id,
+                    oc.tenant_id,
+                    oc.trade_symbol,
+                    oc.status,
+                    oc.close_date,
+                    sc.strategy
+                from {DS}.int_option_contracts oc
+                inner join classified sc
+                    on oc.account = sc.account
+                    and oc.user_id is not distinct from sc.user_id
+                    and oc.tenant_id is not distinct from sc.tenant_id
+                    and oc.trade_symbol = sc.trade_symbol
+                where not coalesce(oc.opened_before_history, false)
+            ),
+            exit_rows as (
+                select coalesce(tenant_id, account) as tkey, strategy
+                from kept
+                where status = 'Closed'
+                  and close_date is not null
+            ),
+            kind_rows as (
+                select coalesce(tenant_id, account) as tkey, strategy
+                from kept
+            ),
+            roll_rows as (
+                select coalesce(r.tenant_id, r.account) as tkey, sc.strategy
+                from {DS}.int_option_rolls r
+                inner join classified sc
+                    on r.account = sc.account
+                    and r.user_id is not distinct from sc.user_id
+                    and r.tenant_id is not distinct from sc.tenant_id
+                    and r.old_trade_symbol = sc.trade_symbol
+            ),
+            base as (
+                select tkey, strategy from exit_rows
+                union distinct
+                select tkey, strategy from kind_rows
+                union distinct
+                select tkey, strategy from roll_rows
+            ),
+            coach as (
+                select b.tkey, b.strategy, count(e.strategy) as n
+                from base b
+                left join exit_rows e using (tkey, strategy)
+                group by 1, 2
+            ),
+            pos as (
+                select coalesce(tenant_id, account) as tkey, strategy, count(*) as n
+                from classified
+                where status = 'Closed'
+                group by 1, 2
+            ),
+            keys as (
+                select tkey, strategy from coach
+                union distinct
+                select tkey, strategy from pos
             )
             select
-                count(*) as extra_rows,
-                countif(close_date < date '2026-01-01') as closed_before_2026,
-                countif(close_date >= date '2026-01-01' and close_date < date '2026-07-01') as closed_2026_h1,
-                countif(close_date >= date '2026-07-01' and close_date < date '2026-10-01') as closed_2026_q3,
-                countif(close_date >= date '2026-10-01' and close_date < date '2026-10-13') as closed_early_oct,
-                countif(close_date >= date '2026-10-13') as closed_since_oct13,
-                countif(coalesce(s.sto, 0) + coalesce(s.bto, 0) > 0) as has_option_open,
-                countif(coalesce(s.btc, 0) + coalesce(s.stc, 0) > 0) as has_option_close,
-                countif(coalesce(s.expired, 0) > 0) as has_expired,
-                countif(coalesce(s.assigned, 0) > 0) as has_assigned,
-                countif(coalesce(s.exercised, 0) > 0) as has_exercised,
-                countif(coalesce(s.equity_verb, 0) > 0) as has_equity_verb,
-                countif(coalesce(s.other_action, 0) > 0) as has_other_action,
-                countif(s.trade_symbol is null) as no_staged_fill,
                 countif(
-                    lower(split(trim(coalesce(e.account, '')), ' ')[safe_offset(0)]) = 'vanguard'
-                    and close_date >= date '2026-10-13'
-                ) as vanguard_closed_since_oct13,
+                    c.tkey is not null and p.tkey is not null
+                    and coalesce(c.n, 0) != coalesce(p.n, 0)
+                ) as mismatch_pairs,
+                countif(c.tkey is not null and p.tkey is null) as coach_only_pairs,
                 countif(
-                    lower(split(trim(coalesce(e.account, '')), ' ')[safe_offset(0)]) = 'vanguard'
-                    and close_date < date '2026-10-01'
-                ) as vanguard_closed_before_oct
-            from extras e
-            left join staged s
-                on s.tenant_id = e.tenant_id
-                and s.trade_symbol = e.trade_symbol
-                and s.user_id is not distinct from e.user_id
+                    c.tkey is not null and p.tkey is null and coalesce(c.n, 0) = 0
+                ) as coach_only_zero,
+                countif(c.tkey is null and p.tkey is not null) as pos_only_pairs
+            from keys k
+            left join coach c using (tkey, strategy)
+            left join pos p using (tkey, strategy)
             """,
         ),
         (
@@ -623,6 +659,11 @@ def main() -> int:
             emit(f"{name}_{key}", value)
         if len(rows) != 1:
             emit(f"{name}_extra_result_rows", len(rows) - 1)
+        if name == "grain":
+            mismatch = int(row["mismatch_pairs"] or 0)
+            coach_only = int(row["coach_only_pairs"] or 0)
+            if mismatch or coach_only:
+                failed += 1
     return 1 if failed else 0
 
 
