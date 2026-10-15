@@ -1739,6 +1739,78 @@ def _cur_df(symbol, qty, price, *, sectype="Equity", desc=""):
     }])
 
 
+def test_unavailable_supplemental_feed_preserves_only_owned_bonds(monkeypatch):
+    """A positions/all timeout must not erase a prior bond, while classic
+    equity rows still refresh and another tenant remains untouched."""
+    account = "Schwab Account"
+    other_tenant = "snaptrade:other"
+    existing = pd.concat([
+        _upload._prepare_seed_df(
+            _cur_df("AAPL", 10, 100),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("912810TM0", 10, 980, sectype="Bond"),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("912810ZZ9", 2, 990, sectype="Bond"),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=7,
+            tenant_id=other_tenant,
+        ),
+    ], ignore_index=True).to_csv(index=False)
+    fresh = _upload._prepare_seed_df(
+        _cur_df("AAPL", 11, 101),
+        account,
+        CURRENT_SEED_COLUMNS,
+        user_id=9,
+        tenant_id=TENANT_SCHWAB_5989,
+    )
+
+    preserved_csv = _upload._merge_seed_with_existing(
+        _upload.CURRENT_PATH,
+        account,
+        fresh,
+        CURRENT_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_5989,
+        existing_content=existing,
+        preserve_current_security_types=("Bond",),
+    )
+    preserved = _parse(preserved_csv)
+    owned = preserved[preserved["tenant_id"] == TENANT_SCHWAB_5989]
+    other = preserved[preserved["tenant_id"] == other_tenant]
+    assert set(owned["Symbol"]) == {"AAPL", "912810TM0"}
+    assert float(owned.loc[owned["Symbol"] == "AAPL", "Quantity"].iloc[0]) == 11
+    assert set(other["Symbol"]) == {"912810ZZ9"}
+
+    # A later successful positions/all response with no bond is authoritative.
+    cleared_csv = _upload._merge_seed_with_existing(
+        _upload.CURRENT_PATH,
+        account,
+        fresh,
+        CURRENT_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_5989,
+        existing_content=preserved_csv,
+    )
+    cleared = _parse(cleared_csv)
+    assert set(
+        cleared.loc[
+            cleared["tenant_id"] == TENANT_SCHWAB_5989, "Symbol"
+        ]
+    ) == {"AAPL"}
+    assert set(
+        cleared.loc[cleared["tenant_id"] == other_tenant, "Symbol"]
+    ) == {"912810ZZ9"}
+
+
 class _FakeSeedStore:
     """In-memory stand-in for the GitHub seed files. ``get`` mirrors
     ``_get_file_content`` (None == 404); ``commit`` mirrors
@@ -1987,6 +2059,42 @@ def test_batch_push_preserves_every_tenant(monkeypatch):
     # All three tenants' snapshot lines present.
     assert set(cur["tenant_id"]) == {TENANT_SCHWAB_5989, TENANT_SCHWAB_5167, TENANT_ALPACA}
     assert set(cur["Symbol"]) == {"AAPL", "MSFT", "TSLA"}
+
+
+def test_batch_push_carries_supplemental_bond_preservation(monkeypatch):
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    initial = pd.concat([
+        _cur_df("AAPL", 10, 100),
+        _cur_df("912810TM0", 10, 980, sectype="Bond"),
+    ], ignore_index=True)
+    ok, err, *_ = _upload.merge_and_push_seeds(
+        "Schwab Account",
+        None,
+        initial,
+        commit_message="initial positions/all success",
+        user_id=9,
+        tenant_id=TENANT_SCHWAB_5989,
+        skip_history=True,
+    )
+    assert ok, err
+
+    entry = {
+        "account_name": "Schwab Account",
+        "user_id": 9,
+        "tenant_id": TENANT_SCHWAB_5989,
+        "history_df": None,
+        "current_df": _cur_df("AAPL", 11, 101),
+        "balances_df": None,
+        "skip_history": True,
+        "preserve_current_security_types": ("Bond",),
+    }
+    ok, err, *_ = _upload.merge_and_push_seeds_batch(
+        [entry], commit_message="positions/all temporarily unavailable",
+    )
+    assert ok, err
+    current = _parse(store.files[_upload.CURRENT_PATH])
+    assert set(current["Symbol"]) == {"AAPL", "912810TM0"}
 
 
 def test_batch_push_skips_entries_missing_tenant_id(monkeypatch):

@@ -3363,6 +3363,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # SDK without this method must not fail the sync or mark the
     # connection broken. Classic positions stay the auth signal.
     all_positions = _fetch_all_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
+    all_positions_available = all_positions is not None
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
     account_summary = _fetch_account_summary(client, snap_user_id, snap_secret, snaptrade_account_id)
     summary_institution_account_id = (
@@ -3568,6 +3569,11 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "history_df": None if skip_history else history_df,
             "current_df": None if push_history_only else current_snapshot_df,
             "balances_df": None if push_history_only else balances_df,
+            # positions/all is supplemental to the classic holdings feeds.
+            # On a transient failure, keep the last known bond rows while
+            # still allowing equities/options to refresh normally.
+            "preserve_current_security_types":
+                ("Bond",) if not all_positions_available else (),
             "push_history_only": push_history_only,
             "skip_history": skip_history,
             "history_rows": 0 if skip_history else len(history_df),
@@ -3640,6 +3646,9 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             tenant_id=tenant_id,
             skip_history=skip_history,
             balances_df=None if push_history_only else balances_df,
+            preserve_current_security_types=(
+                ("Bond",) if not all_positions_available else ()
+            ),
             snapshot_account_id=snaptrade_account_id,
             snapshot_generation=snapshot_generation,
         )
@@ -3793,14 +3802,16 @@ def _fetch_all_positions(client, snap_user_id, snap_secret, account_id):
     SnapTrade documents this as every instrument, including bonds and
     other non-equity positions that ``get_user_account_positions`` does
     not return. Best-effort on purpose: a 403, a missing SDK method, or
-    a wrapped body we cannot read returns ``[]``. It must not raise
-    ``_SnapTradeAuthError`` — the classic positions call remains the
-    auth signal. Callers dedup these rows against that classic list.
+    a wrapped body we cannot read returns ``None``. A valid empty response
+    returns ``[]``. Callers need that distinction so a transient failure
+    does not delete supplemental holdings from the stored snapshot. It must
+    not raise ``_SnapTradeAuthError`` — the classic positions call remains
+    the auth signal. Callers dedup these rows against that classic list.
     """
     info = getattr(client, "account_information", None)
     getter = getattr(info, "get_all_account_positions", None) if info is not None else None
     if getter is None:
-        return []
+        return None
     try:
         resp = getter(
             user_id=snap_user_id,
@@ -3811,7 +3822,7 @@ def _fetch_all_positions(client, snap_user_id, snap_secret, account_id):
         _log_snaptrade_sync_error(
             "holdings", "get_all_account_positions", account_id, exc,
         )
-        return []
+        return None
     return _positions_all_rows(resp)
 
 
@@ -3830,8 +3841,10 @@ def _positions_all_rows(resp):
         data = body.get("data")
         if isinstance(data, list):
             return _coerce_list(data)
-        return []
-    return _coerce_list(resp)
+        return None
+    if isinstance(body, list):
+        return _coerce_list(body)
+    return None
 
 
 def _fetch_recent_orders(

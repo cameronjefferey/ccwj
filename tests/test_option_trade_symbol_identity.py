@@ -40,9 +40,14 @@ def _is_opened_before_history(fills):
 def test_macro_runs_before_the_estimated_fee_match():
     history = (ROOT / "dbt/models/staging/stg_history.sql").read_text()
     current = (ROOT / "dbt/models/staging/stg_current.sql").read_text()
+    marks = (ROOT / "dbt/models/intermediate/int_option_marks_daily.sql").read_text()
     macro = (ROOT / "dbt/macros/canonical_option_trade_symbol.sql").read_text()
     assert "canonical_option_trade_symbol(" in history
     assert "canonical_option_trade_symbol(" in current
+    # The SCD2 snapshot retains the pre-canonicalization spellings. Its
+    # reader must migrate those historical ids or they no longer join to
+    # the canonical contracts.
+    assert marks.count("canonical_option_trade_symbol(") >= 2
     # The CTE, not the comment that names it. The rewrite has to land
     # before the shadow match so both spellings share one contract id.
     assert history.find("canonical_option_trade_symbol(") < history.find("est_fee_matched as (")

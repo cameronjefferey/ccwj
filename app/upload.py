@@ -1595,6 +1595,7 @@ _FETCH_FROM_GITHUB = object()
 def _merge_seed_with_existing(
     path, account_name, new_df, seed_columns,
     *, tenant_id=None, existing_content=_FETCH_FROM_GITHUB,
+    preserve_current_security_types=(),
 ):
     """
     Merge new account data with existing seed data.
@@ -1617,6 +1618,12 @@ def _merge_seed_with_existing(
     ``other_df`` and never touched — required by the tenant-isolation
     rule. See ``.cursor/rules/bigquery-tenant-isolation.mdc`` and
     ``docs/V2_TENANT_KEY_DESIGN.md``.
+
+    ``preserve_current_security_types`` is a fail-safe for supplemental
+    holdings feeds. When such a feed is unavailable, keep matching rows from
+    the prior current-position snapshot while replacing the authoritative
+    classic rows normally. A later successful authoritative empty response
+    passes no preserve types and removes the stale rows.
 
     Raises ``SeedFetchError`` if the existing seed cannot be fetched
     for any reason other than HTTP 404 — see commit ``3f4aecb`` for
@@ -1792,6 +1799,61 @@ def _merge_seed_with_existing(
     else:
         # Current positions (snapshot): replace that account entirely
         merged_account = new_df
+        preserve_types = {
+            str(value or "").strip().casefold()
+            for value in (preserve_current_security_types or ())
+            if str(value or "").strip()
+        }
+        if preserve_types and path == CURRENT_PATH:
+            security_col = next(
+                (c for c in seed_columns if str(c).lower() == "security_type"),
+                None,
+            )
+            symbol_col = next(
+                (c for c in seed_columns if str(c).lower() == "symbol"),
+                None,
+            )
+            if security_col is not None:
+                preserve_mask = (
+                    existing_account_df[security_col]
+                    .astype(str)
+                    .str.strip()
+                    .str.casefold()
+                    .isin(preserve_types)
+                )
+                # Supplemental rows were introduced after tenant_id became
+                # mandatory. Never claim an ambiguous legacy row merely
+                # because its display account label matches.
+                if tenant_id is not None and "tenant_id" in existing_account_df.columns:
+                    preserve_mask &= (
+                        existing_account_df["tenant_id"].map(_normalize_tid)
+                        == _normalize_tid(tenant_id)
+                    )
+                if symbol_col is not None:
+                    fresh_symbols = set(
+                        new_df[symbol_col].astype(str).str.strip().str.upper()
+                    )
+                    preserve_mask &= ~(
+                        existing_account_df[symbol_col]
+                        .astype(str)
+                        .str.strip()
+                        .str.upper()
+                        .isin(fresh_symbols)
+                    )
+                preserved = existing_account_df.loc[preserve_mask].copy()
+                if not preserved.empty:
+                    output_account_col = next(
+                        c for c in seed_columns
+                        if str(c).strip().lower() == "account"
+                    )
+                    preserved[output_account_col] = account_name
+                    if tenant_id is not None and "tenant_id" in preserved.columns:
+                        preserved["tenant_id"] = _normalize_tid(tenant_id)
+                    if not new_df.empty and "user_id" in preserved.columns:
+                        preserved["user_id"] = new_df.iloc[0]["user_id"]
+                    merged_account = pd.concat(
+                        [new_df, preserved], ignore_index=True,
+                    )
 
     merged = pd.concat([other_df, merged_account], ignore_index=True)
     return merged[seed_columns].to_csv(index=False)
@@ -2285,6 +2347,7 @@ def merge_and_push_seeds(
     tenant_id,
     skip_history=False,
     balances_df=None,
+    preserve_current_security_types=(),
     snapshot_account_id=None,
     snapshot_generation=None,
 ):
@@ -2308,6 +2371,9 @@ def merge_and_push_seeds(
         balances_df: optional cash + account_total rows shaped for
             BALANCE_SEED_COLUMNS. Written in the same batch as the others.
             Any broker connector writes here.
+        preserve_current_security_types: current-position security types
+            whose prior rows should survive this write because their
+            supplemental broker feed was unavailable.
         skip_history: when True, write positions only (and balances if given).
         snapshot_account_id / snapshot_generation: SnapTrade's optimistic
             ordering token, reserved before the broker fetch. If a newer fetch
@@ -2370,6 +2436,9 @@ def merge_and_push_seeds(
     for path, prepared_df, seed_columns in specs:
         content = _merge_seed_with_existing(
             path, account_name, prepared_df, seed_columns, tenant_id=tenant_id_str,
+            preserve_current_security_types=(
+                preserve_current_security_types if path == CURRENT_PATH else ()
+            ),
         )
         path_contents.append((path, content))
 
@@ -2404,7 +2473,8 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
         ``account_name`` (str), ``history_df`` (DataFrame|None),
         ``current_df`` (DataFrame|None), ``user_id`` (int), ``tenant_id`` (str),
         ``skip_history`` (bool), ``balances_df`` (DataFrame|None), and optional
-        ``snapshot_account_id`` / ``snapshot_generation`` ordering metadata.
+        ``preserve_current_security_types`` plus ``snapshot_account_id`` /
+        ``snapshot_generation`` ordering metadata.
     ``current_df=None`` is a HISTORY-ONLY push (the intraday trade poll): only
     trade_history is rewritten — the positions/balances snapshots are left
     untouched so an intraday cadence doesn't rebuild the warehouse on snapshot
@@ -2544,6 +2614,10 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
                     content = _merge_seed_with_existing(
                         path, account_name, prepared_df, seed_columns,
                         tenant_id=tenant_id_str, existing_content=content,
+                        preserve_current_security_types=(
+                            entry.get("preserve_current_security_types", ())
+                            if path == CURRENT_PATH else ()
+                        ),
                     )
                 except SeedFetchError:
                     raise
