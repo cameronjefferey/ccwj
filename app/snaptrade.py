@@ -75,6 +75,7 @@ from app.models import (
 from app.snaptrade_normalize import (
     activities_to_history_df,
     balances_to_balance_df,
+    merge_holdings_with_all_positions,
     orders_to_history_df,
     positions_to_current_df,
     recent_option_fee_rates,
@@ -3358,6 +3359,10 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     orders = _fetch_sync_orders(client, snap_user_id, snap_secret, snaptrade_account_id)
     positions = _fetch_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     option_holdings = _fetch_option_holdings(client, snap_user_id, snap_secret, snaptrade_account_id)
+    # Bonds and other non-equity instruments. Best-effort: a 403 or an
+    # SDK without this method must not fail the sync or mark the
+    # connection broken. Classic positions stay the auth signal.
+    all_positions = _fetch_all_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
     account_summary = _fetch_account_summary(client, snap_user_id, snap_secret, snaptrade_account_id)
     summary_institution_account_id = (
@@ -3450,9 +3455,13 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # flag, plus an unflagged money-market fund when the reported account
     # total matches without that fund. Share buys of those symbols are
     # not equity lots. Dividends and interest stay.
-    held_for_cash = list(positions or []) + list(option_holdings or [])
+    # Cash-equivalent detection stays on the classic list. positions/all
+    # only appends identifiers the classic feed did not already return,
+    # so a money-market decision for an existing equity does not move.
+    classic_held = list(positions or []) + list(option_holdings or [])
+    held_for_cash = merge_holdings_with_all_positions(classic_held, all_positions)
     inside_cash = symbols_already_in_cash(
-        held_for_cash, balances=balances, account_summary=account_summary,
+        classic_held, balances=balances, account_summary=account_summary,
     )
     activities_df = activities_to_history_df(
         activities, account_name=account_name, user_id=user_id,
@@ -3505,7 +3514,8 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # (positions_to_current_df classifies each row via _is_option). Option
     # holdings come from a SEPARATE SnapTrade endpoint — see
     # _fetch_option_holdings — so an open option leg lands in the snapshot
-    # instead of only the trade-history feed.
+    # instead of only the trade-history feed. positions/all rows whose
+    # identifier is new are on this same list; a repeated ticker is not.
     current_df = positions_to_current_df(
         held_for_cash,
         account_name=account_name, user_id=user_id,
@@ -3773,6 +3783,53 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
         )
         if _looks_like_auth_error(exc):
             raise _SnapTradeAuthError("list_option_holdings", exc)
+        return []
+    return _coerce_list(resp)
+
+
+def _fetch_all_positions(client, snap_user_id, snap_secret, account_id):
+    """Pull ``GET /accounts/{id}/positions/all``.
+
+    SnapTrade documents this as every instrument, including bonds and
+    other non-equity positions that ``get_user_account_positions`` does
+    not return. Best-effort on purpose: a 403, a missing SDK method, or
+    a wrapped body we cannot read returns ``[]``. It must not raise
+    ``_SnapTradeAuthError`` — the classic positions call remains the
+    auth signal. Callers dedup these rows against that classic list.
+    """
+    info = getattr(client, "account_information", None)
+    getter = getattr(info, "get_all_account_positions", None) if info is not None else None
+    if getter is None:
+        return []
+    try:
+        resp = getter(
+            user_id=snap_user_id,
+            user_secret=snap_secret,
+            account_id=account_id,
+        )
+    except Exception as exc:
+        _log_snaptrade_sync_error(
+            "holdings", "get_all_account_positions", account_id, exc,
+        )
+        return []
+    return _positions_all_rows(resp)
+
+
+def _positions_all_rows(resp):
+    """Unwrap ``{results: [...]}`` before treating the body as a list.
+
+    ``_coerce_list`` turns a dict into a one-element list. The positions/all
+    wrapper is not a position, so a missing ``results`` array is empty
+    rather than one bogus row.
+    """
+    body = _unwrap_body(resp)
+    if isinstance(body, dict):
+        results = body.get("results")
+        if isinstance(results, list):
+            return _coerce_list(results)
+        data = body.get("data")
+        if isinstance(data, list):
+            return _coerce_list(data)
         return []
     return _coerce_list(resp)
 

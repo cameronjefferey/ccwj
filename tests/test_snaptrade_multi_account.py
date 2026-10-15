@@ -1726,6 +1726,62 @@ def test_fetch_positions_still_raises_auth_error_on_403():
     assert exc_info.value.endpoint == "get_user_account_positions"
 
 
+def test_fetch_all_positions_403_returns_empty_and_does_not_raise():
+    """positions/all is best-effort. A 403 must not mark the connection
+    broken. Classic ``get_user_account_positions`` still raises."""
+
+    class _ApiException(Exception):
+        def __str__(self):
+            return "(403)"
+
+    class _Boom:
+        class account_information:
+            @staticmethod
+            def get_all_account_positions(**_):
+                raise _ApiException()
+
+    assert _snap._fetch_all_positions(_Boom, "u", "s", "acc") == []
+
+
+def test_fetch_all_positions_missing_method_returns_empty():
+    class _Client:
+        class account_information:
+            pass
+
+    assert _snap._fetch_all_positions(_Client, "u", "s", "acc") == []
+    assert _snap._fetch_all_positions(object(), "u", "s", "acc") == []
+
+
+def test_fetch_all_positions_unwraps_results_and_drops_a_bare_wrapper():
+    class _Resp:
+        def __init__(self, body):
+            self.body = body
+
+    class _Client:
+        def __init__(self, body):
+            self._body = body
+
+        @property
+        def account_information(self):
+            body = self._body
+
+            class _Info:
+                @staticmethod
+                def get_all_account_positions(**_):
+                    return _Resp(body)
+
+            return _Info()
+
+    rows = _snap._fetch_all_positions(
+        _Client({"results": [{"instrument": {"kind": "bond", "cusip": "912810TM0"}}]}),
+        "u", "s", "acc",
+    )
+    assert len(rows) == 1
+    assert rows[0]["instrument"]["kind"] == "bond"
+    assert _snap._fetch_all_positions(_Client({"results": "nope"}), "u", "s", "acc") == []
+    assert _snap._fetch_all_positions(_Client({"unexpected": 1}), "u", "s", "acc") == []
+
+
 def test_activities_timeout_logs_step_endpoint_and_status(caplog):
     """A long-history activities pull that times out must name the step,
     the endpoint, and the status. The user-facing reason stays short."""

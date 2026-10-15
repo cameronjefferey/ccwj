@@ -19,7 +19,9 @@ from app.snaptrade_normalize import (
     SNAPTRADE_ACTIVITY_TO_ACTION,
     activities_to_history_df,
     balances_to_balance_df,
+    merge_holdings_with_all_positions,
     orders_to_history_df,
+    position_holding_key,
     positions_to_current_df,
     snaptrade_symbol_to_osi,
     symbols_already_in_cash,
@@ -1980,3 +1982,275 @@ def test_holding_is_crypto_does_not_tag_the_stock():
     assert holding_is_crypto("SNX", "Cryptocurrency", "Synthetix") is True
     assert holding_is_crypto("BTC") is True
     assert holding_is_crypto("AAPL", "Equity", "Apple Inc") is False
+
+
+# ---------------------------------------------------------------------------
+# positions/all — symbol-less identifiers, kind, bond percent-of-face
+# ---------------------------------------------------------------------------
+
+
+def _current(positions):
+    return positions_to_current_df(
+        positions, account_name="X", user_id=9, tenant_id=TENANT_SNAPTRADE,
+    )
+
+
+def test_symbol_less_holding_uses_cusip_before_figi_and_description():
+    pos = {
+        "symbol": {"description": "Treasury note"},
+        "cusip": "912810TM0",
+        "figi_code": "BBG000TEST01",
+        "units": 10,
+        "price": 98,
+        "instrument": {"kind": "bond"},
+    }
+    df = _current([pos])
+    assert list(df["Symbol"]) == ["912810TM0"]
+    assert df.iloc[0]["security_type"] == "Bond"
+    assert "Treasury note" in df.iloc[0]["Description"]
+
+
+def test_symbol_less_holding_uses_figi_when_cusip_is_absent():
+    pos = {
+        "figi_code": "BBG000TEST01",
+        "description": "Agency bond",
+        "units": 4,
+        "price": 99,
+        "instrument": {"kind": "bond", "description": "Agency bond"},
+    }
+    df = _current([pos])
+    assert list(df["Symbol"]) == ["BBG000TEST01"]
+    assert df.iloc[0]["security_type"] == "Bond"
+
+
+def test_symbol_less_holding_uses_figi_nested_on_the_instrument():
+    pos = {
+        "instrument": {
+            "kind": "bond",
+            "description": "Municipal bond",
+            "figi_instrument": {"figi_code": "BBG000TEST02"},
+        },
+        "units": "2",
+        "price": "101.5",
+    }
+    df = _current([pos])
+    assert list(df["Symbol"]) == ["BBG000TEST02"]
+    assert abs(float(df.iloc[0]["market_value"]) - (2 * 101.5 * 10)) < 0.01
+
+
+def test_description_key_is_stable_and_ignores_local_id():
+    pos = {
+        "local_id": "912810TM0",
+        "instrument": {
+            "kind": "bond",
+            "description": "US Treasury Note 2.5% 02/15/2045",
+        },
+        "units": 10,
+        "price": 98,
+    }
+    first = _current([pos])
+    second = _current([dict(pos)])
+    symbol = first.iloc[0]["Symbol"]
+    assert symbol == second.iloc[0]["Symbol"]
+    assert symbol.startswith("DESC-")
+    assert "912810TM0" not in symbol
+    assert first.iloc[0]["Description"] == "US Treasury Note 2.5% 02/15/2045"
+    assert position_holding_key(pos) == symbol
+
+
+def test_local_id_alone_does_not_become_a_holding():
+    df = _current([{
+        "local_id": "ABCDEF123",
+        "units": 1,
+        "price": 99,
+    }])
+    assert df.empty
+
+
+def test_bond_price_without_market_value_is_percent_of_face():
+    """10 bonds quoted at 98 are $9,800, not $980. Seed Price is dollars
+    per bond so quantity times price still equals market value."""
+    pos = {
+        "symbol": {
+            "raw_symbol": "912810TM0",
+            "type": {"code": "bnd", "description": "Bond"},
+        },
+        "units": 10,
+        "price": 98,
+        "average_purchase_price": 97,
+    }
+    row = _current([pos]).iloc[0]
+    assert row["security_type"] == "Bond"
+    assert abs(float(row["market_value"]) - 9800) < 0.01
+    assert abs(float(row["Price"]) - 980) < 0.01
+    assert abs(float(row["Quantity"]) * float(row["Price"]) - 9800) <= 0.01
+    assert abs(float(row["cost_bases"]) - 9700) < 0.01
+
+
+def test_bond_market_value_is_not_rescaled():
+    pos = {
+        "cusip": "912810TM0",
+        "units": 10,
+        "price": 98,
+        "market_value": 9750,
+        "instrument": {"kind": "bond"},
+    }
+    row = _current([pos]).iloc[0]
+    assert row["security_type"] == "Bond"
+    assert abs(float(row["market_value"]) - 9750) < 0.01
+    assert abs(float(row["Price"]) - 975) < 0.01
+
+
+def test_v2_bond_cost_basis_quote_is_percent_and_dollar_total_is_not():
+    quote = {
+        "instrument": {"kind": "bond", "cusip": "912810TM1", "description": "Note"},
+        "units": "10",
+        "price": "98",
+        "cost_basis": "97.5",
+    }
+    quote_row = _current([quote]).iloc[0]
+    assert abs(float(quote_row["market_value"]) - 9800) < 0.01
+    assert abs(float(quote_row["cost_bases"]) - 9750) < 0.01
+
+    dollar = {
+        "symbol": {"raw_symbol": "912810TM2", "type": {"code": "fixed_income"}},
+        "units": 10,
+        "price": 98,
+        "cost_basis": 9500,
+    }
+    dollar_row = _current([dollar]).iloc[0]
+    assert dollar_row["security_type"] == "Bond"
+    assert abs(float(dollar_row["market_value"]) - 9800) < 0.01
+    assert abs(float(dollar_row["cost_bases"]) - 9500) < 0.01
+
+
+def test_equity_etf_mutual_fund_and_option_rows_are_unchanged():
+    """Schwab equity, a bond ETF typed ``et``, a Fidelity mutual fund,
+    and an option keep today's security type and valuation."""
+    equity = {
+        "symbol": {"raw_symbol": "JEPI", "type": {"code": "cs", "description": "Common Stock"}},
+        "units": 100,
+        "market_value": 5500.50,
+        "cost_basis": 5300,
+        "price": 9999.99,
+    }
+    etf = {
+        "symbol": {"raw_symbol": "TBOND", "type": {"code": "et", "description": "ETF"}},
+        "units": 10,
+        "price": 98,
+    }
+    fund = {
+        "symbol": {
+            "raw_symbol": "FXAIX",
+            "type": {"code": "oef", "description": "Open End Fund"},
+        },
+        "units": 12,
+        "price": 200,
+        "market_value": 2400,
+    }
+    option = {
+        "symbol": {
+            "raw_symbol": "AAPL",
+            "option_symbol": {
+                "underlying_symbol": "AAPL",
+                "expiration_date": "2026-06-21",
+                "strike_price": 150,
+                "option_type": "CALL",
+            },
+        },
+        "units": 1,
+        "price": 3.50,
+        "market_value": 350,
+        "cost_basis": 250,
+    }
+    df = _current([equity, etf, fund, option])
+    by_symbol = {row["Symbol"]: row for _, row in df.iterrows()}
+    assert by_symbol["JEPI"]["security_type"] == "Equity"
+    assert abs(float(by_symbol["JEPI"]["market_value"]) - 5500.50) < 0.01
+    assert abs(float(by_symbol["JEPI"]["Quantity"]) * float(by_symbol["JEPI"]["Price"]) - 5500.50) <= 0.01
+    assert by_symbol["TBOND"]["security_type"] == "Equity"
+    assert abs(float(by_symbol["TBOND"]["market_value"]) - 980) < 0.01
+    assert by_symbol["FXAIX"]["security_type"] == "Equity"
+    assert abs(float(by_symbol["FXAIX"]["market_value"]) - 2400) < 0.01
+    assert by_symbol["AAPL  260621C00150000"]["security_type"] == "Option"
+    assert float(by_symbol["AAPL  260621C00150000"]["Price"]) == 3.50
+    assert abs(float(by_symbol["AAPL  260621C00150000"]["market_value"]) - 350) < 0.01
+
+
+def test_positions_all_future_kind_is_preserved_and_not_priced_as_a_bond():
+    pos = {
+        "instrument": {"kind": "future", "symbol": "ESZ6", "raw_symbol": "ESZ6"},
+        "units": "1",
+        "price": "5000",
+    }
+    row = _current([pos]).iloc[0]
+    assert row["Symbol"] == "ESZ6"
+    assert row["security_type"] == "Future"
+    assert abs(float(row["market_value"]) - 5000) < 0.01
+
+
+def test_merge_keeps_classic_equity_and_appends_only_a_new_bond():
+    classic = [{
+        "symbol": {"raw_symbol": "JEPI", "type": {"code": "et"}},
+        "units": 100,
+        "market_value": 5500.50,
+        "price": 55,
+        "cost_basis": 5300,
+    }]
+    option = {
+        "symbol": {
+            "option_symbol": {
+                "ticker": "LITE  261120C01100000",
+                "strike_price": 1100.0,
+                "expiration_date": "2026-11-20",
+                "underlying_symbol": {"symbol": "LITE", "raw_symbol": "LITE"},
+                "option_type": "CALL",
+            },
+        },
+        "price": 180.85,
+        "units": 1.0,
+        "average_purchase_price": 23780.66,
+    }
+    all_positions = [
+        {
+            "instrument": {"kind": "stock", "symbol": "JEPI", "raw_symbol": "JEPI"},
+            "units": "1",
+            "price": "1",
+        },
+        {
+            "instrument": {
+                "kind": "option",
+                "symbol": "LITE  261120C01100000",
+                "raw_symbol": "LITE261120C01100000",
+            },
+            "units": "9",
+            "price": "1",
+        },
+        {
+            "instrument": {
+                "kind": "bond",
+                "description": "Treasury note",
+                "cusip": "912810TM0",
+            },
+            "units": "10",
+            "price": "98",
+        },
+    ]
+    merged = merge_holdings_with_all_positions([classic[0], option], all_positions)
+    df = _current(merged)
+    assert list(df["Symbol"]) == [
+        "JEPI",
+        "LITE  261120C01100000",
+        "912810TM0",
+    ]
+    jepi = df[df["Symbol"] == "JEPI"].iloc[0]
+    assert jepi["security_type"] == "Equity"
+    assert abs(float(jepi["market_value"]) - 5500.50) < 0.01
+    assert float(jepi["Quantity"]) == 100
+    lite = df[df["Symbol"] == "LITE  261120C01100000"].iloc[0]
+    assert lite["security_type"] == "Option"
+    assert float(lite["Price"]) == 180.85
+    assert abs(float(lite["market_value"]) - 18085.0) < 0.01
+    bond = df[df["Symbol"] == "912810TM0"].iloc[0]
+    assert bond["security_type"] == "Bond"
+    assert abs(float(bond["market_value"]) - 9800) < 0.01

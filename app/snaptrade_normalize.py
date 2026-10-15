@@ -30,6 +30,7 @@ market_value`` invariant matches the dbt regression test
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import re
@@ -1743,6 +1744,318 @@ def orders_to_history_df(
 # Positions → current_positions rows
 # ---------------------------------------------------------------------------
 
+# US corporate/treasury par is $1,000. A clean quote of 98 means 98% of
+# face, so dollar value is units * price / 100 * 1000 = units * price * 10.
+# Applied only when the instrument kind is a bond AND the payload did not
+# send market_value / equity. An ETF (type ``et`` / ``etf``) is not a bond.
+_BOND_PERCENT_OF_FACE = 10.0
+
+_EQUITY_KIND_COMPACTS = frozenset({
+    "CS", "ET", "ETF", "STOCK", "AD", "ADR", "CEF", "PS", "OEF",
+    "MUTUALFUND", "EQUITY", "COMMONSTOCK", "PREFERREDSTOCK",
+    "PREFERRED", "CLOSEDENDFUND", "CLOSEDEND", "ETFS", "OPENENDFUND",
+})
+_BOND_KIND_COMPACTS = frozenset({"BOND", "BND", "FIXEDINCOME"})
+_CUSIP_RE = re.compile(r"^[0-9A-Z]{9}$")
+_FIGI_RE = re.compile(r"^[A-Z0-9]{12}$")
+
+
+def _kind_compacts(pos: Mapping, symbol_obj: Mapping) -> set[str]:
+    """Type-code / instrument-kind tokens. Not the security description."""
+    found: set[str] = set()
+    code, desc = _type_code_and_description(symbol_obj)
+    for part in (code, desc):
+        whole = re.sub(r"[\s_\-]", "", part).upper()
+        if whole:
+            found.add(whole)
+        for token in re.split(r"[\s_\-]+", part.strip()):
+            compact = re.sub(r"[^A-Z0-9]", "", token.upper())
+            if compact:
+                found.add(compact)
+    if isinstance(pos, Mapping):
+        instrument = pos.get("instrument")
+        if isinstance(instrument, Mapping):
+            kind = str(instrument.get("kind") or "")
+            whole = re.sub(r"[\s_\-]", "", kind).upper()
+            if whole:
+                found.add(whole)
+    return found
+
+
+def _is_equity_like_position(pos: Mapping, symbol_obj: Mapping) -> bool:
+    return bool(_kind_compacts(pos, symbol_obj) & _EQUITY_KIND_COMPACTS)
+
+
+def _is_bond_position(pos: Mapping, symbol_obj: Mapping) -> bool:
+    """Individual bond / fixed income. A ticker ETF stays equity-like."""
+    if _is_option(symbol_obj) or _is_equity_like_position(pos, symbol_obj):
+        return False
+    return bool(_kind_compacts(pos, symbol_obj) & _BOND_KIND_COMPACTS)
+
+
+def _kind_label(kind: str) -> str:
+    compact = re.sub(r"[\s_\-]", "", kind).upper()
+    known = {
+        "FUTURE": "Future",
+        "CFD": "CFD",
+        "TOKENIZEDASSET": "Tokenized Asset",
+        "OTHER": "Other",
+        "FUND": "Fund",
+        "STRUCT": "Structured",
+        "STRUCTUREDPRODUCT": "Structured",
+    }
+    if compact in known:
+        return known[compact]
+    words = [w for w in re.split(r"[\s_\-]+", kind.strip()) if w]
+    return " ".join(w[:1].upper() + w[1:] for w in words)
+
+
+def _preserved_instrument_kind(pos: Mapping, symbol_obj: Mapping) -> str:
+    """Non-equity kind from positions/all. Classic equity rows stay Equity.
+
+    ``instrument.kind`` is the v2 positions/all shape. A classic position
+    has no instrument block, so an unknown type code still falls through
+    to Equity — the same label Schwab, Fidelity, and Vanguard rows use
+    today. Bonds are labeled separately. Mutual-fund and ETF kinds stay
+    Equity.
+    """
+    if not isinstance(pos, Mapping):
+        return ""
+    instrument = pos.get("instrument")
+    if not isinstance(instrument, Mapping):
+        return ""
+    kind = str(instrument.get("kind") or "").strip()
+    compact = re.sub(r"[\s_\-]", "", kind).upper()
+    if not compact:
+        return ""
+    if compact in _EQUITY_KIND_COMPACTS or compact in _BOND_KIND_COMPACTS:
+        return ""
+    if compact in {"OPTION", "FUTUREOPTION", "CRYPTO", "CRYPTOCURRENCY"}:
+        return ""
+    if _is_equity_like_position(pos, symbol_obj) or _is_bond_position(pos, symbol_obj):
+        return ""
+    return _kind_label(kind)
+
+
+def _mapping_chain(pos: Mapping, symbol_obj: Mapping):
+    if isinstance(pos, Mapping):
+        yield pos
+        instrument = pos.get("instrument")
+        if isinstance(instrument, Mapping):
+            yield instrument
+            figi_obj = instrument.get("figi_instrument")
+            if isinstance(figi_obj, Mapping):
+                yield figi_obj
+    if isinstance(symbol_obj, Mapping):
+        yield symbol_obj
+        inner = symbol_obj.get("symbol")
+        if isinstance(inner, Mapping):
+            yield inner
+            figi_obj = inner.get("figi_instrument")
+            if isinstance(figi_obj, Mapping):
+                yield figi_obj
+
+
+def _explicit_cusip(pos: Mapping, symbol_obj: Mapping) -> str:
+    """CUSIP from a field named cusip. Broker ``local_id`` is not a CUSIP."""
+    for mapping in _mapping_chain(pos, symbol_obj):
+        raw = mapping.get("cusip")
+        if not isinstance(raw, str):
+            continue
+        cusip = raw.strip().upper()
+        if _CUSIP_RE.match(cusip):
+            return cusip
+    return ""
+
+
+def _explicit_figi(pos: Mapping, symbol_obj: Mapping) -> str:
+    for mapping in _mapping_chain(pos, symbol_obj):
+        for key in ("figi_code", "figi"):
+            raw = mapping.get(key)
+            if not isinstance(raw, str):
+                continue
+            figi = raw.strip().upper()
+            if _FIGI_RE.match(figi):
+                return figi
+    return ""
+
+
+def _position_description(pos: Mapping, symbol_obj: Mapping) -> str:
+    text = _description_from_symbol(symbol_obj)
+    if text:
+        return text
+    if isinstance(pos, Mapping):
+        instrument = pos.get("instrument")
+        if isinstance(instrument, Mapping):
+            instrument_text = str(instrument.get("description") or "").strip()
+            if instrument_text:
+                return instrument_text
+        return str(pos.get("description") or "").strip()
+    return ""
+
+
+def _stable_description_key(text: str) -> str:
+    """Same description → same symbol on every sync. Not a random id."""
+    norm = re.sub(r"\s+", " ", str(text or "").strip().upper())
+    if not norm:
+        return ""
+    digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:8]
+    slug = re.sub(r"[^A-Z0-9]+", "-", norm).strip("-")[:24]
+    if slug:
+        return f"DESC-{slug}-{digest}"
+    return f"DESC-{digest}"
+
+
+def _fallback_identifier(pos: Mapping, symbol_obj: Mapping) -> str:
+    """CUSIP, then FIGI, then a stable description key. No ticker here."""
+    cusip = _explicit_cusip(pos, symbol_obj)
+    if cusip:
+        return cusip
+    figi = _explicit_figi(pos, symbol_obj)
+    if figi:
+        return figi
+    return _stable_description_key(_position_description(pos, symbol_obj))
+
+
+def _normalize_position_shape(pos: Mapping) -> Mapping:
+    """Copy a positions/all ``instrument`` onto the classic symbol object.
+
+    A classic holding (symbol or option_symbol already set) is returned
+    unchanged so equity and option rows keep today's fields.
+    """
+    if not isinstance(pos, Mapping):
+        return pos
+    instrument = pos.get("instrument")
+    if not isinstance(instrument, Mapping):
+        return pos
+    symbol = pos.get("symbol")
+    has_symbol = (
+        (isinstance(symbol, str) and bool(symbol.strip()))
+        or (isinstance(symbol, Mapping) and bool(symbol))
+    )
+    if has_symbol or pos.get("option_symbol"):
+        return pos
+    raw = str(instrument.get("raw_symbol") or instrument.get("symbol") or "").strip()
+    description = str(instrument.get("description") or pos.get("description") or "").strip()
+    kind = str(instrument.get("kind") or "").strip()
+    symbol_obj: dict = {}
+    if raw:
+        symbol_obj["raw_symbol"] = raw
+        symbol_obj["symbol"] = raw
+    if description:
+        symbol_obj["description"] = description
+    if kind:
+        symbol_obj["type"] = {"code": kind, "description": kind}
+    cusip = instrument.get("cusip") if isinstance(instrument.get("cusip"), str) else ""
+    if not cusip and isinstance(pos.get("cusip"), str):
+        cusip = pos.get("cusip")
+    if isinstance(cusip, str) and cusip.strip():
+        symbol_obj["cusip"] = cusip.strip()
+    figi = instrument.get("figi_code") if isinstance(instrument.get("figi_code"), str) else ""
+    figi_obj = instrument.get("figi_instrument")
+    if not figi and isinstance(figi_obj, Mapping):
+        nested = figi_obj.get("figi_code")
+        if isinstance(nested, str):
+            figi = nested
+    if isinstance(figi, str) and figi.strip():
+        symbol_obj["figi_code"] = figi.strip()
+    out = dict(pos)
+    out["symbol"] = symbol_obj
+    kind_compact = re.sub(r"[\s_\-]", "", kind).upper()
+    if kind_compact in {"OPTION", "FUTUREOPTION"}:
+        # Prefer whichever text parses as OCC so the key matches
+        # list_option_holdings. A compact OSI and a spaced OSI are the
+        # same contract.
+        for candidate in (instrument.get("symbol"), instrument.get("raw_symbol"), raw):
+            if not isinstance(candidate, str) or not candidate.strip():
+                continue
+            parsed = _option_symbol_from_text(candidate)
+            if parsed:
+                out["option_symbol"] = parsed
+                symbol_obj["option_symbol"] = parsed
+                break
+    return out
+
+
+def position_holding_key(pos: Mapping) -> str:
+    """Identifier shared by the seed Symbol and positions/all dedup.
+
+    Ticker or OCC first, then CUSIP, FIGI, and a stable description key.
+    """
+    if not isinstance(pos, Mapping):
+        return ""
+    shaped = _normalize_position_shape(pos)
+    symbol_obj = _position_symbol_obj(shaped)
+    if _is_option(symbol_obj):
+        osi = snaptrade_symbol_to_osi(symbol_obj).strip().upper()
+        if osi:
+            return osi
+    ticker = _underlying_from_symbol(symbol_obj).strip().upper()
+    if ticker:
+        return ticker
+    return _fallback_identifier(shaped, symbol_obj)
+
+
+def merge_holdings_with_all_positions(holdings, all_positions) -> list:
+    """Classic positions and option holdings win. New keys are appended.
+
+    ``GET /accounts/{id}/positions`` does not list bonds and other
+    non-equity instruments. Those arrive on ``positions/all``. A row
+    whose identifier is already on the classic list is dropped so an
+    equity or option is not rewritten.
+    """
+    merged: list = []
+    seen: set[str] = set()
+    for pos in holdings or ():
+        if not isinstance(pos, Mapping):
+            continue
+        merged.append(pos)
+        key = position_holding_key(pos)
+        if key:
+            seen.add(key)
+    for pos in all_positions or ():
+        if not isinstance(pos, Mapping):
+            continue
+        key = position_holding_key(pos)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(_normalize_position_shape(pos))
+    return merged
+
+
+def _looks_like_percent_quote(value, price: float) -> bool:
+    """A clean bond quote is near par (about 0–200), not a dollar total."""
+    if _number_missing(value):
+        return False
+    magnitude = abs(_safe_float(value, 0.0))
+    return magnitude <= max(250.0, abs(price) * 3.0)
+
+
+def _bond_cost_when_price_is_percent(pos: Mapping, units: float, price: float, existing_cost: float) -> float:
+    """Dollar cost when the only quote is percent of face.
+
+    ``average_purchase_price`` or a v2 per-unit ``cost_basis`` in the
+    same percent range is scaled like the price. A classic dollar total
+    (much larger than the quote) is kept.
+    """
+    if not units:
+        return existing_cost
+    avg = pos.get("average_purchase_price")
+    if not _number_missing(avg):
+        avg_f = _safe_float(avg, 0.0)
+        if _looks_like_percent_quote(avg, price):
+            return avg_f * units * _BOND_PERCENT_OF_FACE
+        return avg_f * units
+    raw = pos.get("cost_basis")
+    if _number_missing(raw):
+        return existing_cost
+    raw_f = _safe_float(raw, 0.0)
+    if _looks_like_percent_quote(raw, price):
+        return raw_f * units * _BOND_PERCENT_OF_FACE
+    return raw_f
+
+
 def positions_to_current_df(
     positions: Iterable[Mapping],
     *,
@@ -1764,13 +2077,27 @@ def positions_to_current_df(
     2026-05-11). Options keep SnapTrade's ``price`` which is per-share
     of underlying premium and matches the CSV-export semantic of the
     seed's ``Price`` column for option rows.
+
+    A holding with no ticker is kept. The identifier is the CUSIP, then
+    the FIGI, then a stable hash of the description — the same string
+    on every sync. Broker ``local_id`` is not an identifier.
+
+    Instrument kind is preserved on ``security_type`` when it is not an
+    equity, ETF, mutual fund, option, or crypto. Those stay Equity /
+    Option / Cryptocurrency so an existing Schwab, Fidelity, or Vanguard
+    share or contract does not change. A bond uses ``market_value`` when
+    the payload sends one. When kind is bond and only ``price`` is
+    present, that price is percent of $1,000 face.
     """
     rows: list[dict] = []
     user_id_int = _seed_user_id(user_id)
     tenant_id_str = str(tenant_id).strip()
     inside_cash = _sweep_symbol_set(already_in_cash)
 
-    for pos in positions or ():
+    for raw_pos in positions or ():
+        if not isinstance(raw_pos, Mapping):
+            continue
+        pos = _normalize_position_shape(raw_pos)
         if not isinstance(pos, Mapping):
             continue
         # Mirror the activities path: SnapTrade can ship an OPTION holding
@@ -1791,6 +2118,13 @@ def positions_to_current_df(
             sym_str = snaptrade_symbol_to_osi(symbol_obj)
         else:
             sym_str = _underlying_from_symbol(symbol_obj)
+        used_alt_id = False
+        if not sym_str:
+            # No ticker. CUSIP, then FIGI, then a stable description key.
+            # A missing identifier still skips the row. ``local_id`` is
+            # not consulted.
+            sym_str = _fallback_identifier(pos, symbol_obj)
+            used_alt_id = bool(sym_str)
         if not sym_str:
             continue
 
@@ -1843,6 +2177,17 @@ def positions_to_current_df(
             market_value = units * price * contract_mult
         else:
             market_value = 0.0
+        # Bond quote is percent of $1,000 face, and only when the payload
+        # did not send a dollar market value. Equity and option math above
+        # is left as-is (contract_mult is 100 for options and 1 otherwise).
+        bond_from_price = (
+            not is_option
+            and mv_missing
+            and not price_missing
+            and _is_bond_position(pos, symbol_obj)
+        )
+        if bond_from_price:
+            market_value = units * price * _BOND_PERCENT_OF_FACE
         quote_missing = price_missing and mv_missing
 
         # cost_basis: prefer broker-supplied total, else derive from
@@ -1862,6 +2207,10 @@ def positions_to_current_df(
                     cost_basis = avg_purchase * abs(units)
                 else:
                     cost_basis = avg_purchase * units
+        if bond_from_price:
+            cost_basis = _bond_cost_when_price_is_percent(
+                pos, units, price, cost_basis,
+            )
 
         # Per-share price for the seed:
         # - Options: SnapTrade's per-share premium is the seed value.
@@ -1922,9 +2271,16 @@ def positions_to_current_df(
             # is gated on THIS security_type so a ticker collision (e.g. SEI =
             # Solaris Energy equity vs the Sei token) can't mislabel an equity.
             security_type = "Cryptocurrency"
+        elif _is_bond_position(pos, symbol_obj):
+            security_type = "Bond"
         else:
-            security_type = "Equity"
-        description = _description_from_symbol(symbol_obj) or sym_str
+            # Equity, ETF, and mutual fund stay Equity. A positions/all
+            # kind that is none of those (future, CFD, …) keeps its name.
+            security_type = _preserved_instrument_kind(pos, symbol_obj) or "Equity"
+        if used_alt_id:
+            description = _position_description(pos, symbol_obj) or sym_str
+        else:
+            description = _description_from_symbol(symbol_obj) or sym_str
 
         rows.append({
             "Account": account_name,
