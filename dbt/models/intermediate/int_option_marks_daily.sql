@@ -50,7 +50,17 @@ with versions as (
         nullif(trim(tenant_id), '')       as tenant_id,
         account,
         nullif(user_id, -1)               as user_id,
-        trade_symbol,
+        -- stg_current started canonicalizing padded/long-form option ids in
+        -- Oct 2026, but this SCD2 table intentionally retains every older
+        -- spelling. Rebuild the id from the snapshotted contract fields so
+        -- pre-change marks still join to today's canonical contract.
+        {{ canonical_option_trade_symbol(
+            'trade_symbol',
+            'underlying_symbol',
+            'option_expiry',
+            'option_strike',
+            'option_type'
+        ) }} as trade_symbol,
         underlying_symbol,
         option_expiry,
         option_strike,
@@ -83,7 +93,13 @@ with versions as (
         'demo:demo-account' as tenant_id,
         'Demo Account'      as account,
         cast(null as int64) as user_id,
-        trade_symbol,
+        {{ canonical_option_trade_symbol(
+            'trade_symbol',
+            'underlying_symbol',
+            'option_expiry',
+            'option_strike',
+            'option_type'
+        ) }} as trade_symbol,
         underlying_symbol,
         option_expiry,
         option_strike,
