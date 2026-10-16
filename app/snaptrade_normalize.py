@@ -2200,6 +2200,18 @@ def positions_to_current_df(
         # (market_value + cost_basis) nets correctly for both long and
         # short legs. Equities: average_purchase_price is per share.
         cost_basis = _safe_float(pos.get("cost_basis"), 0.0)
+        if (
+            cost_basis
+            and is_option
+            and isinstance(pos.get("instrument"), Mapping)
+        ):
+            # AccountPosition from positions/all calls this field the option's
+            # book price PER CONTRACT. The classic option-holdings endpoint
+            # normally omits ``cost_basis`` and uses
+            # ``average_purchase_price`` below, while older classic fixtures
+            # that do carry a top-level cost_basis already use a total. The
+            # instrument block identifies the v2 per-contract shape.
+            cost_basis *= abs(units)
         if not cost_basis:
             avg_purchase = _safe_float(pos.get("average_purchase_price"), 0.0)
             if avg_purchase and units:

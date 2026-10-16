@@ -2367,8 +2367,9 @@ def merge_and_push_seeds(
     Args:
         history_df: trade rows shaped for HISTORY_SEED_COLUMNS (or None).
         current_df: open-position rows shaped for CURRENT_SEED_COLUMNS. Pass
-            None for a HISTORY-ONLY push (intraday poll / weekend auto-sync) —
-            only trade_history is written, the snapshots are left untouched.
+            None for a HISTORY-ONLY push (intraday poll / weekend auto-sync),
+            or when holdings are unavailable but ``balances_df`` is
+            authoritative. In both cases current positions stay untouched.
         user_id: required Postgres ``users.id`` of the row owner. Stamped
             into every emitted row's ``user_id`` column (informational).
         tenant_id: required v2 warehouse tenant key
@@ -2408,7 +2409,11 @@ def merge_and_push_seeds(
         return False, "user_id is required.", 0, 0, None, False
     tenant_id_str = str(tenant_id).strip()
     snapshot_superseded = False
-    if current_df is not None and snapshot_generation is not None:
+    has_balances = balances_df is not None and len(balances_df) > 0
+    if (
+        (current_df is not None or has_balances)
+        and snapshot_generation is not None
+    ):
         if not snapshot_account_id:
             return False, "snapshot_account_id is required.", 0, 0, None, False
         from app.models import snaptrade_snapshot_generation_is_current
@@ -2423,13 +2428,20 @@ def merge_and_push_seeds(
             )
             current_df = None
             balances_df = None
+            has_balances = False
 
-    # current_df=None is a HISTORY-ONLY push (intraday poll / weekend auto-sync):
-    # only trade_history is rewritten. It's valid as long as there's history to
-    # push — otherwise there's genuinely nothing to commit. A superseded
-    # snapshot with no history is a successful no-op because a newer fetch owns
-    # the snapshot slot.
-    if current_df is None and (skip_history or history_df is None):
+    # current_df=None usually means a HISTORY-ONLY push (intraday poll /
+    # weekend auto-sync). A holdings-unavailable plan can also withhold
+    # the replace-all positions frame while still returning an account
+    # total. That balance-only write is how a brand-new cash or
+    # employer-plan account leaves the processing screen: onboarding
+    # treats a balance row as queryable data. A superseded snapshot with
+    # no other frame is still a successful no-op.
+    if (
+        current_df is None
+        and (skip_history or history_df is None)
+        and not has_balances
+    ):
         if snapshot_superseded:
             return True, None, 0, 0, None, True
         return False, "nothing to push (no positions and no history).", 0, 0, None, False
@@ -2483,10 +2495,11 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
         ``skip_history`` (bool), ``balances_df`` (DataFrame|None), and optional
         ``preserve_current_security_types`` plus ``snapshot_account_id`` /
         ``snapshot_generation`` ordering metadata.
-    ``current_df=None`` is a HISTORY-ONLY push (the intraday trade poll): only
-    trade_history is rewritten — the positions/balances snapshots are left
-    untouched so an intraday cadence doesn't rebuild the warehouse on snapshot
-    drift. Such an entry is kept only when it carries new trade fills.
+    ``current_df=None`` is usually a HISTORY-ONLY push (the intraday trade
+    poll): only trade_history is rewritten so an intraday cadence doesn't
+    rebuild the warehouse on snapshot drift. It can also be a balance-only
+    snapshot when broker holdings are unavailable; current positions stay
+    untouched while the account balance is written.
     Order matters and must match the per-account push order it replaces:
     each entry folds onto the previous, exactly as sequential pushes did.
 
@@ -2507,8 +2520,10 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
             continue
         if e.get("tenant_id") is None or not str(e.get("tenant_id")).strip():
             continue
+        balances_df = e.get("balances_df")
+        has_balances = balances_df is not None and len(balances_df) > 0
         if (
-            e.get("current_df") is not None
+            (e.get("current_df") is not None or has_balances)
             and e.get("snapshot_generation") is not None
         ):
             account_id = e.get("snapshot_account_id")
@@ -2531,9 +2546,14 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
                 e["balances_df"] = None
         has_current = e.get("current_df") is not None
         # Intraday poll entries are history-only (current_df=None): keep them
-        # as long as there are new trade fills to push.
+        # as long as there are new trade fills to push. A holdings-unavailable
+        # account can instead carry only balances; that frame is what lets a
+        # new account leave processing, so it must not be discarded with the
+        # missing positions snapshot.
         has_history = e.get("history_df") is not None and not e.get("skip_history")
-        if not has_current and not has_history:
+        balances_df = e.get("balances_df")
+        has_balances = balances_df is not None and len(balances_df) > 0
+        if not has_current and not has_history and not has_balances:
             continue
         valid.append(e)
 

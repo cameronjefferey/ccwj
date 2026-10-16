@@ -1404,6 +1404,10 @@ def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatc
     _patch_run_sync_fetches(
         monkeypatch,
         account_summary={
+            "balance": {
+                "cash": 1000,
+                "total": {"amount": 1000},
+            },
             "sync_status": {
                 "holdings": {
                     "last_successful_sync": "2024-06-28T18:42:46.561Z",
@@ -1431,6 +1435,50 @@ def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatc
     assert res["push_history_only"] is False
     assert res["current_rows"] == 0
     assert res["current_df"] is None
+    assert not res["balances_df"].empty
+    total = res["balances_df"].loc[
+        res["balances_df"]["row_type"] == "account_total", "market_value"
+    ]
+    assert total.astype(float).tolist() == [1000.0]
+
+
+@pytest.mark.parametrize(
+    ("option_holdings", "expected_preserve"),
+    [
+        (None, ("Option",)),
+        ([], ()),
+    ],
+)
+def test_run_sync_distinguishes_unavailable_from_empty_option_holdings(
+    monkeypatch, option_holdings, expected_preserve,
+):
+    """A failed option read preserves old contracts; a successful empty read
+    removes contracts that have actually left the account."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {"holdings": {"last_successful_sync": fresh}}
+        },
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_option_holdings", lambda *a, **k: option_holdings,
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_all_positions", lambda *a, **k: [],
+    )
+    res = _snap._run_sync(
+        9,
+        object(),
+        snap=_SNAP,
+        acc_row={
+            "snaptrade_account_id": "abc",
+            "account_name": "Schwab Account",
+        },
+        lookback_days=60,
+        defer_push=True,
+    )
+    assert res["preserve_current_security_types"] == expected_preserve
 
 
 @pytest.mark.parametrize(
@@ -1863,9 +1911,13 @@ def test_fetch_positions_disabled_wording_still_raises_auth_error():
     assert exc_info.value.endpoint == "get_user_account_positions"
 
 
-def test_fetch_option_holdings_403_returns_empty_and_does_not_raise():
+def test_fetch_option_holdings_403_returns_unavailable_and_does_not_raise():
     """A brokerage with no options API returns 403 here. That is not a
-    disabled grant and must not set ``connection_broken_at``."""
+    disabled grant and must not set ``connection_broken_at``.
+
+    ``None`` also keeps the tenant-replacing writer from treating the
+    failed read as proof that every previously open option is gone.
+    """
 
     class _ApiException(Exception):
         def __str__(self):
@@ -1877,7 +1929,7 @@ def test_fetch_option_holdings_403_returns_empty_and_does_not_raise():
             def list_option_holdings(**_):
                 raise _ApiException()
 
-    assert _snap._fetch_option_holdings(_Boom, "u", "s", "acc") == []
+    assert _snap._fetch_option_holdings(_Boom, "u", "s", "acc") is None
 
 
 def test_fetch_all_positions_403_returns_unavailable_and_does_not_raise():

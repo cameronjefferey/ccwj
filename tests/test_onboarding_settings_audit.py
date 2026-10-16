@@ -175,8 +175,8 @@ def test_cash_only_account_leaves_the_still_syncing_screen(monkeypatch):
     client = app.test_client()
     _login(client, monkeypatch)
     html = client.get("/get-started").get_data(as_text=True)
-    assert "This account is in Overview." in html
-    assert "Open Overview" in html
+    assert "Your data is in" in html
+    assert "Go to Overview" in html
     assert "first sync is still running" not in html
     assert "Nothing has landed in the warehouse" not in html
 
@@ -200,7 +200,7 @@ def test_connected_account_without_rows_stays_on_the_syncing_screen(monkeypatch)
     html = client.get("/get-started").get_data(as_text=True)
     assert "The first sync is still running." in html
     assert "Refresh status" in html
-    assert "This account is in Overview." not in html
+    assert "Your data is in" not in html
 
 
 def test_nickname_for_another_login_does_not_claim_success(monkeypatch):

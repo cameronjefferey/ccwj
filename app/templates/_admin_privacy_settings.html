@@ -1,5 +1,5 @@
 {% if admin_privacy and admin_privacy.show and not is_demo_user %}
-<form method="POST" action="{{ url_for('profile', tab='overview') }}" class="mb-3" id="admin-privacy">
+<form method="POST" action="{{ url_for('profile', tab=tab) }}" class="mb-3" id="admin-privacy">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="set_admin_privacy">
     <input type="hidden" name="enabled" value="{{ '0' if admin_privacy.on else '1' }}">
