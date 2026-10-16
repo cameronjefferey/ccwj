@@ -1329,6 +1329,10 @@ def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatc
     _patch_run_sync_fetches(
         monkeypatch,
         account_summary={
+            "balance": {
+                "cash": 125000,
+                "total": {"amount": 125000},
+            },
             "sync_status": {
                 "holdings": {
                     "last_successful_sync": "2024-06-28T18:42:46.561Z",
@@ -1356,6 +1360,11 @@ def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatc
     assert res["push_history_only"] is False
     assert res["current_rows"] == 0
     assert res["current_df"] is None
+    assert not res["balances_df"].empty
+    total = res["balances_df"].loc[
+        res["balances_df"]["row_type"] == "account_total", "market_value"
+    ]
+    assert total.astype(float).tolist() == [125000.0]
 
 
 @pytest.mark.parametrize(

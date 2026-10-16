@@ -1837,6 +1837,20 @@ def _install_store(monkeypatch, store):
     monkeypatch.setattr(_upload, "record_upload", lambda *a, **k: None)
 
 
+def _balance_df(account="Vanguard Account", tenant_id="snaptrade:vanguard"):
+    return pd.DataFrame([{
+        "account": account,
+        "user_id": 21,
+        "tenant_id": tenant_id,
+        "row_type": "account_total",
+        "market_value": 125000.0,
+        "cost_basis": "",
+        "unrealized_pnl": "",
+        "unrealized_pnl_pct": "",
+        "percent_of_account": "",
+    }], columns=_upload.BALANCE_SEED_COLUMNS)
+
+
 def _sample_entries():
     """Three distinct tenants — two SHARING the generic 'Schwab Account'
     label (the exact collision the cron fan-out log showed) plus a separate
@@ -2182,6 +2196,112 @@ def test_merge_and_push_history_only_rejects_when_no_history(monkeypatch):
     )
     assert ok is False
     assert store.files == {}
+
+
+def test_merge_and_push_accepts_balance_only_when_holdings_unavailable(monkeypatch):
+    """A broker can withhold holdings while still returning account value.
+
+    Do not mistake that authoritative balance for an empty history-only push,
+    and do not replace the tenant's last known current-position snapshot.
+    """
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    monkeypatch.setattr(
+        _models, "snaptrade_snapshot_generation_is_current",
+        lambda *_args: True,
+    )
+    ok, err, *_ = _upload.merge_and_push_seeds(
+        "Vanguard Account", None, _cur_df("VTI", 10, 300.0),
+        commit_message="initial holdings", user_id=21,
+        tenant_id="snaptrade:vanguard", skip_history=True,
+    )
+    assert ok, err
+    prior_current = store.files[_upload.CURRENT_PATH]
+
+    ok, err, _hr, _cr, _sha, _nc = _upload.merge_and_push_seeds(
+        "Vanguard Account", None, None,
+        commit_message="holdings unavailable, balance available", user_id=21,
+        tenant_id="snaptrade:vanguard", skip_history=True,
+        balances_df=_balance_df(),
+        snapshot_account_id="vanguard-account", snapshot_generation=1,
+    )
+
+    assert ok, err
+    assert store.files[_upload.CURRENT_PATH] == prior_current
+    balance = _parse(store.files[_upload.BALANCE_SEED_PATH])
+    assert balance["row_type"].tolist() == ["account_total"]
+    assert balance["market_value"].astype(float).tolist() == [125000.0]
+
+
+def test_batch_accepts_balance_only_when_holdings_unavailable(monkeypatch):
+    """The nightly deferred writer must keep the same balance-only account."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    monkeypatch.setattr(
+        _models, "snaptrade_snapshot_generation_is_current",
+        lambda *_args: True,
+    )
+    entry = {
+        "account_name": "Vanguard Account",
+        "user_id": 21,
+        "tenant_id": "snaptrade:vanguard",
+        "history_df": None,
+        "current_df": None,
+        "balances_df": _balance_df(),
+        "skip_history": True,
+        "snapshot_account_id": "vanguard-account",
+        "snapshot_generation": 1,
+    }
+
+    ok, err, _sha, _no_changes, pushed = _upload.merge_and_push_seeds_batch(
+        [entry], commit_message="nightly balance-only account",
+    )
+
+    assert ok, err
+    assert pushed == 1
+    assert set(store.files) == {_upload.BALANCE_SEED_PATH}
+    balance = _parse(store.files[_upload.BALANCE_SEED_PATH])
+    assert balance["tenant_id"].tolist() == ["snaptrade:vanguard"]
+
+
+def test_batch_discards_superseded_balance_only_snapshot(monkeypatch):
+    """A slow balance-only read cannot overwrite a newer account value."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    monkeypatch.setattr(
+        _models, "snaptrade_snapshot_generation_is_current",
+        lambda _uid, _account_id, generation: generation == 2,
+    )
+    fresh = {
+        "account_name": "Vanguard Account",
+        "user_id": 21,
+        "tenant_id": "snaptrade:vanguard",
+        "history_df": None,
+        "current_df": None,
+        "balances_df": _balance_df(),
+        "skip_history": True,
+        "snapshot_account_id": "vanguard-account",
+        "snapshot_generation": 2,
+    }
+    ok, err, *_ = _upload.merge_and_push_seeds_batch(
+        [fresh], commit_message="newer balance",
+    )
+    assert ok, err
+    prior_balance = store.files[_upload.BALANCE_SEED_PATH]
+
+    stale = {
+        **fresh,
+        "balances_df": _balance_df().assign(market_value=100000.0),
+        "snapshot_generation": 1,
+    }
+    ok, err, _sha, no_changes, pushed = _upload.merge_and_push_seeds_batch(
+        [stale], commit_message="older balance",
+    )
+
+    assert ok, err
+    assert no_changes is True
+    assert pushed == 0
+    assert store.files[_upload.BALANCE_SEED_PATH] == prior_balance
 
 
 def test_intraday_history_only_reruns_are_noop_when_no_new_fills(monkeypatch):
