@@ -76,6 +76,7 @@ Exit codes:
 """
 import os
 import sys
+import traceback
 
 # Ensure we can import app
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -485,6 +486,7 @@ def main():
                     skipped=skipped_accounts,
                 )
             except Exception as exc:
+                traceback.print_exc(file=sys.stderr)
                 ok, err, no_changes, n_pushed = False, str(exc), False, 0
             if ok and not no_changes:
                 pushed_note = f", 1 batched push ({n_pushed} accounts) → GitHub"
@@ -493,8 +495,15 @@ def main():
             else:
                 batch_failed = True
                 batch_error = str(err or "unknown batch write error")
-                pushed_note = f", batched push FAILED: {str(err)[:160]}"
-                print(f"WARNING: batched seed push failed: {err}", file=sys.stderr)
+                # The summary line used to keep 160 characters. Render's
+                # cron log is the only place the full text survives; the
+                # account row still stores seed_write_failed:<msg> (capped
+                # at 500 by the recorder below).
+                pushed_note = f", batched push FAILED: {batch_error}"
+                print(
+                    f"WARNING: batched seed push failed: {batch_error}",
+                    file=sys.stderr,
+                )
             skipped_pairs = _skipped_account_pairs(skipped_accounts)
             if skipped_accounts and ok:
                 pushed_note += (

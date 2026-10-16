@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import hmac
 import threading
 from contextlib import contextmanager
@@ -2291,6 +2292,11 @@ def _normalize_account_seed_frames(
         history_col_map = {c: history_standard[c.lower()]
                            for c in history_df.columns if c.lower() in history_standard}
         history_df = history_df.rename(columns=history_col_map)
+        # ``date`` and ``transaction_date`` both rename to Date. Selecting
+        # the seed columns then raises "label is not unique" and, on the
+        # nightly batch, fails every account that carried both.
+        if history_df.columns.duplicated().any():
+            history_df = history_df.loc[:, ~history_df.columns.duplicated()].copy()
         for col in HISTORY_SEED_COLUMNS:
             if col not in history_df.columns:
                 history_df[col] = ""
@@ -2311,6 +2317,8 @@ def _normalize_account_seed_frames(
             if lower in current_norm:
                 current_col_map[col] = current_norm[lower]
         current_df = current_df.rename(columns=current_col_map)
+        if current_df.columns.duplicated().any():
+            current_df = current_df.loc[:, ~current_df.columns.duplicated()].copy()
         for seed_col in CURRENT_SEED_COLUMNS:
             if seed_col not in current_df.columns:
                 current_df[seed_col] = ""
@@ -2641,6 +2649,11 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
         if again:
             for entry, exc in again:
                 _skip(entry, exc)
+            import traceback
+            traceback.print_exception(
+                type(again[0][1]), again[0][1], again[0][1].__traceback__,
+                file=sys.stderr,
+            )
             return False, str(again[0][1]), None, False, 0
 
     prepared_counts = [
@@ -2654,8 +2667,14 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
     try:
         ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
         if not ok:
+            print(
+                f"WARNING: batched seed store write failed: {err}",
+                file=sys.stderr,
+            )
             return False, err or "Seed store write failed.", None, False, 0
     except Exception as exc:
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         return False, str(exc), None, False, 0
 
     # Per-account bookkeeping (idempotent), matching the single-push path.
