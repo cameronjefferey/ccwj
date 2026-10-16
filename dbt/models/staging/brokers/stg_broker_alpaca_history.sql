@@ -142,7 +142,8 @@ select
                 safe_cast(Quantity as float64) * safe_cast(Price as float64) * 100
                 as string)
         else Amount
-    end as Amount
+    end as Amount,
+    _row_seq
 from grouped
 where
     -- Equity group WITH an orders-aggregate: keep aggregate(s), drop the

@@ -10,6 +10,10 @@
     - Moneyness at open (ITM / ATM / OTM / Unknown) using underlying close on open_date when available
     - Strategy (from int_strategy_classification)
     - Outcome (Winner / Loser from total_pnl)
+
+    Pre-window contracts (opened_before_history) are omitted. They have
+    no cost basis, classification does not tag them, and a zero P&L
+    would count as a loser under Other Option.
 */
 with option_contracts as (
     select
@@ -33,6 +37,13 @@ with option_contracts as (
         days_in_trade,
         close_type
     from {{ ref('int_option_contracts') }}
+    -- Same population as strategy classification. A pre-window contract
+    -- has no cost basis and total_pnl 0, so it would land here as an
+    -- Other Option loser and keep that strategy key on
+    -- mart_coaching_signals (this model is part of the coach grain)
+    -- even after exit analysis drops the close. CHECK 12, runs
+    -- 38531276167, 38700075153, and 38867054831.
+    where not coalesce(opened_before_history, false)
 ),
 
 strat as (

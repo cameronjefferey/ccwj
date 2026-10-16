@@ -3,8 +3,9 @@
 CHECK 12 failed after compact OCC roots became the underlying: the
 estimated-fee matcher keys that root, so an open on one spelling was
 dropped as the shadow of a statement open on another. The close stayed
-behind with no cost basis. Classification omits that fragment. The
-coach still counts it as Other Option.
+behind with no cost basis. Classification and the coach both omit
+that fragment. A genuine pre-window close, with no open on any
+spelling, stays out of both.
 
 Synthetic symbols only. The warehouse guard is
 dbt/tests/no_close_only_spelling_of_an_opened_contract.sql.

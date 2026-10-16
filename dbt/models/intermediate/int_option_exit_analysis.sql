@@ -64,8 +64,16 @@ with contracts as (
         and (oc.user_id is not distinct from tk.user_id)
         and (oc.tenant_id is not distinct from tk.tenant_id)
         and oc.trade_symbol = tk.trade_symbol
+    -- A close with no opening fill has no cost basis. Classification
+    -- leaves it out. Counting it here labeled it Other Option and made
+    -- mart_coaching_signals.total_closed run ahead of classified closed
+    -- contracts. CHECK 12, runs 38531276167, 38700075153, and
+    -- 38867054831: every extra row was opened_before_history, and
+    -- dropping those rows left zero mismatches. Realized P&L on these
+    -- rows is already 0.
     where oc.status = 'Closed'
       and oc.close_date is not null
+      and not coalesce(oc.opened_before_history, false)
 ),
 
 peak_stats as (

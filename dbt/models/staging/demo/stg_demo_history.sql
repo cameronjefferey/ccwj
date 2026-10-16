@@ -57,7 +57,8 @@ with mirror as (
         Quantity,
         Price,
         fees_and_comm,
-        Amount
+        Amount,
+        _row_seq
     from {{ ref('stg_broker_alpaca_history') }}
     where tenant_id = '{{ var("demo_source_tenant_id", "") }}'
       and '{{ var("demo_source_tenant_id", "") }}' != ''
@@ -78,6 +79,7 @@ with mirror as (
         cast(Price as string)                   as Price,
         cast(fees_and_comm as string)           as fees_and_comm,
         cast(Amount as string)                  as Amount,
+        cast(null as int64)                    as _row_seq,
         {{ parse_seed_date('Date') }}           as _d,
         lower(trim(cast(Action as string)))     as _a,
         {{ canonical_option_symbol_text('Symbol') }} as _s,
@@ -117,7 +119,8 @@ seed as (
             when k._d is not null and s._p is not null and s._p != 0
                 then cast(s._amt * (s._p + 0.01) / s._p as string)
             else s.Amount
-        end as Amount
+        end as Amount,
+        s._row_seq
     from seed_base s
     left join mirror_keys k
         on k._d is not distinct from s._d
