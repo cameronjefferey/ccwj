@@ -1430,19 +1430,29 @@ def test_run_sync_does_not_flag_holdings_timestamp_before_connect(monkeypatch):
 
 def test_connection_attention_hides_young_stale_holdings_flag():
     """The reconnect banner stays down when we flagged a brand-new grant
-    only because holdings last_successful_sync looked old."""
+    only because holdings last_successful_sync looked old.
+
+    The group path reads the real clock. The grant stays inside
+    SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS of that clock. A fixed
+    2026-10-12 created_at crossed that window on 2026-10-16 and the
+    exemption expired, which is the banner coming back on purpose.
+    """
+    today = date.today()
+    created = datetime(
+        today.year, today.month, today.day, 22, 40, tzinfo=timezone.utc,
+    ) - timedelta(days=1)
     row = {
         "snaptrade_account_id": "vang",
         "account_name": "Vanguard Account",
         "display_nickname": "Roth",
         "broker_slug": "vanguard",
-        "connection_broken_at": datetime(2026, 10, 12, 23, 5, tzinfo=timezone.utc),
-        "created_at": datetime(2026, 10, 12, 22, 40, tzinfo=timezone.utc),
+        "connection_broken_at": created + timedelta(minutes=25),
+        "created_at": created,
         "last_sync_error": (
             "connection_broken:sync_status.holdings.last_successful_sync[stale]"
         ),
     }
-    assert _snap._connection_attention(row, today=date(2026, 10, 13)) is None
+    assert _snap._connection_attention(row, today=today) is None
     groups = _snap._group_accounts_by_connection([row])
     assert groups[0]["needs_reconnect"] is False
     assert groups[0]["accounts"][0]["holdings_cache_false_reconnect"] is True
