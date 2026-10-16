@@ -22,7 +22,7 @@ import sys
 from datetime import date, datetime, time, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
-from flask import abort, redirect, render_template, request, url_for
+from flask import abort, redirect, render_template, request, session, url_for
 from flask_login import login_required, current_user
 from app import app
 from app.bigquery_client import get_bigquery_client
@@ -6050,6 +6050,13 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
     return daily_changes_map
 
 
+class _SkippedConnect(Exception):
+    """No brokerage, and the user chose to open Overview anyway.
+
+    Rendering that empty page must not open a warehouse client.
+    """
+
+
 # Decorator order is intentional: ``/overview`` is the innermost (applied
 # first) so ``url_for('weekly_review')`` returns ``/overview``.
 # ``/daily-review`` and ``/weekly-review`` stay as aliases for bookmarks.
@@ -6161,6 +6168,14 @@ def weekly_review():
     paper_known = []
 
     try:
+        from app.models import get_tenant_ids_for_user
+        if (
+            session.get("ht_skipped_broker_connect")
+            and not get_tenant_ids_for_user(current_user.id)
+        ):
+            # No brokerage yet. The empty card explains that. Do not open
+            # a warehouse client for a page that has nothing to read.
+            raise _SkippedConnect()
         client = get_bigquery_client()
 
         # Compute the market session up front so we can skip queries whose
@@ -6602,6 +6617,8 @@ def weekly_review():
 
         paper_known = _paper_known_symbols(batch)
 
+    except _SkippedConnect:
+        pass
     except Exception as e:
         context["error"] = str(e)
 

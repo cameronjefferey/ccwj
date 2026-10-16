@@ -166,6 +166,31 @@ def test_ill_do_this_later_stays_on_overview(monkeypatch):
         app.view_functions.update(saved)
 
 
+def test_later_overview_renders_without_the_warehouse(monkeypatch):
+    """Skipping connect opens Overview and does not query BigQuery."""
+    monkeypatch.setattr("app.routes.get_tenant_ids_for_user", lambda uid: [])
+    monkeypatch.setattr("app.routes.is_admin", lambda username: False)
+    monkeypatch.setattr("app.models.is_admin", lambda username: False)
+    monkeypatch.setattr("app.models.get_tenant_ids_for_user", lambda uid: [])
+    monkeypatch.setattr("app.weekly_review._user_account_list", lambda: [])
+    monkeypatch.setattr("app.weekly_review._tenants_for_scope", lambda *_a, **_k: [])
+
+    def _boom(*_a, **_k):
+        raise AssertionError("warehouse client opened")
+
+    monkeypatch.setattr("app.weekly_review.get_bigquery_client", _boom)
+
+    client = _client()
+    _login(client, monkeypatch)
+    resp = client.get("/overview?later=1")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "No brokerage connected yet" in html
+    assert "Connect a brokerage" in html
+    assert 'href="/get-started"' in html
+    assert "first sync is still landing" not in html
+
+
 def test_get_started_broker_path_is_connect_first(monkeypatch):
     monkeypatch.setattr(
         "app.marketing.get_tenant_ids_for_user", lambda uid: [],
