@@ -487,6 +487,35 @@ def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
     assert error.startswith("seed_write_failed:")
 
 
+def test_batch_exception_is_logged_in_full_and_stamped(_wire, monkeypatch, capsys):
+    """A thrown batch write exits 1, prints the traceback, and stores
+    ``seed_write_failed:<msg>`` on the account."""
+    rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap,
+        "_sync_one_connection",
+        lambda user_id, row, **kwargs: _ok(
+            row["account_name"], user_id, "snaptrade:new",
+        ),
+    )
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("synthetic-seed-write-boom")
+
+    monkeypatch.setattr(_upload, "merge_and_push_seeds_batch", _boom)
+
+    assert cli.main() == 1
+    captured = capsys.readouterr()
+    assert "Traceback" in captured.err
+    assert "synthetic-seed-write-boom" in captured.err
+    assert "batched push FAILED: synthetic-seed-write-boom" in captured.out
+    uid, account_id, error = _wire["sync_attempts"][0]
+    assert (uid, account_id) == (14, "new-account")
+    assert error.startswith("seed_write_failed:")
+    assert "synthetic-seed-write-boom" in error
+
+
 def test_one_skipped_account_does_not_fail_the_cron(_wire, monkeypatch):
     """A Vanguard (or any) frame that the batch refuses must not exit 1
     or stamp seed_write_failed on the accounts that did land.

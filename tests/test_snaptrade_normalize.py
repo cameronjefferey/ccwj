@@ -2177,6 +2177,30 @@ def test_equity_etf_mutual_fund_and_option_rows_are_unchanged():
     assert abs(float(by_symbol["AAPL  260621C00150000"]["market_value"]) - 350) < 0.01
 
 
+def test_positions_all_option_cost_basis_is_per_contract():
+    """AccountPosition.cost_basis is book price per contract, not a total.
+
+    This path matters when the dedicated option endpoint is unsupported but
+    positions/all still supplies the open contract.
+    """
+    pos = {
+        "instrument": {
+            "kind": "option",
+            "symbol": "AAPL  261120C00200000",
+            "raw_symbol": "AAPL261120C00200000",
+        },
+        "units": "10",
+        "price": "1.00",
+        "cost_basis": "200",
+    }
+    row = _current([pos]).iloc[0]
+    assert row["security_type"] == "Option"
+    assert float(row["Quantity"]) == 10
+    assert abs(float(row["market_value"]) - 1000.0) < 0.01
+    assert abs(float(row["cost_bases"]) - 2000.0) < 0.01
+    assert abs(float(row["gain_or_loss_dollat"]) - (-1000.0)) < 0.01
+
+
 def test_positions_all_future_kind_is_preserved_and_not_priced_as_a_bond():
     pos = {
         "instrument": {"kind": "future", "symbol": "ESZ6", "raw_symbol": "ESZ6"},

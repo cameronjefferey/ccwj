@@ -186,7 +186,12 @@ def profile():
                     "Couldn't turn that off. An admin can't do it for you.",
                     "danger",
                 )
-            return redirect(url_for("profile", tab="overview"))
+            # Stay on the Settings tab that held the card. Hardcoding
+            # overview sent a Preferences toggle to the Overview tab.
+            next_tab = (request.args.get("tab") or "overview").strip()
+            if next_tab not in ("overview", "preferences"):
+                next_tab = "overview"
+            return redirect(url_for("profile", tab=next_tab))
 
         if action == "set_email":
             from app.auth import _validate_email

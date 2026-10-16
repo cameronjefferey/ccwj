@@ -1,0 +1,44 @@
+name: Diagnose seed batch (read-only)
+
+# Manual only. Reproduces the nightly batched seed fold against the
+# stored raw tables and stops before any load job. Does not run on pull
+# requests. Dispatch it from this branch after the workflow file is on
+# the default branch, or from a ref once that is possible.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-seed-batch
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.DBT_KEYFILE_JSON }}"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Dry-run batched seed fold
+        env:
+          SECRET_KEY: diagnostic
+          HAPPYTRADER_SKIP_DB_INIT: "1"
+        run: python scripts/diagnose_seed_batch.py

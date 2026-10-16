@@ -141,9 +141,15 @@
 
 {% if not error and _book_value is none and not equity_snapshot and not _snaps %}
 <div class="card p-4 mb-3">
+    {% if session.get('ht_skipped_broker_connect') %}
+    <h2 class="section-header">No brokerage connected yet</h2>
+    <p class="text-muted mb-3">You skipped connecting. Overview fills in after a brokerage is connected.</p>
+    <a class="btn btn-primary" href="{{ url_for('get_started') }}">Connect a brokerage</a>
+    {% else %}
     <h2 class="section-header">No account value for this close</h2>
     <p class="text-muted mb-3">If you just connected, the first sync is still landing. Overview fills in once balances and history are in the warehouse. Closed history shows further down once it arrives.</p>
     <a class="btn btn-primary" href="{{ url_for('snaptrade_accounts_page') }}">Check sync status</a>
+    {% endif %}
 </div>
 {% endif %}
 

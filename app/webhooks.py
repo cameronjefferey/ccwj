@@ -337,6 +337,7 @@ def _handle_connection_health(event_type, snap_user_id, authorization_id):
         get_snaptrade_accounts,
         get_user_id_by_snaptrade_user_id,
         mark_snaptrade_connection_broken,
+        record_snaptrade_sync_attempt,
     )
 
     auth_id = (authorization_id or "").strip()
@@ -377,6 +378,12 @@ def _handle_connection_health(event_type, snap_user_id, authorization_id):
                 continue
             if mark_snaptrade_connection_broken(user_id, aid):
                 _notify_connection_dropped(user_id, aid, r, seen=seen)
+            # The broken timestamp alone left Last error blank. Always
+            # store why, including when the row was already flagged.
+            record_snaptrade_sync_attempt(
+                user_id, aid,
+                error="connection_broken:webhook:CONNECTION_BROKEN",
+            )
         _log.info(
             "snaptrade_webhook: CONNECTION_BROKEN user_id=%s auth=%s accounts=%d",
             user_id, auth_id, len(rows),

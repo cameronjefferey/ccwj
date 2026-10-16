@@ -198,6 +198,35 @@ def test_csv_account_column_cannot_override_selected_tenant():
     assert "Emmory" not in set(hist["Account"])
 
 
+def test_normalize_collapses_duplicate_date_columns():
+    """``date`` and ``transaction_date`` both rename to Date.
+
+    Selecting the seed columns then used to raise 'label is not unique'
+    and fail the nightly batch for every account that carried both.
+    """
+    history = pd.DataFrame({
+        "date": ["2024-01-02"],
+        "transaction_date": ["2024-01-02"],
+        "action": ["Buy"],
+        "symbol": ["AAA"],
+        "description": ["synthetic"],
+        "quantity": ["1"],
+        "price": ["10"],
+        "amount": ["-10"],
+    })
+    specs, hist_rows, _cur = _normalize_account_seed_frames(
+        "Paper Account", history, None,
+        user_id_int=9,
+        tenant_id_str="snaptrade:synthetic-tenant",
+        skip_history=False, balances_df=None,
+    )
+    hist = specs[0][1]
+    assert hist_rows == 1
+    assert list(hist.columns).count("Date") == 1
+    assert list(hist["Date"]) == ["2024-01-02"]
+    assert list(hist["Symbol"]) == ["AAA"]
+
+
 def test_upload_template_posts_tenant_id_not_nickname():
     html = Path("app/templates/upload.html").read_text()
     picker = html.split('id="accountSelect"', 1)[1].split("</select>", 1)[0]

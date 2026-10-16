@@ -151,6 +151,7 @@ def test_webhook_ignores_non_holdings_events():
 
 def test_webhook_connection_broken_marks_every_account_on_the_grant(monkeypatch):
     marked = []
+    recorded = []
     monkeypatch.setattr(_models, "get_user_id_by_snaptrade_user_id",
                         lambda sid: 9 if sid == "snap-user-1" else None)
     monkeypatch.setattr(_models, "get_snaptrade_accounts", lambda uid: [
@@ -160,6 +161,10 @@ def test_webhook_connection_broken_marks_every_account_on_the_grant(monkeypatch)
     ])
     monkeypatch.setattr(_models, "mark_snaptrade_connection_broken",
                         lambda uid, aid: marked.append((uid, aid)) or True)
+    monkeypatch.setattr(
+        _models, "record_snaptrade_sync_attempt",
+        lambda uid, aid, *, error=None, **_k: recorded.append((uid, aid, error)),
+    )
     monkeypatch.setattr(
         "app.snaptrade_sync_cli._notify_connection_dropped",
         lambda *a, **k: None,
@@ -172,7 +177,38 @@ def test_webhook_connection_broken_marks_every_account_on_the_grant(monkeypatch)
     r = _post(payload, signature=_sign(payload))
     assert r.status_code == 200
     assert marked == [(9, "acc-1"), (9, "acc-2")]
+    assert recorded == [
+        (9, "acc-1", "connection_broken:webhook:CONNECTION_BROKEN"),
+        (9, "acc-2", "connection_broken:webhook:CONNECTION_BROKEN"),
+    ]
     assert _FakeThread.instances == [], "a break must not queue a holdings sync"
+
+
+def test_webhook_connection_broken_records_reason_when_already_flagged(monkeypatch):
+    """A second CONNECTION_BROKEN must still fill a blank last_sync_error."""
+    recorded = []
+    monkeypatch.setattr(_models, "get_user_id_by_snaptrade_user_id", lambda sid: 9)
+    monkeypatch.setattr(_models, "get_snaptrade_accounts", lambda uid: [
+        {"snaptrade_account_id": "acc-1", "brokerage_authorization_id": "auth-a"},
+    ])
+    monkeypatch.setattr(
+        _models, "mark_snaptrade_connection_broken", lambda uid, aid: False,
+    )
+    monkeypatch.setattr(
+        _models, "record_snaptrade_sync_attempt",
+        lambda uid, aid, *, error=None, **_k: recorded.append(error),
+    )
+    monkeypatch.setattr(
+        "app.snaptrade_sync_cli._notify_connection_dropped",
+        lambda *a, **k: None,
+    )
+    payload = {
+        "eventType": "CONNECTION_BROKEN",
+        "userId": "snap-user-1",
+        "brokerageAuthorizationId": "auth-a",
+    }
+    assert _post(payload, signature=_sign(payload)).status_code == 200
+    assert recorded == ["connection_broken:webhook:CONNECTION_BROKEN"]
 
 
 def test_webhook_connection_fixed_clears_and_resyncs(monkeypatch):
