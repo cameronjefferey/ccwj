@@ -299,7 +299,7 @@
             <td>{% if row.private_from_admin %}Private{% else %}{{ row.account_name }}{% endif %}</td>
             <td>{{ row.broker_slug }}</td>
             <td class="ov-muted">{% if row.connection_broken_at %}{{ row.connection_broken_at.strftime('%b %-d') }}{% else %}—{% endif %}</td>
-            <td class="ov-muted">{{ (row.last_sync_error or '—')|truncate(80) }}</td>
+            <td class="ov-muted">{% if row.private_from_admin %}Hidden{% else %}{{ (row.last_sync_error or '—')|truncate(80) }}{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>

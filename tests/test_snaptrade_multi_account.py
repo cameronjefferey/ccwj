@@ -369,11 +369,12 @@ def test_sync_one_returns_session_expired_when_no_snap_user(monkeypatch, _patche
     assert _patched_models["sync_attempts"] == [(9, "abc", "session_expired")]
 
 
-def test_sync_one_marks_connection_broken_on_auth_error(monkeypatch, _patched_models):
-    """When the SDK raises an auth-shaped error (broker grant revoked),
-    flip ``connection_broken_at`` so the banner surfaces and the cron
-    stops retrying silently. Mirrors Schwab's
-    ``mark_schwab_refresh_token_invalid``."""
+def test_sync_one_does_not_mark_broken_on_bare_401(monkeypatch, _patched_models):
+    """A positions 401/403 is a failed read, not a disabled grant.
+
+    ``connection_broken_at`` stays unset. The attempt is stored as
+    ``sync_error:`` so the reconnect badge does not light up.
+    """
     monkeypatch.setattr(_snap, "get_snaptrade_user",
                         lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
     monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
@@ -391,8 +392,39 @@ def test_sync_one_marks_connection_broken_on_auth_error(monkeypatch, _patched_mo
         lookback_days=60,
     )
     assert res["ok"] is False
+    assert res["error"] == "sync_error"
+    assert _patched_models["broken_marked"] == []
+    assert _patched_models["sync_attempts"][0][2].startswith(
+        "sync_error:get_user_account_positions"
+    )
+
+
+def test_sync_one_marks_broken_when_grant_text_says_disabled(
+    monkeypatch, _patched_models,
+):
+    """Wording that the brokerage authorization itself is disabled still
+    sets ``connection_broken_at`` and records the reason."""
+    monkeypatch.setattr(_snap, "get_snaptrade_user",
+                        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"})
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+
+    def _boom(*args, **kwargs):
+        raise _snap._SnapTradeAuthError(
+            "get_user_account_positions",
+            RuntimeError("Authorization disabled by user"),
+        )
+
+    monkeypatch.setattr(_snap, "_run_sync", _boom)
+
+    res = _snap._sync_one_connection(
+        user_id=9,
+        acc_row={"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+    )
+    assert res["ok"] is False
     assert res["error"] == "connection_broken"
     assert _patched_models["broken_marked"] == [(9, "abc")]
+    assert _patched_models["sync_attempts"][0][2].startswith("connection_broken:")
 
 
 def test_sync_one_disabled_flag_first_sighting_is_pending_not_broken(monkeypatch, _patched_models):
@@ -742,6 +774,42 @@ def test_sync_one_carries_reserved_generation_to_deferred_seed_batch(
     assert _patched_models["snapshot_generations"] == [(9, "abc", 1)]
     assert res["frames"]["snapshot_account_id"] == "abc"
     assert res["frames"]["snapshot_generation"] == 1
+    # Missing the key is an empty tuple, not a drop of the whole frames dict.
+    assert res["frames"]["preserve_current_security_types"] == ()
+
+
+def test_sync_one_copies_bond_preserve_onto_deferred_frames(
+    monkeypatch, _patched_models,
+):
+    """The nightly batch only sees ``out['frames']``. The bond guard has
+    to be copied there or a positions/all miss wipes stored bond rows."""
+    monkeypatch.setattr(
+        _snap, "get_snaptrade_user",
+        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+
+    def _fake_run_sync(*args, **kwargs):
+        return _ok_run_sync({
+            "deferred": True,
+            "account_name": "X",
+            "tenant_id": "snaptrade:abc",
+            "history_df": None,
+            "current_df": object(),
+            "balances_df": None,
+            "skip_history": True,
+            "preserve_current_security_types": ("Bond",),
+            "snapshot_generation": kwargs["snapshot_generation"],
+        })
+
+    monkeypatch.setattr(_snap, "_run_sync", _fake_run_sync)
+    res = _snap._sync_one_connection(
+        9,
+        {"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+        defer_push=True,
+    )
+    assert res["frames"]["preserve_current_security_types"] == ("Bond",)
 
 
 def test_snapshot_generation_helpers_use_atomic_postgres_counter(monkeypatch):
@@ -1248,21 +1316,28 @@ def _patch_run_sync_fetches(monkeypatch, *, account_summary):
     )
 
 
-def test_run_sync_raises_on_stale_holdings(monkeypatch):
-    """End-to-end wiring: a stale ``sync_status.holdings.last_successful_sync``
-    escalates to the same _SnapTradeAuthError reconnect path as a disabled
-    connection — even though every fetch 'succeeded'."""
+def test_run_sync_does_not_mark_broken_on_stale_holdings(monkeypatch):
+    """An old holdings timestamp is logged and the sync continues.
+
+    It must not raise ``_SnapTradeAuthError``. That path set
+    ``connection_broken_at`` for a login SnapTrade had not disabled.
+    """
     stale = (date.today() - timedelta(days=10)).strftime("%Y-%m-%dT12:00:00Z")
     _patch_run_sync_fetches(
         monkeypatch,
         account_summary={"sync_status": {"holdings": {"last_successful_sync": stale}}},
     )
     monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
+    sentinel = RuntimeError("reached normalize")
+    monkeypatch.setattr(
+        _snap, "activities_to_history_df",
+        lambda *a, **k: (_ for _ in ()).throw(sentinel),
+    )
 
     acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
-    with pytest.raises(_snap._SnapTradeAuthError) as ei:
+    with pytest.raises(RuntimeError) as ei:
         _snap._run_sync(9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60)
-    assert "stale" in ei.value.endpoint
+    assert ei.value is sentinel
 
 
 def test_holdings_unavailable_is_not_a_stale_connection():
@@ -1329,6 +1404,10 @@ def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatc
     _patch_run_sync_fetches(
         monkeypatch,
         account_summary={
+            "balance": {
+                "cash": 1000,
+                "total": {"amount": 1000},
+            },
             "sync_status": {
                 "holdings": {
                     "last_successful_sync": "2024-06-28T18:42:46.561Z",
@@ -1356,6 +1435,50 @@ def test_run_sync_does_not_replace_snapshot_when_holdings_unavailable(monkeypatc
     assert res["push_history_only"] is False
     assert res["current_rows"] == 0
     assert res["current_df"] is None
+    assert not res["balances_df"].empty
+    total = res["balances_df"].loc[
+        res["balances_df"]["row_type"] == "account_total", "market_value"
+    ]
+    assert total.astype(float).tolist() == [1000.0]
+
+
+@pytest.mark.parametrize(
+    ("option_holdings", "expected_preserve"),
+    [
+        (None, ("Option",)),
+        ([], ()),
+    ],
+)
+def test_run_sync_distinguishes_unavailable_from_empty_option_holdings(
+    monkeypatch, option_holdings, expected_preserve,
+):
+    """A failed option read preserves old contracts; a successful empty read
+    removes contracts that have actually left the account."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {"holdings": {"last_successful_sync": fresh}}
+        },
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_option_holdings", lambda *a, **k: option_holdings,
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_all_positions", lambda *a, **k: [],
+    )
+    res = _snap._run_sync(
+        9,
+        object(),
+        snap=_SNAP,
+        acc_row={
+            "snaptrade_account_id": "abc",
+            "account_name": "Schwab Account",
+        },
+        lookback_days=60,
+        defer_push=True,
+    )
+    assert res["preserve_current_security_types"] == expected_preserve
 
 
 @pytest.mark.parametrize(
@@ -1432,32 +1555,23 @@ def test_connection_attention_hides_young_stale_holdings_flag():
     """The reconnect banner stays down when we flagged a brand-new grant
     only because holdings last_successful_sync looked old.
 
-    The group path calls ``_holdings_cache_false_reconnect`` with the
-    real clock. ``created_at`` stays one day inside
-    ``SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS`` of that clock. A fixed
-    2026-10-12 timestamp left the window on 2026-10-16.
+    Grouping reads ``date.today()`` for the young-grant window, so the
+    connection's age has to stay inside that window. A fixed October
+    date flips the assertion the day the grant turns four days old.
     """
-    window = _snap.SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS
-    assert window >= 1
-    today = date.today()
-    created_day = today - timedelta(days=window - 1)
-    created = datetime(
-        created_day.year, created_day.month, created_day.day,
-        12, 0, tzinfo=timezone.utc,
-    )
-    assert (today - created.date()).days < window
+    created = datetime.combine(date.today(), datetime.min.time(), tzinfo=timezone.utc)
     row = {
         "snaptrade_account_id": "vang",
         "account_name": "Vanguard Account",
         "display_nickname": "Roth",
         "broker_slug": "vanguard",
-        "connection_broken_at": created + timedelta(minutes=25),
+        "connection_broken_at": created,
         "created_at": created,
         "last_sync_error": (
             "connection_broken:sync_status.holdings.last_successful_sync[stale]"
         ),
     }
-    assert _snap._connection_attention(row, today=today) is None
+    assert _snap._connection_attention(row, today=date.today()) is None
     groups = _snap._group_accounts_by_connection([row])
     assert groups[0]["needs_reconnect"] is False
     assert groups[0]["accounts"][0]["holdings_cache_false_reconnect"] is True
@@ -1722,9 +1836,12 @@ def test_connection_reminder_week_index_is_weekly_after_week_zero():
     ("Account not found", False),
 ])
 def test_looks_like_auth_error_pattern_matches(msg, expected):
-    """Heuristic only — ANY new auth-shaped string SnapTrade ships
-    needs to land in this list so the cron flips the broken flag and
-    stops silently retrying."""
+    """String heuristic used by the dormant force-refresh path.
+
+    A bare 401/403 still matches. It does not, by itself, set
+    ``connection_broken_at``. That flag requires the disabled
+    authorization wording, the disabled flag, or CONNECTION_BROKEN.
+    """
     assert _snap._looks_like_auth_error(RuntimeError(msg)) is expected
 
 
@@ -1739,8 +1856,9 @@ def test_fetch_recent_orders_swallows_403_when_activities_already_succeeded():
     their fresh Fidelity link (production bug, 2026-05-15).
 
     The non-fatal contract: any exception from this endpoint logs and
-    returns ``[]``; only ``_fetch_activities`` / ``_fetch_positions`` /
-    ``_fetch_balances`` may raise ``_SnapTradeAuthError``."""
+    returns ``[]``. A bare 401/403 on positions, activities, or balances
+    is a step error. Only disabled-authorization wording raises
+    ``_SnapTradeAuthError``."""
 
     class _ApiException(Exception):
         def __str__(self):
@@ -1756,11 +1874,9 @@ def test_fetch_recent_orders_swallows_403_when_activities_already_succeeded():
     assert result == []
 
 
-def test_fetch_positions_still_raises_auth_error_on_403():
-    """Counter-test to the orders-endpoint relaxation: positions IS one
-    of the authoritative auth surfaces (alongside activities/balances/
-    details). A 403 there must still escalate so a genuinely-revoked
-    grant gets caught and flagged."""
+def test_fetch_positions_403_is_a_step_error_not_a_broken_connection():
+    """A bare positions 403 records the miss. It does not raise
+    ``_SnapTradeAuthError``, so ``connection_broken_at`` stays unset."""
 
     class _ApiException(Exception):
         def __str__(self):
@@ -1772,9 +1888,48 @@ def test_fetch_positions_still_raises_auth_error_on_403():
             def get_user_account_positions(**_):
                 raise _ApiException()
 
+    with pytest.raises(_snap._SnapTradeStepError) as exc_info:
+        _snap._fetch_positions(_Boom, "u", "s", "acc")
+    assert exc_info.value.endpoint == "get_user_account_positions"
+    assert exc_info.value.status == "403"
+    assert exc_info.value.step == "holdings"
+
+
+def test_fetch_positions_disabled_wording_still_raises_auth_error():
+    class _ApiException(Exception):
+        def __str__(self):
+            return "Authorization disabled"
+
+    class _Boom:
+        class account_information:
+            @staticmethod
+            def get_user_account_positions(**_):
+                raise _ApiException()
+
     with pytest.raises(_snap._SnapTradeAuthError) as exc_info:
         _snap._fetch_positions(_Boom, "u", "s", "acc")
     assert exc_info.value.endpoint == "get_user_account_positions"
+
+
+def test_fetch_option_holdings_403_returns_unavailable_and_does_not_raise():
+    """A brokerage with no options API returns 403 here. That is not a
+    disabled grant and must not set ``connection_broken_at``.
+
+    ``None`` also keeps the tenant-replacing writer from treating the
+    failed read as proof that every previously open option is gone.
+    """
+
+    class _ApiException(Exception):
+        def __str__(self):
+            return "(403)"
+
+    class _Boom:
+        class options:
+            @staticmethod
+            def list_option_holdings(**_):
+                raise _ApiException()
+
+    assert _snap._fetch_option_holdings(_Boom, "u", "s", "acc") is None
 
 
 def test_fetch_all_positions_403_returns_unavailable_and_does_not_raise():

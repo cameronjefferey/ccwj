@@ -21,7 +21,7 @@ SQL and/or _filter_df_by_tenant_ids on the frame — see
 .cursor/rules/bigquery-tenant-isolation.mdc.
 """
 
-from flask import abort, g, request, redirect, url_for, flash
+from flask import abort, g, request, redirect, url_for, flash, session
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_login import current_user
 from app import app
@@ -156,7 +156,17 @@ def _redirect_if_no_accounts():
                 return None
             if request.args.get("from_upload") == "1" or request.args.get("from_sync") == "1":
                 return None
+            # "I'll do this later" / "Skip to overview". The query survives
+            # the skeleton's second request. The session flag keeps later
+            # pages (Positions, and Overview without the query) from
+            # bouncing back to /get-started.
+            if request.args.get("later") == "1":
+                session["ht_skipped_broker_connect"] = True
+                return None
+            if session.get("ht_skipped_broker_connect"):
+                return None
             return redirect(url_for("get_started"))
+        session.pop("ht_skipped_broker_connect", None)
     return None
 
 

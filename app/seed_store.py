@@ -129,6 +129,32 @@ def read_seed_csv(path: str, client=None, dataset: str | None = None) -> str | N
     return df.to_csv(index=False)
 
 
+def _string_seed_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy whose data cells are ``str`` or None.
+
+    ``_row_seq`` is left alone so the load job can keep it INT64.
+    """
+    out = df.copy()
+    for col in out.columns:
+        if col == _ROW_SEQ_COL:
+            continue
+        cleaned = []
+        for value in out[col].tolist():
+            if value is None:
+                cleaned.append(None)
+                continue
+            try:
+                if pd.isna(value):
+                    cleaned.append(None)
+                    continue
+            except TypeError:
+                pass
+            text = str(value).replace("\x00", "")
+            cleaned.append(text)
+        out[col] = cleaned
+    return out
+
+
 def write_seed_csvs(path_contents, client=None, dataset: str | None = None) -> None:
     """Atomically replace each raw table with the given CSV content.
 
@@ -152,6 +178,13 @@ def write_seed_csvs(path_contents, client=None, dataset: str | None = None) -> N
             ) from exc
         # Empty cells -> NULL (matches how dbt seed loaded empty CSV cells).
         df = df.astype(object).where(df != "", None)
+        # pyarrow infers an object column from its values. A column that
+        # mixes ints and strings (or is all null in a way the converter
+        # treats as a nested type) fails the load with
+        # "Expected bytes, got a 'int'" / "Array, ListArray, or StructArray"
+        # even when the job schema says STRING. Force every data cell to
+        # str or None before the load. ``_row_seq`` stays an int.
+        df = _string_seed_frame(df)
         df[_ROW_SEQ_COL] = range(len(df))
         schema = [
             bigquery.SchemaField(col, "STRING")
@@ -169,6 +202,7 @@ def write_seed_csvs(path_contents, client=None, dataset: str | None = None) -> N
             )
             job.result()
         except Exception as exc:
+            _log.exception("seed_store: BigQuery load into %s failed", table_id)
             raise SeedStoreError(
                 f"BigQuery load into {table_id} failed: {exc}"
             ) from exc

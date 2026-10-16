@@ -97,6 +97,19 @@ _CSV = (
 # ---------------------------------------------------------------------------
 
 
+def test_string_seed_frame_lets_mixed_object_column_load_as_string():
+    """An object column that mixes ints and strings fails pyarrow unless
+    every cell is str or None before the load job."""
+    from google.cloud import bigquery
+    from google.cloud.bigquery._pandas_helpers import dataframe_to_arrow
+
+    mixed = pd.DataFrame({"Amount": [1, "2.50", None]})
+    frame = seed_store._string_seed_frame(mixed)
+    schema = [bigquery.SchemaField("Amount", "STRING")]
+    table = dataframe_to_arrow(frame, schema)
+    assert table.column("Amount").to_pylist() == ["1", "2.50", None]
+
+
 def test_write_then_read_round_trips_byte_identical(client):
     write_seed_csvs([(HISTORY_PATH, _CSV)], client=client)
     assert read_seed_csv(HISTORY_PATH, client=client) == _CSV

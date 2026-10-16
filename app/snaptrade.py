@@ -2809,6 +2809,12 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
                 "user_id": user_id,
                 "snapshot_account_id": snaptrade_account_id,
                 "snapshot_generation": result.get("snapshot_generation"),
+                # #292 keeps prior bond rows when positions/all is down.
+                # The inline writer already receives this. The nightly batch
+                # only sees what is copied onto the deferred frames.
+                "preserve_current_security_types": result.get(
+                    "preserve_current_security_types"
+                ) or (),
             }
         # data_ready email fires after the warehouse rebuild flushes the
         # cache (app/cache_ops.py), not here — seed write is not yet
@@ -2852,6 +2858,33 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             == f"connection_broken_pending:{_DISABLED_FLAG_ENDPOINT}"
         )
         already_broken = bool(acc_row.get("connection_broken_at"))
+        # A 401/403, a stale holdings timestamp, or a warehouse-write
+        # failure must not flip connection_broken_at. Only SnapTrade's
+        # disabled-authorization flag (debounced below) or text that the
+        # grant itself is revoked does. The reason is still stored, under
+        # a prefix the reconnect badge does not treat as "reconnect".
+        real_disable = (
+            endpoint == _DISABLED_FLAG_ENDPOINT
+            or _disabled_authorization_message(orig)
+        )
+        if not real_disable:
+            _app.logger.warning(
+                "SnapTrade sync error did not mark connection_broken for "
+                "user_id=%s account=%s broker=%s endpoint=%s exc_type=%s msg=%s",
+                user_id, snaptrade_account_id, broker_slug,
+                endpoint, type(orig).__name__, str(orig)[:500],
+            )
+            record_snaptrade_sync_attempt(
+                user_id, snaptrade_account_id,
+                error=f"sync_error:{endpoint}"[:500],
+                snapshot_generation=snapshot_generation,
+            )
+            record_snaptrade_sync_observation(
+                user_id, snaptrade_account_id,
+                broker_slug=acc_row.get("broker_slug"), ok=False,
+            )
+            out["error"] = "sync_error"
+            return out
         if (
             endpoint == _DISABLED_FLAG_ENDPOINT
             and not prior_pending
@@ -3170,10 +3203,34 @@ def _sync_user_reason(step: str, status) -> str:
     return f"SnapTrade couldn't read {what}. Try again in a minute."
 
 
+def _disabled_authorization_message(exc) -> bool:
+    """True when SnapTrade's own text says the brokerage grant is dead.
+
+    A bare HTTP 401/403 is not enough. Those show up on endpoints a
+    broker does not offer (option holdings, recent orders) and on
+    transient refusals. Only the disabled-authorization wording, the
+    ``disabled=true`` flag, and the CONNECTION_BROKEN webhook may mark
+    a connection broken.
+    """
+    low = str(exc or "").lower()
+    needles = (
+        "authorization disabled",
+        "authorization expired",
+        "auth revoked",
+        "reconnect required",
+    )
+    return any(needle in low for needle in needles)
+
+
 def _raise_snaptrade_step(step, endpoint, account_id, exc):
-    """Log the SnapTrade failure, then raise a step error (or auth error)."""
+    """Log the SnapTrade failure, then raise a step error (or auth error).
+
+    A bare 401/403 stays a step error so the account records the miss
+    without ``connection_broken_at``. Wording that the grant itself is
+    disabled still raises ``_SnapTradeAuthError``.
+    """
     status = _log_snaptrade_sync_error(step, endpoint, account_id, exc)
-    if _looks_like_auth_error(exc):
+    if _disabled_authorization_message(exc):
         raise _SnapTradeAuthError(endpoint, exc)
     raise _SnapTradeStepError(step, endpoint, status, exc)
 
@@ -3359,11 +3416,22 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     orders = _fetch_sync_orders(client, snap_user_id, snap_secret, snaptrade_account_id)
     positions = _fetch_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     option_holdings = _fetch_option_holdings(client, snap_user_id, snap_secret, snaptrade_account_id)
+    option_holdings_available = option_holdings is not None
     # Bonds and other non-equity instruments. Best-effort: a 403 or an
     # SDK without this method must not fail the sync or mark the
     # connection broken. Classic positions stay the auth signal.
     all_positions = _fetch_all_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     all_positions_available = all_positions is not None
+    # A failed supplemental read is unknown, not an empty book. Preserve
+    # the last option or bond rows. An authoritative empty list does not.
+    preserve_current_security_types = tuple(
+        security_type
+        for available, security_type in (
+            (option_holdings_available, "Option"),
+            (all_positions_available, "Bond"),
+        )
+        if not available
+    )
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
     account_summary = _fetch_account_summary(client, snap_user_id, snap_secret, snaptrade_account_id)
     summary_institution_account_id = (
@@ -3383,20 +3451,14 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             institution_account_id=summary_institution_account_id,
         )
 
-    # BACKSTOP for the "enabled-but-stalled" failure mode the disabled flag
-    # misses. SnapTrade can keep returning HTTP 200 from its last-cached
-    # holdings while its OWN ``sync_status.holdings.last_successful_sync``
-    # stops advancing (broker auth degraded but not yet flagged disabled).
-    # Every fetch above then "succeeds" with byte-identical stale rows, so row
-    # counts can't tell live from frozen and the seed merge re-pushes a no-op
-    # forever. The authoritative freshness signal is SnapTrade's per-account
-    # last_successful_sync timestamp; if it's older than the threshold,
-    # escalate to the SAME reconnect path as a disabled connection (real case
-    # June 2026: user_id=9 Schwab holdings frozen on a June-12 cache for 7
-    # days, no banner). Threshold <= 0 disables the backstop. None-is-safe:
-    # a missing/odd timestamp never flags. Runs only AFTER the disabled gate
-    # (which raises first when disabled is True), so this catches the
-    # complementary case the disabled flag silently passes.
+    # An old ``last_successful_sync`` used to raise the same auth error as
+    # a disabled grant and set ``connection_broken_at``. That flagged live
+    # logins (a holdings cache can lag without the authorization being
+    # disabled). The disabled flag and the CONNECTION_BROKEN webhook are
+    # the only signals that mark a connection broken. A stale timestamp is
+    # logged and the sync continues. Threshold <= 0 skips the log.
+    # None-is-safe: a missing timestamp never logs. Runs only AFTER the
+    # disabled gate (which raises first when disabled is True).
     holdings_unavailable = _holdings_unavailable(account_summary)
     if SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS > 0 and holdings_unavailable:
         # Vanguard employer plans (and any account SnapTrade marks
@@ -3429,15 +3491,16 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
                 account_name, snaptrade_account_id, raw_stale_days,
             )
         elif stale_days is not None and stale_days >= SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
-            raise _SnapTradeAuthError(
-                "sync_status.holdings.last_successful_sync[stale]",
-                RuntimeError(
-                    f"SnapTrade has not refreshed holdings from the broker in "
-                    f"{stale_days} days (threshold "
-                    f"{SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS}); it is serving a "
-                    f"stale cached snapshot until the user reconnects or "
-                    f"forces a Refresh from broker."
-                ),
+            # An old holdings timestamp is not a disabled grant. Logging it
+            # is enough. Raising _SnapTradeAuthError here set
+            # connection_broken_at and showed a reconnect prompt for a
+            # login SnapTrade had not actually disabled.
+            app.logger.warning(
+                "SnapTrade holdings last_successful_sync is %s days old for "
+                "account=%s (snaptrade_id=%s, threshold %s); not marking "
+                "the login broken",
+                stale_days, account_name, snaptrade_account_id,
+                SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS,
             )
 
     # SnapTrade has TWO sources for trade history:
@@ -3569,11 +3632,9 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "history_df": None if skip_history else history_df,
             "current_df": None if push_history_only else current_snapshot_df,
             "balances_df": None if push_history_only else balances_df,
-            # positions/all is supplemental to the classic holdings feeds.
-            # On a transient failure, keep the last known bond rows while
-            # still allowing equities/options to refresh normally.
-            "preserve_current_security_types":
-                ("Bond",) if not all_positions_available else (),
+            # Supplemental holdings failures are unknown, not an empty book.
+            # Preserve the last option/bond rows while classic equities refresh.
+            "preserve_current_security_types": preserve_current_security_types,
             "push_history_only": push_history_only,
             "skip_history": skip_history,
             "history_rows": 0 if skip_history else len(history_df),
@@ -3646,9 +3707,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             tenant_id=tenant_id,
             skip_history=skip_history,
             balances_df=None if push_history_only else balances_df,
-            preserve_current_security_types=(
-                ("Bond",) if not all_positions_available else ()
-            ),
+            preserve_current_security_types=preserve_current_security_types,
             snapshot_account_id=snaptrade_account_id,
             snapshot_generation=snapshot_generation,
         )
@@ -3776,9 +3835,11 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
     open option contracts. Without this second call an open option leg
     (e.g. a long LEAP call) never lands in the current-positions snapshot
     — it shows in trade history but not as a held position. Best-effort:
-    a 403 ("feature not enabled for this connection") or empty response
-    is normal for brokers/plans without option data and must not fail the
-    sync — the activities feed still carries the option lifecycle.
+    a 403 ("feature not enabled for this connection") is normal and must
+    not fail the sync. Return ``None`` on a read failure and ``[]`` on an
+    authoritative empty response. Tenant snapshots replace in full, so
+    callers need that distinction to keep the last known open options.
+    The activities feed still carries the option lifecycle.
     """
     try:
         resp = client.options.list_option_holdings(
@@ -3787,12 +3848,14 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
             account_id=account_id,
         )
     except Exception as exc:
+        # A 403 here is normal for a brokerage with no options API
+        # (Fidelity, Vanguard employer plans). Returning [] would wipe
+        # stored option rows. Returning None preserves them. It must not
+        # raise _SnapTradeAuthError — that path sets connection_broken_at.
         _log_snaptrade_sync_error(
             "holdings", "list_option_holdings", account_id, exc,
         )
-        if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError("list_option_holdings", exc)
-        return []
+        return None
     return _coerce_list(resp)
 
 

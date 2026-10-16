@@ -235,7 +235,7 @@ def enable_own_privacy(user_id) -> tuple[bool, str]:
     if hidden_record(uid) is None:
         return False, NOT_INVITED
     try:
-        from app.db import execute_returning
+        from app.db import commit_request_transaction, execute_returning
         row = execute_returning(
             """
             UPDATE admin_hidden_users
@@ -250,6 +250,10 @@ def enable_own_privacy(user_id) -> tuple[bool, str]:
             """,
             (uid,),
         )
+        # Durable before the redirect. A nested request transaction would
+        # otherwise roll back when the request socket closes, so the toast
+        # could say privacy is on while the next GET still shows Off.
+        commit_request_transaction()
     except Exception:
         _log.exception("admin privacy enable failed for user_id=%s", uid)
         return False, "Couldn't save that. Try again."
@@ -277,7 +281,7 @@ def remove_hidden_user(user_id, actor_user_id) -> bool:
     if _impersonation_active():
         return False
     try:
-        from app.db import execute_returning
+        from app.db import commit_request_transaction, execute_returning
         row = execute_returning(
             """
             UPDATE admin_hidden_users
@@ -288,6 +292,9 @@ def remove_hidden_user(user_id, actor_user_id) -> bool:
             """,
             (uid,),
         )
+        # Same durability as add/enable. Without this the Turn off flash
+        # can land and the next page still shows On.
+        commit_request_transaction()
     except Exception:
         _log.exception("admin privacy remove failed for user_id=%s", uid)
         return False

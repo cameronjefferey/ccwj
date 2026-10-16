@@ -116,10 +116,79 @@ def test_get_started_without_broker_asks_where_to_start(monkeypatch):
     assert "https://app.alpaca.markets/signup" in html
     assert "path=broker" in html
     assert "I'll do this later" in html
+    assert "later=1" in html
     assert "Skip to overview" not in html
     assert "Upload a CSV" in html
     assert "Two ways to bring your trades" not in html
     assert "Connect brokerage" not in html
+
+
+def test_ill_do_this_later_stays_on_overview(monkeypatch):
+    """A user with no brokerage can skip. The next page must not bounce
+    them back to Get started."""
+    from app.routes import _redirect_if_no_accounts
+
+    monkeypatch.setattr("app.routes.get_tenant_ids_for_user", lambda uid: [])
+    monkeypatch.setattr("app.routes.is_admin", lambda username: False)
+    monkeypatch.setattr("app.models.is_admin", lambda username: False)
+
+    def _stay():
+        bounce = _redirect_if_no_accounts()
+        if bounce:
+            return bounce
+        return "stayed"
+
+    saved = {
+        name: app.view_functions[name]
+        for name in ("weekly_review", "positions")
+    }
+    app.view_functions["weekly_review"] = _stay
+    app.view_functions["positions"] = _stay
+    try:
+        client = _client()
+        _login(client, monkeypatch)
+        blocked = client.get("/overview")
+        assert _path(blocked) == "/get-started"
+
+        stayed = client.get("/overview?later=1")
+        assert stayed.status_code == 200
+        assert stayed.get_data(as_text=True) == "stayed"
+        with client.session_transaction() as sess:
+            assert sess.get("ht_skipped_broker_connect") is True
+
+        again = client.get("/overview")
+        assert again.status_code == 200
+        assert again.get_data(as_text=True) == "stayed"
+        positions = client.get("/positions")
+        assert positions.status_code == 200
+        assert positions.get_data(as_text=True) == "stayed"
+    finally:
+        app.view_functions.update(saved)
+
+
+def test_later_overview_renders_without_the_warehouse(monkeypatch):
+    """Skipping connect opens Overview and does not query BigQuery."""
+    monkeypatch.setattr("app.routes.get_tenant_ids_for_user", lambda uid: [])
+    monkeypatch.setattr("app.routes.is_admin", lambda username: False)
+    monkeypatch.setattr("app.models.is_admin", lambda username: False)
+    monkeypatch.setattr("app.models.get_tenant_ids_for_user", lambda uid: [])
+    monkeypatch.setattr("app.weekly_review._user_account_list", lambda: [])
+    monkeypatch.setattr("app.weekly_review._tenants_for_scope", lambda *_a, **_k: [])
+
+    def _boom(*_a, **_k):
+        raise AssertionError("warehouse client opened")
+
+    monkeypatch.setattr("app.weekly_review.get_bigquery_client", _boom)
+
+    client = _client()
+    _login(client, monkeypatch)
+    resp = client.get("/overview?later=1")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "No brokerage connected yet" in html
+    assert "Connect a brokerage" in html
+    assert 'href="/get-started"' in html
+    assert "first sync is still landing" not in html
 
 
 def test_get_started_broker_path_is_connect_first(monkeypatch):

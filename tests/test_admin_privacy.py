@@ -748,6 +748,41 @@ def test_invited_user_keeps_the_card_after_turning_privacy_off(world):
     _logout(http)
 
 
+def test_privacy_toggle_stays_on_preferences_and_confirms_both_ways(world):
+    """Turning privacy on or off keeps the Settings tab and flashes a toast."""
+    http = world["http"]
+    _login(http, world["friend"])
+
+    off = http.post(
+        "/profile?tab=preferences",
+        data={"action": "set_admin_privacy", "enabled": "0"},
+        follow_redirects=False,
+    )
+    location = off.headers["Location"]
+    assert "tab=preferences" in location
+    off_page = http.get(location)
+    off_body = off_page.get_data(as_text=True)
+    assert "Private from HappyTrader admins is off." in off_body
+    assert 'class="toast show' in off_body
+    assert "Private from HappyTrader admins: Off." in off_body
+    assert (
+        'class="active" aria-current="page" '
+        'href="/profile?tab=preferences"'
+    ) in off_body
+
+    on = http.post(
+        "/profile?tab=preferences",
+        data={"action": "set_admin_privacy", "enabled": "1"},
+        follow_redirects=True,
+    )
+    on_body = on.get_data(as_text=True)
+    assert "Private from HappyTrader admins is on." in on_body
+    assert 'class="toast show' in on_body
+    assert "Private from HappyTrader admins: On" in on_body
+    assert "tab=preferences" in on.request.full_path
+    _logout(http)
+
+
 def test_filtering_applies_only_while_privacy_is_on(world):
     """An invite with privacy off is not dropped from admin reads."""
     from app.admin_privacy import (
