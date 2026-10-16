@@ -22,6 +22,8 @@ from app.outcome_units import (
 CONTRACTS = Path("dbt/models/intermediate/int_option_contracts.sql").read_text()
 CLASSIFICATION = Path("dbt/models/intermediate/int_strategy_classification.sql").read_text()
 LEGS = Path("dbt/models/intermediate/int_position_legs.sql").read_text()
+EXIT_ANALYSIS = Path("dbt/models/intermediate/int_option_exit_analysis.sql").read_text()
+TRADE_KINDS = Path("dbt/models/intermediate/int_option_trade_kinds.sql").read_text()
 WRITEOFFS = Path("dbt/models/intermediate/int_closed_equity_legs.sql").read_text()
 SUMMARY = Path("dbt/models/marts/positions_summary.sql").read_text()
 PAGE = Path("app/templates/position_detail.html").read_text()
@@ -34,6 +36,9 @@ def test_orphan_closes_are_opened_before_history_and_not_realized():
     assert "when coalesce(opened_before_history, false) then 0.0" in CONTRACTS
     assert "where not coalesce(opened_before_history, false)" in CLASSIFICATION
     assert "where not coalesce(opened_before_history, false)" in LEGS
+    # Coach closed-counts are CHECK 12. Pre-window closes are not a strategy.
+    assert "not coalesce(oc.opened_before_history, false)" in EXIT_ANALYSIS
+    assert "not coalesce(opened_before_history, false)" in TRADE_KINDS
     # Both opening quantities at 0 must not take the Sold branch.
     assert "No opening fill" in CONTRACTS
     orphans = closing_without_an_open([

@@ -345,8 +345,8 @@ amount_signed as (
 -- the stock root, and occ_underlying_symbol() made every spelling
 -- share that root — an estimated open on compact OCC was dropped as
 -- the shadow of a long-form statement, and the leftover close became
--- an opened_before_history fragment (coach Other Option, absent from
--- classification). Same contract id keeps the close with the open.
+-- an opened_before_history fragment (absent from classification and
+-- from the coach). Same contract id keeps the close with the open.
 crypto_norm as (
     select
         a.* except (trade_symbol, underlying_symbol),
