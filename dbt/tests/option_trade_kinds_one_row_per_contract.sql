@@ -1,4 +1,8 @@
--- int_option_trade_kinds must stay 1:1 with int_option_contracts.
+-- int_option_trade_kinds must not fan out past int_option_contracts.
+--
+-- Pre-window closes (opened_before_history) are omitted on purpose, so
+-- this test joins from trade_kinds and only fails when a contract is
+-- duplicated. A missing pre-window row is not a fan-out.
 --
 -- The model enriches each contract with strategy + underlying price at
 -- open. Both joins must be non-fanning: the price join in particular used

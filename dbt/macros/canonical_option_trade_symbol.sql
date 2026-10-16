@@ -10,9 +10,9 @@
     spelling as the shadow of a statement open on another. Dropping
     that open left the close on the first spelling with no cost basis.
     Classification omits ``opened_before_history`` contracts. The coach
-    still counts the close as ``Other Option``. That is CHECK 12
-    (run 38531276167): coach closed-counts higher than classified
-    option contracts, only on Other Option.
+    does too (int_option_exit_analysis and int_option_trade_kinds): a
+    close with no opening fill has no cost basis, and counting it as
+    Other Option is CHECK 12.
 
     Rebuild the compact OCC symbol before that match. A row with no
     expiry, strike, or call/put flag keeps its original symbol, so

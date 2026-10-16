@@ -17,7 +17,7 @@
 --
 -- Explicit projection (same names and order as broker_history_rows):
 --   Account, user_id, tenant_id, Date, Action, Symbol, Description,
---   Quantity, Price, fees_and_comm, Amount
+--   Quantity, Price, fees_and_comm, Amount, _row_seq
 
 with fidelity_history as (
     {{ broker_history_rows('fidelity') }}
@@ -34,5 +34,6 @@ select
     Quantity,
     Price,
     fees_and_comm,
-    Amount
+    Amount,
+    _row_seq
 from fidelity_history
