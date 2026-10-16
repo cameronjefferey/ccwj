@@ -1403,6 +1403,45 @@ def test_run_sync_distinguishes_unavailable_from_empty_all_positions(
     assert res["preserve_current_security_types"] == expected_preserve
 
 
+@pytest.mark.parametrize(
+    ("option_holdings", "expected_preserve"),
+    [
+        (None, ("Option",)),
+        ([], ()),
+    ],
+)
+def test_run_sync_distinguishes_unavailable_from_empty_option_holdings(
+    monkeypatch, option_holdings, expected_preserve,
+):
+    """A failed option read preserves old contracts; a successful empty read
+    removes contracts that have actually left the account."""
+    fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
+    _patch_run_sync_fetches(
+        monkeypatch,
+        account_summary={
+            "sync_status": {"holdings": {"last_successful_sync": fresh}}
+        },
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_option_holdings", lambda *a, **k: option_holdings,
+    )
+    monkeypatch.setattr(
+        _snap, "_fetch_all_positions", lambda *a, **k: [],
+    )
+    res = _snap._run_sync(
+        9,
+        object(),
+        snap=_SNAP,
+        acc_row={
+            "snaptrade_account_id": "abc",
+            "account_name": "Schwab Account",
+        },
+        lookback_days=60,
+        defer_push=True,
+    )
+    assert res["preserve_current_security_types"] == expected_preserve
+
+
 def test_run_sync_does_not_flag_holdings_timestamp_before_connect(monkeypatch):
     """A Vanguard last_successful_sync from before this grant is not a stall.
 
@@ -1769,6 +1808,25 @@ def test_fetch_positions_still_raises_auth_error_on_403():
     with pytest.raises(_snap._SnapTradeAuthError) as exc_info:
         _snap._fetch_positions(_Boom, "u", "s", "acc")
     assert exc_info.value.endpoint == "get_user_account_positions"
+
+
+def test_fetch_option_holdings_403_returns_unavailable_and_does_not_raise():
+    """An unsupported optional endpoint is not a broken brokerage grant.
+
+    ``None`` also prevents the tenant-replacing writer from interpreting the
+    failed read as proof that every previously open option has disappeared.
+    """
+    class _ApiException(Exception):
+        def __str__(self):
+            return "(403)"
+
+    class _Boom:
+        class options:
+            @staticmethod
+            def list_option_holdings(**_):
+                raise _ApiException()
+
+    assert _snap._fetch_option_holdings(_Boom, "u", "s", "acc") is None
 
 
 def test_fetch_all_positions_403_returns_unavailable_and_does_not_raise():

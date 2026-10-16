@@ -3359,11 +3359,20 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     orders = _fetch_sync_orders(client, snap_user_id, snap_secret, snaptrade_account_id)
     positions = _fetch_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     option_holdings = _fetch_option_holdings(client, snap_user_id, snap_secret, snaptrade_account_id)
+    option_holdings_available = option_holdings is not None
     # Bonds and other non-equity instruments. Best-effort: a 403 or an
     # SDK without this method must not fail the sync or mark the
     # connection broken. Classic positions stay the auth signal.
     all_positions = _fetch_all_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     all_positions_available = all_positions is not None
+    preserve_current_security_types = tuple(
+        security_type
+        for available, security_type in (
+            (option_holdings_available, "Option"),
+            (all_positions_available, "Bond"),
+        )
+        if not available
+    )
     balances = _fetch_balances(client, snap_user_id, snap_secret, snaptrade_account_id)
     account_summary = _fetch_account_summary(client, snap_user_id, snap_secret, snaptrade_account_id)
     summary_institution_account_id = (
@@ -3569,11 +3578,10 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "history_df": None if skip_history else history_df,
             "current_df": None if push_history_only else current_snapshot_df,
             "balances_df": None if push_history_only else balances_df,
-            # positions/all is supplemental to the classic holdings feeds.
-            # On a transient failure, keep the last known bond rows while
-            # still allowing equities/options to refresh normally.
-            "preserve_current_security_types":
-                ("Bond",) if not all_positions_available else (),
+            # Supplemental holdings failures are unknown, not authoritative
+            # empty snapshots. Preserve their old option/bond rows while
+            # classic equities continue to refresh.
+            "preserve_current_security_types": preserve_current_security_types,
             "push_history_only": push_history_only,
             "skip_history": skip_history,
             "history_rows": 0 if skip_history else len(history_df),
@@ -3646,9 +3654,7 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             tenant_id=tenant_id,
             skip_history=skip_history,
             balances_df=None if push_history_only else balances_df,
-            preserve_current_security_types=(
-                ("Bond",) if not all_positions_available else ()
-            ),
+            preserve_current_security_types=preserve_current_security_types,
             snapshot_account_id=snaptrade_account_id,
             snapshot_generation=snapshot_generation,
         )
@@ -3776,9 +3782,10 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
     open option contracts. Without this second call an open option leg
     (e.g. a long LEAP call) never lands in the current-positions snapshot
     — it shows in trade history but not as a held position. Best-effort:
-    a 403 ("feature not enabled for this connection") or empty response
-    is normal for brokers/plans without option data and must not fail the
-    sync — the activities feed still carries the option lifecycle.
+    a 403 ("feature not enabled for this connection") is normal and must
+    not fail the sync. Return ``None`` on a read failure and ``[]`` on an
+    authoritative empty response: tenant snapshots replace in full, so
+    callers need the distinction to preserve last-known open options.
     """
     try:
         resp = client.options.list_option_holdings(
@@ -3790,9 +3797,7 @@ def _fetch_option_holdings(client, snap_user_id, snap_secret, account_id):
         _log_snaptrade_sync_error(
             "holdings", "list_option_holdings", account_id, exc,
         )
-        if _looks_like_auth_error(exc):
-            raise _SnapTradeAuthError("list_option_holdings", exc)
-        return []
+        return None
     return _coerce_list(resp)
 
 

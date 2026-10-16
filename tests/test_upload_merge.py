@@ -1739,9 +1739,9 @@ def _cur_df(symbol, qty, price, *, sectype="Equity", desc=""):
     }])
 
 
-def test_unavailable_supplemental_feed_preserves_only_owned_bonds(monkeypatch):
-    """A positions/all timeout must not erase a prior bond, while classic
-    equity rows still refresh and another tenant remains untouched."""
+def test_unavailable_supplemental_feeds_preserve_only_owned_rows(monkeypatch):
+    """Optional-feed timeouts keep prior options/bonds while classic equity
+    rows refresh and another tenant remains untouched."""
     account = "Schwab Account"
     other_tenant = "snaptrade:other"
     existing = pd.concat([
@@ -1754,6 +1754,13 @@ def test_unavailable_supplemental_feed_preserves_only_owned_bonds(monkeypatch):
         ),
         _upload._prepare_seed_df(
             _cur_df("912810TM0", 10, 980, sectype="Bond"),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("AAPL261120C00200000", 2, 4, sectype="Option"),
             account,
             CURRENT_SEED_COLUMNS,
             user_id=9,
@@ -1782,12 +1789,14 @@ def test_unavailable_supplemental_feed_preserves_only_owned_bonds(monkeypatch):
         CURRENT_SEED_COLUMNS,
         tenant_id=TENANT_SCHWAB_5989,
         existing_content=existing,
-        preserve_current_security_types=("Bond",),
+        preserve_current_security_types=("Option", "Bond"),
     )
     preserved = _parse(preserved_csv)
     owned = preserved[preserved["tenant_id"] == TENANT_SCHWAB_5989]
     other = preserved[preserved["tenant_id"] == other_tenant]
-    assert set(owned["Symbol"]) == {"AAPL", "912810TM0"}
+    assert set(owned["Symbol"]) == {
+        "AAPL", "AAPL261120C00200000", "912810TM0",
+    }
     assert float(owned.loc[owned["Symbol"] == "AAPL", "Quantity"].iloc[0]) == 11
     assert set(other["Symbol"]) == {"912810ZZ9"}
 
