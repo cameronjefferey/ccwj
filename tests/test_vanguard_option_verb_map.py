@@ -2,8 +2,8 @@
 
 Synthetic rows stand in for warehouse fills. The first equity verb on
 a contract (date, then seed sequence) is the open. A later verb in the
-other direction is the close. The rule applies only to a Vanguard call
-or put that has no option open already.
+other direction is the close. When an explicit option open already
+exists, only its opposite generic verb is promoted to a close.
 """
 from pathlib import Path
 
@@ -28,10 +28,10 @@ def _key(row: dict):
 
 def remap(rows: list[dict]) -> list[str]:
     """Same decision as ``vanguard_option_verbs`` in stg_history."""
-    opens = set()
+    opens = {}
     for row in rows:
         if row["action"] in ("option_buy_to_open", "option_sell_to_open"):
-            opens.add(_key(row))
+            opens.setdefault(_key(row), set()).add(row["action"])
 
     first = {}
     for index, row in enumerate(rows):
@@ -51,20 +51,26 @@ def remap(rows: list[dict]) -> list[str]:
     out = []
     for row in rows:
         action = row["action"]
-        if _eligible(row) and _key(row) not in opens:
-            opener = first[_key(row)][1]
-            if opener == "equity_buy":
-                action = (
-                    "option_buy_to_open"
-                    if action == "equity_buy"
-                    else "option_sell_to_close"
-                )
-            else:
-                action = (
-                    "option_sell_to_open"
-                    if action == "equity_sell"
-                    else "option_buy_to_close"
-                )
+        if _eligible(row):
+            explicit = opens.get(_key(row), set())
+            if explicit == {"option_buy_to_open"} and action == "equity_sell":
+                action = "option_sell_to_close"
+            elif explicit == {"option_sell_to_open"} and action == "equity_buy":
+                action = "option_buy_to_close"
+            elif not explicit:
+                opener = first[_key(row)][1]
+                if opener == "equity_buy":
+                    action = (
+                        "option_buy_to_open"
+                        if action == "equity_buy"
+                        else "option_sell_to_close"
+                    )
+                else:
+                    action = (
+                        "option_sell_to_open"
+                        if action == "equity_sell"
+                        else "option_buy_to_close"
+                    )
         out.append(action)
     return out
 
@@ -103,6 +109,13 @@ def test_sql_is_order_aware_and_drops_the_sequence_column():
     assert "when 'equity_sell' then 'option_sell_to_open'" in sql
     assert "else 'option_buy_to_close'" in sql
     assert "not coalesce(g.has_option_open, false)" in sql
+    assert "coalesce(g.has_buy_open, false)" in sql
+    assert "coalesce(g.has_sell_open, false)" in sql
+    verb_map = sql.split("vanguard_option_verbs as (", 1)[1].split(
+        "fee_guard as (", 1
+    )[0]
+    assert "then 'option_sell_to_close'" in verb_map
+    assert "then 'option_buy_to_close'" in verb_map
     assert "c.* except (_row_seq, action)" in sql
     assert "from vanguard_option_verbs c" in sql
     # The final table does not publish seed order.
@@ -225,17 +238,35 @@ def test_remapped_actions_keep_buy_cash_out_and_sell_cash_in():
     assert "schwab" not in verb.lower()
 
 
-def test_verbs_beside_an_existing_option_open_are_left_alone():
-    rows = [
+def test_generic_opposite_verb_beside_explicit_open_closes_contract():
+    short_rows = [
         _row(action="option_sell_to_open", trade_date="2026-01-01", seq=1),
         _row(action="equity_sell", trade_date="2026-01-02", seq=2),
         _row(action="equity_buy", trade_date="2026-01-03", seq=3),
     ]
-    assert remap(rows) == [
+    assert remap(short_rows) == [
         "option_sell_to_open",
         "equity_sell",
-        "equity_buy",
+        "option_buy_to_close",
     ]
+    long_rows = [
+        _row(action="option_buy_to_open", trade_date="2026-01-01", seq=1),
+        _row(action="equity_buy", trade_date="2026-01-02", seq=2),
+        _row(action="equity_sell", trade_date="2026-01-03", seq=3),
+    ]
+    assert remap(long_rows) == [
+        "option_buy_to_open",
+        "equity_buy",
+        "option_sell_to_close",
+    ]
+
+
+def test_generic_same_side_verb_beside_explicit_open_is_not_double_counted():
+    rows = [
+        _row(action="option_buy_to_open", trade_date="2026-01-01", seq=1),
+        _row(action="equity_buy", trade_date="2026-01-02", seq=2),
+    ]
+    assert remap(rows) == ["option_buy_to_open", "equity_buy"]
 
 
 def test_a_different_contract_still_promotes():
