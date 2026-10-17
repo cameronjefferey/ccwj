@@ -144,6 +144,47 @@ def test_cron_syncs_deferred_and_pushes_one_batch(_wire, monkeypatch):
     assert sorted(_wire["trial_started"]) == [9, 18]
 
 
+def test_cron_batches_balance_only_holdings_unavailable_account(
+    _wire, monkeypatch,
+):
+    """The nightly backstop must persist the only queryable account row."""
+    rows = [_row(21, "vang", "Vanguard Account", first_done=False)]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    balance = pd.DataFrame([{
+        "account": "Vanguard Account",
+        "row_type": "account_total",
+        "market_value": 125_000,
+    }])
+    frames = {
+        "account_name": "Vanguard Account",
+        "tenant_id": "snaptrade:t-vang",
+        "history_df": None,
+        "current_df": None,
+        "balances_df": balance,
+        "skip_history": True,
+        "user_id": 21,
+    }
+    monkeypatch.setattr(
+        _snap,
+        "_sync_one_connection",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "error": None,
+            "history_rows": 0,
+            "current_rows": 0,
+            "transactions_initial_sync_completed": True,
+            "deferred": True,
+            "frames": frames,
+        },
+    )
+
+    assert cli.main() == 0
+    assert len(_wire["batch"]) == 1
+    assert _wire["batch"][0]["entries"] == [frames]
+    assert _wire["first_sync_marked"] == [(21, "vang")]
+    assert _wire["trial_started"] == [21]
+
+
 def test_cron_skips_broken_connection_from_batch(_wire, monkeypatch):
     rows = [_row(9, "a1", "Schwab Account"), _row(9, "a2", "Schwab Account")]
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
