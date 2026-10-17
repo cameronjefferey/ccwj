@@ -231,9 +231,12 @@ cleaned as (
 -- then seed write order) is the open. A Buy first is a long: later
 -- Sells are sell-to-close. A Sell first is a short (covered call or
 -- cash-secured put): later Buys are buy-to-close. Later fills in the
--- same direction stay opens. Promote only when this contract has no
--- option open already, so a second Buy beside Buy to Open does not
--- add the premium twice. Fee netting below then sees option actions.
+-- same direction stay opens. When an explicit option open already
+-- exists, promote only the opposite generic verb to its close. Leaving
+-- every generic verb untouched in that case strands a real close as an
+-- equity action and keeps the contract open forever. The same-side verb
+-- stays untouched so a duplicate Buy beside Buy to Open does not add
+-- the premium twice. Fee netting below then sees option actions.
 -- Stock buys stay equity verbs. Other brokers stay on the labels
 -- they already send. ``_row_seq`` is seed order only and is dropped
 -- here so it never becomes a stg_history column.
@@ -290,7 +293,9 @@ vanguard_open_guard as (
         contract_id,
         logical_or(
             action in ('option_buy_to_open', 'option_sell_to_open')
-        ) as has_option_open
+        ) as has_option_open,
+        logical_or(action = 'option_buy_to_open') as has_buy_open,
+        logical_or(action = 'option_sell_to_open') as has_sell_open
     from (
         select
             tenant_id,
@@ -315,6 +320,20 @@ vanguard_option_verbs as (
     select
         c.* except (_row_seq, action),
         case
+            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
+             and c.instrument_type in ('Call', 'Put')
+             and c.trade_symbol is not null
+             and c.action = 'equity_sell'
+             and coalesce(g.has_buy_open, false)
+             and not coalesce(g.has_sell_open, false)
+            then 'option_sell_to_close'
+            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
+             and c.instrument_type in ('Call', 'Put')
+             and c.trade_symbol is not null
+             and c.action = 'equity_buy'
+             and coalesce(g.has_sell_open, false)
+             and not coalesce(g.has_buy_open, false)
+            then 'option_buy_to_close'
             when {{ broker_slug_from_account('c.account') }} = 'vanguard'
              and c.instrument_type in ('Call', 'Put')
              and c.trade_symbol is not null
