@@ -4484,13 +4484,6 @@ def _inject_snaptrade_reauth_needed():
         return {"snaptrade_reauth_needed": []}
 
 
-# Idle extra brokerages (a Robinhood that last pulled Thursday while
-# Schwab marked this session) used to freeze the global strip. Cluster
-# around the newest live pull; anything more than this many calendar
-# days behind is a different connection, not the page's as-of.
-_FRESHNESS_LAG_DAYS = 1
-
-
 def _snaptrade_tenant_id_for_account(acc_row):
     mapped = (acc_row.get("tenant_id") or "").strip()
     if mapped:
@@ -4511,8 +4504,9 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
     America/New_York session dates. ``(None, None, None)`` means hide
     the strip — better than a date that does not describe the accounts
     the trader is looking at. ``as_of_date`` is the newest live pull.
-    ``oldest_account`` is set only when another account in the same
-    cluster is older.
+    ``stale_days`` is the age of the oldest included account because the
+    page totals include every enabled account, not just the freshest one.
+    ``oldest_account`` is set when another account is older.
 
     Rules:
     - Broken connections are ignored (they have a reconnect banner).
@@ -4520,13 +4514,10 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
       have a holdings stamp. Local warehouse-linked Schwab with no
       ``snaptrade_accounts`` row used to let idle Robinhood say "Aug 27"
       on a page of Monday marks.
-    - Among remaining stamps, drop laggards more than
-      ``_FRESHNESS_LAG_DAYS`` behind the newest pull. The headline date
-      is the **newest** pull in that cluster, so one account a day
-      behind does not make the whole book look stale. The third return
-      value is that older stamp when it differs (label it "oldest
-      account"), else None. A Thursday Robinhood still cannot freeze a
-      Monday Schwab book.
+    - The headline date is the newest pull, but no enabled account stamp is
+      discarded. A stalled account remains in portfolio totals, so hiding
+      its older stamp would make a mixed fresh/stale book look fully current.
+      Broken rows are the only exception because they have a reconnect banner.
     """
     rows = [
         r for r in (get_snaptrade_accounts(user_id) or [])
@@ -4558,13 +4549,11 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
     if not stamps:
         return None, None, None
     newest = max(stamps)
-    clustered = [d for d in stamps if (newest - d).days <= _FRESHNESS_LAG_DAYS]
-    as_of = max(clustered) if clustered else newest
-    oldest = min(clustered) if clustered else as_of
-    oldest_account = oldest if oldest != as_of else None
+    oldest = min(stamps)
+    oldest_account = oldest if oldest != newest else None
     today = today or _et_today()
-    days = (today - as_of).days
-    return as_of, (days if days >= 0 else 0), oldest_account
+    days = (today - oldest).days
+    return newest, (days if days >= 0 else 0), oldest_account
 
 
 def post_close_broker_tenant_ids(user_id, *, now=None):
