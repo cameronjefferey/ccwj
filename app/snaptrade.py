@@ -3194,6 +3194,11 @@ def _sync_user_reason(step: str, status) -> str:
     code = str(status or "")
     if code == "timeout":
         return f"SnapTrade timed out while reading {what}. Try again in a minute."
+    if code == "stale":
+        return (
+            "SnapTrade has not refreshed your broker holdings recently. "
+            "Your saved positions were kept; manage the connection or try again later."
+        )
     if code in ("429", "425"):
         return "Your broker is rate-limiting this sync. Wait a few minutes and try again."
     if code in ("401", "403"):
@@ -3491,16 +3496,26 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
                 account_name, snaptrade_account_id, raw_stale_days,
             )
         elif stale_days is not None and stale_days >= SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
-            # An old holdings timestamp is not a disabled grant. Logging it
-            # is enough. Raising _SnapTradeAuthError here set
-            # connection_broken_at and showed a reconnect prompt for a
-            # login SnapTrade had not actually disabled.
+            # An old holdings timestamp is not necessarily a disabled grant,
+            # so do not set connection_broken_at. It is still not a successful
+            # snapshot: SnapTrade is serving cached positions/balances. Stop
+            # before normalization and the replace-all seed write so stale
+            # data cannot be stamped as current or clear the prior health
+            # error. The saved snapshot remains intact.
             app.logger.warning(
                 "SnapTrade holdings last_successful_sync is %s days old for "
                 "account=%s (snaptrade_id=%s, threshold %s); not marking "
                 "the login broken",
                 stale_days, account_name, snaptrade_account_id,
                 SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS,
+            )
+            raise _SnapTradeStepError(
+                "holdings",
+                "sync_status.holdings.last_successful_sync[stale]",
+                "stale",
+                RuntimeError(
+                    "SnapTrade is serving a stale cached holdings snapshot"
+                ),
             )
 
     # SnapTrade has TWO sources for trade history:

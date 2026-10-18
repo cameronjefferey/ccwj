@@ -399,6 +399,41 @@ def test_sync_one_does_not_mark_broken_on_bare_401(monkeypatch, _patched_models)
     )
 
 
+def test_sync_one_records_stale_holdings_as_failure_without_clearing_health(
+    monkeypatch, _patched_models,
+):
+    """A stale HTTP-200 cache is not a successful snapshot or a revoked grant."""
+    monkeypatch.setattr(
+        _snap,
+        "get_snaptrade_user",
+        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+
+    def _stale(*args, **kwargs):
+        raise _snap._SnapTradeStepError(
+            "holdings",
+            "sync_status.holdings.last_successful_sync[stale]",
+            "stale",
+            RuntimeError("cached holdings"),
+        )
+
+    monkeypatch.setattr(_snap, "_run_sync", _stale)
+    res = _snap._sync_one_connection(
+        user_id=9,
+        acc_row={"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+    )
+
+    assert res["ok"] is False
+    assert res["error"] == "holdings:stale"
+    assert "saved positions were kept" in res["user_message"]
+    assert _patched_models["broken_marked"] == []
+    assert _patched_models["broken_cleared"] == []
+    assert _patched_models["holdings_synced"] == []
+    assert "status=stale" in _patched_models["sync_attempts"][0][2]
+
+
 def test_sync_one_marks_broken_when_grant_text_says_disabled(
     monkeypatch, _patched_models,
 ):
@@ -1319,28 +1354,25 @@ def _patch_run_sync_fetches(monkeypatch, *, account_summary):
     )
 
 
-def test_run_sync_does_not_mark_broken_on_stale_holdings(monkeypatch):
-    """An old holdings timestamp is logged and the sync continues.
-
-    It must not raise ``_SnapTradeAuthError``. That path set
-    ``connection_broken_at`` for a login SnapTrade had not disabled.
-    """
+def test_run_sync_rejects_stale_cached_holdings_before_normalization(monkeypatch):
+    """A stale cache is a failed read, but does not mark the grant disabled."""
     stale = (date.today() - timedelta(days=10)).strftime("%Y-%m-%dT12:00:00Z")
     _patch_run_sync_fetches(
         monkeypatch,
         account_summary={"sync_status": {"holdings": {"last_successful_sync": stale}}},
     )
     monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
-    sentinel = RuntimeError("reached normalize")
     monkeypatch.setattr(
         _snap, "activities_to_history_df",
-        lambda *a, **k: (_ for _ in ()).throw(sentinel),
+        lambda *a, **k: pytest.fail("stale holdings must not reach normalization"),
     )
 
     acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
-    with pytest.raises(RuntimeError) as ei:
+    with pytest.raises(_snap._SnapTradeStepError) as ei:
         _snap._run_sync(9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60)
-    assert ei.value is sentinel
+    assert ei.value.step == "holdings"
+    assert ei.value.status == "stale"
+    assert ei.value.endpoint.endswith("[stale]")
 
 
 def test_holdings_unavailable_is_not_a_stale_connection():
