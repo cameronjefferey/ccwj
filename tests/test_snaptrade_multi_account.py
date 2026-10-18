@@ -813,11 +813,10 @@ def test_sync_one_carries_reserved_generation_to_deferred_seed_batch(
     assert res["frames"]["preserve_current_security_types"] == ()
 
 
-def test_sync_one_copies_bond_preserve_onto_deferred_frames(
+def test_sync_one_copies_supplemental_preserve_onto_deferred_frames(
     monkeypatch, _patched_models,
 ):
-    """The nightly batch only sees ``out['frames']``. The bond guard has
-    to be copied there or a positions/all miss wipes stored bond rows."""
+    """The nightly batch must carry the positions/all preservation sentinel."""
     monkeypatch.setattr(
         _snap, "get_snaptrade_user",
         lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
@@ -833,7 +832,7 @@ def test_sync_one_copies_bond_preserve_onto_deferred_frames(
             "current_df": object(),
             "balances_df": None,
             "skip_history": True,
-            "preserve_current_security_types": ("Bond",),
+            "preserve_current_security_types": ("__positions_all__",),
             "snapshot_generation": kwargs["snapshot_generation"],
         })
 
@@ -844,7 +843,9 @@ def test_sync_one_copies_bond_preserve_onto_deferred_frames(
         lookback_days=60,
         defer_push=True,
     )
-    assert res["frames"]["preserve_current_security_types"] == ("Bond",)
+    assert res["frames"]["preserve_current_security_types"] == (
+        "__positions_all__",
+    )
 
 
 def test_snapshot_generation_helpers_use_atomic_postgres_counter(monkeypatch):
@@ -1519,15 +1520,15 @@ def test_run_sync_distinguishes_unavailable_from_empty_option_holdings(
 @pytest.mark.parametrize(
     ("all_positions", "expected_preserve"),
     [
-        (None, ("Bond",)),
+        (None, ("__positions_all__",)),
         ([], ()),
     ],
 )
 def test_run_sync_distinguishes_unavailable_from_empty_all_positions(
     monkeypatch, all_positions, expected_preserve,
 ):
-    """A failed supplemental read preserves old bonds; an authoritative
-    empty list removes them on the next current-position snapshot."""
+    """A failed supplemental read preserves every positions/all-only type;
+    an authoritative empty list removes them on the next snapshot."""
     fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
     _patch_run_sync_fetches(
         monkeypatch,

@@ -3427,13 +3427,15 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # connection broken. Classic positions stay the auth signal.
     all_positions = _fetch_all_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     all_positions_available = all_positions is not None
+    from app.upload import PRESERVE_SUPPLEMENTAL_SECURITY_TYPES
     # A failed supplemental read is unknown, not an empty book. Preserve
-    # the last option or bond rows. An authoritative empty list does not.
+    # the last option rows and every positions/all-only instrument. An
+    # authoritative empty list does not.
     preserve_current_security_types = tuple(
         security_type
         for available, security_type in (
             (option_holdings_available, "Option"),
-            (all_positions_available, "Bond"),
+            (all_positions_available, PRESERVE_SUPPLEMENTAL_SECURITY_TYPES),
         )
         if not available
     )
@@ -3648,7 +3650,8 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "current_df": None if push_history_only else current_snapshot_df,
             "balances_df": None if push_history_only else balances_df,
             # Supplemental holdings failures are unknown, not an empty book.
-            # Preserve the last option/bond rows while classic equities refresh.
+            # Preserve options and positions/all-only rows while classic
+            # equities refresh.
             "preserve_current_security_types": preserve_current_security_types,
             "push_history_only": push_history_only,
             "skip_history": skip_history,

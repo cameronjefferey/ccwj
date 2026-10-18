@@ -1592,6 +1592,18 @@ def _dedup_history_rows(df, seed_columns):
 # multi-account commits that fold accounts in-memory without re-fetching.
 _FETCH_FROM_GITHUB = object()
 
+# Sentinel used by SnapTrade when ``positions/all`` was unavailable. Those
+# rows can carry any non-classic instrument kind (Bond, Future, CFD, Other,
+# or a future API kind), so enumerating today's labels would silently delete
+# tomorrow's. The merge interprets this as "preserve every non-classic type."
+PRESERVE_SUPPLEMENTAL_SECURITY_TYPES = "__positions_all__"
+_CLASSIC_CURRENT_SECURITY_TYPES = frozenset({
+    "equity",
+    "option",
+    "cryptocurrency",
+    "cash and money market",
+})
+
 
 def _merge_seed_with_existing(
     path, account_name, new_df, seed_columns,
@@ -1621,10 +1633,10 @@ def _merge_seed_with_existing(
     ``docs/V2_TENANT_KEY_DESIGN.md``.
 
     ``preserve_current_security_types`` is a fail-safe for supplemental
-    holdings feeds. When such a feed is unavailable, keep matching rows from
-    the prior current-position snapshot while replacing the authoritative
-    classic rows normally. A later successful authoritative empty response
-    passes no preserve types and removes the stale rows.
+    holdings feeds. Explicit labels preserve that type. The
+    ``PRESERVE_SUPPLEMENTAL_SECURITY_TYPES`` sentinel preserves every
+    non-classic type returned only by ``positions/all``. A later successful
+    authoritative empty response passes neither and removes stale rows.
 
     Raises ``SeedFetchError`` if the existing seed cannot be fetched
     for any reason other than HTTP 404 — see commit ``3f4aecb`` for
@@ -1805,7 +1817,13 @@ def _merge_seed_with_existing(
             for value in (preserve_current_security_types or ())
             if str(value or "").strip()
         }
-        if preserve_types and path == CURRENT_PATH:
+        preserve_supplemental = (
+            PRESERVE_SUPPLEMENTAL_SECURITY_TYPES.casefold() in preserve_types
+        )
+        preserve_types.discard(
+            PRESERVE_SUPPLEMENTAL_SECURITY_TYPES.casefold()
+        )
+        if (preserve_types or preserve_supplemental) and path == CURRENT_PATH:
             security_col = next(
                 (c for c in seed_columns if str(c).lower() == "security_type"),
                 None,
@@ -1815,13 +1833,20 @@ def _merge_seed_with_existing(
                 None,
             )
             if security_col is not None:
-                preserve_mask = (
+                normalized_security = (
                     existing_account_df[security_col]
                     .astype(str)
                     .str.strip()
                     .str.casefold()
-                    .isin(preserve_types)
                 )
+                preserve_mask = normalized_security.isin(preserve_types)
+                if preserve_supplemental:
+                    preserve_mask |= (
+                        normalized_security.ne("")
+                        & ~normalized_security.isin(
+                            _CLASSIC_CURRENT_SECURITY_TYPES
+                        )
+                    )
                 # Supplemental rows were introduced after tenant_id became
                 # mandatory. Never claim an ambiguous legacy row merely
                 # because its display account label matches.
