@@ -221,8 +221,8 @@ def test_note_template_omits_promo_chip_when_unset():
 
 def test_notice_names_the_newest_connected_early_broker(monkeypatch):
     """An older early-cohort brokerage must not stay on the banner after
-    a later unmodeled brokerage is connected. Names come from each row's
-    stored broker_slug. Fixtures are made up.
+    a later one is connected. Names come from each row's stored
+    broker_slug. Fixtures are made up.
     """
     monkeypatch.setenv("EARLY_BROKER_TRIAL_DAYS", "180")
     older = datetime(2026, 3, 2, tzinfo=timezone.utc)
