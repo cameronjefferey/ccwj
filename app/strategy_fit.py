@@ -404,6 +404,7 @@ def _strategy_fit_render_payload(
     insight_ctx: dict,
     error: str | None = None,
     record_span: str = "",
+    trades_grouped: bool = False,
 ) -> dict:
     """Compose the kwargs to render strategy_fit.html. Centralized so the
     error/empty/data paths share one shape and can't drift."""
@@ -447,6 +448,7 @@ def _strategy_fit_render_payload(
         accounts=accounts,
         selected_account=selected_account,
         record_span=record_span,
+        trades_grouped=trades_grouped,
         **insight_ctx,
     )
 
@@ -529,6 +531,7 @@ def render_strategy_fit_view():
                 selected_account="",
                 insight_ctx=insight_ctx,
                 error=str(exc),
+                trades_grouped=False,
             ),
         )
 
@@ -551,6 +554,7 @@ def render_strategy_fit_view():
         attach_sectors, fetch_grouped_book, format_record_span, stamp_grouped_counts,
     )
     book_units, book_fills = fetch_grouped_book(client, tenant_filter, tenant_ids)
+    trades_grouped = bool(book_units)
     record_span = ""
     if book_units:
         attach_sectors(book_units, summary_df)
@@ -581,6 +585,7 @@ def render_strategy_fit_view():
                 selected_account=selected_account,
                 insight_ctx=insight_ctx,
                 record_span=record_span,
+                trades_grouped=trades_grouped,
             ),
         )
 
@@ -596,6 +601,7 @@ def render_strategy_fit_view():
         from app.grouped_trades import fit_options_frame
         if "trade_symbol" in options_df.columns and "strategy" in options_df.columns:
             options_df = fit_options_frame(options_df, book_fills)
+            trades_grouped = True
         else:
             from app.outcome_units import annotate_contract_outcomes
             options_df = annotate_contract_outcomes(options_df)
@@ -654,6 +660,7 @@ def render_strategy_fit_view():
             selected_account=selected_account,
             insight_ctx=insight_ctx,
             record_span=record_span,
+            trades_grouped=trades_grouped,
         ),
     )
 

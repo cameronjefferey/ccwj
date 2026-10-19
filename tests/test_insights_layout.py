@@ -39,6 +39,11 @@ def test_realized_is_the_close_and_given_back_is_not_a_second_result():
     assert ">Actual<" not in PAGE
     assert "Given back" in PAGE
     assert "not a second result" in PAGE
+    assert "ins-phone-meta" in PAGE
+    assert "d after the high" in PAGE
+    assert "being trained" not in PAGE
+    assert "Analyzing your behavior" not in PAGE
+    assert "Writing this up" in PAGE
     assert "term('Collected')" not in PAGE
     assert "net premium" not in PAGE.lower()
     assert "of the credit kept" in PAGE
