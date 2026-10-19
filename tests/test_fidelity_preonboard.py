@@ -472,17 +472,23 @@ def test_fidelity_holdings_unavailable_and_a_real_stall_stay_distinct():
         }
     }
     assert snap._holdings_stale_days(unavailable, today=date(2026, 10, 14)) is None
+    # sync_status_label reads date.today() for the young-grant window.
+    # A fixed created_at ages out of SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS
+    # and the badge flips to Reconnect needed without a real stall.
+    created = datetime.combine(
+        date.today(), datetime.min.time(), tzinfo=timezone.utc,
+    )
     young = {
         "snaptrade_account_id": "fid",
         "account_name": ACCOUNT,
         "broker_slug": "fidelity",
-        "connection_broken_at": datetime(2026, 10, 14, 16, 0, tzinfo=timezone.utc),
-        "created_at": datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc),
+        "connection_broken_at": created,
+        "created_at": created,
         "last_sync_error": (
             "connection_broken:sync_status.holdings.last_successful_sync[stale]"
         ),
     }
-    assert snap._connection_attention(young, today=date(2026, 10, 14)) is None
+    assert snap._connection_attention(young, today=date.today()) is None
     assert sync_status_label(young) == "Sync will retry"
     real = {
         "snaptrade_account_id": "fid",
@@ -497,6 +503,7 @@ def test_fidelity_holdings_unavailable_and_a_real_stall_stay_distinct():
     }
     att = snap._connection_attention(real, today=date(2026, 6, 19))
     assert att is not None
+    assert sync_status_label(real) == "Reconnect needed"
     waiting = {
         "account_name": ACCOUNT,
         "broker_slug": "fidelity",

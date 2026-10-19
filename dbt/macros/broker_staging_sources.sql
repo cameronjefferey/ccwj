@@ -30,8 +30,9 @@
 {% endif %}
 {%- set _user_id_expr = "cast(user_id as string)" if 'user_id' in _cols else "cast(null as string)" -%}
 {%- set _tenant_id_expr = "cast(tenant_id as string)" if 'tenant_id' in _cols else "cast(null as string)" -%}
-{#- Seed write order. Same-day Buy and Sell on one contract need it so
-    the first verb, not a hardcoded Sell, decides open vs close. -#}
+{#- Seed write order. Carried through the adapter union so every history
+    model has one shape. stg_history drops it before the table is
+    published. It does not decide option open versus close. -#}
 {%- set _row_seq_expr = "cast(_row_seq as int64)" if '_row_seq' in _cols else "cast(null as int64)" -%}
     select
         cast(Account as string) as Account,
