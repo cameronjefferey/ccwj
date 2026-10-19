@@ -195,6 +195,57 @@ def test_note_template_omits_promo_chip_when_unset():
     assert 'id="ht-early-promo"' not in html
 
 
+def test_notice_names_the_newest_connected_early_broker(monkeypatch):
+    """An older early-cohort brokerage must not stay on the banner after
+    a later unmodeled brokerage is connected. Names come from each row's
+    stored broker_slug. Fixtures are made up.
+    """
+    monkeypatch.setenv("EARLY_BROKER_TRIAL_DAYS", "180")
+    older = datetime(2026, 3, 2, tzinfo=timezone.utc)
+    newer = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    note = notice_from_accounts([
+        {
+            "broker_slug": "Coinbase",
+            "early_broker_cohort": True,
+            "created_at": older,
+        },
+        {
+            "broker_slug": "Charles Schwab",
+            "early_broker_cohort": False,
+            "created_at": newer,
+        },
+        {
+            "broker_slug": "Empower",
+            "early_broker_cohort": True,
+            "created_at": newer,
+        },
+    ])
+    assert note["broker_key"] == "empower"
+    assert note["broker_name"] == "Empower"
+    assert "Coinbase" not in note["broker_name"]
+    assert "6 months" in note["offer"]
+
+
+def test_empower_is_unmodeled_so_the_written_cap_can_stamp_it(monkeypatch):
+    """Empower is outside the modeled set, so the existing first-10 rule
+    includes it. This test pins that behavior; it does not decide whether
+    a retirement-plan broker should stay in the offer.
+    """
+    assert broker_key("Empower") == "empower"
+    assert display_name("Empower") == "Empower"
+    assert not is_modeled_broker("Empower")
+    assert is_modeled_broker("Charles Schwab")
+    writes = []
+    monkeypatch.setattr("app.db.fetch_all", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "app.db.execute",
+        lambda sql, params=None: writes.append(params),
+    )
+    assert maybe_stamp_early_broker_cohort(4, "acct-made-up", "Empower") is True
+    assert writes == [(4, "acct-made-up")]
+    assert maybe_stamp_early_broker_cohort(4, "acct-made-up", "Charles Schwab") is False
+
+
 def test_trial_days_default_is_six_months(monkeypatch):
     monkeypatch.delenv("EARLY_BROKER_TRIAL_DAYS", raising=False)
     assert trial_days() == 180

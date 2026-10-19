@@ -37,6 +37,7 @@ _DISPLAY = {
     "tastytrade": "tastytrade",
     "webull": "Webull",
     "coinbase": "Coinbase",
+    "empower": "Empower",
 }
 
 
@@ -125,12 +126,28 @@ def subscribe_offer_for_user(user_id, *, prior_subscription_status=None) -> str 
     return subscribe_offer_sentence(pro_trial_days_for_user(user_id))
 
 
+def _cohort_recency(pair):
+    """Newest connection wins. A missing timestamp loses to a real one,
+    and two missing timestamps keep the later row (``created_at`` order).
+    """
+    index, row = pair
+    created = row.get("created_at")
+    return (created is not None, created or "", index)
+
+
 def notice_from_accounts(rows, *, promo=None) -> dict | None:
-    """Template context if this user is in the early cohort for any linked broker."""
+    """Template context if this user is in the early cohort for a linked broker.
+
+    The name comes from that row's ``broker_slug`` — the brokerage stored
+    when they connected. When several early-cohort brokers are linked,
+    the newest one is the connection they just made. The oldest row used
+    to keep an earlier brokerage's name on the banner.
+    """
     cohort = [r for r in (rows or []) if r.get("early_broker_cohort")]
     if not cohort:
         return None
-    raw = cohort[0].get("broker_slug") or ""
+    _index, chosen = max(enumerate(cohort), key=_cohort_recency)
+    raw = (chosen.get("broker_slug") or "").strip()
     code = promo if promo is not None else promo_code()
     days = trial_days()
     return {

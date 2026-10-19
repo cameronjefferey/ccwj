@@ -1229,8 +1229,17 @@ not be mistaken for cancel. The post-upload and post-sync processing pages
 land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the
-background** (`_kick_post_connect_sync`) and sends the user to
-`/sync/processing?connecting=1` — they should not have to click Sync now.
+background** (`_kick_post_connect_sync`). A brand-new user (no saved
+survey, no prior account, no earlier tenant) still lands on
+`/sync/processing?connecting=1&first=1` and sees the survey. Someone
+who already finished or skipped that survey, or who already had any
+connected account or uploaded book, goes back to Settings or Connected
+accounts when they started there, otherwise Overview, with a toast
+`"<Broker> connected, syncing now"`. The quiz decision uses the
+accounts and tenants that existed *before* this portal return was
+saved (`app/onboarding_gate.py`). `?first=1` on a later visit is
+re-checked the same way, so a bookmarked processing URL cannot reopen
+the survey. "I'll do this later" (`/overview?later=1`) is unchanged.
 The processing redirect and one-time `data_ready` email wait until **every**
 active tenant has queryable position or account-balance rows (a tenant row
 from connect, or only the first account in a multi-account build, is not
@@ -1249,10 +1258,15 @@ regranted after cancellation or apply to sibling products on the shared
 Stripe account.
 The cohort is stamped on `snaptrade_accounts.early_broker_cohort` at
 first insert (`app/early_broker.py`) so the note still shows after the
-11th user of that broker arrives. Surfaces: `/snaptrade/accounts`,
+11th user of that broker arrives. The banner names the newest
+early-cohort row's stored `broker_slug` (the brokerage on the SnapTrade
+authorization, which wins when it disagrees with the account's
+`institution_name`). Surfaces: `/snaptrade/accounts`,
 `/sync/processing`, `/get-started` / first look. Create the matching
 Stripe promotion code before setting the env var (Checkout already
-allows promo codes).
+allows promo codes). Empower is unmodeled, so the written first-10
+rule includes it; whether a retirement-plan broker should stay in that
+offer is a product question, not a code exclusion.
 
 ### Upload (`/upload`)
 **Status: Working. CSV is the older-history fallback; broker connect leads.**

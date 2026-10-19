@@ -491,6 +491,10 @@ def test_callback_with_a_new_account_still_starts_sync(monkeypatch):
     monkeypatch.setattr(
         "app.early_broker.maybe_stamp_early_broker_cohort", lambda *a, **k: None,
     )
+    # The quiz decision reads onboarding and tenants. Keep this first-connect
+    # case independent of whatever the local database has for user 7.
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    monkeypatch.setattr("app.models.get_tenant_ids_for_user", lambda uid: [])
     monkeypatch.setattr(
         "app.routes._snaptrade_accounts_needing_nickname", lambda rows: [],
     )
@@ -505,6 +509,7 @@ def test_callback_with_a_new_account_still_starts_sync(monkeypatch):
 
     assert resp.status_code == 302
     assert "sync" in (resp.location or "")
+    assert "first=1" in (resp.location or "")
     assert "name-now" not in (resp.location or "")
     messages = " ".join(str(item) for item in flashes)
     assert "Connected 1 account" in messages
