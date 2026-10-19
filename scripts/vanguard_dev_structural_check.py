@@ -4,10 +4,10 @@
 SELECT-only. Prints pass/fail/absent flags and null rates. Does not print
 balances, symbols, quantities, tenant ids, or dollar amounts.
 
-  --broker SLUG            schwab, alpaca, fidelity, interactive, or vanguard
-                           (default vanguard). Fidelity with zero raw rows
-                           prints absent. A raw row that missed its adapter
-                           prints fail.
+  --broker SLUG            schwab, alpaca, fidelity, interactive, vanguard,
+                           or empower (default vanguard). A broker other than
+                           Vanguard with zero raw rows prints absent. A raw
+                           row that missed its adapter prints fail.
   --check-profile PATH     refuse unless the dbt profile dataset is analytics_dev
   --check-debug-log PATH   refuse unless `dbt debug` reports schema analytics_dev
   --scrub-dbt-log PATH     print a redacted dbt summary (no row values)
@@ -36,7 +36,9 @@ _KEEP_RE = re.compile(
     r"PASS=|ERROR=|SKIP=|WARN=|Got \d+ result)"
 )
 _ACTION_RE = re.compile(r"^[A-Za-z][A-Za-z /.'-]{0,48}$")
-_KNOWN_BROKERS = ("schwab", "alpaca", "fidelity", "interactive", "vanguard")
+_KNOWN_BROKERS = (
+    "schwab", "alpaca", "fidelity", "interactive", "vanguard", "empower",
+)
 
 _FAIL_KEYS = (
     "history_rows_gt_0",
@@ -179,10 +181,10 @@ def result_exit(values) -> int:
 
 def _structural_sql(broker: str = "vanguard") -> str:
     slug = _require_broker(broker)
-    # Vanguard keeps the original fail-on-zero flags. A broker that may
-    # have no historical rows (Fidelity, ahead of the first connection)
-    # prints absent when the raw seed for that surface is empty, and
-    # fail only when raw rows exist but the adapter or union is empty.
+    # Vanguard keeps the original fail-on-zero flags. Any other modeled
+    # broker (Fidelity, Empower, and the rest) prints absent when the
+    # raw seed for that surface is empty, and fail only when raw rows
+    # exist but the adapter or union is empty.
     absent_ok = slug != "vanguard"
     slug_account = _slug_sql(slug, "account")
     slug_account_cap = _slug_sql(slug, "Account")

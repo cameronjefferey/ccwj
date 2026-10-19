@@ -27,6 +27,10 @@ with offenders as (
     from {{ ref('stg_broker_interactive_history') }}
     where {{ broker_slug_from_account('Account') }} = 'fidelity'
     union all
+    select 'empower_history'
+    from {{ ref('stg_broker_empower_history') }}
+    where {{ broker_slug_from_account('Account') }} = 'fidelity'
+    union all
     select 'other_history'
     from {{ ref('stg_broker_other_history') }}
     where {{ broker_slug_from_account('Account') }} = 'fidelity'
@@ -52,6 +56,10 @@ with offenders as (
     from {{ ref('stg_broker_interactive_current') }}
     where {{ broker_slug_from_account('Account') }} = 'fidelity'
     union all
+    select 'empower_current'
+    from {{ ref('stg_broker_empower_current') }}
+    where {{ broker_slug_from_account('Account') }} = 'fidelity'
+    union all
     select 'other_current'
     from {{ ref('stg_broker_other_current') }}
     where {{ broker_slug_from_account('Account') }} = 'fidelity'
@@ -75,6 +83,10 @@ with offenders as (
     union all
     select 'interactive_balances'
     from {{ ref('stg_broker_interactive_balances') }}
+    where {{ broker_slug_from_account('account') }} = 'fidelity'
+    union all
+    select 'empower_balances'
+    from {{ ref('stg_broker_empower_balances') }}
     where {{ broker_slug_from_account('account') }} = 'fidelity'
     union all
     select 'other_balances'

@@ -1,0 +1,98 @@
+version: 2
+
+models:
+  - name: stg_broker_empower_history
+    description: >
+      Empower trade-history rows only (account label first token
+      empower). One row per seed history line. Not unique at this
+      grain: two fills can share a date and symbol, and dedup runs
+      before the seed write plus again in stg_history. Unknown
+      SnapTrade activity types are dropped before they reach this
+      model, so they are not mapped to a trade here.
+    columns:
+      - name: Account
+        description: Broker display label. First token is Empower.
+        tests:
+          - not_null
+      - name: tenant_id
+        description: snaptrade:<uuid> stamped at sync. Isolation key.
+        tests:
+          - not_null
+      - name: Action
+        description: Seed action label (SnapTrade or CSV vocabulary).
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - Buy
+                - Sell
+                - Sell Short
+                - Buy to Open
+                - Buy to Close
+                - Sell to Open
+                - Sell to Close
+                - Expired
+                - Assigned
+                - Exchange or Exercise
+                - Cash Dividend
+                - Qualified Dividend
+                - Special Dividend
+                - Special Qual Div
+                - Pr Yr Cash Div
+                - Credit Interest
+                - Margin Interest
+                - ADR Mgmt Fee
+                - Deposit
+                - Withdrawal
+                - Cash Transfer
+                - Funds Received
+                - MoneyLink Transfer
+                - Journal
+
+  - name: stg_broker_empower_current
+    description: >
+      Empower open-position snapshot rows. Holdings grain is one row
+      per (tenant_id, symbol); see empower_current_symbol_unique.
+      A missing broker cost stays 0. It is not filled from the quote.
+    columns:
+      - name: Account
+        tests:
+          - not_null
+      - name: tenant_id
+        tests:
+          - not_null
+      - name: Symbol
+        tests:
+          - not_null
+      - name: security_type
+        description: >
+          Equity for stocks, ETFs, and open-end funds. Option for
+          contracts. Cash and Money Market for settlement sweeps,
+          which stg_current does not treat as a holding.
+        tests:
+          - not_null
+
+  - name: stg_broker_empower_balances
+    description: >
+      Empower cash and account-total lines from the balances seed
+      and, at lower priority, from current_positions sweep rows.
+      Priority-1 rows are unique on (tenant_id, row_type); see
+      empower_balance_priority_unique.
+    columns:
+      - name: account
+        tests:
+          - not_null
+      - name: tenant_id
+        tests:
+          - not_null
+      - name: row_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['cash', 'account_total']
+      - name: src_priority
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2]
+              quote: false

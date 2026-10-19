@@ -151,3 +151,11 @@ jobs:
       - name: Unknown Fidelity action labels
         if: failure()
         run: python scripts/vanguard_dev_structural_check.py --broker fidelity --unknown-actions
+
+      - name: Structural Empower checks
+        if: success()
+        run: python scripts/vanguard_dev_structural_check.py --broker empower
+
+      - name: Unknown Empower action labels
+        if: failure()
+        run: python scripts/vanguard_dev_structural_check.py --broker empower --unknown-actions

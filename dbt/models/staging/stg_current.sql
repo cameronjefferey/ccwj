@@ -33,6 +33,8 @@ with current_as_strings as (
     union all
     select * from {{ ref('stg_broker_vanguard_current') }}
     union all
+    select * from {{ ref('stg_broker_empower_current') }}
+    union all
     select * from {{ ref('stg_broker_other_current') }}
 ),
 

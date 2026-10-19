@@ -32,7 +32,9 @@ def test_known_brokers_includes_vanguard_and_matches_the_app():
     )
     assert match, "known_brokers() return list not found"
     slugs = re.findall(r"'([a-z0-9_]+)'", match.group(1))
-    assert slugs == ["schwab", "alpaca", "fidelity", "interactive", "vanguard"]
+    assert slugs == [
+        "schwab", "alpaca", "fidelity", "interactive", "vanguard", "empower",
+    ]
     assert set(slugs) == MODELED_BROKER_KEYS
 
 

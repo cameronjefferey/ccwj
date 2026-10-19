@@ -48,6 +48,8 @@ with trade_history_as_strings as (
     union all
     select * from {{ ref('stg_broker_vanguard_history') }}
     union all
+    select * from {{ ref('stg_broker_empower_history') }}
+    union all
     select * from {{ ref('stg_broker_other_history') }}
 ),
 
@@ -224,19 +226,22 @@ cleaned as (
     from osi_split
 ),
 
--- Vanguard option fills arrive as Buy / Sell. The action CASE above
--- stores those as equity verbs, so a call or put with no opening
--- fill looks opened-before-history and its P&L is booked at zero.
--- Whichever equity verb comes first on the contract (trade date,
--- then seed write order) is the open. A Buy first is a long: later
--- Sells are sell-to-close. A Sell first is a short (covered call or
--- cash-secured put): later Buys are buy-to-close. Later fills in the
--- same direction stay opens. Promote only when this contract has no
--- option open already, so a second Buy beside Buy to Open does not
--- add the premium twice. Fee netting below then sees option actions.
--- Stock buys stay equity verbs. Other brokers stay on the labels
--- they already send. ``_row_seq`` is seed order only and is dropped
--- here so it never becomes a stg_history column.
+-- Vanguard and Empower option fills can arrive as Buy / Sell. The
+-- action CASE above stores those as equity verbs, so a call or put
+-- with no opening fill looks opened-before-history and its P&L is
+-- booked at zero. Whichever equity verb comes first on the contract
+-- (trade date, then seed write order) is the open. A Buy first is a
+-- long: later Sells are sell-to-close. A Sell first is a short
+-- (covered call or cash-secured put): later Buys are buy-to-close.
+-- Later fills in the same direction stay opens. Promote only when
+-- this contract has no option open already, so a second Buy beside
+-- Buy to Open does not add the premium twice. The rule relabels a
+-- row that is already on the tape. It does not insert an opening
+-- trade and it does not rewrite amount_raw. Fee netting below then
+-- sees option actions. Stock buys stay equity verbs. Schwab,
+-- Fidelity, Alpaca, and IBKR stay on the labels they already send.
+-- ``_row_seq`` is seed order only and is dropped here so it never
+-- becomes a stg_history column.
 vanguard_verb_ranked as (
     select
         c.tenant_id,
@@ -265,7 +270,7 @@ vanguard_verb_ranked as (
             order by c.trade_date nulls last, c._row_seq nulls last
         ) as _verb_ord
     from cleaned c
-    where {{ broker_slug_from_account('c.account') }} = 'vanguard'
+    where {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
       and c.instrument_type in ('Call', 'Put')
       and c.trade_symbol is not null
       and c.action in ('equity_buy', 'equity_sell')
@@ -315,7 +320,7 @@ vanguard_option_verbs as (
     select
         c.* except (_row_seq, action),
         case
-            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
+            when {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
              and c.instrument_type in ('Call', 'Put')
              and c.trade_symbol is not null
              and c.action in ('equity_buy', 'equity_sell')
@@ -325,7 +330,7 @@ vanguard_option_verbs as (
                 when 'equity_buy' then 'option_buy_to_open'
                 else 'option_sell_to_close'
             end
-            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
+            when {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
              and c.instrument_type in ('Call', 'Put')
              and c.trade_symbol is not null
              and c.action in ('equity_buy', 'equity_sell')

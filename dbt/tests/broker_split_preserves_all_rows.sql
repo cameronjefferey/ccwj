@@ -37,6 +37,7 @@ with history_split as (
         union all select * from {{ ref('stg_broker_fidelity_history') }}
         union all select * from {{ ref('stg_broker_interactive_history') }}
         union all select * from {{ ref('stg_broker_vanguard_history') }}
+        union all select * from {{ ref('stg_broker_empower_history') }}
         union all select * from {{ ref('stg_broker_other_history') }}
     )
 ),
@@ -87,6 +88,7 @@ current_split as (
         union all select * from {{ ref('stg_broker_fidelity_current') }}
         union all select * from {{ ref('stg_broker_interactive_current') }}
         union all select * from {{ ref('stg_broker_vanguard_current') }}
+        union all select * from {{ ref('stg_broker_empower_current') }}
         union all select * from {{ ref('stg_broker_other_current') }}
     )
 ),
@@ -101,6 +103,7 @@ balances_split as (
         union all select * from {{ ref('stg_broker_fidelity_balances') }}
         union all select * from {{ ref('stg_broker_interactive_balances') }}
         union all select * from {{ ref('stg_broker_vanguard_balances') }}
+        union all select * from {{ ref('stg_broker_empower_balances') }}
         union all select * from {{ ref('stg_broker_other_balances') }}
     )
 ),

@@ -41,7 +41,6 @@ jobs:
         env:
           SECRET_KEY: diagnostic
           HAPPYTRADER_SKIP_DB_INIT: "1"
-          EMPOWER_PRINT_TOTALS: "1"
         run: python scripts/empower_shape_probe.py
 
       - name: Dry-run batched seed fold

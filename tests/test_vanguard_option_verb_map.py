@@ -71,7 +71,7 @@ def remap(rows: list[dict]) -> list[str]:
 
 def _eligible(row: dict) -> bool:
     return (
-        _slug(row["account"]) == "vanguard"
+        _slug(row["account"]) in ("vanguard", "empower")
         and row["instrument_type"] in ("Call", "Put")
         and row.get("trade_symbol")
         and row["action"] in ("equity_buy", "equity_sell")
@@ -112,6 +112,21 @@ def test_sql_is_order_aware_and_drops_the_sequence_column():
 
 def test_vanguard_buy_on_a_call_is_an_open():
     assert remap([_row()]) == ["option_buy_to_open"]
+
+
+def test_empower_buy_on_a_call_is_an_open_and_does_not_add_a_row():
+    rows = [
+        _row(account="Empower Retirement ••••4242"),
+        _row(
+            account="Empower Retirement ••••4242",
+            action="equity_sell",
+            trade_date="2026-01-15",
+            seq=2,
+        ),
+    ]
+    assert remap(rows) == ["option_buy_to_open", "option_sell_to_close"]
+    # A hyphenated first token is not the empower slug.
+    assert remap([_row(account="Empower-Retirement Account")]) == ["equity_buy"]
 
 
 def test_buy_then_sell_is_a_long_partial_close():
@@ -220,7 +235,7 @@ def test_remapped_actions_keep_buy_cash_out_and_sell_cash_in():
     assert "then abs(g.amount_raw)" in sql
     verb = sql.split("vanguard_option_verbs as (", 1)[1].split("fee_guard as (", 1)[0]
     assert "amount_raw" not in verb
-    assert "= 'vanguard'" in verb
+    assert "in ('vanguard', 'empower')" in verb
     assert "fidelity" not in verb.lower()
     assert "schwab" not in verb.lower()
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts.empower_shape_probe import (
     _assert_select_only,
     action_sql,
@@ -55,3 +57,12 @@ def test_probe_sql_is_select_only_and_reads_raw_seeds():
     # Prod warehouse is read for presence flags only. No raw overwrite target.
     assert "ccwj-dbt.analytics.stg_history" in warehouse_sql()
     assert "analytics_raw" not in warehouse_sql()
+
+
+def test_diagnose_workflow_does_not_print_empower_dollars():
+    text = (
+        Path(__file__).resolve().parents[1]
+        / ".github/workflows/diagnose_seed_batch.yml"
+    ).read_text()
+    assert "EMPOWER_PRINT_TOTALS" not in text
+    assert "empower_shape_probe.py" in text
