@@ -14,9 +14,9 @@
 -- map (a fund exchange, a share transfer) are dropped before the seed
 -- write. This model does not turn those gaps into a Buy, and it does
 -- not invent an opening fill or a cost basis. Option Buy / Sell on an
--- OSI contract is relabeled later in stg_history by the same
--- first-verb rule as Vanguard, and only when the row is already on
--- the tape.
+-- OSI contract is relabeled later in stg_history only as a close,
+-- and only when that contract already has exactly one explicit open
+-- direction. A bare Buy or Sell is never promoted to an open.
 --
 -- Explicit projection (same names and order as broker_history_rows):
 --   Account, user_id, tenant_id, Date, Action, Symbol, Description,

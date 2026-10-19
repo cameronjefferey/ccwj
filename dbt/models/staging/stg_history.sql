@@ -226,22 +226,20 @@ cleaned as (
     from osi_split
 ),
 
--- Vanguard and Empower option fills can arrive as Buy / Sell. The
--- action CASE above stores those as equity verbs, so a call or put
--- with no opening fill looks opened-before-history and its P&L is
--- booked at zero. Whichever equity verb comes first on the contract
--- (trade date, then seed write order) is the open. A Buy first is a
--- long: later Sells are sell-to-close. A Sell first is a short
--- (covered call or cash-secured put): later Buys are buy-to-close.
--- Later fills in the same direction stay opens. Promote only when
--- this contract has no option open already, so a second Buy beside
--- Buy to Open does not add the premium twice. The rule relabels a
--- row that is already on the tape. It does not insert an opening
--- trade and it does not rewrite amount_raw. Fee netting below then
--- sees option actions. Stock buys stay equity verbs. Schwab,
--- Fidelity, Alpaca, and IBKR stay on the labels they already send.
--- ``_row_seq`` is seed order only and is dropped here so it never
--- becomes a stg_history column.
+-- Vanguard option fills arrive as Buy / Sell. The action CASE above
+-- stores those as equity verbs, so a call or put with no opening
+-- fill looks opened-before-history and its P&L is booked at zero.
+-- Whichever equity verb comes first on the contract (trade date,
+-- then seed write order) is the open. A Buy first is a long: later
+-- Sells are sell-to-close. A Sell first is a short (covered call or
+-- cash-secured put): later Buys are buy-to-close. Later fills in the
+-- same direction stay opens. Promote only when this contract has no
+-- option open already, so a second Buy beside Buy to Open does not
+-- add the premium twice. Fee netting below then sees option actions.
+-- Stock buys stay equity verbs. Empower does not use this first-verb
+-- open. Its close-only rule is the next CTE. Other brokers stay on
+-- the labels they already send. ``_row_seq`` is seed order only and
+-- is dropped here so it never becomes a stg_history column.
 vanguard_verb_ranked as (
     select
         c.tenant_id,
@@ -270,7 +268,7 @@ vanguard_verb_ranked as (
             order by c.trade_date nulls last, c._row_seq nulls last
         ) as _verb_ord
     from cleaned c
-    where {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
+    where {{ broker_slug_from_account('c.account') }} = 'vanguard'
       and c.instrument_type in ('Call', 'Put')
       and c.trade_symbol is not null
       and c.action in ('equity_buy', 'equity_sell')
@@ -320,7 +318,7 @@ vanguard_option_verbs as (
     select
         c.* except (_row_seq, action),
         case
-            when {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
+            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
              and c.instrument_type in ('Call', 'Put')
              and c.trade_symbol is not null
              and c.action in ('equity_buy', 'equity_sell')
@@ -330,7 +328,7 @@ vanguard_option_verbs as (
                 when 'equity_buy' then 'option_buy_to_open'
                 else 'option_sell_to_close'
             end
-            when {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
+            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
              and c.instrument_type in ('Call', 'Put')
              and c.trade_symbol is not null
              and c.action in ('equity_buy', 'equity_sell')
@@ -355,6 +353,76 @@ vanguard_option_verbs as (
             'c.option_type'
         ) }}
     left join vanguard_open_guard g
+        on g.tenant_id is not distinct from c.tenant_id
+       and g.user_id is not distinct from c.user_id
+       and g.account is not distinct from c.account
+       and g.contract_id = {{ canonical_option_trade_symbol(
+            'c.trade_symbol',
+            'c.underlying_symbol',
+            'c.option_expiry',
+            'c.option_strike',
+            'c.option_type'
+        ) }}
+),
+
+empower_open_guard as (
+    -- Empower does not infer an option open from the first Buy or Sell.
+    -- A first retained Buy can be a buy-to-close for a short opened
+    -- before the broker history window, and promoting it invents cost
+    -- basis. When exactly one explicit open direction exists, the
+    -- opposite generic verb is the close. Both open directions, or no
+    -- explicit open, stay on the broker verbs. The label changes only.
+    -- No opening row is inserted.
+    select
+        tenant_id,
+        user_id,
+        account,
+        contract_id,
+        logical_or(action = 'option_buy_to_open') as has_buy_open,
+        logical_or(action = 'option_sell_to_open') as has_sell_open
+    from (
+        select
+            tenant_id,
+            user_id,
+            account,
+            action,
+            {{ canonical_option_trade_symbol(
+                'trade_symbol',
+                'underlying_symbol',
+                'option_expiry',
+                'option_strike',
+                'option_type'
+            ) }} as contract_id
+        from cleaned
+        where {{ broker_slug_from_account('account') }} = 'empower'
+          and instrument_type in ('Call', 'Put')
+          and trade_symbol is not null
+    )
+    group by 1, 2, 3, 4
+),
+
+empower_option_verbs as (
+    select
+        c.* except (action),
+        case
+            when {{ broker_slug_from_account('c.account') }} = 'empower'
+             and c.instrument_type in ('Call', 'Put')
+             and c.trade_symbol is not null
+             and c.action = 'equity_sell'
+             and coalesce(g.has_buy_open, false)
+             and not coalesce(g.has_sell_open, false)
+            then 'option_sell_to_close'
+            when {{ broker_slug_from_account('c.account') }} = 'empower'
+             and c.instrument_type in ('Call', 'Put')
+             and c.trade_symbol is not null
+             and c.action = 'equity_buy'
+             and coalesce(g.has_sell_open, false)
+             and not coalesce(g.has_buy_open, false)
+            then 'option_buy_to_close'
+            else c.action
+        end as action
+    from vanguard_option_verbs c
+    left join empower_open_guard g
         on g.tenant_id is not distinct from c.tenant_id
        and g.user_id is not distinct from c.user_id
        and g.account is not distinct from c.account
@@ -393,7 +461,7 @@ fee_guard as (
                 )
             )
         ) as drop_estimated_fee
-    from vanguard_option_verbs c
+    from empower_option_verbs c
 ),
 
 amount_signed as (

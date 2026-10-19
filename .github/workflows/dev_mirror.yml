@@ -159,3 +159,10 @@ jobs:
       - name: Unknown Empower action labels
         if: failure()
         run: python scripts/vanguard_dev_structural_check.py --broker empower --unknown-actions
+
+      - name: Empower raw activity summary (select only)
+        if: success()
+        env:
+          SECRET_KEY: diagnostic
+          HAPPYTRADER_SKIP_DB_INIT: "1"
+        run: python scripts/empower_raw_activity_summary.py
