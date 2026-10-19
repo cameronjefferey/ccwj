@@ -1269,12 +1269,11 @@ def _migrate_snaptrade_snapshot_sync_generation():
 
 
 def _migrate_snaptrade_early_broker_cohort():
-    """Idempotent: first-N users of an unmodeled SnapTrade brokerage.
+    """Idempotent: first 10 users of every SnapTrade brokerage slug.
 
-    Dedicated dbt adapters cover schwab/alpaca/fidelity/interactive;
-    everything else is catch-all. The flag is stamped at first connect
-    (and backfilled here for people who connected before the note shipped)
-    so the thank-you still shows after the 11th user of that broker arrives.
+    The flag is stamped at first connect and backfilled here for people
+    who connected before the offer covered their broker. Backfill only
+    sets the flag true, so a grant already stored is not revoked.
     """
     try:
         execute(

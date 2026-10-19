@@ -1246,27 +1246,27 @@ from connect, or only the first account in a multi-account build, is not
 enough). Account balances cover legitimate cash-only accounts that never
 appear in `positions_summary`.
 
-After SnapTrade connect, the first 10 users of a brokerage we have not
-modeled yet (anything outside schwab / alpaca / fidelity / interactive / vanguard —
-the `stg_broker_other_*` catch-all) see a note: if they choose to
-subscribe, six months of Pro is included free, plus a thank-you for
-patience while we calibrate. Applied
-at checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional `EARLY_BROKER_PROMO_CODE`
-if a matching Stripe promotion code exists. The trial applies only to the
-user's first Pro subscription and is Pro-checkout-only, so it cannot be
-regranted after cancellation or apply to sibling products on the shared
-Stripe account.
+After SnapTrade connect, the first 10 users of every brokerage slug
+(Schwab, Alpaca, Fidelity, Interactive Brokers, and Vanguard included;
+each slug is its own cohort) see a note: if they choose to subscribe,
+six months of Pro is included before the first charge. Applied at
+checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional
+`EARLY_BROKER_PROMO_CODE` if a matching Stripe promotion code exists.
+The trial applies only to the user's first Pro subscription and is
+Pro-checkout-only, so it cannot be regranted after cancellation or
+apply to sibling products on the shared Stripe account.
 The cohort is stamped on `snaptrade_accounts.early_broker_cohort` at
-first insert (`app/early_broker.py`) so the note still shows after the
-11th user of that broker arrives. The banner names the newest
-early-cohort row's stored `broker_slug` (the brokerage on the SnapTrade
-authorization, which wins when it disagrees with the account's
-`institution_name`). Surfaces: `/snaptrade/accounts`,
+first insert (`app/early_broker.py`) and kept. Startup backfill stamps
+the first 10 users per slug who are not already flagged; it only sets
+the flag true, so an existing grant is not revoked when a slug passes
+10 users or when a previously excluded brokerage joins the offer. The
+banner names the newest early-cohort row's stored `broker_slug` (the
+brokerage on the SnapTrade authorization, which wins when it disagrees
+with the account's `institution_name`) and says they are one of the
+first 10 people to connect that broker. Surfaces: `/snaptrade/accounts`,
 `/sync/processing`, `/get-started` / first look. Create the matching
 Stripe promotion code before setting the env var (Checkout already
-allows promo codes). Empower is unmodeled, so the written first-10
-rule includes it; whether a retirement-plan broker should stay in that
-offer is a product question, not a code exclusion.
+allows promo codes).
 
 ### Upload (`/upload`)
 **Status: Working. CSV is the older-history fallback; broker connect leads.**

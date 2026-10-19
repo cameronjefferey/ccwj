@@ -1,16 +1,19 @@
-"""Early-brokerage cohort: first users of a SnapTrade broker we haven't modeled.
+"""Early-brokerage cohort: the first users of each SnapTrade broker.
 
-SnapTrade can connect ~20 brokerages. Dedicated dbt adapters exist for
-schwab / alpaca / fidelity / interactive (IBKR) / vanguard; everything
-else flows through ``stg_broker_other_*``. The first ``EARLY_BROKER_USER_CAP`` users
-who connect an unmodeled brokerage get a thank-you note and six months
-of HappyTrader Pro free (Stripe Checkout ``trial_period_days``, Pro
-price only — this Stripe account is shared with sibling products, so we
-do not use an account-wide coupon). An optional ``EARLY_BROKER_PROMO_CODE``
-can still be shown if you create a matching Stripe promotion code.
+The first ``EARLY_BROKER_USER_CAP`` users of every brokerage slug get a
+thank-you note and six months of HappyTrader Pro free (Stripe Checkout
+``trial_period_days``, Pro price only — this Stripe account is shared
+with sibling products, so we do not use an account-wide coupon). Schwab,
+Alpaca, Fidelity, Interactive Brokers, and Vanguard are included. Each
+slug is its own cohort: ten Schwab users do not use up Robinhood's ten.
+An optional ``EARLY_BROKER_PROMO_CODE`` can still be shown if you create
+a matching Stripe promotion code.
 
-The cohort flag is stamped ONCE at first connect and kept, so the note
-still shows after the 11th user of that brokerage arrives.
+``MODELED_BROKER_KEYS`` is only the dbt adapter set. It is not an
+eligibility gate.
+
+The cohort flag is stamped once and kept. A later user past the cap does
+not clear an earlier grant, and this module never writes the flag false.
 """
 from __future__ import annotations
 
@@ -187,10 +190,13 @@ def count_users_for_broker_key(key, rows) -> int:
 
 
 def maybe_stamp_early_broker_cohort(user_id, snaptrade_account_id, broker_slug) -> bool:
-    """Mark this account as early-cohort if the brokerage is unmodeled and
-    still under the user cap. Returns True when stamped. Fail-open."""
+    """Mark this account when this slug is still under the user cap.
+
+    Returns True when stamped. Fail-open. Never clears a grant: past the
+    cap this returns False without writing.
+    """
     key = broker_key(broker_slug)
-    if not user_id or not snaptrade_account_id or not key or key in MODELED_BROKER_KEYS:
+    if not user_id or not snaptrade_account_id or not key:
         return False
     from app.db import execute, fetch_all
     try:
@@ -210,10 +216,11 @@ def maybe_stamp_early_broker_cohort(user_id, snaptrade_account_id, broker_slug) 
 
 
 def backfill_early_broker_cohort() -> int:
-    """Stamp the first ``EARLY_BROKER_USER_CAP`` users per unmodeled broker.
+    """Stamp the first ``EARLY_BROKER_USER_CAP`` users of every broker slug.
 
-    Idempotent. Used at migrate time so people who connected Robinhood (etc.)
-    before this note shipped still get the thank-you.
+    Idempotent. Runs at migrate time so people who connected before the
+    offer covered their brokerage still get the thank-you. Only sets the
+    flag true. A grant already stored on a later user is left in place.
     """
     from app.db import execute, fetch_all
 
@@ -224,7 +231,7 @@ def backfill_early_broker_cohort() -> int:
     by_key: dict[str, list] = {}
     for r in rows:
         key = broker_key(r.get("broker_slug"))
-        if not key or key in MODELED_BROKER_KEYS:
+        if not key:
             continue
         by_key.setdefault(key, []).append(r)
 
