@@ -344,6 +344,39 @@ def _snaptrade_accounts_needing_nickname(rows):
     return [r for r in (rows or []) if _is_generic_account_name(r)]
 
 
+def _rows_with_snaptrade_nicknames(user_id, rows):
+    """Show a SnapTrade nickname when the tenant nickname is still blank.
+
+    Display only. Does not write, and does not replace a nickname already
+    stored on ``broker_tenants``. Connect can leave the user-set name on
+    the SnapTrade row after a new account UUID is issued.
+    """
+    try:
+        from app.models import get_snaptrade_accounts
+        accounts = get_snaptrade_accounts(user_id) or []
+    except Exception:
+        return rows
+    by_tid = {}
+    for acc in accounts:
+        tid = (acc.get("tenant_id") or "").strip()
+        nick = (acc.get("display_nickname") or "").strip()
+        if tid and nick and tid not in by_tid:
+            by_tid[tid] = nick
+    if not by_tid:
+        return list(rows or [])
+    out = []
+    for row in rows or []:
+        nick = (row.get("display_nickname") or "").strip()
+        tid = (row.get("tenant_id") or "").strip()
+        if nick or not tid or tid not in by_tid:
+            out.append(row)
+            continue
+        copied = dict(row)
+        copied["display_nickname"] = by_tid[tid]
+        out.append(copied)
+    return out
+
+
 def _tenant_label_map_for_user(user_id) -> dict:
     """``tenant_id -> disambiguated display label`` for one user, or ``{}``.
 
@@ -356,7 +389,9 @@ def _tenant_label_map_for_user(user_id) -> dict:
         rows = get_broker_tenants_for_user(user_id) or []
     except Exception:
         return {}
-    return _disambiguated_tenant_labels(rows)
+    return _disambiguated_tenant_labels(
+        _rows_with_snaptrade_nicknames(user_id, rows),
+    )
 
 
 def _account_label_map(user_id) -> dict:
@@ -393,7 +428,10 @@ def _account_label_map(user_id) -> dict:
     # _tenant_label_map_for_user (tenant_id-keyed) instead.
     out = {}
     ambiguous = set()
-    for row in get_broker_tenants_for_user(user_id) or []:
+    tenant_rows = _rows_with_snaptrade_nicknames(
+        user_id, get_broker_tenants_for_user(user_id) or [],
+    )
+    for row in tenant_rows:
         name = (row.get("account_name") or "").strip()
         nick = (row.get("display_nickname") or "").strip()
         if not (name and nick and nick != name):

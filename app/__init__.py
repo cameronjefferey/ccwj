@@ -106,9 +106,11 @@ def _account_label_filter(account_name, tenant_id=None):
             from app.models import get_broker_tenants_for_user
             from app.routes import (
                 _disambiguated_tenant_labels,
+                _rows_with_snaptrade_nicknames,
                 _unique_account_name_labels,
             )
             rows = get_broker_tenants_for_user(current_user.id) or []
+            rows = _rows_with_snaptrade_nicknames(current_user.id, rows)
             tmap = _disambiguated_tenant_labels(rows)
             umap = _unique_account_name_labels(rows, tmap)
             maps = (tmap, umap)

@@ -992,7 +992,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 ### Connected accounts (`/snaptrade/accounts`) and Settings (`/profile`)
 **Status: One story each. Linking, rename, sync, and billing posts are unchanged.**
 
-Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**.
+Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. Privacy mode still masks it as Account N.
 
 Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
