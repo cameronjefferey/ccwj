@@ -472,17 +472,21 @@ def test_fidelity_holdings_unavailable_and_a_real_stall_stay_distinct():
         }
     }
     assert snap._holdings_stale_days(unavailable, today=date(2026, 10, 14)) is None
+    # The "still new" window is calendar days from created_at. Pin it to
+    # today so the grace period does not expire under the test runner.
+    as_of = date.today()
+    created = datetime(as_of.year, as_of.month, as_of.day, 15, 0, tzinfo=timezone.utc)
     young = {
         "snaptrade_account_id": "fid",
         "account_name": ACCOUNT,
         "broker_slug": "fidelity",
-        "connection_broken_at": datetime(2026, 10, 14, 16, 0, tzinfo=timezone.utc),
-        "created_at": datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc),
+        "connection_broken_at": created.replace(hour=16),
+        "created_at": created,
         "last_sync_error": (
             "connection_broken:sync_status.holdings.last_successful_sync[stale]"
         ),
     }
-    assert snap._connection_attention(young, today=date(2026, 10, 14)) is None
+    assert snap._connection_attention(young, today=as_of) is None
     assert sync_status_label(young) == "Sync will retry"
     real = {
         "snaptrade_account_id": "fid",
