@@ -30,6 +30,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from app.money import fmt_money
+from app.option_formatting import compact_table_date
 
 _log = logging.getLogger(__name__)
 
@@ -230,40 +231,73 @@ def held_page_summary(charts):
     The warehouse ``difference`` is realized minus the expiry outcome, so
     a negative sum means holding finished higher: closing early cost that
     amount. A positive sum means the early exits came out ahead.
+
+    The headline and the total-row pill are the same ``net_cost``. The
+    total's Actual and If held are the column sums, and the gap between
+    those sums is that net, so the sentence and the row cannot diverge.
     """
     if not charts:
         return None
-    net_cost = -sum(float(c.get("difference") or 0) for c in charts)
-    count = len(charts)
+    rows = [_held_table_row(c) for c in charts]
+    total = _held_table_total(rows)
+    count = len(rows)
+    return {
+        "headline": _held_headline(total["net_cost"], count),
+        "count": count,
+        "open_id": charts[0].get("dom_id") or "held-0",
+        "net_cost": total["net_cost"],
+        "rows": rows,
+        "total": total,
+    }
+
+
+def _held_headline(net_cost, count):
+    """One sentence for the fold. ``net_cost`` is If held minus Actual."""
     trade_word = "trade" if count == 1 else "trades"
     across = f" across {count} {trade_word}"
     if abs(net_cost) < 0.5:
-        headline = f"Closing early matched holding to expiration{across}"
-    elif net_cost > 0:
-        headline = (
+        return f"Closing early matched holding to expiration{across}"
+    if net_cost > 0:
+        return (
             f"Closing early cost you {_abs_money(net_cost)}{across}"
             " vs holding to expiration"
         )
-    else:
-        headline = (
-            f"Closing early saved you {_abs_money(net_cost)}{across}"
-            " vs holding"
-        )
+    return (
+        f"Closing early saved you {_abs_money(net_cost)}{across}"
+        " vs holding"
+    )
+
+
+def _held_table_total(rows):
+    """Column sums. The pill is the gap between If held and Actual."""
+    realized = round(sum(float(r.get("realized_pnl") or 0) for r in rows), 2)
+    if_held = round(sum(float(r.get("pnl_if_held") or 0) for r in rows), 2)
+    contracts = sum(int(r.get("contracts") or 0) for r in rows)
+    # Same sign as the warehouse delta: realized minus the expiry outcome.
+    # The headline flips it (positive net_cost = holding finished higher).
+    net_cost = round(if_held - realized, 2)
+    difference = round(-net_cost, 2)
+    word = "contract" if contracts == 1 else "contracts"
     return {
-        "headline": headline,
-        "count": count,
-        "open_id": charts[0].get("dom_id") or "held-0",
-        "net_cost": round(net_cost, 2),
-        "rows": [_held_table_row(c) for c in charts],
+        "contracts": contracts,
+        "contracts_label": f"{contracts:,} {word}",
+        "realized_pnl": realized,
+        "pnl_if_held": if_held,
+        "realized_display": _signed_money(realized),
+        "if_held_display": _signed_money(if_held),
+        "difference": difference,
+        "net_cost": net_cost,
+        "pill": outcome_pill(difference),
+        "held_better": difference < -0.5,
     }
 
 
 def _held_table_row(chart):
-    """One expanded-table line. Contract reads like ``$41 call Sep 12``."""
+    """One expanded-table line. Contract reads like ``$41 call Sep 12 '25``."""
     expired = ""
     if chart.get("expiry_date"):
         exp = _as_date(chart.get("expiry_date"))
-        expired = _fmt_day(exp) if exp else ""
+        expired = compact_table_date(exp) if exp else ""
     label = chart.get("label") or "Option"
     contract = f"{label} {expired}".strip()
     delta = chart.get("difference")
@@ -470,8 +504,8 @@ def _chart_for_row(row, prices, marks, *, keep, label_for):
         "open_date": open_d.isoformat(),
         "close_date": close_d.isoformat(),
         "expiry_date": exp_d.isoformat(),
-        "open_date_label": _fmt_day(open_d),
-        "close_date_label": _fmt_day(close_d),
+        "open_date_label": compact_table_date(open_d),
+        "close_date_label": compact_table_date(close_d),
         "open_price": round(open_px, 4),
         "close_price": round(close_px, 4),
         "expiry_price": round(expiry_intrinsic, 4),

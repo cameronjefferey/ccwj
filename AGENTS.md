@@ -456,10 +456,15 @@ What's working:
   Just above the Position Legs table, a collapsed "If held to expiration"
   block is the headline: the total and a count ("Closing early cost you
   $X across N trades vs holding to expiration", or "saved you" when the
-  early exits came out ahead).   Expanding it lists each early close
+  early exits came out ahead). Expanding it lists each early close
   (contract, contracts, closed date, actual P&L, if-held P&L, difference
-  pill). Below 576px each exit is a stacked card instead of that table,
-  so the difference stays on screen. The fold clips overflow so opening
+  pill). Contract expirations and the Closed column always include the
+  short year (`Aug 30 '24`), the same dense form as Position Legs
+  Opened/Closed. A Total row sums contracts, Actual, and If held; its
+  difference pill and the headline are one net (If held minus Actual),
+  so they cannot disagree. The total does not open a chart. Below 576px
+  each exit is a stacked card instead of that table, and the total is a
+  card too, so the difference stays on screen. The fold clips overflow so opening
   it cannot widen the page. Each row opens that contract's chart. On a
   phone the chart is a full-viewport bottom sheet. The difference uses
   the same words on the card and in the panel ("$X more if held" /

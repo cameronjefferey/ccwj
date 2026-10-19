@@ -11,7 +11,12 @@ display in the Expiring Soon card / Position Detail / Symbols pages.
 """
 import pytest
 
-from app.option_formatting import compact_contract_label, format_option_symbol, parse_occ
+from app.option_formatting import (
+    compact_contract_label,
+    compact_table_date,
+    format_option_symbol,
+    parse_occ,
+)
 
 
 class TestParseOcc:
@@ -133,6 +138,15 @@ class TestFormatOptionSymbol:
         # We'd rather show "TBD" than a stack trace.
         assert format_option_symbol("TBD") == "TBD"
         assert format_option_symbol("not an option") == "not an option"
+
+
+class TestCompactTableDate:
+    def test_always_includes_a_short_year(self):
+        assert compact_table_date("2024-08-30") == "Aug 30 '24"
+        assert compact_table_date("2026-08-02") == "Aug 2 '26"
+        assert compact_table_date("") == ""
+        assert compact_table_date(None) == ""
+        assert compact_table_date("not-a-date") == "not-a-date"
 
 
 class TestCompactContractLabel:

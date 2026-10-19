@@ -20,6 +20,7 @@ The parser tolerates:
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 # OCC option symbol layout: ROOT [space] YYMMDD C|P 8-digit-strike
 # `\.\-` lets uncommon roots like BRK.B or BF-B parse cleanly.
@@ -162,6 +163,24 @@ def _qty_prefix(quantity) -> str:
     if abs(qty - round(qty)) < 1e-6:
         return f"{int(round(qty))}× "
     return f"{qty:.4f}".rstrip("0").rstrip(".") + "× "
+
+
+def compact_table_date(value) -> str:
+    """Dense table date that always keeps the year: ``Aug 30 '24``.
+
+    A book that spans several years makes a bare ``Aug 30`` ambiguous.
+    The short year matches option symbols (``Apr 24 '26``) and stays
+    narrow enough for a contract column. Blank stays blank; anything
+    that is not an ISO date passes through unchanged.
+    """
+    if value is None or value == "":
+        return ""
+    text = str(value)[:10]
+    try:
+        parsed = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return str(value)
+    return f"{parsed.strftime('%b')} {parsed.day} '{parsed.strftime('%y')}"
 
 
 def compact_contract_label(symbol, quantity=None):
