@@ -69,9 +69,8 @@
                         Connect Schwab, Fidelity, Vanguard, Robinhood, Interactive Brokers,
                         Alpaca, Wealthsimple, and more through SnapTrade. If we haven't
                         fitted a given brokerage into our models yet, SnapTrade still
-                        connects it. If you are one of the first handful and you
-                        subscribe, 6 months of Pro is included before the first charge,
-                        while we calibrate.
+                        connects it. The first 10 people to connect each brokerage,
+                        if they subscribe, get 6 months of Pro before the first charge.
                         <br><br>
                         CSV upload is the fallback for older history, and today it
                         parses Charles Schwab's web export (schwab.com, not thinkorswim).
@@ -172,7 +171,7 @@
                 </h3>
                 <div id="faq-cost" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                     <div class="faq-answer">
-                        Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. After the trial the mirror stays readable and daily syncing pauses until you subscribe. People already on the grandfathered beta stay free, with no expiry. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free). If you are one of the first people to connect a brokerage we are still calibrating, subscribing includes 6 months of Pro before the first charge. After you subscribe, the Stripe billing portal is where you change the card or cancel. HappyTrader AI is an optional ${{ price_ai or '9.99' }}/month add-on (Gemini 2.5 Pro, Claude Sonnet, and Claude Opus). See the <a href="{{ url_for('pricing') }}">pricing page</a> for the story that matches your account.
+                        Learning and paper trading are free. Your 30-day trial starts when you connect a real brokerage. After the trial the mirror stays readable and daily syncing pauses until you subscribe. People already on the grandfathered beta stay free, with no expiry. Pro is ${{ price_monthly or '19.99' }}/month or ${{ price_annual or '199.99' }}/year (two months free). If you are one of the first 10 people to connect a brokerage, subscribing includes 6 months of Pro before the first charge. After you subscribe, the Stripe billing portal is where you change the card or cancel. HappyTrader AI is an optional ${{ price_ai or '9.99' }}/month add-on (Gemini 2.5 Pro, Claude Sonnet, and Claude Opus). See the <a href="{{ url_for('pricing') }}">pricing page</a> for the story that matches your account.
                     </div>
                 </div>
             </div>

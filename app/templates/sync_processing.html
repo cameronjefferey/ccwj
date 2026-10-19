@@ -583,8 +583,20 @@
     });
 
     dismissBtn.addEventListener("click", function () {
-        if (!confirm("Skip the survey? You can fill it out later from your profile.")) return;
+        if (!confirm("Skip the survey?")) return;
         window.__onboardingHoldRedirect = false;
+        if (!preview) {
+            var fd = new FormData();
+            var token = form.querySelector("input[name=csrf_token]");
+            if (token) fd.append("csrf_token", token.value);
+            fd.append("skipped", "1");
+            fetch(form.action, {
+                method: "POST",
+                body: fd,
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "XMLHttpRequest" }
+            }).catch(function () {});
+        }
         card.parentNode.removeChild(card);
         // Restore the sync card to its original "hero" layout.
         var sync = document.getElementById("syncCard");

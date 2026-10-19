@@ -1229,27 +1229,41 @@ not be mistaken for cancel. The post-upload and post-sync processing pages
 land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the
-background** (`_kick_post_connect_sync`) and sends the user to
-`/sync/processing?connecting=1` — they should not have to click Sync now.
+background** (`_kick_post_connect_sync`). A brand-new user (no saved
+survey, no prior account, no earlier tenant) still lands on
+`/sync/processing?connecting=1&first=1` and sees the survey. Someone
+who already finished or skipped that survey, or who already had any
+connected account or uploaded book, goes back to Settings or Connected
+accounts when they started there, otherwise Overview, with a toast
+`"<Broker> connected, syncing now"`. The quiz decision uses the
+accounts and tenants that existed *before* this portal return was
+saved (`app/onboarding_gate.py`). `?first=1` on a later visit is
+re-checked the same way, so a bookmarked processing URL cannot reopen
+the survey. "I'll do this later" (`/overview?later=1`) is unchanged.
 The processing redirect and one-time `data_ready` email wait until **every**
 active tenant has queryable position or account-balance rows (a tenant row
 from connect, or only the first account in a multi-account build, is not
 enough). Account balances cover legitimate cash-only accounts that never
 appear in `positions_summary`.
 
-After SnapTrade connect, the first 10 users of a brokerage we have not
-modeled yet (anything outside schwab / alpaca / fidelity / interactive / vanguard / empower —
-the `stg_broker_other_*` catch-all) see a note: if they choose to
-subscribe, six months of Pro is included free, plus a thank-you for
-patience while we calibrate. Applied
-at checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional `EARLY_BROKER_PROMO_CODE`
-if a matching Stripe promotion code exists. The trial applies only to the
-user's first Pro subscription and is Pro-checkout-only, so it cannot be
-regranted after cancellation or apply to sibling products on the shared
-Stripe account.
+After SnapTrade connect, the first 10 users of every brokerage slug
+(Schwab, Alpaca, Fidelity, Interactive Brokers, Vanguard, and Empower
+included; each slug is its own cohort) see a note: if they choose to
+subscribe, six months of Pro is included before the first charge. Applied
+at checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional
+`EARLY_BROKER_PROMO_CODE` if a matching Stripe promotion code exists.
+The trial applies only to the user's first Pro subscription and is
+Pro-checkout-only, so it cannot be regranted after cancellation or
+apply to sibling products on the shared Stripe account.
 The cohort is stamped on `snaptrade_accounts.early_broker_cohort` at
-first insert (`app/early_broker.py`) so the note still shows after the
-11th user of that broker arrives. Surfaces: `/snaptrade/accounts`,
+first insert (`app/early_broker.py`) and kept. Startup backfill stamps
+the first 10 users per slug who are not already flagged; it only sets
+the flag true, so an existing grant is not revoked when a slug passes
+10 users or when a previously excluded brokerage joins the offer. The
+banner names the newest early-cohort row's stored `broker_slug` (the
+brokerage on the SnapTrade authorization, which wins when it disagrees
+with the account's `institution_name`) and says they are one of the
+first 10 people to connect that broker. Surfaces: `/snaptrade/accounts`,
 `/sync/processing`, `/get-started` / first look. Create the matching
 Stripe promotion code before setting the env var (Checkout already
 allows promo codes).
