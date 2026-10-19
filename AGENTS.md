@@ -203,7 +203,7 @@ that names the paper account, keeps paper on that page. Position chips,
 the "traded in N accounts" count, and the symbol strip follow the same
 rule and default to the real account when a symbol exists in both.
 Positions, Strategies, Sectors, and Overview/Today movers use that scope.
-Labels say Paper (privacy mode: `Account N · Paper`) on the chip, the
+Labels say Paper (Hide account names on screen, `user_profiles.privacy_mode`: `Account N · Paper`) on the chip, the
 account picker, and position legs. Practice (`/practice`) still shows
 the paper book. An unscoped admin read (`tenant_ids` None) also drops known
 paper tenants from real totals; a lookup miss leaves that read unscoped.
@@ -468,7 +468,7 @@ What's working:
   apply; the same sentence is the cell's tooltip. The panel steps between charts,
   largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
-  name when privacy mode is on. Math lives in `app/held_chart.py`; no
+  name when Hide account names on screen is on (`user_profiles.privacy_mode`). Math lives in `app/held_chart.py`; no
   new market-data vendor. The two price queries (`stg_daily_prices`,
   `int_option_marks_daily`) are fetched outside the shared position
   batch (`fetch_held_series`) and fail to empty frames, so a
@@ -992,7 +992,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 ### Connected accounts (`/snaptrade/accounts`) and Settings (`/profile`)
 **Status: One story each. Linking, rename, sync, and billing posts are unchanged.**
 
-Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. Privacy mode still masks it as Account N.
+Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. Hide account names on screen (`user_profiles.privacy_mode`, default off, Preferences and the Account menu) still masks it as Account N. That control is separate from Private from HappyTrader admins.
 
 Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
@@ -1171,6 +1171,10 @@ one 404s, including any tenant outside the admin's own accounts and
 the demo tenant when the list is down. Impersonation and the digest
 preview 404. The friend's own pages, the demo tenant, and admin-owned
 accounts stay visible. This is an application gate, not encryption.
+The card writes only `admin_hidden_users`. It does not set
+`user_profiles.privacy_mode` and does not change the owner's own pages.
+On-screen masking is a separate control, **Hide account names on screen**
+(Preferences and the Account menu), default off, `POST /privacy-mode` only.
 
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path

@@ -195,3 +195,22 @@ def test_story_review_keeps_names_when_privacy_is_off(monkeypatch):
     assert items[0]["option_cards"][0]["account"] == "Roth IRA"
     assert "Roth IRA" in markers[0]["t"][0]
     assert markers[0]["tips"][0]["acct"] == "Roth IRA"
+
+
+def test_screen_mask_and_admin_privacy_use_different_controls():
+    """The on-screen mask and private-from-admins do not share a form."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    profile = (root / "app/templates/profile.html").read_text()
+    admin = (root / "app/templates/_admin_privacy_settings.html").read_text()
+    nav = (root / "app/templates/base.html").read_text()
+    screen = profile.split("set_privacy_mode_route", 1)[1].split("</form>", 1)[0]
+    assert "Hide account names on screen" in screen
+    assert "set_admin_privacy" not in screen
+    assert "Privacy mode" not in profile
+    assert 'name="action" value="set_admin_privacy"' in admin
+    assert "set_privacy_mode" not in admin
+    assert "does not change what you see" in admin
+    assert "Hide account names on screen" in nav
+    assert "Privacy mode" not in nav

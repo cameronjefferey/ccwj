@@ -1072,7 +1072,7 @@ def test_go_pages_are_focused_noindex_and_free_of_account_totals(monkeypatch):
             assert "ht-feature-title" not in how_block
             assert ">Which strategies work<" not in how_block
             assert "GZ3mPiagkLo" in how_block
-            assert "Privacy mode masks account names" not in body
+            assert "Hide account names on screen masks account names" not in body
             assert "A share card is a picture" not in body
             assert "Sync your accounts" not in body
             assert "covered-call income tracked" not in body
