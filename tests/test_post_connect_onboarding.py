@@ -65,6 +65,10 @@ def test_just_added_account_inside_the_window_still_shows_the_quiz(monkeypatch):
             "snaptrade_account_id": "new-acc",
             "tenant_id": "snaptrade:new-acc",
             "first_sync_completed": False,
+            # The background post-connect pull can stamp both clocks before
+            # this page renders. Neither proves transaction history finished.
+            "last_sync_at": datetime.now(timezone.utc),
+            "holdings_last_successful_sync": datetime.now(timezone.utc),
             "created_at": datetime.now(timezone.utc),
         }],
     )

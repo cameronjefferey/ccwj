@@ -26,14 +26,18 @@ def _as_utc(value):
 
 
 def account_is_established(row) -> bool:
-    """True when this SnapTrade row has already been through a sync."""
+    """True when this SnapTrade row completed its initial history sync.
+
+    ``last_sync_at`` is only an attempt timestamp and
+    ``holdings_last_successful_sync`` can advance before SnapTrade finishes
+    indexing transaction history.  The post-connect pull runs in a background
+    thread, so either timestamp can be written before the browser reaches the
+    survey page.  Only the durable completion flag proves this is an older,
+    fully-processed connection.
+    """
     if not row:
         return False
-    if row.get("first_sync_completed"):
-        return True
-    if row.get("holdings_last_successful_sync") or row.get("last_sync_at"):
-        return True
-    return False
+    return bool(row.get("first_sync_completed"))
 
 
 def account_predates_this_connect(row, *, now=None) -> bool:
