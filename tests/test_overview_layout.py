@@ -128,6 +128,25 @@ def test_heatmap_dollars_scroll_inside_the_card():
     phone = STYLES.split("@media (max-width: 480px)", 1)[1].split("@media", 1)[0]
     assert ".68rem" in phone
     assert ".38rem" not in phone
+    assert "1fr" not in phone
+    assert "width: 100%" not in phone
+
+
+def test_heatmap_fills_the_card_from_tablet_up():
+    """From 900px the weekday columns share the card. Phone sizing stays."""
+    base = STYLES.split(".cal-grid-rolling {", 1)[1].split("}", 1)[0]
+    assert "width: max-content" in base
+    assert "minmax(3.4rem, max-content)" in base
+    start = STYLES.index("@media (min-width: 900px)")
+    desk = STYLES[start:STYLES.index(".cal-day.today", start)]
+    assert "width: 100%" in desk
+    assert "repeat(5, minmax(0, 1fr))" in desk
+    assert "min-height: 5.75rem" in desk
+    assert "font-size: 1.05rem" in desk
+    assert "font-size: 1.4rem" in desk
+    assert "color-mix" not in desk
+    today = STYLES[STYLES.index(".cal-day.today"):STYLES.index(".cal-day.today") + 80]
+    assert "outline: 2px solid var(--color-mirror-ink)" in today
 
 
 def test_today_names_the_dividend_bar_date_when_it_is_not_today():
