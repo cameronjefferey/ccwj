@@ -1530,7 +1530,7 @@
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
                                 <input type="hidden" name="next" value="{{ request.full_path }}">
-                                <button type="submit" class="dropdown-item">{% if privacy_mode %}Privacy mode is on{% else %}Privacy mode{% endif %}</button>
+                                <button type="submit" class="dropdown-item">{% if privacy_mode %}Hide account names on screen is on{% else %}Hide account names on screen{% endif %}</button>
                             </form>
                         </li>
                         <li><hr class="dropdown-divider"></li>

@@ -62,6 +62,7 @@ from app.models import (
     set_snaptrade_brokerage_authorization_id,
     snaptrade_snapshot_generation_is_current,
     stamp_snaptrade_force_refresh_attempt,
+    update_broker_tenant_display_nickname,
     update_snaptrade_account_nickname,
     upsert_snaptrade_account,
     get_broker_tenant,
@@ -454,6 +455,22 @@ def _unwrap_body(resp):
 # ---------------------------------------------------------------------------
 # Account name helpers
 # ---------------------------------------------------------------------------
+
+def _preserved_display_nickname(*rows) -> Optional[str]:
+    """First non-blank user nickname among these rows.
+
+    Callers pass the surviving SnapTrade row, then any row about to be
+    deleted, then the tenant. A later row never replaces an earlier
+    nickname, and a broker label is not a nickname.
+    """
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        nick = (row.get("display_nickname") or "").strip()
+        if nick:
+            return nick
+    return None
+
 
 def _stable_account_name(broker_slug: str, account_number_masked: Optional[str]) -> str:
     """Build the warehouse-facing ``account_name`` label. Once written
@@ -930,15 +947,18 @@ def snaptrade_callback():
             if not canonical_tenant:
                 raise ValueError("canonical SnapTrade tenant was not persisted")
             account_name = canonical_tenant["account_name"]
-            stale_account_ids = [
-                str(stale.get("snaptrade_account_id") or "")
-                for stale in existing_accounts
+            stale_rows = [
+                stale for stale in existing_accounts
                 if str(stale.get("snaptrade_account_id") or "")
                 and str(stale.get("snaptrade_account_id") or "")
                 != snaptrade_account_id
                 and str(stale.get("snaptrade_account_id") or "")
                 not in remote_account_ids
                 and stale.get("tenant_id") == tenant_id
+            ]
+            stale_account_ids = [
+                str(stale.get("snaptrade_account_id") or "")
+                for stale in stale_rows
             ]
         except _SnapTradeTenantIdentityConflict as exc:
             identity_conflicts += 1
@@ -955,16 +975,24 @@ def snaptrade_callback():
                 user_id, snaptrade_account_id, exc,
             )
             continue
+        kept_nickname = _preserved_display_nickname(
+            existed, *stale_rows, canonical_tenant,
+        )
         upsert_snaptrade_account(
             user_id,
             snaptrade_account_id,
             tenant_id=tenant_id,
             institution_account_id=institution_account_id,
-            display_nickname=canonical_tenant.get("display_nickname"),
+            display_nickname=kept_nickname,
             broker_slug=broker_slug,
             account_number_masked=masked,
             account_name=account_name,
         )
+        tenant_nick = (canonical_tenant.get("display_nickname") or "").strip()
+        if kept_nickname and not tenant_nick:
+            update_broker_tenant_display_nickname(
+                user_id, tenant_id, kept_nickname,
+            )
         claimed_tenant_ids.add(tenant_id)
         for stale_account_id in stale_account_ids:
             try:
