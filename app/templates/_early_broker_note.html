@@ -1,7 +1,6 @@
-{# Thank-you for the first ~10 users of a SnapTrade brokerage we have
-   not fitted into dedicated dbt adapters yet. Hidden until JS confirms
-   it hasn't been dismissed (per brokerage), so a returning visitor
-   never sees a flash. #}
+{# Thank-you for the first 10 users of a SnapTrade brokerage. Hidden
+   until JS confirms it hasn't been dismissed (per brokerage), so a
+   returning visitor never sees a flash. #}
 {% if early_broker %}
 <style>
     .early-broker-note {
@@ -65,19 +64,18 @@
     <div class="note-body">
         {% if early_broker.offer %}
         <p class="note-kicker">{{ early_broker.offer }}</p>
-        <p class="mb-0">You're one of the first handful of users to bring in {{ early_broker.broker_name }}. Thank you for your patience while we calibrate.</p>
+        <p class="mb-0">You're one of the first 10 people to connect {{ early_broker.broker_name }}.</p>
         {% elif early_broker.promo_code %}
-        <span class="note-kicker">A thank-you for bringing {{ early_broker.broker_name }} in.</span>
-        You're one of the first handful of users. Use
+        <span class="note-kicker">A thank-you for connecting {{ early_broker.broker_name }}.</span>
+        You're one of the first 10 people to connect it. Use
         <button type="button" class="promo-chip" id="ht-early-promo"
                 title="Copy code" aria-label="Copy promo code {{ early_broker.promo_code }}">
             {{ early_broker.promo_code }}
         </button>
-        at checkout. As we calibrate our systems, thank you for your patience.
+        at checkout.
         {% else %}
-        <span class="note-kicker">Thank you for bringing {{ early_broker.broker_name }} in.</span>
-        You're one of the first handful of users. As we calibrate our systems,
-        thank you for your patience.
+        <span class="note-kicker">Thank you for connecting {{ early_broker.broker_name }}.</span>
+        You're one of the first 10 people to connect it.
         {% endif %}
     </div>
     <button type="button" class="btn-close" aria-label="Dismiss this note"></button>

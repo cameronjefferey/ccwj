@@ -193,8 +193,10 @@ saved card and invoice history.
 
 ## Early-broker thank-you (6 months of Pro free)
 
-The first 10 users of a SnapTrade brokerage we have not modeled yet get
-**6 months of HappyTrader Pro free**. That is a Checkout
+The first 10 users of every SnapTrade brokerage slug (including Schwab,
+Alpaca, Fidelity, Interactive Brokers, and Vanguard; each slug is its
+own cohort) get **6 months of HappyTrader Pro free**. An existing
+`early_broker_cohort` grant is not cleared when a slug passes 10 users. That is a Checkout
 `subscription_data.trial_period_days` of 180, applied only on *this* app's
 Pro Checkout (`app/billing.py` → `_with_early_broker_trial`). It does **not**
 use an account-wide coupon: this Stripe account is shared with EarningsFollower

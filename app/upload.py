@@ -3449,7 +3449,7 @@ def sync_processing():
     ``?connecting=1`` is the post-portal path: the pull is already running
     in the background; copy says so instead of asking them to Sync now.
     """
-    from app.models import get_onboarding_response
+    from app.onboarding_gate import onboarding_quiz_still_pending
 
     expected_minutes = 25
     head_sha = (request.args.get("sha") or "").strip() or None
@@ -3457,23 +3457,24 @@ def sync_processing():
 
     connecting = (request.args.get("connecting") or "").strip() == "1"
     paper = (request.args.get("paper") or "").strip() == "1"
+    # ``?first=1`` used to mean "some account has not finished its first
+    # sync". A second brokerage is always unsynced, so that reopened the
+    # survey. Re-check here so a bookmarked URL cannot do that either.
+    pending_quiz = bool(
+        is_first
+        and not paper
+        and onboarding_quiz_still_pending(current_user.id)
+    )
     if paper:
         done_url = url_for("paper_practice")
-    elif is_first:
+    elif pending_quiz:
         done_url = url_for("get_started", from_sync=1)
     else:
         done_url = url_for("weekly_review", from_sync=1)
 
-    # Only prompt the onboarding survey on the first sync, and only if
-    # the user hasn't already answered. Refreshing the page after submit
-    # therefore won't re-show the form. The poll script will pause its
-    # auto-redirect while the form is being interacted with so a slow
-    # typer doesn't lose their answer to the dbt build finishing.
-    show_onboarding = bool(
-        is_first
-        and not paper
-        and get_onboarding_response(current_user.id) is None
-    )
+    # Refreshing after a saved answer (or a stored skip) hides the form.
+    # The poll script pauses auto-redirect while the form is on screen.
+    show_onboarding = pending_quiz
 
     from app.early_broker import early_broker_notice_for_user
     return render_template(

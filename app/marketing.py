@@ -389,6 +389,21 @@ def submit_onboarding_why_here():
     )
 
     answers: dict[str, object] = {}
+    skipped = (request.form.get("skipped") or "").strip() == "1"
+    if skipped:
+        # A skip is a finished survey. It must not also flip the weekly
+        # email toggle, which is absent from this short post.
+        answers = {"skipped": True}
+        ok = save_onboarding_response(user_id=current_user.id, answers=answers)
+        if not ok:
+            msg = "We couldn't save that just now. Try again in a minute."
+            if wants_json:
+                return {"ok": False, "error": msg}, 500
+            flash(msg, "danger")
+            return redirect(request.referrer or url_for("index"))
+        if wants_json:
+            return {"ok": True}
+        return redirect(request.referrer or url_for("weekly_review"))
 
     # Scalar fields (radios / textareas) and checkbox groups. Every
     # question is optional — a missing key is simply omitted. Multi-selects

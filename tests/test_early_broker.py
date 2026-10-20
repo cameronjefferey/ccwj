@@ -1,4 +1,4 @@
-"""First-N users of a SnapTrade brokerage we haven't modeled yet."""
+"""First 10 users of every SnapTrade brokerage slug."""
 
 from datetime import datetime, timezone
 
@@ -77,16 +77,23 @@ def test_count_users_is_distinct_and_key_scoped():
     assert count_users_for_broker_key("schwab", rows) == 1
 
 
-def test_stamp_skips_modeled_brokers(monkeypatch):
-    called = []
-    monkeypatch.setattr("app.db.fetch_all", lambda *a, **k: called.append("fetch") or [])
-    monkeypatch.setattr("app.db.execute", lambda *a, **k: called.append("exec"))
-    assert maybe_stamp_early_broker_cohort(1, "acc-1", "Charles Schwab") is False
-    assert maybe_stamp_early_broker_cohort(1, "acc-1", "Fidelity") is False
-    assert maybe_stamp_early_broker_cohort(1, "acc-1", "Alpaca") is False
-    assert maybe_stamp_early_broker_cohort(1, "acc-1", "Interactive Brokers") is False
-    assert maybe_stamp_early_broker_cohort(1, "acc-1", "Vanguard") is False
-    assert called == []
+def test_each_broker_slug_has_its_own_first_ten(monkeypatch):
+    """Eleven Schwab users do not spend Fidelity's cap. Past the cap we
+    do not write, so a grant already stored is left alone.
+    """
+    writes = []
+    schwab = [{"user_id": i, "broker_slug": "Charles Schwab"} for i in range(1, 12)]
+    mixed = schwab + [{"user_id": 40, "broker_slug": "Fidelity"}]
+    monkeypatch.setattr("app.db.fetch_all", lambda *a, **k: mixed)
+    monkeypatch.setattr(
+        "app.db.execute",
+        lambda sql, params=None: writes.append((sql, params)),
+    )
+    assert maybe_stamp_early_broker_cohort(11, "acc-schwab", "Schwab") is False
+    assert writes == []
+    assert maybe_stamp_early_broker_cohort(40, "acc-fidelity", "Fidelity") is True
+    assert "FALSE" not in writes[0][0].upper()
+    assert writes[0][1] == (40, "acc-fidelity")
 
 
 def test_stamp_within_cap(monkeypatch):
@@ -116,8 +123,9 @@ def test_stamp_past_cap(monkeypatch):
     assert EARLY_BROKER_USER_CAP == 10
 
 
-def test_backfill_stamps_first_ten_users_per_unmodeled_broker(monkeypatch):
+def test_backfill_stamps_first_ten_of_every_slug_and_keeps_grants(monkeypatch):
     writes = []
+    sqls = []
     t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
     rows = []
     for i in range(1, 15):
@@ -126,9 +134,9 @@ def test_backfill_stamps_first_ten_users_per_unmodeled_broker(monkeypatch):
             "snaptrade_account_id": f"rh-{i}",
             "broker_slug": "Robinhood",
             "created_at": t0.replace(day=min(i, 28)),
-            "early_broker_cohort": False,
+            # Already granted, and past this slug's first 10. Must stay.
+            "early_broker_cohort": i in (1, 14),
         })
-    # Modeled broker must never be stamped.
     rows.append({
         "user_id": 99,
         "snaptrade_account_id": "schwab-99",
@@ -136,16 +144,31 @@ def test_backfill_stamps_first_ten_users_per_unmodeled_broker(monkeypatch):
         "created_at": t0,
         "early_broker_cohort": False,
     })
+    for offset, uid in enumerate(range(100, 111)):
+        rows.append({
+            "user_id": uid,
+            "snaptrade_account_id": f"schwab-{uid}",
+            "broker_slug": "Schwab",
+            "created_at": t0.replace(day=offset + 2),
+            # 12th Schwab user (uid 110) already has a grant.
+            "early_broker_cohort": uid == 110,
+        })
     monkeypatch.setattr("app.db.fetch_all", lambda *a, **k: rows)
     monkeypatch.setattr(
         "app.db.execute",
-        lambda sql, params=None: writes.append(params),
+        lambda sql, params=None: (sqls.append(sql), writes.append(params)),
     )
     n = backfill_early_broker_cohort()
-    assert n == 10
     stamped_users = {p[0] for p in writes}
-    assert stamped_users == set(range(1, 11))
-    assert 99 not in stamped_users
+    # Robinhood 2-10 (1 already granted). Schwab 99 plus 100-108.
+    assert n == 19
+    assert stamped_users == set(range(2, 11)) | {99} | set(range(100, 109))
+    assert 1 not in stamped_users
+    assert 14 not in stamped_users
+    assert 109 not in stamped_users
+    assert 110 not in stamped_users
+    assert sqls
+    assert all("TRUE" in sql and "FALSE" not in sql.upper() for sql in sqls)
 
 
 def test_note_template_renders_promo_and_stays_hidden_for_js():
@@ -163,9 +186,9 @@ def test_note_template_renders_promo_and_stays_hidden_for_js():
             },
         )
     assert "If you subscribe, 6 months of Pro is included before the first charge." in html
-    assert "first handful of users" in html
-    assert "bring in Robinhood" in html
-    assert "Thank you for your patience while we calibrate." in html
+    assert "first 10 people to connect Robinhood" in html
+    assert "calibrate" not in html.lower()
+    assert "handful" not in html.lower()
     assert "EARLYMIRROR" not in html
     assert "Have a CSV" not in html
     assert "SnapTrade" not in html
@@ -191,8 +214,57 @@ def test_note_template_omits_promo_chip_when_unset():
     assert "early Vanguard user" not in html
     assert "6 months of Pro, free." not in html
     assert "If you subscribe, 6 months of Pro is included before the first charge." in html
-    assert "bring in Vanguard" in html
+    assert "first 10 people to connect Vanguard" in html
+    assert "calibrate" not in html.lower()
     assert 'id="ht-early-promo"' not in html
+
+
+def test_notice_names_the_newest_connected_early_broker(monkeypatch):
+    """An older early-cohort brokerage must not stay on the banner after
+    a later one is connected. Names come from each row's stored
+    broker_slug. Fixtures are made up.
+    """
+    monkeypatch.setenv("EARLY_BROKER_TRIAL_DAYS", "180")
+    older = datetime(2026, 3, 2, tzinfo=timezone.utc)
+    newer = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    note = notice_from_accounts([
+        {
+            "broker_slug": "Coinbase",
+            "early_broker_cohort": True,
+            "created_at": older,
+        },
+        {
+            "broker_slug": "Charles Schwab",
+            "early_broker_cohort": False,
+            "created_at": newer,
+        },
+        {
+            "broker_slug": "Empower",
+            "early_broker_cohort": True,
+            "created_at": newer,
+        },
+    ])
+    assert note["broker_key"] == "empower"
+    assert note["broker_name"] == "Empower"
+    assert "Coinbase" not in note["broker_name"]
+    assert "6 months" in note["offer"]
+
+
+def test_empower_and_schwab_both_stamp_under_the_cap(monkeypatch):
+    """Every slug is eligible, including a modeled brokerage and Empower."""
+    assert broker_key("Empower") == "empower"
+    assert display_name("Empower") == "Empower"
+    assert not is_modeled_broker("Empower")
+    assert is_modeled_broker("Charles Schwab")
+    writes = []
+    monkeypatch.setattr("app.db.fetch_all", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "app.db.execute",
+        lambda sql, params=None: writes.append(params),
+    )
+    assert maybe_stamp_early_broker_cohort(4, "acct-empower", "Empower") is True
+    assert maybe_stamp_early_broker_cohort(4, "acct-schwab", "Charles Schwab") is True
+    assert writes == [(4, "acct-empower"), (4, "acct-schwab")]
 
 
 def test_trial_days_default_is_six_months(monkeypatch):
