@@ -515,6 +515,8 @@
 {% endblock %}
 
 {% block content %}
+{% set count_noun = 'trade' if trades_grouped else 'fill' %}
+{% set count_nouns = 'trades' if trades_grouped else 'fills' %}
 
 <div class="review-hero strat-hero" id="fit-hero">
     <div class="ov-bar ov-bar-keep">
@@ -536,7 +538,7 @@
             <div class="ov-big {% if grand_total.total_pnl > 0 %}pos{% elif grand_total.total_pnl < 0 %}neg{% endif %}">{% if grand_total.total_pnl > 0 %}+{% endif %}{{ money(grand_total.total_pnl, 0) }}</div>
         </div>
         <div>
-            <div class="ov-k" title="Total return divided by trades. Open marks are included.">Average per trade</div>
+            <div class="ov-k" title="Total return divided by {{ count_nouns }}. Open marks are included.">Average per {{ count_noun }}</div>
             <div class="ov-pct">{{ money(baseline_expectancy, 2) }}</div>
         </div>
         <div>
@@ -544,12 +546,12 @@
             <div class="ov-big ov-invest">{{ "{:.0%}".format(baseline_win_rate) }}</div>
         </div>
         <div>
-            <div class="ov-k">Trades</div>
+            <div class="ov-k">{{ 'Trades' if trades_grouped else 'Fills' }}</div>
             <div class="ov-pct">{{ grand_total.num_trades | int }}</div>
         </div>
     </div>
     {% endif %}
-    <p class="ov-line">How each strategy has done across {{ dim_label_plural or 'sectors' }}. A spread counts as one trade. Average per trade includes open marks.</p>
+    <p class="ov-line">How each strategy has done across {{ dim_label_plural or 'sectors' }}. {% if trades_grouped %}A spread counts as one trade. Average per trade includes open marks.{% else %}These counts are fills. A spread's legs are counted separately.{% endif %}</p>
 </div>
 <!-- /fit-hero -->
 {% include "_history_window_note.html" %}
@@ -600,7 +602,7 @@
         <label class="lblh">View metric</label>
         <div class="metric-toggle" id="metricToggle">
             <button type="button" data-metric="total_pnl" class="active">Total Return</button>
-            <button type="button" data-metric="expectancy" title="Total return divided by trades, including open marks.">Average per trade</button>
+            <button type="button" data-metric="expectancy" title="Total return divided by {{ count_nouns }}, including open marks.">Average per {{ count_noun }}</button>
             <button type="button" data-metric="win_rate">Win rate</button>{{ term_mark('Win rate') }}
             <button type="button" data-metric="edge">Vs your average</button>
         </div>
@@ -615,7 +617,7 @@
             </div>
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="dimLowN" checked>
-                <label class="form-check-label" for="dimLowN">Dim cells with &lt; 3 trades</label>
+                <label class="form-check-label" for="dimLowN">Dim cells with &lt; 3 {{ count_nouns }}</label>
             </div>
         </div>
     </div>
@@ -728,9 +730,9 @@
                             data-num-losers="{{ c.num_losers | int }}"
                             data-num-symbols="{{ c.num_symbols | int }}"
                             data-positions-url="{{ drill_url }}"
-                            title="{{ strat }} in {{ col }} · {{ c.num_trades | int }} trades · {{ '{:.0%}'.format(c.win_rate) }} win · {{ money(c.expectancy, 2) }} per trade · {{ money(c.total_pnl, 0) }} total · click for details">
+                            title="{{ strat }} in {{ col }} · {{ c.num_trades | int }} {{ count_nouns if c.num_trades != 1 else count_noun }} · {{ '{:.0%}'.format(c.win_rate) }} win · {{ money(c.expectancy, 2) }} per {{ count_noun }} · {{ money(c.total_pnl, 0) }} total · click for details">
                             <span class="cell-pnl"></span>
-                            <span class="cell-meta">{{ c.num_trades | int }} trade{{ 's' if c.num_trades != 1 else '' }}{% if (c.num_winners + c.num_losers) > 0 %} · {{ "{:.0%}".format(c.win_rate) }}{% endif %}</span>
+                            <span class="cell-meta">{{ c.num_trades | int }} {{ count_nouns if c.num_trades != 1 else count_noun }}{% if (c.num_winners + c.num_losers) > 0 %} · {{ "{:.0%}".format(c.win_rate) }}{% endif %}</span>
                         </td>
                     {% elif is_equity_na %}
                         <td class="cell na {% if col in ('Unknown', 'Unclassified', 'Other') %}col-unknown{% endif %}">N/A</td>
@@ -750,7 +752,7 @@
                         {{ money(rt.total_pnl, 0, true) }}
                     </span>
                     <span class="cell-meta">
-                        {{ rt.num_trades | int }} trade{{ 's' if rt.num_trades != 1 else '' }}
+                        {{ rt.num_trades | int }} {{ count_nouns if rt.num_trades != 1 else count_noun }}
                         {% if (rt.num_winners + rt.num_losers) > 0 %}· {{ "{:.0%}".format(rt.win_rate) }}{% endif %}
                     </span>
                 </td>
@@ -774,7 +776,7 @@
                             {{ money(ct.total_pnl, 0, true) }}
                         </span>
                         <span class="cell-meta">
-                            {{ ct.num_trades | int }} trade{{ 's' if ct.num_trades != 1 else '' }}
+                            {{ ct.num_trades | int }} {{ count_nouns if ct.num_trades != 1 else count_noun }}
                             {% if (ct.num_winners + ct.num_losers) > 0 %}· {{ "{:.0%}".format(ct.win_rate) }}{% endif %}
                         </span>
                     </td>
@@ -792,7 +794,7 @@
                         {{ money(grand_total.total_pnl, 0, true) }}
                     </span>
                     <span class="cell-meta">
-                        {{ grand_total.num_trades | int }} trade{{ 's' if grand_total.num_trades != 1 else '' }} · {{ "{:.0%}".format(grand_total.win_rate) }}
+                        {{ grand_total.num_trades | int }} {{ count_nouns if grand_total.num_trades != 1 else count_noun }} · {{ "{:.0%}".format(grand_total.win_rate) }}
                     </span>
                 </td>
                 {% endif %}
@@ -805,7 +807,7 @@
         <span><span class="swatch" style="background: var(--gain);"></span>positive</span>
         <span><span class="swatch" style="background: var(--loss);"></span>negative</span>
         <span class="text-muted">Color intensity scales with magnitude.</span>
-        <span class="text-muted">Faded cells have &lt; 3 trades — too few to call signal.</span>
+        <span class="text-muted">Faded cells have &lt; 3 {{ count_nouns }} — too few to call signal.</span>
         <span class="text-muted">Click a cell to filter Positions.</span>
     </div>
 </div>
@@ -829,7 +831,7 @@
                     <span class="strat-tag">{{ c.strategy }}</span>
                     <span class="text-muted small">in</span>
                     <span class="ind-tag">{{ c[col_field] }}</span>
-                    <span class="meta">{{ c.num_trades | int }} trade{{ 's' if c.num_trades != 1 else '' }} · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }} per trade</span>
+                    <span class="meta">{{ c.num_trades | int }} {{ count_nouns if c.num_trades != 1 else count_noun }} · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }} per {{ count_noun }}</span>
                     <span class="pnl-big pos">{{ money(c.total_pnl, 0, true) }}</span>
                 </div>
                 {% endfor %}
@@ -843,7 +845,7 @@
                     <span class="strat-tag">{{ c.strategy }}</span>
                     <span class="text-muted small">in</span>
                     <span class="ind-tag">{{ c[col_field] }}</span>
-                    <span class="meta">{{ c.num_trades | int }} trade{{ 's' if c.num_trades != 1 else '' }} · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }} per trade</span>
+                    <span class="meta">{{ c.num_trades | int }} {{ count_nouns if c.num_trades != 1 else count_noun }} · {{ "{:.0%}".format(c.win_rate) }} win · {{ money(c.expectancy, 0) }} per {{ count_noun }}</span>
                     <span class="pnl-big neg">{{ money(c.total_pnl, 0) }}</span>
                 </div>
                 {% endfor %}
@@ -926,9 +928,9 @@
         </div>
 
         <div class="panel-stats">
-            <div class="stat"><div class="lbl">Trades</div><div class="val" id="panelTrades">0</div></div>
+            <div class="stat"><div class="lbl">{{ 'Trades' if trades_grouped else 'Fills' }}</div><div class="val" id="panelTrades">0</div></div>
             <div class="stat"><div class="lbl">{{ term('Win rate') }}</div><div class="val" id="panelWinRate">—</div></div>
-            <div class="stat"><div class="lbl">Average per trade</div><div class="val" id="panelExpectancy">$0</div></div>
+            <div class="stat"><div class="lbl">Average per {{ count_noun }}</div><div class="val" id="panelExpectancy">$0</div></div>
             <div class="stat"><div class="lbl">Wins and losses</div><div class="val" id="panelWL">—</div></div>
             <div class="stat"><div class="lbl">{{ term('Realized') }}</div><div class="val" id="panelRealized">$0</div></div>
             <div class="stat"><div class="lbl">{{ term('Unrealized') }}</div><div class="val" id="panelUnrealized">$0</div></div>
@@ -950,6 +952,8 @@
 const CELL_SYMBOLS = {{ cell_symbols_json|safe }};
 const BASELINE_EXPECTANCY = {{ baseline_expectancy|float }};
 const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
+const FIT_COUNT_ONE = {{ count_noun | tojson }};
+const FIT_COUNT_MANY = {{ count_nouns | tojson }};
 
 (function () {
     var table = document.getElementById('fitTable');
@@ -1115,7 +1119,7 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
         pnlEl.classList.toggle('pos', totalPnl >= 0);
         pnlEl.classList.toggle('neg', totalPnl < 0);
         document.getElementById('panelPnlSub').textContent =
-            trades + ' trade' + (trades === 1 ? '' : 's') +
+            trades + ' ' + (trades === 1 ? FIT_COUNT_ONE : FIT_COUNT_MANY) +
             (winners + losers > 0 ? ' · ' + fmtPct(winRate) + ' win rate' : '');
 
         // Edge narrative — only when sample size is reasonable so we don't
@@ -1129,7 +1133,7 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
                     'The average result here is ' +
                     fmtMoney(Math.abs(edgeExp), Math.abs(edgeExp) < 100 ? 2 : 0).replace(/^[+-]/, '') +
                     ' ' + (edgeExp >= 0 ? 'higher' : 'lower') +
-                    ' than your average trade (' +
+                    ' than your average ' + FIT_COUNT_ONE + ' (' +
                     fmtMoney(BASELINE_EXPECTANCY, Math.abs(BASELINE_EXPECTANCY) < 100 ? 2 : 0) + ').'
                 );
             }
@@ -1189,7 +1193,7 @@ const BASELINE_WIN_RATE   = {{ baseline_win_rate|float }};
                         '<span class="sym">' + s.symbol + '</span>' +
                         '<div>' +
                             '<div class="bar"><span class="' + posCls + '" style="width: ' + w + '%;"></span></div>' +
-                            '<div class="meta">' + s.num_trades + ' trade' + (s.num_trades === 1 ? '' : 's') +
+                            '<div class="meta">' + s.num_trades + ' ' + (s.num_trades === 1 ? FIT_COUNT_ONE : FIT_COUNT_MANY) +
                             (wr ? ' · ' + wr : '') + '</div>' +
                         '</div>' +
                         '<span class="pnl ' + posCls + '">' + fmtMoney(s.total_pnl) + '</span>' +

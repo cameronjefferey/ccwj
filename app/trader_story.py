@@ -264,6 +264,20 @@ def _contract_record_fact(record):
     }
 
 
+def _has_option_activity(totals) -> bool:
+    """True when the fingerprint recorded an option, even under a dollar.
+
+    The income and directional headlines need more than $1 before they
+    claim a book. A cheaper contract is still an option, so the stock
+    headline must not say there were none.
+    """
+    keys = (
+        "covered_calls", "puts_sold", "rolls", "long_opens",
+        "contract_wins", "contract_losses", "expired_kept",
+    )
+    return any(int(totals.get(key) or 0) > 0 for key in keys)
+
+
 def _compose_profile(totals, busiest, option_record=None):
     """The profile summary, takeaway-first (READABILITY REGISTER).
 
@@ -303,10 +317,16 @@ def _compose_profile(totals, busiest, option_record=None):
     elif risk > 1:
         headline = ("You're a directional trader first — most of your "
                     "options work buys options outright.")
+    elif _has_option_activity(totals):
+        headline = ("Options are in this record. Premium received and "
+                    "the cost of long options are both under a dollar.")
     else:
         adds = totals.get("adds", 0) + totals.get("stock_opens", 0)
-        headline = (f"You build stock positions incrementally — "
-                    f"{adds} separate buys, no options.")
+        if adds:
+            headline = (f"You build stock positions incrementally — "
+                        f"{adds} separate buy{'s' if adds != 1 else ''}.")
+        else:
+            headline = "This record has no option fills and no stock buys."
 
     facts = []
     if premium > 1:
@@ -383,10 +403,11 @@ def _placed_trades_df(trades_df):
 def _build_eras(trades_df, book=None):
     """One narrative row per calendar year, computed straight from fills.
 
-    ``book`` is the profile's symbol universe (symbols that produced a
-    story). New-symbol counts then add up to the header symbol count.
-    Fills the story engine does not narrate (a journal with no chapters)
-    used to add a symbol the header never counted.
+    ``book`` is the narrated symbol universe. New-symbol counts add up
+    to that book, not to the header. The header is every symbol on
+    Positions, including names with no fills to narrate. Fills the
+    story engine does not narrate (a journal with no chapters) must
+    not add a year-row symbol either.
 
     "Calendar days" is each date once. The header's "trade days" add up
     each symbol's active days, so three names on one session are three

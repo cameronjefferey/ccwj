@@ -33,6 +33,7 @@ from app.models import (
     save_strategy_fit_insight,
     get_user_llm_model,
 )
+from app.money import fmt_money
 from app.routes import (
     _filter_df_by_tenant_ids,
     _scope_keep_kwargs,
@@ -111,6 +112,18 @@ def _build_strategy_fit_brief(client, tenant_ids):
             df[c] = df[c].fillna("Unknown").astype(str)
     from app.sector_labels import apply_sector_labels, is_unclassified
     df = apply_sector_labels(df)
+    # The matrix stamps the same grouped book before it sums. Without
+    # this, the narration's "$/trade" divides by fills while the cells
+    # divide by trades (a spread is one).
+    from app.grouped_trades import fetch_grouped_book, stamp_grouped_counts
+    book_units, _book_fills = fetch_grouped_book(client, tenant_filter, tenant_ids)
+    trades_grouped = bool(book_units)
+    if trades_grouped:
+        df = stamp_grouped_counts(
+            df, book_units, ("tenant_id", "symbol", "strategy"),
+        )
+    count_one = "trade" if trades_grouped else "fill"
+    count_many = "trades" if trades_grouped else "fills"
 
     # Baselines — these are the user's overall numbers. Every claim in
     # the brief should reference these so "edge" is meaningful.
@@ -345,75 +358,93 @@ def _build_strategy_fit_brief(client, tenant_ids):
 
     # Render to a compact text form for the LLM. Keep it dense — token
     # cost matters and we want every fact to anchor a claim.
+    def _dollars(value, places=0):
+        return fmt_money(value, places)
+
     lines = []
+    if trades_grouped:
+        lines.append(
+            "COUNTING: Call every count a trade. A spread counts as one trade. "
+            "A closed $0 is neither a win nor a loss. Average per trade is "
+            "total return divided by trades, and open marks are included."
+        )
+    else:
+        lines.append(
+            "COUNTING: Call every count a fill. Grouping was unavailable, so "
+            "a spread's legs are separate. Do not say a spread counts as one trade."
+        )
     lines.append(
-        f"BASELINE: ${baseline_expectancy:,.2f}/trade · "
+        f"BASELINE: {_dollars(baseline_expectancy, 2)}/{count_one} · "
         f"{baseline_win_rate:.0%} win rate · "
-        f"${total_pnl:,.0f} total over {total_trades} trades "
+        f"{_dollars(total_pnl, 0)} total over {total_trades} {count_many} "
         f"({total_winners}W/{total_losers}L closed)."
     )
     lines.append(f"COVERAGE: {brief['num_strategies']} strategies, {brief['num_sectors']} sectors with data.")
     if brief["unknown_share"] > 0.1:
         lines.append(
-            f"  NOTE: {brief['unknown_share']:.0%} of trades are in symbols without sector metadata yet — "
+            f"  NOTE: {brief['unknown_share']:.0%} of {count_many} are in symbols without sector metadata yet — "
             f"those sit in an 'Unknown' bucket and aren't included in sector observations."
         )
 
     if sweet_spots:
-        lines.append("\nSWEET SPOTS (positive expectancy, ≥5 trades, ≥45% win rate):")
+        lines.append(f"\nSWEET SPOTS (positive expectancy, ≥5 {count_many}, ≥45% win rate):")
         for s in sweet_spots:
             edge_x = (s["expectancy"] / baseline_expectancy) if baseline_expectancy > 0 else None
+            n = int(s["num_trades"])
             lines.append(
-                f"- {s['strategy']} × {s['sector']}: ${s['expectancy']:,.2f}/trade "
-                f"vs ${baseline_expectancy:,.2f}/trade baseline"
+                f"- {s['strategy']} × {s['sector']}: {_dollars(s['expectancy'], 2)}/{count_one} "
+                f"vs {_dollars(baseline_expectancy, 2)}/{count_one} baseline"
                 f"{f' ({edge_x:.1f}× edge)' if edge_x else ''}, "
                 f"{s['win_rate']:.0%} win rate vs {baseline_win_rate:.0%} baseline. "
-                f"${s['total_pnl']:,.0f} total over {int(s['num_trades'])} trades, "
+                f"{_dollars(s['total_pnl'], 0)} total over {n} {count_one if n == 1 else count_many}, "
                 f"{int(s['num_symbols'])} symbol(s)."
             )
             if s.get("top_symbols"):
                 tops = ", ".join(
-                    f"{t['symbol']} (${t['total_pnl']:,.0f})" for t in s["top_symbols"]
+                    f"{t['symbol']} ({_dollars(t['total_pnl'], 0)})" for t in s["top_symbols"]
                 )
                 lines.append(f"  Top symbols: {tops}.")
 
     if soft_spots:
-        lines.append("\nSOFT SPOTS (negative expectancy, ≥5 trades):")
+        lines.append(f"\nSOFT SPOTS (negative expectancy, ≥5 {count_many}):")
         for s in soft_spots:
+            n = int(s["num_trades"])
             lines.append(
-                f"- {s['strategy']} × {s['sector']}: ${s['expectancy']:,.2f}/trade, "
+                f"- {s['strategy']} × {s['sector']}: {_dollars(s['expectancy'], 2)}/{count_one}, "
                 f"{s['win_rate']:.0%} win rate. "
-                f"${s['total_pnl']:,.0f} total over {int(s['num_trades'])} trades."
+                f"{_dollars(s['total_pnl'], 0)} total over {n} {count_one if n == 1 else count_many}."
             )
             if s.get("top_symbols"):
                 worst = ", ".join(
-                    f"{t['symbol']} (${t['total_pnl']:,.0f})" for t in s["top_symbols"]
+                    f"{t['symbol']} ({_dollars(t['total_pnl'], 0)})" for t in s["top_symbols"]
                 )
                 lines.append(f"  Biggest contributors: {worst}.")
 
     if overweight:
-        lines.append("\nSECTORS WHERE YOU PUNCH ABOVE YOUR WEIGHT (positive P&L, share of P&L > share of trades):")
+        lines.append(f"\nSECTORS WHERE YOU PUNCH ABOVE YOUR WEIGHT (positive P&L, share of P&L > share of {count_many}):")
         for r in overweight:
+            n = int(r["num_trades"])
             lines.append(
-                f"- {r['sector']}: {r['pct_trades']:.0%} of trades but {r['pct_pnl']:.0%} of P&L "
-                f"({r['punch_ratio']:.1f}× ratio). ${r['total_pnl']:,.0f} over {int(r['num_trades'])} trades."
+                f"- {r['sector']}: {r['pct_trades']:.0%} of {count_many} but {r['pct_pnl']:.0%} of P&L "
+                f"({r['punch_ratio']:.1f}× ratio). {_dollars(r['total_pnl'], 0)} over {n} {count_one if n == 1 else count_many}."
             )
             if r.get("top_symbols"):
                 tops = ", ".join(
-                    f"{t['symbol']} (${t['total_pnl']:,.0f})" for t in r["top_symbols"]
+                    f"{t['symbol']} ({_dollars(t['total_pnl'], 0)})" for t in r["top_symbols"]
                 )
                 lines.append(f"  Top symbols in {r['sector']}: {tops}.")
 
     if underweight:
         lines.append("\nSECTORS DRAGGING YOUR PERFORMANCE (negative P&L):")
         for r in underweight:
+            n = int(r["num_trades"])
             lines.append(
-                f"- {r['sector']}: ${r['total_pnl']:,.0f} over {int(r['num_trades'])} trades "
-                f"({r['pct_trades']:.0%} of total trade volume)."
+                f"- {r['sector']}: {_dollars(r['total_pnl'], 0)} over {n} {count_one if n == 1 else count_many} "
+                f"({r['pct_trades']:.0%} of total {count_one} volume)."
             )
             if r.get("top_symbols"):
                 worst = ", ".join(
-                    f"{t['symbol']} (${t['total_pnl']:,.0f})" for t in r["top_symbols"]
+                    f"{t['symbol']} ({_dollars(t['total_pnl'], 0)})" for t in r["top_symbols"]
                 )
                 lines.append(f"  Biggest losers in {r['sector']}: {worst}.")
 
@@ -422,7 +453,7 @@ def _build_strategy_fit_brief(client, tenant_ids):
     # interesting; we just expose it.
     multi_sector = strat_agg[strat_agg["sectors_with_trades"] >= 3].head(3)
     if not multi_sector.empty:
-        lines.append("\nSTRATEGIES THAT WORK ACROSS SECTORS (≥3 sectors with trades):")
+        lines.append(f"\nSTRATEGIES THAT WORK ACROSS SECTORS (≥3 sectors with {count_many}):")
         for _, r in multi_sector.iterrows():
             # Top contributing symbols across all sectors for this strategy.
             strat_syms = (
@@ -435,12 +466,13 @@ def _build_strategy_fit_brief(client, tenant_ids):
             tops_str = ""
             if not top.empty:
                 tops_str = " Top symbols: " + ", ".join(
-                    f"{row['symbol']} (${row['total_pnl']:,.0f})"
+                    f"{row['symbol']} ({_dollars(row['total_pnl'], 0)})"
                     for _, row in top.iterrows()
                 ) + "."
+            n = int(r["num_trades"])
             lines.append(
                 f"- {r['strategy']}: profitable in {int(r['profitable_sectors'])}/{int(r['sectors_with_trades'])} sectors "
-                f"({r['win_rate']:.0%} WR, ${r['expectancy']:,.2f}/trade across {int(r['num_trades'])} trades).{tops_str}"
+                f"({r['win_rate']:.0%} WR, {_dollars(r['expectancy'], 2)}/{count_one} across {n} {count_one if n == 1 else count_many}).{tops_str}"
             )
 
     brief_text = "\n".join(lines)
@@ -464,7 +496,7 @@ Voice and structure:
   number from the brief (P&L, win rate, expectancy, edge, or trade count).
 - Frame observations as "You..." in second person.
 - Where edge is meaningful, contrast with the user's baseline
-  (e.g. "vs your baseline of $X/trade").
+  (e.g. "vs your baseline of $X per trade" — use the COUNTING line's word).
 - If multiple cells have small samples, acknowledge it once briefly
   ("These are still small samples — keep watching.").
 
@@ -490,6 +522,7 @@ Hard rules — do not violate:
 - Do NOT speculate about emotional state ("revenge", "tilt", "FOMO").
 - Do NOT add severity labels ("ALERT", "WARNING", "HIGH").
 - Do NOT invent numbers or symbols. If it isn't in the brief, don't claim it.
+- Use the COUNTING line's word. When it says fill, do not call the count a trade.
 - Do NOT pad with generic trading advice — only narrate what's IN the brief.
 
 Format: markdown. Use "## Summary" once at the top, then "## Observations"

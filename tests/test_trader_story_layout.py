@@ -46,13 +46,15 @@ def test_collected_means_premium_received():
 
 
 def test_phone_rows_stack_on_word_boundaries():
-    assert 'data-label="Positions"' in PAGE
+    assert 'data-label="Symbols"' in PAGE
+    assert 'data-label="Positions"' not in PAGE
     assert 'data-label="Ahead"' in PAGE
     assert ">Ahead<" in PAGE
     assert "positions still open" in PAGE
     assert "These figures are the paper account." in PAGE
     assert 'data-label="Total return"' in PAGE
-    assert 'data-label="Best position"' in PAGE
+    assert 'data-label="Best symbol"' in PAGE
+    assert 'data-label="Best position"' not in PAGE
     assert "content: attr(data-label)" not in PAGE
     assert "ts-style-phone-meta" in PAGE
     assert "white-space: nowrap" in PAGE

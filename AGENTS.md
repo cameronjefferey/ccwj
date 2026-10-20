@@ -2011,11 +2011,13 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   scale so a small result stays small),
   (Top performer / Largest loss / Most active / Longest held / Most
   re-entered — each linking to the position page whose history proves
-  the claim), a per-style scoreboard (income/directional/stock ×
-  positions, profitable count, P&L), and YEAR-BY-YEAR rows computed
+  the claim),   a per-style scoreboard (income/directional/stock ×
+  symbols, profitable count, P&L), and YEAR-BY-YEAR rows computed
   straight from fills. The header's trade days sum each symbol's active
   days; year rows say calendar days (each date once) and new symbols
-  (first year in the profile), which add up to the header symbol count.
+  (first year in the narrated history). Those new symbols add up to
+  the narrated book. The header symbol count is every symbol on
+  Positions, including names with no fills to narrate.
   Profile "Kept at expiry" reuses Execution Review's
   `kept_at_expiry` realized-P&L total when that card is on the page.
   CONSISTENCY INVARIANT: yearly premium sums STO

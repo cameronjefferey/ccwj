@@ -57,3 +57,55 @@ def test_generation_preserves_tenant_and_group_scope(monkeypatch):
     assert query["tenants"] == ["snaptrade:aaa"]
     assert query["groups"] == ["7"]
     assert query["dim"] == ["dte"]
+
+
+def test_fit_brief_counts_a_spread_as_one_trade(monkeypatch):
+    """The write-up must use the same trade the matrix counts."""
+    import pandas as pd
+
+    from app.strategy_fit_insights import _build_strategy_fit_brief
+
+    summary = pd.DataFrame([
+        {
+            "tenant_id": "snaptrade:one",
+            "account": "Main",
+            "symbol": "SPY",
+            "strategy": "Put Credit Spread",
+            "sector": "Index",
+            "subsector": "Index",
+            "total_pnl": 80.0,
+            "realized_pnl": 80.0,
+            "unrealized_pnl": 0.0,
+            "num_individual_trades": 2,
+            "num_winners": 2,
+            "num_losers": 0,
+        },
+    ])
+    units = [{
+        "tenant_id": "snaptrade:one",
+        "symbol": "SPY",
+        "strategy": "Put Credit Spread",
+        "sector": "Index",
+        "counts_as_trade": True,
+        "num_winners": 1,
+        "num_losers": 0,
+    }]
+
+    monkeypatch.setattr(
+        "app.query_cache._to_dataframe_fast", lambda _q: summary.copy(),
+    )
+    monkeypatch.setattr(
+        "app.grouped_trades.fetch_grouped_book",
+        lambda *_a, **_k: (units, []),
+    )
+    brief, payload = _build_strategy_fit_brief(
+        type("C", (), {"query": lambda *a, **k: None})(),
+        ["snaptrade:one"],
+    )
+    assert "1 trade" in brief
+    assert "2 trades" not in brief
+    assert "2 fills" not in brief
+    assert "A spread counts as one trade" in brief
+    assert payload["baseline"]["total_trades"] == 1
+    assert payload["baseline"]["winners"] == 1
+    assert "+$-" not in brief

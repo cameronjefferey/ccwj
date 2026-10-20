@@ -9,6 +9,8 @@ from flask import render_template, redirect, request, url_for
 from flask_login import current_user, login_required
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.money import fmt_money
+from app.outcome_units import SPREAD_STRATEGIES
 from app.routes import (
     _tenants_for_scope,
     _tenant_sql_filter,
@@ -32,7 +34,13 @@ PROFILE_QUERY = """
         SUM(num_losers) AS total_losers,
         MIN(first_trade_date) AS first_trade,
         MAX(last_trade_date) AS last_trade,
-        ROUND(AVG(avg_days_in_trade), 1) AS avg_holding_days
+        -- A one-fill name must not weigh the same as a fifty-fill name.
+        ROUND(SAFE_DIVIDE(
+            SUM(IF(avg_days_in_trade IS NULL, 0,
+                   avg_days_in_trade * GREATEST(num_individual_trades, 0))),
+            NULLIF(SUM(IF(avg_days_in_trade IS NULL, 0,
+                          GREATEST(num_individual_trades, 0))), 0)
+        ), 1) AS avg_holding_days
     FROM `ccwj-dbt.analytics.positions_summary`
     {where}
 """
@@ -45,7 +53,12 @@ STRATEGY_QUERY = """
         SUM(num_losers) AS losers,
         COUNT(DISTINCT symbol) AS num_symbols,
         SUM(num_individual_trades) AS total_trades,
-        ROUND(AVG(avg_days_in_trade), 1) AS avg_days
+        ROUND(SAFE_DIVIDE(
+            SUM(IF(avg_days_in_trade IS NULL, 0,
+                   avg_days_in_trade * GREATEST(num_individual_trades, 0))),
+            NULLIF(SUM(IF(avg_days_in_trade IS NULL, 0,
+                          GREATEST(num_individual_trades, 0))), 0)
+        ), 1) AS avg_days
     FROM `ccwj-dbt.analytics.positions_summary`
     {where}
     GROUP BY strategy
@@ -69,22 +82,84 @@ SYMBOL_QUERY = """
     ORDER BY total_return DESC
 """
 
+def _spread_list_sql():
+    """Same spread labels as positions_summary outcome units."""
+    return ", ".join(f"'{name}'" for name in sorted(SPREAD_STRATEGIES))
+
+
+# One row per closed result. A same-day spread is one unit, matching
+# positions_summary, so the average win is not a single leg of a spread
+# next to a grouped win rate.
 WIN_LOSS_QUERY = """
+    WITH keyed AS (
+        SELECT
+            tenant_id,
+            account,
+            user_id,
+            symbol,
+            strategy,
+            status,
+            total_pnl,
+            CASE
+                WHEN strategy IN ({spread_list})
+                THEN CONCAT(
+                    COALESCE(CAST(open_date AS STRING), ''),
+                    '|',
+                    COALESCE(CAST(option_expiry AS STRING), '')
+                )
+                ELSE COALESCE(trade_symbol, '')
+            END AS unit_key
+        FROM `ccwj-dbt.analytics.int_strategy_classification`
+        {where}
+    ),
+    units AS (
+        SELECT
+            unit_key,
+            LOGICAL_AND(status = 'Closed') AS unit_closed,
+            SUM(total_pnl) AS unit_pnl
+        FROM keyed
+        GROUP BY unit_key, tenant_id, account, user_id, symbol, strategy
+    )
     SELECT
-        AVG(CASE WHEN is_winner AND status = 'Closed' THEN total_pnl END) AS avg_win,
-        AVG(CASE WHEN NOT is_winner AND status = 'Closed' THEN total_pnl END) AS avg_loss
-    FROM `ccwj-dbt.analytics.int_strategy_classification`
-    {where}
+        AVG(IF(unit_closed AND ROUND(unit_pnl, 2) > 0, unit_pnl, NULL)) AS avg_win,
+        AVG(IF(unit_closed AND ROUND(unit_pnl, 2) < 0, unit_pnl, NULL)) AS avg_loss,
+        SUM(IF(unit_closed AND ROUND(unit_pnl, 2) > 0, unit_pnl, 0)) AS gross_wins,
+        SUM(IF(unit_closed AND ROUND(unit_pnl, 2) < 0, unit_pnl, 0)) AS gross_losses
+    FROM units
 """
 
 BUSIEST_MONTH_QUERY = """
+    WITH keyed AS (
+        SELECT
+            open_date,
+            tenant_id,
+            account,
+            user_id,
+            symbol,
+            strategy,
+            CASE
+                WHEN strategy IN ({spread_list})
+                THEN CONCAT(
+                    COALESCE(CAST(open_date AS STRING), ''),
+                    '|',
+                    COALESCE(CAST(option_expiry AS STRING), '')
+                )
+                ELSE COALESCE(trade_symbol, '')
+            END AS unit_key
+        FROM `ccwj-dbt.analytics.int_strategy_classification`
+        WHERE open_date IS NOT NULL {tenant_filter}
+    ),
+    units AS (
+        SELECT MIN(open_date) AS open_date
+        FROM keyed
+        GROUP BY unit_key, tenant_id, account, user_id, symbol, strategy
+    )
     SELECT
         -- Single %: this string goes through str.format() (which ignores %),
         -- NOT %-formatting. %% here would render a literal "%Y-%m" on the page.
         FORMAT_DATE('%B %Y', open_date) AS month,
         COUNT(*) AS trades_opened
-    FROM `ccwj-dbt.analytics.int_strategy_classification`
-    WHERE open_date IS NOT NULL {tenant_filter}
+    FROM units
     GROUP BY 1
     ORDER BY trades_opened DESC
     LIMIT 1
@@ -119,8 +194,12 @@ def _build_profile(client, where, tenant_and):
         "fl_profile": PROFILE_QUERY.format(where=where),
         "fl_strategies": STRATEGY_QUERY.format(where=where),
         "fl_symbols": SYMBOL_QUERY.format(where=where),
-        "fl_win_loss": WIN_LOSS_QUERY.format(where=where),
-        "fl_busiest_month": BUSIEST_MONTH_QUERY.format(tenant_filter=tenant_and),
+        "fl_win_loss": WIN_LOSS_QUERY.format(
+            where=where, spread_list=_spread_list_sql(),
+        ),
+        "fl_busiest_month": BUSIEST_MONTH_QUERY.format(
+            tenant_filter=tenant_and, spread_list=_spread_list_sql(),
+        ),
     })
 
     # Overall stats
@@ -170,6 +249,8 @@ def _build_profile(client, where, tenant_and):
                 "strategy": sr["strategy"],
                 "total_return": float(sr["total_return"]),
                 "win_rate": float(sr["winners"]) / closed if closed else 0,
+                "winners": int(sr["winners"]),
+                "losers": int(sr["losers"]),
                 "num_symbols": int(sr["num_symbols"]),
                 "total_trades": int(sr["total_trades"]),
                 "avg_days": float(sr["avg_days"]),
@@ -214,16 +295,24 @@ def _build_profile(client, where, tenant_and):
     if not wl_df.empty:
         avg_win = _safe_float(wl_df.iloc[0].get("avg_win"))
         avg_loss = _safe_float(wl_df.iloc[0].get("avg_loss"))
+        gross_wins = _safe_float(wl_df.iloc[0].get("gross_wins"))
+        gross_losses = _safe_float(wl_df.iloc[0].get("gross_losses"))
         profile["avg_win"] = avg_win
         profile["avg_loss"] = avg_loss
-        # Profit factor: do your wins outweigh your losses?
-        if avg_loss != 0 and avg_win != 0:
-            profile["profit_factor"] = abs(avg_win / avg_loss)
+        profile["gross_wins"] = gross_wins
+        profile["gross_losses"] = gross_losses
+        # Profit factor is the sum of wins divided by the sum of losses.
+        # The ratio of the two averages is a different number whenever
+        # the win count and the loss count differ.
+        if gross_losses < 0 and gross_wins > 0:
+            profile["profit_factor"] = gross_wins / abs(gross_losses)
         else:
             profile["profit_factor"] = None
     else:
         profile["avg_win"] = 0
         profile["avg_loss"] = 0
+        profile["gross_wins"] = 0
+        profile["gross_losses"] = 0
         profile["profit_factor"] = None
 
     # Busiest month
@@ -244,105 +333,96 @@ def _build_profile(client, where, tenant_and):
 
 
 def _pick_key_insight(p):
-    """Pick the single most interesting insight from the profile."""
+    """Pick the single most interesting fact from the profile.
+
+    Evidence only. The ratio of average win to average loss is not the
+    profit factor, and this page does not name a score that was removed.
+    """
     insights = []
+    wr = p.get("win_rate") or 0
+    pf = p.get("profit_factor")
+    avg_win = abs(p.get("avg_win") or 0)
+    avg_loss = abs(p.get("avg_loss") or 0)
+    gross_wins = p.get("gross_wins") or 0
+    gross_losses = abs(p.get("gross_losses") or 0)
 
-    # Win/loss asymmetry
-    if p.get("profit_factor") is not None and p["win_rate"] > 0:
-        pf = p["profit_factor"]
-        wr = p["win_rate"]
-        if pf < 1.0 and wr > 0.5:
-            insights.append({
-                "priority": 10,
-                "title": "Your wins are smaller than your losses",
-                "body": (
-                    f"You win {wr:.0%} of the time — that's solid. But your average win "
-                    f"(${abs(p['avg_win']):,.0f}) is smaller than your average loss "
-                    f"(${abs(p['avg_loss']):,.0f}). That means a single bad trade can erase "
-                    f"multiple winners. This is the most common pattern in options trading "
-                    f"— and the most important one to watch."
-                ),
-                "action": "Look at your biggest loss this month. Was it a thesis you held too long, or a stop you didn't set?",
-            })
-        elif pf > 2.0:
-            insights.append({
-                "priority": 5,
-                "title": "Your edge is real",
-                "body": (
-                    f"Your average win (${abs(p['avg_win']):,.0f}) is {pf:.1f}x your average "
-                    f"loss (${abs(p['avg_loss']):,.0f}). That's a strong profit factor. "
-                    f"The question isn't whether your strategy works — it's whether you can "
-                    f"stay disciplined when it doesn't."
-                ),
-                "action": "The Mirror Score is designed to track exactly this. Check it weekly.",
-            })
+    if pf is not None and wr > 0.5 and pf < 1.0:
+        insights.append({
+            "priority": 10,
+            "title": "Losses add up to more than wins",
+            "body": (
+                f"Closed results finished ahead {wr:.0%} of the time. "
+                f"The average win is {fmt_money(avg_win, 0)} and the average loss is "
+                f"{fmt_money(avg_loss, 0)}. Added together, wins are "
+                f"{fmt_money(gross_wins, 0)} and losses are {fmt_money(gross_losses, 0)}."
+            ),
+            "action": "Each closed result is on Positions.",
+        })
+    elif pf is not None and pf > 2.0:
+        insights.append({
+            "priority": 5,
+            "title": "Wins add up to more than losses",
+            "body": (
+                f"Added together, wins are {fmt_money(gross_wins, 0)} and losses are "
+                f"{fmt_money(gross_losses, 0)}. Wins are {pf:.1f} times losses. "
+                f"The average win is {fmt_money(avg_win, 0)} and the average loss is "
+                f"{fmt_money(avg_loss, 0)}."
+            ),
+            "action": "The closed results are on Positions.",
+        })
 
-    # Concentration risk
     if p.get("top3_concentration", 0) > 70 and p.get("num_symbols", 0) > 5:
         syms = ", ".join(p.get("top3_symbols", [])[:3])
         insights.append({
             "priority": 8,
-            "title": f"You're concentrated in {syms}",
+            "title": f"{syms} carry most of the absolute results",
             "body": (
-                f"Your top 3 symbols account for {p['top3_concentration']:.0f}% of your total returns. "
-                f"That's a lot of exposure to a small number of names. If one of them moves against you "
-                f"significantly, it affects your whole portfolio."
+                f"Those symbols are {p['top3_concentration']:.0f}% of the absolute results. "
+                f"A large gain and a large loss both count."
             ),
-            "action": "Ask yourself: if your biggest position dropped 20% tomorrow, would you be okay?",
+            "action": "Those symbols open from Positions.",
         })
 
-    # Short holding period + high frequency
     if p.get("avg_holding_days", 0) < 10 and p.get("total_trades", 0) > 50:
         insights.append({
             "priority": 7,
-            "title": "You trade frequently with short holds",
+            "title": "Holding periods are short",
             "body": (
-                f"Your average holding period is {p['avg_holding_days']:.0f} days across "
-                f"{p['total_trades']} trades. Fast turnover can work, but it also means more "
-                f"decisions, more opportunities for emotion to creep in, and more friction costs."
+                f"The average hold, weighted by fills, is {p['avg_holding_days']:.0f} days "
+                f"across {p['total_trades']} fills."
             ),
-            "action": "Track how you feel before your next trade. If you're not calm, wait.",
+            "action": "Position Detail shows how long each one was open.",
         })
 
-    # Low win rate but still profitable
-    if p.get("win_rate", 0) < 0.5 and p.get("total_return", 0) > 0:
+    if wr < 0.5 and p.get("total_return", 0) > 0 and (p.get("total_winners", 0) + p.get("total_losers", 0)) > 0:
         insights.append({
             "priority": 6,
-            "title": "You're profitable despite losing more often than winning",
+            "title": "Fewer than half of closed results finished ahead",
             "body": (
-                f"Your win rate is {p['win_rate']:.0%}, but your total return is "
-                f"${p['total_return']:,.0f}. That means when you win, you win big. "
-                f"This is a valid approach — but it requires patience and confidence in "
-                f"your thesis during losing streaks."
+                f"The win rate is {wr:.0%}, and total return is "
+                f"{fmt_money(p.get('total_return') or 0, 0)}."
             ),
-            "action": "Review your biggest winners. What did they have in common?",
+            "action": "The largest results are on Positions.",
         })
 
-    # Only one strategy
     if p.get("num_strategies", 0) == 1 and p.get("strategies"):
         strat = p["strategies"][0]["strategy"]
         insights.append({
             "priority": 4,
-            "title": f"You're all-in on {strat}",
-            "body": (
-                f"Every position uses {strat}. That's focus — which is good. But it also means "
-                f"you're exposed to environments where {strat} underperforms. Understanding "
-                f"when your strategy works best is as important as the strategy itself."
-            ),
-            "action": "Think about what market conditions would make this strategy struggle.",
+            "title": f"Every position uses {strat}",
+            "body": f"{strat} is the only strategy label in this record.",
+            "action": "Strategies shows that label across the book.",
         })
 
-    # Default insight
     if not insights:
         insights.append({
             "priority": 1,
-            "title": "You've been trading — now start reflecting",
+            "title": "The record is in",
             "body": (
-                f"You have {p.get('total_trades', 0)} trades across "
-                f"{p.get('num_symbols', 0)} symbols. The data is here. "
-                f"The question is: what patterns are hiding in it?"
+                f"{p.get('total_trades', 0)} fills across "
+                f"{p.get('num_symbols', 0)} symbols."
             ),
-            "action": "Check Overview for patterns in your most recent trades.",
+            "action": "Overview shows the latest session. Positions shows the whole book.",
         })
 
     return max(insights, key=lambda i: i["priority"])
