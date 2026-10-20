@@ -501,6 +501,7 @@ def test_fidelity_holdings_unavailable_and_a_real_stall_stay_distinct():
     }
     att = snap._connection_attention(real, today=date(2026, 6, 19))
     assert att is not None
+    assert sync_status_label(real) == "Reconnect needed"
     waiting = {
         "account_name": ACCOUNT,
         "broker_slug": "fidelity",
