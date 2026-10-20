@@ -139,45 +139,46 @@
                 Four short steps while we crunch your data. Skip anything.
             </p>
 
-            <div class="ob-question">
+            <div class="ob-question" data-multi="1">
                 <span class="ob-q-label">What brought you to HappyTrader today?</span>
+                <p class="ob-q-help">Pick any that apply.</p>
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="why_here"
+                    <input class="form-check-input" type="checkbox" name="why_here[]"
                            id="why_lose" value="lose_money_options">
                     <label class="form-check-label" for="why_lose">
                         I keep losing on options and want to know why
                     </label>
                 </div>
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="why_here"
+                    <input class="form-check-input" type="checkbox" name="why_here[]"
                            id="why_patterns" value="understand_patterns">
                     <label class="form-check-label" for="why_patterns">
                         I want to understand my own trading patterns
                     </label>
                 </div>
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="why_here"
+                    <input class="form-check-input" type="checkbox" name="why_here[]"
                            id="why_record" value="better_record">
                     <label class="form-check-label" for="why_record">
                         I want a better record of my trades than my broker gives me
                     </label>
                 </div>
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="why_here"
+                    <input class="form-check-input" type="checkbox" name="why_here[]"
                            id="why_discipline" value="more_disciplined">
                     <label class="form-check-label" for="why_discipline">
                         I want to be more disciplined
                     </label>
                 </div>
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="why_here"
+                    <input class="form-check-input" type="checkbox" name="why_here[]"
                            id="why_looking" value="just_looking">
                     <label class="form-check-label" for="why_looking">
                         Just looking around for now
                     </label>
                 </div>
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="why_here"
+                    <input class="form-check-input" type="checkbox" name="why_here[]"
                            id="why_other" value="other"
                            data-reveal="why_here_other_wrap">
                     <label class="form-check-label" for="why_other">Something else</label>
@@ -220,42 +221,46 @@
                 Quick context so we can show the right cuts of your data first.
             </p>
 
-            <div class="ob-question">
+            <div class="ob-question" data-multi="1">
                 <span class="ob-q-label">How long have you been actively trading?</span>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_lt1" value="under_1y"><label class="form-check-label" for="ty_lt1">Less than 1 year</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_1_3" value="1_to_3y"><label class="form-check-label" for="ty_1_3">1–3 years</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_3_5" value="3_to_5y"><label class="form-check-label" for="ty_3_5">3–5 years</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_5_10" value="5_to_10y"><label class="form-check-label" for="ty_5_10">5–10 years</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trading_years" id="ty_10p" value="over_10y"><label class="form-check-label" for="ty_10p">10+ years</label></div>
+                <p class="ob-q-help">Pick any that apply.</p>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trading_years[]" id="ty_lt1" value="under_1y"><label class="form-check-label" for="ty_lt1">Less than 1 year</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trading_years[]" id="ty_1_3" value="1_to_3y"><label class="form-check-label" for="ty_1_3">1–3 years</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trading_years[]" id="ty_3_5" value="3_to_5y"><label class="form-check-label" for="ty_3_5">3–5 years</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trading_years[]" id="ty_5_10" value="5_to_10y"><label class="form-check-label" for="ty_5_10">5–10 years</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trading_years[]" id="ty_10p" value="over_10y"><label class="form-check-label" for="ty_10p">10+ years</label></div>
             </div>
 
-            <div class="ob-question">
+            <div class="ob-question" data-multi="1">
                 <span class="ob-q-label">Which best describes your primary style?</span>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_buyhold" value="buy_and_hold"><label class="form-check-label" for="ps_buyhold">Buy &amp; hold stock</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_cc" value="covered_calls"><label class="form-check-label" for="ps_cc">Covered calls</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_csp" value="cash_secured_puts"><label class="form-check-label" for="ps_csp">Cash-secured puts / wheel</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_spreads" value="vertical_spreads"><label class="form-check-label" for="ps_spreads">Vertical spreads</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_iron" value="iron_condors"><label class="form-check-label" for="ps_iron">Iron condors / strangles</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_swing" value="swing_trading"><label class="form-check-label" for="ps_swing">Swing trading</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_day" value="day_trading"><label class="form-check-label" for="ps_day">Day trading</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="primary_style" id="ps_mixed" value="mixed"><label class="form-check-label" for="ps_mixed">A bit of everything</label></div>
+                <p class="ob-q-help">Pick any that apply.</p>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_buyhold" value="buy_and_hold"><label class="form-check-label" for="ps_buyhold">Buy &amp; hold stock</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_cc" value="covered_calls"><label class="form-check-label" for="ps_cc">Covered calls</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_csp" value="cash_secured_puts"><label class="form-check-label" for="ps_csp">Cash-secured puts / wheel</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_spreads" value="vertical_spreads"><label class="form-check-label" for="ps_spreads">Vertical spreads</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_iron" value="iron_condors"><label class="form-check-label" for="ps_iron">Iron condors / strangles</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_swing" value="swing_trading"><label class="form-check-label" for="ps_swing">Swing trading</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_day" value="day_trading"><label class="form-check-label" for="ps_day">Day trading</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="primary_style[]" id="ps_mixed" value="mixed"><label class="form-check-label" for="ps_mixed">A bit of everything</label></div>
             </div>
 
-            <div class="ob-question">
+            <div class="ob-question" data-multi="1">
                 <span class="ob-q-label">How often do you place trades?</span>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_daily" value="daily"><label class="form-check-label" for="tf_daily">Daily</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_few" value="few_per_week"><label class="form-check-label" for="tf_few">A few times per week</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_weekly" value="weekly"><label class="form-check-label" for="tf_weekly">About once a week</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_monthly" value="monthly"><label class="form-check-label" for="tf_monthly">A few times a month</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="trade_frequency" id="tf_opp" value="opportunistic"><label class="form-check-label" for="tf_opp">Only when I see something I like</label></div>
+                <p class="ob-q-help">Pick any that apply.</p>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trade_frequency[]" id="tf_daily" value="daily"><label class="form-check-label" for="tf_daily">Daily</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trade_frequency[]" id="tf_few" value="few_per_week"><label class="form-check-label" for="tf_few">A few times per week</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trade_frequency[]" id="tf_weekly" value="weekly"><label class="form-check-label" for="tf_weekly">About once a week</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trade_frequency[]" id="tf_monthly" value="monthly"><label class="form-check-label" for="tf_monthly">A few times a month</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="trade_frequency[]" id="tf_opp" value="opportunistic"><label class="form-check-label" for="tf_opp">Only when I see something I like</label></div>
             </div>
 
-            <div class="ob-question">
+            <div class="ob-question" data-multi="1">
                 <span class="ob-q-label">How many positions are you usually holding at once?</span>
-                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_1_5" value="1_to_5"><label class="form-check-label" for="pc_1_5">1–5</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_6_15" value="6_to_15"><label class="form-check-label" for="pc_6_15">6–15</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_16_30" value="16_to_30"><label class="form-check-label" for="pc_16_30">16–30</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="position_count" id="pc_30p" value="over_30"><label class="form-check-label" for="pc_30p">More than 30</label></div>
+                <p class="ob-q-help">Pick any that apply.</p>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="position_count[]" id="pc_1_5" value="1_to_5"><label class="form-check-label" for="pc_1_5">1–5</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="position_count[]" id="pc_6_15" value="6_to_15"><label class="form-check-label" for="pc_6_15">6–15</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="position_count[]" id="pc_16_30" value="16_to_30"><label class="form-check-label" for="pc_16_30">16–30</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="position_count[]" id="pc_30p" value="over_30"><label class="form-check-label" for="pc_30p">More than 30</label></div>
             </div>
         </section>
 
@@ -266,35 +271,36 @@
                 The honest stuff. We'll compare these to what your trades actually show.
             </p>
 
-            <div class="ob-question">
+            <div class="ob-question" data-multi="1">
                 <span class="ob-q-label">What do you think you do best as a trader?</span>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_entries" value="entries"><label class="form-check-label" for="ba_entries">Picking entries</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_sizing" value="sizing"><label class="form-check-label" for="ba_sizing">Sizing positions correctly</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_cutting" value="cutting_losers"><label class="form-check-label" for="ba_cutting">Cutting losers</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_riding" value="riding_winners"><label class="form-check-label" for="ba_riding">Riding winners</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_strategy" value="strategy_choice"><label class="form-check-label" for="ba_strategy">Picking the right strategy for the setup</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_discipline" value="discipline"><label class="form-check-label" for="ba_discipline">Sticking to my plan</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_unsure" value="unsure"><label class="form-check-label" for="ba_unsure">Honestly not sure</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="best_at" id="ba_other" value="other" data-reveal="best_at_other_wrap"><label class="form-check-label" for="ba_other">Something else</label></div>
+                <p class="ob-q-help">Pick any that apply.</p>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_entries" value="entries"><label class="form-check-label" for="ba_entries">Picking entries</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_sizing" value="sizing"><label class="form-check-label" for="ba_sizing">Sizing positions correctly</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_cutting" value="cutting_losers"><label class="form-check-label" for="ba_cutting">Cutting losers</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_riding" value="riding_winners"><label class="form-check-label" for="ba_riding">Riding winners</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_strategy" value="strategy_choice"><label class="form-check-label" for="ba_strategy">Picking the right strategy for the setup</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_discipline" value="discipline"><label class="form-check-label" for="ba_discipline">Sticking to my plan</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_unsure" value="unsure"><label class="form-check-label" for="ba_unsure">Honestly not sure</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="best_at[]" id="ba_other" value="other" data-reveal="best_at_other_wrap"><label class="form-check-label" for="ba_other">Something else</label></div>
                 <div class="ob-other-text d-none" id="best_at_other_wrap">
                     <input type="text" class="form-control form-control-sm"
                            name="best_at_other" maxlength="500" placeholder="In your words">
                 </div>
             </div>
 
-            <div class="ob-question">
+            <div class="ob-question" data-multi="1">
                 <span class="ob-q-label">What do you think you do worst?</span>
-                <p class="ob-q-help">No judgment — naming it is the first step.</p>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_cut_winner" value="cut_winners_early"><label class="form-check-label" for="wa_cut_winner">Cutting winners too early</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_let_run" value="let_losers_run"><label class="form-check-label" for="wa_let_run">Letting losers run</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_chase" value="chasing"><label class="form-check-label" for="wa_chase">Chasing trades</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_too_big" value="sizing_too_big"><label class="form-check-label" for="wa_too_big">Sizing too big</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_too_small" value="sizing_too_small"><label class="form-check-label" for="wa_too_small">Sizing too small to matter</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_overtrade" value="overtrading"><label class="form-check-label" for="wa_overtrade">Trading too often</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_undertrade" value="undertrading"><label class="form-check-label" for="wa_undertrade">Trading too rarely</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_strategy" value="bad_strategy_choice"><label class="form-check-label" for="wa_strategy">Picking the wrong strategy for the setup</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_unsure" value="unsure"><label class="form-check-label" for="wa_unsure">Honestly not sure</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="worst_at" id="wa_other" value="other" data-reveal="worst_at_other_wrap"><label class="form-check-label" for="wa_other">Something else</label></div>
+                <p class="ob-q-help">Pick any that apply.</p>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_cut_winner" value="cut_winners_early"><label class="form-check-label" for="wa_cut_winner">Cutting winners too early</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_let_run" value="let_losers_run"><label class="form-check-label" for="wa_let_run">Letting losers run</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_chase" value="chasing"><label class="form-check-label" for="wa_chase">Chasing trades</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_too_big" value="sizing_too_big"><label class="form-check-label" for="wa_too_big">Sizing too big</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_too_small" value="sizing_too_small"><label class="form-check-label" for="wa_too_small">Sizing too small to matter</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_overtrade" value="overtrading"><label class="form-check-label" for="wa_overtrade">Trading too often</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_undertrade" value="undertrading"><label class="form-check-label" for="wa_undertrade">Trading too rarely</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_strategy" value="bad_strategy_choice"><label class="form-check-label" for="wa_strategy">Picking the wrong strategy for the setup</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_unsure" value="unsure"><label class="form-check-label" for="wa_unsure">Honestly not sure</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" name="worst_at[]" id="wa_other" value="other" data-reveal="worst_at_other_wrap"><label class="form-check-label" for="wa_other">Something else</label></div>
                 <div class="ob-other-text d-none" id="worst_at_other_wrap">
                     <input type="text" class="form-control form-control-sm"
                            name="worst_at_other" maxlength="500" placeholder="In your words">

@@ -507,6 +507,7 @@ def profile():
         editing_group=editing_group,
         snaptrade_enabled=snaptrade_enabled,
         snaptrade_accounts=snaptrade_accounts,
+        profile_rows=profile_rows,
         snaptrade_routine_lookback_days=snaptrade_routine_lookback_days,
         snaptrade_full_history_lookback_days=snaptrade_full_history_lookback_days,
         accent_presets=sorted(_ALLOWED_ACCENTS),

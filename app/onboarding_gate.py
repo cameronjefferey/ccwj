@@ -26,14 +26,39 @@ def _as_utc(value):
 
 
 def account_is_established(row) -> bool:
-    """True when this SnapTrade row has already been through a sync."""
+    """True when this SnapTrade row has finished its first history sync.
+
+    A background pull stamps ``last_sync_at`` and
+    ``holdings_last_successful_sync`` as soon as it reads the broker,
+    including a failed attempt and a holdings-only read while history
+    is still pending. Those timestamps are not proof the person already
+    finished onboarding. Only ``first_sync_completed`` is. An older row
+    that predates the flag (or never had it set) is still "already
+    here" via ``account_predates_this_connect``, and any account that
+    existed before this portal return skips the quiz in
+    ``first_connect_needs_quiz``.
+    """
     if not row:
         return False
-    if row.get("first_sync_completed"):
-        return True
-    if row.get("holdings_last_successful_sync") or row.get("last_sync_at"):
-        return True
-    return False
+    return bool(row.get("first_sync_completed"))
+
+
+def account_still_awaiting_first_sync(row) -> bool:
+    """True when this row is an unfinished connect from the last 12 hours.
+
+    ``first_sync_completed`` defaults to false and is not backfilled, so
+    an older account can sit on false forever. That is not a recovery
+    of the portal return happening now. A missing ``created_at`` still
+    counts as awaiting, matching rows written before the column was
+    read by this check.
+    """
+    if not row:
+        return False
+    if row.get("first_sync_completed") is None or bool(row.get("first_sync_completed")):
+        return False
+    if account_predates_this_connect(row):
+        return False
+    return True
 
 
 def account_predates_this_connect(row, *, now=None) -> bool:
@@ -79,10 +104,11 @@ def first_connect_needs_quiz(user_id, prior_accounts, prior_tenant_ids=None) -> 
 def onboarding_quiz_still_pending(user_id) -> bool:
     """Re-check at page render, so a stale ``?first=1`` cannot reopen it.
 
-    A just-added account (no completed sync, created inside the grace
-    window) does not count as "already onboarded". An older account, a
-    finished sync, a saved survey, or a tenant that is not one of those
-    new SnapTrade rows does.
+    A just-added account (first history sync not finished, created
+    inside the grace window) does not count as "already onboarded",
+    even after the background pull stamps a sync time. An older
+    account, a finished first sync, a saved survey, or a tenant that
+    is not one of those new SnapTrade rows does.
     """
     if not user_id:
         return False

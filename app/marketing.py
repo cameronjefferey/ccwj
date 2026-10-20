@@ -339,8 +339,20 @@ _ONBOARDING_ANSWER_KEYS: tuple[str, ...] = (
     "one_thing",
 )
 
-# Checkbox groups. The form posts ``name="<key>[]"``.
-_ONBOARDING_MULTI_KEYS: frozenset[str] = frozenset({"brokers", "help_most"})
+# Every survey question is multiple-select. The form posts
+# ``name="<key>[]"``. The weekly-email toggle and the free-text
+# ``one_thing`` line are not in this set.
+_ONBOARDING_MULTI_KEYS: frozenset[str] = frozenset({
+    "why_here",
+    "brokers",
+    "trading_years",
+    "primary_style",
+    "trade_frequency",
+    "position_count",
+    "best_at",
+    "worst_at",
+    "help_most",
+})
 
 # Optional adjunct keys — saved only when present and non-empty.
 _ONBOARDING_OPTIONAL_KEYS: tuple[str, ...] = (
@@ -405,9 +417,9 @@ def submit_onboarding_why_here():
             return {"ok": True}
         return redirect(request.referrer or url_for("weekly_review"))
 
-    # Scalar fields (radios / textareas) and checkbox groups. Every
-    # question is optional — a missing key is simply omitted. Multi-selects
-    # post as ``name="<key>[]"``; also accept the bare name.
+    # Checkbox groups and the free-text line. Every question is optional
+    # — a missing key is simply omitted. Multi-selects post as
+    # ``name="<key>[]"``; also accept the bare name.
     for key in _ONBOARDING_ANSWER_KEYS:
         if key in _ONBOARDING_MULTI_KEYS:
             vals = request.form.getlist(f"{key}[]") or request.form.getlist(key)

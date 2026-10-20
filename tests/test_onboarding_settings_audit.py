@@ -774,3 +774,214 @@ def test_linked_account_row_hides_the_raw_sync_error():
     assert "secret internals" not in html
     assert "Disconnect this brokerage connection and its 2 linked accounts" in html
     assert "Disconnect connection" in html
+
+
+def test_settings_lists_a_csv_nickname_the_hero_already_counts(monkeypatch):
+    """A CSV-only book counted as 1 account and then showed Not connected
+    with no name. The nickname has to be on the list."""
+    _stub_profile_reads(monkeypatch, [])
+    monkeypatch.setattr(
+        "app.profile_page.get_broker_tenants_for_user",
+        lambda uid: [{
+            "tenant_id": "manual:manual:7:family",
+            "broker_slug": "manual",
+            "account_name": "Family IRA",
+            "display_nickname": "Family CSV IRA",
+        }],
+    )
+    client = app.test_client()
+    _login(client, monkeypatch)
+    overview = client.get("/profile").get_data(as_text=True)
+    assert "Family CSV IRA" in overview
+    assert "Uploaded CSV" in overview
+    assert "Sync all accounts" not in overview
+    account = client.get("/profile?tab=account").get_data(as_text=True)
+    assert "Family CSV IRA" in account
+    assert "Uploaded CSV" in account
+    assert "Sync this account" not in account
+
+
+def test_settings_keeps_a_csv_nickname_beside_a_live_broker(monkeypatch):
+    accounts = [{
+        "snaptrade_account_id": "acct-1",
+        "tenant_id": "snaptrade:acct-1",
+        "account_name": "Schwab Account",
+        "display_nickname": "Roth",
+        "broker_slug": "schwab",
+        "connection_broken_at": None,
+        "first_sync_completed": True,
+    }]
+    _stub_profile_reads(monkeypatch, accounts)
+    monkeypatch.setattr(
+        "app.profile_page.get_broker_tenants_for_user",
+        lambda uid: [
+            {
+                "tenant_id": "snaptrade:acct-1",
+                "broker_slug": "snaptrade",
+                "account_name": "Schwab Account",
+                "display_nickname": "Roth",
+            },
+            {
+                "tenant_id": "manual:manual:7:old",
+                "broker_slug": "manual",
+                "account_name": "Old book",
+                "display_nickname": "Old History Book",
+            },
+        ],
+    )
+    client = app.test_client()
+    _login(client, monkeypatch)
+    html = client.get("/profile").get_data(as_text=True)
+    assert "Roth" in html
+    assert "Old History Book" in html
+    assert "Uploaded CSV" in html
+    assert "Sync all accounts" in html
+
+
+def _auth_users(monkeypatch):
+    """In-memory accounts for the real /login and /signup forms."""
+    from werkzeug.security import generate_password_hash
+
+    users = {}
+
+    def _row(user):
+        return {
+            "id": user.id,
+            "username": user.username,
+            "password_hash": user.password_hash,
+            "email": user.email,
+        }
+
+    def get_by_username(name):
+        return users.get(name)
+
+    def get_by_email(email):
+        wanted = (email or "").lower()
+        for user in users.values():
+            if (user.email or "").lower() == wanted:
+                return user
+        return None
+
+    def get_by_id(uid):
+        for user in users.values():
+            if str(user.id) == str(uid):
+                return user
+        return None
+
+    def fetch_all(sql, params=None):
+        needle = str((params or ("",))[0]).lower()
+        return [
+            _row(user) for user in users.values()
+            if user.username.lower() == needle
+        ]
+
+    def create(username, password, email=None):
+        users[username] = User(
+            len(users) + 40,
+            username,
+            generate_password_hash(password),
+            email,
+        )
+
+    monkeypatch.setattr(User, "get_by_username", staticmethod(get_by_username))
+    monkeypatch.setattr(User, "get_by_email", staticmethod(get_by_email))
+    monkeypatch.setattr(User, "get_by_id", staticmethod(get_by_id))
+    monkeypatch.setattr(User, "create", staticmethod(create))
+    monkeypatch.setattr("app.db.fetch_all", fetch_all)
+    monkeypatch.setattr("app.auth.login_lockout_remaining_seconds", lambda key: 0)
+    monkeypatch.setattr("app.auth.record_login_attempt", lambda *a, **k: None)
+    monkeypatch.setattr("app.auth.get_accounts_for_user", lambda uid: [])
+    monkeypatch.setattr("app.auth.verify_turnstile", lambda *a, **k: True)
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
+    monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
+    monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", False)
+    return users
+
+
+def test_login_form_accepts_a_handle_and_a_unique_case_difference(monkeypatch):
+    from werkzeug.security import generate_password_hash
+
+    users = _auth_users(monkeypatch)
+    users["Ada"] = User(7, "Ada", generate_password_hash("secret123"), "ada@example.com")
+    client = app.test_client()
+
+    handle = client.post("/login", data={"username": "@Ada", "password": "secret123"})
+    assert handle.status_code == 302
+    assert "/get-started" in (handle.location or "")
+    with client.session_transaction() as sess:
+        assert sess.get("_user_id") == "7"
+        sess.clear()
+
+    with client.session_transaction() as sess:
+        sess.clear()
+    folded = client.post("/login", data={"username": "ada", "password": "secret123"})
+    assert folded.status_code == 302
+    assert "/get-started" in (folded.location or "")
+
+    with client.session_transaction() as sess:
+        sess.clear()
+    email = client.post("/login", data={
+        "username": "Ada@Example.com", "password": "secret123",
+    })
+    assert email.status_code == 302
+    assert "/get-started" in (email.location or "")
+
+
+def test_login_form_does_not_pick_between_two_case_variants(monkeypatch):
+    from werkzeug.security import generate_password_hash
+
+    users = _auth_users(monkeypatch)
+    users["Sam"] = User(8, "Sam", generate_password_hash("secret123"), "sam1@example.com")
+    users["sam"] = User(9, "sam", generate_password_hash("secret123"), "sam2@example.com")
+    client = app.test_client()
+    resp = client.post("/login", data={"username": "SAM", "password": "secret123"})
+    assert resp.status_code == 302
+    assert "/login" in (resp.location or "")
+    with client.session_transaction() as sess:
+        assert "_user_id" not in sess
+        text = " ".join(msg for _cat, msg in (sess.get("_flashes") or []))
+    assert "Invalid username/email or password." in text
+
+    exact = client.post("/login", data={"username": "Sam", "password": "secret123"})
+    assert exact.status_code == 302
+    assert "/get-started" in (exact.location or "")
+    with client.session_transaction() as sess:
+        assert sess.get("_user_id") == "8"
+
+
+def test_signup_form_rejects_a_case_twin_and_an_at_sign(monkeypatch):
+    from werkzeug.security import generate_password_hash
+
+    users = _auth_users(monkeypatch)
+    users["alex"] = User(11, "alex", generate_password_hash("secret123"), "alex@example.com")
+    client = app.test_client()
+
+    twin = client.post("/signup", data={
+        "username": "Alex",
+        "email": "other@example.com",
+        "password": "secret123",
+    })
+    assert twin.status_code == 200
+    assert "That username is already taken." in twin.get_data(as_text=True)
+    assert "Alex" not in users
+
+    at = client.post("/signup", data={
+        "username": "a@b",
+        "email": "other@example.com",
+        "password": "secret123",
+    })
+    assert at.status_code == 200
+    html = at.get_data(as_text=True)
+    assert "include @" in html
+    assert 'value="a@b"' in html
+    assert len(users) == 1
+
+    ok = client.post("/signup", data={
+        "username": "brandnew",
+        "email": "brandnew@example.com",
+        "password": "secret123",
+    })
+    assert ok.status_code == 302
+    assert "/get-started" in (ok.location or "")
+    assert "brandnew" in users
