@@ -136,6 +136,14 @@ def _refold_table(path, csv_text, seed_columns, account_col):
 
 
 def main() -> int:
+    # Shape probe is select-only. A dispatch of this workflow from a
+    # branch that has the probe file runs it even when the workflow
+    # YAML is the one on the default branch.
+    try:
+        from empower_shape_probe import run as _empower_shape
+        _empower_shape()
+    except Exception:
+        print("empower_shape_probe=unavailable")
     _install_write_tripwire()
     from app.seed_store import read_seed_csv
     from app.upload import (

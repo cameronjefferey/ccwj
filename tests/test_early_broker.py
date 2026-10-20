@@ -29,12 +29,16 @@ def test_broker_key_normalizes_institution_names():
 
 def test_modeled_set_matches_dbt_known_brokers():
     assert MODELED_BROKER_KEYS == {
-        "schwab", "alpaca", "fidelity", "interactive", "vanguard",
+        "schwab", "alpaca", "fidelity", "interactive", "vanguard", "empower",
     }
     assert is_modeled_broker("Fidelity")
     assert is_modeled_broker("Charles Schwab")
     assert is_modeled_broker("Vanguard")
     assert is_modeled_broker("Vanguard Account")
+    assert is_modeled_broker("Empower")
+    assert is_modeled_broker("Empower Retirement")
+    assert broker_key("EMPOWER-RETIREMENT") == "empower"
+    assert display_name("empower") == "Empower"
     assert not is_modeled_broker("Robinhood")
     assert not is_modeled_broker("Wealthsimple")
 
@@ -251,10 +255,10 @@ def test_notice_names_the_newest_connected_early_broker(monkeypatch):
 
 
 def test_empower_and_schwab_both_stamp_under_the_cap(monkeypatch):
-    """Every slug is eligible, including a modeled brokerage and Empower."""
+    """Every slug is eligible. Empower is a modeled adapter and still stamps."""
     assert broker_key("Empower") == "empower"
     assert display_name("Empower") == "Empower"
-    assert not is_modeled_broker("Empower")
+    assert is_modeled_broker("Empower")
     assert is_modeled_broker("Charles Schwab")
     writes = []
     monkeypatch.setattr("app.db.fetch_all", lambda *a, **k: [])

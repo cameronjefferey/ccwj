@@ -37,6 +37,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Empower raw shape (select only)
+        env:
+          SECRET_KEY: diagnostic
+          HAPPYTRADER_SKIP_DB_INIT: "1"
+        run: python scripts/empower_shape_probe.py
+
       - name: Dry-run batched seed fold
         env:
           SECRET_KEY: diagnostic

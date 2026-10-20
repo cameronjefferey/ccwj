@@ -1,4 +1,4 @@
-"""Vanguard option verbs: fail closed on opens, close only when sure.
+"""Vanguard and Empower option verbs: fail closed on opens, close only when sure.
 
 Synthetic rows stand in for warehouse fills. A bare Buy or Sell does not
 become an option open. The first retained Buy can be a buy-to-close for
@@ -51,7 +51,7 @@ def remap(rows: list[dict]) -> list[str]:
 
 def _eligible(row: dict) -> bool:
     return (
-        _slug(row["account"]) == "vanguard"
+        _slug(row["account"]) in ("vanguard", "empower")
         and row["instrument_type"] in ("Call", "Put")
         and row.get("trade_symbol")
         and row["action"] in ("equity_buy", "equity_sell")
@@ -167,6 +167,20 @@ def test_a_dated_fill_does_not_make_an_undated_fill_a_close():
     assert remap(rows) == ["equity_sell", "equity_buy"]
 
 
+def test_empower_uses_the_same_close_only_map():
+    account = "Empower Retirement ••••4242"
+    assert remap([_row(account=account)]) == ["equity_buy"]
+    assert remap([
+        _row(account=account, action="option_sell_to_open", seq=1),
+        _row(account=account, action="equity_buy", trade_date="2026-01-03", seq=2),
+    ]) == ["option_sell_to_open", "option_buy_to_close"]
+    hyphen = "Empower-Retirement Account"
+    assert remap([
+        _row(account=hyphen, action="option_sell_to_open", seq=1),
+        _row(account=hyphen, action="equity_buy", trade_date="2026-01-03", seq=2),
+    ]) == ["option_sell_to_open", "equity_buy"]
+
+
 def test_vanguard_stock_buy_stays_an_equity_verb():
     assert remap([_row(instrument_type="Equity", trade_symbol="SYN")]) == [
         "equity_buy"
@@ -181,6 +195,7 @@ def test_other_broker_option_buy_stays_an_equity_verb():
         "Alpaca Paper Account",
         "Interactive Brokers Account",
         "Robinhood Account",
+        "Empower-Retirement Account",
     ):
         assert remap([_row(account=account)]) == ["equity_buy"]
         assert remap([_row(account=account, action="equity_sell")]) == ["equity_sell"]
@@ -210,7 +225,7 @@ def test_explicit_option_actions_keep_buy_cash_out_and_sell_cash_in():
     Buys stay in the cash-out branch (including the option fee net,
     which subtracts the commission from a gross premium). Sells stay
     cash-in. The close-only map changes the action label and does not
-    touch amount_raw. The gate is the Vanguard account label only.
+    touch amount_raw. The gate is the Vanguard and Empower account labels.
     """
     sql = _STG.read_text()
     assert "'equity_buy',\n                'option_buy_to_open',\n                'option_buy_to_close'" in sql
@@ -225,9 +240,13 @@ def test_explicit_option_actions_keep_buy_cash_out_and_sell_cash_in():
         "                'option_sell_to_close'"
     ) in sql
     assert "then abs(g.amount_raw)" in sql
-    verb = sql.split("vanguard_option_verbs as (", 1)[1].split("fee_guard as (", 1)[0]
+    verb = sql.split("vanguard_option_verbs as (", 1)[1].split(
+        "fee_guard as (", 1
+    )[0]
     assert "amount_raw" not in verb
-    assert "= 'vanguard'" in verb
+    assert "in ('vanguard', 'empower')" in verb
+    assert "empower_option_verbs" not in sql
+    assert "empower_open_guard" not in sql
     assert "fidelity" not in verb.lower()
     assert "schwab" not in verb.lower()
 

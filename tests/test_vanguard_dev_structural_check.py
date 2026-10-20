@@ -106,6 +106,33 @@ def test_fidelity_allow_list_stops_before_balance_row_types():
     assert "account_total" not in {label.casefold() for label in labels}
 
 
+def test_empower_structural_sql_is_absent_when_raw_is_empty():
+    sql = _structural_sql("empower")
+    _assert_select_only(sql)
+    assert "stg_broker_empower_history" in sql
+    assert "stg_broker_empower_current" in sql
+    assert "stg_broker_empower_balances" in sql
+    assert "stg_broker_vanguard_history" not in sql
+    assert "ccwj-dbt.analytics_raw.trade_history" in sql
+    assert "ccwj-dbt.analytics_raw.current_positions" in sql
+    assert "ccwj-dbt.analytics_raw.account_balances" in sql
+    assert "mart_wealth_daily" in sql
+    assert "'absent'" in sql
+    assert "ccwj-dbt.analytics." not in sql
+
+
+def test_empower_allow_list_stops_before_balance_row_types():
+    labels = allowed_actions(
+        (ROOT / "dbt/models/staging/brokers/_stg_broker_empower.yml").read_text(),
+        broker="empower",
+    )
+    assert "Buy" in labels
+    assert "Cash Dividend" in labels
+    assert "Deposit" in labels
+    assert "cash" not in {label.casefold() for label in labels}
+    assert "account_total" not in {label.casefold() for label in labels}
+
+
 def test_result_exit_treats_absent_as_success():
     assert result_exit({"history_rows_gt_0": "absent", "current_rows_gt_0": "pass"}) == 0
     assert result_exit({"history_rows_gt_0": "fail"}) == 1
@@ -125,6 +152,7 @@ def test_dev_mirror_workflow_builds_dev_and_does_not_write_prod():
     assert "workflow_call" in text
     assert "dbt_build:" in text
     assert "--broker fidelity" in steps
+    assert "--broker empower" in steps
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     assert "vanguard-dev-dbt" not in ci
     # The one-shot analytics_dev build for this branch already ran

@@ -48,6 +48,8 @@ with trade_history_as_strings as (
     union all
     select * from {{ ref('stg_broker_vanguard_history') }}
     union all
+    select * from {{ ref('stg_broker_empower_history') }}
+    union all
     select * from {{ ref('stg_broker_other_history') }}
 ),
 
@@ -224,22 +226,23 @@ cleaned as (
     from osi_split
 ),
 
--- Vanguard option fills can arrive as bare Buy / Sell. Those verbs do
--- not say whether the contract opened. A first retained Buy is often a
--- buy-to-close for a short whose opening fill predates the broker
--- history window. Promoting that row to an open invents cost basis and
--- turns the closing cash into phantom option P&L. A contract with no
--- explicit option open, or with both Buy to Open and Sell to Open,
--- stays on the verbs the broker sent.
+-- Vanguard and Empower option fills can arrive as bare Buy / Sell.
+-- Those verbs do not say whether the contract opened. A first retained
+-- Buy is often a buy-to-close for a short whose opening fill predates
+-- the broker history window. Promoting that row to an open invents cost
+-- basis and turns the closing cash into phantom option P&L. A contract
+-- with no explicit option open, or with both Buy to Open and Sell to
+-- Open, stays on the verbs the broker sent.
 --
 -- When exactly one explicit open direction exists, the opposite generic
 -- verb is the close: Sell beside only Buy to Open is sell-to-close;
 -- Buy beside only Sell to Open is buy-to-close. The same-side generic
 -- stays an equity verb so a second Buy beside Buy to Open does not add
 -- the premium twice. Fee netting below then sees the close as an option
--- action. Stock buys stay equity verbs. Other brokers stay on the
--- labels they already send. ``_row_seq`` is seed order only and is
--- dropped here so it never becomes a stg_history column.
+-- action. Stock buys stay equity verbs. Both brokers use this one map.
+-- Other brokers stay on the labels they already send. ``_row_seq`` is
+-- seed order only and is dropped here so it never becomes a stg_history
+-- column.
 vanguard_open_guard as (
     select
         tenant_id,
@@ -272,14 +275,14 @@ vanguard_option_verbs as (
     select
         c.* except (_row_seq, action),
         case
-            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
+            when {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
              and c.instrument_type in ('Call', 'Put')
              and c.trade_symbol is not null
              and c.action = 'equity_sell'
              and coalesce(g.has_buy_open, false)
              and not coalesce(g.has_sell_open, false)
             then 'option_sell_to_close'
-            when {{ broker_slug_from_account('c.account') }} = 'vanguard'
+            when {{ broker_slug_from_account('c.account') }} in ('vanguard', 'empower')
              and c.instrument_type in ('Call', 'Put')
              and c.trade_symbol is not null
              and c.action = 'equity_buy'

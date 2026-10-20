@@ -37,6 +37,8 @@ with unioned as (
     union all
     select * from {{ ref('stg_broker_vanguard_balances') }}
     union all
+    select * from {{ ref('stg_broker_empower_balances') }}
+    union all
     select * from {{ ref('stg_broker_other_balances') }}
     union all
     select * from {{ ref('stg_demo_balances') }}
