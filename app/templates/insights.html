@@ -115,7 +115,8 @@
     .ins-ask-form .form-control { min-width: 0; flex: 1; }
     .ins-model { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: .9rem; }
     .ins-model .form-select { width: auto; min-width: 0; max-width: 100%; }
-    .ins-money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .ins-money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ins-phone-meta { display: none; }
 
     #insExits th { font-size: .72rem; font-weight: 650; color: var(--ht-muted); }
     #insExits td { font-size: .88rem; }
@@ -137,6 +138,16 @@
         #insExits th:nth-child(7),
         #insExits td:nth-child(7) { display: none; }
         #insExits td.ins-money { white-space: nowrap; }
+        .ins-phone-meta {
+            display: block;
+            margin-top: .15rem;
+            font-size: .75rem;
+            color: var(--ht-muted);
+            font-weight: 500;
+            white-space: normal;
+            overflow-wrap: break-word;
+            word-break: normal;
+        }
         .ins-ask-form { flex-direction: column; }
         .ins-ask-form .btn { align-self: flex-start; min-height: 44px; }
     }
@@ -192,7 +203,7 @@
                 <div class="ov-pct ov-invest">{{ coaching.reliable_contracts }}<span class="ov-quiet"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
             </div>
         </div>
-        <p class="ov-line">Given back is the gap from the best value while the option was open to the close. Opens are not included. The percent weights each scored close since daily prices began.</p>
+        <p class="ov-line">Given back is the gap from the best value while the option was open to the close. Opens are not included. The percent weights the scored closes on the strategy rows. A strategy with fewer than 3 scored closes stays in the count and out of the percent.</p>
         {% if paper_only %}<p class="ov-line">These figures are the paper account.</p>{% endif %}
         {% else %}
         <p class="ov-line">How your closes line up: by weekday, by symbol, by how long you held, and by the trade after a loss.</p>
@@ -205,12 +216,15 @@
 
     {% if coaching and coaching.has_data %}
 
-    {% if coaching.signals or coaching.recent_exits %}
+    {% set exit_rows = coaching.recent_exits | selectattr('given_back', 'gt', 10) | list %}
+    {% if coaching.signals or exit_rows %}
     <div class="card" id="ins-timing">
         <div class="ins-pad">
             <h2 class="section-header">Exit timing</h2>
-            <p class="ins-lead">Why the headline dollar is that size. By strategy, then recent closes.</p>
+            <p class="ins-lead">{% if coaching.signals %}Why the headline dollar is that size. By strategy{% if exit_rows %}, then recent closes{% endif %}.{% else %}Recent closes.{% endif %}</p>
+            {% if coaching.signals %}
             <p class="ins-note">These rows add up to the headline. They are not a second result.</p>
+            {% endif %}
             {% if coaching.signals %}
             {% for s in coaching.signals %}
             <div class="strat-row">
@@ -232,7 +246,7 @@
             {% endfor %}
             {% endif %}
 
-            {% if coaching.recent_exits %}
+            {% if exit_rows %}
             <p class="ins-note">Each row is one contract. The best value is stored per contract, so a spread is not combined here. Closed date is the day the contract ended.</p>
             <div class="table-responsive" style="margin-top:1rem;">
                 <table class="table table-sm align-middle mb-0" id="insExits">
@@ -248,11 +262,11 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for e in coaching.recent_exits %}
-                        {% if e.given_back > 10 %}
+                        {% for e in exit_rows %}
                         <tr data-href="{{ scoped_url('position_detail', symbol=e.symbol) }}">
                             <td data-label="Symbol" data-val="{{ e.symbol }}">
                                 <a href="{{ scoped_url('position_detail', symbol=e.symbol) }}" class="fw-semibold text-decoration-none">{{ e.symbol }}</a>
+                                <div class="ins-phone-meta">{{ e.strategy }} · {{ e.close_date }} · {{ e.days_past_peak }}d after the high</div>
                             </td>
                             <td data-label="Strategy" class="text-muted" data-val="{{ e.strategy }}">{{ e.strategy }}</td>
                             <td data-label="Closed date" data-val="{{ e.close_date }}">{{ e.close_date }}</td>
@@ -263,7 +277,6 @@
                             <td data-label="Given back" class="text-end ins-money text-negative fw-semibold" data-val="{{ e.given_back }}">{{ money(e.given_back, 0) }}</td>
                             <td data-label="Days after the high" class="text-end" data-val="{{ e.days_past_peak }}">{{ e.days_past_peak }}</td>
                         </tr>
-                        {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
@@ -442,7 +455,7 @@
             {% endif %}
             {% else %}
             <h2 class="section-header">AI Insights is warming up</h2>
-            <p class="ins-lead mb-0">The model is still being trained on the patterns we see across the platform. It will be available here as soon as it is ready.</p>
+            <p class="ins-lead mb-0">The write-up needs a model configured on this server.</p>
             {% if coaching and coaching.has_data %}
             <p class="ins-note" style="margin-top:.75rem;">In the meantime, the cards above are from your own trades.</p>
             {% endif %}
@@ -511,7 +524,7 @@
         if (!btn) return;
         btn.closest('form').addEventListener('submit', () => {
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analyzing your behavior...';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Writing this up...';
         });
     });
 

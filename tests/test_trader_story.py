@@ -16,6 +16,7 @@ from app.trader_story import (
     _build_scoreboard,
     _build_standouts,
     _busiest_day,
+    _compose_profile,
     _open_held_symbol_count,
 )
 
@@ -164,8 +165,10 @@ def _new_symbol_count(line):
 def test_eras_new_symbols_follow_the_profile_book():
     """A fill the story engine never narrates must not inflate new symbols.
 
-    Year rows then add up to the header symbol count. Calendar days stay
-    a different unit from the header's per-symbol trade days.
+    Year rows add up to the narrated book. The header symbol count is
+    every Positions symbol, so a name with no fills stays out of the
+    years. Calendar days stay a different unit from the header's
+    per-symbol trade days.
     """
     extra = _trades([
         (date(2024, 4, 1), "ZZZ", "journal", "Cash Event", "", 0, 0.0, 50.0),
@@ -244,3 +247,27 @@ def test_open_held_symbol_count_is_unique_open_symbols():
         {"status": "Closed", "symbol": "AMD"},
     ])
     assert _open_held_symbol_count(status_df) == 1
+
+
+def test_stock_headline_does_not_deny_a_sub_dollar_option():
+    stock = _compose_profile({"adds": 4, "stock_opens": 1}, None)
+    assert "5 separate buys" in stock["headline"]
+    assert "no options" not in stock["headline"]
+
+    cheap = _compose_profile({
+        "premium_collected": 0.4,
+        "long_risk": 0.0,
+        "covered_calls": 1,
+        "adds": 2,
+        "stock_opens": 1,
+    }, None)
+    assert "no options" not in cheap["headline"]
+    assert "Options are in this record" in cheap["headline"]
+
+
+def test_year_note_does_not_claim_new_symbols_equal_the_header():
+    from pathlib import Path
+    page = Path("app/templates/trader_story.html").read_text()
+    assert "add up to the header count" not in page
+    assert "only on Positions" in page
+    assert 'data-label="Symbols"' in page

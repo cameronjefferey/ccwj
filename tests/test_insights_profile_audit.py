@@ -31,6 +31,15 @@ def _fill(day, symbol, action, occ, qty, amount, tenant="snaptrade:real",
     }
 
 
+def test_recent_exit_brief_keeps_the_loss_sign():
+    """A loss must not render as +$-400."""
+    line = insights._format_recent_exit_line("BE", "Covered Call", 200, -400, 600, 4)
+    assert "-$400" in line
+    assert "+$-" not in line
+    assert "+$200" in line
+    assert "$600" in line
+
+
 def test_exit_timing_headline_weights_by_scored_closes():
     """A 3-close strategy must not count the same as a 200-close one.
 

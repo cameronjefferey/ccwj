@@ -3,12 +3,16 @@
 {% block head %}
 <style>
     .fl-hero {
-        background: #1a1a2e;
+        background: #121826;
         border-radius: 16px;
         padding: 2.5rem;
         color: #fff;
         margin-bottom: 2rem;
+        min-width: 0;
+        overflow-wrap: break-word;
+        word-break: normal;
     }
+    .fl-skip { color: rgba(255,255,255,.7); }
     .fl-section {
         background: #121826;
         border-radius: 16px;
@@ -47,6 +51,13 @@
         color: var(--color-mirror-ink);
         margin-bottom: .75rem;
     }
+    .fl-stat .val { font-variant-numeric: tabular-nums; }
+    @media (max-width: 576px) {
+        .fl-hero { padding: 1.15rem 1rem 1.25rem; }
+        .fl-hero .fl-skip { position: static !important; display: inline-block; margin: 0 0 .75rem; }
+        .fl-section, .insight-box { padding: 1.15rem 1rem; }
+        .fl-stat .val { font-size: 1.25rem; }
+    }
 </style>
 {% endblock %}
 
@@ -57,8 +68,7 @@
 {# ── Hero ── #}
 <div class="fl-hero position-relative">
     <a href="{{ url_for('weekly_review') }}"
-       class="position-absolute top-0 end-0 m-3 small text-decoration-none"
-       style="color:rgba(255,255,255,.7);">
+       class="fl-skip position-absolute top-0 end-0 m-3 small text-decoration-none">
        Skip to Overview &rarr;
     </a>
     <p class="text-uppercase small fw-bold mb-1" style="letter-spacing:2px; opacity:.5">Your Trading Mirror</p>
@@ -89,11 +99,11 @@
 <div class="fl-section">
     <h3>At a Glance</h3>
     <p class="narrative mb-4">
-        You've made <strong>{{ profile.total_trades }} trades</strong>
+        You've placed <strong>{{ profile.total_trades }} fills</strong>
         across <strong>{{ profile.num_symbols }} symbols</strong>
         using <strong>{{ profile.num_strategies }} {{ 'strategy' if profile.num_strategies == 1 else 'strategies' }}</strong>{% if profile.months_active > 0 %} over <strong>{{ profile.months_active }} month{{ 's' if profile.months_active != 1 }}</strong>{% endif %}.
-        {% if profile.win_rate > 0 %}Your win rate is <strong>{{ "{:.0%}".format(profile.win_rate) }}</strong>
-        ({{ profile.total_winners }}W / {{ profile.total_losers }}L).{% endif %}
+        {% if profile.total_winners + profile.total_losers > 0 %}Closed results finished ahead <strong>{{ "{:.0%}".format(profile.win_rate) }}</strong> of the time
+        ({{ profile.total_winners }}W / {{ profile.total_losers }}L). A spread counts as one. A $0 close is neither.{% endif %}
     </p>
     <div class="row g-2">
         <div class="col-6 col-md-3">
@@ -106,20 +116,20 @@
         </div>
         <div class="col-6 col-md-3">
             <div class="fl-stat">
-                <div class="val text-positive">${{ "{:,.0f}".format(profile.premium_collected) }}</div>
-                <div class="lbl">{{ term('Premium Collected') }}</div>
+                <div class="val {% if profile.premium_collected > 0 %}text-positive{% endif %}">{{ money(profile.premium_collected, 0) }}</div>
+                <div class="lbl">{{ term('Collected') }}</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="fl-stat">
-                <div class="val">{{ "{:.0%}".format(profile.win_rate) }}</div>
+                <div class="val">{% if profile.total_winners + profile.total_losers > 0 %}{{ "{:.0%}".format(profile.win_rate) }}{% else %}&mdash;{% endif %}</div>
                 <div class="lbl">{{ term('Win Rate') }}</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="fl-stat">
                 <div class="val">{{ "{:.0f}".format(profile.avg_holding_days) }}d</div>
-                <div class="lbl">Avg Holding Period</div>
+                <div class="lbl" title="Weighted by fills.">Avg hold</div>
             </div>
         </div>
     </div>
@@ -132,7 +142,7 @@
     {% if profile.top_strategy %}
     <p class="narrative mb-3">
         Your primary strategy is <strong>{{ profile.top_strategy.strategy }}</strong>
-        ({{ profile.top_strategy.total_trades }} trades, {{ "{:.0%}".format(profile.top_strategy.win_rate) }} win rate,
+        ({{ profile.top_strategy.total_trades }} fills, {{ profile.top_strategy.winners }}W / {{ profile.top_strategy.losers }}L,
         {{ money(profile.top_strategy.total_return, 0) }} total return).
         {% if profile.strategies|length > 1 %}
         You also use
@@ -145,10 +155,12 @@
     <div class="strat-card d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div>
             <span class="fw-bold">{{ s.strategy }}</span>
-            <span class="text-muted small ms-2">{{ s.num_symbols }} symbols &middot; {{ s.total_trades }} trades &middot; avg {{ s.avg_days|int }}d hold</span>
+            <span class="text-muted small ms-2">{{ s.num_symbols }} symbols &middot; {{ s.total_trades }} fills &middot; {{ s.winners }}W / {{ s.losers }}L &middot; avg {{ s.avg_days|int }}d hold</span>
         </div>
         <div class="d-flex gap-3 align-items-center">
-            <span class="small">{{ "{:.0%}".format(s.win_rate) }} win</span>
+            {% if s.winners + s.losers > 0 %}
+            <span class="small">{{ "{:.0%}".format(s.win_rate) }} of closed trades</span>
+            {% endif %}
             <span class="fw-bold {{ 'text-positive' if s.total_return >= 0 else 'text-negative' }}">
                 {{ money(s.total_return, 0) }}
             </span>
@@ -194,36 +206,30 @@
     <h3>What We Notice</h3>
     <div class="narrative">
         <ul style="list-style: none; padding: 0;">
-            {% if profile.avg_holding_days < 10 %}
-            <li class="mb-2">You tend to trade <strong>short-duration</strong> — averaging {{ profile.avg_holding_days|int }} days per position.</li>
-            {% elif profile.avg_holding_days > 45 %}
-            <li class="mb-2">You're a <strong>patient holder</strong> — averaging {{ profile.avg_holding_days|int }} days per position.</li>
-            {% else %}
-            <li class="mb-2">Your average holding period is <strong>{{ profile.avg_holding_days|int }} days</strong> — a moderate pace.</li>
-            {% endif %}
+            <li class="mb-2">The average hold, weighted by fills, is <strong>{{ profile.avg_holding_days|int }} days</strong>.</li>
 
             {% if profile.top3_concentration > 70 and profile.num_symbols > 3 %}
-            <li class="mb-2">Your top 3 symbols ({{ profile.top3_symbols|join(', ') }}) account for <strong>{{ profile.top3_concentration|int }}%</strong> of your returns. That's concentrated.</li>
+            <li class="mb-2">The top 3 symbols ({{ profile.top3_symbols|join(', ') }}) are <strong>{{ profile.top3_concentration|int }}%</strong> of the absolute results. A large gain and a large loss both count.</li>
             {% elif profile.num_symbols > 8 %}
-            <li class="mb-2">You're well diversified across <strong>{{ profile.num_symbols }} symbols</strong>.</li>
+            <li class="mb-2">The record covers <strong>{{ profile.num_symbols }} symbols</strong>.</li>
             {% endif %}
 
             {% if profile.avg_win and profile.avg_loss %}
-            <li class="mb-2">Your average win is <strong>${{ "{:,.0f}".format(profile.avg_win|abs) }}</strong> and your average loss is <strong>${{ "{:,.0f}".format(profile.avg_loss|abs) }}</strong>.
+            <li class="mb-2">The average win is <strong>{{ money(profile.avg_win|abs, 0) }}</strong> and the average loss is <strong>{{ money(profile.avg_loss|abs, 0) }}</strong>.
                 {% if profile.profit_factor and profile.profit_factor < 1 %}
-                Your losses are bigger than your wins — this is worth watching.
+                Added together, losses are larger than wins.
                 {% elif profile.profit_factor and profile.profit_factor > 2 %}
-                When you win, you win big. Strong edge.
+                Added together, wins are {{ "{:.1f}".format(profile.profit_factor) }} times losses.
                 {% endif %}
             </li>
             {% endif %}
 
             {% if profile.premium_collected > 0 %}
-            <li class="mb-2">You've collected <strong>${{ "{:,.0f}".format(profile.premium_collected) }}</strong> in option premium. That's your income engine.</li>
+            <li class="mb-2">Premium received is <strong>{{ money(profile.premium_collected, 0) }}</strong>.</li>
             {% endif %}
 
             {% if profile.busiest_month %}
-            <li class="mb-2">Your most active period was <strong>{{ profile.busiest_month }}</strong> ({{ profile.busiest_month_trades }} trade groups opened).</li>
+            <li class="mb-2">The most opens were in <strong>{{ profile.busiest_month }}</strong> ({{ profile.busiest_month_trades }} trades). A spread counts as one.</li>
             {% endif %}
         </ul>
     </div>
@@ -237,7 +243,7 @@
     <div class="small text-uppercase fw-bold mb-2" style="letter-spacing:1.5px; color:#8a97b1;">One thing to think about</div>
     <h2>{{ profile.key_insight.title }}</h2>
     <p class="narrative mb-3">{{ profile.key_insight.body }}</p>
-    <div class="prompt-card" style="background:rgba(255,255,255,.6);">
+    <div class="prompt-card">
         <div class="prompt-q">{{ profile.key_insight.action }}</div>
     </div>
 </div>
@@ -247,8 +253,7 @@
 <div class="fl-section text-center">
     <h3>What's Next</h3>
     <p class="narrative mb-4">
-        Your data is in. Your profile is built. Now the real work starts —
-        using this tool to trade more intentionally.
+        Your data is in. Overview shows the latest session. Positions shows the whole book.
     </p>
     <div class="d-flex flex-wrap justify-content-center gap-3">
         <a href="{{ url_for('weekly_review') }}" class="btn btn-primary btn-lg">Go to Overview</a>

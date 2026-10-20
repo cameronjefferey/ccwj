@@ -35,7 +35,7 @@ from app.llm import (
     resolved_user_model_key, model_is_paid,
 )
 from app.llm_access import user_can_use_paid_llm
-from app.money import signed_points
+from app.money import fmt_money, signed_points
 from app.outcome_units import (
     SPREAD_STRATEGIES,
     apply_spread_collected,
@@ -572,6 +572,21 @@ def _strip_md_for_brief(s: str) -> str:
     return s.replace("**", "").replace("*", "")
 
 
+def _format_recent_exit_line(sym, strat, peak, pnl, given_back, days_past):
+    """One recent-close fact for Ask AI.
+
+    A literal ``+$`` in front of a formatted negative prints ``+$-400``.
+    The sign belongs in front of the dollar sign.
+    """
+    return (
+        f"  - {sym} ({strat}) contract: best value while open "
+        f"{fmt_money(peak, 0, signed=True)}, closed at "
+        f"{fmt_money(pnl, 0, signed=True)}, given back "
+        f"{fmt_money(given_back, 0)} "
+        f"({int(days_past or 0)} days after the high)"
+    )
+
+
 def strategy_display_label(name, account, tenant_id, name_counts, tenant_labels=None):
     """Attach an account nickname when the same strategy name is repeated.
 
@@ -1061,11 +1076,9 @@ def _build_coaching_brief(client, tenant_ids):
                 })
 
                 if gb > 10:
-                    recent_lines.append(
-                        f"  - {sym} ({strat}) contract: best value while open +${peak:,.0f}, "
-                        f"closed at +${pnl:,.0f}, given back ${gb:,.0f} "
-                        f"({days_past} days after the high)"
-                    )
+                    recent_lines.append(_format_recent_exit_line(
+                        sym, strat, peak, pnl, gb, days_past,
+                    ))
             if recent_lines:
                 sections.append("RECENT EXIT EXAMPLES (last 90 days)\n" + "\n".join(recent_lines))
     except Exception as exc:

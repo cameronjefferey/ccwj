@@ -583,10 +583,10 @@
     <p class="ts-era-note">Ahead counts symbols whose total return is positive. Total return includes positions still open.</p>
     <div class="ts-style-head">
         <span>Style</span>
-        <span>Positions</span>
+        <span>Symbols</span>
         <span>Ahead</span>
         <span class="ts-align-end">Total return</span>
-        <span class="ts-align-end">Best position</span>
+        <span class="ts-align-end">Best symbol</span>
     </div>
     {% for r in novel.scoreboard %}
     {% set win_pct = ((r.green * 100 / r.symbols)|round|int) if r.symbols else 0 %}
@@ -594,15 +594,15 @@
         <div class="ts-style-name-cell">
             <div class="ts-style-name">{{ r.label }}</div>
             <div class="ts-style-desc">{{ r.desc }}</div>
-            <div class="ts-style-phone-meta">{{ r.symbols }} position{{ 's' if r.symbols != 1 else '' }}{% if r.best_symbol %} · best {{ r.best_symbol }} <span class="ts-style-pnl {{ 'pos' if r.best_pnl >= 0 else 'neg' }}">{{ r.best_text }}</span>{% endif %}</div>
+            <div class="ts-style-phone-meta">{{ r.symbols }} symbol{{ 's' if r.symbols != 1 else '' }}{% if r.best_symbol %} · best {{ r.best_symbol }} <span class="ts-style-pnl {{ 'pos' if r.best_pnl >= 0 else 'neg' }}">{{ r.best_text }}</span>{% endif %}</div>
         </div>
-        <div class="ts-style-n" data-label="Positions">{{ r.symbols }}</div>
+        <div class="ts-style-n" data-label="Symbols">{{ r.symbols }}</div>
         <div data-label="Ahead">
             <div><span class="ts-style-win">{{ r.green }} of {{ r.symbols }}</span><span class="ts-style-pct">{{ win_pct }}%</span></div>
             <div class="ts-style-bar"><span style="width: {{ win_pct }}%"></span></div>
         </div>
         <div class="ts-style-pnl {{ 'pos' if r.pnl >= 0 else 'neg' }}" data-label="Total return">{{ r.pnl_text }}</div>
-        <div class="ts-style-best" data-label="Best position">
+        <div class="ts-style-best" data-label="Best symbol">
             {% if r.best_symbol %}
             <a href="{{ scoped_url('position_detail', symbol=r.best_symbol) }}">{{ r.best_symbol }}</a>
             <span class="ts-style-pnl {{ 'pos' if r.best_pnl >= 0 else 'neg' }}">{{ r.best_text }}</span>
@@ -621,7 +621,7 @@
         <span class="disclosure-note">Calendar days, and new symbols.</span>
     </summary>
     <div class="disclosure-body">
-    <p class="ts-era-note">New symbols are names that first appear in the profile that year. They add up to the header count. Calendar days count each date once, so a year runs lower than the header's trade days.</p>
+    <p class="ts-era-note">New symbols are names with a day-by-day history that first appear that year. A symbol that is only on Positions, with no fills to narrate, stays in the header and out of these years. Calendar days count each date once, so a year runs lower than the header's trade days.</p>
     {% for e in novel.eras %}
     <div class="ts-era">
         <div class="ts-era-year">{{ e.year }}</div>
