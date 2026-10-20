@@ -203,7 +203,7 @@ that names the paper account, keeps paper on that page. Position chips,
 the "traded in N accounts" count, and the symbol strip follow the same
 rule and default to the real account when a symbol exists in both.
 Positions, Strategies, Sectors, and Overview/Today movers use that scope.
-Labels say Paper (privacy mode: `Account N · Paper`) on the chip, the
+Labels say Paper (Hide account names on screen, `user_profiles.privacy_mode`: `Account N · Paper`) on the chip, the
 account picker, and position legs. Practice (`/practice`) still shows
 the paper book. An unscoped admin read (`tenant_ids` None) also drops known
 paper tenants from real totals; a lookup miss leaves that read unscoped.
@@ -456,10 +456,15 @@ What's working:
   Just above the Position Legs table, a collapsed "If held to expiration"
   block is the headline: the total and a count ("Closing early cost you
   $X across N trades vs holding to expiration", or "saved you" when the
-  early exits came out ahead).   Expanding it lists each early close
+  early exits came out ahead). Expanding it lists each early close
   (contract, contracts, closed date, actual P&L, if-held P&L, difference
-  pill). Below 576px each exit is a stacked card instead of that table,
-  so the difference stays on screen. The fold clips overflow so opening
+  pill). Contract expirations and the Closed column always include the
+  short year (`Aug 30 '24`), the same dense form as Position Legs
+  Opened/Closed. A Total row sums contracts, Actual, and If held; its
+  difference pill and the headline are one net (If held minus Actual),
+  so they cannot disagree. The total does not open a chart. Below 576px
+  each exit is a stacked card instead of that table, and the total is a
+  card too, so the difference stays on screen. The fold clips overflow so opening
   it cannot widen the page. Each row opens that contract's chart. On a
   phone the chart is a full-viewport bottom sheet. The difference uses
   the same words on the card and in the panel ("$X more if held" /
@@ -468,7 +473,7 @@ What's working:
   apply; the same sentence is the cell's tooltip. The panel steps between charts,
   largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
-  name when privacy mode is on. Math lives in `app/held_chart.py`; no
+  name when Hide account names on screen is on (`user_profiles.privacy_mode`). Math lives in `app/held_chart.py`; no
   new market-data vendor. The two price queries (`stg_daily_prices`,
   `int_option_marks_daily`) are fetched outside the shared position
   batch (`fetch_held_series`) and fail to empty frames, so a
@@ -992,7 +997,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 ### Connected accounts (`/snaptrade/accounts`) and Settings (`/profile`)
 **Status: One story each. Linking, rename, sync, and billing posts are unchanged.**
 
-Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**.
+Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. Hide account names on screen (`user_profiles.privacy_mode`, default off, Preferences and the Account menu) still masks it as Account N. That control is separate from Private from HappyTrader admins.
 
 Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
@@ -1171,6 +1176,10 @@ one 404s, including any tenant outside the admin's own accounts and
 the demo tenant when the list is down. Impersonation and the digest
 preview 404. The friend's own pages, the demo tenant, and admin-owned
 accounts stay visible. This is an application gate, not encryption.
+The card writes only `admin_hidden_users`. It does not set
+`user_profiles.privacy_mode` and does not change the owner's own pages.
+On-screen masking is a separate control, **Hide account names on screen**
+(Preferences and the Account menu), default off, `POST /privacy-mode` only.
 
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path
@@ -1229,27 +1238,41 @@ not be mistaken for cancel. The post-upload and post-sync processing pages
 land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the
-background** (`_kick_post_connect_sync`) and sends the user to
-`/sync/processing?connecting=1` — they should not have to click Sync now.
+background** (`_kick_post_connect_sync`). A brand-new user (no saved
+survey, no prior account, no earlier tenant) still lands on
+`/sync/processing?connecting=1&first=1` and sees the survey. Someone
+who already finished or skipped that survey, or who already had any
+connected account or uploaded book, goes back to Settings or Connected
+accounts when they started there, otherwise Overview, with a toast
+`"<Broker> connected, syncing now"`. The quiz decision uses the
+accounts and tenants that existed *before* this portal return was
+saved (`app/onboarding_gate.py`). `?first=1` on a later visit is
+re-checked the same way, so a bookmarked processing URL cannot reopen
+the survey. "I'll do this later" (`/overview?later=1`) is unchanged.
 The processing redirect and one-time `data_ready` email wait until **every**
 active tenant has queryable position or account-balance rows (a tenant row
 from connect, or only the first account in a multi-account build, is not
 enough). Account balances cover legitimate cash-only accounts that never
 appear in `positions_summary`.
 
-After SnapTrade connect, the first 10 users of a brokerage we have not
-modeled yet (anything outside schwab / alpaca / fidelity / interactive / vanguard —
-the `stg_broker_other_*` catch-all) see a note: if they choose to
-subscribe, six months of Pro is included free, plus a thank-you for
-patience while we calibrate. Applied
-at checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional `EARLY_BROKER_PROMO_CODE`
-if a matching Stripe promotion code exists. The trial applies only to the
-user's first Pro subscription and is Pro-checkout-only, so it cannot be
-regranted after cancellation or apply to sibling products on the shared
-Stripe account.
+After SnapTrade connect, the first 10 users of every brokerage slug
+(Schwab, Alpaca, Fidelity, Interactive Brokers, and Vanguard included;
+each slug is its own cohort) see a note: if they choose to subscribe,
+six months of Pro is included before the first charge. Applied at
+checkout (`EARLY_BROKER_TRIAL_DAYS`, default 180). Optional
+`EARLY_BROKER_PROMO_CODE` if a matching Stripe promotion code exists.
+The trial applies only to the user's first Pro subscription and is
+Pro-checkout-only, so it cannot be regranted after cancellation or
+apply to sibling products on the shared Stripe account.
 The cohort is stamped on `snaptrade_accounts.early_broker_cohort` at
-first insert (`app/early_broker.py`) so the note still shows after the
-11th user of that broker arrives. Surfaces: `/snaptrade/accounts`,
+first insert (`app/early_broker.py`) and kept. Startup backfill stamps
+the first 10 users per slug who are not already flagged; it only sets
+the flag true, so an existing grant is not revoked when a slug passes
+10 users or when a previously excluded brokerage joins the offer. The
+banner names the newest early-cohort row's stored `broker_slug` (the
+brokerage on the SnapTrade authorization, which wins when it disagrees
+with the account's `institution_name`) and says they are one of the
+first 10 people to connect that broker. Surfaces: `/snaptrade/accounts`,
 `/sync/processing`, `/get-started` / first look. Create the matching
 Stripe promotion code before setting the env var (Checkout already
 allows promo codes).

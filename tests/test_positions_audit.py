@@ -39,6 +39,11 @@ def test_orphan_closes_are_opened_before_history_and_not_realized():
     # Coach closed-counts are CHECK 12. Pre-window closes are not a strategy.
     assert "not coalesce(oc.opened_before_history, false)" in EXIT_ANALYSIS
     assert "not coalesce(opened_before_history, false)" in TRADE_KINDS
+    # A bare Vanguard Buy is not an open. Contracts that stay pre-window
+    # remain on this coach filter instead of picking up invented basis.
+    history = Path("dbt/models/staging/stg_history.sql").read_text()
+    assert "vanguard_first_verb" not in history
+    assert "when 'equity_buy' then 'option_buy_to_open'" not in history
     check12 = Path(
         "dbt/tests/coach_closed_matches_classified_option_contracts.sql"
     ).read_text()

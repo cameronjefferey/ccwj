@@ -70,6 +70,7 @@ app.config.from_object(Config)
 
 from app.option_formatting import (
     compact_contract_label as _compact_contract_label,
+    compact_table_date as _compact_date,
     format_option_symbol as _format_option_symbol,
 )
 
@@ -106,9 +107,11 @@ def _account_label_filter(account_name, tenant_id=None):
             from app.models import get_broker_tenants_for_user
             from app.routes import (
                 _disambiguated_tenant_labels,
+                _rows_with_snaptrade_nicknames,
                 _unique_account_name_labels,
             )
             rows = get_broker_tenants_for_user(current_user.id) or []
+            rows = _rows_with_snaptrade_nicknames(current_user.id, rows)
             tmap = _disambiguated_tenant_labels(rows)
             umap = _unique_account_name_labels(rows, tmap)
             maps = (tmap, umap)
@@ -275,20 +278,6 @@ def _human_date(value):
     if parsed is None:
         return "" if value is None or value == "" else str(value)
     return parsed.strftime("%b %-d, %Y")
-
-
-def _compact_date(value):
-    """Dense table date. Current year drops the year (``Sep 25``).
-
-    Any other year keeps a short year (``Apr 23 '25``) so a multi-year
-    book stays readable without the width of ``Sep 25, 2026``.
-    """
-    parsed = _parse_iso_date(value)
-    if parsed is None:
-        return "" if value is None or value == "" else str(value)
-    if parsed.year == datetime.now().year:
-        return parsed.strftime("%b %-d")
-    return parsed.strftime("%b %-d '%y")
 
 
 def _win_rate_label(rate, winners=None, losers=None):

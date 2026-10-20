@@ -62,6 +62,7 @@ from app.models import (
     set_snaptrade_brokerage_authorization_id,
     snaptrade_snapshot_generation_is_current,
     stamp_snaptrade_force_refresh_attempt,
+    update_broker_tenant_display_nickname,
     update_snaptrade_account_nickname,
     upsert_snaptrade_account,
     get_broker_tenant,
@@ -455,6 +456,22 @@ def _unwrap_body(resp):
 # Account name helpers
 # ---------------------------------------------------------------------------
 
+def _preserved_display_nickname(*rows) -> Optional[str]:
+    """First non-blank user nickname among these rows.
+
+    Callers pass the surviving SnapTrade row, then any row about to be
+    deleted, then the tenant. A later row never replaces an earlier
+    nickname, and a broker label is not a nickname.
+    """
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        nick = (row.get("display_nickname") or "").strip()
+        if nick:
+            return nick
+    return None
+
+
 def _stable_account_name(broker_slug: str, account_number_masked: Optional[str]) -> str:
     """Build the warehouse-facing ``account_name`` label. Once written
     into seed.Account, this string is the tenancy key joined to every
@@ -606,9 +623,15 @@ def open_connection_portal(client, user_id, login_kwargs) -> str:
     return portal_url
 
 
-def remember_portal_session(user_id, *, reconnect_label=None, practice=False):
+def remember_portal_session(
+    user_id, *, reconnect_label=None, practice=False, return_to=None,
+):
     """One-shot callback binding. A practice session never leaves the
-    read-only marker set, and a read-only session clears a stale one."""
+    read-only marker set, and a read-only session clears a stale one.
+
+    ``return_to`` is where an already-onboarded user should land after
+    adding another brokerage (Settings or Connected accounts).
+    """
     session["snaptrade_callback_user_id"] = user_id
     if practice:
         session[PRACTICE_PORTAL_SESSION_KEY] = "1"
@@ -618,6 +641,10 @@ def remember_portal_session(user_id, *, reconnect_label=None, practice=False):
         session["snaptrade_reconnect_label"] = reconnect_label
     else:
         session.pop("snaptrade_reconnect_label", None)
+    if return_to:
+        session["snaptrade_return_to"] = return_to
+    else:
+        session.pop("snaptrade_return_to", None)
 
 
 def portal_return_target(practice: bool, default: str) -> str:
@@ -754,6 +781,7 @@ def snaptrade_connect():
         user_id,
         reconnect_label=(reconnect_broker_label or "broker") if is_reconnect else None,
         practice=False,
+        return_to=safe_internal_next(request.values.get("return_to")),
     )
     return redirect(portal_url)
 
@@ -770,6 +798,7 @@ def snaptrade_callback():
     # Pop the reconnect marker unconditionally so it can never leak into a
     # later unrelated connect; only the success path below uses it.
     reconnect_label = session.pop("snaptrade_reconnect_label", None)
+    return_to = session.pop("snaptrade_return_to", None)
     # Practice portal returns to the ticket. Pop immediately so a later
     # read-only connect cannot inherit it.
     practice_return = bool(session.pop(PRACTICE_PORTAL_SESSION_KEY, None))
@@ -807,6 +836,15 @@ def snaptrade_callback():
         return _after_portal("snaptrade_accounts_page")
 
     existing_accounts = get_snaptrade_accounts(user_id) or []
+    # Snapshot before this portal return writes the new connection.
+    # The survey decision has to use what was already linked, not the
+    # account count after the save.
+    prior_accounts = list(existing_accounts)
+    try:
+        from app.models import get_tenant_ids_for_user
+        prior_tenant_ids = list(get_tenant_ids_for_user(user_id) or [])
+    except Exception:
+        prior_tenant_ids = []
     prior_ids = {
         str(row.get("snaptrade_account_id") or "")
         for row in existing_accounts
@@ -853,6 +891,8 @@ def snaptrade_callback():
     saved = 0
     newly_saved = 0
     paper_saved = 0
+    new_broker_labels = []
+    from app.early_broker import display_name as _broker_display_name
     # Before any new tenant is written, so "first connection" is still true.
     from app.plan import user_has_real_brokerage
     had_real = user_has_real_brokerage(user_id)
@@ -876,11 +916,7 @@ def snaptrade_callback():
         snaptrade_account_id = str(acc.get("id") or "").strip()
         if not snaptrade_account_id:
             continue
-        broker_slug = (
-            (acc.get("institution_name") or "").strip()
-            or _institution_slug_from(acc)
-            or "BROKER"
-        )
+        broker_slug = _broker_label_for_account(acc)
         masked = (acc.get("number") or acc.get("account_number") or "").strip() or None
         account_name = _stable_account_name(broker_slug, masked)
         institution_account_id = (
@@ -911,15 +947,18 @@ def snaptrade_callback():
             if not canonical_tenant:
                 raise ValueError("canonical SnapTrade tenant was not persisted")
             account_name = canonical_tenant["account_name"]
-            stale_account_ids = [
-                str(stale.get("snaptrade_account_id") or "")
-                for stale in existing_accounts
+            stale_rows = [
+                stale for stale in existing_accounts
                 if str(stale.get("snaptrade_account_id") or "")
                 and str(stale.get("snaptrade_account_id") or "")
                 != snaptrade_account_id
                 and str(stale.get("snaptrade_account_id") or "")
                 not in remote_account_ids
                 and stale.get("tenant_id") == tenant_id
+            ]
+            stale_account_ids = [
+                str(stale.get("snaptrade_account_id") or "")
+                for stale in stale_rows
             ]
         except _SnapTradeTenantIdentityConflict as exc:
             identity_conflicts += 1
@@ -936,16 +975,24 @@ def snaptrade_callback():
                 user_id, snaptrade_account_id, exc,
             )
             continue
+        kept_nickname = _preserved_display_nickname(
+            existed, *stale_rows, canonical_tenant,
+        )
         upsert_snaptrade_account(
             user_id,
             snaptrade_account_id,
             tenant_id=tenant_id,
             institution_account_id=institution_account_id,
-            display_nickname=canonical_tenant.get("display_nickname"),
+            display_nickname=kept_nickname,
             broker_slug=broker_slug,
             account_number_masked=masked,
             account_name=account_name,
         )
+        tenant_nick = (canonical_tenant.get("display_nickname") or "").strip()
+        if kept_nickname and not tenant_nick:
+            update_broker_tenant_display_nickname(
+                user_id, tenant_id, kept_nickname,
+            )
         claimed_tenant_ids.add(tenant_id)
         for stale_account_id in stale_account_ids:
             try:
@@ -987,6 +1034,9 @@ def snaptrade_callback():
         saved += 1
         if not existed:
             newly_saved += 1
+            shown = _broker_display_name(broker_slug)
+            if shown and shown not in new_broker_labels:
+                new_broker_labels.append(shown)
             if _account_is_alpaca_paper(acc):
                 paper_saved += 1
 
@@ -1009,12 +1059,23 @@ def snaptrade_callback():
         if practice_return:
             flash("Paper account connected. Pick a call or a put.", "success")
             return redirect(url_for("paper_practice"))
-        all_accounts = get_snaptrade_accounts(user_id) or []
-        pending_first = any(
-            not bool(r.get("first_sync_completed")) for r in all_accounts
+        from app.onboarding_gate import first_connect_needs_quiz
+        # Survey only when onboarding is still genuinely not done.
+        # A new account's first_sync_completed flag is false for every
+        # additional broker; that used to set ?first=1 and reopen the quiz.
+        needs_quiz = first_connect_needs_quiz(
+            user_id, prior_accounts, prior_tenant_ids,
         )
+        # Already onboarded, and this was a new brokerage (not a
+        # reconnect or a recovery of an account we already had).
+        # Go back to Settings/accounts, or Overview, with a toast.
+        # The pull is already running in the background.
+        if needs_quiz is False and newly_saved and not reconnect_label and not recovery_existing:
+            flash(_connected_syncing_message(new_broker_labels), "success")
+            return redirect(_additional_broker_return_url(return_to))
+        all_accounts = get_snaptrade_accounts(user_id) or []
         qp = {"connecting": 1}
-        if pending_first:
+        if needs_quiz:
             qp["first"] = 1
         # A new paper account has no trades. Don't send it through the
         # history-and-Overview waiting room.
@@ -1203,6 +1264,7 @@ def _list_snaptrade_accounts(client, snap):
         if not auth_id:
             complete = False
             continue
+        connection_broker = _connection_broker_name(auth)
         try:
             acc_resp = client.connections.list_brokerage_authorization_accounts(
                 user_id=snap["snaptrade_user_id"],
@@ -1233,11 +1295,15 @@ def _list_snaptrade_accounts(client, snap):
                 # payload — without it the auth-id cache backfill in
                 # _sync_one_connection wouldn't fire.
                 item.setdefault("brokerage_authorization", auth_id)
+                if connection_broker:
+                    item["connection_broker"] = connection_broker
                 out.append(item)
             elif hasattr(item, "to_dict"):
                 try:
                     d = item.to_dict()
                     d.setdefault("brokerage_authorization", auth_id)
+                    if connection_broker:
+                        d["connection_broker"] = connection_broker
                     out.append(d)
                 except Exception:
                     complete = False
@@ -1267,6 +1333,76 @@ def _institution_slug_from(acc) -> str:
         if isinstance(b, dict):
             return (b.get("name") or b.get("slug") or "").strip()
     return ""
+
+
+def _connection_broker_name(auth) -> str:
+    """Brokerage on the authorization the user just granted.
+
+    ``list_brokerage_authorization_accounts`` is called per grant, so
+    this name is the broker they connected, even when the account's
+    own ``institution_name`` names a different firm.
+    """
+    if not isinstance(auth, dict):
+        return ""
+    brokerage = auth.get("brokerage") or {}
+    if not isinstance(brokerage, dict):
+        try:
+            brokerage = brokerage.to_dict() if hasattr(brokerage, "to_dict") else {}
+        except Exception:
+            brokerage = {}
+    if not isinstance(brokerage, dict):
+        return ""
+    return (
+        (brokerage.get("display_name") or "").strip()
+        or (brokerage.get("name") or "").strip()
+        or (brokerage.get("slug") or "").strip()
+    )
+
+
+def _broker_label_for_account(acc) -> str:
+    """Label stored as ``snaptrade_accounts.broker_slug``.
+
+    Prefer the authorization's brokerage. When that name and the
+    account ``institution_name`` disagree, the grant wins — the
+    account field has come back as a different brokerage than the
+    one the user just connected.
+    """
+    if not isinstance(acc, dict):
+        return "BROKER"
+    connection = (acc.get("connection_broker") or "").strip()
+    institution = (acc.get("institution_name") or "").strip()
+    nested = _institution_slug_from(acc)
+    if connection and institution:
+        from app.early_broker import broker_key
+        if broker_key(connection) != broker_key(institution):
+            return connection
+    return connection or institution or nested or "BROKER"
+
+
+def _connected_syncing_message(labels) -> str:
+    """Success toast after an already-onboarded user adds a broker."""
+    names = [str(label).strip() for label in (labels or []) if str(label or "").strip()]
+    if not names:
+        return "Brokerage connected, syncing now"
+    if len(names) == 1:
+        return f"{names[0]} connected, syncing now"
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]} connected, syncing now"
+    return f"{', '.join(names[:-1])}, and {names[-1]} connected, syncing now"
+
+
+def _additional_broker_return_url(return_to) -> str:
+    """Settings or Connected accounts when that's where they started.
+
+    Anywhere else (Get started, a bare portal return) goes to Overview.
+    """
+    from urllib.parse import urlparse
+
+    path = safe_internal_next(return_to) or ""
+    route = (urlparse(path).path or "").rstrip("/")
+    if route in ("/snaptrade/accounts", "/profile"):
+        return path
+    return url_for("weekly_review")
 
 
 def _mapping(obj):
@@ -2351,8 +2487,12 @@ def _flash_and_redirect_after_sync(res, *, first_done, refreshed=False):
         h = (res["github_head_sha"] or "").strip()
         if h:
             qp["sha"] = h
+        # first_sync_completed is false on every newly added broker.
+        # That flag used to reopen the survey for someone already onboarded.
         if not first_done:
-            qp["first"] = 1
+            from app.onboarding_gate import onboarding_quiz_still_pending
+            if onboarding_quiz_still_pending(current_user.id):
+                qp["first"] = 1
         return redirect(url_for("sync_processing", **qp))
 
     if res.get("github_no_changes"):
@@ -3079,7 +3219,9 @@ def _sync_all_for_user(user_id, *, force_full_history=False):
         )
         qp = {"sha": last_pushed_sha}
         if any_first_run:
-            qp["first"] = 1
+            from app.onboarding_gate import onboarding_quiz_still_pending
+            if onboarding_quiz_still_pending(user_id):
+                qp["first"] = 1
         return redirect(url_for("sync_processing", **qp))
 
     if failures and not successes:

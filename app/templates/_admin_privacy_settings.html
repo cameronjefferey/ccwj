@@ -6,6 +6,9 @@
     <div class="card">
         <div class="settings-pad">
             <h2 class="section-header">Private from HappyTrader admins</h2>
+            <p class="settings-lead">
+                This only hides your book from HappyTrader admins. It does not change what you see on your own pages.
+            </p>
             {% if admin_privacy.on %}
             <p class="settings-lead">
                 Private from HappyTrader admins: On{% if admin_privacy.since %}, since {{ admin_privacy.since }}{% endif %}.

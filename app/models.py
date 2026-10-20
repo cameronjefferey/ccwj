@@ -618,9 +618,9 @@ def _backfill_broker_tenant_nicknames_from_snaptrade_accounts():
 
     Only fills NULL targets — a nickname already on broker_tenants is
     treated as the more authoritative value and never overwritten by
-    this backfill. Joins on
-    ``broker_tenants.broker_uuid = snaptrade_accounts.snaptrade_account_id``
-    since SnapTrade's account UUID is the natural key for both.
+    this backfill. Matches the current SnapTrade account UUID, or the
+    canonical ``tenant_id`` when a reconnect issued a new UUID and the
+    nickname still lives on the SnapTrade row.
 
     Safe to call on every startup: matches existing
     ``_migrate_*`` helpers' idempotency contract. Once the
@@ -634,8 +634,9 @@ def _backfill_broker_tenant_nicknames_from_snaptrade_accounts():
             "SET display_nickname = sa.display_nickname, updated_at = NOW() "
             "FROM snaptrade_accounts sa "
             "WHERE bt.broker_slug = 'snaptrade' "
-            "  AND bt.broker_uuid = sa.snaptrade_account_id "
             "  AND bt.user_id = sa.user_id "
+            "  AND (bt.broker_uuid = sa.snaptrade_account_id "
+            "       OR bt.tenant_id = sa.tenant_id) "
             "  AND bt.display_nickname IS NULL "
             "  AND sa.display_nickname IS NOT NULL "
             "  AND length(trim(sa.display_nickname)) > 0"
@@ -1269,12 +1270,11 @@ def _migrate_snaptrade_snapshot_sync_generation():
 
 
 def _migrate_snaptrade_early_broker_cohort():
-    """Idempotent: first-N users of an unmodeled SnapTrade brokerage.
+    """Idempotent: first 10 users of every SnapTrade brokerage slug.
 
-    Dedicated dbt adapters cover schwab/alpaca/fidelity/interactive;
-    everything else is catch-all. The flag is stamped at first connect
-    (and backfilled here for people who connected before the note shipped)
-    so the thank-you still shows after the 11th user of that broker arrives.
+    The flag is stamped at first connect and backfilled here for people
+    who connected before the offer covered their broker. Backfill only
+    sets the flag true, so a grant already stored is not revoked.
     """
     try:
         execute(
@@ -2768,6 +2768,10 @@ def upsert_snaptrade_account(
     renames an account at the broker), but renaming after first sync
     orphans seed rows. Callers (the /snaptrade/callback handler) are
     expected to pass a stable label derived from broker + masked number.
+
+    ``display_nickname`` is the user-set label. A non-blank value already
+    stored on the row always wins. A blank incoming value does not clear
+    it; clearing is ``update_snaptrade_account_nickname`` only.
     """
     execute(
         """INSERT INTO snaptrade_accounts
@@ -2782,8 +2786,8 @@ def upsert_snaptrade_account(
                    EXCLUDED.institution_account_id
                ),
                display_nickname       = COALESCE(
-                   snaptrade_accounts.display_nickname,
-                   EXCLUDED.display_nickname
+                   NULLIF(btrim(snaptrade_accounts.display_nickname), ''),
+                   NULLIF(btrim(EXCLUDED.display_nickname), '')
                ),
                broker_slug           = EXCLUDED.broker_slug,
                account_number_masked = EXCLUDED.account_number_masked,
