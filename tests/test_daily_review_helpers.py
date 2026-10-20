@@ -2381,6 +2381,43 @@ class TestBuildAccountBreakdown:
         assert len(out["rows"]) == 1
         assert out["rows"][0]["net_pnl"] == 400.0
 
+    def test_monday_close_window_starts_on_that_monday(self):
+        """Tuesday Oct 20 publishes Monday Oct 19, and that Monday is the window.
+
+        The scorecard keeps open positions plus closes on or after the
+        ISO Monday of the close on screen. When that close is itself a
+        Monday, the closed slice is that one session. Calendar-today
+        (Tuesday) is outside the published close.
+        """
+        from app.weekly_review import _iso_week_start
+
+        tuesday = date(2026, 10, 20)
+        monday = date(2026, 10, 19)
+        prior_friday = date(2026, 10, 16)
+        session = _snapshot_as_of_date(
+            tuesday, {"state": "after_hours"}, et_today=tuesday)
+        assert session == monday
+        week = _iso_week_start(session)
+        assert week == monday
+        assert week != tuesday
+        df = pd.DataFrame([
+            self._row(
+                symbol="MON", num_open_groups=0, num_equity_legs=0,
+                num_option_legs=0, current_equity_cost=0.0,
+                last_activity_date=monday,
+                net_pnl=100.0, equity_pnl=100.0, dividend_income=0.0,
+            ),
+            self._row(
+                symbol="FRI", num_open_groups=0, num_equity_legs=0,
+                num_option_legs=0, current_equity_cost=0.0,
+                last_activity_date=prior_friday,
+                net_pnl=900.0, equity_pnl=900.0, dividend_income=0.0,
+            ),
+        ])
+        out = _build_account_breakdown(df, week_start=week)
+        assert len(out["rows"]) == 1
+        assert out["rows"][0]["net_pnl"] == 100.0
+
     def test_week_scope_none_keeps_everything(self):
         week_start = None
         df = pd.DataFrame([
@@ -3688,6 +3725,7 @@ class TestReviewSessionDates:
             context = weekly_review.overview_below.__wrapped__()
 
         assert context["review_date"] == friday
+        assert context["overview_performance_in_fragment"] is True
         assert observed["snap_cutoff"] == friday
         assert observed["scorecard_week"] == date(2026, 8, 24)
         assert observed["highlight_symbols"] == ["FRIDAY_FILL"]

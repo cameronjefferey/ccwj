@@ -6161,6 +6161,9 @@ def weekly_review():
         # The full page includes Daily change after Accounts. Only the
         # lazy /overview/below response also embeds that partial.
         "overview_daily_in_fragment": False,
+        # Performance by account renders under the hero. The lazy
+        # fragment includes the partial so it can be moved into that slot.
+        "overview_performance_in_fragment": False,
         "debug_lots": request.args.get("debug") == "lots",
     }
 
@@ -6760,6 +6763,7 @@ def overview_below():
         "building_history": None,
         "overview_below_deferred": False,
         "overview_daily_in_fragment": True,
+        "overview_performance_in_fragment": True,
     }
 
     try:

@@ -1,4 +1,4 @@
-"""Overview and Today read as one page: headline, what happened, then the rest."""
+"""Overview and Today read as one page: headline, performance, what happened, then the rest."""
 
 from pathlib import Path
 
@@ -6,6 +6,7 @@ ROOT = Path("app/templates")
 PAGE = (ROOT / "weekly_review.html").read_text()
 BELOW = (ROOT / "_overview_below.html").read_text()
 DAILY = (ROOT / "_overview_daily.html").read_text()
+PERF = (ROOT / "_overview_performance.html").read_text()
 TODAY = (ROOT / "today.html").read_text()
 STYLES = (ROOT / "_review_styles.html").read_text()
 SINCE = (ROOT / "_since_last_looked.html").read_text()
@@ -25,22 +26,55 @@ def test_overview_story_order_is_headline_then_what_happened_then_accounts():
     assert "border:1px solid #5b8cff" not in PAGE
 
 
-def test_simple_view_tucks_execution_and_performance():
+def test_simple_view_tucks_execution_and_hides_performance():
     exec_at = BELOW.index('id="ov-execution"')
-    perf_at = BELOW.index('id="ov-performance"')
     week_at = BELOW.index('id="ov-week"')
     assert BELOW.rfind("{% if not simple_view %}", 0, exec_at) != -1
-    assert BELOW.rfind("{% if not simple_view %}", 0, perf_at) > exec_at
-    assert "simple-view-full execution" in BELOW[exec_at:perf_at]
-    assert "simple-view-full performance" in BELOW[perf_at:week_at]
+    assert "simple-view-full execution" in BELOW[exec_at:week_at]
+    assert 'id="ov-performance"' not in BELOW
+    assert PERF.index("{% if not simple_view %}") < PERF.index('id="ov-performance"')
+    assert "simple-view-full performance" in PERF
+    slot = PAGE.index('id="ht-overview-performance"')
+    assert PAGE.rfind("{% if not simple_view %}", 0, slot) > PAGE.index('class="review-hero"')
+    assert slot < PAGE.index('id="ov-show-more"')
     assert PAGE.index("{% if not simple_view %}") < PAGE.index("See your trader profile")
+
+
+def test_performance_by_account_opens_under_the_hero():
+    """First section under the hero, expanded unless a stored collapse says closed."""
+    hero = PAGE.index('class="review-hero"')
+    slot = PAGE.index('id="ht-overview-performance"')
+    inline = PAGE.index('{% include "_overview_performance.html" %}')
+    happened = PAGE.index('id="ov-happened"')
+    accounts = PAGE.index('id="ov-accounts"')
+    assert hero < slot < happened < accounts
+    assert hero < inline < happened
+    assert '<details class="disclosure" id="ov-performance" open>' in PERF
+    assert "Performance by account" in PERF
+    assert "How this is computed" in PERF
+    assert "ht-ov-performance" in PAGE
+    assert 'stored === "0"' in PAGE
+    assert "placeOverviewPerformance" in PAGE
+    assert "overview_performance_in_fragment" in BELOW
+    assert BELOW.index("overview_performance_in_fragment") < BELOW.index('id="ov-week"')
+    assert 'id="ov-performance"' not in BELOW
+    # Phone: title and chevron share a row; the note wraps underneath.
+    # Dividend / G/L % / Annualized stay hideable.
+    assert "grid-template-columns: minmax(0, 1fr) auto" in STYLES
+    assert '#ov-performance .breakdown-wrap { min-width: 0; max-width: 100%; }' in STYLES
+    assert 'data-m="hide">Dividend' in PERF
+    assert 'data-m="hide">G/L %' in PERF
+    # Subtitle still names week_start. The window math stays in Python.
+    assert "week_start.strftime('%a %-d')" in PERF
+    source = Path("app/weekly_review.py").read_text()
+    assert '"overview_performance_in_fragment": False' in source
+    assert '"overview_performance_in_fragment": True' in source
 
 
 def test_secondary_overview_sections_are_collapsed_in_order():
     assert BELOW.index('id="ov-radar"') < BELOW.index('id="ov-execution"')
     assert BELOW.index('id="ov-execution"') < BELOW.index('{% include "_overview_daily.html" %}')
-    assert BELOW.index('{% include "_overview_daily.html" %}') < BELOW.index('id="ov-performance"')
-    assert BELOW.index('id="ov-performance"') < BELOW.index('id="ov-week"')
+    assert BELOW.index('{% include "_overview_daily.html" %}') < BELOW.index('id="ov-week"')
     assert 'class="review-section"' not in BELOW
     assert '<details class="disclosure" id="ov-daily">' not in BELOW
     assert '<details class="disclosure" id="ov-week">' in BELOW

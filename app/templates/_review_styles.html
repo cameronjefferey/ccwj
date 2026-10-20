@@ -183,6 +183,32 @@
     .disclosure-body { padding: 0 1.1rem 1rem; min-width: 0; }
     body .ov-page .disclosure > summary .section-header { margin: 0; }
     .disclosure-note { font-size: .82rem; color: var(--ht-muted); font-weight: 500; }
+    /* Performance by account sits under the hero and stays inside the
+       page width on a phone. The note wraps under the title; Dividend,
+       G/L %, and Annualized stay on data-m="hide". */
+    #ov-performance { min-width: 0; max-width: 100%; }
+    #ov-performance .disclosure-body,
+    #ov-performance .breakdown-wrap { min-width: 0; max-width: 100%; }
+    @media (max-width: 640px) {
+        body .ov-page #ov-performance > summary {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            column-gap: .75rem;
+            row-gap: .2rem;
+        }
+        body .ov-page #ov-performance > summary .section-header { grid-column: 1; grid-row: 1; }
+        body .ov-page #ov-performance > summary .disclosure-note {
+            grid-column: 1 / -1;
+            grid-row: 2;
+            min-width: 0;
+        }
+        body .ov-page #ov-performance > summary::after {
+            grid-column: 2;
+            grid-row: 1;
+            margin-left: 0;
+        }
+    }
     .ov-note { font-size: .85rem; color: var(--ht-muted); margin: 0 0 .75rem; max-width: 62ch; }
     .ov-subk { font-size: .78rem; font-weight: 650; color: var(--ht-label); margin: 0 0 .4rem; }
     .ov-facts {

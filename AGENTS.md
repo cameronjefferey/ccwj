@@ -215,16 +215,20 @@ query-cache epoch so the next load misses the previous entry. The fill
 itself still waits for the next settled close.
 
 The page reads in one order: the headline (session date, account value, the
-close labeled Today, this week), then one **What happened** section (that
+close labeled Today, this week), then **Performance by account** (full view,
+open by default, directly under the hero; a stored collapse in
+`localStorage` key `ht-ov-performance` = `0` is the only remembered closed
+state), then one **What happened** section (that
 session's fills and the notable moves), then the account breakdown, then
 **Daily change** as an open section (the heatmap, still loaded with the
 lazy `/overview/below` fragment and placed in `#ht-overview-daily`), then
 secondary items collapsed in disclosures — building your history, the radar,
-execution review, performance by account, and trades this week.
-Simple view keeps Daily change open under Accounts and tucks the rest
-under Show more. `#ht-overview-below` is not a card; an empty or failed
-load removes that slot. Daily change stays, with a refresh line when the
-fragment never arrives.
+execution review, and trades this week.
+Simple view keeps Daily change open under Accounts, hides Performance by
+account, and tucks the rest under Show more. `#ht-overview-below` is not a
+card; an empty or failed load removes that slot. Daily change stays, with a
+refresh line when the fragment never arrives. The same lazy response moves
+`#ov-performance` into `#ht-overview-performance` under the hero.
 
 What's working:
 - Session hero: brand and the Group filter sit in the dark
