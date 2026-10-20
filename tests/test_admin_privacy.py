@@ -836,14 +836,13 @@ def test_admin_privacy_on_still_shows_the_owners_nickname(world, db_conn):
     assert "••••" not in body
 
     prefs = http.get("/profile?tab=preferences").get_data(as_text=True)
-    assert "Hide account names on screen" in prefs
+    assert "Hide account names on screen" not in prefs
+    assert 'action="/privacy-mode"' not in prefs
     assert "does not change what you see" in prefs
     admin_form = prefs.split('id="admin-privacy"', 1)[1].split("</form>", 1)[0]
     assert "set_admin_privacy" in admin_form
     assert "/privacy-mode" not in admin_form
-    screen_form = prefs.split('action="/privacy-mode"', 1)[1].split("</form>", 1)[0]
-    assert "Hide account names on screen" in screen_form
-    assert "set_admin_privacy" not in screen_form
+    assert "set_privacy_mode" not in admin_form
 
     http.post(
         "/profile?tab=preferences",
@@ -864,29 +863,18 @@ def test_admin_privacy_on_still_shows_the_owners_nickname(world, db_conn):
     assert OWNER_NICK in still
     assert "Account 1" not in still
 
-    http.post(
+    refused = http.post(
         "/privacy-mode",
         data={"enabled": "1", "next": "/profile?tab=account"},
-        follow_redirects=True,
+        follow_redirects=False,
     )
-    assert _stored_privacy_mode(friend_id) is True
-    assert is_hidden_from_admins(friend_id)
-    masked = http.get("/profile?tab=account").get_data(as_text=True)
-    assert "Account 1" in masked
-    assert OWNER_NICK not in masked
-    assert "••••" in masked
-
-    http.post(
-        "/privacy-mode",
-        data={"enabled": "0", "next": "/profile?tab=account"},
-        follow_redirects=True,
-    )
+    assert refused.status_code == 403
     assert _stored_privacy_mode(friend_id) is False
     assert is_hidden_from_admins(friend_id)
-    clear = http.get("/profile?tab=account").get_data(as_text=True)
-    assert OWNER_NICK in clear
-    assert "Account 1" not in clear
-    assert "••••" not in clear
+    still_named = http.get("/profile?tab=account").get_data(as_text=True)
+    assert OWNER_NICK in still_named
+    assert "Account 1" not in still_named
+    assert "Hide account names on screen" not in still_named
     _logout(http)
 
 

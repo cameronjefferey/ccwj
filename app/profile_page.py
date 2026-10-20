@@ -143,8 +143,8 @@ def profile():
             return blocked
         action = request.form.get("action", "")
         if action == "set_admin_privacy":
-            # admin_hidden_users only. Screen masking is POST /privacy-mode
-            # (user_profiles.privacy_mode) and must not move with this card.
+            # admin_hidden_users only. The screen mask is admin-only
+            # (POST /privacy-mode) and must not move with this card.
             from app.admin_privacy import (
                 NOT_INVITED,
                 enable_own_privacy,

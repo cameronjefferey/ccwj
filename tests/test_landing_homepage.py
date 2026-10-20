@@ -235,7 +235,7 @@ def test_homepage_renders_click_to_play_story(monkeypatch):
         assert _webp_width(blob) == story["width"]
         small = (root / "app" / "static" / story["image_sm"]).read_bytes()
         assert _webp_width(small) == 800
-    assert "Hide account names on screen masks account names" in html
+    assert "Hide account names on screen" not in html
     assert "ht-band-proof" in html
     assert 'class="ht-proof-k"' not in page
     assert "ht-band-how" in html

@@ -1,7 +1,14 @@
 """Privacy mode masks identity and account balances at the data layer.
 
 Trade-level money formatting is a different function and stays numeric.
+The mask is an admin recording tool. A stored flag does not mask a
+non-admin, and a non-admin cannot turn it on.
 """
+
+import os
+import uuid
+
+import pytest
 
 from app.money import fmt_money
 from app.privacy import (
@@ -197,20 +204,362 @@ def test_story_review_keeps_names_when_privacy_is_off(monkeypatch):
     assert markers[0]["tips"][0]["acct"] == "Roth IRA"
 
 
-def test_screen_mask_and_admin_privacy_use_different_controls():
-    """The on-screen mask and private-from-admins do not share a form."""
+def test_screen_mask_control_is_admin_menu_only():
+    """End users have no toggle. Admins get it inside the Admin menu.
+
+    Private-from-admins stays its own form and does not post the screen mask.
+    """
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     profile = (root / "app/templates/profile.html").read_text()
     admin = (root / "app/templates/_admin_privacy_settings.html").read_text()
     nav = (root / "app/templates/base.html").read_text()
-    screen = profile.split("set_privacy_mode_route", 1)[1].split("</form>", 1)[0]
-    assert "Hide account names on screen" in screen
-    assert "set_admin_privacy" not in screen
+    assert "set_privacy_mode_route" not in profile
+    assert 'id="settings-privacy"' not in profile
     assert "Privacy mode" not in profile
+    account = nav.split('id="userMenu"', 1)[1].split("</ul>", 1)[0]
+    assert "Hide account names on screen" not in account
+    assert "set_privacy_mode_route" not in account
+    admin_menu = nav.split('id="navAdmin"', 1)[1].split("</ul>", 1)[0]
+    assert "Hide account names on screen" in admin_menu
+    assert "set_privacy_mode_route" in admin_menu
+    assert "{% if is_admin_user %}" in nav.split('id="navAdmin"', 1)[0][-500:]
     assert 'name="action" value="set_admin_privacy"' in admin
     assert "set_privacy_mode" not in admin
     assert "does not change what you see" in admin
-    assert "Hide account names on screen" in nav
     assert "Privacy mode" not in nav
+    templates = root / "app/templates"
+    for path in templates.rglob("*.html"):
+        text = path.read_text()
+        if "set_privacy_mode_route" in text:
+            assert path.name == "base.html"
+        if "Hide account names on screen masks" in text or "can mask them when you turn it on" in text:
+            raise AssertionError(path.name)
+
+
+class _Viewer:
+    is_authenticated = True
+
+    def __init__(self, username, user_id):
+        self.username = username
+        self.id = user_id
+
+
+def test_stored_flag_does_not_mask_a_non_admin(monkeypatch):
+    monkeypatch.setenv("ADMIN_USERS", "zzoperator")
+    monkeypatch.setattr("flask_login.current_user", _Viewer("zztrader", 4))
+    monkeypatch.setattr("app._viewer_profile", lambda: {"privacy_mode": True})
+    from app import app
+    from app.privacy import privacy_mode_on
+
+    with app.test_request_context("/profile"):
+        assert privacy_mode_on() is False
+
+
+def test_stored_flag_masks_an_admin(monkeypatch):
+    monkeypatch.setenv("ADMIN_USERS", "zzoperator")
+    monkeypatch.setattr("flask_login.current_user", _Viewer("zzoperator", 9))
+    monkeypatch.setattr("app._viewer_profile", lambda: {"privacy_mode": True})
+    from app import app
+    from app.privacy import privacy_mode_on
+
+    with app.test_request_context("/profile"):
+        assert privacy_mode_on() is True
+
+
+def test_admin_with_flag_off_is_not_masked(monkeypatch):
+    monkeypatch.setenv("ADMIN_USERS", "zzoperator")
+    monkeypatch.setattr("flask_login.current_user", _Viewer("zzoperator", 9))
+    monkeypatch.setattr("app._viewer_profile", lambda: {"privacy_mode": False})
+    from app import app
+    from app.privacy import privacy_mode_on
+
+    with app.test_request_context("/profile"):
+        assert privacy_mode_on() is False
+
+
+def test_demo_login_is_never_masked(monkeypatch):
+    monkeypatch.setenv("ADMIN_USERS", "demo,zzoperator")
+    monkeypatch.setattr("flask_login.current_user", _Viewer("demo", 1))
+    monkeypatch.setattr("app._viewer_profile", lambda: {"privacy_mode": True})
+    from app import app
+    from app.privacy import privacy_mode_on
+
+    with app.test_request_context("/overview"):
+        assert privacy_mode_on() is False
+
+
+def test_set_privacy_mode_refuses_a_non_admin(monkeypatch):
+    calls = []
+    monkeypatch.setenv("ADMIN_USERS", "zzoperator")
+    monkeypatch.setattr("flask_login.current_user", _Viewer("zztrader", 4))
+
+    def _write(*args, **kwargs):
+        calls.append((args, kwargs))
+        return True
+
+    monkeypatch.setattr("app.models.update_user_profile", _write)
+    from app import app
+    from app.privacy import set_privacy_mode
+
+    with app.test_request_context("/privacy-mode", method="POST"):
+        assert set_privacy_mode(True) is False
+    assert calls == []
+
+
+def test_set_privacy_mode_writes_for_an_admin(monkeypatch):
+    calls = []
+    monkeypatch.setenv("ADMIN_USERS", "zzoperator")
+    monkeypatch.setattr("flask_login.current_user", _Viewer("zzoperator", 9))
+
+    def _write(*args, **kwargs):
+        calls.append((args, kwargs))
+        return True
+
+    monkeypatch.setattr("app.models.update_user_profile", _write)
+    from app import app
+    from app.privacy import privacy_mode_on, set_privacy_mode
+
+    with app.test_request_context("/privacy-mode", method="POST"):
+        assert set_privacy_mode(True) is True
+        assert privacy_mode_on() is True
+    assert calls == [((9,), {"privacy_mode": True})]
+
+
+def test_profile_update_strips_screen_mask_unless_admin_updates_self(monkeypatch):
+    sqls = []
+    monkeypatch.setenv("ADMIN_USERS", "zzoperator")
+    monkeypatch.setattr("app.models.ensure_user_profile", lambda user_id: None)
+    monkeypatch.setattr("app.models._forget_shell", lambda user_id: None)
+    monkeypatch.setattr("app.models.execute", lambda sql, params=(): sqls.append(sql))
+    from app import app
+    from app.models import update_user_profile
+
+    with app.test_request_context("/profile"):
+        monkeypatch.setattr("flask_login.current_user", _Viewer("zztrader", 4))
+        assert update_user_profile(4, display_name="Ada", privacy_mode=True) is True
+        monkeypatch.setattr("flask_login.current_user", _Viewer("zzoperator", 9))
+        assert update_user_profile(9, privacy_mode=True) is True
+        assert update_user_profile(4, privacy_mode=True) is True
+    assert "privacy_mode" not in sqls[0]
+    assert "display_name" in sqls[0]
+    assert "privacy_mode" in sqls[1]
+    assert len(sqls) == 2
+
+
+def _unique(prefix):
+    return f"{prefix}_{uuid.uuid4().hex[:8]}"
+
+
+def _create_user(conn, username):
+    from werkzeug.security import generate_password_hash
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO users (username, password_hash, email) "
+            "VALUES (%s, %s, %s) RETURNING id",
+            (username, generate_password_hash("testpass123"), f"{username}@example.com"),
+        )
+        user_id = int(cur.fetchone()["id"])
+    conn.commit()
+    return user_id
+
+
+def _plant_account(conn, user_id, nickname):
+    from app.models import get_or_create_broker_tenant
+
+    account_name = "ZZBROKER-ACCT-7712"
+    tenant_id = get_or_create_broker_tenant(
+        user_id, "snaptrade", uuid.uuid4().hex, account_name,
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE broker_tenants SET display_nickname = %s "
+            "WHERE user_id = %s AND tenant_id = %s",
+            (nickname, user_id, tenant_id),
+        )
+        cur.execute(
+            """
+            INSERT INTO snaptrade_accounts
+                (user_id, snaptrade_account_id, tenant_id, broker_slug,
+                 account_name, display_nickname)
+            VALUES (%s, %s, %s, 'schwab', %s, %s)
+            """,
+            (user_id, uuid.uuid4().hex, tenant_id, account_name, nickname),
+        )
+    conn.commit()
+    return tenant_id
+
+
+def _plant_privacy_flag(user_id, enabled):
+    from app.db import execute
+    from app.models import _forget_shell, ensure_user_profile
+
+    ensure_user_profile(user_id)
+    execute(
+        "UPDATE user_profiles SET privacy_mode = %s WHERE user_id = %s",
+        (bool(enabled), user_id),
+    )
+    _forget_shell(user_id)
+
+
+def _stored_flag(user_id):
+    from app.db import fetch_one
+
+    row = fetch_one(
+        "SELECT privacy_mode FROM user_profiles WHERE user_id = %s",
+        (user_id,),
+    )
+    return bool(row and row["privacy_mode"])
+
+
+def _login(http, username):
+    resp = http.post(
+        "/login",
+        data={"username": username, "password": "testpass123"},
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 303)
+
+
+def _account_menu(html):
+    start = html.find('id="userMenu"')
+    assert start != -1
+    return html[start:html.find("</ul>", start)]
+
+
+def _admin_menu(html):
+    start = html.find('id="navAdmin"')
+    if start == -1:
+        return ""
+    return html[start:html.find("</ul>", start)]
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set; skipping DB-dependent tests",
+)
+def test_non_admin_sees_real_names_and_cannot_enable_the_mask(app, db_conn, monkeypatch):
+    """A stored true flag does not mask, and POST /privacy-mode is rejected."""
+    username = _unique("mask_user")
+    nickname = "ZZMASK-NICK-7712"
+    monkeypatch.setenv("ADMIN_USERS", "zzoperator_unused")
+    user_id = _create_user(db_conn, username)
+    try:
+        _plant_account(db_conn, user_id, nickname)
+        _plant_privacy_flag(user_id, True)
+        assert _stored_flag(user_id) is True
+
+        http = app.test_client()
+        _login(http, username)
+        account = http.get("/profile?tab=account")
+        body = account.get_data(as_text=True)
+        assert account.status_code == 200
+        assert nickname in body
+        assert "Account 1" not in body
+        assert "Hide account names on screen" not in body
+        assert 'action="/privacy-mode"' not in body
+        menu = _account_menu(body)
+        assert "Hide account names on screen" not in menu
+        assert _admin_menu(body) == ""
+
+        prefs = http.get("/profile?tab=preferences").get_data(as_text=True)
+        assert "Hide account names on screen" not in prefs
+        assert 'id="settings-privacy"' not in prefs
+        assert 'action="/privacy-mode"' not in prefs
+
+        refused = http.post(
+            "/privacy-mode",
+            data={"enabled": "1", "next": "/profile?tab=account"},
+            follow_redirects=False,
+        )
+        assert refused.status_code == 403
+        assert _stored_flag(user_id) is True
+        again = http.get("/profile?tab=account").get_data(as_text=True)
+        assert nickname in again
+        assert "Account 1" not in again
+    finally:
+        with db_conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        db_conn.commit()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set; skipping DB-dependent tests",
+)
+def test_admin_can_toggle_the_screen_mask(app, db_conn, monkeypatch):
+    username = _unique("mask_admin")
+    nickname = "ZZMASK-ADMIN-7712"
+    monkeypatch.setenv("ADMIN_USERS", username)
+    user_id = _create_user(db_conn, username)
+    try:
+        _plant_account(db_conn, user_id, nickname)
+        _plant_privacy_flag(user_id, False)
+
+        http = app.test_client()
+        _login(http, username)
+        before = http.get("/profile?tab=account").get_data(as_text=True)
+        assert nickname in before
+        assert "Account 1" not in before
+        assert "Hide account names on screen" not in _account_menu(before)
+        admin_menu = _admin_menu(before)
+        assert "Hide account names on screen" in admin_menu
+        assert 'action="/privacy-mode"' in admin_menu
+        prefs = http.get("/profile?tab=preferences").get_data(as_text=True)
+        assert 'id="settings-privacy"' not in prefs
+
+        turned_on = http.post(
+            "/privacy-mode",
+            data={"enabled": "1", "next": "/profile?tab=account"},
+            follow_redirects=True,
+        )
+        assert turned_on.status_code == 200
+        assert _stored_flag(user_id) is True
+        masked = turned_on.get_data(as_text=True)
+        assert nickname not in masked
+        assert "Account 1" in masked
+        assert "Hide account names on screen is on" in _admin_menu(masked)
+
+        turned_off = http.post(
+            "/privacy-mode",
+            data={"enabled": "0", "next": "/profile?tab=account"},
+            follow_redirects=True,
+        )
+        assert turned_off.status_code == 200
+        assert _stored_flag(user_id) is False
+        clear = turned_off.get_data(as_text=True)
+        assert nickname in clear
+        assert "Account 1" not in clear
+    finally:
+        with db_conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        db_conn.commit()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set; skipping DB-dependent tests",
+)
+def test_startup_clears_screen_mask_for_non_admins(db_conn, monkeypatch):
+    admin_name = _unique("mask_keep")
+    other_name = _unique("mask_clear")
+    monkeypatch.setenv("ADMIN_USERS", admin_name)
+    admin_id = _create_user(db_conn, admin_name)
+    other_id = _create_user(db_conn, other_name)
+    try:
+        _plant_privacy_flag(admin_id, True)
+        _plant_privacy_flag(other_id, True)
+        from app.models import _clear_non_admin_screen_mask
+
+        _clear_non_admin_screen_mask()
+        assert _stored_flag(admin_id) is True
+        assert _stored_flag(other_id) is False
+    finally:
+        with db_conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM users WHERE id = ANY(%s)",
+                ([admin_id, other_id],),
+            )
+        db_conn.commit()

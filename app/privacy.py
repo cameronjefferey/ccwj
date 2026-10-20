@@ -1,9 +1,10 @@
-"""Privacy mode — mask identity and account balances at the data layer.
+"""Screen mask — hide account names and balances while an admin records a demo.
 
-The toggle is stored on ``user_profiles.privacy_mode`` (and, for the shared
-demo login, only in the session so one viewer cannot flip it for everyone).
-The same flag is mirrored into localStorage ``ht-privacy`` so the header
-control and any client cache key stay in step with what the server rendered.
+The flag is stored on ``user_profiles.privacy_mode``. It takes effect only
+for a signed-in admin (``ADMIN_USERS``). A stored true on any other user,
+including the shared demo login, is ignored. Startup clears those rows.
+The rendered flag is mirrored into localStorage ``ht-privacy`` so chart
+tooltips and the symbol-cache key match the page.
 
 Masking happens when a label or balance is turned into text. Tables that
 re-sort or redraw from ``data-val`` / ``account_display`` keep the neutral
@@ -12,6 +13,9 @@ a CSS overlay.
 
 Trade-level P&L and prices are left alone. Only account value, cash, and
 per-account balances go through ``privacy_balance`` / ``privacy_signed``.
+
+Private-from-admins (``admin_hidden_users``) is a different control and
+is not read or written here.
 """
 
 from __future__ import annotations
@@ -20,7 +24,6 @@ import re
 
 PRIVACY_MASK = "••••"
 PRIVACY_STORAGE_KEY = "ht-privacy"
-_SESSION_KEY = "ht_privacy_mode"
 
 
 def slots_from_rows(rows) -> tuple[dict, dict]:
@@ -260,11 +263,32 @@ def _format_dollars(value, digits, *, signed):
     return f"${number:,.{places}f}"
 
 
-def privacy_mode_on() -> bool:
-    """Whether the signed-in viewer is in privacy mode. False when logged out."""
+def viewer_may_use_screen_mask() -> bool:
+    """True only for a signed-in admin. The demo login is never an admin."""
     try:
-        from flask import g, has_request_context, session
+        from flask import has_request_context
         from flask_login import current_user
+        from app.models import is_admin
+    except Exception:
+        return False
+    if not has_request_context():
+        return False
+    if not getattr(current_user, "is_authenticated", False):
+        return False
+    try:
+        return bool(is_admin(getattr(current_user, "username", None)))
+    except Exception:
+        return False
+
+
+def privacy_mode_on() -> bool:
+    """Whether this request should mask names and balances.
+
+    False when logged out, and false for every non-admin even when
+    ``user_profiles.privacy_mode`` is stored true.
+    """
+    try:
+        from flask import g, has_request_context
     except Exception:
         return False
     if not has_request_context():
@@ -274,14 +298,10 @@ def privacy_mode_on() -> bool:
         return bool(cached)
     on = False
     try:
-        if getattr(current_user, "is_authenticated", False):
-            from app.utils import is_demo_user
-            if is_demo_user():
-                on = bool(session.get(_SESSION_KEY))
-            else:
-                from app import _viewer_profile
-                profile = _viewer_profile() or {}
-                on = bool(profile.get("privacy_mode"))
+        if viewer_may_use_screen_mask():
+            from app import _viewer_profile
+            profile = _viewer_profile() or {}
+            on = bool(profile.get("privacy_mode"))
     except Exception:
         on = False
     g._privacy_mode = on
@@ -311,28 +331,34 @@ def viewer_slots():
     return slots
 
 
-def set_privacy_mode(enabled: bool) -> None:
-    """Persist on-screen masking. Demo stays in the session; everyone else in Postgres.
+def set_privacy_mode(enabled: bool) -> bool:
+    """Persist the screen mask for the signed-in admin.
 
+    Non-admins are refused: nothing is written, and this request stays
+    unmasked. Returns True only when the admin's row was updated.
     Writes ``user_profiles.privacy_mode`` only. Private-from-admins
     (``admin_hidden_users``) is a different control and is not touched.
     """
-    from flask import g, session
-    from flask_login import current_user
+    from flask import g
 
     enabled = bool(enabled)
-    from app.utils import is_demo_user
-    if is_demo_user():
-        session[_SESSION_KEY] = enabled
-        session.modified = True
-    else:
-        from app.models import update_user_profile
-        update_user_profile(current_user.id, privacy_mode=enabled)
-    g._privacy_mode = enabled
+    if not viewer_may_use_screen_mask():
+        try:
+            g._privacy_mode = False
+        except Exception:
+            pass
+        return False
+    from flask_login import current_user
+    from app.models import update_user_profile
+
+    wrote = bool(update_user_profile(current_user.id, privacy_mode=enabled))
+    if wrote:
+        g._privacy_mode = enabled
+    return wrote
 
 
 def register_privacy_routes(app):
-    from flask import redirect, request, url_for
+    from flask import abort, redirect, request, url_for
     from flask_login import login_required
 
     from app.utils import safe_internal_next
@@ -340,6 +366,8 @@ def register_privacy_routes(app):
     @app.route("/privacy-mode", methods=["POST"])
     @login_required
     def set_privacy_mode_route():
+        if not viewer_may_use_screen_mask():
+            abort(403)
         enabled = (request.form.get("enabled") or "").strip().lower() in ("1", "true", "on", "yes")
         set_privacy_mode(enabled)
         nxt = safe_internal_next(request.form.get("next") or request.referrer or "")

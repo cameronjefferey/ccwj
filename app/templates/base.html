@@ -1483,6 +1483,15 @@
                             <a class="dropdown-item {% if ep == 'admin_feedback' %}active{% endif %}"
                                href="{{ url_for('admin_feedback') }}">Feedback inbox</a>
                         </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="post" action="{{ url_for('set_privacy_mode_route') }}" class="px-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
+                                <button type="submit" class="dropdown-item" title="For recording a demo. Account names and balances show as placeholders.">{% if privacy_mode %}Hide account names on screen is on{% else %}Hide account names on screen{% endif %}</button>
+                            </form>
+                        </li>
                     </ul>
                 </li>
                 {% endif %}
@@ -1523,15 +1532,6 @@
                            (html.ht-pwa-installed, set in <head>). #}
                         <li id="ht-install-item">
                             <button type="button" class="dropdown-item" id="ht-install-link">Install app</button>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <form method="post" action="{{ url_for('set_privacy_mode_route') }}" class="px-0">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="enabled" value="{{ '0' if privacy_mode else '1' }}">
-                                <input type="hidden" name="next" value="{{ request.full_path }}">
-                                <button type="submit" class="dropdown-item">{% if privacy_mode %}Hide account names on screen is on{% else %}Hide account names on screen{% endif %}</button>
-                            </form>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
