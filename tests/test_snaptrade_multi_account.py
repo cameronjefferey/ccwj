@@ -399,6 +399,41 @@ def test_sync_one_does_not_mark_broken_on_bare_401(monkeypatch, _patched_models)
     )
 
 
+def test_sync_one_records_stale_holdings_as_failure_without_clearing_health(
+    monkeypatch, _patched_models,
+):
+    """A stale HTTP-200 cache is not a successful snapshot or a revoked grant."""
+    monkeypatch.setattr(
+        _snap,
+        "get_snaptrade_user",
+        lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(_snap, "_get_snaptrade_client", lambda: object())
+
+    def _stale(*args, **kwargs):
+        raise _snap._SnapTradeStepError(
+            "holdings",
+            "sync_status.holdings.last_successful_sync[stale]",
+            "stale",
+            RuntimeError("cached holdings"),
+        )
+
+    monkeypatch.setattr(_snap, "_run_sync", _stale)
+    res = _snap._sync_one_connection(
+        user_id=9,
+        acc_row={"snaptrade_account_id": "abc", "account_name": "X"},
+        lookback_days=60,
+    )
+
+    assert res["ok"] is False
+    assert res["error"] == "holdings:stale"
+    assert "saved positions were kept" in res["user_message"]
+    assert _patched_models["broken_marked"] == []
+    assert _patched_models["broken_cleared"] == []
+    assert _patched_models["holdings_synced"] == []
+    assert "status=stale" in _patched_models["sync_attempts"][0][2]
+
+
 def test_sync_one_marks_broken_when_grant_text_says_disabled(
     monkeypatch, _patched_models,
 ):
@@ -778,11 +813,10 @@ def test_sync_one_carries_reserved_generation_to_deferred_seed_batch(
     assert res["frames"]["preserve_current_security_types"] == ()
 
 
-def test_sync_one_copies_bond_preserve_onto_deferred_frames(
+def test_sync_one_copies_supplemental_preserve_onto_deferred_frames(
     monkeypatch, _patched_models,
 ):
-    """The nightly batch only sees ``out['frames']``. The bond guard has
-    to be copied there or a positions/all miss wipes stored bond rows."""
+    """The nightly batch must carry the positions/all preservation sentinel."""
     monkeypatch.setattr(
         _snap, "get_snaptrade_user",
         lambda u: {"snaptrade_user_id": "snap-u", "snaptrade_secret": "s"},
@@ -798,7 +832,7 @@ def test_sync_one_copies_bond_preserve_onto_deferred_frames(
             "current_df": object(),
             "balances_df": None,
             "skip_history": True,
-            "preserve_current_security_types": ("Bond",),
+            "preserve_current_security_types": ("__positions_all__",),
             "snapshot_generation": kwargs["snapshot_generation"],
         })
 
@@ -809,7 +843,9 @@ def test_sync_one_copies_bond_preserve_onto_deferred_frames(
         lookback_days=60,
         defer_push=True,
     )
-    assert res["frames"]["preserve_current_security_types"] == ("Bond",)
+    assert res["frames"]["preserve_current_security_types"] == (
+        "__positions_all__",
+    )
 
 
 def test_snapshot_generation_helpers_use_atomic_postgres_counter(monkeypatch):
@@ -1103,9 +1139,12 @@ def test_sync_one_persists_holdings_last_successful_sync(monkeypatch, _patched_m
     assert _patched_models["holdings_synced"] == [(9, "abc", when)]
 
 
-def test_broker_data_freshness_ignores_lagging_extra_brokerage(monkeypatch):
-    """A Robinhood that last pulled Thursday must not freeze the strip
-    while Schwab marked this session."""
+def test_broker_data_freshness_surfaces_lagging_extra_brokerage(monkeypatch):
+    """A fresh Schwab stamp must not hide a stale Robinhood account.
+
+    Both accounts remain in portfolio totals, so the strip names the newest
+    pull while its warning age and oldest-account date expose the laggard.
+    """
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
         {"holdings_last_successful_sync": datetime(2026, 8, 31, 18, 0, 0)},
         {"holdings_last_successful_sync": datetime(2026, 8, 27, 18, 0, 0)},
@@ -1113,19 +1152,19 @@ def test_broker_data_freshness_ignores_lagging_extra_brokerage(monkeypatch):
     ])
     as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
     assert as_of == date(2026, 8, 31)
-    assert stale_days == 0
-    assert oldest is None
+    assert stale_days == 4
+    assert oldest == date(2026, 8, 27)
 
 
 def test_broker_data_freshness_same_session_names_oldest_account(monkeypatch):
-    """The headline is the newest pull. A one-day laggard is labeled, not the date."""
+    """The headline stays newest while age follows the oldest account."""
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
         {"holdings_last_successful_sync": datetime(2026, 8, 31, 18, 0, 0)},
         {"holdings_last_successful_sync": datetime(2026, 8, 30, 20, 0, 0)},
     ])
     as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
     assert as_of == date(2026, 8, 31)
-    assert stale_days == 0
+    assert stale_days == 1
     assert oldest == date(2026, 8, 30)
 
 
@@ -1316,28 +1355,25 @@ def _patch_run_sync_fetches(monkeypatch, *, account_summary):
     )
 
 
-def test_run_sync_does_not_mark_broken_on_stale_holdings(monkeypatch):
-    """An old holdings timestamp is logged and the sync continues.
-
-    It must not raise ``_SnapTradeAuthError``. That path set
-    ``connection_broken_at`` for a login SnapTrade had not disabled.
-    """
+def test_run_sync_rejects_stale_cached_holdings_before_normalization(monkeypatch):
+    """A stale cache is a failed read, but does not mark the grant disabled."""
     stale = (date.today() - timedelta(days=10)).strftime("%Y-%m-%dT12:00:00Z")
     _patch_run_sync_fetches(
         monkeypatch,
         account_summary={"sync_status": {"holdings": {"last_successful_sync": stale}}},
     )
     monkeypatch.setattr(_snap, "SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS", 4)
-    sentinel = RuntimeError("reached normalize")
     monkeypatch.setattr(
         _snap, "activities_to_history_df",
-        lambda *a, **k: (_ for _ in ()).throw(sentinel),
+        lambda *a, **k: pytest.fail("stale holdings must not reach normalization"),
     )
 
     acc_row = {"snaptrade_account_id": "abc", "account_name": "Schwab Account"}
-    with pytest.raises(RuntimeError) as ei:
+    with pytest.raises(_snap._SnapTradeStepError) as ei:
         _snap._run_sync(9, object(), snap=_SNAP, acc_row=acc_row, lookback_days=60)
-    assert ei.value is sentinel
+    assert ei.value.step == "holdings"
+    assert ei.value.status == "stale"
+    assert ei.value.endpoint.endswith("[stale]")
 
 
 def test_holdings_unavailable_is_not_a_stale_connection():
@@ -1484,15 +1520,15 @@ def test_run_sync_distinguishes_unavailable_from_empty_option_holdings(
 @pytest.mark.parametrize(
     ("all_positions", "expected_preserve"),
     [
-        (None, ("Bond",)),
+        (None, ("__positions_all__",)),
         ([], ()),
     ],
 )
 def test_run_sync_distinguishes_unavailable_from_empty_all_positions(
     monkeypatch, all_positions, expected_preserve,
 ):
-    """A failed supplemental read preserves old bonds; an authoritative
-    empty list removes them on the next current-position snapshot."""
+    """A failed supplemental read preserves every positions/all-only type;
+    an authoritative empty list removes them on the next snapshot."""
     fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
     _patch_run_sync_fetches(
         monkeypatch,

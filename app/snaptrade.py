@@ -3336,6 +3336,11 @@ def _sync_user_reason(step: str, status) -> str:
     code = str(status or "")
     if code == "timeout":
         return f"SnapTrade timed out while reading {what}. Try again in a minute."
+    if code == "stale":
+        return (
+            "SnapTrade has not refreshed your broker holdings recently. "
+            "Your saved positions were kept; manage the connection or try again later."
+        )
     if code in ("429", "425"):
         return "Your broker is rate-limiting this sync. Wait a few minutes and try again."
     if code in ("401", "403"):
@@ -3564,13 +3569,15 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     # connection broken. Classic positions stay the auth signal.
     all_positions = _fetch_all_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     all_positions_available = all_positions is not None
+    from app.upload import PRESERVE_SUPPLEMENTAL_SECURITY_TYPES
     # A failed supplemental read is unknown, not an empty book. Preserve
-    # the last option or bond rows. An authoritative empty list does not.
+    # the last option rows and every positions/all-only instrument. An
+    # authoritative empty list does not.
     preserve_current_security_types = tuple(
         security_type
         for available, security_type in (
             (option_holdings_available, "Option"),
-            (all_positions_available, "Bond"),
+            (all_positions_available, PRESERVE_SUPPLEMENTAL_SECURITY_TYPES),
         )
         if not available
     )
@@ -3633,16 +3640,26 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
                 account_name, snaptrade_account_id, raw_stale_days,
             )
         elif stale_days is not None and stale_days >= SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS:
-            # An old holdings timestamp is not a disabled grant. Logging it
-            # is enough. Raising _SnapTradeAuthError here set
-            # connection_broken_at and showed a reconnect prompt for a
-            # login SnapTrade had not actually disabled.
+            # An old holdings timestamp is not necessarily a disabled grant,
+            # so do not set connection_broken_at. It is still not a successful
+            # snapshot: SnapTrade is serving cached positions/balances. Stop
+            # before normalization and the replace-all seed write so stale
+            # data cannot be stamped as current or clear the prior health
+            # error. The saved snapshot remains intact.
             app.logger.warning(
                 "SnapTrade holdings last_successful_sync is %s days old for "
                 "account=%s (snaptrade_id=%s, threshold %s); not marking "
                 "the login broken",
                 stale_days, account_name, snaptrade_account_id,
                 SNAPTRADE_HOLDINGS_STALE_AFTER_DAYS,
+            )
+            raise _SnapTradeStepError(
+                "holdings",
+                "sync_status.holdings.last_successful_sync[stale]",
+                "stale",
+                RuntimeError(
+                    "SnapTrade is serving a stale cached holdings snapshot"
+                ),
             )
 
     # SnapTrade has TWO sources for trade history:
@@ -3775,7 +3792,8 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
             "current_df": None if push_history_only else current_snapshot_df,
             "balances_df": None if push_history_only else balances_df,
             # Supplemental holdings failures are unknown, not an empty book.
-            # Preserve the last option/bond rows while classic equities refresh.
+            # Preserve options and positions/all-only rows while classic
+            # equities refresh.
             "preserve_current_security_types": preserve_current_security_types,
             "push_history_only": push_history_only,
             "skip_history": skip_history,
@@ -4626,13 +4644,6 @@ def _inject_snaptrade_reauth_needed():
         return {"snaptrade_reauth_needed": []}
 
 
-# Idle extra brokerages (a Robinhood that last pulled Thursday while
-# Schwab marked this session) used to freeze the global strip. Cluster
-# around the newest live pull; anything more than this many calendar
-# days behind is a different connection, not the page's as-of.
-_FRESHNESS_LAG_DAYS = 1
-
-
 def _snaptrade_tenant_id_for_account(acc_row):
     mapped = (acc_row.get("tenant_id") or "").strip()
     if mapped:
@@ -4653,8 +4664,9 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
     America/New_York session dates. ``(None, None, None)`` means hide
     the strip — better than a date that does not describe the accounts
     the trader is looking at. ``as_of_date`` is the newest live pull.
-    ``oldest_account`` is set only when another account in the same
-    cluster is older.
+    ``stale_days`` is the age of the oldest included account because the
+    page totals include every enabled account, not just the freshest one.
+    ``oldest_account`` is set when another account is older.
 
     Rules:
     - Broken connections are ignored (they have a reconnect banner).
@@ -4662,13 +4674,10 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
       have a holdings stamp. Local warehouse-linked Schwab with no
       ``snaptrade_accounts`` row used to let idle Robinhood say "Aug 27"
       on a page of Monday marks.
-    - Among remaining stamps, drop laggards more than
-      ``_FRESHNESS_LAG_DAYS`` behind the newest pull. The headline date
-      is the **newest** pull in that cluster, so one account a day
-      behind does not make the whole book look stale. The third return
-      value is that older stamp when it differs (label it "oldest
-      account"), else None. A Thursday Robinhood still cannot freeze a
-      Monday Schwab book.
+    - The headline date is the newest pull, but no enabled account stamp is
+      discarded. A stalled account remains in portfolio totals, so hiding
+      its older stamp would make a mixed fresh/stale book look fully current.
+      Broken rows are the only exception because they have a reconnect banner.
     """
     rows = [
         r for r in (get_snaptrade_accounts(user_id) or [])
@@ -4700,13 +4709,11 @@ def broker_data_freshness(user_id, *, today=None, tenant_ids=None):
     if not stamps:
         return None, None, None
     newest = max(stamps)
-    clustered = [d for d in stamps if (newest - d).days <= _FRESHNESS_LAG_DAYS]
-    as_of = max(clustered) if clustered else newest
-    oldest = min(clustered) if clustered else as_of
-    oldest_account = oldest if oldest != as_of else None
+    oldest = min(stamps)
+    oldest_account = oldest if oldest != newest else None
     today = today or _et_today()
-    days = (today - as_of).days
-    return as_of, (days if days >= 0 else 0), oldest_account
+    days = (today - oldest).days
+    return newest, (days if days >= 0 else 0), oldest_account
 
 
 def post_close_broker_tenant_ids(user_id, *, now=None):
