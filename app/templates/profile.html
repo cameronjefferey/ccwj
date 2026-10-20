@@ -127,6 +127,7 @@
 
 {% block content %}
 {% set _snaptrade_accounts = snaptrade_accounts | default([]) %}
+{% set _manual_rows = profile_rows | default([]) | selectattr('removable') | list %}
 {% set snaptrade_connected = _snaptrade_accounts|length > 0 %}
 
 <div class="settings-page" id="settings-page">
@@ -195,7 +196,7 @@
                 <span class="badge">Not connected</span>
                 {% endif %}
             </div>
-            {% if _snaptrade_accounts %}
+            {% if _snaptrade_accounts or _manual_rows %}
             {% set _ns_st_o = namespace(any_first_pending=false, any_broken=false) %}
             {% for a in _snaptrade_accounts %}
                 {% if not a.first_sync_completed %}{% set _ns_st_o.any_first_pending = true %}{% endif %}
@@ -225,6 +226,16 @@
                 {% endif %}
             </div>
             {% endfor %}
+            {% for row in _manual_rows %}
+            <div class="conn-row">
+                <div>
+                    <span class="badge">{{ row.label | account_label(row.tenant_id) }}</span>
+                    <span class="small text-body-secondary">Uploaded CSV</span>
+                </div>
+                <span class="badge">History upload</span>
+            </div>
+            {% endfor %}
+            {% if _snaptrade_accounts %}
             <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mt-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="sync_all" value="1">
@@ -245,6 +256,18 @@
                     Pulling from each brokerage. This can take a minute or two — keep this tab open.
                 </p>
             </form>
+            {% elif snaptrade_enabled %}
+            <p class="settings-lead">Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and other brokers through SnapTrade.</p>
+            <div class="settings-actions">
+                <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary btn-lg">Connect an account</a>
+                <a href="{{ url_for('upload') }}" class="btn btn-outline-secondary">Upload CSV instead</a>
+            </div>
+            {% else %}
+            <p class="settings-lead">Broker sync is not configured on this server. You can still upload CSV exports.</p>
+            <div class="settings-actions">
+                <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg">Upload CSV</a>
+            </div>
+            {% endif %}
             {% elif snaptrade_enabled %}
             <p class="settings-lead">Connect Schwab, Fidelity, Vanguard, Robinhood, IBKR, and other brokers through SnapTrade.</p>
             <div class="settings-actions">
@@ -583,11 +606,25 @@
                 </form>
             </div>
             {% endfor %}
+            {% for row in _manual_rows %}
+            <div class="acct-line">
+                <span class="badge">{{ row.label | account_label(row.tenant_id) }}</span>
+                <span class="small text-body-secondary">Uploaded CSV</span>
+                <span class="badge">History upload</span>
+            </div>
+            {% endfor %}
             <div class="settings-actions">
                 <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary btn-lg">Connect an account</a>
                 <a href="{{ url_for('snaptrade_accounts_page') }}" class="btn btn-outline-primary">Manage &amp; nickname accounts</a>
             </div>
             {% else %}
+            {% for row in _manual_rows %}
+            <div class="acct-line">
+                <span class="badge">{{ row.label | account_label(row.tenant_id) }}</span>
+                <span class="small text-body-secondary">Uploaded CSV</span>
+                <span class="badge">History upload</span>
+            </div>
+            {% endfor %}
             <a href="{{ url_for('snaptrade_connect') }}" class="btn btn-primary btn-lg">Connect a brokerage</a>
             {% endif %}
         </div>

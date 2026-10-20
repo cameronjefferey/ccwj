@@ -113,6 +113,102 @@ def test_processing_page_shows_the_quiz_only_while_it_is_pending(monkeypatch):
     assert '"/overview?from_sync=1"' in body or '"/overview?from_sync=1"' in body.replace("&amp;", "&")
 
 
+def test_background_sync_stamps_do_not_hide_the_first_survey(monkeypatch):
+    """A post-connect pull stamps last_sync_at before history is ready.
+    That must not take down the only survey."""
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    monkeypatch.setattr(
+        "app.models.get_snaptrade_accounts",
+        lambda uid: [{
+            "snaptrade_account_id": "new-acc",
+            "tenant_id": "snaptrade:new-acc",
+            "first_sync_completed": False,
+            "last_sync_at": now,
+            "holdings_last_successful_sync": now,
+            "created_at": now,
+        }],
+    )
+    monkeypatch.setattr(
+        "app.models.get_tenant_ids_for_user",
+        lambda uid: ["snaptrade:new-acc"],
+    )
+    assert onboarding_quiz_still_pending(7) is True
+
+    monkeypatch.setattr(
+        "app.early_broker.early_broker_notice_for_user", lambda uid: None,
+    )
+    client = _client()
+    _login(client, monkeypatch)
+    page = client.get("/sync/processing?first=1&connecting=1")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert 'id="onboardingForm"' in html
+    assert 'name="why_here[]"' in html
+    assert 'type="radio"' not in html
+    assert "Pick any that apply." in html
+
+
+def test_old_account_without_the_first_sync_flag_hides_a_bookmarked_quiz(monkeypatch):
+    """Accounts that predate first_sync_completed still count as onboarded."""
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    monkeypatch.setattr(
+        "app.models.get_snaptrade_accounts",
+        lambda uid: [{
+            "snaptrade_account_id": "older-acc",
+            "tenant_id": "snaptrade:older-acc",
+            "first_sync_completed": False,
+            "last_sync_at": now,
+            "created_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+        }],
+    )
+    monkeypatch.setattr(
+        "app.models.get_tenant_ids_for_user",
+        lambda uid: ["snaptrade:older-acc"],
+    )
+    assert onboarding_quiz_still_pending(7) is False
+
+    monkeypatch.setattr(
+        "app.early_broker.early_broker_notice_for_user", lambda uid: None,
+    )
+    client = _client()
+    _login(client, monkeypatch)
+    page = client.get("/sync/processing?first=1&connecting=1")
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    assert "Why are you here?" not in body
+    assert 'id="onboardingForm"' not in body
+
+
+def test_survey_stores_several_answers_for_a_former_radio(monkeypatch):
+    saved = {}
+
+    def _save(**kwargs):
+        saved.update(kwargs)
+        return True
+
+    monkeypatch.setattr("app.models.save_onboarding_response", _save)
+    monkeypatch.setattr("app.models.update_user_profile", lambda *a, **k: None)
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    client = _client()
+    _login(client, monkeypatch)
+    resp = client.post(
+        "/onboarding/why-here",
+        data={
+            "why_here[]": ["lose_money_options", "understand_patterns"],
+            "primary_style[]": ["covered_calls", "cash_secured_puts"],
+            "one_thing": "What did the covered calls actually make?",
+        },
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
+    assert resp.status_code == 200
+    answers = saved["answers"]
+    assert answers["why_here"] == ["lose_money_options", "understand_patterns"]
+    assert answers["primary_style"] == ["covered_calls", "cash_secured_puts"]
+    assert answers["one_thing"].startswith("What did the covered calls")
+
+
 def test_skip_stores_a_finished_survey(monkeypatch):
     saved = {}
 
@@ -225,6 +321,45 @@ def test_existing_user_adding_empower_skips_the_quiz(monkeypatch, return_to, exp
     assert "Why are you here" not in messages
     assert "Empower connected, syncing now" in messages
     assert "Coinbase" not in messages
+    assert kicked == [7]
+
+
+def test_old_account_without_the_first_sync_flag_skips_the_quiz_on_another_broker(monkeypatch):
+    """Adding a broker must not quiz someone whose older account never
+    flipped first_sync_completed."""
+    prior = [{
+        "snaptrade_account_id": "older-acc",
+        "tenant_id": "snaptrade:older-acc",
+        "account_name": "Schwab Account",
+        "first_sync_completed": False,
+        "last_sync_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+        "created_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+        "connection_broken_at": None,
+    }]
+    remote = [
+        {
+            "id": "older-acc",
+            "institution_name": "Charles Schwab",
+            "connection_broker": "Charles Schwab",
+            "number": "1111",
+            "brokerage_authorization": "auth-old",
+        },
+        {
+            "id": "new-empower",
+            "institution_name": "Coinbase",
+            "connection_broker": "Empower",
+            "number": "2222",
+            "brokerage_authorization": "auth-new",
+        },
+    ]
+    snap, kicked = _wire_portal_return(monkeypatch, prior=prior, remote=remote)
+    resp, messages = _callback(snap, return_to="/profile?tab=account")
+
+    assert resp.status_code == 302
+    assert "sync/processing" not in (resp.location or "")
+    assert "first=1" not in (resp.location or "")
+    assert "Why are you here" not in messages
+    assert "Empower connected, syncing now" in messages
     assert kicked == [7]
 
 

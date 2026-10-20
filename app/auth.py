@@ -75,20 +75,66 @@ def _user_id_is_demo(user_id) -> bool:
     return row is not None and (row.username or "").lower() == "demo"
 
 
+def _match_username_ci(name):
+    """Exact username, else the one account that differs only by case.
+
+    ``users.username`` is case-sensitive, so two accounts can share a
+    spelling. More than one case-insensitive match is ambiguous and
+    returns None — login then shows the same generic error as a wrong
+    password, and does not sign in either person.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    exact = User.get_by_username(name)
+    if exact is not None:
+        return exact
+    from app.db import fetch_all
+    rows = fetch_all(
+        "SELECT id, username, password_hash, email FROM users "
+        "WHERE lower(username) = lower(%s)",
+        (name,),
+    ) or []
+    if len(rows) != 1:
+        return None
+    return User._from_row(rows[0])
+
+
+def _username_taken_ignoring_case(username) -> bool:
+    """True when any account already uses this spelling, any case."""
+    name = (username or "").strip()
+    if not name:
+        return False
+    from app.db import fetch_all
+    rows = fetch_all(
+        "SELECT id FROM users WHERE lower(username) = lower(%s)",
+        (name,),
+    ) or []
+    return len(rows) > 0
+
+
 def _lookup_login_user(identifier):
-    """Return a user for either username or email, preferring exact username."""
+    """Username, ``@handle``, or email.
+
+    A single leading ``@`` is a username handle. Anything else with an
+    ``@`` is an email after an exact username miss (a username that
+    literally contains ``@`` still wins). Other names match exactly,
+    then case-insensitively when that spelling belongs to one account.
+    """
     ident = (identifier or "").strip()
     if not ident:
         return None
+    if ident.startswith("@") and ident.count("@") == 1:
+        return _match_username_ci(ident[1:])
     user = User.get_by_username(ident)
     if user is not None:
         return user
-    if "@" not in ident:
-        return None
-    email, err = _validate_email(ident)
-    if err or not email:
-        return None
-    return User.get_by_email(email)
+    if "@" in ident:
+        email, err = _validate_email(ident)
+        if err or not email:
+            return None
+        return User.get_by_email(email)
+    return _match_username_ci(ident)
 
 
 def _login_attempt_keys(identifier, user=None):
@@ -354,6 +400,11 @@ def signup():
 
         if len(username) < 3:
             return _retry("Username must be at least 3 characters.")
+        if "@" in username:
+            return _retry(
+                "Usernames can't include @. Sign in later with the name, "
+                "or with your email.",
+            )
         if username.lower() == "demo":
             return _retry("That username is already taken.")
 
@@ -361,7 +412,7 @@ def signup():
         if not valid:
             return _retry(err)
 
-        if User.get_by_username(username):
+        if User.get_by_username(username) or _username_taken_ignoring_case(username):
             return _retry("That username is already taken.")
 
         token = (request.form.get("cf-turnstile-response") or "").strip()
@@ -979,8 +1030,11 @@ def create_user(username, password):
     if (username or "").strip().lower() == "demo":
         click.echo("Error: User 'demo' is reserved for the public demo.")
         return
+    if "@" in (username or ""):
+        click.echo("Error: Usernames can't include @.")
+        return
     existing = User.get_by_username(username)
-    if existing:
+    if existing or _username_taken_ignoring_case(username):
         click.echo(f"Error: User '{username}' already exists.")
         return
 

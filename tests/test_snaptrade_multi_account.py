@@ -1103,9 +1103,9 @@ def test_sync_one_persists_holdings_last_successful_sync(monkeypatch, _patched_m
     assert _patched_models["holdings_synced"] == [(9, "abc", when)]
 
 
-def test_broker_data_freshness_ignores_lagging_extra_brokerage(monkeypatch):
-    """A Robinhood that last pulled Thursday must not freeze the strip
-    while Schwab marked this session."""
+def test_broker_data_freshness_names_a_lagging_extra_brokerage(monkeypatch):
+    """A Robinhood that last pulled Thursday must not disappear. The
+    headline stays on Schwab's Monday pull, and the age follows Thursday."""
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
         {"holdings_last_successful_sync": datetime(2026, 8, 31, 18, 0, 0)},
         {"holdings_last_successful_sync": datetime(2026, 8, 27, 18, 0, 0)},
@@ -1113,19 +1113,20 @@ def test_broker_data_freshness_ignores_lagging_extra_brokerage(monkeypatch):
     ])
     as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
     assert as_of == date(2026, 8, 31)
-    assert stale_days == 0
-    assert oldest is None
+    assert stale_days == 4
+    assert oldest == date(2026, 8, 27)
 
 
 def test_broker_data_freshness_same_session_names_oldest_account(monkeypatch):
-    """The headline is the newest pull. A one-day laggard is labeled, not the date."""
+    """The headline is the newest pull. A one-day laggard is labeled,
+    and the age follows that older account."""
     monkeypatch.setattr(_snap, "get_snaptrade_accounts", lambda u: [
         {"holdings_last_successful_sync": datetime(2026, 8, 31, 18, 0, 0)},
         {"holdings_last_successful_sync": datetime(2026, 8, 30, 20, 0, 0)},
     ])
     as_of, stale_days, oldest = _snap.broker_data_freshness(99, today=date(2026, 8, 31))
     assert as_of == date(2026, 8, 31)
-    assert stale_days == 0
+    assert stale_days == 1
     assert oldest == date(2026, 8, 30)
 
 

@@ -1621,8 +1621,12 @@
                 Broker data as of <strong>{{ broker_data_as_of.strftime('%b %-d, %Y') }}</strong>
                 {% if broker_data_oldest %}
                     &middot; oldest account <strong>{{ broker_data_oldest.strftime('%b %-d, %Y') }}</strong>
-                {% endif %}
-                {% if broker_data_stale_days == 1 %}
+                    {% if broker_data_stale_days == 1 %}
+                        (1 day ago)
+                    {% elif broker_data_stale_days is not none and broker_data_stale_days > 1 %}
+                        ({{ broker_data_stale_days }} days ago)
+                    {% endif %}
+                {% elif broker_data_stale_days == 1 %}
                     &middot; 1 day ago
                 {% elif broker_data_stale_days is not none and broker_data_stale_days > 1 %}
                     &middot; {{ broker_data_stale_days }} days ago
