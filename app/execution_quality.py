@@ -854,11 +854,97 @@ def audit_verdict_frame(df):
     return out
 
 
-def verdicts_landed(df, start, end):
+def _date_label(d, today):
+    """Weekday and date. The year is included when it is not ``today``'s year."""
+    ts = pd.Timestamp(d)
+    anchor = today
+    try:
+        if anchor is not None and int(ts.year) != int(pd.Timestamp(anchor).year):
+            return ts.strftime("%a %b %-d, %Y")
+    except (TypeError, ValueError):
+        pass
+    return ts.strftime("%a %b %-d")
+
+
+def _leg_close_cash(row):
+    """Signed cash of the closing fills. Negative means paid to close."""
+    cost = _num(row.get("cost_to_close"))
+    proceeds = _num(row.get("proceeds_from_close"))
+    if cost is None and proceeds is None:
+        return None
+    return (cost or 0.0) + (proceeds or 0.0)
+
+
+def _leg_expiry_cash(row):
+    """Signed cash holding to expiry would have paid the trader.
+
+    ``expiry_settlement_value`` is the option's intrinsic, unsigned.
+    A short pays that intrinsic; a long receives it. Worthless is $0.
+    """
+    settlement = _num(row.get("expiry_settlement_value"))
+    if settlement is None:
+        intrinsic = _num(row.get("intrinsic_at_expiry"))
+        qty = _num(row.get("contracts"))
+        if intrinsic is None or qty is None:
+            return None
+        settlement = intrinsic * 100.0 * abs(qty)
+    direction = str(row.get("direction") or "")
+    if direction == "Sold":
+        return -abs(settlement)
+    if direction == "Bought":
+        return abs(settlement)
+    return None
+
+
+def _sum_known(values):
+    if not any(v is not None for v in values):
+        return None
+    return round(sum(v or 0.0 for v in values), 2)
+
+
+def _close_phrase(cash):
+    if cash is None:
+        return None
+    if abs(cash) < 0.005:
+        return "Closed at $0"
+    if cash < 0:
+        return f"Paid {_verdict_money(cash)} to close"
+    return f"Received {_verdict_money(cash)} to close"
+
+
+def _worth_phrase(expiry_cash):
+    """What the option (or the net spread) was worth at expiry."""
+    if expiry_cash is None:
+        return None
+    return f"Worth {_verdict_money(abs(expiry_cash))} at expiry"
+
+
+def _outcome_phrase(delta):
+    if abs(delta) < 0.005:
+        return "Even with holding"
+    if delta > 0:
+        return f"Saved {_verdict_money(delta)}"
+    return f"Cost {_verdict_money(delta)}"
+
+
+def _verdict_amounts(members):
+    close_cash = _sum_known([_leg_close_cash(m) for m in members])
+    expiry_cash = _sum_known([_leg_expiry_cash(m) for m in members])
+    return {
+        "closed_cash": close_cash,
+        "expiry_cash": expiry_cash,
+        "closed_label": _close_phrase(close_cash),
+        "worth_label": _worth_phrase(expiry_cash),
+    }
+
+
+def verdicts_landed(df, start, end, today=None):
     """Verdicts that MATURED in [start, end] — early closes whose expiry
-    date arrived in the window, making the counterfactual knowable. This
-    is the Daily Review's "news since you last looked": each item is new
-    information on the day it lands, not a re-read of a lifetime total.
+    date arrived in the window, making the counterfactual knowable.
+
+    The weekly email passes the last 7 days. Overview passes every expiry
+    through today: a 7-day window hid the whole graded book whenever
+    nothing had expired that week.
 
     Complementary legs of one structure (put/call spread, iron condor,
     straddle/strangle) on the same tenant + expiry collapse to ONE row
@@ -869,6 +955,9 @@ def verdicts_landed(df, start, end):
     When a row carries the per-share exit price, the dollar is recomputed
     (×100 once, against the underlying close on the expiry date) before
     the legs are grouped.
+
+    ``today`` decides whether the expiry date prints a year. It defaults
+    to ``end``.
     """
     df = _prep(df)
     df = audit_verdict_frame(df)
@@ -881,44 +970,91 @@ def verdicts_landed(df, start, end):
               & (df["option_expiry"] <= end)]
     if rows.empty:
         return []
+    anchor = today or end
     groups = _cluster_structure_groups(
         [r.to_dict() for _, r in rows.iterrows()])
     out = []
     for members in groups:
+        amounts = _verdict_amounts(members)
         if len(members) == 1:
             r = members[0]
-            delta = float(r["early_close_vs_expiry_delta"])
+            delta = round(float(r["early_close_vs_expiry_delta"]), 2)
             out.append({
                 "symbol": r["symbol"],
+                "label": _short_label(r),
                 "landed": r["option_expiry"].isoformat(),
-                "landed_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+                "landed_label": _date_label(r["option_expiry"], anchor),
                 # action → the page feed (delta rendered separately);
                 # sentence → the email digest (self-contained prose).
                 "action": _verdict_action(r),
                 "sentence": _verdict_sentence(r),
-                "delta": round(delta, 2),
+                "delta": delta,
+                "outcome_label": _outcome_phrase(delta),
                 "structure": None,
+                **amounts,
             })
             continue
-        delta = sum(float(m["early_close_vs_expiry_delta"]) for m in members)
+        delta = round(sum(
+            float(m["early_close_vs_expiry_delta"]) for m in members), 2)
         exp = members[0]["option_expiry"]
         out.append({
             "symbol": members[0]["symbol"],
+            "label": _structure_name(members),
             "landed": exp.isoformat(),
-            "landed_label": pd.Timestamp(exp).strftime("%a %b %-d"),
+            "landed_label": _date_label(exp, anchor),
             "action": _structure_action(members),
             "sentence": _structure_sentence(members),
-            "delta": round(delta, 2),
+            "delta": delta,
+            "outcome_label": _outcome_phrase(delta),
             "structure": _structure_kind(members),
+            **amounts,
         })
     out.sort(key=lambda v: abs(v["delta"]), reverse=True)
     return out
 
 
+def verdict_totals(items):
+    """Net of graded verdicts: saved, cost, or even, across the list."""
+    if not items:
+        return None
+    delta = round(sum(float(v["delta"]) for v in items), 2)
+    n = len(items)
+    noun = "verdict" if n == 1 else "verdicts"
+    if abs(delta) < 0.005:
+        label = f"Closing early came out even across {n} {noun}"
+        short = "Even"
+    elif delta > 0:
+        money = _verdict_money(delta)
+        label = f"Closing early saved {money} across {n} {noun}"
+        short = f"Saved {money}"
+    else:
+        money = _verdict_money(delta)
+        label = f"Closing early cost {money} across {n} {noun}"
+        short = f"Cost {money}"
+    return {"n": n, "delta": delta, "label": label, "short": short}
+
+
+def overview_graded_verdicts(df, today):
+    """Every early close whose expiry has arrived, through ``today``.
+
+    Overview used to ask only for the last 7 days. Pending rows have no
+    such window, so a book whose recent expiries are still ahead showed
+    "N waiting" and the next contract, and every graded close older than
+    a week disappeared.
+    """
+    items = verdicts_landed(df, date.min, today, today=today)
+    return items, verdict_totals(items)
+
+
 def verdicts_pending(df, today):
     """The open loop: early closes whose expiry hasn't arrived yet. Each
     one is a verdict already in the mail — {n, next_date_label, items}.
-    Multi-leg structures count as one pending verdict."""
+    Multi-leg structures count as one pending verdict.
+
+    A close that is already graded (expiry price is in, delta is known)
+    stays off this list even when the expiry date is today, so it is not
+    both a verdict and a wait.
+    """
     df = _prep(df)
     if df.empty or "close_type" not in df.columns:
         return None
@@ -927,6 +1063,9 @@ def verdicts_pending(df, today):
               & df["option_expiry"].notna()
               & (df["close_date"] < df["option_expiry"])
               & (df["option_expiry"] >= today)]
+    if "gradeable_early_close" in rows.columns and "early_close_vs_expiry_delta" in rows.columns:
+        graded = rows["gradeable_early_close"] & rows["early_close_vs_expiry_delta"].notna()
+        rows = rows[~graded]
     if rows.empty:
         return None
     groups = _cluster_structure_groups(
@@ -935,13 +1074,14 @@ def verdicts_pending(df, today):
     items = []
     for members in groups:
         r = members[0]
+        expiry_label = _date_label(r["option_expiry"], today)
         if len(members) == 1:
             items.append({
                 "symbol": r["symbol"],
                 "label": _contract_label(r),
                 "short_label": _short_label(r),
                 "expiry": r["option_expiry"].isoformat(),
-                "expiry_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+                "expiry_label": expiry_label,
                 "days_away": int((r["option_expiry"] - today).days),
             })
         else:
@@ -951,7 +1091,7 @@ def verdicts_pending(df, today):
                 "label": name,
                 "short_label": name,
                 "expiry": r["option_expiry"].isoformat(),
-                "expiry_label": pd.Timestamp(r["option_expiry"]).strftime("%a %b %-d"),
+                "expiry_label": expiry_label,
                 "days_away": int((r["option_expiry"] - today).days),
             })
     nxt = items[0]

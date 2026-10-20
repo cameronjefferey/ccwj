@@ -20,6 +20,8 @@ from app.execution_quality import (
     summarize_execution,
     symbol_execution_callout,
     symbol_execution_sentences,
+    overview_graded_verdicts,
+    verdict_totals,
     verdicts_landed,
     verdicts_pending,
 )
@@ -332,6 +334,163 @@ def test_trend_finding_reaches_profile_card():
 
 
 # ── Verdict maturation (Daily Review) ────────────────────────────────────
+
+def test_overview_graded_verdicts_include_every_past_expiry():
+    """A 7-day window hid the owner's graded book. Overview keeps every
+    early close whose expiry has already arrived, and totals them."""
+    old = _row(
+        trade_symbol="OLD",
+        symbol="BE",
+        option_expiry=date(2025, 6, 20),
+        cost_to_close=-180.0,
+        proceeds_from_close=0.0,
+        expiry_settlement_value=1000.0,
+        intrinsic_at_expiry=10.0,
+        expired_worthless=False,
+        early_close_vs_expiry_delta=820.0,
+    )
+    recent = _row(
+        trade_symbol="NEW",
+        option_expiry=_TODAY - timedelta(days=2),
+        cost_to_close=-45.0,
+        expiry_settlement_value=0.0,
+        early_close_vs_expiry_delta=-45.0,
+    )
+    waiting = _row(
+        trade_symbol="WAIT",
+        symbol="LITE",
+        option_strike=1100.0,
+        option_expiry=_TODAY + timedelta(days=40),
+        gradeable_early_close=False,
+        early_close_vs_expiry_delta=None,
+        intrinsic_at_expiry=None,
+        expired_worthless=None,
+    )
+    df = pd.DataFrame([old, recent, waiting])
+    landed, total = overview_graded_verdicts(df, _TODAY)
+    assert [v["symbol"] for v in landed] == ["BE", "SOFI"]
+    be = next(v for v in landed if v["symbol"] == "BE")
+    assert be["closed_label"] == "Paid $180 to close"
+    assert be["worth_label"] == "Worth $1,000 at expiry"
+    assert be["outcome_label"] == "Saved $820"
+    assert be["landed_label"].endswith(", 2025")
+    assert "2026" not in next(v for v in landed if v["symbol"] == "SOFI")["landed_label"]
+    assert total["delta"] == 775.0
+    assert total["label"] == "Closing early saved $775 across 2 verdicts"
+    assert total["short"] == "Saved $775"
+    pending = verdicts_pending(df, _TODAY)
+    assert pending["n"] == 1
+    assert pending["items"][0]["symbol"] == "LITE"
+    assert pending["items"][0]["short_label"] == "$1100 call"
+    assert "2026" not in pending["items"][0]["expiry_label"]
+
+
+def test_graded_spread_is_one_verdict_with_net_cash():
+    df = pd.DataFrame([
+        _row(symbol="VICR", trade_symbol="VICR  260821P00210000",
+             option_type="P", option_strike=210.0, direction="Sold",
+             option_expiry=date(2025, 8, 15),
+             cost_to_close=-400.0, proceeds_from_close=0.0,
+             expiry_settlement_value=2000.0, expired_worthless=False,
+             early_close_vs_expiry_delta=1600.0),
+        _row(symbol="VICR", trade_symbol="VICR  260821P00190000",
+             option_type="P", option_strike=190.0, direction="Bought",
+             option_expiry=date(2025, 8, 15),
+             cost_to_close=0.0, proceeds_from_close=100.0,
+             expiry_settlement_value=500.0, expired_worthless=False,
+             early_close_vs_expiry_delta=-400.0),
+    ])
+    landed, total = overview_graded_verdicts(df, _TODAY)
+    assert len(landed) == 1
+    vicr = landed[0]
+    assert vicr["structure"] == "Put Spread"
+    assert vicr["label"] == "$190 / $210 put spread"
+    assert vicr["delta"] == 1200.0
+    # Paid 400, received 100 → paid $300 net. Short intrinsic 2000,
+    # long intrinsic 500 → the spread was worth $1,500 at expiry.
+    assert vicr["closed_label"] == "Paid $300 to close"
+    assert vicr["worth_label"] == "Worth $1,500 at expiry"
+    assert vicr["outcome_label"] == "Saved $1,200"
+    assert vicr["landed_label"].endswith(", 2025")
+    assert total["n"] == 1
+    assert total["short"] == "Saved $1,200"
+
+
+def test_pending_list_names_each_contract_and_a_future_year():
+    df = pd.DataFrame([
+        _row(symbol="VICR", trade_symbol="VICR  270115P00210000",
+             option_type="P", option_strike=210.0, direction="Sold",
+             option_expiry=date(2027, 1, 15),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+        _row(symbol="VICR", trade_symbol="VICR  270115P00190000",
+             option_type="P", option_strike=190.0, direction="Bought",
+             option_expiry=date(2027, 1, 15),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+        _row(symbol="LITE", trade_symbol="LITE  261120C01100000",
+             option_type="C", option_strike=1100.0, direction="Sold",
+             option_expiry=date(2026, 11, 20),
+             gradeable_early_close=False, early_close_vs_expiry_delta=None),
+        # Already graded today — not also "waiting".
+        _row(trade_symbol="DONE", option_expiry=_TODAY),
+    ])
+    out = verdicts_pending(df, _TODAY)
+    assert out["n"] == 2
+    assert [i["symbol"] for i in out["items"]] == ["LITE", "VICR"]
+    assert out["items"][0]["expiry_label"] == "Fri Nov 20"
+    assert out["items"][1]["short_label"] == "$190 / $210 put spread"
+    assert out["items"][1]["expiry_label"].endswith(", 2027")
+    assert verdicts_landed(df, date.min, _TODAY, today=_TODAY)
+    assert verdict_totals([]) is None
+
+
+def test_execution_card_renders_the_graded_list_and_hides_when_empty():
+    from app import app
+
+    old = _row(
+        trade_symbol="OLD", symbol="BE", option_expiry=date(2025, 6, 20),
+        cost_to_close=-180.0, proceeds_from_close=0.0,
+        expiry_settlement_value=1000.0, intrinsic_at_expiry=10.0,
+        expired_worthless=False, early_close_vs_expiry_delta=820.0,
+    )
+    recent = _row(
+        trade_symbol="NEW", option_expiry=_TODAY - timedelta(days=2),
+        cost_to_close=-45.0, early_close_vs_expiry_delta=-45.0,
+    )
+    waiting = _row(
+        trade_symbol="WAIT", symbol="LITE", option_strike=1100.0,
+        option_expiry=date(2026, 11, 20),
+        gradeable_early_close=False, early_close_vs_expiry_delta=None,
+    )
+    df = pd.DataFrame([old, recent, waiting])
+    landed, total = overview_graded_verdicts(df, _TODAY)
+    pending = verdicts_pending(df, _TODAY)
+    with app.test_request_context("/overview"):
+        html = app.jinja_env.get_template("_overview_below.html").render(
+            simple_view=False,
+            exit_verdicts_landed=landed,
+            exit_verdicts_total=total,
+            exit_verdicts_pending=pending,
+            overview_daily_in_fragment=False,
+        )
+        empty = app.jinja_env.get_template("_overview_below.html").render(
+            simple_view=False,
+            exit_verdicts_landed=[],
+            exit_verdicts_total=None,
+            exit_verdicts_pending=None,
+            open_option_record={"shorts": [{"symbol": "X"}], "longs": []},
+            overview_daily_in_fragment=False,
+        )
+    assert html.count("ov-verdict-row") == 2
+    assert "Paid $180 to close" in html
+    assert "Worth $1,000 at expiry" in html
+    assert "Saved $820" in html
+    assert "Closing early saved $775 across 2 verdicts" in html
+    assert ", 2025" in html
+    assert "LITE $1100 call" in html
+    assert "Fri Nov 20" in html
+    assert "Waiting on expiry" in html
+    assert 'id="ov-execution"' not in empty
+
 
 def test_verdicts_landed_windows_on_expiry_date():
     in_window = _row(trade_symbol="A", option_expiry=_TODAY - timedelta(days=2))

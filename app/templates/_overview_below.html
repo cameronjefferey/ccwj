@@ -188,35 +188,47 @@
 {# simple-view-full-start: execution review stays in Full view #}
 {% if not simple_view %}
 {# ════════════════════════════════════
-   EXECUTION REVIEW — verdicts that matured + live open-option record
-   A verdict "lands" on the contract's expiry date: that's the day the
-   expiry counterfactual for an early close becomes knowable. Pending
-   items are verdicts already in the mail. The open-contract record is
-   strictly observational (premium captured / mark vs cost, days left).
+   EXECUTION REVIEW — every early close whose expiry has passed, then
+   the closes still waiting on that expiry. Hidden when both are empty.
+   Spread legs are one verdict. A populated open-contract record can
+   sit under that list; it does not show the card by itself. Today
+   owns the live open-contract section.
    ════════════════════════════════════ #}
-{% if exit_verdicts_landed or exit_verdicts_pending or (open_option_record and (open_option_record.shorts or open_option_record.longs)) %}
+{% if exit_verdicts_landed or exit_verdicts_pending %}
 <details class="disclosure" id="ov-execution">
     <summary>
         <span class="section-header">Execution review</span>
-        {% if exit_verdicts_landed %}<span class="disclosure-note">{{ exit_verdicts_landed|length }} landed</span>{% endif %}
+        {% if exit_verdicts_total %}<span class="disclosure-note">{{ exit_verdicts_total.short }}</span>{% endif %}
         {% if exit_verdicts_pending %}<span class="disclosure-note">{{ exit_verdicts_pending.n }} waiting</span>{% endif %}
     </summary>
     <div class="disclosure-body">
     <p class="ov-note">Your closes, graded against what happened at expiry. Spread legs are one verdict.</p>
-    <div class="ov-pills-lite">
-        {% if exit_verdicts_landed %}<span class="ov-pl gn">{{ exit_verdicts_landed|length }} landed</span>{% endif %}
-        {% if exit_verdicts_pending %}<span class="ov-pl am">{{ exit_verdicts_pending.n }} waiting</span>
-        <span class="ov-pl in">Next: {{ exit_verdicts_pending.next_symbol }} {{ exit_verdicts_pending.next_short_label }}, {{ exit_verdicts_pending.next_date_label }}</span>{% endif %}
-    </div>
     {% if exit_verdicts_landed %}
-    {% set v = exit_verdicts_landed[0] %}
-    <a class="ov-verdict {{ 'up' if v.delta >= 0 else 'down' }}" href="{{ scoped_url('position_detail', symbol=v.symbol) }}">
-        <div><strong class="{{ 'pos' if v.delta >= 0 else 'neg' }}">{{ "+" if v.delta >= 0 else "−" }}${{ "{:,.0f}".format(v.delta|abs) }}</strong><small>vs expiry</small></div>
-        <div><p class="h">{{ v.symbol }} <small>landed {{ v.landed_label }}</small></p><p>{{ v.action }}</p></div>
-    </a>
+    <p class="ov-verdict-total {{ 'up' if exit_verdicts_total.delta >= 0 else 'down' }}">{{ exit_verdicts_total.label }}</p>
+    <div class="ov-verdict-list">
+        {% for v in exit_verdicts_landed %}
+        <a class="ov-verdict-row {{ 'up' if v.delta >= 0 else 'down' }}" href="{{ scoped_url('position_detail', symbol=v.symbol) }}">
+            <span class="ov-vr-name">{{ v.symbol }} {{ v.label }}</span>
+            <span class="ov-vr-when">{{ v.landed_label }}</span>
+            <span class="ov-vr-facts">
+                {% if v.closed_label %}<span>{{ v.closed_label }}</span>{% endif %}
+                {% if v.worth_label %}<span>{{ v.worth_label }}</span>{% endif %}
+                <span class="ov-vr-out {{ 'pos' if v.delta >= 0 else 'neg' }}">{{ v.outcome_label }}</span>
+            </span>
+        </a>
+        {% endfor %}
+    </div>
     {% endif %}
     {% if exit_verdicts_pending %}
-    <p class="ov-wait">{{ exit_verdicts_pending.n }} awaiting a verdict: contracts you closed early, graded once the expiry arrives and the outcome is knowable.</p>
+    <p class="ov-grp">Waiting on expiry</p>
+    <div class="ov-pending-list">
+        {% for item in exit_verdicts_pending['items'] %}
+        <a class="ov-pending" href="{{ scoped_url('position_detail', symbol=item.symbol) }}">
+            <span>{{ item.symbol }} {{ item.short_label }}</span>
+            <span class="ov-vr-when">{{ item.expiry_label }}</span>
+        </a>
+        {% endfor %}
+    </div>
     {% endif %}
     {% if open_option_record and (open_option_record.shorts or open_option_record.longs) %}
     <div class="watch-grid">
