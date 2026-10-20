@@ -1233,9 +1233,13 @@ another account first. `/first-look` 301s here. New signups land here.
 Cancelling the SnapTrade portal returns to `/snaptrade/accounts` with
 an honest "nothing new was connected" message — not name-now claiming
 "Connected N accounts". An unchanged account list is still treated as a
-successful recovery when a returned account is broken or has not completed
-its first sync; that path must clear health state and kick the catch-up pull,
-not be mistaken for cancel. The post-upload and post-sync processing pages
+successful recovery when a returned account is broken, or when it was
+linked in the last 12 hours and has not completed its first sync. That
+recovery clears health state and kicks the catch-up pull, so it is not
+mistaken for cancel. An older account whose `first_sync_completed`
+flag was never set is not that recovery: cancelling the portal says
+nothing new was connected, and adding another broker goes back to the
+user's data with "<Broker> connected, syncing now." The post-upload and post-sync processing pages
 land here on first data.
 
 The SnapTrade Connection Portal callback **starts the first pull in the

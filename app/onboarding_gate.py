@@ -43,6 +43,24 @@ def account_is_established(row) -> bool:
     return bool(row.get("first_sync_completed"))
 
 
+def account_still_awaiting_first_sync(row) -> bool:
+    """True when this row is an unfinished connect from the last 12 hours.
+
+    ``first_sync_completed`` defaults to false and is not backfilled, so
+    an older account can sit on false forever. That is not a recovery
+    of the portal return happening now. A missing ``created_at`` still
+    counts as awaiting, matching rows written before the column was
+    read by this check.
+    """
+    if not row:
+        return False
+    if row.get("first_sync_completed") is None or bool(row.get("first_sync_completed")):
+        return False
+    if account_predates_this_connect(row):
+        return False
+    return True
+
+
 def account_predates_this_connect(row, *, now=None) -> bool:
     """True when the row was linked well before the current connect."""
     created = _as_utc((row or {}).get("created_at"))

@@ -363,6 +363,34 @@ def test_old_account_without_the_first_sync_flag_skips_the_quiz_on_another_broke
     assert kicked == [7]
 
 
+def test_old_unfinished_flag_does_not_turn_a_cancelled_portal_into_a_sync(monkeypatch):
+    """Closing the portal on an old account must say nothing new was
+    connected. The flag defaulting to false is not a first sync in progress."""
+    prior = [{
+        "snaptrade_account_id": "older-acc",
+        "tenant_id": "snaptrade:older-acc",
+        "account_name": "Schwab Account",
+        "first_sync_completed": False,
+        "created_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+        "connection_broken_at": None,
+    }]
+    remote = [{
+        "id": "older-acc",
+        "institution_name": "Charles Schwab",
+        "connection_broker": "Charles Schwab",
+        "number": "1111",
+        "brokerage_authorization": "auth-old",
+    }]
+    snap, kicked = _wire_portal_return(monkeypatch, prior=prior, remote=remote)
+    resp, messages = _callback(snap)
+
+    assert resp.status_code == 302
+    assert "sync/processing" not in (resp.location or "")
+    assert "without adding a brokerage" in messages
+    assert "Empower connected" not in messages
+    assert kicked == []
+
+
 def test_grant_name_wins_when_the_account_names_a_different_broker():
     label = _broker_label_for_account({
         "institution_name": "Coinbase",

@@ -856,14 +856,17 @@ def snaptrade_callback():
         if isinstance(acc, dict) and str(acc.get("id") or "").strip()
     }
     new_ids = remote_ids - prior_ids
+    from app.onboarding_gate import account_still_awaiting_first_sync
+    # A broken grant of any age is a recovery. An unfinished first sync
+    # is a recovery only while the row is still "this connect" (inside
+    # 12 hours). An older account whose flag was never set must not turn
+    # "add another broker" into the first-sync waiting room, and must
+    # not turn a cancelled portal into a catch-up sync.
     recovery_existing = any(
         str(row.get("snaptrade_account_id") or "") in remote_ids
         and (
             bool(row.get("connection_broken_at"))
-            or (
-                row.get("first_sync_completed") is not None
-                and not bool(row.get("first_sync_completed"))
-            )
+            or account_still_awaiting_first_sync(row)
         )
         for row in existing_accounts
     )

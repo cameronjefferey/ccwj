@@ -972,7 +972,9 @@ def test_signup_form_rejects_a_case_twin_and_an_at_sign(monkeypatch):
         "password": "secret123",
     })
     assert at.status_code == 200
-    assert "Usernames can't include @" in at.get_data(as_text=True)
+    html = at.get_data(as_text=True)
+    assert "include @" in html
+    assert 'value="a@b"' in html
     assert len(users) == 1
 
     ok = client.post("/signup", data={
