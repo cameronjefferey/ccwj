@@ -1096,8 +1096,12 @@ def _migrate_user_profiles_email_prefs():
 
 
 def _migrate_user_profiles_privacy_mode():
-    """Idempotent: privacy mode is a per-user flag. CREATE TABLE does not
-    add the column on databases that already have user_profiles."""
+    """Idempotent: add the column, then turn the flag off for non-admins.
+
+    The screen mask is an admin recording tool. A stored true on any
+    other user is cleared on every startup. ``is_admin`` (ADMIN_USERS,
+    never ``demo``) decides who keeps the flag.
+    """
     try:
         execute(
             "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
@@ -1105,6 +1109,44 @@ def _migrate_user_profiles_privacy_mode():
         )
     except Exception as exc:
         _log.warning("user_profiles privacy_mode migration skipped: %s", exc)
+        return
+    _clear_non_admin_screen_mask()
+
+
+def _clear_non_admin_screen_mask():
+    """Set ``privacy_mode`` false for every user who is not an admin.
+
+    Idempotent. Admin usernames come from ``ADMIN_USERS`` via
+    ``is_admin``. An empty admin list clears every stored flag.
+    """
+    try:
+        names = []
+        for raw in (os.environ.get("ADMIN_USERS", "") or "").split(","):
+            name = raw.strip()
+            if name and is_admin(name):
+                names.append(name.lower())
+        if names:
+            rows = fetch_all(
+                "UPDATE user_profiles AS p "
+                "SET privacy_mode = FALSE, updated_at = NOW() "
+                "FROM users AS u "
+                "WHERE p.user_id = u.id "
+                "AND p.privacy_mode IS TRUE "
+                "AND lower(u.username) <> ALL(%s) "
+                "RETURNING p.user_id",
+                (names,),
+            )
+        else:
+            rows = fetch_all(
+                "UPDATE user_profiles "
+                "SET privacy_mode = FALSE, updated_at = NOW() "
+                "WHERE privacy_mode IS TRUE "
+                "RETURNING user_id"
+            )
+        for row in rows or []:
+            _forget_shell(row.get("user_id"))
+    except Exception as exc:
+        _log.warning("non-admin privacy_mode clear skipped: %s", exc)
 
 
 def _migrate_schwab_first_sync_column():
@@ -3381,6 +3423,23 @@ def get_user_profile(user_id):
     return _shell_load(user_id, "profile", _load)
 
 
+def _screen_mask_write_allowed(user_id) -> bool:
+    """The signed-in admin may set their own ``privacy_mode`` only."""
+    try:
+        from flask import has_request_context
+        from flask_login import current_user
+
+        if not has_request_context():
+            return False
+        if not getattr(current_user, "is_authenticated", False):
+            return False
+        if not is_admin(getattr(current_user, "username", None)):
+            return False
+        return int(current_user.id) == int(user_id)
+    except Exception:
+        return False
+
+
 def update_user_profile(user_id, **fields):
     """
     Whitelisted profile updates. Unknown keys are ignored.
@@ -3403,6 +3462,11 @@ def update_user_profile(user_id, **fields):
         "show_account_names_on_published",
         "profile_visibility",
     }
+    # Screen-mask writes are admin-only. A profile save, or any other
+    # caller, cannot set the column unless the signed-in admin is
+    # updating their own row. Private-from-admins is a different table.
+    if "privacy_mode" in fields and not _screen_mask_write_allowed(user_id):
+        fields.pop("privacy_mode", None)
     sets = []
     values = []
     for key, val in fields.items():
