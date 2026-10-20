@@ -312,7 +312,11 @@ def viewer_slots():
 
 
 def set_privacy_mode(enabled: bool) -> None:
-    """Persist the toggle. Demo stays in the session; everyone else in Postgres."""
+    """Persist on-screen masking. Demo stays in the session; everyone else in Postgres.
+
+    Writes ``user_profiles.privacy_mode`` only. Private-from-admins
+    (``admin_hidden_users``) is a different control and is not touched.
+    """
     from flask import g, session
     from flask_login import current_user
 

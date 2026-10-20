@@ -307,8 +307,8 @@
         <div class="card" id="settings-privacy">
             <div class="settings-pad d-flex flex-wrap justify-content-between align-items-center gap-3">
                 <div>
-                    <h2 class="section-header">Privacy mode</h2>
-                    <p class="settings-lead mb-0">Hide account names, broker names, balances, your username, and your email. Trade P&amp;L and prices stay visible.</p>
+                    <h2 class="section-header">Hide account names on screen</h2>
+                    <p class="settings-lead mb-0">For a public video or a screenshot. Account names, broker names, balances, your username, and your email show as placeholders. Trade P&amp;L and prices stay visible. Off until you turn it on. This does not change what HappyTrader admins can see.</p>
                 </div>
                 <button type="submit" class="btn {% if privacy_mode %}btn-primary{% else %}btn-outline-primary{% endif %}">
                     {% if privacy_mode %}Turn off{% else %}Turn on{% endif %}
@@ -805,7 +805,7 @@
             </div>
             {% endif %}
             {% if privacy_mode %}
-            <p class="settings-lead mb-0">Turn off privacy mode to view or change your email.</p>
+            <p class="settings-lead mb-0">Turn off Hide account names on screen to view or change your email.</p>
             {% else %}
             <form method="POST" action="{{ url_for('profile', tab='security') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

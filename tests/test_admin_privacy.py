@@ -783,6 +783,113 @@ def test_privacy_toggle_stays_on_preferences_and_confirms_both_ways(world):
     _logout(http)
 
 
+OWNER_NICK = "Cedar IRA"
+
+
+def _stored_privacy_mode(user_id) -> bool:
+    """Column value, not the shell cache."""
+    from app.db import fetch_one
+
+    row = fetch_one(
+        "SELECT privacy_mode FROM user_profiles WHERE user_id = %s",
+        (user_id,),
+    )
+    if not row:
+        return False
+    return bool(row["privacy_mode"])
+
+
+def test_admin_privacy_on_still_shows_the_owners_nickname(world, db_conn):
+    """Private-from-admins does not mask the owner's own account list.
+
+    Screen masking is user_profiles.privacy_mode. Toggling one flag
+    must not write the other.
+    """
+    from app.admin_privacy import is_hidden_from_admins
+    from app.models import _forget_shell
+
+    friend_id = world["friend_id"]
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE snaptrade_accounts SET display_nickname = %s "
+            "WHERE user_id = %s",
+            (OWNER_NICK, friend_id),
+        )
+        cur.execute(
+            "UPDATE broker_tenants SET display_nickname = %s "
+            "WHERE user_id = %s AND tenant_id = %s",
+            (OWNER_NICK, friend_id, world["friend_tid"]),
+        )
+    db_conn.commit()
+    _forget_shell(friend_id)
+
+    assert is_hidden_from_admins(friend_id)
+    assert _stored_privacy_mode(friend_id) is False
+
+    http = world["http"]
+    _login(http, world["friend"])
+    account = http.get("/profile?tab=account")
+    body = account.get_data(as_text=True)
+    assert account.status_code == 200
+    assert OWNER_NICK in body
+    assert "Account 1" not in body
+    assert "••••" not in body
+
+    prefs = http.get("/profile?tab=preferences").get_data(as_text=True)
+    assert "Hide account names on screen" in prefs
+    assert "does not change what you see" in prefs
+    admin_form = prefs.split('id="admin-privacy"', 1)[1].split("</form>", 1)[0]
+    assert "set_admin_privacy" in admin_form
+    assert "/privacy-mode" not in admin_form
+    screen_form = prefs.split('action="/privacy-mode"', 1)[1].split("</form>", 1)[0]
+    assert "Hide account names on screen" in screen_form
+    assert "set_admin_privacy" not in screen_form
+
+    http.post(
+        "/profile?tab=preferences",
+        data={"action": "set_admin_privacy", "enabled": "0"},
+        follow_redirects=True,
+    )
+    assert _stored_privacy_mode(friend_id) is False
+    assert not is_hidden_from_admins(friend_id)
+
+    http.post(
+        "/profile?tab=preferences",
+        data={"action": "set_admin_privacy", "enabled": "1"},
+        follow_redirects=True,
+    )
+    assert _stored_privacy_mode(friend_id) is False
+    assert is_hidden_from_admins(friend_id)
+    still = http.get("/profile?tab=account").get_data(as_text=True)
+    assert OWNER_NICK in still
+    assert "Account 1" not in still
+
+    http.post(
+        "/privacy-mode",
+        data={"enabled": "1", "next": "/profile?tab=account"},
+        follow_redirects=True,
+    )
+    assert _stored_privacy_mode(friend_id) is True
+    assert is_hidden_from_admins(friend_id)
+    masked = http.get("/profile?tab=account").get_data(as_text=True)
+    assert "Account 1" in masked
+    assert OWNER_NICK not in masked
+    assert "••••" in masked
+
+    http.post(
+        "/privacy-mode",
+        data={"enabled": "0", "next": "/profile?tab=account"},
+        follow_redirects=True,
+    )
+    assert _stored_privacy_mode(friend_id) is False
+    assert is_hidden_from_admins(friend_id)
+    clear = http.get("/profile?tab=account").get_data(as_text=True)
+    assert OWNER_NICK in clear
+    assert "Account 1" not in clear
+    assert "••••" not in clear
+    _logout(http)
+
+
 def test_filtering_applies_only_while_privacy_is_on(world):
     """An invite with privacy off is not dropped from admin reads."""
     from app.admin_privacy import (

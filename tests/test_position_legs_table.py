@@ -103,12 +103,13 @@ def _render_legs():
         )
 
 
-def test_compact_date_drops_the_current_year():
+def test_compact_date_always_includes_the_year():
     year = datetime.now().year
     compact = app.jinja_env.filters["compact_date"]
     human = app.jinja_env.filters["human_date"]
-    assert compact(f"{year}-09-25") == "Sep 25"
-    assert compact(f"{year}-04-23") == "Apr 23"
+    yy = str(year)[-2:]
+    assert compact(f"{year}-09-25") == f"Sep 25 '{yy}"
+    assert compact(f"{year}-04-23") == f"Apr 23 '{yy}"
     prior = year - 1
     assert compact(f"{prior}-09-11") == f"Sep 11 '{str(prior)[-2:]}"
     assert human(f"{year}-09-25") == f"Sep 25, {year}"
@@ -141,9 +142,11 @@ def test_legs_table_keeps_numbers_whole_and_dashes_if_held():
     assert "$56,162.00" in html
     assert "$825.32" in html
     assert "-$486.66" in html
-    # Full dates stay on the tooltip; the cell itself is compact.
-    assert f'title="Sep 25, {year}">Sep 25</td>' in html
-    assert f'title="Apr 23, {year}">Apr 23</td>' in html
+    # Full dates stay on the tooltip. The cell keeps a short year too,
+    # including the current year, so a multi-year book stays readable.
+    yy = str(year)[-2:]
+    assert f'title="Sep 25, {year}">Sep 25 &#39;{yy}</td>' in html
+    assert f'title="Apr 23, {year}">Apr 23 &#39;{yy}</td>' in html
     # Jinja escapes the apostrophe; the browser shows Sep 11 '25.
     assert f"Sep 11 &#39;{str(prior)[-2:]}</td>" in html
     assert 'title="Covered Call"' in html

@@ -117,19 +117,18 @@ def test_empower_schema_tests_cover_nulls_actions_and_keys():
 
 def test_empower_close_only_rule_does_not_infer_an_open():
     sql = _text("dbt/models/staging/stg_history.sql")
-    first_verb = sql.split("vanguard_verb_ranked as (", 1)[1].split(
-        "empower_open_guard as (", 1
-    )[0]
-    assert "empower" not in first_verb.lower()
-    assert "= 'vanguard'" in first_verb
-    close = sql.split("empower_option_verbs as (", 1)[1].split(
+    assert "vanguard_verb_ranked" not in sql
+    assert "empower_option_verbs" not in sql
+    assert "empower_open_guard" not in sql
+    assert "first_action" not in sql
+    close = sql.split("vanguard_option_verbs as (", 1)[1].split(
         "fee_guard as (", 1
     )[0]
-    assert "= 'empower'" in close
+    assert "in ('vanguard', 'empower')" in close
+    assert close.count("in ('vanguard', 'empower')") == 2
     assert "then 'option_sell_to_close'" in close
     assert "then 'option_buy_to_close'" in close
     assert "option_buy_to_open" not in close
     assert "option_sell_to_open" not in close
     assert "amount_raw" not in close
-    assert "first_action" not in close
-    assert "from empower_option_verbs c" in sql
+    assert "from vanguard_option_verbs c" in sql

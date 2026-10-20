@@ -539,10 +539,16 @@ def test_headline_for_one_early_close_names_the_cost():
         "Closing early cost you $15,266 across 1 trade vs holding to expiration"
     )
     assert summary["count"] == 1
-    assert summary["rows"][0]["contract"] == "$41 call Sep 12"
+    assert summary["rows"][0]["contract"] == "$41 call Sep 12 '25"
     assert summary["rows"][0]["contracts"] == 25
-    assert summary["rows"][0]["closed"] == "Aug 13"
+    assert summary["rows"][0]["closed"] == "Aug 13 '25"
     assert summary["rows"][0]["pill"] == "$15,266 more if held"
+    assert summary["total"]["contracts"] == 25
+    assert summary["total"]["realized_display"] == "-$3,333"
+    assert summary["total"]["if_held_display"] == "+$11,933"
+    assert summary["total"]["pill"] == "$15,266 more if held"
+    assert summary["total"]["net_cost"] == 15266.0
+    assert "$15,266" in summary["headline"]
     assert summary["rows"][0]["dom_id"] == "held-0"
     assert charts[0]["difference_display"] == "$15,266 more if held"
     assert outcome_pill(charts[0]["difference"]) == "$15,266 more if held"
@@ -591,9 +597,123 @@ def test_headline_says_saved_when_early_exits_came_out_ahead():
     ]), _onon_prices())
     summary = held_page_summary(charts)
     assert summary["headline"] == "Closing early saved you $400 across 1 trade vs holding"
+    assert summary["total"]["pill"] == "$400 less if held"
+    assert summary["total"]["net_cost"] == -400.0
     assert outcome_pill(400) == "$400 less if held"
     assert charts[0]["difference_display"] == "$400 less if held"
     assert outcome_pill(0) == "Same"
+
+
+def test_total_matches_headline_and_dates_keep_the_year():
+    """Made-up contracts in two different years. The total pill and the
+    headline are one gap (If held minus Actual), so the dollar and the
+    sign cannot drift apart.
+    """
+    rows = [
+        _row(
+            trade_symbol="ZZZ   230317C00010000",
+            option_type="C",
+            option_strike=10.0,
+            option_expiry=date(2023, 3, 17),
+            open_date=date(2023, 1, 9),
+            close_date=date(2023, 2, 4),
+            contracts=4,
+            realized_pnl=400.0,
+            cost_to_close=0.0,
+            proceeds_from_close=120.0,
+            early_close_vs_expiry_delta=-1250.0,
+            intrinsic_at_expiry=3.0,
+        ),
+        _row(
+            trade_symbol="ZZZ   261120P00040000",
+            option_type="P",
+            option_strike=40.0,
+            option_expiry=date(2026, 11, 20),
+            open_date=date(2026, 9, 1),
+            close_date=date(2026, 10, 2),
+            contracts=2,
+            realized_pnl=-80.0,
+            cost_to_close=-30.0,
+            proceeds_from_close=0.0,
+            early_close_vs_expiry_delta=30.25,
+            intrinsic_at_expiry=0.0,
+        ),
+    ]
+    charts = build_held_charts(pd.DataFrame(rows), _prices([
+        (date(2023, 1, 9), 12.0),
+        (date(2023, 2, 4), 11.0),
+        (date(2023, 3, 17), 13.0),
+        (date(2026, 9, 1), 42.0),
+        (date(2026, 10, 2), 41.0),
+        (date(2026, 11, 20), 44.0),
+    ]))
+    assert len(charts) == 2
+    summary = held_page_summary(charts)
+    by_contract = {row["contract"]: row for row in summary["rows"]}
+    assert by_contract["$10 call Mar 17 '23"]["closed"] == "Feb 4 '23"
+    assert by_contract["$40 put Nov 20 '26"]["closed"] == "Oct 2 '26"
+    total = summary["total"]
+    assert total["contracts"] == 6
+    assert total["contracts_label"] == "6 contracts"
+    assert total["realized_pnl"] == 320.0
+    assert total["pnl_if_held"] == 1539.75
+    assert total["net_cost"] == round(total["pnl_if_held"] - total["realized_pnl"], 2)
+    assert total["net_cost"] == summary["net_cost"]
+    # Holding finished higher, so the sentence and the pill agree on the cost.
+    assert summary["headline"] == (
+        "Closing early cost you $1,220 across 2 trades vs holding to expiration"
+    )
+    assert total["pill"] == "$1,220 more if held"
+    assert "$1,220" in summary["headline"]
+    assert total["held_better"] is True
+
+    # Flip the gap so the early exits come out ahead overall.
+    ahead = [
+        _row(
+            trade_symbol="ZZZ   230315C00008000",
+            option_strike=8.0,
+            option_expiry=date(2023, 3, 15),
+            open_date=date(2023, 1, 9),
+            close_date=date(2023, 2, 1),
+            contracts=2,
+            realized_pnl=250.0,
+            cost_to_close=0.0,
+            proceeds_from_close=80.0,
+            early_close_vs_expiry_delta=600.0,
+            intrinsic_at_expiry=1.0,
+        ),
+        _row(
+            trade_symbol="ZZZ   251121P00015000",
+            option_type="P",
+            option_strike=15.0,
+            option_expiry=date(2025, 11, 21),
+            open_date=date(2025, 10, 1),
+            close_date=date(2025, 11, 3),
+            contracts=1,
+            realized_pnl=40.0,
+            cost_to_close=-15.0,
+            proceeds_from_close=0.0,
+            early_close_vs_expiry_delta=25.5,
+            intrinsic_at_expiry=0.0,
+        ),
+    ]
+    saved = held_page_summary(build_held_charts(pd.DataFrame(ahead), _prices([
+        (date(2023, 1, 9), 9.0),
+        (date(2023, 2, 1), 10.0),
+        (date(2023, 3, 15), 11.0),
+        (date(2025, 10, 1), 16.0),
+        (date(2025, 11, 3), 15.0),
+        (date(2025, 11, 21), 18.0),
+    ])))
+    assert saved["total"]["net_cost"] == -625.5
+    assert saved["headline"] == (
+        "Closing early saved you $626 across 2 trades vs holding"
+    )
+    assert saved["total"]["pill"] == "$626 less if held"
+    assert saved["total"]["contracts"] == 3
+    assert any(row["contract"] == "$8 call Mar 15 '23" for row in saved["rows"])
+    assert any(row["contract"] == "$15 put Nov 21 '25" for row in saved["rows"])
+    assert any(row["closed"] == "Nov 3 '25" for row in saved["rows"])
 
 
 def test_stamp_marks_only_the_matching_option_row():
@@ -634,7 +754,14 @@ def test_template_renders_the_headline_and_keeps_the_chart_card():
             held_summary=summary,
         )
     assert summary["headline"] in html
-    assert "$41 call Sep 12" in html
+    assert "$41 call Sep 12 &#39;25" in html
+    assert "Aug 13 &#39;25" in html
+    assert '<tr class="held-fold-total">' in html
+    assert 'class="held-fold-card held-fold-total"' in html
+    total_row = html[html.find('<tr class="held-fold-total">'):html.find("</tfoot>")]
+    assert "data-held-open" not in total_row
+    assert "Total" in total_row
+    assert "$15,266 more if held" in total_row
     assert "See chart" not in html
     assert 'data-held-open="held-0"' in html
     assert "If held to expiration" in html

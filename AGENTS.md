@@ -33,7 +33,7 @@ This document describes how AI agents are used in this repository and how to wor
 
 The dev dataset is a **full mirror for testing**, kept fresh two ways. (1) **App/UI work — clone:** `scripts/dev_clone_prod.py` (`./scripts/dev.sh --sync`) COPYs prod `analytics` → `analytics_dev` (read-only on prod; refuses to write `analytics` / `analytics_raw` / `analytics_backups`). CI runs this after every `bigquery_update.yml` / `prices_refresh.yml` job (`.github/workflows/dev_mirror.yml`), so local Flask sees the same marts customers see without a laptop `dbt build`. (2) **dbt model work — rebuild:** `scripts/dev-refresh.sh` rebuilds `analytics_raw_dev` from prod `analytics_raw` MERGED with the local environment's own syncs (merge logic in `scripts/dev_refresh_raw.py`, local tenants from the local `broker_tenants` win), then dbt-builds `analytics_dev` from it — using the **working tree's dbt code** with `DBT_RAW_DATASET=analytics_raw_dev` pointing the `raw_broker` source at the dev copy and `dbt/profiles.dev.yml` (temp `--profiles-dir`; dataset `analytics_dev`) so a missing `~/.dbt` cannot silently hit prod. `refresh.sh` / plain `dbt build` from `dbt/` still target prod `analytics` (the repo's `dbt/profiles.yml` takes precedence). dbt snapshots use `target_schema=target.schema` (never hardcode `'analytics'`, or dev builds MERGE into the prod snapshot tables). Raw market-data sources (`sources.yml` `external`, prices/splits/earnings) intentionally stay shared on `analytics` — they're not tenant data and the loaders only run once. Never purge shared-warehouse rows by numeric `user_id` — only by `tenant_id`. Tenant linking without a prod DB password: `scripts/dev-link-prod-tenants.py --from-warehouse --prod-user-id <n>` (or `./scripts/dev.sh --link` with `DEV_PROD_USER_ID`).
 
-**Per-broker staging layer (June 2026).** The three base staging models (`stg_history`, `stg_current`, `stg_account_balances`) no longer read the seeds directly — each is now a UNION of thin per-broker adapter models in `dbt/models/staging/brokers/` (`stg_broker_{schwab,alpaca,fidelity,interactive,vanguard,empower}_*`, plus an `stg_broker_other_*` catch-all) followed by the unchanged heavy parse. (`interactive` = IBKR; slug is the lowercased first token of the account label "Interactive Brokers …".) Each broker has its own model so broker-specific quirks (date formats, sign conventions, duplicate-fill patterns) stay isolated and independently queryable/testable instead of being special-cased in the shared parse. Broker identity is DISPLAY-derived (not a tenancy boundary): `tenant_id` is the literal `snaptrade:<uuid>` for EVERY broker, so the only broker signal in the warehouse is the account-label prefix — `dbt/macros/broker_slug_from_account.sql` maps it to a slug (`"Schwab Account"`→`schwab`, `"Alpaca Paper Account"`→`alpaca`). Tenant isolation stays on `tenant_id`; never scope a user-facing read by `broker_slug`. The catch-all is mutually-exclusive+exhaustive with the named brokers so no row is ever dropped; the `dbt/tests/broker_split_preserves_all_rows.sql` test enforces union-count parity. **To add a brokerage:** (1) add its slug to `known_brokers()`, (2) add `stg_broker_<slug>_{history,current,balances}` (one-line `broker_*_rows('<slug>')` calls), (3) add those three models to the UNION in the matching base staging model, (4) add them to the per-surface unions in `dbt/tests/broker_split_preserves_all_rows.sql`. `dim_broker_tenants.broker_slug` now shows the real brokerage (was the always-`snaptrade` aggregator slug, kept as `aggregator_slug`). Fidelity core sweeps whose SnapTrade position has `cash_equivalent` true, and an unflagged money-market fund whose dollars are already inside the broker cash balance, are not equity lots (`docs/FIDELITY_SNAPTRADE_ONBOARDING.md`). Empower is a named partition the same way (`stg_broker_empower_*`): passthrough of the seed. A generic option Buy or Sell becomes a close only when that contract already has exactly one explicit open direction. A bare first verb is not promoted to an open, so a pre-window short is not given an invented cost basis.
+**Per-broker staging layer (June 2026).** The three base staging models (`stg_history`, `stg_current`, `stg_account_balances`) no longer read the seeds directly — each is now a UNION of thin per-broker adapter models in `dbt/models/staging/brokers/` (`stg_broker_{schwab,alpaca,fidelity,interactive,vanguard,empower}_*`, plus an `stg_broker_other_*` catch-all) followed by the unchanged heavy parse. (`interactive` = IBKR; slug is the lowercased first token of the account label "Interactive Brokers …".) Each broker has its own model so broker-specific quirks (date formats, sign conventions, duplicate-fill patterns) stay isolated and independently queryable/testable instead of being special-cased in the shared parse. Broker identity is DISPLAY-derived (not a tenancy boundary): `tenant_id` is the literal `snaptrade:<uuid>` for EVERY broker, so the only broker signal in the warehouse is the account-label prefix — `dbt/macros/broker_slug_from_account.sql` maps it to a slug (`"Schwab Account"`→`schwab`, `"Alpaca Paper Account"`→`alpaca`). Tenant isolation stays on `tenant_id`; never scope a user-facing read by `broker_slug`. The catch-all is mutually-exclusive+exhaustive with the named brokers so no row is ever dropped; the `dbt/tests/broker_split_preserves_all_rows.sql` test enforces union-count parity. **To add a brokerage:** (1) add its slug to `known_brokers()`, (2) add `stg_broker_<slug>_{history,current,balances}` (one-line `broker_*_rows('<slug>')` calls), (3) add those three models to the UNION in the matching base staging model, (4) add them to the per-surface unions in `dbt/tests/broker_split_preserves_all_rows.sql`. `dim_broker_tenants.broker_slug` now shows the real brokerage (was the always-`snaptrade` aggregator slug, kept as `aggregator_slug`). Fidelity core sweeps whose SnapTrade position has `cash_equivalent` true, and an unflagged money-market fund whose dollars are already inside the broker cash balance, are not equity lots (`docs/FIDELITY_SNAPTRADE_ONBOARDING.md`). Empower is a named partition the same way (`stg_broker_empower_*`): passthrough of the seed. A generic option Buy or Sell uses the same close-only map as Vanguard in `stg_history`: it becomes a close only when that contract already has exactly one explicit open direction. A bare first verb is not promoted to an open, so a pre-window short is not given an invented cost basis.
 
 **TEMPORARY demo book (Oct 2026).** While `demo_temp_seed_on()` is true, Demo Account is the bot mirror **plus** the made-up book in `dbt/seeds/demo_temp_history.csv` and `dbt/seeds/demo_temp_current.csv` (covered calls, a wheel, and spreads, including summer DIA/IWM/GLD credit spreads so the combined cumulative P&L stays above the 2026-08-07 close), stamped only onto `demo:demo-account`. The seed's cash and account value are added on top of the mirror curve by `int_demo_temp_equity_daily`. The switch is the GitHub Actions variable `DEMO_TEMP_SEED` (warehouse job env, not Render): `false` then the next `bigquery_update.yml` run leaves zero seed rows and zero seed equity. Steps: `dbt/seeds/DEMO_TEMP_SEED.md`.
 
@@ -203,7 +203,7 @@ that names the paper account, keeps paper on that page. Position chips,
 the "traded in N accounts" count, and the symbol strip follow the same
 rule and default to the real account when a symbol exists in both.
 Positions, Strategies, Sectors, and Overview/Today movers use that scope.
-Labels say Paper (privacy mode: `Account N · Paper`) on the chip, the
+Labels say Paper (Hide account names on screen, `user_profiles.privacy_mode`: `Account N · Paper`) on the chip, the
 account picker, and position legs. Practice (`/practice`) still shows
 the paper book. An unscoped admin read (`tenant_ids` None) also drops known
 paper tenants from real totals; a lookup miss leaves that read unscoped.
@@ -456,10 +456,15 @@ What's working:
   Just above the Position Legs table, a collapsed "If held to expiration"
   block is the headline: the total and a count ("Closing early cost you
   $X across N trades vs holding to expiration", or "saved you" when the
-  early exits came out ahead).   Expanding it lists each early close
+  early exits came out ahead). Expanding it lists each early close
   (contract, contracts, closed date, actual P&L, if-held P&L, difference
-  pill). Below 576px each exit is a stacked card instead of that table,
-  so the difference stays on screen. The fold clips overflow so opening
+  pill). Contract expirations and the Closed column always include the
+  short year (`Aug 30 '24`), the same dense form as Position Legs
+  Opened/Closed. A Total row sums contracts, Actual, and If held; its
+  difference pill and the headline are one net (If held minus Actual),
+  so they cannot disagree. The total does not open a chart. Below 576px
+  each exit is a stacked card instead of that table, and the total is a
+  card too, so the difference stays on screen. The fold clips overflow so opening
   it cannot widen the page. Each row opens that contract's chart. On a
   phone the chart is a full-viewport bottom sheet. The difference uses
   the same words on the card and in the panel ("$X more if held" /
@@ -468,7 +473,7 @@ What's working:
   apply; the same sentence is the cell's tooltip. The panel steps between charts,
   largest first. The peek
   drawer still links to that panel (`#if-held`) and masks the account
-  name when privacy mode is on. Math lives in `app/held_chart.py`; no
+  name when Hide account names on screen is on (`user_profiles.privacy_mode`). Math lives in `app/held_chart.py`; no
   new market-data vendor. The two price queries (`stg_daily_prices`,
   `int_option_marks_daily`) are fetched outside the shared position
   batch (`fetch_held_series`) and fail to empty frames, so a
@@ -992,7 +997,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 ### Connected accounts (`/snaptrade/accounts`) and Settings (`/profile`)
 **Status: One story each. Linking, rename, sync, and billing posts are unchanged.**
 
-Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**.
+Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. Hide account names on screen (`user_profiles.privacy_mode`, default off, Preferences and the Account menu) still masks it as Account N. That control is separate from Private from HappyTrader admins.
 
 Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
@@ -1171,6 +1176,10 @@ one 404s, including any tenant outside the admin's own accounts and
 the demo tenant when the list is down. Impersonation and the digest
 preview 404. The friend's own pages, the demo tenant, and admin-owned
 accounts stay visible. This is an application gate, not encryption.
+The card writes only `admin_hidden_users`. It does not set
+`user_profiles.privacy_mode` and does not change the owner's own pages.
+On-screen masking is a separate control, **Hide account names on screen**
+(Preferences and the Account menu), default off, `POST /privacy-mode` only.
 
 ### Get Started (`/get-started`) — one onboarding surface
 **Status: Working. Broker-first (Sep 2026).** Choosing the paper path
