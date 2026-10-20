@@ -38,6 +38,22 @@
                 </tr>
                 {% endfor %}
             </tbody>
+            {% if held_summary.total %}
+            <tfoot>
+                <tr class="held-fold-total">
+                    <td class="held-fold-total-label">Total</td>
+                    <td class="num">{{ "{:,}".format(held_summary.total.contracts) }}</td>
+                    <td></td>
+                    <td class="num {{ 'pos' if held_summary.total.realized_pnl > 0 else 'neg' if held_summary.total.realized_pnl < 0 else '' }}">{{ held_summary.total.realized_display }}</td>
+                    <td class="num {{ 'pos' if held_summary.total.pnl_if_held > 0 else 'neg' if held_summary.total.pnl_if_held < 0 else '' }}">{{ held_summary.total.if_held_display }}</td>
+                    <td class="num">
+                        {% if held_summary.total.pill %}
+                        <span class="held-pill {{ 'held-more' if held_summary.total.held_better else 'held-less' if held_summary.total.pill != 'Same' else 'held-same' }}">{{ held_summary.total.pill }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tfoot>
+            {% endif %}
         </table>
         <div class="held-fold-cards">
             {% for row in held_summary.rows %}
@@ -61,6 +77,27 @@
                 </div>
             </div>
             {% endfor %}
+            {% if held_summary.total %}
+            <div class="held-fold-card held-fold-total">
+                <div class="held-fold-contract held-fold-total-label">Total</div>
+                <div class="held-fold-total-n">{{ held_summary.total.contracts_label }}</div>
+                <div class="held-fold-card-metrics">
+                    <div>
+                        <span class="k">Actual</span>
+                        <span class="v {{ 'pos' if held_summary.total.realized_pnl > 0 else 'neg' if held_summary.total.realized_pnl < 0 else '' }}">{{ held_summary.total.realized_display }}</span>
+                    </div>
+                    <div>
+                        <span class="k">If held</span>
+                        <span class="v {{ 'pos' if held_summary.total.pnl_if_held > 0 else 'neg' if held_summary.total.pnl_if_held < 0 else '' }}">{{ held_summary.total.if_held_display }}</span>
+                    </div>
+                    <div class="held-fold-card-pill">
+                        {% if held_summary.total.pill %}
+                        <span class="held-pill {{ 'held-more' if held_summary.total.held_better else 'held-less' if held_summary.total.pill != 'Same' else 'held-same' }}">{{ held_summary.total.pill }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </details>
@@ -170,7 +207,30 @@
         border-bottom: 1px solid #243049;
         vertical-align: middle;
     }
-    .held-fold-table tr:last-child td { border-bottom: 0; }
+    .held-fold-table tbody tr:last-child td { border-bottom: 0; }
+    .held-fold-table tfoot td {
+        font-weight: 650;
+        border-top: 1px solid #3a4a68;
+        border-bottom: 0;
+        background: rgba(91, 140, 255, .06);
+        padding-top: .55rem;
+        padding-bottom: .55rem;
+    }
+    .held-fold-total-label {
+        font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        font-weight: 650;
+        letter-spacing: 0;
+    }
+    .held-fold-total { cursor: default; }
+    .held-fold-total .held-pill { cursor: default; }
+    .held-fold-total-n {
+        margin-top: .15rem;
+        color: #8a97b1;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: .72rem;
+        font-weight: 500;
+    }
     .held-fold-table .num { text-align: right; font-variant-numeric: tabular-nums; }
     .held-fold-table .num, .held-fold-contract {
         font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -190,6 +250,11 @@
         background: #0a0e17;
     }
     .held-fold-card:last-child { margin-bottom: 0; }
+    .held-fold-card.held-fold-total {
+        background: rgba(91, 140, 255, .06);
+        border-color: #3a4a68;
+        cursor: default;
+    }
     .held-fold-card-metrics {
         display: grid;
         grid-template-columns: 1fr 1fr auto;
