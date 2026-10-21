@@ -183,6 +183,32 @@
     .disclosure-body { padding: 0 1.1rem 1rem; min-width: 0; }
     body .ov-page .disclosure > summary .section-header { margin: 0; }
     .disclosure-note { font-size: .82rem; color: var(--ht-muted); font-weight: 500; }
+    /* Performance by account sits under the hero and stays inside the
+       page width on a phone. The note wraps under the title; Dividend,
+       G/L %, and Annualized stay on data-m="hide". */
+    #ov-performance { min-width: 0; max-width: 100%; }
+    #ov-performance .disclosure-body,
+    #ov-performance .breakdown-wrap { min-width: 0; max-width: 100%; }
+    @media (max-width: 640px) {
+        body .ov-page #ov-performance > summary {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            column-gap: .75rem;
+            row-gap: .2rem;
+        }
+        body .ov-page #ov-performance > summary .section-header { grid-column: 1; grid-row: 1; }
+        body .ov-page #ov-performance > summary .disclosure-note {
+            grid-column: 1 / -1;
+            grid-row: 2;
+            min-width: 0;
+        }
+        body .ov-page #ov-performance > summary::after {
+            grid-column: 2;
+            grid-row: 1;
+            margin-left: 0;
+        }
+    }
     .ov-note { font-size: .85rem; color: var(--ht-muted); margin: 0 0 .75rem; max-width: 62ch; }
     .ov-subk { font-size: .78rem; font-weight: 650; color: var(--ht-label); margin: 0 0 .4rem; }
     .ov-facts {
@@ -576,8 +602,9 @@
     }
     .cal-grid-rolling {
         display: grid;
-        /* Dollars stay whole. A wide day scrolls inside this card
-           instead of shrinking the type or scrolling the page. */
+        /* Phone: dollars stay whole. A wide day scrolls inside this
+           card instead of shrinking the type or scrolling the page.
+           From 900px up the weekday columns stretch (see below). */
         grid-template-columns: max-content repeat(5, minmax(3.4rem, max-content));
         gap: 4px;
         width: max-content;
@@ -622,6 +649,35 @@
         .cal-day { padding: .28rem .2rem; min-height: 2.35rem; }
         .cal-day .cal-day-num { font-size: .62rem; }
         .cal-day .cal-day-pnl { font-size: .68rem; }
+    }
+    @media (min-width: 900px) {
+        /* Tablet and desktop: five weekday columns share the card.
+           The week label stays content-sized. Cell colors and the
+           today outline are unchanged. Phone rules above stay put. */
+        .cal-grid-rolling {
+            width: 100%;
+            grid-template-columns: max-content repeat(5, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .cal-rolling-header {
+            font-size: .8rem;
+            letter-spacing: .6px;
+            padding: .35rem 0 .55rem;
+        }
+        .cal-rolling-week-label {
+            font-size: .85rem;
+            padding-right: 1rem;
+        }
+        .cal-day {
+            min-width: 0;
+            min-height: 5.75rem;
+            padding: .85rem .7rem;
+        }
+        .cal-day .cal-day-num { font-size: 1.05rem; }
+        .cal-day .cal-day-pnl {
+            font-size: 1.4rem;
+            margin-top: .4rem;
+        }
     }
     .cal-day.today { outline: 2px solid var(--color-mirror-ink); }
     /* Time-machine: past cells are links to the day-detail page. */
