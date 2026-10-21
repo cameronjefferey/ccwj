@@ -9,11 +9,12 @@
    Story order, top to bottom:
 
      1. Headline           — session date, account value, today / week
-     2. What happened      — fills and notable moves, one section
-     3. Accounts           — per-account close / vs prior / week / month
-     4. Daily change       — open heatmap, still filled by /overview/below
-     5. Secondary          — building history, radar, execution review,
-                             performance, trades this week. Collapsed.
+     2. Performance        — open scorecard under the hero (full view)
+     3. What happened      — fills and notable moves, one section
+     4. Accounts           — per-account close / vs prior / week / month
+     5. Daily change       — open heatmap, still filled by /overview/below
+     6. Secondary          — building history, radar, execution review,
+                             trades this week. Collapsed.
    ════════════════════════════════════════════════════════════════════════ #}
 
 {% block head %}
@@ -138,6 +139,42 @@
         <span class="ov-quiet">Times in {{ user_timezone|replace('_', ' ') }}</span>
     </div>
 </div>
+
+{# Performance by account is the first section under the hero.
+   Full view only. The lazy fragment moves #ov-performance into
+   #ht-overview-performance. The section is open unless
+   localStorage ht-ov-performance is "0". #}
+{% if not simple_view %}
+{% if overview_below_deferred %}
+<div id="ht-overview-performance" class="ov-below-slot"></div>
+{% else %}
+{% include "_overview_performance.html" %}
+{% endif %}
+<script>
+window.applyOverviewPerformanceState = function () {
+    var el = document.getElementById("ov-performance");
+    if (!el || el.getAttribute("data-perf-bound") === "1") return;
+    el.setAttribute("data-perf-bound", "1");
+    var stored = null;
+    try { stored = localStorage.getItem("ht-ov-performance"); } catch (e) {}
+    // A missing key stays open. Only an explicit collapse ("0") closes it.
+    if (stored === "0") el.open = false;
+    el.addEventListener("toggle", function () {
+        try {
+            localStorage.setItem("ht-ov-performance", el.open ? "1" : "0");
+        } catch (e) {}
+    });
+};
+window.placeOverviewPerformance = function () {
+    var perf = document.getElementById("ov-performance");
+    var slot = document.getElementById("ht-overview-performance");
+    if (slot && perf) slot.replaceWith(perf);
+    else if (slot) slot.remove();
+    window.applyOverviewPerformanceState();
+};
+window.applyOverviewPerformanceState();
+</script>
+{% endif %}
 
 {% if not error and _book_value is none and not equity_snapshot and not _snaps %}
 <div class="card p-4 mb-3">
@@ -601,6 +638,7 @@
             }
             el.outerHTML = html;
             placeOverviewDaily();
+            if (window.placeOverviewPerformance) window.placeOverviewPerformance();
         })
         .catch(function () {
             if (el) el.remove();

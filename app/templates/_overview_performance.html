@@ -1,0 +1,105 @@
+{# Performance by account — one row per account for the close on screen.
+   Full view only. Open by default. A stored collapse
+   (localStorage ht-ov-performance = "0") is the only remembered
+   closed state. The page places this under the hero; the lazy
+   /overview/below response includes it so the fetch can move
+   #ov-performance into #ht-overview-performance. #}
+{# simple-view-full performance #}
+{% if not simple_view %}
+{% macro acct_pct_cell(val) %}
+<td data-val="{{ val if val is not none else '' }}" class="{% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}">
+    {% if val is none %}<span class="text-muted">&mdash;</span>
+    {% else %}{{ "+" if val > 0 else "" }}{{ "{:,.1f}".format(val) }}%{% endif %}
+</td>
+{% endmacro %}
+{% macro acct_money_cell(val) %}
+<td data-val="{{ val }}" class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
+    {% if val == 0 %}<span class="text-muted">$0</span>
+    {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
+</td>
+{% endmacro %}
+{% if account_breakdown and account_breakdown.rows %}
+<details class="disclosure" id="ov-performance" open>
+    <summary>
+        <span class="section-header">Performance by account</span>
+        <span class="disclosure-note">Open positions plus anything closed since {{ week_start.strftime('%a %-d') if week_start else 'Monday' }} — stock, options, and lifetime dividends.</span>
+    </summary>
+    <div class="disclosure-body">
+    <div class="breakdown-wrap">
+        <table class="breakdown-table">
+            <thead>
+                <tr>
+                    {# data-m="hide": collapsed on phones (tables.js). #}
+                    <th class="left">Account</th>
+                    <th>Stock</th>
+                    <th>Options</th>
+                    <th data-m="hide">Dividend</th>
+                    <th>Total</th>
+                    <th data-m="hide">G/L %</th>
+                    <th data-m="hide">{{ term('Annualized') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in account_breakdown.rows %}
+                <tr data-href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}">
+                    <td class="left" data-val="{{ a.account_display | account_label(a.tenant_id) }}">
+                        <a href="{{ scoped_url('accounts', tenant=a.tenant_id, tenants=none) }}" class="row-symbol">{{ a.account_display | account_label(a.tenant_id) }}</a>
+                        {% if account_rename_urls is defined and a.tenant_id in account_rename_urls %}
+                        <a class="acct-rename" href="{{ account_rename_urls[a.tenant_id] }}">rename</a>
+                        {% endif %}
+                    </td>
+                    {{ acct_money_cell(a.equity_pnl) }}
+                    {{ acct_money_cell(a.option_pnl) }}
+                    {{ acct_money_cell(a.dividend_income) }}
+                    {{ acct_money_cell(a.net_pnl) }}
+                    {{ acct_pct_cell(a.pct_return) }}
+                    {{ acct_pct_cell(a.annualized_pct) }}
+                </tr>
+                {% endfor %}
+                {% if account_breakdown.totals %}
+                {% set t = account_breakdown.totals %}
+                <tr class="totals-row" data-no-sort data-no-row-nav>
+                    <td class="left">All accounts</td>
+                    {{ acct_money_cell(t.equity_pnl) }}
+                    {{ acct_money_cell(t.option_pnl) }}
+                    {{ acct_money_cell(t.dividend_income) }}
+                    {{ acct_money_cell(t.net_pnl) }}
+                    {{ acct_pct_cell(t.pct_return) }}
+                    {{ acct_pct_cell(t.annualized_pct) }}
+                </tr>
+                {% endif %}
+                {% for b in account_breakdown.benchmarks or [] %}
+                <tr class="benchmark-row" data-no-sort data-no-row-nav>
+                    <td class="left">
+                        {{ b.label }}
+                        <div class="row-meta">same capital, same period</div>
+                    </td>
+                    <td class="bench-na">&mdash;</td>
+                    <td class="bench-na">&mdash;</td>
+                    <td class="bench-na">&mdash;</td>
+                    {{ acct_money_cell(b.total_pnl) }}
+                    {{ acct_pct_cell(b.pct_return) }}
+                    {{ acct_pct_cell(b.annualized_pct) }}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <details class="section-fine">
+        <summary>How this is computed</summary>
+        <p>
+            Counts open positions plus anything closed since
+            {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }};
+            older closed trades live in the full account breakdown. Annualized
+            factors in how long each position has been held.
+            {% if account_breakdown.benchmarks %}
+            Benchmark rows show what the same capital would have returned in
+            the index over the same holding window &mdash; beating them means
+            you outperformed the market.
+            {% endif %}
+        </p>
+    </details>
+    </div>
+</details>
+{% endif %}
+{% endif %}{# /simple-view-full performance #}
