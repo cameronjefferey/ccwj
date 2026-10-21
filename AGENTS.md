@@ -314,7 +314,7 @@ What's working:
 - Current positions strip (open-position cards with live prices)
 - Position / strategy / sector / subsector scorecards (performance by account). The account scorecard is **lifetime P&amp;L for currently-open positions plus anything closed since the Monday of the close on screen** (Friday's session → that Friday's Monday, not calendar-today's ISO Monday, which is still ahead of the close on Monday morning). Dividends on those rows are lifetime too — not a week-to-date clock. Copy names that Monday, not "this week's result". Ex-div share counts are every share held in the current scope; Today's "No short call open" list is uncovered covered-call lots only.
 - Trader Profile teaser under the strip: unique currently-held symbols (same grain as the strip), not "open positions".
-- Execution Review: verdicts that matured in the **last 7 days**, labeled as such — not "this week".
+- Execution Review: every early close whose expiry has passed (what you closed at, what it was worth at expiry, and whether that saved or cost money, with a total). Dates include the year when they are not the current year. Spread legs are one verdict. Closes still waiting on expiry are a secondary list that names each contract and its expiry. The card is hidden when nothing is graded and nothing is pending. The weekly email still sends only verdicts that matured in the last 7 days.
 
 ### Today (`/today`, endpoint `today_view`) — LIVE SESSION
 **Status: In-session last-trade / last-sync page with an always-on delay disclaimer. Same dark hero bar as Overview.**
@@ -1695,8 +1695,7 @@ pass, user feedback "a lot of words, I don't know the takeaway"): these
 surfaces are TAKEAWAY-FIRST, not prose-first. The profile card is one
 headline number, then long and short books (one bold number each, detail
 under it, never repeated in a chip). The largest early-exit swings sit
-in their own list with the dollar in its own column. Daily Review verdict rows show the signed delta in its own
-column with a SHORT action line (`action` field), while the full
+in their own list with the dollar in its own column. Overview verdict rows name the contract, what you closed at, what it was worth at expiry, and whether that saved or cost money. The full
 `sentence` form is reserved for the weekly EMAIL (no layout to lean on).
 New execution copy must follow this shape — no paragraph blocks on pages. All three models keep one row per
 contract (`dbt/tests/option_exit_quality_one_row_per_contract.sql`);
@@ -1708,12 +1707,15 @@ phrasing pinned by `tests/test_execution_quality.py`.
 lifetime card alone is read-once; three surfaces make the grading
 RECURRING: (1) **Verdict maturation** — a verdict "lands" on the closed
 contract's `option_expiry` (the day the counterfactual becomes knowable).
-Overview's "Execution Review" section (`weekly_review.html`) shows
-verdicts landed in the trailing 7 days (`verdicts_landed`) plus the
-pending open loop ("N verdicts pending — next lands Fri …",
-`verdicts_pending`); the weekly summary EMAIL carries the same landed
-list (`_VERDICTS_SQL` in `app/email_digests_cli.py` reuses
-`verdicts_landed` for phrasing so email and page can never drift).
+Overview's "Execution Review" section (`_overview_below.html`) shows
+every graded early close whose expiry has passed
+(`overview_graded_verdicts`: close cash, expiry worth, saved or cost,
+and a total) plus a secondary list of pending contracts
+(`verdicts_pending`, each contract and its expiry). The card is hidden
+when both are empty. The weekly summary EMAIL still sends only verdicts
+that matured in the last 7 days (`_VERDICTS_SQL` in
+`app/email_digests_cli.py` reuses `verdicts_landed` for the sentence,
+with that 7-day window).
 Complementary legs of one structure (put/call spread, iron condor,
 straddle/strangle) on the same `tenant_id` + expiry collapse to one
 row whose dollar is the **net** vs holding every leg — a VICR $210

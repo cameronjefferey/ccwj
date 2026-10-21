@@ -26,6 +26,27 @@ def test_overview_story_order_is_headline_then_what_happened_then_accounts():
     assert "border:1px solid #5b8cff" not in PAGE
 
 
+def test_overview_grades_the_whole_book_not_a_seven_day_window():
+    src = Path("app/weekly_review.py").read_text()
+    assert "overview_graded_verdicts" in src
+    assert "market_today - timedelta(days=6)" not in src
+
+
+def test_execution_card_lists_every_verdict_and_hides_when_empty():
+    start = BELOW.index("EXECUTION REVIEW")
+    gate = BELOW[start:BELOW.index('id="ov-execution"')]
+    assert "exit_verdicts_landed or exit_verdicts_pending" in gate
+    assert "open_option_record" not in gate
+    body = BELOW[BELOW.index('id="ov-execution"'):BELOW.index("simple-view-full execution")]
+    assert "exit_verdicts_landed[0]" not in body
+    assert "for v in exit_verdicts_landed" in body
+    assert "exit_verdicts_pending['items']" in body
+    assert "exit_verdicts_total.label" in body
+    assert "v.closed_label" in body and "v.worth_label" in body
+    assert "v.outcome_label" in body
+    assert "Next:" not in body
+
+
 def test_simple_view_tucks_execution_and_hides_performance():
     exec_at = BELOW.index('id="ov-execution"')
     week_at = BELOW.index('id="ov-week"')

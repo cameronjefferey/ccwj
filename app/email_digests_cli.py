@@ -163,8 +163,9 @@ WHERE CAST(s.user_id AS STRING) = @user_id
 
 # Execution verdicts that MATURED in the last 7 days: early closes whose
 # expiry date arrived, making the "what if you'd held" counterfactual
-# knowable. Phrasing is delegated to app.execution_quality.verdicts_landed
-# so the email and the Daily Review section can never drift apart.
+# knowable. The email stays on this 7-day slice. Overview shows every
+# graded close whose expiry has passed; both call verdicts_landed for
+# the sentence.
 # Close price is the per-share premium on the buy-to-close / sell-to-close
 # fill. The verdict dollar is recomputed from that price, the contract
 # count, and the underlying close on the expiry date (×100 once). A

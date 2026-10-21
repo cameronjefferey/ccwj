@@ -137,7 +137,7 @@ from app.execution_quality import (  # noqa: E402
     EXECUTION_REVIEW_QUERY as _EXECUTION_REVIEW_QUERY,
     OPEN_OPTION_RECORD_QUERY as _OPEN_OPTION_RECORD_QUERY,
     open_option_record as _open_option_record,
-    verdicts_landed as _verdicts_landed,
+    overview_graded_verdicts as _overview_graded_verdicts,
     verdicts_pending as _verdicts_pending,
 )
 
@@ -5830,9 +5830,10 @@ def build_daily_review_batch(tenant_filter, today, this_week, trades_as_of=None,
         "attribution": POSITION_ATTRIBUTION_QUERY.format(
             tenant_filter=tenant_filter, week_start=scorecard_week.isoformat()),
         **market_context_specs,
-        # Execution verdicts (int_option_exit_quality): early closes whose
-        # expiry arrived recently (the verdict "landed") + the pending
-        # open loop. Windowing happens in Python; the frame is small.
+        # Execution verdicts (int_option_exit_quality): every early close
+        # whose expiry has passed, plus the pending open loop. Windowing
+        # happens in Python; the frame is small. The weekly email keeps
+        # its own last-7-days slice.
         "exit_verdicts": _EXECUTION_REVIEW_QUERY.format(
             tenant_filter=tenant_filter),
     }
@@ -5975,8 +5976,9 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
 
     try:
         ev_df = batch.get("exit_verdicts", pd.DataFrame())
-        context["exit_verdicts_landed"] = _verdicts_landed(
-            ev_df, market_today - timedelta(days=6), market_today)
+        landed, total = _overview_graded_verdicts(ev_df, market_today)
+        context["exit_verdicts_landed"] = landed
+        context["exit_verdicts_total"] = total
         context["exit_verdicts_pending"] = _verdicts_pending(
             ev_df, market_today)
     except Exception as e:
@@ -6154,6 +6156,7 @@ def weekly_review():
         "account_breakdown": {"rows": [], "totals": None, "benchmarks": []},
         "benchmark_snapshot": [],
         "exit_verdicts_landed": [],
+        "exit_verdicts_total": None,
         "exit_verdicts_pending": None,
         "open_option_record": None,
         "overview_below_deferred": False,
@@ -6745,6 +6748,7 @@ def overview_below():
         "upcoming_ex_dividends": [],
         "expiring_options": [],
         "exit_verdicts_landed": [],
+        "exit_verdicts_total": None,
         "exit_verdicts_pending": None,
         "open_option_record": None,
         "trades_this_week": {"trades": [], "count": 0, "opened_count": 0,
