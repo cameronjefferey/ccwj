@@ -200,6 +200,8 @@ def test_logged_in_user_can_open_learn(monkeypatch):
     assert "Create a free account" not in html
     assert "Start your free 30-day trial" not in html
     assert 'href="/practice"' in html
+    assert 'href="/snaptrade/connect"' in html
+    assert "Your 30-day trial starts when you connect a real brokerage." in html
     nav = html[html.find('class="navbar-nav me-auto"'):html.find('id="userMenu"')]
     assert ">Practice</a>" in nav
     index = client.get("/learn").get_data(as_text=True)

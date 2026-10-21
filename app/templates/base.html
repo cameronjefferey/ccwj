@@ -88,8 +88,9 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"></noscript>
     {# Public landings do not draw charts. Skipping Chart.js is the
-       largest script on those pages. #}
-    {% if request.endpoint not in ('index', 'campaign_start', 'pricing', 'learn_index', 'learn_episode', 'learn_replay_page', 'faq', 'privacy', 'terms', 'contact', 'feature_detail', 'go_landing') %}
+       largest script on those pages. The trade replay does draw one,
+       so learn_replay_page keeps the script. #}
+    {% if request.endpoint not in ('index', 'campaign_start', 'pricing', 'learn_index', 'learn_episode', 'faq', 'privacy', 'terms', 'contact', 'feature_detail', 'go_landing') %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Chart.js global theme defaults — must run after chart.js loads

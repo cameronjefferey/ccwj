@@ -117,6 +117,16 @@
         .pp-chain button { min-height: 44px; }
         .pp-card form .btn-primary { width: 100%; }
     }
+    @media (min-width: 992px) {
+        .pp-wrap h1 { font-size: 2.25rem; }
+        .pp-card { padding: 1.75rem 2rem 2rem; }
+        .pp-kicker { font-size: .85rem; }
+        .pp-choice { font-size: 1.05rem; padding: .55rem 1.05rem; }
+        .pp-sentence { font-size: 1.15rem; }
+        .pp-chain th { font-size: .85rem; padding: .65rem .75rem; }
+        .pp-chain td { font-size: 1.05rem; padding: .7rem .55rem; }
+        .pp-chain button { padding: .4rem .45rem; }
+    }
 </style>
 {% endblock %}
 
@@ -124,7 +134,7 @@
 {% if logged_out %}
 <div class="pp-wrap">
 <div class="row justify-content-center">
-    <div class="col-lg-8">
+    <div class="col-12">
         <h1 class="mb-1">Practice a trade</h1>
         <p class="pp-note mb-3">Paper money. This is practice, not a recommendation and not advice.</p>
         <div class="pp-card">
@@ -141,7 +151,7 @@
 {% else %}
 <div class="pp-wrap">
 <div class="row justify-content-center">
-    <div class="col-lg-8">
+    <div class="col-12">
         <h1 class="mb-1">Practice a trade</h1>
         {% if not account and not look and not sent and not ticket %}
         <p class="pp-note mb-3">
@@ -182,6 +192,7 @@
                     <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Practice another</a>
                     <a class="btn btn-primary" href="{{ url_for('position_detail', symbol=sent.link_symbol or sent.symbol, tenants=sent.tenant_id) if sent.tenant_id else url_for('position_detail', symbol=sent.link_symbol or sent.symbol) }}">See {{ sent.link_symbol or sent.symbol }}</a>
                 </div>
+                <p class="pp-note mt-3 mb-0">Open <a href="{{ url_for('positions') }}">Positions</a> to see the trade. <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.</p>
             {% elif ticket %}
                 {% if ticket.session_note %}
                 <p class="pp-note">{{ ticket.session_note }}</p>
@@ -202,6 +213,7 @@
                     <button class="btn btn-primary" type="submit">Place this trade</button>
                     <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Change it</a>
                 </form>
+                <p class="pp-note mt-3 mb-0">Open <a href="{{ url_for('positions') }}">Positions</a> to see the trade. <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.</p>
             {% elif not account and not look and not broker_pending %}
                 <p>
                     Connect a paper account to practice. The buying power is whatever that
@@ -494,7 +506,7 @@
                                 var cash = contractText.indexOf("cash") >= 0;
                                 var name = voiceNow();
                                 if (name === "brokerage") {
-                                    contract.textContent = cash ? "SPX pays cash. One contract is $100 per point." : "One contract is 100 shares.";
+                                    contract.textContent = cash ? "SPX pays cash. One contract is $100 per point, not 100 shares." : "One contract is 100 shares.";
                                 } else if (name === "intermediate") {
                                     contract.textContent = cash ? "Cash-settled. $100 a point." : "1 contract controls 100 shares.";
                                 } else {
@@ -509,6 +521,7 @@
                         sync();
                     })();
                 </script>
+                <p class="pp-note mt-3 mb-0">Open <a href="{{ url_for('positions') }}">Positions</a> to see the trade. <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.</p>
                 </div>
             {% endif %}
             {% if recent_orders %}

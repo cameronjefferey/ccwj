@@ -705,7 +705,13 @@ Logged-out nav and footer link here. Logged-in users can open the same pages.
 The signup card at the bottom is for logged-out visitors. The button is
 **Create a free account** (`data-ht-cta="create-account"`). The note is
 “Learning and paper trading are free. Your 30-day trial starts when you
-connect a real brokerage.” A signed-in page replaces it with Practice.
+connect a real brokerage.” A signed-in page replaces it with Practice, then names Positions and
+Connect a brokerage. The 30-day trial starts when a real brokerage
+connects. Practice dates include the year when that date is not the
+current year. The covered-call replay total adds only the lines that
+belong in it (the option result, and the rise above the strike, are
+shown and are not added again). The replay page loads Chart.js; the
+other Learn pages do not.
 Copy and video ids live in `app/learn_episodes.json` (loaded by
 `app/learn_catalog.py`). All 10 episodes are published with public YouTube
 ids, in series order (the wheel is episode 7, spreads 8, options risk 9).

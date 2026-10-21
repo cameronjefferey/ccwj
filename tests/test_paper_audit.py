@@ -281,6 +281,9 @@ def test_copy_is_literal():
     assert "cash-settled" in spx["brokerage"]["note"]
     assert "Total cost $350.00" in spx["brokerage"]["note"]
     assert "per point" in spx["brokerage"]["note"]
+    assert "$100 per point" in spx["intermediate"]["note"]
+    assert "100 points" not in spx["intermediate"]["note"]
+    assert "100 points" not in spx["beginner"]["note"]
     assert "per share" in note
     placed = views["beginner"]["note"]
     assert "was sent" not in placed

@@ -95,11 +95,15 @@
                 {% if choice.detail %}
                 <div class="replay-detail">
                     {% for line in choice.detail %}
-                    <div class="replay-outcome-row">
-                        <span class="replay-outcome-label">{{ line.label }}</span>
+                    <div class="replay-outcome-row{% if not line.in_total %} is-aside{% endif %}">
+                        <span class="replay-outcome-label">{{ line.label }}{% if not line.in_total %} <span class="replay-aside-note">Not in the total</span>{% endif %}</span>
                         <span class="ht-num replay-money{% if line.sign == 'gain' %} is-gain{% elif line.sign == 'loss' %} is-loss{% endif %}">{{ line.text }}</span>
                     </div>
                     {% endfor %}
+                    <div class="replay-outcome-row is-total">
+                        <span class="replay-outcome-label">Total</span>
+                        <span class="ht-num replay-money{% if choice.sign == 'gain' %} is-gain{% elif choice.sign == 'loss' %} is-loss{% endif %}">{{ choice.result_text }}</span>
+                    </div>
                 </div>
                 {% endif %}
                 <p class="replay-explain">{{ choice.explanation }}</p>
