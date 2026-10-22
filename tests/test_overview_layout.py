@@ -86,7 +86,10 @@ def test_performance_by_account_opens_under_the_hero():
     assert 'data-m="hide">Dividend' in PERF
     assert 'data-m="hide">G/L %' in PERF
     # Subtitle still names week_start. The window math stays in Python.
-    assert "week_start.strftime('%a %-d')" in PERF
+    # The label includes the month, and the year when that Monday is not
+    # in the current year.
+    assert "week_start|session_date('dow', today)" in PERF
+    assert "week_start.strftime('%a %-d')" not in PERF
     source = Path("app/weekly_review.py").read_text()
     assert '"overview_performance_in_fragment": False' in source
     assert '"overview_performance_in_fragment": True' in source

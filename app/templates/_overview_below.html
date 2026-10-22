@@ -304,18 +304,33 @@
 {% endmacro %}
 {% if trades_this_week and trades_this_week.has_any %}
 {% set tw = trades_this_week %}
+{% set week_bits = namespace(realized=0, unrealized=0, result=0) %}
+{% if tw.realized_display is defined %}
+{% set week_bits.realized = tw.realized_display %}
+{% set week_bits.unrealized = tw.unrealized_display %}
+{% set week_bits.result = tw.result_display %}
+{% else %}
+{% set week_bits.realized = tw.realized_pnl|whole_dollars %}
+{% set week_bits.unrealized = tw.unrealized_pnl|whole_dollars %}
+{% set week_bits.result = (week_bits.realized or 0) + (week_bits.unrealized or 0) %}
+{% endif %}
 <details class="disclosure" id="ov-week">
     <summary>
         <span class="section-header">{% if trades_week_is_prior %}Trades last week{% else %}Trades this week{% endif %}</span>
         <span class="disclosure-note">
-        {% if tw.realized_pnl or tw.closed_count %}
-        <span class="trades-pnl {% if tw.realized_pnl > 0 %}text-positive{% elif tw.realized_pnl < 0 %}text-negative{% endif %}">
-            {% if tw.realized_pnl == 0 %}$0{% else %}{{ "+" if tw.realized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.realized_pnl|abs) }}{% endif %} realized
+        {% if week_bits.realized or tw.closed_count %}
+        <span class="trades-pnl {% if week_bits.realized > 0 %}text-positive{% elif week_bits.realized < 0 %}text-negative{% endif %}">
+            {{ week_bits.realized|signed_whole }} realized
         </span>
         {% endif %}
-        {% if tw.unrealized_pnl or tw.opened_count %}
-        <span class="trades-pnl {% if tw.unrealized_pnl > 0 %}text-positive{% elif tw.unrealized_pnl < 0 %}text-negative{% endif %}">
-            {% if tw.unrealized_pnl == 0 %}$0{% else %}{{ "+" if tw.unrealized_pnl > 0 else "-" }}${{ "{:,.0f}".format(tw.unrealized_pnl|abs) }}{% endif %} unrealized
+        {% if week_bits.unrealized or tw.opened_count %}
+        <span class="trades-pnl {% if week_bits.unrealized > 0 %}text-positive{% elif week_bits.unrealized < 0 %}text-negative{% endif %}">
+            {{ week_bits.unrealized|signed_whole }} unrealized
+        </span>
+        {% endif %}
+        {% if week_bits.realized and week_bits.unrealized %}
+        <span class="trades-pnl {% if week_bits.result > 0 %}text-positive{% elif week_bits.result < 0 %}text-negative{% endif %}">
+            {{ week_bits.result|signed_whole }} total
         </span>
         {% endif %}
         </span>
@@ -323,7 +338,7 @@
     <div class="disclosure-body">
     <p class="section-sub">
         Groups that opened or closed since
-        {{ (trades_week_start or week_start).strftime('%a %b %-d') if (trades_week_start or week_start) else 'Monday' }}
+        {{ (trades_week_start or week_start)|session_date('dow', today) if (trades_week_start or week_start) else 'Monday' }}
         &mdash; {{ tw.closed_count }} closed, {{ tw.opened_count }} still open.
     </p>
     <details class="section-fine" style="margin:-.4rem 0 .8rem;">
@@ -353,18 +368,19 @@
                         {% if r.contract and r.contract != r.symbol %}<div class="row-meta">{{ r.contract }}</div>{% endif %}
                     </td>
                     <td class="left" data-val="{{ r.strategy }}">{{ r.strategy }}</td>
-                    <td data-val="{{ r.open_date.strftime('%Y-%m-%d') if r.open_date else '' }}">{{ r.open_date.strftime('%b %-d') if r.open_date else '—' }}</td>
+                    <td data-val="{{ r.open_date.strftime('%Y-%m-%d') if r.open_date else '' }}">{{ r.open_date|session_date('short', today) if r.open_date else '—' }}</td>
                     <td class="left" data-val="{{ 'Closed' if r.is_closed else 'Open' }}">
                         {% if r.is_closed %}
-                        <span class="pill-status closed">Closed {{ r.close_date.strftime('%b %-d') if r.close_date else '' }}</span>
+                        <span class="pill-status closed">Closed {{ r.close_date|session_date('short', today) if r.close_date else '' }}</span>
                         {% else %}
                         <span class="pill-status open">Open</span>
                         {% endif %}
                         {% if r.traded_today %}<span class="pill-status today">{{ (review_date or today).strftime('%a') }}</span>{% endif %}
                     </td>
-                    <td data-val="{{ r.result_pnl }}" class="{% if r.result_pnl > 0 %}text-positive{% elif r.result_pnl < 0 %}text-negative{% endif %}">
-                        {% if r.result_pnl == 0 %}<span class="text-muted">$0</span>
-                        {% else %}{{ "+" if r.result_pnl > 0 else "-" }}${{ "{:,.0f}".format(r.result_pnl|abs) }}{% endif %}
+                    {% set row_result = r.result_display if r.result_display is defined else (r.result_pnl|whole_dollars) %}
+                    <td data-val="{{ r.result_pnl }}" class="{% if row_result > 0 %}text-positive{% elif row_result < 0 %}text-negative{% endif %}">
+                        {% if row_result == 0 %}<span class="text-muted">$0</span>
+                        {% else %}{{ row_result|signed_whole }}{% endif %}
                         <div class="row-meta">{{ r.result_kind }}</div>
                     </td>
                     <td class="left" data-no-row-nav>
@@ -374,6 +390,11 @@
                     </td>
                 </tr>
                 {% endfor %}
+                <tr class="totals-row" data-no-sort data-no-row-nav>
+                    <td class="left" colspan="5">Total</td>
+                    <td class="{% if week_bits.result > 0 %}text-positive{% elif week_bits.result < 0 %}text-negative{% endif %}">{{ week_bits.result|signed_whole }}</td>
+                    <td></td>
+                </tr>
             </tbody>
         </table>
     </div>

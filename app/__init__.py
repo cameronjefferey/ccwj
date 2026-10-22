@@ -302,6 +302,22 @@ def _win_rate_label(rate, winners=None, losers=None):
 
 app.add_template_filter(_human_date, name="human_date")
 app.add_template_filter(_compact_date, name="compact_date")
+
+from app.review_format import (
+    mover_parts as _mover_parts,
+    plain_whole as _plain_whole,
+    session_date as _session_date,
+    signed_pct as _signed_pct,
+    signed_whole as _signed_whole,
+    whole_dollars as _whole_dollars,
+)
+
+app.add_template_filter(_session_date, name="session_date")
+app.add_template_filter(_signed_whole, name="signed_whole")
+app.add_template_filter(_plain_whole, name="plain_whole")
+app.add_template_filter(_signed_pct, name="signed_pct")
+app.add_template_filter(_whole_dollars, name="whole_dollars")
+app.add_template_filter(_mover_parts, name="mover_parts")
 app.add_template_global(_win_rate_label, name="win_rate_label")
 
 

@@ -3795,8 +3795,9 @@ class TestReviewSessionDates:
         assert _coerce_date("2026-08-13") == self.thursday
 
     def test_format_session_date_matches_pulse_label(self):
-        assert _format_session_date(self.thursday) == "Thu Aug 13"
-        assert _format_session_date("2026-08-28") == "Fri Aug 28"
+        from app.review_format import session_date
+        assert _format_session_date(self.thursday) == session_date(self.thursday, "dow")
+        assert _format_session_date("2026-08-28") == session_date(date(2026, 8, 28), "dow")
         assert _format_session_date(None) is None
 
     def test_pulse_carries_date_label(self):

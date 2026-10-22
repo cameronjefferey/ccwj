@@ -25,13 +25,13 @@
                 <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                        <div class="mover-pct text-positive">{{ m.price_change_pct|signed_pct }}</div>
                     </div>
                     <div>
                         <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
                         <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
-                    <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
+                    <div class="mover-dollar text-positive">{{ m.dollar_impact|signed_whole }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _ah.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
@@ -46,13 +46,13 @@
                 <a href="{{ scoped_url('position_detail', symbol=m.symbol) }}" class="mover-row" data-peek-symbol="{{ m.symbol }}" data-peek-impact="{{ m.dollar_impact }}">
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                        <div class="mover-pct text-negative">{{ m.price_change_pct|signed_pct }}</div>
                     </div>
                     <div>
                         <div class="mover-meta">close ${{ "{:,.2f}".format(m.today_close) }} → ${{ "{:,.2f}".format(m.broker_mark) }}</div>
                         <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
-                    <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                    <div class="mover-dollar text-negative">{{ m.dollar_impact|signed_whole }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _ah.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
