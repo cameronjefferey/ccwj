@@ -308,6 +308,15 @@ def main():
     # (Dividends are a first-class P&L stream as of the dividends-as-first-class
     # change. The invariant the rest of the app relies on is that the headline
     # number reconciles with its three building blocks.)
+    #
+    # Each column is ROUND(..., 2) on its own, so the rounded headline and
+    # the sum of the rounded parts can differ by one cent. That remainder
+    # is inside this file's 1-cent tolerance (EPS, the same bound diff()
+    # uses on CHECK 1). A literal `> 0.01` is not: FLOAT64 stores one cent
+    # as 0.010000000002, so the predicate fires on a remainder the rest of
+    # the audit accepts. Run 39743232647 failed on exactly that row —
+    # QTUM Buy and Hold, 32516.53 vs 0 + 31294.88 + 1221.66, printed
+    # delta -0.01. A two-cent break is still a failure.
     # ====================================================================
     section("CHECK 5: total_pnl == realized_pnl + unrealized_pnl + total_dividend_income per row")
     sql5 = f"""
@@ -321,7 +330,7 @@ def main():
         FROM {DS}.positions_summary
         WHERE ABS(
             total_pnl - (realized_pnl + unrealized_pnl + COALESCE(total_dividend_income, 0))
-        ) > 0.01
+        ) > {EPS}
     """
     d5 = q(client, sql5)
     if not d5.empty:
