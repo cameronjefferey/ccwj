@@ -472,8 +472,7 @@ def test_rendered_account_tables_match_the_header():
     assert "Dec 15, 2025" in page
     assert "Dec 31, 2025" in page
     assert "+$22" in page
-    div_at = page.index("dividends")
-    assert "+$6" in page[div_at:div_at + 40]
+    assert "dividends +$6" in page
     assert "-$5.00" in page
     for name in (
         "weekly_review.html",
