@@ -149,8 +149,17 @@ def spx_level_from_spy(spy_close: float) -> float:
     return float(spy_close) * _SPX_PER_SPY
 
 
+def _calendar_label(raw) -> str:
+    """Weekday and date. A year other than this one is named."""
+    day = raw.date() if isinstance(raw, datetime) else raw
+    text = day.strftime("%a %b %-d").replace("  ", " ")
+    if day.year != market_today().year:
+        text = f"{text}, {day.year}"
+    return text
+
+
 def _pill_text(choice) -> str:
-    return f"{choice['label']} · {choice['date'].strftime('%a %b %-d')}"
+    return f"{choice['label']} · {_calendar_label(choice['date'])}"
 
 
 def _ny_now(now=None) -> datetime:
@@ -307,7 +316,7 @@ def practice_receipt(ticket, body=None, tenant_id=None) -> dict:
         "link_symbol": position_link_symbol(symbol),
         "side": ticket["side"],
         "strike_label": money_strike(ticket["strike"]),
-        "expiry_label": f"{ticket['expiry_label']} · {expiry.strftime('%a %b %-d')}",
+        "expiry_label": f"{ticket['expiry_label']} · {_calendar_label(expiry)}",
         "limit_label": ticket["limit_label"],
         "quantity_label": "1 contract",
         "detail": _order_detail("1 contract", ticket.get("limit_label") or ""),
@@ -370,7 +379,7 @@ def money_spot(amount) -> str:
 
 
 def _when_label(expiry: date) -> str:
-    return expiry.strftime("%a %b %-d").replace("  ", " ")
+    return _calendar_label(expiry)
 
 
 def _paper_tenant_ids(user_id) -> list[str]:
@@ -405,7 +414,7 @@ def _finite_decimal(raw):
 
 def _expiry_phrase(raw) -> str:
     if hasattr(raw, "strftime"):
-        return f" Expires: {raw.strftime('%a %b %-d')}."
+        return f" Expires: {_calendar_label(raw)}."
     return ""
 
 
@@ -739,10 +748,14 @@ def _remember_voice() -> str:
 
 
 def _share_math(limit_label, cost_label, cash_settled) -> str:
-    unit = "point" if cash_settled else "share"
+    if cash_settled:
+        return (
+            f"The limit is the price per point. "
+            f"One contract pays $100 per point, so {limit_label} x 100 = {cost_label}."
+        )
     return (
-        f"The limit is the price per {unit}. "
-        f"One contract is 100 {unit}s, so {limit_label} x 100 = {cost_label}."
+        f"The limit is the price per share. "
+        f"One contract is 100 shares, so {limit_label} x 100 = {cost_label}."
     )
 
 
@@ -814,7 +827,7 @@ def trade_views(
 ) -> dict:
     """Three readings of one paper order. Beginner is the lesson. Brokerage is the ticket."""
     side_name = "Call" if side == "call" else "Put"
-    when = expiry.strftime("%a %b %-d")
+    when = _calendar_label(expiry)
     if price_note == "live bid/ask":
         price_label = "Live bid/ask"
     elif price_note:
@@ -998,7 +1011,10 @@ def _close_label(raw) -> str | None:
             day = None
     if day is None:
         return None
-    return f"the {day.strftime('%b')} {day.day} close"
+    when = f"{day.strftime('%b')} {day.day}"
+    if day.year != market_today().year:
+        when = f"{when}, {day.year}"
+    return f"the {when} close"
 
 
 def _remember_spot_label(symbol: str, label: str) -> None:

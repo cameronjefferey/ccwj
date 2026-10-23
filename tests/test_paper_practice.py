@@ -155,6 +155,36 @@ def test_sentence_is_the_trade_they_picked():
     assert spx_level_from_spy(759.89) == 7598.9
 
 
+def test_dates_name_the_year_when_it_is_not_this_year(monkeypatch):
+    from app import paper_practice as practice
+    monkeypatch.setattr(practice, "market_today", lambda now=None: date(2026, 10, 21))
+    assert practice._close_label(date(2026, 9, 29)) == "the Sep 29 close"
+    assert practice._close_label(date(2025, 12, 31)) == "the Dec 31, 2025 close"
+    same_year = practice.practice_sentence("SPY", "call", 500, "at", date(2026, 10, 2))
+    assert "Expires: Fri Oct 2." in same_year
+    assert "2026" not in same_year
+    later = practice.practice_sentence("SPY", "call", 500, "at", date(2027, 1, 8))
+    assert "Expires: Fri Jan 8, 2027." in later
+    text = practice.beginner_trade_sentence({
+        "direction": "Bought",
+        "contracts_bought_to_open": 1,
+        "premium_paid": -18,
+        "option_strike": 770,
+        "option_type": "C",
+        "underlying_symbol": "SPY",
+        "option_expiry": date(2025, 9, 30),
+        "status": "Closed",
+        "finish_price": 766.44,
+        "net_cash_flow": -18,
+    })
+    assert "Expires: Tue Sep 30, 2025." in text
+    monkeypatch.setattr(practice, "market_today", lambda now=None: date(2026, 12, 28))
+    choices = practice.expiry_choices(date(2026, 12, 28), "SPY", session_open=True)
+    assert choices["soon"]["pill"] == "Daily · Mon Dec 28"
+    assert "2026" not in choices["soon"]["pill"]
+    assert choices["weekly"]["pill"] == "Weekly · Fri Jan 1, 2027"
+
+
 def test_quote_triplet_puts_the_mid_between_bid_and_ask():
     from app.paper_practice import quote_triplet
     assert quote_triplet(0.05, 0.06) == {"bid": "0.05", "mid": "0.055", "ask": "0.06"}
@@ -490,6 +520,12 @@ def test_pick_page_uses_lesson_words(monkeypatch):
     assert 'data-soon="Daily · Tue Sep 29"' in html
     assert ">Daily · Tue Sep 29<" in html
     assert 'data-contract="SPX pays cash. One contract is $100 per point, not 100 shares."' in html
+    assert 'href="/positions"' in html
+    assert 'href="/snaptrade/connect"' in html
+    assert "Your 30-day trial starts when you connect a real brokerage." in html
+    assert 'class="col-12"' in html
+    assert "col-lg-8" not in html
+    assert ".pp-card { padding: 1.75rem 2rem 2rem; }" in html
     assert "Weekly" in html
     assert "Multi-week" in html
     assert "In 3 months" not in html

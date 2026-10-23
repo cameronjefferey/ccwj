@@ -79,6 +79,20 @@ def test_choice_results_come_from_the_path():
     labels = [line["label"] for line in covered_choices["close"]["detail"]]
     assert labels[0] == "Premium collected"
     assert "Paid" not in labels[0]
+    paid = next(line for line in covered_choices["close"]["detail"] if line["label"] == "Paid to close")
+    assert paid["text"] == "-$360.00"
+    assert paid["in_total"] is True
+
+
+def test_covered_call_lines_add_to_the_headline():
+    covered = learn_replay.replay_by_slug("covered-call")["decisions"][0]
+    for choice in covered["choices"]:
+        parts = [line for line in choice["detail"] if line["in_total"]]
+        total = sum(line["amount"] for line in parts)
+        assert round(total, 2) == choice["result"], choice["id"]
+        aside = [line["label"] for line in choice["detail"] if not line["in_total"]]
+        assert aside
+        assert "Option result" in aside or "Rise above the strike, not kept" in aside
 
 
 def test_replay_pages_render_the_decision_and_the_checkpoint():
@@ -113,11 +127,32 @@ def test_replay_pages_render_the_decision_and_the_checkpoint():
     assert "Premium collected" in covered
     assert "+$140.00" not in covered
     assert "$140.00" in covered
+    assert "-$360.00" in covered
+    assert "Not in the total" in covered
+    assert ">Total</span>" in covered
     assert "+$260.00" in covered
     assert "+$340.00" in covered
     assert "+$760.00" in covered
     assert "not a quote" in covered
     assert 'href="/learn/covered-calls"' in covered
+
+
+def test_replay_page_loads_the_price_chart():
+    html = _html("/learn/replay/long-call")
+    assert "https://cdn.jsdelivr.net/npm/chart.js" in html
+    assert 'id="replay-chart"' in html
+    assert "chart.js" not in _html("/learn")
+    assert "chart.js" not in _html("/learn/calls-and-puts")
+
+
+def test_desktop_learn_uses_the_page_width():
+    html = _html("/learn/replay/covered-call")
+    assert ".learn-replay-page { max-width: 40rem;" in html
+    assert ".learn-replay-page { max-width: none; }" in html
+    assert ".replay-chart { height: 22rem; }" in html
+    episode = _html("/learn/calls-and-puts")
+    assert ".learn-episode { max-width: 42rem;" in episode
+    assert ".learn-episode,\n        .learn-replay-page { max-width: none; }" in episode
 
 
 def test_replay_routes_and_links():

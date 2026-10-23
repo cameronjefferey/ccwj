@@ -166,10 +166,10 @@ def _choice_result(replay, decision, choice, by_day):
             share = _share_pnl(shares["cost"], pause["underlying"], shares["quantity"])
             headline = (option_pnl + share).quantize(Decimal("0.01"))
             detail = [
-                {"label": "Premium collected", "text": _money(collected), "sign": "flat"},
-                {"label": "Paid to close", "text": _money(paid), "sign": "flat"},
-                {"label": "Option result", "text": _money(option_pnl, signed=True), "sign": _sign(option_pnl)},
-                {"label": "Shares still held", "text": _money(share, signed=True), "sign": _sign(share)},
+                _detail_line("Premium collected", collected, signed=False, in_total=True),
+                _detail_line("Paid to close", -paid, signed=True, in_total=True),
+                _detail_line("Option result", option_pnl, signed=True, in_total=False),
+                _detail_line("Shares still held", share, signed=True, in_total=True),
             ]
         elif mode == "assigned":
             if replay["leg"]["right"] != "call":
@@ -183,9 +183,9 @@ def _choice_result(replay, decision, choice, by_day):
                 (last["underlying"] - replay["leg"]["strike"]) * shares["quantity"]
             ).quantize(Decimal("0.01"))
             detail = [
-                {"label": "Premium collected", "text": _money(collected), "sign": "flat"},
-                {"label": "Shares called away", "text": _money(share, signed=True), "sign": _sign(share)},
-                {"label": "Rise above the strike, not kept", "text": _money(given_up), "sign": "flat"},
+                _detail_line("Premium collected", collected, signed=False, in_total=True),
+                _detail_line("Shares called away", share, signed=True, in_total=True),
+                _detail_line("Rise above the strike, not kept", given_up, signed=False, in_total=False),
             ]
         elif mode == "roll":
             credit = choice["new_credit"]
@@ -195,16 +195,17 @@ def _choice_result(replay, decision, choice, by_day):
             share = _share_pnl(shares["cost"], last["underlying"], shares["quantity"])
             headline = (option_pnl + share).quantize(Decimal("0.01"))
             detail = [
-                {"label": "Premium collected", "text": _money(collected), "sign": "flat"},
-                {"label": "Paid to close", "text": _money(paid), "sign": "flat"},
-                {"label": "Assumed credit on the new call", "text": _money(credit_cash), "sign": "flat"},
-                {"label": "Option result", "text": _money(option_pnl, signed=True), "sign": _sign(option_pnl)},
-                {"label": "Shares still held at the end", "text": _money(share, signed=True), "sign": _sign(share)},
+                _detail_line("Premium collected", collected, signed=False, in_total=True),
+                _detail_line("Paid to close", -paid, signed=True, in_total=True),
+                _detail_line("Assumed credit on the new call", credit_cash, signed=False, in_total=True),
+                _detail_line("Option result", option_pnl, signed=True, in_total=False),
+                _detail_line("Shares still held at the end", share, signed=True, in_total=True),
             ]
         else:
             raise ValueError(f"{slug}: a covered call choice is close, called away, or roll")
         result = headline
 
+    _assert_detail_total(slug, choice["id"], detail, result)
     result_text = _money(result, signed=True)
     if result_text not in choice["explanation"]:
         raise ValueError(
@@ -230,6 +231,33 @@ def _sign(number):
     if number < 0:
         return "loss"
     return "flat"
+
+
+def _detail_line(label, amount, *, signed, in_total):
+    """One breakdown line. ``in_total`` lines are the only ones that add up."""
+    amount = amount.quantize(Decimal("0.01"))
+    return {
+        "label": label,
+        "text": _money(amount, signed=signed),
+        "sign": _sign(amount) if amount < 0 or signed else "flat",
+        "amount": float(amount),
+        "in_total": in_total,
+    }
+
+
+def _assert_detail_total(slug, choice_id, detail, result):
+    parts = [line for line in detail if line.get("in_total")]
+    if not parts:
+        return
+    total = sum(
+        (Decimal(str(line["amount"])) for line in parts),
+        Decimal("0"),
+    ).quantize(Decimal("0.01"))
+    expected = result.quantize(Decimal("0.01"))
+    if total != expected:
+        raise ValueError(
+            f"{slug}: choice {choice_id} lines add to {total}, headline is {expected}"
+        )
 
 
 def _public_strings(replay, decisions):

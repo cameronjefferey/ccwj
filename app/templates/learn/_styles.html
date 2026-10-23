@@ -544,6 +544,16 @@
     .replay-outcome-label { min-width: 0; overflow-wrap: anywhere; }
     .replay-money { white-space: nowrap; }
     .replay-outcome-row.is-picked { background: var(--ht-mint-wash); border-radius: .35rem; }
+    .replay-outcome-row.is-aside { color: var(--ht-muted); }
+    .replay-outcome-row.is-total { font-weight: 650; }
+    .replay-aside-note {
+        display: block;
+        color: var(--ht-muted);
+        font-size: .72rem;
+        font-weight: 650;
+        letter-spacing: .03em;
+        text-transform: uppercase;
+    }
     .replay-detail { margin-top: .35rem; }
     .replay-continue { margin-top: .85rem; width: 100%; box-shadow: none; }
     .replay-card h2 {
@@ -660,5 +670,30 @@
     #replay-checkpoint .learn-try { margin-bottom: 1rem; }
     @media (min-width: 640px) {
         .replay-continue { width: auto; }
+    }
+    @media (min-width: 960px) {
+        .learn-episode,
+        .learn-replay-page { max-width: none; }
+        .learn-episode h1,
+        .learn-replay-page h1 { font-size: 2.15rem; }
+        .learn-card-body { padding: 1.15rem 1.25rem 1.3rem; }
+        .learn-card-title { font-size: 1.2rem; }
+        .learn-chapters button,
+        .learn-chapter { font-size: 1.05rem; padding: .9rem 0; }
+        .learn-chapters .ht-num { min-width: 3.6rem; font-size: 1.05rem; }
+        .learn-check-choice { font-size: 1.05rem; padding: .8rem .7rem; }
+        .learn-replay { padding: 1rem 1.15rem; font-size: 1.08rem; }
+        .replay-card { padding: 1.35rem 1.5rem 1.5rem; }
+        .replay-entry,
+        .replay-readout {
+            grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+            gap: .85rem 1.25rem;
+        }
+        .replay-fact-l { font-size: .78rem; }
+        .replay-fact-v { font-size: 1.25rem; }
+        .replay-chart { height: 22rem; }
+        .replay-choice { font-size: 1.05rem; padding: .9rem .6rem; }
+        .replay-question { font-size: 1.15rem; }
+        .replay-prompt { font-size: 1.05rem; }
     }
 </style>
