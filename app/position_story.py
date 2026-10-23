@@ -12,8 +12,9 @@ Position Detail page:
                   dashboard has).
   story_markers — one dot per event day for the chart overlay. ``t``
                   is still the wrapped review headline (the chart-read
-                  brief). ``tips`` is the compact chart card: a short
-                  action label and the cash that changed hands.
+                  brief). ``tips`` is the compact chart card: one short
+                  line per fill (verb, quantity, signed cash) plus the
+                  running total. A repeated account name is left off.
 
 This is a deterministic fill state machine, not an LLM. It never reads
 Strategy Breakdown; it names maneuvers from the fills and the running
@@ -39,7 +40,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from app.chart_tooltip import format_tip_date, present_tip
+from app.chart_tooltip import format_tip_date, present_tip, tighten_tip_accounts
 
 __all__ = [
     "build_position_story",
@@ -108,6 +109,16 @@ def _fmt_strike(strike):
     if strike == int(strike):
         return f"${int(strike)}"
     return f"${strike:g}"
+
+
+def _strike_cp(occ):
+    """'$285C' / '$12.5P' from a contract the tooltip already parsed.
+
+    The letter is the call/put the fill carried. Nothing is invented when
+    the contract did not parse — callers omit the marker.
+    """
+    letter = "C" if occ.get("option_type") == "call" else "P"
+    return f"{_fmt_strike(occ['strike'])}{letter}"
 
 
 def _fmt_expiry(expiry, anchor):
@@ -801,10 +812,11 @@ def _exercise_is_short(f, st, day_ctx):
 def _option_tip(f, short_exercise=None):
     """Short chart label for one option fill. Cash is the fill, not P&L.
 
-    Opens keep the expiry ('Sold 2 × $320 call · Jun 26'). Closes do not
-    ('Bought back 2 × $285 call'). Expiry and assignment did not move cash
-    that day, so they carry no amount — the kept premium stays in the
-    review sentence, not on the card.
+    Opens keep the expiry ('Sold 2 · $320C · Jun 26'). Closes do not
+    ('Bought back 2 · $285C'). A fill with no parseable contract drops
+    the word options ('Bought back 20') — the card does not invent a
+    strike. Expiry and assignment did not move cash that day, so they
+    carry no amount. The kept premium stays in the review sentence.
     """
     action = f.get("action")
     n = abs(f.get("quantity") or 0)
@@ -827,28 +839,27 @@ def _option_tip(f, short_exercise=None):
         if action in ("option_expired", "option_assigned", "option_exercised"):
             label = verb
         else:
-            label = f"{verb} {times} × options"
+            label = f"{verb} {times}"
         return {"label": label, "amount": cash, "kind": kind}
 
-    strike = _fmt_strike(occ["strike"])
-    otype = occ["option_type"]
+    mark = _strike_cp(occ)
     exp = _fmt_expiry(occ["expiry"], f["date"])
     if action == "option_sell_to_open":
-        return {"label": f"Sold {times} × {strike} {otype} · {exp}", "amount": amt, "kind": "sell"}
+        return {"label": f"Sold {times} · {mark} · {exp}", "amount": amt, "kind": "sell"}
     if action == "option_buy_to_open":
-        return {"label": f"Bought {times} × {strike} {otype} · {exp}", "amount": amt, "kind": "buy"}
+        return {"label": f"Bought {times} · {mark} · {exp}", "amount": amt, "kind": "buy"}
     if action == "option_buy_to_close":
-        return {"label": f"Bought back {times} × {strike} {otype}", "amount": amt, "kind": "buy"}
+        return {"label": f"Bought back {times} · {mark}", "amount": amt, "kind": "buy"}
     if action == "option_sell_to_close":
-        return {"label": f"Sold {times} × {strike} {otype}", "amount": amt, "kind": "sell"}
+        return {"label": f"Sold {times} · {mark}", "amount": amt, "kind": "sell"}
     if action == "option_expired":
-        return {"label": f"Expired · {strike} {otype}", "amount": None, "kind": "lifecycle"}
+        return {"label": f"Expired · {mark}", "amount": None, "kind": "lifecycle"}
     if action == "option_assigned":
-        return {"label": f"Assigned · {strike} {otype}", "amount": None, "kind": "lifecycle"}
+        return {"label": f"Assigned · {mark}", "amount": None, "kind": "lifecycle"}
     if action == "option_exercised":
         verb = "Assigned" if short_exercise else "Exercised"
-        return {"label": f"{verb} · {strike} {otype}", "amount": None, "kind": "lifecycle"}
-    return {"label": f"{_RAW_VERBS.get(action, ('Fill',))[0]} {times} × {strike} {otype}",
+        return {"label": f"{verb} · {mark}", "amount": None, "kind": "lifecycle"}
+    return {"label": f"{_RAW_VERBS.get(action, ('Fill',))[0]} {times} · {mark}",
             "amount": amt, "kind": kind}
 
 
@@ -869,24 +880,19 @@ def _roll_tip(close_fill, open_fill, short_side):
     """One line for a roll. The amount is the net cash, not 'premium'."""
     c_occ, o_occ = close_fill["occ"], open_fill["occ"]
     n = abs(open_fill["quantity"]) or abs(close_fill["quantity"])
-    otype = c_occ["option_type"]
     anchor = close_fill["date"]
     times = _qty_times(n)
-    cs, os_ = _fmt_strike(c_occ["strike"]), _fmt_strike(o_occ["strike"])
+    c_mark, o_mark = _strike_cp(c_occ), _strike_cp(o_occ)
+    c_exp = _fmt_expiry(c_occ["expiry"], anchor)
+    o_exp = _fmt_expiry(o_occ["expiry"], anchor)
     same_strike = abs(c_occ["strike"] - o_occ["strike"]) < 0.01
     same_exp = c_occ["expiry"] == o_occ["expiry"]
     if same_strike and not same_exp:
-        label = (
-            f"Rolled {times} × {cs} {otype} · "
-            f"{_fmt_expiry(c_occ['expiry'], anchor)} → {_fmt_expiry(o_occ['expiry'], anchor)}"
-        )
+        label = f"Rolled {times} · {c_mark} · {c_exp} → {o_exp}"
     elif same_exp:
-        label = f"Rolled {times} × {cs} → {os_} {otype}"
+        label = f"Rolled {times} · {c_mark} → {o_mark}"
     else:
-        label = (
-            f"Rolled {times} × {cs} {_fmt_expiry(c_occ['expiry'], anchor)} → "
-            f"{os_} {_fmt_expiry(o_occ['expiry'], anchor)} {otype}"
-        )
+        label = f"Rolled {times} · {c_mark} {c_exp} → {o_mark} {o_exp}"
     return {
         "label": label,
         "amount": close_fill["amount"] + open_fill["amount"],
@@ -2186,7 +2192,12 @@ def build_position_story(
     # the strings that actually render (header chip, card account line,
     # chart tooltip) so a re-sort cannot put the nickname back.
     layout_story_items(story_items, account_labels)
+    # Mask first, while ``acct`` is still the full nickname, so privacy
+    # mode can find the tenant. Then drop a repeated name and shorten a
+    # long one. The review sentences are not the chart card.
     _mask_story_account_labels(story_items, story_markers, stats, label_tenants)
+    for marker in story_markers:
+        tighten_tip_accounts(marker.get("tips"))
 
     return story_items, story_markers, stats
 

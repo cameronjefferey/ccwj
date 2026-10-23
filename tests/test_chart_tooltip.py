@@ -17,6 +17,7 @@ from app.chart_tooltip import (
     format_running_total,
     format_tip_amount,
     format_tip_date,
+    tighten_tip_accounts,
 )
 from app.position_story import build_position_story
 
@@ -87,7 +88,7 @@ def test_covered_call_sale_is_a_short_label_not_the_sentence():
     ])
     marker = _tips_on(df, "2026-05-12")
     assert marker["when"] == format_tip_date(date(2026, 5, 12))
-    assert _labels(marker) == ["Sold 2 × $320 call · Jun 26"]
+    assert _labels(marker) == ["Sold 2 · $320C · Jun 26"]
     tip = marker["tips"][0]
     assert tip["amt"] == "+$3,909"
     assert tip["sign"] == 1
@@ -110,7 +111,7 @@ def test_buyback_amount_is_the_debit_not_the_locked_in_premium():
          "BE 260626C00285000", 2, 3.65, -730.0),
     ])
     marker = _tips_on(df, "2026-05-20")
-    assert _labels(marker) == ["Bought back 2 × $285 call"]
+    assert _labels(marker) == ["Bought back 2 · $285C"]
     tip = marker["tips"][0]
     assert tip["amt"] == "−$730"
     assert tip["sign"] == -1
@@ -129,7 +130,7 @@ def test_share_buy_and_same_day_call_stack():
     marker = _tips_on(df, "2026-05-12")
     assert _labels(marker) == [
         "Bought 100 sh",
-        "Sold 2 × $320 call · Jun 26",
+        "Sold 2 · $320C · Jun 26",
     ]
     assert marker["tips"][0]["amt"] == "−$32,000"
     assert marker["tips"][1]["amt"] == "+$3,909"
@@ -149,14 +150,14 @@ def test_expiry_and_assignment_do_not_repeat_premium():
          "BE 260626C00320000", 2, 0.0, 0.0),
     ])
     assigned = _tips_on(df, "2024-06-21")
-    assert _labels(assigned) == ["Assigned · $12 put"]
+    assert _labels(assigned) == ["Assigned · $12P"]
     assert "amt" not in assigned["tips"][0]
     assert "premium" not in assigned["tips"][0]["label"].lower()
     # The share fill at the strike is the assignment, not a second buy.
     assert all("sh" not in lab for lab in _labels(assigned))
 
     expired = _tips_on(df, "2026-06-26")
-    assert _labels(expired) == ["Expired · $320 call"]
+    assert _labels(expired) == ["Expired · $320C"]
     assert "amt" not in expired["tips"][0]
     assert "premium" not in expired["tips"][0]["label"].lower()
     assert "premium" in " ".join(expired["t"]).lower()
@@ -174,7 +175,7 @@ def test_roll_label_names_the_move_and_nets_the_cash():
     marker = _tips_on(df, "2024-11-12")
     assert len(marker["tips"]) == 1
     tip = marker["tips"][0]
-    assert tip["label"] == "Rolled 1 × $11 Nov 15 → $13 Dec 20 call"
+    assert tip["label"] == "Rolled 1 · $11C Nov 15 → $13C Dec 20"
     assert tip["amt"] == "+$70"
     low = tip["label"].lower()
     assert "collecting" not in low
@@ -213,6 +214,7 @@ def test_dividend_tip_is_the_cash_received():
 
 
 def test_multi_account_tip_carries_the_nickname():
+    """A nickname that already fits stays. It is not rewritten."""
     df = _trades([
         (date(2024, 1, 2), "equity_buy", "Equity", "X", 10, 10.0, -100.0, "Cameron 401k"),
         (date(2024, 1, 2), "equity_buy", "Equity", "X", 10, 10.0, -100.0, "Sara IRA"),
@@ -221,6 +223,112 @@ def test_multi_account_tip_carries_the_nickname():
     accts = {t["acct"] for t in marker["tips"]}
     assert accts == {"Cameron 401k", "Sara IRA"}
     assert all(t["label"] == "Bought 10 sh" for t in marker["tips"])
+
+
+def test_same_account_day_drops_the_repeated_name():
+    """Every line on the card is one account, so the name is not repeated."""
+    df = _trades([
+        (date(2026, 10, 22), "option_buy_to_close", "Call", "SPXW",
+         20, 1.0, -1200.0, "North Brokerage Account", "t-north"),
+        (date(2026, 10, 22), "option_buy_to_open", "Call", "SPXW",
+         20, 1.0, -4400.0, "North Brokerage Account", "t-north"),
+        (date(2026, 10, 22), "option_sell_to_open", "Call", "SPXW",
+         20, 1.0, 900.0, "North Brokerage Account", "t-north"),
+        (date(2026, 9, 2), "equity_buy", "Equity", "SPXW",
+         10, 1.0, -100.0, "South IRA", "t-south"),
+    ])
+    marker = _tips_on(df, "2026-10-22")
+    assert _labels(marker) == ["Bought back 20", "Bought 20", "Sold 20"]
+    assert all("acct" not in t for t in marker["tips"])
+    assert all("options" not in t["label"].lower() for t in marker["tips"])
+    assert [t["amt"] for t in marker["tips"]] == ["−$1,200", "−$4,400", "+$900"]
+    joined = " ".join(marker["t"]).lower()
+    assert "north" in joined  # the review sentence still names the account
+
+
+def test_unparsed_option_overflow_still_counts_the_hidden_line():
+    df = _trades([
+        (date(2026, 10, 22), "option_buy_to_close", "Call", "SPXW",
+         20, 1.0, -1200.0, "North Account"),
+        (date(2026, 10, 22), "option_buy_to_open", "Call", "SPXW",
+         20, 1.0, -4400.0, "North Account"),
+        (date(2026, 10, 22), "option_sell_to_open", "Call", "SPXW",
+         20, 1.0, 900.0, "North Account"),
+        (date(2026, 10, 22), "option_sell_to_close", "Call", "SPXW",
+         5, 1.0, 250.0, "North Account"),
+    ])
+    marker = _tips_on(df, "2026-10-22")
+    assert len(marker["tips"]) == 4
+    shown, more = clip_tips(marker["tips"])
+    assert len(shown) == 3
+    assert more == 1
+    assert all("options" not in t["label"] for t in marker["tips"])
+
+
+def test_mixed_long_names_shorten_and_a_bare_line_stays_bare():
+    tips = [
+        {"label": "Bought back 20", "acct": "North Brokerage Account"},
+        {"label": "Dividend"},
+        {"label": "Sold 20", "acct": "South Retirement Account"},
+    ]
+    tighten_tip_accounts(tips)
+    assert tips[0]["acct"] == "North"
+    assert "acct" not in tips[1]
+    assert tips[2]["acct"] == "South"
+    assert "Brokerage" not in tips[0]["acct"]
+
+
+def test_colliding_long_names_keep_a_second_word():
+    tips = [
+        {"label": "Bought 1", "acct": "North Brokerage Account"},
+        {"label": "Sold 1", "acct": "North Retirement Account"},
+    ]
+    tighten_tip_accounts(tips)
+    assert tips[0]["acct"] == "North Bro."
+    assert tips[1]["acct"] == "North Ret."
+
+
+def test_privacy_masks_are_not_abbreviated():
+    tips = [
+        {"label": "Bought 1", "acct": "Account 1"},
+        {"label": "Sold 1", "acct": "Account 2 · Paper"},
+    ]
+    tighten_tip_accounts(tips)
+    assert tips[0]["acct"] == "Account 1"
+    assert tips[1]["acct"] == "Account 2 · Paper"
+
+
+def test_tooltip_year_and_card_width_are_unchanged_rules():
+    """Prior-year dates keep the year. The card cannot be wider than the chart."""
+    assert format_tip_date(date(2024, 3, 3), date(2026, 10, 23)) == "March 3, 2024"
+    css = (ROOT / "app/templates/position_detail.html").read_text()
+    assert "min(240px, calc(100% - 12px))" in css
+    phone = css.split(".pd-page .pnl-chart-box", 1)[1][:600]
+    assert "ht-pnl-tip" in phone
+    assert "calc(100% - 12px)" in phone
+
+
+def test_privacy_mask_runs_before_the_short_name(monkeypatch):
+    """A mixed day shows Account N, never the nickname the mask replaced."""
+    monkeypatch.setattr("app.privacy.privacy_mode_on", lambda: True)
+    monkeypatch.setattr(
+        "app.privacy.shown_account",
+        lambda name, tenant_id=None: {
+            "t-north": "Account 1",
+            "t-south": "Account 2",
+        }.get(tenant_id, "Account"),
+    )
+    df = _trades([
+        (date(2026, 10, 22), "option_buy_to_close", "Call", "SPXW",
+         20, 1.0, -1200.0, "North Brokerage Account", "t-north"),
+        (date(2026, 10, 22), "option_sell_to_open", "Put", "SPXW",
+         10, 1.0, 500.0, "South IRA", "t-south"),
+    ])
+    marker = _tips_on(df, "2026-10-22")
+    assert [t.get("acct") for t in marker["tips"]] == ["Account 1", "Account 2"]
+    blob = " ".join(t["label"] for t in marker["tips"])
+    assert "North" not in blob and "South" not in blob
+    assert _labels(marker) == ["Bought back 20", "Sold 10"]
 
 
 def test_browser_tooltip_fill_resolves_marker_colors():
@@ -260,16 +368,68 @@ global.getComputedStyle = function () {
 };
 
 vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+if (window.htPnlTooltip.formatDate("2024-03-03", 2026) !== "March 3, 2024") {
+  throw new Error("prior year dropped");
+}
+if (window.htPnlTooltip.formatDate("2026-10-22", 2026) !== "October 22") {
+  throw new Error("current year should stay off the header");
+}
 const root = element();
 window.htPnlTooltip.fill(root, {
+  when: "March 3, 2024",
+  kind: "buy",
+  tips: [
+    { kind: "buy", label: "Bought back 20", amt: "\u2212$1,200", sign: -1 },
+    { kind: "buy", label: "Bought 20", amt: "\u2212$4,400", sign: -1 },
+    { kind: "sell", label: "Sold 20", amt: "+$900", sign: 1, acct: "North" },
+    { kind: "sell", label: "Sold 5", amt: "+$250", sign: 1 }
+  ],
+  total: -2500
+});
+if (root.children[0].textContent !== "March 3, 2024") {
+  throw new Error("date header missing the year: " + root.children[0].textContent);
+}
+const row = root.children[1];
+if (row.children[0].style.background !== "#1d4ed8") {
+  throw new Error("buy marker color");
+}
+if (row.children.length !== 3) {
+  throw new Error("amount should sit on the trade line, not under it");
+}
+const tail = row.children[2];
+if (tail.children[0].textContent !== " \u00b7 ") {
+  throw new Error("missing separator before the amount");
+}
+if (tail.children[1].className.indexOf("neg") < 0 || tail.children[1].textContent !== "\u2212$1,200") {
+  throw new Error("signed amount was not kept: " + tail.children[1].textContent);
+}
+const mixed = root.children[3];
+const labelText = mixed.children[1].children.map(function (n) { return n.textContent; }).join("");
+if (labelText.indexOf("Sold 20") < 0 || labelText.indexOf("North") < 0) {
+  throw new Error("short account missing on a mixed line: " + labelText);
+}
+const more = root.children[4];
+if (more.textContent !== "+1 more") {
+  throw new Error("overflow count: " + more.textContent);
+}
+const total = root.children[5];
+const totalText = total.children.map(function (n) { return n.textContent; }).join("");
+if (totalText.indexOf("Running total") < 0 || totalText.indexOf("\u2212$2,500") < 0) {
+  throw new Error("running total: " + totalText);
+}
+const sell = element();
+window.htPnlTooltip.fill(sell, {
   when: "May 12",
   kind: "buy",
-  tips: [{ kind: "sell", label: "Sold call", amt: "\u2212$730", sign: -1 }],
+  tips: [{ kind: "sell", label: "Sold 2 \u00b7 $320C", amt: "\u2212$730", sign: -1 }],
   total: -730
 });
-if (root.children[1].children[0].style.background !== "#f0556d") {
+if (sell.children[1].children[0].style.background !== "#f0556d") {
   throw new Error("sell marker did not use the loss token");
 }
+const wide = { offsetWidth: 300, offsetHeight: 40 };
+const pos = window.htPnlTooltip.place(wide, 180, 280, 160, 40);
+if (pos.left < 0) throw new Error("tooltip left the chart: " + pos.left);
 """,
             str(script),
         ],

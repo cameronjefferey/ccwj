@@ -2,8 +2,9 @@
  * Compact card for the cumulative P&L chart.
  *
  * Date / amount / running-total rules live in app/chart_tooltip.py.
- * This file is the same display: Instrument Sans for words, JetBrains Mono
- * for numbers, a 240px dark card that flips so it stays inside the chart.
+ * One line per fill: verb, quantity, optional contract, optional short
+ * account, then the signed dollars. The card stays inside the chart,
+ * including on a phone (max-width is the chart, not the viewport).
  */
 (function (global) {
   function token(name) {
@@ -104,13 +105,20 @@
       appendNumbers(label, text);
       row.appendChild(dot);
       row.appendChild(label);
-      el.appendChild(row);
       if (tip.amt) {
-        var amt = document.createElement("div");
+        var tail = document.createElement("span");
+        tail.className = "ht-pnl-tip-tail";
+        var sep = document.createElement("span");
+        sep.className = "ht-pnl-tip-sep";
+        sep.textContent = " · ";
+        var amt = document.createElement("span");
         amt.className = "ht-pnl-tip-amt " + (tip.sign < 0 ? "neg" : "pos");
         amt.textContent = tip.amt;
-        el.appendChild(amt);
+        tail.appendChild(sep);
+        tail.appendChild(amt);
+        row.appendChild(tail);
       }
+      el.appendChild(row);
     });
 
     if (clipped.more) {

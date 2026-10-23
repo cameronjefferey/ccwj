@@ -286,7 +286,9 @@
         z-index: 6;
         box-sizing: border-box;
         width: max-content;
-        max-width: 240px;
+        /* Hug the line, but never wider than the chart. A phone chart is
+           narrower than 240px; the card must stay inside it. */
+        max-width: min(240px, calc(100% - 12px));
         padding: 8px 10px 9px;
         background: #0a0e17;
         color: #e8edf7;
@@ -307,31 +309,29 @@
     }
     .ht-pnl-tip-row {
         display: flex;
-        gap: 6px;
-        align-items: flex-start;
-        margin-top: 5px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 4px;
     }
     .ht-pnl-tip-dot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        margin-top: 5px;
+        margin-right: 6px;
         flex: none;
     }
     .ht-pnl-tip-label {
         font-weight: 500;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
+        min-width: 0;
     }
     .ht-pnl-tip-num {
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
         font-weight: 500;
     }
+    .ht-pnl-tip-tail { white-space: nowrap; flex: none; }
+    .ht-pnl-tip-sep { color: #8a97b1; }
     .ht-pnl-tip-amt {
-        margin: 1px 0 0 13px;
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
         font-weight: 500;
@@ -867,6 +867,11 @@
             height: 280px;
             max-width: 100%;
         }
+        .pd-page .ht-pnl-tip {
+            max-width: calc(100% - 12px);
+            font-size: 12px;
+        }
+        .pd-page .ht-pnl-tip-amt { font-size: 12px; }
         .pd-page #position-chart .d-flex {
             align-items: flex-start;
         }
