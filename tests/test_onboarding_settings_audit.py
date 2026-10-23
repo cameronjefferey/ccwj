@@ -928,6 +928,33 @@ def test_login_form_accepts_a_handle_and_a_unique_case_difference(monkeypatch):
     assert "/get-started" in (email.location or "")
 
 
+def test_login_form_prefers_an_exact_legacy_at_username(monkeypatch):
+    """Handle shorthand must not shadow an account created before @ was banned."""
+    from werkzeug.security import generate_password_hash
+
+    from app.admin_privacy import find_user_by_username_or_email
+
+    users = _auth_users(monkeypatch)
+    users["@Ada"] = User(
+        7, "@Ada", generate_password_hash("secret123"), "legacy@example.com"
+    )
+    users["Ada"] = User(
+        8, "Ada", generate_password_hash("secret123"), "current@example.com"
+    )
+    assert find_user_by_username_or_email("@Ada").id == 7
+
+    client = app.test_client()
+
+    response = client.post(
+        "/login", data={"username": "@Ada", "password": "secret123"}
+    )
+
+    assert response.status_code == 302
+    assert "/get-started" in (response.location or "")
+    with client.session_transaction() as sess:
+        assert sess.get("_user_id") == "7"
+
+
 def test_login_form_does_not_pick_between_two_case_variants(monkeypatch):
     from werkzeug.security import generate_password_hash
 

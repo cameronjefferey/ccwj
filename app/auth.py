@@ -124,11 +124,11 @@ def _lookup_login_user(identifier):
     ident = (identifier or "").strip()
     if not ident:
         return None
-    if ident.startswith("@") and ident.count("@") == 1:
-        return _match_username_ci(ident[1:])
     user = User.get_by_username(ident)
     if user is not None:
         return user
+    if ident.startswith("@") and ident.count("@") == 1:
+        return _match_username_ci(ident[1:])
     if "@" in ident:
         email, err = _validate_email(ident)
         if err or not email:
