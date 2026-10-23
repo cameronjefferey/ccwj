@@ -62,6 +62,12 @@
         text-transform: uppercase;
         letter-spacing: .04em;
     }
+    @media (min-width: 900px) {
+        #secTable { font-size: 1rem; }
+        #secTable th, #secTable td { padding: .55rem .7rem; }
+        .sec-subs table { font-size: .95rem; }
+        .sec-subs th, .sec-subs td { padding: .5rem .6rem; }
+    }
     @media (max-width: 767px) {
         .sec-page { overflow-x: clip; }
         .sec-page .table-responsive {
@@ -131,7 +137,7 @@
     {% if kpis and (kpis.num_subsectors|default(0)) > 0 %}
     <div class="ov-top">
         <div>
-            <div class="ov-k">Total return</div>
+            <div class="ov-k">{% if kpis.dividends %}Total return, incl. dividends{% else %}Total return{% endif %}</div>
             <div class="ov-big {% if kpis.total_pnl > 0 %}pos{% elif kpis.total_pnl < 0 %}neg{% endif %}">{% if kpis.total_pnl > 0 %}+{% endif %}{{ money(kpis.total_pnl, 0) }}</div>
         </div>
         <div>
@@ -155,6 +161,9 @@
         {% if kpis.num_trades %}
         {% set trade_word = count_label|default('trades') %}
         <span class="ov-pill">{{ kpis.num_trades }} {{ trade_word[:-1] if kpis.num_trades == 1 and trade_word.endswith('s') else trade_word }}</span>
+        {% endif %}
+        {% if kpis.dividends %}
+        <span class="ov-pill" title="Cash dividends. Total return is realized + unrealized + dividends.">Dividends {% if kpis.dividends > 0 %}+{% endif %}{{ money(kpis.dividends, 0) }}</span>
         {% endif %}
     </div>
     {% else %}
@@ -219,14 +228,17 @@
                             <div class="sec-lead">{{ s.num_winners | int }} win{{ 's' if s.num_winners != 1 else '' }}, {{ s.num_losers | int }} loss{{ 'es' if s.num_losers != 1 else '' }}</div>
                         {% else %}—{% endif %}
                     </td>
-                    <td data-label="Realized" class="text-end sec-money {{ 'text-positive' if s.realized_pnl > 0 else ('text-negative' if s.realized_pnl < 0 else '') }}">
-                        {{ money(s.realized_pnl, 0) }}
+                    <td data-label="Realized" class="text-end sec-money {{ 'text-positive' if s.shown_realized_pnl > 0 else ('text-negative' if s.shown_realized_pnl < 0 else '') }}">
+                        {{ money(s.shown_realized_pnl, 0) }}
+                        {% if s.shown_dividend_income %}
+                        <div class="sec-lead">Dividends {{ money(s.shown_dividend_income, 0) }}</div>
+                        {% endif %}
                     </td>
-                    <td data-label="Unrealized" class="text-end sec-money {{ 'text-positive' if s.unrealized_pnl > 0 else ('text-negative' if s.unrealized_pnl < 0 else '') }}">
-                        {{ money(s.unrealized_pnl, 0) }}
+                    <td data-label="Unrealized" class="text-end sec-money {{ 'text-positive' if s.shown_unrealized_pnl > 0 else ('text-negative' if s.shown_unrealized_pnl < 0 else '') }}">
+                        {{ money(s.shown_unrealized_pnl, 0) }}
                     </td>
-                    <td data-label="Total return" class="text-end sec-money fw-semibold {{ 'text-positive' if s.total_pnl >= 0 else 'text-negative' }}">
-                        {{ money(s.total_pnl, 0, true) }}
+                    <td data-label="Total return" class="text-end sec-money fw-semibold {{ 'text-positive' if s.shown_total >= 0 else 'text-negative' }}">
+                        {{ money(s.shown_total, 0, true) }}
                     </td>
                     <td data-label="Positions" class="text-end">
                         <a href="{{ scoped_url('positions', sector=s.sector) }}">View</a>
@@ -234,6 +246,18 @@
                 </tr>
                 {% endfor %}
             </tbody>
+            <tfoot>
+                <tr>
+                    <th data-label="Sector">Total</th>
+                    <th data-label="Symbols" class="text-end">{{ kpis.num_symbols }}</th>
+                    <th data-label="{{ (count_label or 'trades')|capitalize }}" class="text-end">{{ kpis.num_trades | int }}</th>
+                    <th data-label="Win rate" class="text-end">{% if kpis.closed_trades %}{{ "{:.0%}".format(kpis.win_rate) }}{% else %}—{% endif %}</th>
+                    <th data-label="Realized" class="text-end sec-money">{{ money(kpis.realized_pnl, 0) }}</th>
+                    <th data-label="Unrealized" class="text-end sec-money">{{ money(kpis.unrealized_pnl, 0) }}</th>
+                    <th data-label="Total return" class="text-end sec-money">{{ money(kpis.total_pnl, 0, true) }}</th>
+                    <th></th>
+                </tr>
+            </tfoot>
         </table>
     </div>
     {% if unknown_count and unknown_count > 0 %}
@@ -260,8 +284,8 @@
                 {% if s.premium_received %}
                 <span title="Premium received.">{{ term('Collected') }} {{ money(s.premium_received, 0) }}</span>
                 {% endif %}
-                {% if s.dividend_income and s.dividend_income > 0 %}
-                <span>Dividends {{ money(s.dividend_income, 0) }}</span>
+                {% if s.shown_dividend_income %}
+                <span>Dividends {{ money(s.shown_dividend_income, 0) }}</span>
                 {% endif %}
                 {% if s.top_symbol %}
                 <span>Best symbol
@@ -301,14 +325,23 @@
             <tbody>
             {% for r in subs %}
             <tr>
-                <td data-label="Subsector"><a href="{{ scoped_url('positions', subsector=r.subsector) }}">{{ r.subsector }}</a></td>
+                <td data-label="Subsector"><a href="{{ scoped_url('positions', sector=s.sector, subsector=r.subsector) }}">{{ r.subsector }}</a></td>
                 <td class="n text-end" data-label="Symbols">{{ r.num_symbols }}</td>
                 <td class="n text-end" data-label="{{ (count_label or 'trades')|capitalize }}">{{ r.num_trades | int }}</td>
                 <td class="n text-end" data-label="Win rate">{% if (r.num_winners + r.num_losers) > 0 %}{{ "{:.0%}".format(r.win_rate) }}{% else %}—{% endif %}</td>
-                <td class="n text-end {{ 'text-positive' if r.total_pnl >= 0 else 'text-negative' }}" data-label="Total return">{{ money(r.total_pnl, 0, true) }}</td>
+                <td class="n text-end {{ 'text-positive' if r.shown_total >= 0 else 'text-negative' }}" data-label="Total return">{{ money(r.shown_total, 0, true) }}</td>
             </tr>
             {% endfor %}
             </tbody>
+            <tfoot>
+            <tr>
+                <th data-label="Subsector">Total</th>
+                <th class="n text-end" data-label="Symbols">{{ s.num_symbols }}</th>
+                <th class="n text-end" data-label="{{ (count_label or 'trades')|capitalize }}">{{ s.num_trades | int }}</th>
+                <th class="n text-end" data-label="Win rate">{% if (s.num_winners + s.num_losers) > 0 %}{{ "{:.0%}".format(s.win_rate) }}{% else %}—{% endif %}</th>
+                <th class="n text-end" data-label="Total return">{{ money(s.shown_total, 0, true) }}</th>
+            </tr>
+            </tfoot>
             </table>
             </div>
         </section>

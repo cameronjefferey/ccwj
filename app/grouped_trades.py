@@ -631,6 +631,93 @@ def counts_by(units, keys) -> dict:
     return tallies
 
 
+def _pair_key(tenant_id, symbol) -> tuple:
+    def _clean(value, upper=False) -> str:
+        text = "" if value is None else str(value).strip()
+        if text.lower() in {"nan", "none", "nat", ""}:
+            return ""
+        return text.upper() if upper else text
+
+    return (_clean(tenant_id), _clean(symbol, upper=True))
+
+
+def retag_dividend_units(units, display_rows) -> int:
+    """Move grouped trades onto the Dividend display label.
+
+    ``positions_summary`` relabels a Buy and Hold name to Dividend when
+    the yield test passes. Classification, and therefore grouped units,
+    still says Buy and Hold. Stamping counts by strategy then attaches
+    those trades to the Buy and Hold card and leaves Dividend on its
+    fill count.
+
+    A name that is still Buy and Hold on any row stays put, so a mixed
+    book keeps both labels. Returns how many units changed. Calling it
+    again changes nothing.
+    """
+    if not units or display_rows is None or getattr(display_rows, "empty", True):
+        return 0
+    needed = {"strategy", "symbol", "tenant_id"}
+    if any(name not in display_rows.columns for name in needed):
+        return 0
+    dividend = set()
+    still_hold = set()
+    for row in display_rows.itertuples(index=False):
+        key = _pair_key(getattr(row, "tenant_id", ""), getattr(row, "symbol", ""))
+        label = str(getattr(row, "strategy", "") or "")
+        if label == "Dividend":
+            dividend.add(key)
+        elif label == "Buy and Hold":
+            still_hold.add(key)
+    if not dividend:
+        return 0
+    moved = 0
+    for unit in units:
+        if str(unit.get("strategy") or "") != "Buy and Hold":
+            continue
+        key = _pair_key(unit.get("tenant_id"), unit.get("symbol"))
+        if key in dividend and key not in still_hold:
+            unit["strategy"] = "Dividend"
+            moved += 1
+    return moved
+
+
+def replace_month_pnl(mart_months, grouped_months, strategies) -> pd.DataFrame:
+    """Replace mart month dollars for strategies whose units were retagged.
+
+    Grouped-unit pnl is the price result of the trades that still carry
+    that strategy. Buy and Hold uses this after Dividend names move off
+    it, so the sparkline does not keep the relabeled book's dollars.
+    A month with no remaining grouped close goes to $0. Other strategies
+    keep mart dollars: a spread's legs can close in different months.
+    """
+    names = {str(name) for name in (strategies or [])}
+    if mart_months is None or getattr(mart_months, "empty", True) or not names:
+        return mart_months
+    if "strategy" not in mart_months.columns or "total_pnl" not in mart_months.columns:
+        return mart_months
+    out = mart_months.copy()
+    out["_month"] = pd.to_datetime(out["month_start"], errors="coerce").dt.strftime("%Y-%m")
+    lookup = {}
+    if grouped_months is not None and not getattr(grouped_months, "empty", True) and "strategy" in grouped_months.columns:
+        grouped = grouped_months.copy()
+        grouped["_month"] = pd.to_datetime(grouped["month_start"], errors="coerce").dt.strftime("%Y-%m")
+        for row in grouped.to_dict("records"):
+            strategy = str(row.get("strategy") or "")
+            if strategy in names:
+                lookup[(strategy, row.get("_month"))] = _num(row.get("total_pnl"))
+    avg_col = "avg_pnl" if "avg_pnl" in out.columns else None
+    for idx, row in out.iterrows():
+        strategy = str(row.get("strategy") or "")
+        if strategy not in names:
+            continue
+        pnl = lookup.get((strategy, row.get("_month")), 0.0)
+        out.at[idx, "total_pnl"] = round(pnl, 2)
+        if avg_col:
+            trades = _num(row.get("trades_closed"))
+            out.at[idx, avg_col] = (pnl / trades) if trades else pd.NA
+    return out.drop(columns=["_month"])
+
+
 def stamp_grouped_counts(df, units, keys, trade_col="num_individual_trades"):
     """Replace fill counts with grouped counts. Dollars on ``df`` stay put.
 

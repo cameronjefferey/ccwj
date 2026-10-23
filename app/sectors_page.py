@@ -20,7 +20,7 @@ from app.routes import (
     _tenants_for_scope,
     _user_account_list,
 )
-from app.book_totals import hero_book
+from app.book_totals import hero_book, reconcile_component_rows
 from app.sector_labels import apply_sector_labels, is_unclassified
 
 
@@ -88,6 +88,8 @@ def _sector_rollups(df: pd.DataFrame) -> dict:
         "num_symbols": int(df["symbol"].nunique()) if "symbol" in df.columns else 0,
         "num_trades": int(df["num_individual_trades"].sum()),
         "win_rate": (overall_winners / overall_closed) if overall_closed else 0.0,
+        "closed_trades": overall_closed,
+        "dividends": book["dividends"],
     }
 
     # Per-subsector rollup: collapse strategy granularity, aggregate over the
@@ -206,6 +208,29 @@ def _sector_rollups(df: pd.DataFrame) -> dict:
             key=lambda x: x.get("total_return", 0), reverse=True
         )
 
+    # Whole-dollar rows that add to the hero. Subsector rows are the same
+    # dicts, so their columns add to the sector row above them.
+    _money_cols = ("realized_pnl", "unrealized_pnl", "dividend_income")
+    reconcile_component_rows(
+        sector_rows,
+        _money_cols,
+        {
+            "realized_pnl": book["realized"],
+            "unrealized_pnl": book["unrealized"],
+            "dividend_income": book["dividends"],
+        },
+    )
+    for row in sector_rows:
+        reconcile_component_rows(
+            subsectors_by_sector.get(row.get("sector"), []),
+            _money_cols,
+            {
+                "realized_pnl": row.get("shown_realized_pnl", 0),
+                "unrealized_pnl": row.get("shown_unrealized_pnl", 0),
+                "dividend_income": row.get("shown_dividend_income", 0),
+            },
+        )
+
     unknown_count = int(
         df["sector"].map(is_unclassified)
         .pipe(lambda s: s.groupby([df["account"], df["symbol"]]).any())
@@ -283,10 +308,14 @@ def sectors():
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
     df = apply_sector_labels(df)
-    from app.grouped_trades import attach_sectors, best_and_worst, fetch_book_units, stamp_grouped_counts
+    from app.grouped_trades import (
+        attach_sectors, best_and_worst, fetch_book_units, retag_dividend_units,
+        stamp_grouped_counts,
+    )
     book_units = fetch_book_units(client, tenant_filter, tenant_ids)
     trades_grouped = bool(book_units)
     if book_units:
+        retag_dividend_units(book_units, df)
         attach_sectors(book_units, df)
         df = stamp_grouped_counts(
             df, book_units, ("tenant_id", "symbol", "strategy"),
@@ -309,6 +338,7 @@ def sectors():
             unknown_count=0,
             kpis={
                 "total_pnl": 0.0, "realized_pnl": 0.0, "unrealized_pnl": 0.0,
+                "dividends": 0.0,
                 "num_subsectors": 0, "num_symbols": 0, "num_trades": 0,
                 "win_rate": 0.0,
             },
