@@ -943,11 +943,259 @@ def test_login_form_does_not_pick_between_two_case_variants(monkeypatch):
         text = " ".join(msg for _cat, msg in (sess.get("_flashes") or []))
     assert "Invalid username/email or password." in text
 
+    handle = client.post("/login", data={"username": "@SAM", "password": "secret123"})
+    assert handle.status_code == 302
+    assert "/login" in (handle.location or "")
+    assert _session_user_id(client) is None
+
     exact = client.post("/login", data={"username": "Sam", "password": "secret123"})
     assert exact.status_code == 302
     assert "/get-started" in (exact.location or "")
     with client.session_transaction() as sess:
         assert sess.get("_user_id") == "8"
+
+
+def _session_user_id(client):
+    with client.session_transaction() as sess:
+        return sess.get("_user_id")
+
+
+def test_login_prefers_a_legacy_at_username_over_the_handle(monkeypatch):
+    """A stored '@Ada' must not sign in as 'Ada', even with the same password.
+
+    Signup allowed '@' until the handle shorthand shipped. The full name
+    wins exactly and when only the case differs. The handle's password
+    must not authenticate that other account.
+    """
+    from werkzeug.security import generate_password_hash
+
+    users = _auth_users(monkeypatch)
+    users["@Ada"] = User(
+        7, "@Ada", generate_password_hash("secret123"), "legacy@example.com",
+    )
+    users["Ada"] = User(
+        8, "Ada", generate_password_hash("otherpass1"), "current@example.com",
+    )
+    client = app.test_client()
+
+    wrong = client.post("/login", data={"username": "@Ada", "password": "otherpass1"})
+    assert wrong.status_code == 302
+    assert "/login" in (wrong.location or "")
+    assert _session_user_id(client) is None
+
+    exact = client.post("/login", data={"username": "@Ada", "password": "secret123"})
+    assert exact.status_code == 302
+    assert "/get-started" in (exact.location or "")
+    assert _session_user_id(client) == "7"
+
+    with client.session_transaction() as sess:
+        sess.clear()
+    folded = client.post("/login", data={"username": "@ada", "password": "secret123"})
+    assert folded.status_code == 302
+    assert "/get-started" in (folded.location or "")
+    assert _session_user_id(client) == "7"
+
+    # No plain 'Bea' twin: '@bea' is still the handle, any case.
+    users["Bea"] = User(
+        9, "Bea", generate_password_hash("secret123"), "bea@example.com",
+    )
+    with client.session_transaction() as sess:
+        sess.clear()
+    handle = client.post("/login", data={"username": "@bea", "password": "secret123"})
+    assert handle.status_code == 302
+    assert "/get-started" in (handle.location or "")
+    assert _session_user_id(client) == "9"
+
+
+def test_login_does_not_fall_through_ambiguous_legacy_at_usernames(monkeypatch):
+    from werkzeug.security import generate_password_hash
+
+    users = _auth_users(monkeypatch)
+    users["@Ada"] = User(
+        7, "@Ada", generate_password_hash("secret123"), "legacy@example.com",
+    )
+    users["@ada"] = User(
+        9, "@ada", generate_password_hash("secret123"), "otherlegacy@example.com",
+    )
+    users["Ada"] = User(
+        8, "Ada", generate_password_hash("secret123"), "current@example.com",
+    )
+    client = app.test_client()
+
+    ambiguous = client.post(
+        "/login", data={"username": "@ADA", "password": "secret123"},
+    )
+    assert ambiguous.status_code == 302
+    assert "/login" in (ambiguous.location or "")
+    assert _session_user_id(client) is None
+
+    exact = client.post("/login", data={"username": "@Ada", "password": "secret123"})
+    assert exact.status_code == 302
+    assert _session_user_id(client) == "7"
+
+
+def test_login_email_still_loses_to_a_username_that_contains_at(monkeypatch):
+    """A username that is an email string still wins over another person's email."""
+    from werkzeug.security import generate_password_hash
+
+    users = _auth_users(monkeypatch)
+    users["ada@example.com"] = User(
+        7, "ada@example.com", generate_password_hash("secret123"), "other@example.com",
+    )
+    users["ada"] = User(
+        8, "ada", generate_password_hash("secret123"), "ada@example.com",
+    )
+    client = app.test_client()
+    response = client.post(
+        "/login",
+        data={"username": "ada@example.com", "password": "secret123"},
+    )
+    assert response.status_code == 302
+    assert "/get-started" in (response.location or "")
+    assert _session_user_id(client) == "7"
+
+
+def _notice_chunk(body: str, kind: str) -> str:
+    marker = f'class="ap-notice {kind}"'
+    assert marker in body
+    start = body.index(marker)
+    return body[start:start + 500]
+
+
+def _private_add_client(monkeypatch):
+    """Admin session whose add never writes the private list."""
+    from werkzeug.security import generate_password_hash
+
+    users = _auth_users(monkeypatch)
+    users["operator"] = User(
+        1, "operator", generate_password_hash("secret123"), "op@example.com",
+    )
+    monkeypatch.setenv("ADMIN_USERS", "operator")
+    added = []
+
+    def fake_add(user_id, added_by):
+        added.append(int(user_id))
+        found = User.get_by_id(user_id)
+        return True, found.username
+
+    monkeypatch.setattr("app.admin_privacy.add_hidden_user", fake_add)
+    monkeypatch.setattr("app.models.get_user_profile", lambda uid: {})
+
+    def no_write(*_args, **_kwargs):
+        raise AssertionError("refusing a database write")
+
+    monkeypatch.setattr("app.db.execute", no_write)
+    client = app.test_client()
+    login = client.post(
+        "/login", data={"username": "operator", "password": "secret123"},
+    )
+    assert login.status_code == 302
+    assert _session_user_id(client) == "1"
+    return users, client, added
+
+
+def _post_private(client, raw):
+    return client.post(
+        "/admin/private",
+        data={"username": raw},
+        follow_redirects=True,
+    )
+
+
+def test_admin_private_form_prefers_legacy_at_username(monkeypatch):
+    """@handle, capitalization, and errors stay; a legacy @name is not the handle."""
+    from werkzeug.security import generate_password_hash
+
+    from app.admin_privacy import find_user_by_username_or_email
+
+    users, client, added = _private_add_client(monkeypatch)
+    users["@Ada"] = User(
+        7, "@Ada", generate_password_hash("secret123"), "legacy@example.com",
+    )
+    users["Ada"] = User(
+        8, "Ada", generate_password_hash("secret123"), "current@example.com",
+    )
+    users["Mina"] = User(
+        4, "Mina", generate_password_hash("secret123"), "mina@example.com",
+    )
+    assert find_user_by_username_or_email("@Ada").id == 7
+    assert find_user_by_username_or_email("@ada").id == 7
+    assert find_user_by_username_or_email("@Mina").id == 4
+    assert find_user_by_username_or_email("mInA").id == 4
+
+    exact = _post_private(client, "@Ada")
+    assert exact.status_code == 200
+    assert added == [7]
+    assert "is private from admins" in _notice_chunk(exact.get_data(as_text=True), "ok")
+
+    folded = _post_private(client, "@ada")
+    assert added == [7, 7]
+    assert "is private from admins" in _notice_chunk(folded.get_data(as_text=True), "ok")
+
+    handle = _post_private(client, "@mina")
+    assert added == [7, 7, 4]
+
+    caps = _post_private(client, "mInA")
+    assert added == [7, 7, 4, 4]
+    assert "@Mina" in _notice_chunk(caps.get_data(as_text=True), "ok")
+
+    blank = _post_private(client, "   ")
+    assert "Enter a username or email." in _notice_chunk(
+        blank.get_data(as_text=True), "bad",
+    )
+    missing = _post_private(client, "nosuchperson")
+    assert "No user with that username or email." in _notice_chunk(
+        missing.get_data(as_text=True), "bad",
+    )
+    assert added == [7, 7, 4, 4]
+
+
+def test_admin_private_form_does_not_hide_the_handle_for_an_ambiguous_at_name(monkeypatch):
+    from werkzeug.security import generate_password_hash
+
+    users, client, added = _private_add_client(monkeypatch)
+    users["@Ada"] = User(
+        7, "@Ada", generate_password_hash("secret123"), "legacy@example.com",
+    )
+    users["@ada"] = User(
+        9, "@ada", generate_password_hash("secret123"), "otherlegacy@example.com",
+    )
+    users["Ada"] = User(
+        8, "Ada", generate_password_hash("secret123"), "current@example.com",
+    )
+
+    ambiguous = _post_private(client, "@ADA")
+    assert added == []
+    assert "No user with that username or email." in _notice_chunk(
+        ambiguous.get_data(as_text=True), "bad",
+    )
+
+    exact = _post_private(client, "@Ada")
+    assert added == [7]
+
+
+def test_admin_private_form_email_beats_a_username_that_looks_like_email(monkeypatch):
+    from werkzeug.security import generate_password_hash
+
+    from app.admin_privacy import find_user_by_username_or_email
+
+    users, client, added = _private_add_client(monkeypatch)
+    users["ada@example.com"] = User(
+        7, "ada@example.com", generate_password_hash("secret123"), "other@example.com",
+    )
+    users["ada"] = User(
+        8, "ada", generate_password_hash("secret123"), "ada@example.com",
+    )
+    users["legacy@example.com"] = User(
+        10, "legacy@example.com", generate_password_hash("secret123"), "somewhere@example.com",
+    )
+    assert find_user_by_username_or_email("ADA@example.com").id == 8
+    # Nobody owns this address, so the username that is the string still matches.
+    assert find_user_by_username_or_email("legacy@example.com").id == 10
+
+    mailed = _post_private(client, "ADA@example.com")
+    assert added == [8]
+    assert "@ada" in _notice_chunk(mailed.get_data(as_text=True), "ok")
 
 
 def test_signup_form_rejects_a_case_twin_and_an_at_sign(monkeypatch):
