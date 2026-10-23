@@ -16,7 +16,7 @@
 {% if error %}<div class="alert alert-danger small">We're having trouble loading the live session right now. Refresh in a minute, or <a href="{{ url_for('contact') }}">contact support</a> if it keeps happening.</div>{% endif %}
 
 {% set _tt = trades_today or {} %}
-{% set _ti = today_movers.combined_impact if today_movers and today_movers.combined_impact is not none else none %}
+{% set _parts = today_movers|mover_parts if today_movers else none %}
 <div class="review-hero">
     <div class="ov-bar">
         {% if scope_account_choices|length > 1 or account_groups %}
@@ -28,29 +28,30 @@
         </form>
         {% endif %}
     </div>
-    <p class="ov-date">{{ today.strftime('%A, %b %-d') }}{% if session_is_live %} · live session{% else %} · no live session{% endif %}</p>
+    <p class="ov-date">{{ today|session_date('long', today) }}{% if session_is_live %} · live session{% else %} · no live session{% endif %}</p>
     {% if session_is_live %}
     <div class="ov-top">
         <div>
             <div class="ov-k">Holdings impact</div>
-            {% if _ti is not none %}
-            <div class="ov-big {% if _ti >= 0 %}pos{% else %}neg{% endif %}">{% if _ti >= 0 %}+{% else %}−{% endif %}${{ "{:,.0f}".format(_ti|abs) }}</div>
+            {% if _parts %}
+            <div class="ov-big {% if _parts.impact > 0 %}pos{% elif _parts.impact < 0 %}neg{% endif %}">{{ _parts.impact|signed_whole }}</div>
+            {% if _parts.dividends %}
+            <div class="ov-bench">includes {{ _parts.dividends|signed_whole }} dividends</div>
+            {% endif %}
             {% else %}
             <div class="ov-big ov-dash">—</div>
             {% endif %}
         </div>
         <div>
             <div class="ov-k">Stocks</div>
-            {% if today_movers and today_movers.total_impact is not none %}
-            {% set s = today_movers.total_impact %}
-            <div class="ov-pct {% if s >= 0 %}pos{% else %}neg{% endif %}">{% if s >= 0 %}+{% else %}−{% endif %}${{ "{:,.0f}".format(s|abs) }}</div>
+            {% if _parts %}
+            <div class="ov-pct {% if _parts.stocks > 0 %}pos{% elif _parts.stocks < 0 %}neg{% endif %}">{{ _parts.stocks|signed_whole }}</div>
             {% else %}<div class="ov-pct ov-dash">—</div>{% endif %}
         </div>
         <div>
             <div class="ov-k">Options</div>
-            {% if today_movers and today_movers.options %}
-            {% set o = today_movers.options_impact %}
-            <div class="ov-pct {% if o >= 0 %}pos{% else %}neg{% endif %}">{% if o >= 0 %}+{% else %}−{% endif %}${{ "{:,.0f}".format(o|abs) }}</div>
+            {% if _parts and (today_movers.options or _parts.options) %}
+            <div class="ov-pct {% if _parts.options > 0 %}pos{% elif _parts.options < 0 %}neg{% endif %}">{{ _parts.options|signed_whole }}</div>
             {% else %}<div class="ov-pct ov-dash">—</div>{% endif %}
         </div>
         <div>
@@ -65,7 +66,7 @@
         {{ delay.shared if delay else 'These numbers can lag your broker. They are not the official close.' }}
         {% if delay and delay.extra %}{{ delay.extra }}{% endif %}
         {% if not session_is_live and last_close_date %}
-        {{ last_close_date.strftime('%A, %b %-d') }}'s close is on
+        {{ last_close_date|session_date('long', today) }}'s close is on
         <a href="{{ scoped_url('weekly_review') }}" style="color:#e6ebf5;">Overview</a>.
         {% else %}
         Official close is on <a href="{{ scoped_url('weekly_review') }}" style="color:#e6ebf5;">Overview</a>.
@@ -106,14 +107,14 @@
 <div class="ov-block">
     <div class="ov-head">
         <div>
-            <h3>Trades, {{ today.strftime('%a %b %-d') }}</h3>
+            <h3>Trades, {{ today|session_date('dow', today) }}</h3>
             <p>Every fill dated today, including adds and trims.</p>
         </div>
         {% if _tt.count %}
         <div class="ov-pills-lite">
             <span class="ov-pl">{% with count=_tt.count, fill_count=_tt.fill_count %}{% include "_fill_count.html" %}{% endwith %}</span>
             {% if _tt.symbols %}<span class="ov-pl">{{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}</span>{% endif %}
-            {% if _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' }}">{{ "+" if _tt.net_gl > 0 else "−" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} realized</span>{% endif %}
+            {% if _tt.has_gl or _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' if _tt.net_gl < 0 else '' }}">{{ money(_tt.net_gl, 2, true) }} realized</span>{% endif %}
         </div>
         {% endif %}
     </div>
@@ -158,6 +159,13 @@
                 </td>
             </tr>
             {% endfor %}
+            {% if _tt.has_gl or _tt.net_gl %}
+            <tr class="tt-total">
+                <td class="tt-sticky" colspan="3">Total realized</td>
+                <td class="tt-money {% if _tt.net_gl > 0 %}text-positive{% elif _tt.net_gl < 0 %}text-negative{% endif %}">{{ money(_tt.net_gl, 2, true) }}</td>
+                <td class="tt-tag"></td>
+            </tr>
+            {% endif %}
         </table>
     </div>
     {% else %}
@@ -198,11 +206,12 @@
             <h3>Biggest movers</h3>
             <p>Last-trade vs the prior close on positions you hold. Price impact on holdings, not full account value.</p>
         </div>
-        {% if _ti is not none %}
+        {% if _parts %}
         <div class="ov-pills-lite">
-            <span class="ov-pl {{ 'gn' if _ti >= 0 else 'rd' }}">{% if _ti >= 0 %}+{% else %}−{% endif %}${{ "{:,.0f}".format(_ti|abs) }} impact</span>
-            {% if today_movers.total_impact is not none %}<span class="ov-pl">stocks {% if today_movers.total_impact >= 0 %}+{% else %}−{% endif %}${{ "{:,.0f}".format(today_movers.total_impact|abs) }}</span>{% endif %}
-            {% if today_movers.options %}<span class="ov-pl">options {% if today_movers.options_impact >= 0 %}+{% else %}−{% endif %}${{ "{:,.0f}".format(today_movers.options_impact|abs) }}</span>{% endif %}
+            <span class="ov-pl {{ 'gn' if _parts.impact > 0 else 'rd' if _parts.impact < 0 else '' }}">{{ _parts.impact|signed_whole }} impact</span>
+            <span class="ov-pl">stocks {{ _parts.stocks|signed_whole }}</span>
+            {% if today_movers.options or _parts.options %}<span class="ov-pl">options {{ _parts.options|signed_whole }}</span>{% endif %}
+            {% if _parts.dividends %}<span class="ov-pl">dividends {{ _parts.dividends|signed_whole }}</span>{% endif %}
         </div>
         {% endif %}
     </div>
@@ -229,14 +238,14 @@
                     {% else %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                        <div class="mover-pct text-positive">{{ m.price_change_pct|signed_pct }}</div>
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
                         <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
-                    <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
+                    <div class="mover-dollar text-positive">{{ m.dollar_impact|signed_whole }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _mv.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
@@ -262,14 +271,14 @@
                     {% else %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                        <div class="mover-pct text-negative">{{ m.price_change_pct|signed_pct }}</div>
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
                         <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
-                    <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                    <div class="mover-dollar text-negative">{{ m.dollar_impact|signed_whole }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _mv.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
@@ -283,15 +292,16 @@
     {% endif %}
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">
+        {% set _div_label = today_movers.dividends_impact|signed_whole %}
         <div class="ov-subk">
             {% if today_movers.as_of_label and not today_movers.is_today %}Dividends paid {{ today_movers.as_of_label }}{% else %}Dividends paid today{% endif %}
-            <span class="pos">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+            <span class="{% if _div_label.startswith('+') %}pos{% elif _div_label.startswith('−') %}neg{% endif %}">{{ _div_label }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
-            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge ov-div-chip text-decoration-none"
+            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge ov-div-chip text-decoration-none{% if d.amount < 0 %} neg{% endif %}"
                data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}">
-                {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
+                {{ d.symbol }} {{ money(d.amount, 2, true) }}
             </a>
             {% endfor %}
         </div>

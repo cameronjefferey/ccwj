@@ -30,6 +30,13 @@ from app.extensions import limiter
 from app.query_cache import bind_user_query_epoch, cached_query_df
 from app.skeleton import skeleton_page
 from app.privacy import shown_account as _privacy_account_label
+from app.review_format import (
+    display_parts as _display_parts,
+    session_date as _session_date_label,
+    stamp_snapshot as _stamp_snapshot,
+    sum_ints as _sum_ints,
+    whole_dollars as _whole_dollars,
+)
 from app.models import (
     get_user_profile,
     bump_review_visit,
@@ -1740,6 +1747,23 @@ def _today_pulse(today_snapshots_by_account):
     }
 
 
+def _period_display_delta(snaps, key):
+    """Sum of already-rounded deltas for accounts that contribute to the period.
+
+    Same membership as the exact sum: the comparison has data, and both the
+    delta and the account value are present. A rounded zero still counts.
+    """
+    values = []
+    for snap in snaps or []:
+        comp = (snap.get("comparisons") or {}).get(key) or {}
+        if not comp.get("has_data"):
+            continue
+        if comp.get("delta") is None or snap.get("today_value") is None:
+            continue
+        values.append(comp.get("display_delta"))
+    return _sum_ints(values)
+
+
 def _today_totals(today_snapshots_by_account):
     """Aggregate per-account snapshot rows into one consolidated "All Accounts" row.
 
@@ -1750,15 +1774,23 @@ def _today_totals(today_snapshots_by_account):
     minus delta), not off the full multi-account today total — otherwise an
     account missing a 1-month baseline would silently dilute the % for the
     other accounts.
+
+    ``display_value`` / ``display_delta`` are whole dollars. The total is the
+    sum of the per-account whole dollars, so the Total row matches the cells
+    above it. Exact ``today_value`` / ``delta`` stay for the cash-sleeve check
+    and for the share-of-book percent.
     """
-    if not today_snapshots_by_account or len(today_snapshots_by_account) < 2:
+    snaps = today_snapshots_by_account or []
+    for snap in snaps:
+        _stamp_snapshot(snap)
+    if len(snaps) < 2:
         return None
 
     total_today = 0.0
     today_seen = False
     latest_date = None
     accounts_with_value = 0
-    for snap in today_snapshots_by_account:
+    for snap in snaps:
         tv = snap.get("today_value")
         if tv is not None:
             total_today += float(tv)
@@ -1775,7 +1807,7 @@ def _today_totals(today_snapshots_by_account):
         sum_delta = 0.0
         sum_base = 0.0
         any_data = False
-        for snap in today_snapshots_by_account:
+        for snap in snaps:
             comp = (snap.get("comparisons") or {}).get(key) or {}
             if not comp.get("has_data"):
                 continue
@@ -1787,13 +1819,17 @@ def _today_totals(today_snapshots_by_account):
             sum_base += float(tv) - float(d)
             any_data = True
         if not any_data:
-            return {"label": None, "base_date": None, "delta": None, "delta_pct": None, "has_data": False}
+            return {
+                "label": None, "base_date": None, "delta": None,
+                "delta_pct": None, "display_delta": None, "has_data": False,
+            }
         pct = round(sum_delta / sum_base * 100, 2) if sum_base > 0 else None
         return {
             "label": None,
             "base_date": None,
             "delta": round(sum_delta, 2),
             "delta_pct": pct,
+            "display_delta": _period_display_delta(snaps, key),
             "has_data": True,
         }
 
@@ -1802,7 +1838,7 @@ def _today_totals(today_snapshots_by_account):
         sum_base = 0.0
         any_data = False
         base_date = None
-        for snap in today_snapshots_by_account:
+        for snap in snaps:
             sw = snap.get("vs_week_start") or {}
             if not sw.get("has_data"):
                 continue
@@ -1816,17 +1852,28 @@ def _today_totals(today_snapshots_by_account):
             if base_date is None:
                 base_date = sw.get("base_date")
         if not any_data:
-            return {"delta": None, "delta_pct": None, "has_data": False, "base_date": base_date}
+            return {
+                "delta": None, "delta_pct": None, "display_delta": None,
+                "has_data": False, "base_date": base_date,
+            }
         pct = round(sum_delta / sum_base * 100, 2) if sum_base > 0 else None
+        week_displays = []
+        for snap in snaps:
+            sw = snap.get("vs_week_start") or {}
+            if not sw.get("has_data") or sw.get("delta") is None or snap.get("today_value") is None:
+                continue
+            week_displays.append(sw.get("display_delta"))
         return {
             "delta": round(sum_delta, 2),
             "delta_pct": pct,
+            "display_delta": _sum_ints(week_displays),
             "has_data": True,
             "base_date": base_date,
         }
 
     return {
         "today_value": round(total_today, 2),
+        "display_value": _sum_ints(snap.get("display_value") for snap in snaps),
         "today_date": latest_date,
         "accounts_count": accounts_with_value,
         "comparisons": {
@@ -1898,10 +1945,22 @@ def _coerce_date(value):
         return None
 
 
+def _mover_as_of_label(as_of, anchor):
+    """Weekday label for a movers bar, with the year when it is not ``anchor``."""
+    try:
+        day = datetime.strptime(str(as_of), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return as_of
+    return _session_date_label(day, "dow", anchor)
+
+
 def _format_session_date(value):
-    """Short weekday label for snapshot meta (``Fri Aug 28``), or None."""
+    """Short weekday label for snapshot meta (``Fri Aug 28``), or None.
+
+    A date outside the current year keeps the year (``Mon Dec 29, 2025``).
+    """
     d = _coerce_date(value)
-    return d.strftime("%a %b %-d") if d else None
+    return _session_date_label(d, "dow") if d else None
 
 
 _OSI_CORE = re.compile(r"(\d{6}[CP]\d{8})")
@@ -2452,7 +2511,9 @@ def _overview_radar(start, earnings, options, dividends, pending, n_days=15):
     days = []
     for i in range(n_days):
         d = start + timedelta(days=i)
-        if d.day == 1:
+        if d.year != start.year:
+            num = _session_date_label(d, "short", start)
+        elif d.day == 1:
             num = d.strftime("%b %-d")
         else:
             num = d.strftime("%-d")
@@ -2808,7 +2869,7 @@ def _build_calendar_grid(
                 "has_data": change is not None,
             })
         rows.append({
-            "week_label": row_start.strftime("%b %-d"),
+            "week_label": _session_date_label(row_start, "short", today),
             "week_start": row_start,
             "cells": row_cells,
             # First `extra_weeks` rows are older history hidden by default.
@@ -3347,15 +3408,25 @@ def _build_account_breakdown(attribution_df, label_map=None, *, week_start=None)
         net = s["net_pnl"]
         pct = round(net / cap * 100.0, 1) if cap >= ANNUALIZED_DENOMINATOR_FLOOR else None
         ann = _annualized_pct(net, cap, s["max_days_held"])
+        equity_pnl = round(s["equity_pnl"], 2)
+        option_pnl = round(s["option_pnl"], 2)
+        dividend_income = round(s["dividend_income"], 2)
+        eq_d, opt_d, div_d, net_d = _display_parts(
+            equity_pnl, option_pnl, dividend_income,
+        )
         rows.append({
             "tenant_id": tid,
             "account_display": _privacy_account_label(
                 label_map.get(tid) or s["account"] or tid, tid,
             ),
-            "equity_pnl": round(s["equity_pnl"], 2),
-            "option_pnl": round(s["option_pnl"], 2),
-            "dividend_income": round(s["dividend_income"], 2),
+            "equity_pnl": equity_pnl,
+            "option_pnl": option_pnl,
+            "dividend_income": dividend_income,
             "net_pnl": round(net, 2),
+            "equity_display": eq_d,
+            "option_display": opt_d,
+            "dividend_display": div_d,
+            "net_display": net_d,
             "capital_at_risk": round(cap, 2),
             "pct_return": pct,
             "annualized_pct": ann,
@@ -3371,11 +3442,18 @@ def _build_account_breakdown(attribution_df, label_map=None, *, week_start=None)
         t_net = sum(r["net_pnl"] for r in rows)
         t_cap = sum(r["capital_at_risk"] for r in rows)
         t_days = max((r["max_days_held"] for r in rows), default=0)
+        t_eq_d = sum(r["equity_display"] for r in rows)
+        t_opt_d = sum(r["option_display"] for r in rows)
+        t_div_d = sum(r["dividend_display"] for r in rows)
         totals = {
             "equity_pnl": round(t_eq, 2),
             "option_pnl": round(t_opt, 2),
             "dividend_income": round(t_div, 2),
             "net_pnl": round(t_net, 2),
+            "equity_display": t_eq_d,
+            "option_display": t_opt_d,
+            "dividend_display": t_div_d,
+            "net_display": t_eq_d + t_opt_d + t_div_d,
             "capital_at_risk": round(t_cap, 2),
             "pct_return": round(t_net / t_cap * 100.0, 1) if t_cap >= ANNUALIZED_DENOMINATOR_FLOOR else None,
             "annualized_pct": _annualized_pct(t_net, t_cap, t_days),
@@ -5484,8 +5562,12 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
     (``closed_count`` / ``opened_count`` / ``realized_pnl`` /
     ``unrealized_pnl``) for the header.
     """
-    empty = {"trades": [], "count": 0, "opened_count": 0, "closed_count": 0,
-             "realized_pnl": 0.0, "unrealized_pnl": 0.0, "has_any": False}
+    empty = {
+        "trades": [], "count": 0, "opened_count": 0, "closed_count": 0,
+        "realized_pnl": 0.0, "unrealized_pnl": 0.0,
+        "realized_display": 0, "unrealized_display": 0, "result_display": 0,
+        "has_any": False,
+    }
     if trades_df is None or trades_df.empty:
         return empty
     label_map = label_map or {}
@@ -5594,6 +5676,9 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
             strategy = "Uncategorized"
         realized = round(g["realized"], 2)
         unrealized = round(g["unrealized"], 2)
+        realized_display = _whole_dollars(realized) or 0
+        unrealized_display = _whole_dollars(unrealized) or 0
+        result_display = realized_display + unrealized_display
         if is_closed:
             result_kind = "realized"
         elif g["has_closed"]:
@@ -5634,12 +5719,17 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
             "realized_pnl": realized,
             "unrealized_pnl": unrealized,
             "result_pnl": round(realized + unrealized, 2),
+            "realized_display": realized_display,
+            "unrealized_display": unrealized_display,
+            "result_display": result_display,
             "result_kind": result_kind,
             "tags": row_tags,
         })
 
     realized_pnl = sum(r["realized_pnl"] for r in trades)
     unrealized_pnl = sum(r["unrealized_pnl"] for r in trades)
+    realized_display = sum(r["realized_display"] for r in trades)
+    unrealized_display = sum(r["unrealized_display"] for r in trades)
     closed_count = sum(1 for r in trades if r["is_closed"])
     opened_count = sum(1 for r in trades if not r["is_closed"])
 
@@ -5659,7 +5749,10 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
         "closed_count": closed_count,
         "realized_pnl": round(realized_pnl, 2),
         "unrealized_pnl": round(unrealized_pnl, 2),
-            "has_any": bool(trades),
+        "realized_display": realized_display,
+        "unrealized_display": unrealized_display,
+        "result_display": realized_display + unrealized_display,
+        "has_any": bool(trades),
     }
 
 
@@ -6559,11 +6652,7 @@ def weekly_review():
             # Overview never uses the word "today" — always the session date.
             _tm["is_today"] = False
             if _tm.get("as_of"):
-                try:
-                    _tm["as_of_label"] = datetime.strptime(
-                        _tm["as_of"], "%Y-%m-%d").strftime("%a %b %-d")
-                except ValueError:
-                    _tm["as_of_label"] = _tm["as_of"]
+                _tm["as_of_label"] = _mover_as_of_label(_tm["as_of"], today)
         except Exception as e:
             app.logger.warning("Session movers processing failed: %s", e)
 
@@ -6670,6 +6759,14 @@ def weekly_review():
         context["equity_snapshot"] = _eq
     context.pop("close_sleeve", None)
     context["hero_account_value"] = _hero_av
+    _hero_display = None
+    if _total_row and _total_row.get("display_value") is not None:
+        _hero_display = _total_row["display_value"]
+    elif len(_snaps) == 1 and _snaps[0].get("display_value") is not None:
+        _hero_display = _snaps[0]["display_value"]
+    elif _hero_av is not None:
+        _hero_display = _whole_dollars(_hero_av)
+    context["hero_display_value"] = _hero_display
     context["paper_only"] = False
     context["paper_aside"] = None
     context["paper_fills"] = []
@@ -6968,11 +7065,7 @@ def today_view():
             _tm = context["today_movers"]
             if _tm.get("as_of"):
                 _tm["is_today"] = (_tm["as_of"] == today.isoformat())
-                try:
-                    _tm["as_of_label"] = datetime.strptime(
-                        _tm["as_of"], "%Y-%m-%d").strftime("%a %b %-d")
-                except ValueError:
-                    _tm["as_of_label"] = _tm["as_of"]
+                _tm["as_of_label"] = _mover_as_of_label(_tm["as_of"], today)
             else:
                 _tm["is_today"] = True
 
@@ -7591,7 +7684,8 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     """
     empty = {
         "trades": [], "cash": [], "count": 0, "fill_count": 0, "roll_count": 0,
-        "net_cash": 0.0, "net_gl": 0.0, "symbols": [], "has_any": False,
+        "net_cash": 0.0, "net_gl": 0.0, "has_gl": False,
+        "symbols": [], "has_any": False,
     }
     if trades_df is None or trades_df.empty:
         return empty
@@ -7688,10 +7782,13 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     )
     _attach_fill_tags(grouped, tag_rows)
     net_gl = 0.0
+    has_gl = False
     for row in grouped:
         gl = _finite_or_none(row.get("realized_pnl"))
         if gl is not None:
             net_gl += gl
+        if row.get("amount") is not None:
+            has_gl = True
     return {
         "trades": grouped,
         "cash": cash_rows,
@@ -7700,6 +7797,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         "roll_count": sum(1 for r in grouped if r.get("is_roll")),
         "net_cash": round(net_cash, 2),
         "net_gl": round(net_gl, 2),
+        "has_gl": has_gl,
         "symbols": symbols,
         "has_any": bool(trade_rows or cash_rows),
     }
@@ -7776,12 +7874,16 @@ def day_detail(day_str):
             ),
             "value": value,
             "delta": delta,
+            "display_value": _whole_dollars(value),
+            "display_delta": _whole_dollars(delta),
             "delta_pct": (delta / prev_value * 100) if prev_value else None,
         })
         total_value += value
         total_delta += delta
     prev_total = total_value - total_delta
     total_delta_pct = (total_delta / prev_total * 100) if prev_total else None
+    display_total_value = _sum_ints(row.get("display_value") for row in account_rows)
+    display_total_delta = _sum_ints(row.get("display_delta") for row in account_rows)
 
     # ── Fills that day ────────────────────────────────────────────────
     trades_df = _filter_df_by_tenant_ids(batch["trades"], tenant_ids)
@@ -7828,8 +7930,9 @@ def day_detail(day_str):
 
     return render_template(
         "day_detail.html",
-        title=day.strftime("%A, %b %-d"),
+        title=_session_date_label(day, "long", today),
         day=day,
+        today=today,
         day_label=day.strftime("%A, %B %-d, %Y"),
         is_weekend=day.weekday() >= 5,
         prev_day=prev_day,
@@ -7841,11 +7944,14 @@ def day_detail(day_str):
         account_rows=account_rows,
         total_value=total_value,
         total_delta=total_delta,
+        display_total_value=display_total_value,
+        display_total_delta=display_total_delta,
         total_delta_pct=total_delta_pct,
         trade_rows=trade_rows,
         cash_rows=cash_rows,
         net_cash=fills.get("net_cash") or 0,
         net_gl=fills.get("net_gl") or 0,
+        has_gl=bool(fills.get("has_gl")),
         option_rows=option_rows,
         dividend_rows=dividend_rows,
         market_rows=market_rows,

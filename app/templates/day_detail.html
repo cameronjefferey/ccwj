@@ -22,6 +22,7 @@
     .dd-table { width: 100%; font-size: .9rem; }
     .dd-table td { padding: .45rem .4rem; border-bottom: 1px solid #243049; vertical-align: middle; }
     .dd-table tr:last-child td { border-bottom: 0; }
+    .dd-table tr.tt-total td { font-weight: 700; border-top: 2px solid var(--ht-line); }
     .dd-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
     .dd-money.pos { color: var(--color-positive); }
     .dd-money.neg { color: var(--color-negative); }
@@ -69,13 +70,21 @@
         <div>
             <div class="dd-date">Day review &middot; {{ day_label }}</div>
             {% if account_rows %}
-            <div class="dd-delta {{ 'pos' if total_delta > 0 else 'neg' if total_delta < 0 else '' }}">
-                {% if privacy_mode %}••••{% else %}{{ money(total_delta, 0, true) }}{% endif %}
+            {% set _dd = namespace(value=total_value, delta=total_delta) %}
+            {% if display_total_value is defined and display_total_value is not none %}
+            {% set _dd.value = display_total_value %}
+            {% endif %}
+            {% if display_total_delta is defined and display_total_delta is not none %}
+            {% set _dd.delta = display_total_delta %}
+            {% endif %}
+            {% set _delta_label = _dd.delta|signed_whole %}
+            <div class="dd-delta {{ 'pos' if _delta_label.startswith('+') else 'neg' if _delta_label.startswith('−') else '' }}">
+                {% if privacy_mode %}••••{% else %}{{ _delta_label }}{% endif %}
                 {% if total_delta_pct is not none %}
-                <span style="font-size:1rem; font-weight:600;">({{ "+" if total_delta_pct > 0 else "" }}{{ "%.2f"|format(total_delta_pct) }}%)</span>
+                <span style="font-size:1rem; font-weight:600;">({{ total_delta_pct|signed_pct }})</span>
                 {% endif %}
             </div>
-            <div class="dd-sub">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(total_value) }}{% endif %} total account value at that close</div>
+            <div class="dd-sub">{% if privacy_mode %}••••{% else %}{{ _dd.value|plain_whole }}{% endif %} total account value at that close</div>
             {% elif is_weekend %}
             <div class="dd-delta">Weekend</div>
             <div class="dd-sub">Markets were closed — any rows below are broker postings dated that day.</div>
@@ -96,13 +105,13 @@
             <a href="{{ scoped_url('day_detail', day_str=prev_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants, _anchor='day-review') }}">&larr; {{ prev_day.strftime('%a %b %-d') }}</a>
+                                tenants=selected_tenants, _anchor='day-review') }}">&larr; {{ prev_day|session_date('dow', today) }}</a>
             {% if next_day %}
             <span class="mx-1" style="color:#8a97b1;">|</span>
             <a href="{{ scoped_url('day_detail', day_str=next_day.isoformat(),
                                 account=selected_account or None,
                                 tenant=selected_tenant,
-                                tenants=selected_tenants, _anchor='day-review') }}">{{ next_day.strftime('%a %b %-d') }} &rarr;</a>
+                                tenants=selected_tenants, _anchor='day-review') }}">{{ next_day|session_date('dow', today) }} &rarr;</a>
             {% endif %}
             <div class="mt-2">
                 <a href="{{ scoped_url('weekly_review',
@@ -115,20 +124,39 @@
 </div>
 
 {% if account_rows and account_rows|length > 1 %}
+{% set _book = namespace(value=total_value, delta=total_delta) %}
+{% if display_total_value is defined and display_total_value is not none %}
+{% set _book.value = display_total_value %}
+{% endif %}
+{% if display_total_delta is defined and display_total_delta is not none %}
+{% set _book.delta = display_total_delta %}
+{% endif %}
+{% set _book_delta = _book.delta|signed_whole %}
 <div class="card dd-card mb-4">
     <div class="card-body p-3 p-md-4">
         <h2>By account</h2>
         <table class="dd-table">
             {% for a in account_rows %}
+            {% set row_value = a.display_value if a.display_value is defined and a.display_value is not none else a.value %}
+            {% set row_delta = a.display_delta if a.display_delta is defined and a.display_delta is not none else a.delta %}
+            {% set row_delta_label = row_delta|signed_whole %}
             <tr>
                 <td data-val="{{ a.label | account_label(a.tenant_id) }}">{{ a.label | account_label(a.tenant_id) }}</td>
-                <td class="dd-money">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(a.value) }}{% endif %}</td>
-                <td class="dd-money {{ 'pos' if a.delta > 0 else 'neg' if a.delta < 0 else '' }}">
-                    {% if privacy_mode %}••••{% else %}{{ money(a.delta, 0, true) }}{% endif %}
-                    {% if a.delta_pct is not none %}<span class="dd-muted">({{ "+" if a.delta_pct > 0 else "" }}{{ "%.2f"|format(a.delta_pct) }}%)</span>{% endif %}
+                <td class="dd-money">{% if privacy_mode %}••••{% else %}{{ row_value|plain_whole }}{% endif %}</td>
+                <td class="dd-money {{ 'pos' if row_delta_label.startswith('+') else 'neg' if row_delta_label.startswith('−') else '' }}">
+                    {% if privacy_mode %}••••{% else %}{{ row_delta_label }}{% endif %}
+                    {% if a.delta_pct is not none %}<span class="dd-muted">({{ a.delta_pct|signed_pct }})</span>{% endif %}
                 </td>
             </tr>
             {% endfor %}
+            <tr class="tt-total">
+                <td>Total</td>
+                <td class="dd-money">{% if privacy_mode %}••••{% else %}{{ _book.value|plain_whole }}{% endif %}</td>
+                <td class="dd-money {{ 'pos' if _book_delta.startswith('+') else 'neg' if _book_delta.startswith('−') else '' }}">
+                    {% if privacy_mode %}••••{% else %}{{ _book_delta }}{% endif %}
+                    {% if total_delta_pct is not none %}<span class="dd-muted">({{ total_delta_pct|signed_pct }})</span>{% endif %}
+                </td>
+            </tr>
         </table>
     </div>
 </div>
@@ -138,9 +166,9 @@
     <div class="col-12 col-lg-7">
         <div class="card dd-card mb-4">
             <div class="card-body p-3 p-md-4">
-                <h2>Trades that day{% if net_gl %}
+                <h2>Trades that day{% if has_gl or net_gl %}
                 <span class="dd-muted" style="text-transform:none; letter-spacing:0; font-weight:600; float:right;">
-                    {{ "+" if net_gl > 0 else "−" }}${{ "{:,.0f}".format(net_gl|abs) }} G/L
+                    {{ money(net_gl, 2, true) }} G/L
                 </span>
                 {% endif %}</h2>
                 {% if trade_rows %}
@@ -175,6 +203,12 @@
                         </td>
                     </tr>
                     {% endfor %}
+                    {% if has_gl or net_gl %}
+                    <tr class="tt-total">
+                        <td colspan="3">Total realized</td>
+                        <td class="dd-money {{ 'pos' if net_gl > 0 else 'neg' if net_gl < 0 else '' }}">{{ money(net_gl, 2, true) }}</td>
+                    </tr>
+                    {% endif %}
                 </table>
                 {% else %}
                 <div class="dd-empty">No fills on this day.</div>
@@ -214,7 +248,7 @@
                     {% for d in dividend_rows %}
                     <tr>
                         <td><a class="dd-sym" href="{{ scoped_url('position_detail', symbol=d.symbol) }}">{{ d.symbol }}</a></td>
-                        <td class="dd-money pos">+${{ "{:,.2f}".format(d.amount) }}</td>
+                        <td class="dd-money {{ 'pos' if d.amount > 0 else 'neg' if d.amount < 0 else '' }}">{{ money(d.amount, 2, true) }}</td>
                     </tr>
                     {% endfor %}
                 </table>

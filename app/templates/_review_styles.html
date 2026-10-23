@@ -225,6 +225,11 @@
         background: color-mix(in srgb, var(--gain) 14%, transparent) !important;
         border-color: color-mix(in srgb, var(--gain) 45%, var(--ht-line)) !important;
     }
+    body .ov-page .badge.ov-div-chip.neg {
+        color: var(--loss) !important;
+        background: color-mix(in srgb, var(--loss) 14%, transparent) !important;
+        border-color: color-mix(in srgb, var(--loss) 45%, var(--ht-line)) !important;
+    }
     .ov-ev-when { display: none; }
     .section-label {
         font-size: .72rem;
@@ -777,6 +782,11 @@
     .tt-table td { padding: .45rem .4rem; border-bottom: 1px solid #243049; vertical-align: middle; }
     .tt-verb-short { display: none; }
     .tt-table tr:last-child td { border-bottom: 0; }
+    .tt-table tr.tt-total td {
+        font-weight: 700;
+        border-top: 2px solid var(--ht-line);
+        border-bottom: 0;
+    }
     .tt-money { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; white-space: nowrap; }
     .tt-muted { color: var(--ht-muted); font-size: .8rem; }
     .tt-roll-ok { color: var(--gain); font-size: .75rem; font-weight: 600; }

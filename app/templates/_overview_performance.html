@@ -7,22 +7,30 @@
 {# simple-view-full performance #}
 {% if not simple_view %}
 {% macro acct_pct_cell(val) %}
-<td data-val="{{ val if val is not none else '' }}" class="{% if val is not none and val > 0 %}text-positive{% elif val is not none and val < 0 %}text-negative{% endif %}">
+{% set pct_label = val|signed_pct(1) if val is not none else '' %}
+<td data-val="{{ val if val is not none else '' }}" class="{% if pct_label.startswith('+') %}text-positive{% elif pct_label.startswith('−') %}text-negative{% endif %}">
     {% if val is none %}<span class="text-muted">&mdash;</span>
-    {% else %}{{ "+" if val > 0 else "" }}{{ "{:,.1f}".format(val) }}%{% endif %}
+    {% else %}{{ pct_label }}{% endif %}
 </td>
 {% endmacro %}
-{% macro acct_money_cell(val) %}
-<td data-val="{{ val }}" class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
-    {% if val == 0 %}<span class="text-muted">$0</span>
-    {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
+{% macro acct_money_cell(val, display=none) %}
+{% set cell = namespace(shown=none) %}
+{% if display is defined and display is not none %}
+{% set cell.shown = display %}
+{% elif val is not none %}
+{% set cell.shown = val|whole_dollars %}
+{% endif %}
+<td data-val="{{ val }}" class="{% if cell.shown is not none and cell.shown > 0 %}text-positive{% elif cell.shown is not none and cell.shown < 0 %}text-negative{% endif %}">
+    {% if cell.shown is none %}<span class="text-muted">&mdash;</span>
+    {% elif cell.shown == 0 %}<span class="text-muted">$0</span>
+    {% else %}{{ cell.shown|signed_whole }}{% endif %}
 </td>
 {% endmacro %}
 {% if account_breakdown and account_breakdown.rows %}
 <details class="disclosure" id="ov-performance" open>
     <summary>
         <span class="section-header">Performance by account</span>
-        <span class="disclosure-note">Open positions plus anything closed since {{ week_start.strftime('%a %-d') if week_start else 'Monday' }} — stock, options, and lifetime dividends.</span>
+        <span class="disclosure-note">Open positions plus anything closed since {{ week_start|session_date('dow', today) if week_start else 'Monday' }} — stock, options, and lifetime dividends.</span>
     </summary>
     <div class="disclosure-body">
     <div class="breakdown-wrap">
@@ -48,10 +56,10 @@
                         <a class="acct-rename" href="{{ account_rename_urls[a.tenant_id] }}">rename</a>
                         {% endif %}
                     </td>
-                    {{ acct_money_cell(a.equity_pnl) }}
-                    {{ acct_money_cell(a.option_pnl) }}
-                    {{ acct_money_cell(a.dividend_income) }}
-                    {{ acct_money_cell(a.net_pnl) }}
+                    {{ acct_money_cell(a.equity_pnl, a.equity_display) }}
+                    {{ acct_money_cell(a.option_pnl, a.option_display) }}
+                    {{ acct_money_cell(a.dividend_income, a.dividend_display) }}
+                    {{ acct_money_cell(a.net_pnl, a.net_display) }}
                     {{ acct_pct_cell(a.pct_return) }}
                     {{ acct_pct_cell(a.annualized_pct) }}
                 </tr>
@@ -60,10 +68,10 @@
                 {% set t = account_breakdown.totals %}
                 <tr class="totals-row" data-no-sort data-no-row-nav>
                     <td class="left">All accounts</td>
-                    {{ acct_money_cell(t.equity_pnl) }}
-                    {{ acct_money_cell(t.option_pnl) }}
-                    {{ acct_money_cell(t.dividend_income) }}
-                    {{ acct_money_cell(t.net_pnl) }}
+                    {{ acct_money_cell(t.equity_pnl, t.equity_display) }}
+                    {{ acct_money_cell(t.option_pnl, t.option_display) }}
+                    {{ acct_money_cell(t.dividend_income, t.dividend_display) }}
+                    {{ acct_money_cell(t.net_pnl, t.net_display) }}
                     {{ acct_pct_cell(t.pct_return) }}
                     {{ acct_pct_cell(t.annualized_pct) }}
                 </tr>
@@ -89,7 +97,7 @@
         <summary>How this is computed</summary>
         <p>
             Counts open positions plus anything closed since
-            {{ week_start.strftime('%a %b %-d') if week_start else 'Monday' }};
+            {{ week_start|session_date('dow', today) if week_start else 'Monday' }};
             older closed trades live in the full account breakdown. Annualized
             factors in how long each position has been held.
             {% if account_breakdown.benchmarks %}

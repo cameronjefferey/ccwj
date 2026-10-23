@@ -21,7 +21,7 @@
            href="{{ scoped_url('position_detail', symbol=m.symbol) }}"
            title="From ${{ '%.2f' % m.prior_price }} to ${{ '%.2f' % m.current_price }}">
             <span class="sym">{{ m.symbol }}</span>
-            <span>{{ '+' if m.positive else '' }}{{ '%.2f' % m.delta_pct }}%</span>
+            <span>{{ m.delta_pct|signed_pct }}</span>
         </a>
         {% endfor %}
     </div>
@@ -65,7 +65,7 @@
             {% if t.total_pnl is not none %}
             <span>{{ money(t.total_pnl, 0, true) }}</span>
             {% endif %}
-            <span class="text-muted">{{ t.close_date }}</span>
+            <span class="text-muted">{{ t.close_date|session_date('short', today) }}</span>
         </a>
         {% endfor %}
     </div>
@@ -78,7 +78,7 @@
         <a class="since-chip" href="{{ scoped_url('position_detail', symbol=t.symbol) }}">
             <span class="sym">{{ t.symbol }}</span>
             {% if t.strategy %}<span class="text-muted">{{ t.strategy }}</span>{% endif %}
-            <span class="text-muted">{{ t.open_date }}</span>
+            <span class="text-muted">{{ t.open_date|session_date('short', today) }}</span>
         </a>
         {% endfor %}
     </div>

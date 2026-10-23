@@ -48,22 +48,45 @@
 {% set _book = today_snapshots_total or (_snaps[0] if _snaps|length == 1 else none) %}
 {% set _book_n = (today_snapshots_total.accounts_count if today_snapshots_total else (_snaps|length)) %}
 {% set _book_value = hero_account_value if (hero_account_value is defined and hero_account_value is not none) else ((_book.today_value if _book else none)) %}
+{% set _hero = namespace(shown=none) %}
+{% if hero_display_value is defined and hero_display_value is not none %}
+{% set _hero.shown = hero_display_value %}
+{% elif _book_value is not none %}
+{% set _hero.shown = _book_value|whole_dollars %}
+{% endif %}
 {% set _spy = (benchmark_snapshot | selectattr('symbol', 'equalto', 'SPY') | list | first) if benchmark_snapshot else none %}
+{% macro hero_dollar(comp) %}
+    {% set hd = namespace(n=none) %}
+    {% if comp.display_delta is defined and comp.display_delta is not none %}
+    {% set hd.n = comp.display_delta %}
+    {% elif comp.delta is not none %}
+    {% set hd.n = comp.delta|whole_dollars %}
+    {% endif %}
+    {% if hd.n is not none %}
+    {% set label = hd.n|signed_whole %}
+    <div class="ov-sub {% if label.startswith('+') %}pos{% elif label.startswith('−') %}neg{% endif %}">{% if privacy_mode %}••••{% else %}{{ label }}{% endif %}</div>
+    {% endif %}
+{% endmacro %}
 {% macro hero_stat(comp, bench_pct) %}
     {% if comp and comp.has_data and comp.delta_pct is not none %}
-    {% set pos = comp.delta_pct >= 0 %}
-    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{{ "+" if pos else "" }}{{ "%.2f"|format(comp.delta_pct) }}%</div>
-    {% if comp.delta is not none %}
-    <div class="ov-sub {% if comp.delta >= 0 %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
-    {% endif %}
+    {% set pct_label = comp.delta_pct|signed_pct %}
+    <div class="ov-pct {% if pct_label.startswith('+') %}pos{% elif pct_label.startswith('−') %}neg{% endif %}">{{ pct_label }}</div>
+    {{ hero_dollar(comp) }}
     {% elif comp and comp.has_data and comp.delta is not none %}
-    {% set pos = comp.delta >= 0 %}
-    <div class="ov-pct {% if pos %}pos{% else %}neg{% endif %}">{% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}</div>
+    {% set hd = namespace(n=none) %}
+    {% if comp.display_delta is defined and comp.display_delta is not none %}
+    {% set hd.n = comp.display_delta %}
+    {% else %}
+    {% set hd.n = comp.delta|whole_dollars %}
+    {% endif %}
+    {% set label = hd.n|signed_whole %}
+    <div class="ov-pct {% if label.startswith('+') %}pos{% elif label.startswith('−') %}neg{% endif %}">{% if privacy_mode %}••••{% else %}{{ label }}{% endif %}</div>
     {% else %}
     <div class="ov-pct ov-dash">—</div>
     {% endif %}
     {% if bench_pct is not none %}
-    <div class="ov-bench">S&amp;P 500 <span class="{% if bench_pct >= 0 %}pos{% else %}neg{% endif %}">{{ "+" if bench_pct >= 0 else "" }}{{ "%.2f"|format(bench_pct) }}%</span></div>
+    {% set bench_label = bench_pct|signed_pct %}
+    <div class="ov-bench">S&amp;P 500 <span class="{% if bench_label.startswith('+') %}pos{% elif bench_label.startswith('−') %}neg{% endif %}">{{ bench_label }}</span></div>
     {% endif %}
 {% endmacro %}
 <div class="review-hero">
@@ -77,13 +100,13 @@
         </form>
         {% endif %}
     </div>
-    <p class="ov-date">{{ (review_date or today).strftime('%A, %b %-d') }} close</p>
+    <p class="ov-date">{{ (review_date or today)|session_date('long', today) }} close</p>
     {% if _book_value is not none or _book or equity_snapshot %}
     <div class="ov-top">
         <div>
             <div class="ov-k">{% if paper_only %}Paper account value{% else %}Total value{% endif %}{% if _book_n %} across {{ _book_n }} account{{ 's' if _book_n != 1 }}{% endif %}</div>
-            {% if _book_value is not none %}
-            <div class="ov-big">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(_book_value) }}{% endif %}</div>
+            {% if _hero.shown is not none %}
+            <div class="ov-big">{% if privacy_mode %}••••{% else %}{{ _hero.shown|plain_whole }}{% endif %}</div>
             {% else %}
             <div class="ov-big ov-dash">—</div>
             {% endif %}
@@ -107,7 +130,7 @@
             {% if equity_snapshot and equity_snapshot.pct_invested is not none %}
             <div class="ov-big ov-invest">{{ "%.0f"|format(equity_snapshot.pct_invested) }}%</div>
             {% if equity_snapshot.cash_balance is not none %}
-            <div class="ov-bench">{% if privacy_mode %}•••• cash{% else %}${{ "{:,.0f}".format(equity_snapshot.cash_balance) }} cash{% endif %}</div>
+            <div class="ov-bench">{% if privacy_mode %}•••• cash{% else %}{{ equity_snapshot.cash_balance|plain_whole }} cash{% endif %}</div>
             {% endif %}
             {% else %}
             <div class="ov-big ov-dash">—</div>
@@ -204,21 +227,21 @@ window.applyOverviewPerformanceState();
     <div class="ov-head">
         <div>
             <h2 class="section-header">What happened</h2>
-            <p>Fills dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }}, and the largest moves on shares you held.</p>
+            <p>Fills dated {{ _tt_day|session_date('dow', today) if _tt_day else 'the last close' }}, and the largest moves on shares you held.</p>
         </div>
     </div>
 {% if _tt.has_any or _tt_weekday %}
 <div class="ov-block">
     <div class="ov-head">
         <div>
-            <h3>Trades, {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'last close' }}</h3>
-            <p>Every fill dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }}, including adds and trims.</p>
+            <h3>Trades, {{ _tt_day|session_date('dow', today) if _tt_day else 'last close' }}</h3>
+            <p>Every fill dated {{ _tt_day|session_date('dow', today) if _tt_day else 'the last close' }}, including adds and trims.</p>
         </div>
         {% if _tt.count %}
         <div class="ov-pills-lite">
             <span class="ov-pl">{% with count=_tt.count, fill_count=_tt.fill_count %}{% include "_fill_count.html" %}{% endwith %}</span>
             {% if _tt.symbols %}<span class="ov-pl">{{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}</span>{% endif %}
-            {% if _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' }}">{{ "+" if _tt.net_gl > 0 else "−" }}${{ "{:,.0f}".format(_tt.net_gl|abs) }} realized</span>{% endif %}
+            {% if _tt.has_gl or _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' if _tt.net_gl < 0 else '' }}">{{ money(_tt.net_gl, 2, true) }} realized</span>{% endif %}
         </div>
         {% endif %}
     </div>
@@ -263,10 +286,17 @@ window.applyOverviewPerformanceState();
                 </td>
             </tr>
             {% endfor %}
+            {% if _tt.has_gl or _tt.net_gl %}
+            <tr class="tt-total">
+                <td class="tt-sticky" colspan="3">Total realized</td>
+                <td class="tt-money {% if _tt.net_gl > 0 %}text-positive{% elif _tt.net_gl < 0 %}text-negative{% endif %}">{{ money(_tt.net_gl, 2, true) }}</td>
+                <td class="tt-tag"></td>
+            </tr>
+            {% endif %}
         </table>
     </div>
     {% else %}
-    <div class="tt-empty">No fills recorded for {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the last close' }}.</div>
+    <div class="tt-empty">No fills recorded for {{ _tt_day|session_date('dow', today) if _tt_day else 'the last close' }}.</div>
     {% endif %}
     {% if _tt.cash %}
     <div class="ov-subk">Cash and fees</div>
@@ -285,7 +315,7 @@ window.applyOverviewPerformanceState();
         <summary>How this is computed</summary>
         <p>
             Rows come from the same fill feed as a past day's review
-            (broker history dated {{ _tt_day.strftime('%a %b %-d') if _tt_day else 'the session' }}).
+            (broker history dated {{ _tt_day|session_date('dow', today) if _tt_day else 'the session' }}).
             This is not the weekly table below: a covered-call write on a
             stock you've held for months shows here even though that group
             didn't newly open this week.
@@ -311,7 +341,7 @@ window.applyOverviewPerformanceState();
    SESSION MOVERS — biggest stock $ impact on holdings (last close)
    ════════════════════════════════════ #}
 {% if today_movers and (today_movers.winners or today_movers.losers or today_movers.options or today_movers.dividends) %}
-{% set tm_day = today_movers.as_of_label or (review_date.strftime('%a %b %-d') if review_date else 'last close') %}
+{% set tm_day = today_movers.as_of_label or (review_date|session_date('dow', today) if review_date else 'last close') %}
 <div class="ov-block">
     <div class="ov-head">
         <div>
@@ -319,11 +349,12 @@ window.applyOverviewPerformanceState();
             <p>Your holdings. Top 5 up and top 5 down by dollar impact.</p>
         </div>
         {% if today_movers.combined_impact is not none %}
-        {% set ti = today_movers.combined_impact %}
+        {% set _parts = today_movers|mover_parts %}
         <div class="ov-pills-lite">
-            <span class="ov-pl {{ 'gn' if ti >= 0 else 'rd' }}">{{ "+" if ti >= 0 else "−" }}${{ "{:,.0f}".format(ti|abs) }} impact</span>
-            <span class="ov-pl">stocks {{ "+" if today_movers.total_impact >= 0 else "−" }}${{ "{:,.0f}".format(today_movers.total_impact|abs) }}</span>
-            {% if today_movers.options %}<span class="ov-pl">options {{ "+" if today_movers.options_impact >= 0 else "−" }}${{ "{:,.0f}".format(today_movers.options_impact|abs) }}</span>{% endif %}
+            <span class="ov-pl {{ 'gn' if _parts.impact > 0 else 'rd' if _parts.impact < 0 else '' }}">{{ _parts.impact|signed_whole }} impact</span>
+            <span class="ov-pl">stocks {{ _parts.stocks|signed_whole }}</span>
+            {% if today_movers.options or _parts.options %}<span class="ov-pl">options {{ _parts.options|signed_whole }}</span>{% endif %}
+            {% if _parts.dividends %}<span class="ov-pl">dividends {{ _parts.dividends|signed_whole }}</span>{% endif %}
         </div>
         {% endif %}
     </div>
@@ -350,14 +381,14 @@ window.applyOverviewPerformanceState();
                     {% else %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-positive">+{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                        <div class="mover-pct text-positive">{{ m.price_change_pct|signed_pct }}</div>
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
                         <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
-                    <div class="mover-dollar text-positive">+${{ "{:,.0f}".format(m.dollar_impact) }}</div>
+                    <div class="mover-dollar text-positive">{{ m.dollar_impact|signed_whole }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _mv.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
@@ -383,14 +414,14 @@ window.applyOverviewPerformanceState();
                     {% else %}
                     <div>
                         <div class="mover-sym">{{ m.symbol }}</div>
-                        <div class="mover-pct text-negative">{{ "%.2f"|format(m.price_change_pct) }}%</div>
+                        <div class="mover-pct text-negative">{{ m.price_change_pct|signed_pct }}</div>
                     </div>
                     <div>
                         <div class="mover-meta">{{ "{:,.0f}".format(m.shares) }} sh @ ${{ "{:,.2f}".format(m.today_close) }}</div>
                         <div class="mover-meta">{{ money(m.price_change, 2, true) }}/sh</div>
                     </div>
                     {% endif %}
-                    <div class="mover-dollar text-negative">−${{ "{:,.0f}".format(m.dollar_impact|abs) }}</div>
+                    <div class="mover-dollar text-negative">{{ m.dollar_impact|signed_whole }}</div>
                     <div class="ov-mbar"><i style="width:{{ ((m.dollar_impact|abs) / _mv.m * 100)|round(0) }}%"></i></div>
                 </a>
                 {% else %}
@@ -405,15 +436,16 @@ window.applyOverviewPerformanceState();
     </details>
     {% if today_movers.dividends %}
     <div style="margin-top:.9rem;">
+        {% set _div_label = today_movers.dividends_impact|signed_whole %}
         <div class="ov-subk">
             Dividends paid {{ tm_day }}
-            <span class="pos">+${{ "{:,.0f}".format(today_movers.dividends_impact) }}</span>
+            <span class="{% if _div_label.startswith('+') %}pos{% elif _div_label.startswith('−') %}neg{% endif %}">{{ _div_label }}</span>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:.4rem;">
             {% for d in today_movers.dividends %}
-            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge ov-div-chip text-decoration-none"
+            <a href="{{ scoped_url('position_detail', symbol=d.symbol) }}" class="badge ov-div-chip text-decoration-none{% if d.amount < 0 %} neg{% endif %}"
                data-peek-symbol="{{ d.symbol }}" data-peek-impact="{{ d.amount }}">
-                {{ d.symbol }} +${{ "{:,.2f}".format(d.amount) }}
+                {{ d.symbol }} {{ money(d.amount, 2, true) }}
             </a>
             {% endfor %}
         </div>
@@ -430,29 +462,57 @@ window.applyOverviewPerformanceState();
    ACCOUNT SNAPSHOT
    ════════════════════════════════════ #}
 {% if today_snapshots_by_account %}
-{% macro money_cell(comp, dash="—") %}
-    {% if comp and comp.has_data and comp.delta_pct is not none %}
-    {% set pos = comp.delta_pct >= 0 %}
-    <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
-        {{ "+" if pos else "" }}{{ "%.2f"|format(comp.delta_pct) }}%
-    </div>
-    {% if comp.delta is not none %}
-    <div class="snap-cell-pct {% if comp.delta >= 0 %}text-positive{% else %}text-negative{% endif %}">
-        {% if privacy_mode %}••••{% elif comp.delta >= 0 %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+{% macro snap_dollar(comp) %}
+    {% set hd = namespace(n=none) %}
+    {% if comp.display_delta is defined and comp.display_delta is not none %}
+    {% set hd.n = comp.display_delta %}
+    {% elif comp.delta is not none %}
+    {% set hd.n = comp.delta|whole_dollars %}
+    {% endif %}
+    {% if hd.n is not none %}
+    {% set label = hd.n|signed_whole %}
+    <div class="snap-cell-pct {% if label.startswith('+') %}text-positive{% elif label.startswith('−') %}text-negative{% endif %}">
+        {% if privacy_mode %}••••{% else %}{{ label }}{% endif %}
     </div>
     {% endif %}
+{% endmacro %}
+{% macro money_cell(comp, dash="—") %}
+    {% if comp and comp.has_data and comp.delta_pct is not none %}
+    {% set pct_label = comp.delta_pct|signed_pct %}
+    <div class="snap-cell-val {% if pct_label.startswith('+') %}text-positive{% elif pct_label.startswith('−') %}text-negative{% endif %}">
+        {{ pct_label }}
+    </div>
+    {{ snap_dollar(comp) }}
     {% elif comp and comp.has_data and comp.delta is not none %}
-    {% set pos = comp.delta >= 0 %}
-    <div class="snap-cell-val {% if pos %}text-positive{% else %}text-negative{% endif %}">
-        {% if privacy_mode %}••••{% elif pos %}+${{ "{:,.0f}".format(comp.delta) }}{% else %}−${{ "{:,.0f}".format(comp.delta|abs) }}{% endif %}
+    {% set hd = namespace(n=none) %}
+    {% if comp.display_delta is defined and comp.display_delta is not none %}
+    {% set hd.n = comp.display_delta %}
+    {% else %}
+    {% set hd.n = comp.delta|whole_dollars %}
+    {% endif %}
+    {% set label = hd.n|signed_whole %}
+    <div class="snap-cell-val {% if label.startswith('+') %}text-positive{% elif label.startswith('−') %}text-negative{% endif %}">
+        {% if privacy_mode %}••••{% else %}{{ label }}{% endif %}
     </div>
     {% else %}<div class="snap-cell-val snap-cell-dash">{{ dash }}</div>{% endif %}
 {% endmacro %}
 {% macro bench_pct_cell(pct) %}
     {% if pct is not none %}
-    <div class="snap-cell-val {% if pct >= 0 %}text-positive{% else %}text-negative{% endif %}">
-        {{ "+" if pct >= 0 else "" }}{{ "%.2f"|format(pct) }}%
+    {% set pct_label = pct|signed_pct %}
+    <div class="snap-cell-val {% if pct_label.startswith('+') %}text-positive{% elif pct_label.startswith('−') %}text-negative{% endif %}">
+        {{ pct_label }}
     </div>
+    {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
+{% endmacro %}
+{% macro snap_value(raw, display) %}
+    {% set hv = namespace(n=none) %}
+    {% if display is defined and display is not none %}
+    {% set hv.n = display %}
+    {% elif raw is not none %}
+    {% set hv.n = raw|whole_dollars %}
+    {% endif %}
+    {% if hv.n is not none %}
+    <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}{{ hv.n|plain_whole }}{% endif %}</div>
     {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
 {% endmacro %}
 {% macro share_cell(value, total) %}
@@ -478,7 +538,7 @@ window.applyOverviewPerformanceState();
             <div>Account</div>
             <div class="snap-col-share">Share of book</div>
             <div>Value</div>
-            <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date.strftime('%A, %b %-d') }}{% endif %}">Today</div>
+            <div title="{% if overview_prior_date %}Close vs {{ overview_prior_date|session_date('long', today) }}{% endif %}">Today</div>
             <div class="snap-col-week">1 week</div>
             <div class="snap-col-month">1 month</div>
         </div>
@@ -504,11 +564,7 @@ window.applyOverviewPerformanceState();
                 {% endif %}
             </div>
             <div class="snap-col-share" data-label="Share of book">{{ share_cell(snap.today_value, _share_total or snap.today_value) }}</div>
-            <div data-label="Value">
-                {% if snap.today_value is not none %}
-                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(snap.today_value) }}{% endif %}</div>
-                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
-            </div>
+            <div data-label="Value">{{ snap_value(snap.today_value, snap.display_value) }}</div>
             <div data-label="Today">{{ money_cell(snap.comparisons.day) }}</div>
             <div class="snap-col-week" data-label="1 week">{{ money_cell(snap.comparisons.week) }}</div>
             <div class="snap-col-month" data-label="1 month">{{ money_cell(snap.comparisons.month) }}</div>
@@ -521,11 +577,7 @@ window.applyOverviewPerformanceState();
                 <div class="acct-meta">{{ today_snapshots_total.accounts_count }} account{{ "s" if today_snapshots_total.accounts_count != 1 }}</div>
             </div>
             <div class="snap-col-share" data-label="Share of book"></div>
-            <div data-label="Value">
-                {% if today_snapshots_total.today_value is not none %}
-                <div class="snap-cell-val">{% if privacy_mode %}••••{% else %}${{ "{:,.0f}".format(today_snapshots_total.today_value) }}{% endif %}</div>
-                {% else %}<div class="snap-cell-val snap-cell-dash">—</div>{% endif %}
-            </div>
+            <div data-label="Value">{{ snap_value(today_snapshots_total.today_value, today_snapshots_total.display_value) }}</div>
             <div data-label="Today">{{ money_cell(today_snapshots_total.comparisons.day) }}</div>
             <div class="snap-col-week" data-label="1 week">{{ money_cell(today_snapshots_total.comparisons.week) }}</div>
             <div class="snap-col-month" data-label="1 month">{{ money_cell(today_snapshots_total.comparisons.month) }}</div>
