@@ -551,6 +551,9 @@ def find_user_by_username_or_email(raw: str):
     if not text:
         return None
     from app.models import User
+    exact = User.get_by_username(text)
+    if exact is not None:
+        return exact
     # @handle from a signup ping. One leading @ and no other @.
     if text.startswith("@") and text.count("@") == 1:
         return _match_username(text[1:])
