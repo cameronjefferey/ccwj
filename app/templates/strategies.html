@@ -67,6 +67,14 @@
     .month-latest-amt.up { color: var(--gain); }
     .month-latest-amt.down { color: var(--loss); }
 
+    @media (min-width: 900px) {
+        .strat-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+        .strat-card { padding: 1.2rem 1.35rem; }
+        .sc-stat-value { font-size: 1.45rem; }
+        #stratAcct th, #stratType th { font-size: .78rem; }
+        #stratAcct td, #stratType td { font-size: 1rem; padding: .55rem .7rem; }
+    }
+
     .trend-chart-wrap { position: relative; height: 180px; width: 100%; min-width: 0; }
     .dte-bar-row { display: flex; align-items: center; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--ht-line); min-width: 0; }
     .dte-bar-row:last-child { border-bottom: none; }
@@ -370,7 +378,7 @@
                     {% endfor %}
                 </div>
                 <div class="month-latest">
-                    <span class="month-latest-name">{{ _mo[last.month[-2:]|int] }}</span>
+                    <span class="month-latest-name">{{ _mo[last.month[-2:]|int] }}{% if last.month[:4]|int != current_year() %} {{ last.month[:4] }}{% endif %}</span>
                     <span class="month-latest-amt {% if last.pnl > 0 %}up{% elif last.pnl < 0 %}down{% endif %}">{{ money(last.pnl, 0, true) }}</span>
                 </div>
             </div>
@@ -450,12 +458,17 @@
                     {% endfor %}
                 </tbody>
                 {% set _bd_tot = focus_breakdown_rows | sum(attribute='total') %}
+                {% set _bd = namespace(realized=0, unrealized=0, has_unreal=false) %}
+                {% for r in focus_breakdown_rows %}
+                    {% if r.realized is not none %}{% set _bd.realized = _bd.realized + r.realized %}{% endif %}
+                    {% if r.unrealized is not none %}{% set _bd.unrealized = _bd.unrealized + r.unrealized %}{% set _bd.has_unreal = true %}{% endif %}
+                {% endfor %}
                 <tfoot>
                     <tr>
                         <th data-label="Type">Total</th>
                         <th data-label="Total return" class="text-end strat-money {{ 'text-positive' if _bd_tot >= 0 else 'text-negative' }}">{{ money(_bd_tot, 2, true) }}</th>
-                        <th data-label="Realized"></th>
-                        <th data-label="Unrealized"></th>
+                        <th data-label="Realized" class="text-end strat-money">{{ money(_bd.realized, 2, true) }}</th>
+                        <th data-label="Unrealized" class="text-end strat-money">{% if _bd.has_unreal %}{{ money(_bd.unrealized, 2, true) }}{% else %}&mdash;{% endif %}</th>
                         <th data-label="Detail" class="strat-detail"></th>
                     </tr>
                 </tfoot>
@@ -596,6 +609,14 @@
                         </tr>
                         {% endfor %}
                     </tbody>
+                    <tfoot>
+                        <tr>
+                            <th data-label="Account">Total</th>
+                            <th data-label="Trades" class="text-end">{{ focus_accounts | sum(attribute='num_trades') }}</th>
+                            <th data-label="Win rate" class="text-end">{% if focus_strategy.win_rate is not none %}{{ "%.0f%%"|format(focus_strategy.win_rate) }}{% else %}&mdash;{% endif %}</th>
+                            <th data-label="Total return" class="text-end strat-money">{{ money(focus_strategy.total_return, 2, true) }}</th>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>

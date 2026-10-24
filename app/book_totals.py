@@ -65,6 +65,68 @@ def reconcile_book(realized, unrealized, dividends) -> dict:
     }
 
 
+def allocate_rounded(raw_values, target, places=0) -> list:
+    """Round each value, then park the remainder on the largest one.
+
+    ``places`` is 0 for whole dollars and 2 for cents. The returned
+    numbers sum to ``target`` rounded to that same precision. An empty
+    input stays empty. Ties keep the earlier row.
+    """
+    raws = [_num(value) for value in raw_values]
+    if not raws:
+        return []
+    factor = 10 ** int(places)
+    shown = [int(round(value * factor)) for value in raws]
+    drift = int(round(_num(target) * factor)) - sum(shown)
+    if drift:
+        index = max(range(len(shown)), key=lambda i: (abs(raws[i]), -i))
+        shown[index] += drift
+    if places <= 0:
+        return shown
+    return [value / factor for value in shown]
+
+
+def reconcile_component_rows(rows, components, targets) -> list:
+    """Whole-dollar columns that add down and across.
+
+    Each component column sums to ``targets``. ``shown_total`` on a row
+    is the sum of that row's shown components, so the total column
+    matches the header and each row still adds across.
+    """
+    if not rows:
+        return rows
+    shown = {
+        key: allocate_rounded(
+            [row.get(key) for row in rows],
+            targets.get(key, 0),
+            places=0,
+        )
+        for key in components
+    }
+    for index, row in enumerate(rows):
+        total = 0
+        for key in components:
+            value = shown[key][index]
+            row[f"shown_{key}"] = value
+            total += value
+        row["shown_total"] = total
+    return rows
+
+
+def pin_rounded_column(rows, key, target, places=2) -> list:
+    """Make a displayed money column sum to ``target``.
+
+    Each row is rounded on its own, then a leftover cent is parked on
+    the largest absolute row.
+    """
+    if not rows:
+        return rows
+    shown = allocate_rounded([row.get(key) for row in rows], target, places=places)
+    for row, value in zip(rows, shown):
+        row[key] = value
+    return rows
+
+
 def book_totals_from_frame(df) -> dict:
     """Shared hero from a ``positions_summary``-shaped frame.
 
