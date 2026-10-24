@@ -40,6 +40,20 @@ def test_parse_occ():
     assert parse_occ("RKLB") is None
     assert parse_occ(None) is None
     assert parse_occ("BRK B 250117P00300500")["strike"] == 300.5
+    # Warehouse canonical form has no space before the date block.
+    compact = parse_occ("SPXW251022C06700000")
+    assert compact["expiry"] == date(2025, 10, 22)
+    assert compact["option_type"] == "call"
+    assert compact["strike"] == 6700.0
+    equity = parse_occ("AAPL260117C00200000")
+    assert equity["expiry"] == date(2026, 1, 17)
+    assert equity["strike"] == 200.0
+    # Schwab long form (demo seed, before stg_history canonicalizes it).
+    long_form = parse_occ("NVDA 09/18/2026 220 C")
+    assert long_form == {
+        "expiry": date(2026, 9, 18), "option_type": "call", "strike": 220.0,
+    }
+    assert parse_occ("NVDA 09/18/2026 200 P")["option_type"] == "put"
 
 
 def test_posted_expiry_settlement_is_not_a_roll():
