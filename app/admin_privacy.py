@@ -543,17 +543,23 @@ def find_user_by_username_or_email(raw: str):
     """Resolve an admin add-form value.
 
     A single leading ``@`` is a username handle (the signup ping is
-    ``@Name``). Any other ``@`` is an email, matched without regard to
-    case. Usernames match exactly first, then case-insensitively when
-    that spelling belongs to one account. Blank input returns None.
+    ``@Name``) after a literal username match. A legacy account named
+    ``@Ada`` wins over the handle ``Ada``, including a unique case
+    difference. Two case variants of that legacy name match nobody.
+    Any other ``@`` is an email, matched without regard to case, and
+    only then a username. Plain usernames match exactly first, then
+    case-insensitively when that spelling belongs to one account.
+    Blank input returns None.
     """
     text = (raw or "").strip()
     if not text:
         return None
     from app.models import User
     # @handle from a signup ping. One leading @ and no other @.
+    # A stored username may itself be "@Ada"; that row wins first.
     if text.startswith("@") and text.count("@") == 1:
-        return _match_username(text[1:])
+        from app.auth import resolve_leading_at_username
+        return resolve_leading_at_username(text)
     if "@" in text:
         found = User.get_by_email(text)
         if found is not None:
