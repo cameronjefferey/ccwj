@@ -286,66 +286,89 @@
         z-index: 6;
         box-sizing: border-box;
         width: max-content;
-        max-width: 240px;
-        padding: 8px 10px 9px;
+        max-width: min(420px, 94%);
+        padding: 6px 8px;
         background: #0a0e17;
         color: #e8edf7;
         border: 1px solid #243049;
-        border-radius: 10px;
-        box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+        border-radius: 8px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, .45);
         font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
-        font-size: 13px;
-        line-height: 1.35;
+        font-size: 12.5px;
+        line-height: 1.25;
         pointer-events: none;
         overflow-wrap: anywhere;
+    }
+    .ht-pnl-tip.is-expanded {
+        pointer-events: auto;
+        max-height: 280px;
+        overflow: auto;
     }
     .ht-pnl-tip[hidden] { display: none !important; }
     .ht-pnl-tip-date {
         color: #8a97b1;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
     }
     .ht-pnl-tip-row {
         display: flex;
         gap: 6px;
-        align-items: flex-start;
-        margin-top: 5px;
+        align-items: baseline;
+        margin-top: 2px;
     }
     .ht-pnl-tip-dot {
-        width: 7px;
-        height: 7px;
+        width: 6px;
+        height: 6px;
         border-radius: 50%;
-        margin-top: 5px;
         flex: none;
+        align-self: center;
     }
     .ht-pnl-tip-label {
         font-weight: 500;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
+        min-width: 0;
+        white-space: nowrap;
     }
     .ht-pnl-tip-num {
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
         font-weight: 500;
     }
+    .ht-pnl-tip-tail {
+        margin-left: auto;
+        display: inline-flex;
+        gap: 4px;
+        align-items: baseline;
+        white-space: nowrap;
+        padding-left: 8px;
+    }
+    .ht-pnl-tip-sep { color: #8a97b1; }
     .ht-pnl-tip-amt {
-        margin: 1px 0 0 13px;
+        margin: 0;
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-variant-numeric: tabular-nums;
         font-weight: 500;
-        font-size: 13px;
+        font-size: 12px;
     }
     .ht-pnl-tip-amt.pos { color: var(--pd-gain); }
     .ht-pnl-tip-amt.neg { color: var(--pd-loss); }
     .ht-pnl-tip-more {
-        margin: 4px 0 0 13px;
+        margin: 3px 0 0 12px;
         color: #8a97b1;
-        font-size: 12px;
+        font-size: 11px;
+        font-family: inherit;
+        background: none;
+        border: 0;
+        padding: 0;
+        text-align: left;
+        pointer-events: auto;
+        cursor: pointer;
     }
+    .ht-pnl-tip-more:hover,
+    .ht-pnl-tip-more:focus-visible { color: #e8edf7; }
     .ht-pnl-tip-total {
-        margin-top: 6px;
+        margin-top: 4px;
+        padding-top: 3px;
+        border-top: 1px solid #243049;
         color: #8a97b1;
         font-size: 11px;
     }

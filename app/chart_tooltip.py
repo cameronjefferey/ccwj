@@ -19,7 +19,10 @@ _MONTHS = (
 )
 
 # How many action lines the card shows before "+N more".
-TIP_VISIBLE_MAX = 3
+# Rolls and same-day structures are already one tip by the time this
+# runs. The card shows every line up to this count; past it, the
+# "+N more" control expands the rest (see pnl-tooltip.js VISIBLE).
+TIP_VISIBLE_MAX = 5
 
 _MINUS = "\u2212"
 
@@ -85,7 +88,12 @@ def format_running_number(value):
 
 
 def clip_tips(tips, limit=TIP_VISIBLE_MAX):
-    """(shown, hidden_count). Hidden count is what '+2 more' reports."""
+    """(shown, hidden_count). Hidden count is what '+2 more' reports.
+
+    Pass tips after roll / spread collapse. Clipping the raw fills hides
+    a leg that the running total still includes and leaves "+N more" as
+    a dead end — the chart card expands that remainder instead.
+    """
     tips = [t for t in (tips or []) if t]
     if limit < 1:
         limit = 1

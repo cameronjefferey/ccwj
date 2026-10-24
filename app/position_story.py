@@ -40,6 +40,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from app.chart_tooltip import format_tip_date, present_tip
+from app.option_formatting import parse_occ as _parse_occ_symbol
 
 __all__ = [
     "build_position_story",
@@ -52,10 +53,6 @@ __all__ = [
     "_span_text",
 ]
 
-
-# OCC option symbol: "RKLB 250117C00037000" -> expiry / type / strike.
-# Lazy prefix tolerates underlyings that themselves contain spaces.
-_OCC_RE = re.compile(r"^\s*.+?\s+(\d{2})(\d{2})(\d{2})([CP])(\d{8})\s*$")
 
 # Interludes only narrate stretches a human would call "waiting":
 # at least ~2.5 weeks of silence AND a move worth talking about.
@@ -72,22 +69,33 @@ _STRUCTURE_MAX_SPAN_DAYS = 7
 
 
 def parse_occ(trade_symbol):
-    """Parse an OCC option symbol into {expiry, option_type, strike}.
+    """Parse an option symbol into {expiry, option_type, strike}.
 
-    Returns None for equity rows / unparseable strings.
+    The warehouse stores compact OCC with no space (``SPXW251022C06700000``).
+    Demo seeds and Schwab exports use long form (``NVDA 09/18/2026 220 C``).
+    Space-padded OSI (``RKLB 250117C00037000``) still parses. A regex that
+    required whitespace before the date block rejected both compact and
+    long form, so the chart tip fell back to "× options" and roll / spread
+    detection never saw the legs.
+
+    Returns None for equity rows and unparseable strings. The shape stays
+    the story shape (expiry date, call/put, strike) — not the raw OCC dict.
     """
-    m = _OCC_RE.match(str(trade_symbol or ""))
-    if not m:
+    parsed = _parse_occ_symbol(trade_symbol)
+    if not parsed:
         return None
-    yy, mm, dd, cp, strike8 = m.groups()
+    cp = parsed.get("cp")
+    if cp not in ("C", "P"):
+        return None
     try:
-        expiry = date(2000 + int(yy), int(mm), int(dd))
-    except ValueError:
+        expiry = date(2000 + int(parsed["yy"]), int(parsed["mm"]), int(parsed["dd"]))
+        strike = float(parsed["strike"])
+    except (TypeError, ValueError, OverflowError):
         return None
     return {
         "expiry": expiry,
         "option_type": "call" if cp == "C" else "put",
-        "strike": int(strike8) / 1000.0,
+        "strike": strike,
     }
 
 
@@ -108,6 +116,63 @@ def _fmt_strike(strike):
     if strike == int(strike):
         return f"${int(strike)}"
     return f"${strike:g}"
+
+
+def _strike_body(strike):
+    """'6,700' / '12.50' — the number half of a chart-tip contract."""
+    value = float(strike)
+    if abs(value - round(value)) < 1e-6:
+        return f"{int(round(value)):,}"
+    return f"{value:,.2f}"
+
+
+def _tip_contract(occ):
+    """'$6,700C' / '$12.50P'. Chart tips use the letter, not the word."""
+    letter = "C" if occ.get("option_type") == "call" else "P"
+    return f"${_strike_body(occ['strike'])}{letter}"
+
+
+def _spread_pair(fills):
+    """'$215/$220C' — strikes low to high, one call/put letter."""
+    letter = "C" if fills[0]["occ"]["option_type"] == "call" else "P"
+    strikes = sorted(float(f["occ"]["strike"]) for f in fills)
+    return f"${_strike_body(strikes[0])}/${_strike_body(strikes[-1])}{letter}"
+
+
+_BARE_LIFECYCLE = ("Expired", "Assigned", "Exercised")
+
+
+def _finalize_day_tips(tips):
+    """Account nicknames are a day-level fact, and bare lifecycle words collapse.
+
+    Show the account only when this day's tips come from two or more
+    physical accounts. A position that spans accounts still omits the
+    name on a day that only one of them traded. Two unparsed "Expired"
+    lines with no contract and no symbol become one — a parsed expiry
+    names the strike and is kept.
+    """
+    keys = set()
+    for tip in tips or []:
+        key = tip.get("_acct_key")
+        if key:
+            keys.add(key)
+    show_acct = len(keys) >= 2
+    out = []
+    seen_bare = set()
+    for tip in tips or []:
+        if not tip:
+            continue
+        acct = (tip.pop("_acct", None) or "").strip()
+        tip.pop("_acct_key", None)
+        if show_acct and acct:
+            tip["acct"] = acct
+        label = (tip.get("label") or "").strip()
+        if label in _BARE_LIFECYCLE and not tip.get("amount"):
+            if label in seen_bare:
+                continue
+            seen_bare.add(label)
+        out.append(tip)
+    return out
 
 
 def _fmt_expiry(expiry, anchor):
@@ -311,11 +376,15 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
     exit_notes = exit_notes or {}
 
     def _stamp(tip):
+        # Account display is decided after the whole day is known
+        # (_finalize_day_tips). Stamp the nickname now; drop it unless
+        # this day's tips span two accounts.
         if not tip:
             return None
         out = dict(tip)
-        if multi_account and account:
-            out["acct"] = account
+        if account:
+            out["_acct"] = account
+            out["_acct_key"] = state_key
         return out
     label_map = label_map or {}
 
@@ -526,27 +595,51 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
                 tips.append(_stamp(_equity_tip(f)))
                 kinds.append(_RAW_VERBS[f["action"]][1])
 
+        def _narrate_option(f):
+            """Review sentence + state. Returns (narrated, exercise side).
+
+            ``exercise side`` is True/False for an exercise and None
+            otherwise. State updates live inside ``_phrase_option``, so
+            this must run once per fill.
+            """
+            short_exercise = _exercise_is_short(f, st, day_ctx)
+            s = _phrase_option(f, st, day_ctx, stats)
+            if not s:
+                return False, short_exercise
+            sentences.append(_tag(s, account))
+            kinds.append(_RAW_VERBS[f["action"]][1])
+            # Verdict from the execution-review layer, on the
+            # COMPLETING close only (net position back to zero) so a
+            # contract closed in pieces gets one verdict, not one per
+            # partial fill.
+            if f["action"] in ("option_buy_to_close",
+                               "option_sell_to_close"):
+                rec = st.opt(f["trade_symbol"])
+                if abs(rec["net"]) < 0.0001:
+                    note = _note_for(f)
+                    if note:
+                        sentences.append(_tag(note, account))
+            return True, short_exercise
+
+        # Same-day spread / condor closes become one net tip before the
+        # per-leg lines. The review still narrates each leg. Rolls already
+        # consumed their close, and a settlement is not a close.
+        for kind_name, group in _net_close_groups(opt_fills, consumed):
+            ordered = sorted(group, key=lambda f: f["uid"])
+            for f in ordered:
+                consumed.add(id(f))
+                _narrate_option(f)
+            close_tip = _net_close_tip(kind_name, ordered)
+            if close_tip:
+                tips.append(_stamp(close_tip))
+
         # ── Remaining option fills.
         for f in opt_fills:
             if id(f) in consumed:
                 continue
-            short_exercise = _exercise_is_short(f, st, day_ctx)
-            s = _phrase_option(f, st, day_ctx, stats)
-            if s:
-                sentences.append(_tag(s, account))
+            narrated, short_exercise = _narrate_option(f)
+            if narrated:
                 tips.append(_stamp(_option_tip(f, short_exercise=short_exercise)))
-                kinds.append(_RAW_VERBS[f["action"]][1])
-                # Verdict from the execution-review layer, on the
-                # COMPLETING close only (net position back to zero) so a
-                # contract closed in pieces gets one verdict, not one per
-                # partial fill.
-                if f["action"] in ("option_buy_to_close",
-                                   "option_sell_to_close"):
-                    rec = st.opt(f["trade_symbol"])
-                    if abs(rec["net"]) < 0.0001:
-                        note = _note_for(f)
-                        if note:
-                            sentences.append(_tag(note, account))
 
         if len(sentences) == sentences_before and fills:
             # Nothing narratable (shouldn't happen) — keep the day silent
@@ -558,7 +651,7 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         if k in kinds:
             dominant = k
             break
-    return sentences, dominant, tips
+    return sentences, dominant, _finalize_day_tips(tips)
 
 
 def _one_of_type(fills, otype):
@@ -685,7 +778,7 @@ def _try_vertical(group):
         f"{_structure_cash(net)}."
     )
     kind = "sell" if net >= 0 else "buy"
-    return sentence, legs, kind, _opened_tip(f"a {otype} spread", exp, net)
+    return sentence, legs, kind, _opened_spread_tip(legs, exp, net)
 
 
 def _try_strangle(group):
@@ -768,14 +861,148 @@ def _plan_open_structures(all_fills):
         if span > _STRUCTURE_MAX_SPAN_DAYS:
             continue
         hit = _try_iron(group) or _try_vertical(group) or _try_strangle(group)
+        # A third leg used to hide a real vertical (the whole group failed
+        # the len==2 test). Peel an unambiguous same-size pair per type
+        # when the group is not itself one named structure. Two spreads of
+        # the same type stay ungrouped — pairing them would invent a net.
+        found = [hit] if hit else _peel_verticals(group)
+        for sentence, struct_fills, kind, tip in found:
+            last = max(f["date"] for f in struct_fills)
+            sk = struct_fills[0]["state_key"]
+            uids = [f["uid"] for f in struct_fills]
+            plan.setdefault((last, sk), []).append((sentence, uids, kind, tip))
+    return plan
+
+
+def _peel_verticals(group):
+    """Unambiguous short+long pairs inside a group that is not one structure.
+
+    Exactly one short and one long of a type, same size, different strikes.
+    Two shorts of the same type are left for per-leg tips so the cash is
+    not assigned to the wrong wing.
+    """
+    hits = []
+    used = set()
+    for otype in ("put", "call"):
+        shorts = [
+            f for f in group
+            if id(f) not in used
+            and f["action"] == "option_sell_to_open"
+            and f["occ"]["option_type"] == otype
+        ]
+        longs = [
+            f for f in group
+            if id(f) not in used
+            and f["action"] == "option_buy_to_open"
+            and f["occ"]["option_type"] == otype
+        ]
+        if len(shorts) != 1 or len(longs) != 1:
+            continue
+        short, long = shorts[0], longs[0]
+        if abs(abs(short["quantity"]) - abs(long["quantity"])) > 1e-6:
+            continue
+        if abs(short["occ"]["strike"] - long["occ"]["strike"]) < 0.01:
+            continue
+        hit = _try_vertical([short, long])
         if not hit:
             continue
-        sentence, struct_fills, kind, tip = hit
-        last = max(f["date"] for f in struct_fills)
-        sk = struct_fills[0]["state_key"]
-        uids = [f["uid"] for f in struct_fills]
-        plan.setdefault((last, sk), []).append((sentence, uids, kind, tip))
-    return plan
+        hits.append(hit)
+        used.add(id(short))
+        used.add(id(long))
+    return hits
+
+
+def _net_close_groups(opt_fills, consumed):
+    """Same-day closes that are one condor or one vertical.
+
+    Returns ``[(name, fills)]``. ``name`` is ``iron condor``,
+    ``iron butterfly``, or ``vertical``. A 20-lot does not pair with a
+    10-lot. Settlements and fills already used by a roll are skipped.
+    """
+    closers = []
+    for f in opt_fills or []:
+        if id(f) in consumed:
+            continue
+        if f["action"] not in ("option_buy_to_close", "option_sell_to_close"):
+            continue
+        if not f.get("occ") or _fill_is_settlement(f):
+            continue
+        closers.append(f)
+    by_exp = {}
+    for f in closers:
+        by_exp.setdefault(f["occ"]["expiry"], []).append(f)
+    groups = []
+    claimed = set()
+    for legs in by_exp.values():
+        name = _iron_close_name(legs)
+        if name:
+            groups.append((name, legs))
+            claimed.update(id(f) for f in legs)
+            continue
+        for otype in ("put", "call"):
+            shorts = [
+                f for f in legs
+                if id(f) not in claimed
+                and f["action"] == "option_buy_to_close"
+                and f["occ"]["option_type"] == otype
+            ]
+            longs = [
+                f for f in legs
+                if id(f) not in claimed
+                and f["action"] == "option_sell_to_close"
+                and f["occ"]["option_type"] == otype
+            ]
+            if len(shorts) != 1 or len(longs) != 1:
+                continue
+            short, long = shorts[0], longs[0]
+            if abs(abs(short["quantity"]) - abs(long["quantity"])) > 1e-6:
+                continue
+            if abs(short["occ"]["strike"] - long["occ"]["strike"]) < 0.01:
+                continue
+            groups.append(("vertical", [short, long]))
+            claimed.add(id(short))
+            claimed.add(id(long))
+    return groups
+
+
+def _iron_close_name(legs):
+    """'iron condor' / 'iron butterfly' when four closes are that structure."""
+    shorts = [f for f in legs if f["action"] == "option_buy_to_close"]
+    longs = [f for f in legs if f["action"] == "option_sell_to_close"]
+    if len(legs) != 4 or len(shorts) != 2 or len(longs) != 2:
+        return None
+    sp = _one_of_type(shorts, "put")
+    sc = _one_of_type(shorts, "call")
+    lp = _one_of_type(longs, "put")
+    lc = _one_of_type(longs, "call")
+    if not all((sp, sc, lp, lc)):
+        return None
+    if not (lp["occ"]["strike"] < sp["occ"]["strike"]
+            and lc["occ"]["strike"] > sc["occ"]["strike"]):
+        return None
+    sizes = [abs(f["quantity"]) for f in legs]
+    if max(sizes) - min(sizes) > 1e-6:
+        return None
+    if abs(sp["occ"]["strike"] - sc["occ"]["strike"]) < 0.01:
+        return "iron butterfly"
+    return "iron condor"
+
+
+def _net_close_tip(kind, fills):
+    """One chart line for a same-day structure close. Net cash, named strikes."""
+    net = sum(f.get("amount") or 0.0 for f in fills)
+    anchor = fills[0]["date"]
+    exp = _fmt_expiry(fills[0]["occ"]["expiry"], anchor)
+    if kind == "vertical":
+        n = abs(fills[0]["quantity"])
+        label = f"Closed {_qty_times(n)} × {_spread_pair(fills)} · {exp}"
+    else:
+        label = f"Closed {kind} · {exp}"
+    return {
+        "label": label,
+        "amount": net,
+        "kind": "sell" if net >= 0 else "buy",
+    }
 
 
 def _exercise_is_short(f, st, day_ctx):
@@ -801,10 +1028,12 @@ def _exercise_is_short(f, st, day_ctx):
 def _option_tip(f, short_exercise=None):
     """Short chart label for one option fill. Cash is the fill, not P&L.
 
-    Opens keep the expiry ('Sold 2 × $320 call · Jun 26'). Closes do not
-    ('Bought back 2 × $285 call'). Expiry and assignment did not move cash
+    Opens keep the expiry ('Sold 2 × $320C · Jun 26'). Closes do not
+    ('Bought back 20 × $6,700C'). Expiry and assignment did not move cash
     that day, so they carry no amount — the kept premium stays in the
-    review sentence, not on the card.
+    review sentence, not on the card. The contract is strike plus C or P.
+    A symbol that does not parse keeps its own text instead of the word
+    "options", which made every leg look the same.
     """
     action = f.get("action")
     n = abs(f.get("quantity") or 0)
@@ -824,31 +1053,33 @@ def _option_tip(f, short_exercise=None):
         }.get(action, _RAW_VERBS.get(action, ("Fill",))[0])
         cash = None if action in (
             "option_expired", "option_assigned", "option_exercised") else amt
+        symbol = (f.get("trade_symbol") or "").strip()
         if action in ("option_expired", "option_assigned", "option_exercised"):
-            label = verb
+            label = f"{verb} · {symbol}" if symbol else verb
+        elif symbol:
+            label = f"{verb} {times} × {symbol}"
         else:
-            label = f"{verb} {times} × options"
+            label = f"{verb} {times}".strip()
         return {"label": label, "amount": cash, "kind": kind}
 
-    strike = _fmt_strike(occ["strike"])
-    otype = occ["option_type"]
+    contract = _tip_contract(occ)
     exp = _fmt_expiry(occ["expiry"], f["date"])
     if action == "option_sell_to_open":
-        return {"label": f"Sold {times} × {strike} {otype} · {exp}", "amount": amt, "kind": "sell"}
+        return {"label": f"Sold {times} × {contract} · {exp}", "amount": amt, "kind": "sell"}
     if action == "option_buy_to_open":
-        return {"label": f"Bought {times} × {strike} {otype} · {exp}", "amount": amt, "kind": "buy"}
+        return {"label": f"Bought {times} × {contract} · {exp}", "amount": amt, "kind": "buy"}
     if action == "option_buy_to_close":
-        return {"label": f"Bought back {times} × {strike} {otype}", "amount": amt, "kind": "buy"}
+        return {"label": f"Bought back {times} × {contract}", "amount": amt, "kind": "buy"}
     if action == "option_sell_to_close":
-        return {"label": f"Sold {times} × {strike} {otype}", "amount": amt, "kind": "sell"}
+        return {"label": f"Sold {times} × {contract}", "amount": amt, "kind": "sell"}
     if action == "option_expired":
-        return {"label": f"Expired · {strike} {otype}", "amount": None, "kind": "lifecycle"}
+        return {"label": f"Expired {times} × {contract}", "amount": None, "kind": "lifecycle"}
     if action == "option_assigned":
-        return {"label": f"Assigned · {strike} {otype}", "amount": None, "kind": "lifecycle"}
+        return {"label": f"Assigned {times} × {contract}", "amount": None, "kind": "lifecycle"}
     if action == "option_exercised":
         verb = "Assigned" if short_exercise else "Exercised"
-        return {"label": f"{verb} · {strike} {otype}", "amount": None, "kind": "lifecycle"}
-    return {"label": f"{_RAW_VERBS.get(action, ('Fill',))[0]} {times} × {strike} {otype}",
+        return {"label": f"{verb} {times} × {contract}", "amount": None, "kind": "lifecycle"}
+    return {"label": f"{_RAW_VERBS.get(action, ('Fill',))[0]} {times} × {contract}",
             "amount": amt, "kind": kind}
 
 
@@ -869,28 +1100,37 @@ def _roll_tip(close_fill, open_fill, short_side):
     """One line for a roll. The amount is the net cash, not 'premium'."""
     c_occ, o_occ = close_fill["occ"], open_fill["occ"]
     n = abs(open_fill["quantity"]) or abs(close_fill["quantity"])
-    otype = c_occ["option_type"]
     anchor = close_fill["date"]
     times = _qty_times(n)
-    cs, os_ = _fmt_strike(c_occ["strike"]), _fmt_strike(o_occ["strike"])
+    cs, os_ = _tip_contract(c_occ), _tip_contract(o_occ)
+    ce = _fmt_expiry(c_occ["expiry"], anchor)
+    oe = _fmt_expiry(o_occ["expiry"], anchor)
     same_strike = abs(c_occ["strike"] - o_occ["strike"]) < 0.01
     same_exp = c_occ["expiry"] == o_occ["expiry"]
     if same_strike and not same_exp:
-        label = (
-            f"Rolled {times} × {cs} {otype} · "
-            f"{_fmt_expiry(c_occ['expiry'], anchor)} → {_fmt_expiry(o_occ['expiry'], anchor)}"
-        )
+        label = f"Rolled {times} × {cs} · {ce} → {oe}"
     elif same_exp:
-        label = f"Rolled {times} × {cs} → {os_} {otype}"
+        label = f"Rolled {times} × {cs} → {os_}"
     else:
-        label = (
-            f"Rolled {times} × {cs} {_fmt_expiry(c_occ['expiry'], anchor)} → "
-            f"{os_} {_fmt_expiry(o_occ['expiry'], anchor)} {otype}"
-        )
+        label = f"Rolled {times} × {cs} {ce} → {os_} {oe}"
     return {
         "label": label,
         "amount": close_fill["amount"] + open_fill["amount"],
         "kind": "sell" if short_side else "buy",
+    }
+
+
+def _opened_spread_tip(fills, exp, net):
+    """'Opened 1 × $215/$220C · Sep 18'. Strikes, not the word options."""
+    n = abs(fills[0]["quantity"])
+    same = all(abs(abs(f["quantity"]) - n) < 1e-6 for f in fills)
+    pair = _spread_pair(fills)
+    head = f"Opened {_qty_times(n)} × {pair}" if same and n else f"Opened {pair}"
+    label = f"{head} · {exp}" if exp else head
+    return {
+        "label": label,
+        "amount": net,
+        "kind": "sell" if net >= 0 else "buy",
     }
 
 
