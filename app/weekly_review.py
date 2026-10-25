@@ -5152,6 +5152,20 @@ def _group_day_rolls(trade_rows):
             o_occ = _parse_occ(cand.get("trade_symbol"))
             if not o_occ or o_occ["option_type"] != occ["option_type"]:
                 continue
+            try:
+                row_qty = abs(float(row.get("quantity")))
+                cand_qty = abs(float(cand.get("quantity")))
+            except (TypeError, ValueError):
+                continue
+            if (
+                row_qty != row_qty
+                or cand_qty != cand_qty
+                or abs(row_qty - cand_qty) > 1e-6
+            ):
+                # A partial reduction/increase cannot be represented by
+                # this one-row roll shape: its cash and quantity would
+                # describe different contract counts. Keep both fills.
+                continue
             if o_occ["strike"] == occ["strike"] and o_occ["expiry"] == occ["expiry"]:
                 continue
             match_idx = j

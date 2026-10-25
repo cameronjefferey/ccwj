@@ -495,6 +495,14 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
                         continue
                     if o["occ"]["option_type"] != c["occ"]["option_type"]:
                         continue
+                    # A reduced or enlarged position is not one whole-fill
+                    # roll. Collapsing mismatched quantities combines the
+                    # cash from every closed contract with only the smaller
+                    # open quantity, and also removes the close from the
+                    # contract win/loss record. Keep both fills explicit
+                    # until partial-roll allocation is modeled.
+                    if abs(abs(o["quantity"]) - abs(c["quantity"])) > 1e-6:
+                        continue
                     if (o["occ"]["strike"] == c["occ"]["strike"]
                             and o["occ"]["expiry"] == c["occ"]["expiry"]):
                         continue  # same contract both ways isn't a roll

@@ -298,6 +298,36 @@ def test_compact_roll_collapses_to_one_line_before_clip():
     assert more == 0
 
 
+def test_mismatched_roll_quantities_keep_the_close_and_open_separate():
+    """A 20-lot close plus a 10-lot open is not one 10-lot roll.
+
+    Compact OCC started reaching the roll detector when tooltip parsing
+    was broadened. Combining these fills labels all 20 closed contracts
+    as a 10-lot roll and removes the completed 20-lot loss from the
+    Trader Profile contract record.
+    """
+    df = _trades([
+        (date(2025, 10, 10), "option_sell_to_open", "Call",
+         "SPXW251015C06700000", 20, 3.0, 6000.0),
+        (date(2025, 10, 15), "option_buy_to_close", "Call",
+         "SPXW251015C06700000", 20, 3.392, -6784.0),
+        (date(2025, 10, 15), "option_sell_to_open", "Call",
+         "SPXW251022C06800000", 10, 2.5, 2500.0),
+    ])
+
+    _items, markers, stats = build_position_story(df, None)
+    marker = next(m for m in markers if m["d"] == "2025-10-15")
+
+    assert _labels(marker) == [
+        "Bought back 20 × $6,700C",
+        "Sold 10 × $6,800C · Oct 22",
+    ]
+    assert [tip["amt"] for tip in marker["tips"]] == ["−$6,784", "+$2,500"]
+    assert stats["rolls"] == 0
+    assert stats["contract_losses"] == 1
+    assert stats["contract_loss_total"] == 784.0
+
+
 def test_clip_keeps_collapsed_spreads_and_still_sends_the_rest():
     """Six raw legs collapse to two spreads plus four opens: clip after that.
 

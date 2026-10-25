@@ -2748,6 +2748,24 @@ class TestSplitDayFills:
         assert out["trades"][0]["cash_amount"] == 60
         assert out["trades"][0]["successful"] is True
 
+    def test_mismatched_roll_quantities_stay_as_two_fills(self):
+        closed = self._jpm(
+            "option_buy_to_close", "JPM   260821C00300000", -240,
+        )
+        closed["quantity"] = 2
+        opened = self._jpm(
+            "option_sell_to_open", "JPM   260828C00305000", 180,
+        )
+        opened["quantity"] = 1
+
+        out = _split_day_fills(pd.DataFrame([closed, opened]))
+
+        assert out["fill_count"] == 2
+        assert out["count"] == 2
+        assert out["roll_count"] == 0
+        assert [row["quantity"] for row in out["trades"]] == [2.0, 1.0]
+        assert all(not row.get("is_roll") for row in out["trades"])
+
     def test_sto_and_same_day_expiry_is_one_row(self):
         sto = self._row(
             action="option_sell_to_open",
