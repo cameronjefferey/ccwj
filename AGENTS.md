@@ -270,10 +270,12 @@ What's working:
  close; after the bell, today's close lands tomorrow. Adds and
  trims on a long-held position show here even though **Trades this week**
  only lists groups that opened or closed this ISO week. Same-day close +
- open of the same option type (same symbol + tenant, different strike/expiry)
- is grouped as one **Rolled** row (`_group_day_rolls`). Pairing keys on
- `tenant_id`. Same-day open + expiry/assignment/exercise of the **same**
- contract is one row (`_group_day_open_and_settle`) — a Friday 0DTE is not
+ open of the same option type and size (same symbol + tenant, different
+ strike/expiry) is grouped as one **Rolled** row (`_group_day_rolls`).
+ Pairing keys on `tenant_id`. Mismatched quantities stay as separate fills
+ until partial-roll allocation is modeled. Same-day open +
+ expiry/assignment/exercise of the **same** contract and size is one row
+ (`_group_day_open_and_settle`) — a Friday 0DTE is not
  Sold-to-open plus Expired. Estimated expiry (`option_settled_est`) pairs
  the same way. A same-day short and long of the same call or put, same
  expiry and size, different strikes, is one spread (`_group_day_spreads`);
@@ -507,7 +509,9 @@ What's working:
   premium on the same symbol during the current holding cycle
   (credits minus debits, after fees). The cycle includes the
   cash-secured puts that were assigned into the shares, rolls of
-  those puts, and calls written while the shares are held. It resets
+  those puts (same contract count only; a 2-lot buyback beside a 1-lot
+  sale stays out of the assigned put), and calls written while the
+  shares are held. It resets
   when the share count goes to zero. A still-open option that was
   sold while no shares were held counts at the premium collected so
   far, even when that sale is dated before the share purchase, and
@@ -521,7 +525,8 @@ What's working:
   (strike minus net premium on that put, per share the assignment
   would deliver). That is not a held cost. Calls and put spreads are
   separate breakdown lines; a put-spread debit in the current cycle
-  raises All-in and is named Put spreads. A spread that closed before
+  raises All-in and is named Put spreads only when the short and long
+  are the same size. A spread that closed before
   the shares were bought does not. The contract symbol, not a
   conflicting Call/Put column, decides the bucket.   When the broker
   cost basis is missing, share cost is the average cost of the shares
@@ -1959,10 +1964,13 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   `app/position_detail.py`; UI card titled "Position review", internal
   names keep the `story` vocabulary): plain-English day-by-day review of
   the position, not a transaction-log rehash. A per-account state machine
-  detects and names maneuvers — rolls (same-day close+open, strike/expiry
-  direction, net credit), defined-risk structures whose opens span ≤7 days
-  (iron condor / vertical / strangle named from matching opens on the last
-  wing so a condor short put is not a wheel), wheels (named at assignment
+  detects and names maneuvers — rolls (same-day close+open of the same
+  type and size, strike/expiry direction, net credit; a 2-lot close and
+  a 1-lot open stay two fills), defined-risk structures whose opens span
+  ≤7 days and whose earlier wings are still open when the last wing lands
+  (iron condor / vertical / strangle of one size, named from matching
+  opens on the last wing so a condor short put is not a wheel; a contract
+  closed on an earlier day is not part of that spread), wheels (named at assignment
   of a standalone CSP, then
   covered calls → called away, with cumulative premium — the put sale
   itself is not a wheel), covered vs naked calls, kept

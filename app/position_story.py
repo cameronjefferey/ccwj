@@ -495,6 +495,14 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
                         continue
                     if o["occ"]["option_type"] != c["occ"]["option_type"]:
                         continue
+                    # A reduced or enlarged position is not one whole-fill
+                    # roll. Collapsing mismatched quantities combines the
+                    # cash from every closed contract with only the smaller
+                    # open quantity, and also removes the close from the
+                    # contract win/loss record. Keep both fills explicit
+                    # until partial-roll allocation is modeled.
+                    if abs(abs(o["quantity"]) - abs(c["quantity"])) > 1e-6:
+                        continue
                     if (o["occ"]["strike"] == c["occ"]["strike"]
                             and o["occ"]["expiry"] == c["occ"]["expiry"]):
                         continue  # same contract both ways isn't a roll
@@ -659,6 +667,18 @@ def _one_of_type(fills, otype):
     return hits[0] if len(hits) == 1 else None
 
 
+def _same_open_size(fills):
+    """True when every leg is the same contract count.
+
+    A 2-lot short and a 1-lot long are two trades. Naming them one
+    spread or condor adds their cash into a single net.
+    """
+    sizes = [abs(f["quantity"]) for f in fills]
+    if len(sizes) < 2:
+        return True
+    return max(sizes) - min(sizes) <= 1e-6
+
+
 def _matching_qty_phrase(fills):
     """'10 contracts' when every leg is the same size; else empty."""
     qs = [abs(f["quantity"]) for f in fills]
@@ -731,6 +751,8 @@ def _try_iron(group):
     if not (lp["occ"]["strike"] < sp["occ"]["strike"]
             and lc["occ"]["strike"] > sc["occ"]["strike"]):
         return None
+    if not _same_open_size((sp, sc, lp, lc)):
+        return None
     fly = abs(sp["occ"]["strike"] - sc["occ"]["strike"]) < 0.01
     name = "an iron butterfly" if fly else "an iron condor"
     legs = [sp, sc, lp, lc]
@@ -765,6 +787,8 @@ def _try_vertical(group):
     s, lo = shorts[0], longs[0]
     if s["occ"]["option_type"] != lo["occ"]["option_type"]:
         return None
+    if not _same_open_size((s, lo)):
+        return None
     otype = s["occ"]["option_type"]
     legs = [s, lo]
     net = s["amount"] + lo["amount"]
@@ -790,6 +814,8 @@ def _try_strangle(group):
         sp, sc = _one_of_type(shorts, "put"), _one_of_type(shorts, "call")
         if not (sp and sc):
             return None
+        if not _same_open_size((sp, sc)):
+            return None
         same = abs(sp["occ"]["strike"] - sc["occ"]["strike"]) < 0.01
         name = "a short straddle" if same else "a short strangle"
         legs = [sp, sc]
@@ -811,6 +837,8 @@ def _try_strangle(group):
     if len(longs) == 2 and not shorts:
         lp, lc = _one_of_type(longs, "put"), _one_of_type(longs, "call")
         if not (lp and lc):
+            return None
+        if not _same_open_size((lp, lc)):
             return None
         same = abs(lp["occ"]["strike"] - lc["occ"]["strike"]) < 0.01
         name = "a long straddle" if same else "a long strangle"
@@ -841,21 +869,68 @@ def _all_planned_uids(structure_plan):
     return out
 
 
+def _structure_legs_overlap(struct_fills, contract_fills, net_cache):
+    """True when every earlier wing is still open as the last wing arrives.
+
+    The seven-day structure window describes legging into one position, not
+    merely trading opposite directions before the same expiry. A contract
+    closed on an earlier day cannot be paired with a later open. Same-day
+    opens remain eligible because the fill tape has date, not intraday,
+    ordering and the legs may genuinely have overlapped before a later close.
+    """
+    completion = max(f["date"] for f in struct_fills)
+    for leg in struct_fills:
+        if leg["date"] >= completion:
+            continue
+        key = (leg["state_key"], leg["trade_symbol"], completion)
+        if key not in net_cache:
+            net = 0.0
+            for event in contract_fills.get(key[:2], []):
+                if event["date"] >= completion:
+                    break
+                action = event["action"]
+                qty = abs(event["quantity"])
+                if action in ("option_expired", "option_assigned",
+                              "option_exercised"):
+                    net = 0.0
+                elif action in ("option_buy_to_open", "option_buy_to_close"):
+                    net += qty
+                elif action in ("option_sell_to_open", "option_sell_to_close"):
+                    net -= qty
+            net_cache[key] = net
+        net = net_cache[key]
+        qty = abs(leg["quantity"])
+        if leg["action"] == "option_sell_to_open":
+            if net > -qty + 1e-6:
+                return False
+        elif net < qty - 1e-6:
+            return False
+    return True
+
+
 def _plan_open_structures(all_fills):
     """Name iron condor / vertical / strangle groups whose opens span ≤7 days.
 
     Returns ``{(last_open_date, state_key): [(sentence, uids, kind), ...]}``
-    so the review names the structure when the last wing lands.
+    so the review names the structure when the last wing lands. Earlier
+    wings must still be open that day, and every leg must be the same size.
     """
     by = {}
+    contract_fills = {}
     for f in all_fills or []:
+        if f.get("trade_symbol"):
+            contract_fills.setdefault(
+                (f["state_key"], f["trade_symbol"]), []).append(f)
         if f["action"] not in ("option_sell_to_open", "option_buy_to_open"):
             continue
         if not f.get("occ"):
             continue
         key = (f["state_key"], f["occ"]["expiry"])
         by.setdefault(key, []).append(f)
+    for events in contract_fills.values():
+        events.sort(key=lambda event: (event["date"], event.get("uid") or 0))
     plan = {}
+    net_cache = {}
     for _key, group in by.items():
         span = (max(f["date"] for f in group) - min(f["date"] for f in group)).days
         if span > _STRUCTURE_MAX_SPAN_DAYS:
@@ -867,6 +942,9 @@ def _plan_open_structures(all_fills):
         # the same type stay ungrouped — pairing them would invent a net.
         found = [hit] if hit else _peel_verticals(group)
         for sentence, struct_fills, kind, tip in found:
+            if not _structure_legs_overlap(
+                    struct_fills, contract_fills, net_cache):
+                continue
             last = max(f["date"] for f in struct_fills)
             sk = struct_fills[0]["state_key"]
             uids = [f["uid"] for f in struct_fills]

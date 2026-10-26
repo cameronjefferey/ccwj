@@ -225,6 +225,79 @@ def test_put_spread_legged_in_over_two_days():
     assert stats["wheels_opened"] == 0
 
 
+def test_sequential_compact_occ_trades_are_not_grouped_as_a_spread():
+    """A closed covered call cannot become a spread with a later long call."""
+    df = _trades([
+        (date(2026, 1, 2), "equity_buy", "Equity",
+         "XYZ", 100, 100.0, -10000.0),
+        (date(2026, 1, 2), "option_sell_to_open", "Call",
+         "XYZ260116C00110000", 1, 2.0, 200.0),
+        (date(2026, 1, 5), "option_buy_to_close", "Call",
+         "XYZ260116C00110000", 1, 0.5, -50.0),
+        (date(2026, 1, 7), "option_buy_to_open", "Call",
+         "XYZ260116C00120000", 1, 1.5, -150.0),
+    ])
+
+    items, markers, stats = build_position_story(df, None)
+    text = _headlines(items)
+    tips = {
+        marker["d"]: [tip["label"] for tip in marker["tips"]]
+        for marker in markers
+    }
+
+    assert "Opened a call spread" not in text
+    assert "covered call" in text
+    assert "Bought 1 contract of the $120 call" in text
+    assert tips["2026-01-02"][-1] == "Sold 1 × $110C · Jan 16"
+    assert tips["2026-01-07"] == ["Bought 1 × $120C · Jan 16"]
+    assert stats["covered_calls"] == 1
+    assert stats["short_calls"] == 0
+
+
+def test_same_day_close_still_allows_a_real_legged_spread():
+    """The fill tape has no clock, so a close on the completion day stays grouped."""
+    df = _trades([
+        (date(2024, 6, 3), "option_sell_to_open", "Put",
+         "F 240621P00012000", 1, 0.60, 60.0),
+        (date(2024, 6, 5), "option_buy_to_open", "Put",
+         "F 240621P00011000", 1, 0.25, -25.0),
+        (date(2024, 6, 5), "option_buy_to_close", "Put",
+         "F 240621P00012000", 1, 0.10, -10.0),
+    ])
+    text = _headlines(build_position_story(df, None)[0])
+    assert "Opened a put spread over 2 sessions, 1 contract expiring Jun 21" in text
+
+
+def test_mismatched_open_sizes_are_not_a_spread():
+    df = _trades([
+        (date(2024, 6, 3), "option_sell_to_open", "Call",
+         "F 240621C00012000", 2, 1.00, 200.0),
+        (date(2024, 6, 3), "option_buy_to_open", "Call",
+         "F 240621C00013000", 1, 0.40, -40.0),
+    ])
+    text = _headlines(build_position_story(df, None)[0])
+    assert "spread" not in text
+    assert "Sold 2 contracts of the $12 call" in text
+    assert "Bought 1 contract of the $13 call" in text
+
+
+def test_uneven_wings_are_two_spreads_not_one_condor():
+    df = _trades([
+        (date(2026, 7, 8), "option_sell_to_open", "Put",
+         "DAL 260717P00090000", 2, 1.0, 200.0),
+        (date(2026, 7, 8), "option_buy_to_open", "Put",
+         "DAL 260717P00085000", 2, 0.4, -80.0),
+        (date(2026, 7, 10), "option_sell_to_open", "Call",
+         "DAL 260717C00093000", 1, 1.14, 114.0),
+        (date(2026, 7, 10), "option_buy_to_open", "Call",
+         "DAL 260717C00098000", 1, 0.4, -40.0),
+    ])
+    text = _headlines(build_position_story(df, None)[0])
+    assert "iron condor" not in text
+    assert "put spread" in text
+    assert "call spread" in text
+
+
 def test_structure_not_grouped_beyond_seven_days():
     df = _trades([
         (date(2024, 6, 3), "option_sell_to_open", "Put",

@@ -1021,6 +1021,16 @@ def _in_premium_window(fill, episode, chain_ids):
     return episode["start"] is not None and fill.date >= episode["start"]
 
 
+def _same_fill_qty(left, right):
+    """True when two option fills are the same contract count.
+
+    A 2-lot buyback next to a 1-lot sale is not one roll, and a 2-lot
+    short next to a 1-lot long is not one spread. Walking the larger
+    close into the assigned put would change all-in per share.
+    """
+    return abs(abs(left.qty or 0) - abs(right.qty or 0)) <= _EPS
+
+
 def _assignment_chain(fills, contract, as_of):
     """Puts that were rolled into the assigned put, plus same-day long puts.
 
@@ -1050,6 +1060,7 @@ def _assignment_chain(fills, contract, as_of):
             and fill.date == opened.date
             and fill.contract != cursor
             and fill.contract not in seen
+            and _same_fill_qty(fill, opened)
         ]
         if not closes:
             break
@@ -1063,6 +1074,8 @@ def _assignment_chain(fills, contract, as_of):
             if fill.action != "option_buy_to_open" or fill.date != opened.date:
                 continue
             if fill.expiry != opened.expiry or fill.contract == opened.contract:
+                continue
+            if not _same_fill_qty(fill, opened):
                 continue
             included.add(fill.id)
     return included
@@ -1088,6 +1101,7 @@ def _group_fills(fills, chain_ids):
             and opened.date == close.date
             and opened.option_type == close.option_type
             and opened.contract != close.contract
+            and _same_fill_qty(opened, close)
         ]
         if not candidates:
             continue
@@ -1115,6 +1129,7 @@ def _group_fills(fills, chain_ids):
             and long.option_type == short.option_type
             and long.expiry == short.expiry
             and long.contract != short.contract
+            and _same_fill_qty(long, short)
         ]
         if not candidates:
             continue
