@@ -225,6 +225,35 @@ def test_put_spread_legged_in_over_two_days():
     assert stats["wheels_opened"] == 0
 
 
+def test_sequential_compact_occ_trades_are_not_grouped_as_a_spread():
+    """A closed covered call cannot become a spread with a later long call."""
+    df = _trades([
+        (date(2026, 1, 2), "equity_buy", "Equity",
+         "XYZ", 100, 100.0, -10000.0),
+        (date(2026, 1, 2), "option_sell_to_open", "Call",
+         "XYZ260116C00110000", 1, 2.0, 200.0),
+        (date(2026, 1, 5), "option_buy_to_close", "Call",
+         "XYZ260116C00110000", 1, 0.5, -50.0),
+        (date(2026, 1, 7), "option_buy_to_open", "Call",
+         "XYZ260116C00120000", 1, 1.5, -150.0),
+    ])
+
+    items, markers, stats = build_position_story(df, None)
+    text = _headlines(items)
+    tips = {
+        marker["d"]: [tip["label"] for tip in marker["tips"]]
+        for marker in markers
+    }
+
+    assert "Opened a call spread" not in text
+    assert "covered call" in text
+    assert "Bought 1 contract of the $120 call" in text
+    assert tips["2026-01-02"][-1] == "Sold 1 × $110C · Jan 16"
+    assert tips["2026-01-07"] == ["Bought 1 × $120C · Jan 16"]
+    assert stats["covered_calls"] == 1
+    assert stats["short_calls"] == 0
+
+
 def test_structure_not_grouped_beyond_seven_days():
     df = _trades([
         (date(2024, 6, 3), "option_sell_to_open", "Put",
