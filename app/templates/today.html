@@ -114,7 +114,7 @@
         <div class="ov-pills-lite">
             <span class="ov-pl">{% with count=_tt.count, fill_count=_tt.fill_count %}{% include "_fill_count.html" %}{% endwith %}</span>
             {% if _tt.symbols %}<span class="ov-pl">{{ _tt.symbols|length }} symbol{{ 's' if _tt.symbols|length != 1 }}</span>{% endif %}
-            {% if _tt.has_gl or _tt.net_gl %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' if _tt.net_gl < 0 else '' }}">{{ money(_tt.net_gl, 2, true) }} realized</span>{% endif %}
+            {% if _tt.gl_complete %}<span class="ov-pl {{ 'gn' if _tt.net_gl > 0 else 'rd' if _tt.net_gl < 0 else '' }}">{{ money(_tt.net_gl, 2, true) }} realized</span>{% endif %}
         </div>
         {% endif %}
     </div>
@@ -159,7 +159,7 @@
                 </td>
             </tr>
             {% endfor %}
-            {% if _tt.has_gl or _tt.net_gl %}
+            {% if _tt.gl_complete %}
             <tr class="tt-total">
                 <td class="tt-sticky" colspan="3">Total realized</td>
                 <td class="tt-money {% if _tt.net_gl > 0 %}text-positive{% elif _tt.net_gl < 0 %}text-negative{% endif %}">{{ money(_tt.net_gl, 2, true) }}</td>

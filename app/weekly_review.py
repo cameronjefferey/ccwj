@@ -7700,11 +7700,17 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     The dollar column is realized G/L (sale vs cost), not fill cash.
     Opens and unmatched closes render as ``None`` (em dash).
 
-    Returns ``{trades, cash, count, net_cash, net_gl, symbols, has_any}``.
+    ``net_gl`` is always the sum of known rows. ``gl_complete`` is true
+    only when every close matched, so callers never present that subtotal
+    as a complete session result.
+
+    Returns ``{trades, cash, count, net_cash, net_gl, gl_complete,
+    symbols, has_any}``.
     """
     empty = {
         "trades": [], "cash": [], "count": 0, "fill_count": 0, "roll_count": 0,
         "net_cash": 0.0, "net_gl": 0.0, "has_gl": False,
+        "gl_complete": False, "has_unmatched_gl": False,
         "symbols": [], "has_any": False,
     }
     if trades_df is None or trades_df.empty:
@@ -7719,6 +7725,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     # fill row.  Keep every fill for the activity count, but credit the
     # contract result only once per account/contract/day.
     seen_option_close_gl = set()
+    has_unmatched_gl = False
     net_cash = 0.0
     for _, r in trades_df.iterrows():
         if _is_drip_fill(r):
@@ -7742,6 +7749,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         tenant_id = str(r.get("tenant_id") or "").strip()
         trade_symbol = str(r.get("trade_symbol") or "").strip()
         trade_date = _coerce_date(r.get("trade_date"))
+        realized_deduped = False
         if (
             realized is not None
             and action in ("option_buy_to_close", "option_sell_to_close")
@@ -7755,8 +7763,19 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
             )
             if option_close_key in seen_option_close_gl:
                 realized = None
+                realized_deduped = True
             else:
                 seen_option_close_gl.add(option_close_key)
+        # Opens legitimately have no realized result. A close with no
+        # matching warehouse result is different: its em dash means any
+        # aggregate would be only a partial subtotal. Duplicate partial
+        # option fills are already represented by the first contract row.
+        if (
+            action in (_CLOSE_ACTIONS - {"equity_sell_short"})
+            and realized is None
+            and not realized_deduped
+        ):
+            has_unmatched_gl = True
         direction = ""
         if "direction" in r.index:
             raw_dir = r.get("direction")
@@ -7818,6 +7837,8 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         "net_cash": round(net_cash, 2),
         "net_gl": round(net_gl, 2),
         "has_gl": has_gl,
+        "gl_complete": has_gl and not has_unmatched_gl,
+        "has_unmatched_gl": has_unmatched_gl,
         "symbols": symbols,
         "has_any": bool(trade_rows or cash_rows),
     }
@@ -7972,6 +7993,7 @@ def day_detail(day_str):
         net_cash=fills.get("net_cash") or 0,
         net_gl=fills.get("net_gl") or 0,
         has_gl=bool(fills.get("has_gl")),
+        gl_complete=bool(fills.get("gl_complete")),
         option_rows=option_rows,
         dividend_rows=dividend_rows,
         market_rows=market_rows,

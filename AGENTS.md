@@ -259,6 +259,8 @@ What's working:
  = sale vs average cost; option: `int_option_contracts.realized_pnl` on
  `realized_close_date`), not fill cash/proceeds. Opens and closes that
  have not yet matched a warehouse realized row render as an em dash.
+ The session realized total renders only when every close has matched;
+ a known subtotal must not be presented as the full realized result.
  The session is always a settled ET weekday (`_snapshot_as_of_date`) —
  never calendar-today, even after the bell. Same-evening warehouse rows
  can mix a yfinance close with a partial broker sync; live numbers stay

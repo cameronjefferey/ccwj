@@ -3247,6 +3247,8 @@ class TestSplitDayFills:
         assert len(out["trades"]) == 2
         assert [r["amount"] for r in out["trades"]] == [2100.0, None]
         assert out["net_gl"] == 2100.0
+        assert out["has_unmatched_gl"] is False
+        assert out["gl_complete"] is True
 
     def test_same_contract_in_two_tenants_keeps_each_realized_result(self):
         contract = "MRVL  260904C00242500"
