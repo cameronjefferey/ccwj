@@ -58,7 +58,7 @@ def _exec(**kw):
 
 
 def _trade(d, symbol="JPM", action="option_sell_to_open", amount=100.0,
-           tsym=None, tenant="snaptrade:t1"):
+           tsym=None, tenant="snaptrade:t1", quantity=1):
     return {
         "tenant_id": tenant,
         "account": "Schwab Account",
@@ -67,7 +67,7 @@ def _trade(d, symbol="JPM", action="option_sell_to_open", amount=100.0,
         "action": action,
         "instrument_type": "Call",
         "trade_symbol": tsym or f"{symbol} X",
-        "quantity": 1,
+        "quantity": quantity,
         "price": 1.0,
         "amount": amount,
     }
@@ -522,6 +522,30 @@ def test_last_week_counts_a_same_day_roll():
     out = build_last_week(pd.DataFrame(rows), today=_TODAY)
     assert out["activity"]["rolls"] == 1
     assert any(f["label"] == "Rolls" and f["value"] == "1" for f in out["facts"])
+    assert out["label"] == "Aug 17–23"
+
+
+def test_mismatched_contract_size_is_not_a_roll():
+    day = _LAST_MON + timedelta(days=1)
+    rows = [
+        _trade(day, symbol="JPM", action="option_buy_to_close", amount=-80.0,
+               tsym="JPM   260821C00300000", quantity=20),
+        _trade(day, symbol="JPM", action="option_sell_to_open", amount=120.0,
+               tsym="JPM   260828C00305000", quantity=10),
+    ]
+    out = build_last_week(pd.DataFrame(rows), today=_TODAY)
+    assert out["activity"]["rolls"] == 0
+
+
+def test_last_week_label_names_the_prior_year():
+    from app.story_loop import _week_label
+    today = date(2026, 1, 6)
+    assert _week_label(date(2025, 12, 29), date(2026, 1, 4), today=today) == "Dec 29, 2025–Jan 4"
+    assert _week_label(date(2025, 12, 22), date(2025, 12, 28), today=today) == "Dec 22–28, 2025"
+    assert _week_label(date(2026, 10, 19), date(2026, 10, 25), today=date(2026, 10, 27)) == "Oct 19–25"
+    out = build_last_week(
+        pd.DataFrame([_trade(date(2025, 12, 30))]), today=today)
+    assert out["label"] == "Dec 29, 2025–Jan 4"
 
 
 def test_compose_story_loop_none_when_empty():

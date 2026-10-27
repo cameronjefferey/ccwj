@@ -36,6 +36,7 @@ from app.llm import (
 )
 from app.llm_access import user_can_use_paid_llm
 from app.money import fmt_money, signed_points
+from app.review_format import allocate_rounded, session_date, whole_dollars
 from app.outcome_units import (
     SPREAD_STRATEGIES,
     apply_spread_collected,
@@ -481,6 +482,9 @@ def _discovery_cards_from_series(r: pd.Series):
             ),
             "score": conc * 2.8,
             "muted": "",
+            "concentration_pct": float(conc),
+            "total_dollars": float(tot_gb),
+            "top_symbol": str(tsym),
         })
 
     dte_gap = _safe_float(r.get("sold_short_vs_long_gb_gap_pp"))
@@ -572,14 +576,16 @@ def _strip_md_for_brief(s: str) -> str:
     return s.replace("**", "").replace("*", "")
 
 
-def _format_recent_exit_line(sym, strat, peak, pnl, given_back, days_past):
+def _format_recent_exit_line(sym, strat, peak, pnl, given_back, days_past,
+                            close_label=None):
     """One recent-close fact for Ask AI.
 
     A literal ``+$`` in front of a formatted negative prints ``+$-400``.
     The sign belongs in front of the dollar sign.
     """
+    when = f" on {close_label}" if close_label else ""
     return (
-        f"  - {sym} ({strat}) contract: best value while open "
+        f"  - {sym} ({strat}) contract{when}: best value while open "
         f"{fmt_money(peak, 0, signed=True)}, closed at "
         f"{fmt_money(pnl, 0, signed=True)}, given back "
         f"{fmt_money(given_back, 0)} "
@@ -634,7 +640,7 @@ def _strategy_label(value):
     return text
 
 
-def _rollup_exit_signals(signals_df):
+def _rollup_exit_signals(signals_df, min_trades=None):
     """One exit-timing row per strategy name.
 
     ``mart_coaching_signals`` is grained by (account, strategy). The
@@ -706,9 +712,11 @@ def _rollup_exit_signals(signals_df):
                 g["worst_dte_win_rate"] = float(r.get("worst_dte_win_rate") or 0)
                 g["worst_dte_trades"] = wt
 
+    if min_trades is None:
+        min_trades = _MIN_RELIABLE_FOR_STRATEGY_ROW
     rows = []
     for g in grouped.values():
-        if g["trades"] < _MIN_RELIABLE_FOR_STRATEGY_ROW:
+        if g["trades"] < min_trades:
             continue
         weight = g["weight"] or 1
         rows.append({
@@ -734,6 +742,7 @@ def _rollup_exit_signals(signals_df):
             "worst_dte_bucket": g["worst_dte_bucket"],
             "worst_dte_win_rate": g["worst_dte_win_rate"],
             "worst_dte_trades": g["worst_dte_trades"],
+            "below_minimum": g["trades"] < _MIN_RELIABLE_FOR_STRATEGY_ROW,
         })
     rows.sort(key=lambda row: row["pnl_given_back"], reverse=True)
     return rows
@@ -768,14 +777,158 @@ def _exit_timing_headlines(rows, reliable_contracts, total_closed):
     }
 
 
+def _display_dollars(row, key="display_given_back", raw_key="pnl_given_back"):
+    shown = row.get(key)
+    if shown is None:
+        shown = row.get(raw_key)
+    number = whole_dollars(shown)
+    return 0 if number is None else number
+
+
+def _assemble_exit_timing(named, small, full_dollars, reliable, eligible):
+    """Strategy rows whose displayed dollars add up to the headline.
+
+    Strategies under the row minimum stay out of the percent. Their
+    dollars still sit on the headline, in an Other strategies row when
+    they round to at least a dollar.
+    """
+    headlines = _exit_timing_headlines(
+        named, reliable, eligible) if named else None
+    other_dollars = float(sum(s["pnl_given_back"] for s in small))
+    other_trades = int(sum(int(s.get("trades") or 0) for s in small))
+    other_closed = int(sum(int(s.get("total_closed") or 0) for s in small))
+    displayed = list(named)
+    if other_trades > 0 and abs(other_dollars) >= 0.5:
+        displayed.append({
+            "strategy": "Other strategies",
+            "strategy_label": "Other strategies",
+            "is_other": True,
+            "pnl_given_back": other_dollars,
+            "trades": other_trades,
+            "total_closed": other_closed,
+            "giveback_pct": 0.0,
+            "days_past_peak": 0.0,
+            "pct_premium_captured": 0.0,
+            "account_count": 0,
+        })
+    if not displayed:
+        return displayed, headlines
+    shown = allocate_rounded(
+        [s["pnl_given_back"] for s in displayed], full_dollars)
+    for row, dollars in zip(displayed, shown):
+        row["display_given_back"] = dollars
+    if headlines is None:
+        eligible_n = int(eligible or 0)
+        reliable_n = int(reliable or 0)
+        headlines = {
+            "total_given_back": float(full_dollars or 0),
+            "avg_giveback": 0.0,
+            "avg_days": 0.0,
+            "reliable_contracts": reliable_n,
+            "total_closed": eligible_n,
+            "pct_reliable": (
+                round(reliable_n / eligible_n * 100, 0) if eligible_n else 0
+            ),
+        }
+    headlines["total_given_back"] = float(full_dollars or 0)
+    headlines["display_total"] = sum(shown)
+    return displayed, headlines
+
+
+def stamp_recent_exits(rows, anchor=None):
+    """Human dates, and whole dollars that add up across the visible rows.
+
+    Visible rows are the ones the table prints (given back over $10).
+    Their total is those closes, not the exit-timing headline.
+    """
+    from datetime import date
+    anchor = anchor or date.today()
+    for row in rows:
+        row["close_label"] = session_date(row.get("close_date"), anchor=anchor)
+    visible = [row for row in rows if float(row.get("given_back") or 0) > 10]
+    if not visible:
+        return {"actual": 0, "peak": 0, "given_back": 0}
+    fields = (
+        ("actual_pnl", "display_actual"),
+        ("peak_pnl", "display_peak"),
+        ("given_back", "display_given_back"),
+    )
+    totals = {}
+    for raw_key, display_key in fields:
+        raws = [row.get(raw_key) or 0 for row in visible]
+        shown = allocate_rounded(raws, sum(float(value) for value in raws))
+        for row, dollars in zip(visible, shown):
+            row[display_key] = dollars
+        totals[display_key] = sum(shown)
+    return {
+        "actual": totals["display_actual"],
+        "peak": totals["display_peak"],
+        "given_back": totals["display_given_back"],
+    }
+
+
+def align_giveback_concentration(cards, headline_dollars):
+    """Point a concentration card at the headline dollar when that is honest.
+
+    The discovery total is every scored close. The headline is the same
+    money once small strategies are included, apart from mart rounding.
+    When those two whole-dollar totals differ, the percent is rescaled
+    only while it still describes a share of the headline. Otherwise the
+    card names both dollars.
+    """
+    headline = whole_dollars(headline_dollars)
+    if headline is None or not cards:
+        return cards
+    for card in cards:
+        if card.get("tag") != "Concentration":
+            continue
+        conc = card.get("concentration_pct")
+        tot = card.get("total_dollars")
+        symbol = card.get("top_symbol") or ""
+        if conc is None or tot is None:
+            continue
+        discovery = whole_dollars(tot)
+        if discovery is None:
+            continue
+        if discovery == headline:
+            pct_txt = f"{float(conc):.0f}"
+            card["stat"] = f"{pct_txt}% of ${headline:,.0f}"
+            card["body"] = (
+                f"About **{pct_txt}%** of the dollars between the best value "
+                f"while you held it and the close is on **{symbol}**. "
+                f"The rest of the book is smaller."
+            )
+            continue
+        base = float(headline_dollars) if headline_dollars else float(headline)
+        if not base:
+            continue
+        scaled = float(conc) * float(tot) / base
+        shown_pct = int(f"{scaled:.0f}")
+        if 0 < shown_pct <= 100:
+            card["stat"] = f"{shown_pct}% of ${headline:,.0f}"
+            card["body"] = (
+                f"About **{shown_pct}%** of the dollars between the best value "
+                f"while you held it and the close is on **{symbol}**. "
+                f"The rest of the book is smaller."
+            )
+            continue
+        card["stat"] = f"{float(conc):.0f}% of ${discovery:,.0f}"
+        card["muted"] = (
+            f"That share is of ${discovery:,.0f} in scored giveback. "
+            f"The headline is ${headline:,.0f}."
+        )
+    return cards
+
+
 def _format_exit_timing_brief(headlines, rows):
     """Plain-text copy of the live cards. Ask AI must quote this block."""
+    total = headlines.get("display_total", headlines["total_given_back"])
     lines = [
         "CANONICAL EXIT TIMING (these are the live Insights cards. "
         "Quote these figures exactly. Do not recompute a different total, "
         "giveback percent, coverage count, or strategy name.):",
         (
-            f"- Given back: ${headlines['total_given_back']:,.0f} "
+            f"- Given back: ${float(total):,.0f} "
             "(gap from the best value while the option was open to the close; "
             "scored closes only; opens are not included)"
         ),
@@ -796,11 +949,21 @@ def _format_exit_timing_brief(headlines, rows):
         ),
     ]
     for s in rows:
+        dollars = _display_dollars(s)
+        label = s.get("strategy_label") or s["strategy"]
+        if s.get("is_other"):
+            lines.append(
+                f"- {label}: ${dollars:,.0f} given back, "
+                f"{s['trades']} of {int(s.get('total_closed') or 0)} scored closes. "
+                "These closes are in the headline dollar and the scored-close "
+                "count. They are not in the percent."
+            )
+            continue
         accounts = ""
         if int(s.get("account_count") or 0) > 1:
             accounts = f", {int(s['account_count'])} accounts combined"
         lines.append(
-            f"- {s.get('strategy_label') or s['strategy']}: ${s['pnl_given_back']:,.0f} given back, "
+            f"- {label}: ${dollars:,.0f} given back, "
             f"{s['giveback_pct']:.0f}% of the best value, "
             f"{s['days_past_peak']:.0f} days after the high, "
             f"{s['trades']} of {int(s.get('total_closed') or 0)} scored closes"
@@ -1005,7 +1168,6 @@ def _build_coaching_brief(client, tenant_ids):
                         str(c.get("strategy") or ""),
                     )] = int(c.get("eligible_closed") or 0)
 
-            total_given_back = float(signals_df["total_pnl_given_back"].sum())
             coverage_src = coverage_df if not coverage_df.empty else signals_df
             reliable_contracts, eligible_closed, pct_reliable = _exit_coverage(
                 coverage_src)
@@ -1017,12 +1179,13 @@ def _build_coaching_brief(client, tenant_ids):
 
             # One card per strategy name. The mart is (account, strategy);
             # the template, Regenerate, and Ask AI all read this list.
-            strat_rows = _rollup_exit_signals(signals_df)
+            # Small strategies stay in the dollar as Other strategies.
+            all_rows = _rollup_exit_signals(signals_df, min_trades=1)
             if eligible_by_key:
                 window_by_strategy = {}
                 for (_tid, strategy), n in eligible_by_key.items():
                     window_by_strategy[strategy] = window_by_strategy.get(strategy, 0) + n
-                for s in strat_rows:
+                for s in all_rows:
                     window = window_by_strategy.get(str(s.get("strategy") or ""))
                     if window is None:
                         continue
@@ -1031,12 +1194,20 @@ def _build_coaching_brief(client, tenant_ids):
                     s["pct_reliable"] = (
                         round(trades / window * 100, 0) if window else 0
                     )
-            coaching_data["signals"] = strat_rows
-            headlines = _exit_timing_headlines(
-                strat_rows,
-                reliable_contracts,
+            named = [
+                s for s in all_rows
+                if int(s.get("trades") or 0) >= _MIN_RELIABLE_FOR_STRATEGY_ROW
+            ]
+            small = [
+                s for s in all_rows
+                if int(s.get("trades") or 0) < _MIN_RELIABLE_FOR_STRATEGY_ROW
+            ]
+            full_given_back = float(signals_df["total_pnl_given_back"].sum())
+            strat_rows, headlines = _assemble_exit_timing(
+                named, small, full_given_back, reliable_contracts,
                 eligible_closed or coaching_data["total_closed"],
             )
+            coaching_data["signals"] = strat_rows
             coaching_data["exit_timing"] = headlines
             if headlines:
                 sections.append(_format_exit_timing_brief(headlines, strat_rows))
@@ -1055,30 +1226,31 @@ def _build_coaching_brief(client, tenant_ids):
         exits_df = _filter_df_by_tenant_ids(
             batch.get("coach_exits", pd.DataFrame()), tenant_ids)
         if exits_df is not None and not exits_df.empty:
-            recent_lines = []
             for _, r in exits_df.head(10).iterrows():
-                gb = float(r.get("pnl_given_back", 0) or 0)
-                sym = r.get("underlying_symbol", "")
-                strat = r.get("strategy", "")
-                pnl = float(r.get("actual_pnl", 0) or 0)
-                peak = float(r.get("peak_unrealized_pnl", 0) or 0)
-                days_past = int(r.get("days_held_past_peak", 0) or 0)
-
                 coaching_data["recent_exits"].append({
-                    "symbol": sym,
-                    "strategy": strat,
-                    "actual_pnl": pnl,
-                    "peak_pnl": peak,
-                    "given_back": gb,
-                    "days_past_peak": days_past,
+                    "symbol": r.get("underlying_symbol", ""),
+                    "strategy": r.get("strategy", ""),
+                    "actual_pnl": float(r.get("actual_pnl", 0) or 0),
+                    "peak_pnl": float(r.get("peak_unrealized_pnl", 0) or 0),
+                    "given_back": float(r.get("pnl_given_back", 0) or 0),
+                    "days_past_peak": int(r.get("days_held_past_peak", 0) or 0),
                     "close_date": str(r.get("close_date", ""))[:10],
                     "pct_premium_captured": float(r.get("pct_of_premium_captured") or 0),
                 })
-
-                if gb > 10:
-                    recent_lines.append(_format_recent_exit_line(
-                        sym, strat, peak, pnl, gb, days_past,
-                    ))
+            coaching_data["exit_totals"] = stamp_recent_exits(
+                coaching_data["recent_exits"])
+            recent_lines = []
+            for row in coaching_data["recent_exits"]:
+                if float(row.get("given_back") or 0) <= 10:
+                    continue
+                recent_lines.append(_format_recent_exit_line(
+                    row["symbol"], row["strategy"],
+                    row.get("display_peak", row["peak_pnl"]),
+                    row.get("display_actual", row["actual_pnl"]),
+                    row.get("display_given_back", row["given_back"]),
+                    row["days_past_peak"],
+                    close_label=row.get("close_label"),
+                ))
             if recent_lines:
                 sections.append("RECENT EXIT EXAMPLES (last 90 days)\n" + "\n".join(recent_lines))
     except Exception as exc:
@@ -1088,6 +1260,22 @@ def _build_coaching_brief(client, tenant_ids):
         dq = batch.get("coach_discovery", pd.DataFrame())
         if not dq.empty:
             disco_cards, disco_txt = _discovery_cards_from_series(dq.iloc[0])
+            headline_dollars = (coaching_data.get("exit_timing") or {}).get(
+                "display_total")
+            align_giveback_concentration(disco_cards, headline_dollars)
+            if disco_cards:
+                n_rel = int(_safe_float(
+                    dq.iloc[0].get("reliable_contracts"), 0) or 0)
+                blob = [
+                    "DISCOVERY LAB (deterministic contrasts; not advice):",
+                    f"- Snapshot-quality contracts summarized: ~{n_rel} reliable closes (backed by daily prices).",
+                ]
+                for card in disco_cards[:5]:
+                    blob.append(
+                        f"- [{card['tag']}] {card['title']}: "
+                        f"{_strip_md_for_brief(card['body'])}"
+                    )
+                disco_txt = "\n".join(blob)
             coaching_data["discoveries"] = disco_cards
             if disco_cards:
                 coaching_data["has_data"] = True

@@ -33,6 +33,7 @@ import pandas as pd
 
 from app.expiry_settlement import ESTIMATE_LABEL
 from app.position_story import _money
+from app.review_format import allocate_rounded
 
 # Both queries are tenant-scoped in SQL AND project tenant_id so the
 # fail-closed DataFrame filter works (pinned by
@@ -207,6 +208,7 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
     if len(graded) < min_graded:
         return None
 
+    today = today or date.today()
     net_all = float(graded["early_close_vs_expiry_delta"].sum())
     if net_all > 1:
         headline_text = "more by exiting early than holding to expiry"
@@ -335,6 +337,9 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         pending_note = ("Daily option marks are still accumulating — "
                         "peak-capture grading unlocks as coverage builds.")
 
+    _align_exit_parts(graded, findings, headline)
+    adds_up = _exit_parts_sentence(findings)
+
     # Examples: the largest verdicts, each provable on its position page.
     examples = []
     ex = graded.reindex(
@@ -356,6 +361,13 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
                      else f"Sold the {label} near the highs")
             caption = ("vs holding to expiry" if delta < 0
                        else "better than expiry")
+        closed = ""
+        try:
+            closed = _date_label(row.get("close_date"), today)
+        except (TypeError, ValueError):
+            closed = ""
+        if closed:
+            title = f"{title} · {closed}"
         examples.append({
             "symbol": row["symbol"],
             "desc": title,
@@ -363,6 +375,7 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
             "delta": round(delta, 2),
             "delta_text": _signed(delta),
             "tone": "pos" if delta >= 0 else "neg",
+            "close_label": closed,
         })
 
     return {
@@ -372,7 +385,121 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         "examples": examples,
         "pending_note": pending_note,
         "kept_at_expiry": kept_at_expiry,
+        "adds_up": adds_up,
     }
+
+
+def _bucket_net(frame):
+    if frame is None or len(frame) == 0:
+        return 0.0
+    return float(frame["early_close_vs_expiry_delta"].sum())
+
+
+def _align_exit_parts(graded, findings, headline):
+    """Show the dollars that add up to the headline.
+
+    Rolls already print a count. Their net is a second figure. A bucket
+    with a single close stays out of its own row and lands in Other early
+    closes, so the headline is still the sum of the dollar rows.
+    """
+    longs = graded[(graded["direction"] == "Bought") & ~graded["was_rolled"]]
+    shorts = graded[(graded["direction"] == "Sold") & ~graded["was_rolled"]]
+    rolls = graded[graded["was_rolled"]]
+    known = graded.index.isin(longs.index) | graded.index.isin(shorts.index) | graded.index.isin(rolls.index)
+    rest = graded.loc[~known]
+    buckets = []
+    if len(longs):
+        buckets.append(("long", _bucket_net(longs), int(len(longs))))
+    if len(shorts):
+        buckets.append(("short", _bucket_net(shorts), int(len(shorts))))
+    if len(rolls):
+        buckets.append(("roll", _bucket_net(rolls), int(len(rolls))))
+    if len(rest):
+        buckets.append(("rest", _bucket_net(rest), int(len(rest))))
+    if not buckets:
+        return
+    net_all = _bucket_net(graded)
+    shown = allocate_rounded([item[1] for item in buckets], net_all)
+    by_key = {
+        item[0]: (dollars, item[2])
+        for item, dollars in zip(buckets, shown)
+    }
+
+    def _rewrite(label, dollars):
+        for finding in findings:
+            if finding.get("label") == label:
+                finding["value"] = _signed(dollars)
+                finding["tone"] = "pos" if dollars >= 0 else "neg"
+                return
+
+    other_dollars = 0
+    other_n = 0
+    named = (
+        ("long", "Long exits"),
+        ("short", "Short buybacks"),
+    )
+    for key, label in named:
+        if key not in by_key:
+            continue
+        dollars, count = by_key[key]
+        if count >= 2:
+            _rewrite(label, dollars)
+        else:
+            other_dollars += dollars
+            other_n += count
+    if "roll" in by_key:
+        dollars, count = by_key["roll"]
+        if count >= 2:
+            for finding in findings:
+                if finding.get("label") == "Rolls never tested":
+                    finding["net_text"] = _signed(dollars)
+                    finding["net_tone"] = "pos" if dollars >= 0 else "neg"
+        else:
+            other_dollars += dollars
+            other_n += count
+    if "rest" in by_key:
+        dollars, count = by_key["rest"]
+        other_dollars += dollars
+        other_n += count
+    if other_n:
+        findings.append({
+            "label": "Other early closes",
+            "value": _signed(other_dollars),
+            "tone": "pos" if other_dollars >= 0 else "neg",
+            "detail": (
+                f"{other_n} early close{'s' if other_n != 1 else ''} "
+                "outside the rows above. Included in the headline."
+            ),
+        })
+    total = sum(shown)
+    if total > 1:
+        headline["text"] = "more by exiting early than holding to expiry"
+    elif total < -1:
+        headline["text"] = "less by exiting early than holding to expiry"
+    else:
+        headline["text"] = "about the same as holding every contract to expiry"
+    headline["value"] = _signed(total)
+    headline["tone"] = "pos" if total >= 0 else "neg"
+
+
+def _exit_parts_sentence(findings):
+    labels = {finding.get("label") for finding in findings}
+    parts = []
+    if "Long exits" in labels:
+        parts.append("long exits")
+    if "Short buybacks" in labels:
+        parts.append("short buybacks")
+    if "Rolls never tested" in labels:
+        parts.append("rolls")
+    if "Other early closes" in labels:
+        parts.append("other early closes")
+    if len(parts) < 2:
+        return ""
+    if len(parts) == 2:
+        joined = f"{parts[0]} and {parts[1]}"
+    else:
+        joined = ", ".join(parts[:-1]) + f", and {parts[-1]}"
+    return f"{joined[:1].upper()}{joined[1:]} add up to the headline."
 
 
 # ── Rolling self-comparison ──────────────────────────────────────────────

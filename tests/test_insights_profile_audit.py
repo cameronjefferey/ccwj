@@ -12,6 +12,7 @@ import pandas as pd
 import app.insights as insights
 from app.outcome_units import SPREAD_STRATEGIES, option_record_from_fills
 from app.position_story import _money
+from app.review_format import allocate_rounded, session_date, whole_dollars
 from app.trader_story import _contract_record_fact, compose_novel, build_book
 
 
@@ -297,3 +298,91 @@ def test_profile_contract_record_comes_from_fills_not_per_leg_fingerprint():
     book = build_book(_BOOK_TRADES, None, None, _BOOK_SUMMARY)
     per_leg = sum(e["stats"]["contract_wins"] for e in book.values())
     assert per_leg == 2
+
+
+def test_allocate_rounded_parks_the_leftover_dollar():
+    shown = allocate_rounded([1.5, 1.5], 3.0)
+    assert shown == [1, 2]
+    assert sum(shown) == whole_dollars(3.0)
+    shown = allocate_rounded([10.4, 10.4], 20.8)
+    assert sum(shown) == whole_dollars(20.8)
+    assert allocate_rounded([]) == []
+    assert allocate_rounded([None, 4.2], 4.2) == [0, 4]
+
+
+def test_strategy_rows_display_dollars_add_up_to_the_headline():
+    named = [
+        {"strategy": "Covered Call", "giveback_pct": 10.0, "days_past_peak": 2.0,
+         "pnl_given_back": 10.4, "trades": 4, "total_closed": 8},
+        {"strategy": "Cash-Secured Put", "giveback_pct": 40.0, "days_past_peak": 6.0,
+         "pnl_given_back": 10.4, "trades": 5, "total_closed": 9},
+    ]
+    small = [{
+        "strategy": "Long Call", "pnl_given_back": 80.0,
+        "trades": 2, "total_closed": 6,
+    }]
+    rows, headlines = insights._assemble_exit_timing(
+        named, small, 10.4 + 10.4 + 80.0, 11, 40)
+    assert [r["strategy"] for r in rows] == [
+        "Covered Call", "Cash-Secured Put", "Other strategies"]
+    assert rows[-1]["is_other"] is True
+    assert rows[-1]["trades"] == 2
+    assert sum(r["display_given_back"] for r in rows) == headlines["display_total"]
+    assert headlines["display_total"] == whole_dollars(100.8)
+    # The percent still ignores the 2-close strategy.
+    weight = 4 + 5
+    assert round(headlines["avg_giveback"], 1) == round((4 * 10 + 5 * 40) / weight, 1)
+    brief = insights._format_exit_timing_brief(headlines, rows)
+    assert f"${headlines['display_total']:,.0f}" in brief
+    assert "Other strategies:" in brief
+    assert "Long Call" not in brief
+    assert "not in the percent" in brief
+
+
+def test_recent_exit_dates_and_totals_are_the_visible_rows():
+    rows = [
+        {"symbol": "AAA", "strategy": "Covered Call", "actual_pnl": 10.4,
+         "peak_pnl": 20.4, "given_back": 10.4, "days_past_peak": 2,
+         "close_date": "2024-12-29"},
+        {"symbol": "BBB", "strategy": "Covered Call", "actual_pnl": 10.4,
+         "peak_pnl": 20.4, "given_back": 10.4, "days_past_peak": 3,
+         "close_date": "2026-10-22"},
+        {"symbol": "CCC", "strategy": "Covered Call", "actual_pnl": 1.0,
+         "peak_pnl": 2.0, "given_back": 4.0, "days_past_peak": 1,
+         "close_date": "2024-01-02"},
+    ]
+    totals = insights.stamp_recent_exits(rows, anchor=date(2026, 10, 27))
+    assert rows[0]["close_label"] == "Dec 29, 2024"
+    assert "2026" not in rows[1]["close_label"]
+    assert rows[1]["close_label"] == "Oct 22"
+    visible = [r for r in rows if r["given_back"] > 10]
+    assert totals["given_back"] == sum(r["display_given_back"] for r in visible)
+    assert totals["actual"] == sum(r["display_actual"] for r in visible)
+    assert totals["peak"] == sum(r["display_peak"] for r in visible)
+    assert totals["given_back"] == whole_dollars(20.8)
+    assert "display_given_back" not in rows[2]
+    assert session_date("2024-12-29", anchor=date(2026, 10, 27)) == "Dec 29, 2024"
+
+
+def test_concentration_uses_the_headline_dollar_when_it_matches():
+    cards = [{
+        "tag": "Concentration",
+        "title": "One symbol accounts for a large share of giveback",
+        "stat": "40% of $200",
+        "body": "About **40%** of the dollars is on **AAA**.",
+        "concentration_pct": 40.0,
+        "total_dollars": 200.4,
+        "top_symbol": "AAA",
+        "muted": "",
+    }]
+    insights.align_giveback_concentration(cards, 200.4)
+    assert cards[0]["stat"] == "40% of $200"
+    assert "40%" in cards[0]["body"]
+    insights.align_giveback_concentration(cards, 400)
+    assert cards[0]["stat"] == "20% of $400"
+    assert "20%" in cards[0]["body"]
+    cards[0]["concentration_pct"] = 80.0
+    cards[0]["total_dollars"] = 300.0
+    insights.align_giveback_concentration(cards, 100)
+    assert "headline is $100" in cards[0]["muted"]
+    assert cards[0]["stat"].startswith("80% of $")

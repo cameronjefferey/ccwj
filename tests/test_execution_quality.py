@@ -154,7 +154,9 @@ def test_profile_summary_buckets_and_copy():
     assert "$820" in f["Short buybacks"]["detail"]
     # Rolls: 1 of 2 never tested; the other sidestepped $400.
     assert f["Rolls never tested"]["value"] == "1 of 2"
+    assert f["Rolls never tested"]["net_text"] == "+$375"
     assert "$400" in f["Rolls never tested"]["detail"]
+    assert "long exits, short buybacks, and rolls add up" in out["adds_up"].lower()
     # Expiry discipline: $215 kept across 2 contracts. The profile
     # "Kept at expiry" fact reuses this same dollar.
     assert f["Held to expiry"]["value"] == "$215 kept"
@@ -166,6 +168,24 @@ def test_profile_summary_buckets_and_copy():
     # Examples sorted by |delta|; biggest first (ORCL +$900).
     assert out["examples"][0]["symbol"] == "ORCL"
     assert len(out["examples"]) == 3
+    dated = summarize_execution(_profile_df(), today=date(2026, 10, 27))
+    assert ", 2025" in dated["examples"][0]["desc"]
+
+
+def test_singleton_early_close_stays_in_the_headline_as_other():
+    rows = [_row(early_close_vs_expiry_delta=100.0) for _ in range(4)]
+    rows.append(_row(
+        trade_symbol="ORCL 260618C00200000", symbol="ORCL",
+        direction="Bought", early_close_vs_expiry_delta=50.0,
+    ))
+    out = summarize_execution(pd.DataFrame(rows), today=date(2026, 10, 27))
+    labels = [f["label"] for f in out["findings"]]
+    assert "Long exits" not in labels
+    other = next(f for f in out["findings"] if f["label"] == "Other early closes")
+    shorts = next(f for f in out["findings"] if f["label"] == "Short buybacks")
+    assert shorts["value"] == "+$400"
+    assert other["value"] == "+$50"
+    assert out["headline"]["value"] == "+$450"
 
 
 def test_profile_marks_finding_when_coverage_reliable():

@@ -208,6 +208,33 @@ def test_align_kept_at_expiry_uses_execution_realized_pnl():
     }
     align_kept_at_expiry(other, None)
     assert other["profile"]["facts"][0]["value"] == "$99,558"
+    empty = {"profile": {"facts": [dict(other["profile"]["facts"][0])]}}
+    align_kept_at_expiry(empty, pd.DataFrame())
+    assert empty["profile"]["facts"][0]["value"] == "$99,558"
+    hidden = {
+        "profile": {"facts": [{
+            "label": "Kept at expiry", "value": "$99,558",
+            "tone": "pos", "detail": "fill cash",
+        }]},
+    }
+    align_kept_at_expiry(hidden, {"headline": {"value": "+$10"}})
+    assert all(f["label"] != "Kept at expiry" for f in hidden["profile"]["facts"])
+
+
+def test_kept_at_expiry_survives_a_full_fact_list_at_two_contracts():
+    facts = [{"label": f"Fact {i}", "value": "1", "tone": "", "detail": ""}
+             for i in range(6)]
+    profile = {"facts": facts}
+    df = pd.DataFrame([
+        {"close_type": "Expired", "direction": "Sold", "realized_pnl": 40.0},
+        {"close_type": "ExpiredOTM", "direction": "Sold", "realized_pnl": 15.0},
+    ])
+    align_kept_at_expiry(profile, df)
+    labels = [f["label"] for f in profile["facts"]]
+    assert labels.count("Kept at expiry") == 1
+    kept = next(f for f in profile["facts"] if f["label"] == "Kept at expiry")
+    assert kept["value"] == _money(55)
+    assert len(profile["facts"]) == 7
 
 
 def test_compose_novel_shape():
