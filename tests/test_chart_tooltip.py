@@ -328,6 +328,40 @@ def test_mismatched_roll_quantities_keep_the_close_and_open_separate():
     assert stats["contract_loss_total"] == 784.0
 
 
+def test_multiple_same_day_rolls_stay_separate_when_pairing_is_ambiguous():
+    """Date-only fills cannot prove which of two closes became which open."""
+    df = _trades([
+        (date(2025, 10, 1), "option_sell_to_open", "Call",
+         "XYZ251017C00100000", 1, 5.0, 500.0),
+        (date(2025, 10, 1), "option_sell_to_open", "Call",
+         "XYZ251017C00200000", 1, 4.0, 400.0),
+        (date(2025, 10, 10), "option_buy_to_close", "Call",
+         "XYZ251017C00100000", 1, 6.0, -600.0),
+        (date(2025, 10, 10), "option_buy_to_close", "Call",
+         "XYZ251017C00200000", 1, 1.0, -100.0),
+        # Deliberately ordered so the old first-match loop fabricated
+        # $100C → $205C and $200C → $105C.
+        (date(2025, 10, 10), "option_sell_to_open", "Call",
+         "XYZ251024C00205000", 1, 7.0, 700.0),
+        (date(2025, 10, 10), "option_sell_to_open", "Call",
+         "XYZ251024C00105000", 1, 1.0, 100.0),
+    ])
+
+    _items, markers, stats = build_position_story(df, None)
+    marker = next(m for m in markers if m["d"] == "2025-10-10")
+
+    assert stats["rolls"] == 0
+    assert _labels(marker) == [
+        "Bought back 1 × $100C",
+        "Bought back 1 × $200C",
+        "Sold 1 × $205C · Oct 24",
+        "Sold 1 × $105C · Oct 24",
+    ]
+    assert [tip["amt"] for tip in marker["tips"]] == [
+        "−$600", "−$100", "+$700", "+$100",
+    ]
+
+
 def test_clip_keeps_collapsed_spreads_and_still_sends_the_rest():
     """Six raw legs collapse to two spreads plus four opens: clip after that.
 

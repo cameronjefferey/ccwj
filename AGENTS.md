@@ -273,11 +273,14 @@ What's working:
  trims on a long-held position show here even though **Trades this week**
  only lists groups that opened or closed this ISO week. Same-day close +
  open of the same option type and size (same symbol + tenant, different
- strike/expiry) is grouped as one **Rolled** row (`_group_day_rolls`).
- Pairing keys on `tenant_id`. Mismatched quantities stay as separate fills
- until partial-roll allocation is modeled. Same-day open +
- expiry/assignment/exercise of the **same** contract and size is one row
- (`_group_day_open_and_settle`) — a Friday 0DTE is not
+ strike/expiry) is grouped as one **Rolled** row (`_group_day_rolls`) only
+ when the close/open match is one-to-one. Two same-type closes plus two
+ opens are ambiguous without order ids and stay as fills rather than
+ inventing which strike rolled where. Pairing keys on `tenant_id`.
+ Mismatched quantities also stay separate until partial-roll allocation is
+ modeled. Same-day open + expiry/assignment/exercise of the **same**
+ contract and size is one row (`_group_day_open_and_settle`) — a Friday
+ 0DTE is not
  Sold-to-open plus Expired. Estimated expiry (`option_settled_est`) pairs
  the same way. A same-day short and long of the same call or put, same
  expiry and size, different strikes, is one spread (`_group_day_spreads`);

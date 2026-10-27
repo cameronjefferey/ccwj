@@ -5117,70 +5117,80 @@ def _group_day_rolls(trade_rows):
         "option_sell_to_close": ("option_buy_to_open", False),
     }
     open_close = {v[0]: (k, v[1]) for k, v in close_open.items()}
+
+    def _pair_info(row, cand):
+        action = row.get("action")
+        if action in close_open:
+            pair_action, short_side = close_open[action]
+            if cand.get("action") != pair_action:
+                return None
+            closing = row
+        elif action in open_close:
+            pair_action, short_side = open_close[action]
+            if cand.get("action") != pair_action:
+                return None
+            closing = cand
+        else:
+            return None
+        if _close_is_settlement_not_trade(closing):
+            return None
+        if (cand.get("symbol") or "").upper() != (row.get("symbol") or "").upper():
+            return None
+        ta = str(row.get("tenant_id") or "").strip()
+        tb = str(cand.get("tenant_id") or "").strip()
+        if ta and tb:
+            if ta != tb:
+                return None
+        elif (cand.get("account") or "") != (row.get("account") or ""):
+            return None
+        occ = _parse_occ(row.get("trade_symbol"))
+        other_occ = _parse_occ(cand.get("trade_symbol"))
+        if not occ or not other_occ or other_occ["option_type"] != occ["option_type"]:
+            return None
+        if not _same_abs_qty(row.get("quantity"), cand.get("quantity")):
+            return None
+        if other_occ["strike"] == occ["strike"] and other_occ["expiry"] == occ["expiry"]:
+            return None
+        return short_side
+
+    # The source has a session date, not a reliable order id. If several
+    # closes can pair with several opens, choosing the first row fabricates
+    # strike transitions and per-roll cash. Only reciprocal one-to-one
+    # candidates are safe to collapse.
+    candidates = {i: set() for i in range(len(trade_rows))}
+    for i, row in enumerate(trade_rows):
+        for j in range(i + 1, len(trade_rows)):
+            if _pair_info(row, trade_rows[j]) is None:
+                continue
+            candidates[i].add(j)
+            candidates[j].add(i)
+
     used = set()
     out = []
     for i, row in enumerate(trade_rows):
         if i in used:
             continue
         action = row.get("action")
-        if action in close_open:
-            if _close_is_settlement_not_trade(row):
-                out.append(row)
-                continue
-            pair_action, short_side = close_open[action]
-            close_row, seek_open = row, True
-        elif action in open_close:
-            pair_action, short_side = open_close[action]
-            close_row, seek_open = None, False
-        else:
+        if action not in close_open and action not in open_close:
             out.append(row)
             continue
-        occ = _parse_occ(row.get("trade_symbol"))
-        if not occ:
+        matches = candidates.get(i) or set()
+        if len(matches) != 1:
             out.append(row)
             continue
-        match_idx = None
-        for j in range(i + 1, len(trade_rows)):
-            if j in used:
-                continue
-            cand = trade_rows[j]
-            if cand.get("action") != pair_action:
-                continue
-            # The match is the close when we started from the open.
-            closing = row if seek_open else cand
-            if _close_is_settlement_not_trade(closing):
-                continue
-            if (cand.get("symbol") or "").upper() != (row.get("symbol") or "").upper():
-                continue
-            # tenant_id is the grain — colliding "Schwab Account" labels
-            # must not pair a close in one account with an open in another.
-            ta = str(row.get("tenant_id") or "").strip()
-            tb = str(cand.get("tenant_id") or "").strip()
-            if ta and tb:
-                if ta != tb:
-                    continue
-            elif (cand.get("account") or "") != (row.get("account") or ""):
-                continue
-            o_occ = _parse_occ(cand.get("trade_symbol"))
-            if not o_occ or o_occ["option_type"] != occ["option_type"]:
-                continue
-            if not _same_abs_qty(row.get("quantity"), cand.get("quantity")):
-                # A partial reduction or increase cannot be one row: its
-                # cash and quantity would describe different contract
-                # counts. Keep both fills until partial rolls are modeled.
-                continue
-            if o_occ["strike"] == occ["strike"] and o_occ["expiry"] == occ["expiry"]:
-                continue
-            match_idx = j
-            break
-        if match_idx is None:
+        match_idx = next(iter(matches))
+        if match_idx in used or candidates.get(match_idx) != {i}:
             out.append(row)
             continue
         other = trade_rows[match_idx]
+        short_side = _pair_info(row, other)
+        if short_side is None:
+            out.append(row)
+            continue
         used.add(match_idx)
-        if seek_open:
+        if action in close_open:
             opened = other
-            closed = close_row
+            closed = row
         else:
             opened = row
             closed = other
