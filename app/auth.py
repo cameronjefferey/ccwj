@@ -75,6 +75,19 @@ def _user_id_is_demo(user_id) -> bool:
     return row is not None and (row.username or "").lower() == "demo"
 
 
+def _ci_username_rows(name):
+    """Accounts whose username differs from ``name`` only by case."""
+    name = (name or "").strip()
+    if not name:
+        return []
+    from app.db import fetch_all
+    return fetch_all(
+        "SELECT id, username, password_hash, email FROM users "
+        "WHERE lower(username) = lower(%s)",
+        (name,),
+    ) or []
+
+
 def _match_username_ci(name):
     """Exact username, else the one account that differs only by case.
 
@@ -89,15 +102,34 @@ def _match_username_ci(name):
     exact = User.get_by_username(name)
     if exact is not None:
         return exact
-    from app.db import fetch_all
-    rows = fetch_all(
-        "SELECT id, username, password_hash, email FROM users "
-        "WHERE lower(username) = lower(%s)",
-        (name,),
-    ) or []
+    rows = _ci_username_rows(name)
     if len(rows) != 1:
         return None
     return User._from_row(rows[0])
+
+
+def resolve_leading_at_username(identifier):
+    """Resolve a single leading ``@`` that contains no other ``@``.
+
+    Signup allowed ``@`` in usernames until the handle shorthand shipped,
+    and nothing in the schema removes those rows. A stored name
+    ``@Ada`` therefore wins over the handle ``Ada``, including the one
+    account that differs only by case. Two such spellings match nobody,
+    so the lookup does not continue on to a different account. When no
+    legacy row matches, the text after ``@`` is the handle.
+    """
+    ident = (identifier or "").strip()
+    if not (ident.startswith("@") and ident.count("@") == 1):
+        return None
+    exact = User.get_by_username(ident)
+    if exact is not None:
+        return exact
+    rows = _ci_username_rows(ident)
+    if len(rows) == 1:
+        return User._from_row(rows[0])
+    if len(rows) > 1:
+        return None
+    return _match_username_ci(ident[1:])
 
 
 def _username_taken_ignoring_case(username) -> bool:
@@ -116,7 +148,10 @@ def _username_taken_ignoring_case(username) -> bool:
 def _lookup_login_user(identifier):
     """Username, ``@handle``, or email.
 
-    A single leading ``@`` is a username handle. Anything else with an
+    A single leading ``@`` is a username handle after a literal match
+    of the whole string (exact, then a unique case difference). A
+    legacy username that starts with ``@`` wins over the handle, and
+    two case variants of that name match nobody. Anything else with an
     ``@`` is an email after an exact username miss (a username that
     literally contains ``@`` still wins). Other names match exactly,
     then case-insensitively when that spelling belongs to one account.
@@ -125,7 +160,7 @@ def _lookup_login_user(identifier):
     if not ident:
         return None
     if ident.startswith("@") and ident.count("@") == 1:
-        return _match_username_ci(ident[1:])
+        return resolve_leading_at_username(ident)
     user = User.get_by_username(ident)
     if user is not None:
         return user
