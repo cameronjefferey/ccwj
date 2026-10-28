@@ -620,20 +620,20 @@ def settings():
 
         if not current_user.check_password(current_pw):
             flash("Current password is incorrect.", "danger")
-            return redirect(url_for("profile", tab="account"))
+            return redirect(url_for("profile", tab="security"))
 
         valid, err = _validate_password(new_pw)
         if not valid:
             flash(err, "danger")
-            return redirect(url_for("profile", tab="account"))
+            return redirect(url_for("profile", tab="security"))
 
         if new_pw != confirm_pw:
             flash("New passwords do not match.", "danger")
-            return redirect(url_for("profile", tab="account"))
+            return redirect(url_for("profile", tab="security"))
 
         User.update_password(current_user.id, new_pw)
         flash("Password updated successfully.", "success")
-        return redirect(url_for("profile", tab="account"))
+        return redirect(url_for("profile", tab="security"))
 
 
 # ------------------------------------------------------------------

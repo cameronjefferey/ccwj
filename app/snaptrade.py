@@ -1126,7 +1126,10 @@ def snaptrade_name_accounts():
     ``account_rename_urls``).
     """
     qp = {}
-    for key in ("connecting", "first"):
+    # ``paper`` has to survive this step. A paper connect sets it so the
+    # processing page opens Practice. Dropping it sent that person into
+    # the brokerage waiting room (and, with ``first=1``, the survey).
+    for key in ("connecting", "first", "paper"):
         val = (request.args.get(key) or "").strip()
         if val:
             qp[key] = val
@@ -1137,6 +1140,8 @@ def snaptrade_name_accounts():
         if blocked:
             return blocked
         rows = get_snaptrade_accounts(current_user.id) or []
+        attempted = 0
+        saved = 0
         for r in rows:
             acct_id = r.get("snaptrade_account_id")
             if not acct_id:
@@ -1145,10 +1150,24 @@ def snaptrade_name_accounts():
             if field not in request.form:
                 continue
             nickname = (request.form.get(field) or "").strip()
-            if nickname:
-                update_snaptrade_account_nickname(
-                    current_user.id, acct_id, nickname)
-        flash("Got it — nicknames saved.", "success")
+            if not nickname:
+                continue
+            attempted += 1
+            if update_snaptrade_account_nickname(
+                current_user.id, acct_id, nickname,
+            ):
+                saved += 1
+        if attempted and saved == attempted:
+            flash("Got it — nicknames saved.", "success")
+        elif attempted and saved == 0:
+            flash("Couldn't save those nicknames. Try again.", "danger")
+            return redirect(request.url)
+        elif attempted:
+            flash(
+                "Some nicknames couldn't be saved. The ones that saved "
+                "are kept. You can finish the rest from Accounts.",
+                "warning",
+            )
         return redirect(continue_url)
 
     from app.routes import _snaptrade_accounts_needing_nickname

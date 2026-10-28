@@ -46,6 +46,11 @@ def sync_status_label(row):
     if err:
         return "Last sync didn't finish"
     if not row.get("first_sync_completed"):
+        # Positions can land before SnapTrade finishes indexing history.
+        # "Waiting for the first sync" next to a broker-data date says the
+        # account both has data and has never synced.
+        if row.get("holdings_last_successful_sync"):
+            return "Trade history still arriving"
         return "Waiting for the first sync"
     return None
 

@@ -588,25 +588,47 @@
         showStep(current - 1);
     });
 
-    dismissBtn.addEventListener("click", function () {
-        if (!confirm("Skip the survey?")) return;
+    function leaveSurvey() {
         window.__onboardingHoldRedirect = false;
-        if (!preview) {
-            var fd = new FormData();
-            var token = form.querySelector("input[name=csrf_token]");
-            if (token) fd.append("csrf_token", token.value);
-            fd.append("skipped", "1");
-            fetch(form.action, {
-                method: "POST",
-                body: fd,
-                credentials: "same-origin",
-                headers: { "X-Requested-With": "XMLHttpRequest" }
-            }).catch(function () {});
-        }
-        card.parentNode.removeChild(card);
-        // Restore the sync card to its original "hero" layout.
+        if (card.parentNode) card.parentNode.removeChild(card);
         var sync = document.getElementById("syncCard");
         if (sync) sync.classList.remove("is-secondary");
+    }
+
+    dismissBtn.addEventListener("click", function () {
+        if (!confirm("Skip the survey?")) return;
+        if (preview) {
+            leaveSurvey();
+            return;
+        }
+        dismissBtn.disabled = true;
+        var fd = new FormData();
+        var token = form.querySelector("input[name=csrf_token]");
+        if (token) fd.append("csrf_token", token.value);
+        fd.append("skipped", "1");
+        fetch(form.action, {
+            method: "POST",
+            body: fd,
+            credentials: "same-origin",
+            headers: { "X-Requested-With": "XMLHttpRequest" }
+        })
+            .then(function (r) {
+                return r.json().then(function (body) {
+                    return { ok: r.ok && body && body.ok };
+                });
+            })
+            .then(function (res) {
+                if (!res.ok) {
+                    dismissBtn.disabled = false;
+                    sectionError.textContent = "Couldn't skip just now. Try again in a moment.";
+                    return;
+                }
+                leaveSurvey();
+            })
+            .catch(function () {
+                dismissBtn.disabled = false;
+                sectionError.textContent = "Network hiccup. Try again in a moment.";
+            });
     });
 
     form.addEventListener("submit", function (ev) {

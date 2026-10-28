@@ -50,7 +50,7 @@
     <div class="card" id="name-list">
         <div class="name-pad">
             <h2 class="section-header">Nicknames</h2>
-            <form method="post">
+            <form method="post" data-submit-once>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 {% for c in generic_accounts %}
                 <div class="name-row">
