@@ -1799,7 +1799,7 @@
                         <div class="small mt-1">
                             We haven&rsquo;t been able to sync
                             <code>{{ (c.display_nickname or c.account_name) | account_label(c.tenant_id) }}</code>
-                            {% if c.stale_days and c.stale_days > 0 %}for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}since today{% endif %}.
+                            {% if c.stale_days and c.stale_days > 0 %}for {{ c.stale_days }} day{{ 's' if c.stale_days != 1 }}{% else %}— it just stopped syncing{% endif %}.
                             New trades won't show up until you reconnect.
                         </div>
                     {% endif %}
@@ -2018,26 +2018,38 @@
             });
         })();
 
-        // Broker "Sync now" — show loading state until redirect
-        document.querySelectorAll('form[data-submit-once]').forEach(function (form) {
-            form.addEventListener('submit', function () {
+        // Disable the button after this submit has started. Doing it
+        // inside the submit handler itself can drop the request. A second
+        // submit (double-click) is cancelled. A confirm() that returns
+        // false has already prevented the event, so that click stays live.
+        function lockSubmitButton(form, paint) {
+            form.addEventListener('submit', function (ev) {
+                if (ev.defaultPrevented) return;
                 var btn = form.querySelector('button[type="submit"]');
-                if (!btn || btn.disabled) return;
-                btn.disabled = true;
+                if (!btn) return;
+                if (btn.getAttribute('data-submitting') === '1') {
+                    ev.preventDefault();
+                    return;
+                }
+                btn.setAttribute('data-submitting', '1');
                 btn.setAttribute('aria-busy', 'true');
+                setTimeout(function () {
+                    if (paint) paint(btn, form);
+                    btn.disabled = true;
+                }, 0);
             });
+        }
+
+        document.querySelectorAll('form[data-submit-once]').forEach(function (form) {
+            lockSubmitButton(form);
         });
 
         document.querySelectorAll('form.snaptrade-sync-form').forEach(function(form) {
-            form.addEventListener('submit', function() {
-                var btn = form.querySelector('button[type="submit"]');
-                if (!btn || btn.disabled) return;
+            lockSubmitButton(form, function (btn, lockedForm) {
                 var w = btn.offsetWidth;
                 if (w) btn.style.minWidth = w + 'px';
-                btn.disabled = true;
-                btn.setAttribute('aria-busy', 'true');
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="ms-2">Syncing…</span>';
-                var st = form.querySelector('.snaptrade-sync-status');
+                var st = lockedForm.querySelector('.snaptrade-sync-status');
                 if (st) st.classList.remove('d-none');
             });
         });

@@ -1,7 +1,8 @@
 """Second brokerage must not reopen first-time onboarding.
 
-The survey is for a person who has never finished it and had nothing
-linked before this connect. Fixtures are made up.
+The survey is for a person who has never finished it and had no real
+brokerage or CSV before this connect. Alpaca Paper does not count.
+Fixtures are made up.
 """
 from datetime import datetime, timezone
 
@@ -32,6 +33,45 @@ def test_prior_accounts_or_tenants_skip_the_quiz_before_the_new_row_exists():
     prior = [{"snaptrade_account_id": "older-acc", "first_sync_completed": True}]
     assert first_connect_needs_quiz(7, prior, []) is False
     assert first_connect_needs_quiz(7, [], ["manual:manual:7:older-book"]) is False
+
+
+def test_paper_only_history_still_needs_the_quiz(monkeypatch):
+    """Alpaca Paper is not an onboarded book. A later real brokerage
+    still shows the survey until they save or skip."""
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    paper = [{
+        "snaptrade_account_id": "paper-acc",
+        "tenant_id": "snaptrade:paper-acc",
+        "account_name": "Alpaca Paper Account",
+        "broker_slug": "Alpaca Paper",
+        "first_sync_completed": True,
+        "created_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+    }]
+    assert first_connect_needs_quiz(7, paper, ["snaptrade:paper-acc"]) is True
+    assert first_connect_needs_quiz(
+        7, paper, ["snaptrade:paper-acc", "manual:manual:7:csv"],
+    ) is False
+    real = paper + [{
+        "snaptrade_account_id": "schwab",
+        "tenant_id": "snaptrade:schwab",
+        "account_name": "Schwab Account",
+        "broker_slug": "Charles Schwab",
+    }]
+    assert first_connect_needs_quiz(
+        7, real, ["snaptrade:paper-acc", "snaptrade:schwab"],
+    ) is False
+
+
+def test_saved_survey_hides_the_quiz_after_paper(monkeypatch):
+    monkeypatch.setattr(
+        "app.models.get_onboarding_response",
+        lambda uid: {"answers": {"skipped": True}},
+    )
+    paper = [{
+        "account_name": "Alpaca Paper Account",
+        "tenant_id": "snaptrade:paper-acc",
+    }]
+    assert first_connect_needs_quiz(7, paper, ["snaptrade:paper-acc"]) is False
 
 
 def test_brand_new_user_still_needs_the_quiz(monkeypatch):
@@ -147,6 +187,78 @@ def test_background_sync_stamps_do_not_hide_the_first_survey(monkeypatch):
     assert 'name="why_here[]"' in html
     assert 'type="radio"' not in html
     assert "Pick any that apply." in html
+
+
+def test_paper_processing_page_shows_the_quiz_until_it_is_saved(monkeypatch):
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    monkeypatch.setattr(
+        "app.models.get_snaptrade_accounts",
+        lambda uid: [{
+            "snaptrade_account_id": "paper-acc",
+            "tenant_id": "snaptrade:paper-acc",
+            "account_name": "Alpaca Paper Account",
+            "broker_slug": "Alpaca Paper",
+            "first_sync_completed": True,
+            "created_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+        }],
+    )
+    monkeypatch.setattr(
+        "app.models.get_tenant_ids_for_user",
+        lambda uid: ["snaptrade:paper-acc"],
+    )
+    assert onboarding_quiz_still_pending(7) is True
+    monkeypatch.setattr(
+        "app.early_broker.early_broker_notice_for_user", lambda uid: None,
+    )
+    client = _client()
+    _login(client, monkeypatch)
+    page = client.get("/sync/processing?first=1&connecting=1&paper=1")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert 'id="onboardingForm"' in html
+    assert "Your paper account is connected" in html
+    assert "Practice a trade" in html
+    assert '"/practice"' in html or "/practice" in html
+
+    monkeypatch.setattr(
+        "app.models.get_onboarding_response",
+        lambda uid: {"answers": {"skipped": True}},
+    )
+    assert onboarding_quiz_still_pending(7) is False
+    skipped = client.get("/sync/processing?first=1&connecting=1&paper=1")
+    body = skipped.get_data(as_text=True)
+    assert 'id="onboardingForm"' not in body
+    assert "Your paper account is connected" in body
+
+
+def test_real_broker_after_paper_still_shows_the_quiz(monkeypatch):
+    """The paper row can be old and fully synced. The new real account
+    must not inherit that as 'already onboarded'."""
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    monkeypatch.setattr(
+        "app.models.get_snaptrade_accounts",
+        lambda uid: [
+            {
+                "snaptrade_account_id": "paper-acc",
+                "tenant_id": "snaptrade:paper-acc",
+                "account_name": "Alpaca Paper Account",
+                "first_sync_completed": True,
+                "created_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+            },
+            {
+                "snaptrade_account_id": "schwab",
+                "tenant_id": "snaptrade:schwab",
+                "account_name": "Schwab Account",
+                "first_sync_completed": False,
+                "created_at": datetime.now(timezone.utc),
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "app.models.get_tenant_ids_for_user",
+        lambda uid: ["snaptrade:paper-acc", "snaptrade:schwab"],
+    )
+    assert onboarding_quiz_still_pending(7) is True
 
 
 def test_old_account_without_the_first_sync_flag_hides_a_bookmarked_quiz(monkeypatch):
@@ -424,3 +536,103 @@ def test_account_list_copies_the_authorization_brokerage():
     assert complete is True
     assert accounts[0]["connection_broker"] == "Empower"
     assert _broker_label_for_account(accounts[0]) == "Empower"
+
+
+def test_callback_after_paper_still_opens_the_quiz(monkeypatch):
+    import types
+    from app import snaptrade as snap
+
+    paper = {
+        "snaptrade_account_id": "paper-acc",
+        "tenant_id": "snaptrade:paper-acc",
+        "account_name": "Alpaca Paper Account",
+        "broker_slug": "Alpaca Paper",
+        "first_sync_completed": True,
+        "created_at": datetime(2024, 4, 4, tzinfo=timezone.utc),
+    }
+    schwab = {
+        "snaptrade_account_id": "schwab-acc",
+        "tenant_id": "snaptrade:schwab-acc",
+        "account_name": "Schwab Account",
+        "display_nickname": "Roth",
+        "broker_slug": "Charles Schwab",
+        "first_sync_completed": False,
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    monkeypatch.setattr(snap, "current_user", types.SimpleNamespace(id=7))
+    monkeypatch.setattr(
+        snap, "get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(
+        snap, "_list_snaptrade_accounts",
+        lambda client, creds: ([
+            {
+                "id": "paper-acc",
+                "institution_name": "Alpaca Paper",
+                "number": "1111",
+                "brokerage_authorization": "auth-paper",
+            },
+            {
+                "id": "schwab-acc",
+                "institution_name": "Charles Schwab",
+                "number": "9988",
+                "brokerage_authorization": "auth-schwab",
+            },
+        ], True),
+    )
+
+    def _accounts(uid):
+        _accounts.calls += 1
+        if _accounts.calls == 1:
+            return [paper]
+        return [paper, schwab]
+
+    _accounts.calls = 0
+    monkeypatch.setattr(snap, "get_snaptrade_accounts", _accounts)
+    monkeypatch.setattr(
+        snap, "_ensure_snaptrade_tenant_id",
+        lambda **kwargs: "snaptrade:" + kwargs["snaptrade_account_id"],
+    )
+    monkeypatch.setattr(
+        snap, "get_broker_tenant",
+        lambda tid: {"account_name": "Account", "display_nickname": "Roth"},
+    )
+    monkeypatch.setattr(snap, "upsert_snaptrade_account", lambda *a, **k: None)
+    monkeypatch.setattr(snap, "clear_snaptrade_connection_broken", lambda *a, **k: None)
+    monkeypatch.setattr(snap, "add_account_for_user", lambda *a, **k: None)
+    monkeypatch.setattr(
+        snap, "set_snaptrade_brokerage_authorization_id", lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "app.early_broker.maybe_stamp_early_broker_cohort", lambda *a, **k: None,
+    )
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    monkeypatch.setattr(
+        "app.models.get_tenant_ids_for_user",
+        lambda uid: ["snaptrade:paper-acc"],
+    )
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda uid: False)
+    monkeypatch.setattr(
+        "app.paper_accounts.note_connect_view", lambda *a, **k: None,
+    )
+    monkeypatch.setattr(snap, "_kick_post_connect_sync", lambda uid: None)
+    monkeypatch.setattr(
+        "app.routes._snaptrade_accounts_needing_nickname", lambda rows: [],
+    )
+
+    with app.test_request_context("/snaptrade/callback"):
+        from flask import session
+        session["snaptrade_callback_user_id"] = 7
+        resp = snap.snaptrade_callback.__wrapped__()
+        flashes = session.get("_flashes") or []
+
+    location = resp.location or ""
+    assert resp.status_code == 302
+    assert "sync/processing" in location
+    assert "first=1" in location
+    assert "paper=1" not in location
+    messages = " ".join(str(item) for item in flashes)
+    assert "connected, syncing now" not in messages

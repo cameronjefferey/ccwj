@@ -192,6 +192,8 @@
                 <h2 class="section-header">Connected accounts</h2>
                 {% if snaptrade_connected %}
                 <span class="badge badge-open">Connected</span>
+                {% elif _manual_rows %}
+                <span class="badge">CSV on file</span>
                 {% else %}
                 <span class="badge">Not connected</span>
                 {% endif %}
@@ -558,7 +560,9 @@
             <p class="settings-lead">
                 You have <strong>{{ _snaptrade_accounts|length }}</strong>
                 brokerage account{{ '' if _snaptrade_accounts|length == 1 else 's' }}
-                connected via SnapTrade.
+                connected via SnapTrade{% if _manual_rows %},
+                plus <strong>{{ _manual_rows|length }}</strong>
+                uploaded CSV account{{ '' if _manual_rows|length == 1 else 's' }}{% endif %}.
             </p>
             <form method="POST" action="{{ url_for('snaptrade_sync') }}" class="snaptrade-sync-form mb-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -637,7 +641,7 @@
             <ul class="settings-lead ps-3">
                 <li><strong>Within minutes:</strong> current positions, cash balance, and account total.</li>
                 <li><strong>Within a few hours:</strong> recent trade history (sometimes up to 24h for the very first sync).</li>
-                <li><strong>Not the life of the account.</strong> We request up to {{ snaptrade_full_history_lookback_days | history_window }}; each broker only returns what it still has on file. Schwab typically sends about 1–2 years of trades, not 5 years and not the account open date. Daily values start the first day we captured a snapshot.</li>
+                <li><strong>Not the life of the account.</strong> We ask for the longest window the connection allows. Each broker only returns what it still has on file. Schwab typically sends about 1–2 years of trades, not the account open date. Daily values start the first day we captured a snapshot.</li>
             </ul>
             <p class="settings-lead">
                 If trades aren't visible right away, sync again later — the broker

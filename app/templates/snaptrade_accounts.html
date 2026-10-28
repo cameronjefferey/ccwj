@@ -280,7 +280,7 @@
         </summary>
         <div class="disclosure-body">
             <p class="empty-hint mb-2"><strong>Trades can lag.</strong> {% include "_broker_sync_timing.html" %} If a trade you just placed isn't here, check back later.</p>
-            <p class="empty-hint mb-0">Opens the connection portal. Use Connect an account for a new brokerage, or another account at a broker you already use.</p>
+            <p class="empty-hint mb-0">Broker sync is not a lifetime archive. Each broker only returns the history it still has on file, often 1–2 years for Schwab. Older years: <a href="{{ url_for('upload') }}">upload a CSV</a>.</p>
         </div>
     </details>
 

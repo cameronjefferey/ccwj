@@ -169,16 +169,33 @@
         if (!form || !btn) return;
         var label = btn.querySelector(".signup-btn-label");
         var progress = btn.querySelector(".signup-btn-progress");
-        form.addEventListener("submit", function () {
-            if (btn.getAttribute("data-submitting") === "1") return;
+        form.addEventListener("submit", function (ev) {
+            if (btn.getAttribute("data-submitting") === "1") {
+                ev.preventDefault();
+                return;
+            }
+            // Turnstile cancels the first submit and posts again after the
+            // challenge. Locking that first click blocks the real one.
+            var widget = document.getElementById("signup-turnstile");
+            if (widget && window.turnstile && form.getAttribute("data-turnstile-ok") !== "1") {
+                btn.setAttribute("aria-busy", "true");
+                if (label) label.classList.add("d-none");
+                if (progress) {
+                    progress.classList.remove("d-none");
+                    progress.classList.add("d-inline-flex");
+                }
+                return;
+            }
             btn.setAttribute("data-submitting", "1");
             btn.setAttribute("aria-busy", "true");
-            btn.disabled = true;
-            if (label) label.classList.add("d-none");
-            if (progress) {
-                progress.classList.remove("d-none");
-                progress.classList.add("d-inline-flex");
-            }
+            setTimeout(function () {
+                btn.disabled = true;
+                if (label) label.classList.add("d-none");
+                if (progress) {
+                    progress.classList.remove("d-none");
+                    progress.classList.add("d-inline-flex");
+                }
+            }, 0);
         });
     })();
     </script>

@@ -3460,9 +3460,10 @@ def sync_processing():
     # ``?first=1`` used to mean "some account has not finished its first
     # sync". A second brokerage is always unsynced, so that reopened the
     # survey. Re-check here so a bookmarked URL cannot do that either.
+    # Paper uses the same survey. ``paper=1`` only changes the page
+    # they land on after Save or Skip.
     pending_quiz = bool(
         is_first
-        and not paper
         and onboarding_quiz_still_pending(current_user.id)
     )
     if paper:

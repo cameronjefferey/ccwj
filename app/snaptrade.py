@@ -1059,16 +1059,18 @@ def snaptrade_callback():
             paper_saved=paper_saved,
         )
         _kick_post_connect_sync(user_id)
-        if practice_return:
-            flash("Paper account connected. Pick a call or a put.", "success")
-            return redirect(url_for("paper_practice"))
         from app.onboarding_gate import first_connect_needs_quiz
         # Survey only when onboarding is still genuinely not done.
         # A new account's first_sync_completed flag is false for every
         # additional broker; that used to set ?first=1 and reopen the quiz.
+        # Paper does not count as already onboarded. A practice-portal
+        # return still shows the survey on a first paper connect.
         needs_quiz = first_connect_needs_quiz(
             user_id, prior_accounts, prior_tenant_ids,
         )
+        if practice_return and not needs_quiz:
+            flash("Paper account connected. Pick a call or a put.", "success")
+            return redirect(url_for("paper_practice"))
         # Already onboarded, and this was a new brokerage (not a
         # reconnect or a recovery of an account we already had).
         # Go back to Settings/accounts, or Overview, with a toast.
@@ -1081,8 +1083,10 @@ def snaptrade_callback():
         if needs_quiz:
             qp["first"] = 1
         # A new paper account has no trades. Don't send it through the
-        # history-and-Overview waiting room.
-        if newly_saved and paper_saved == newly_saved:
+        # history-and-Overview waiting room. The survey still shows
+        # (``first=1``); Practice is where they go after Save or Skip.
+        paper_only = bool(newly_saved and paper_saved == newly_saved)
+        if paper_only or (practice_return and needs_quiz and newly_saved):
             qp["paper"] = 1
         if reconnect_label:
             flash(
@@ -1090,6 +1094,8 @@ def snaptrade_callback():
                 "data now.",
                 "success",
             )
+        elif paper_only or (practice_return and needs_quiz and newly_saved):
+            flash("Paper account connected.", "success")
         elif recovery_existing:
             flash(
                 "Broker connection refreshed. We're pulling the latest "
@@ -1126,7 +1132,10 @@ def snaptrade_name_accounts():
     ``account_rename_urls``).
     """
     qp = {}
-    for key in ("connecting", "first"):
+    # ``paper`` has to survive this step. A paper connect sets it so the
+    # processing page opens Practice. Dropping it sent that person into
+    # the brokerage waiting room (and, with ``first=1``, the survey).
+    for key in ("connecting", "first", "paper"):
         val = (request.args.get(key) or "").strip()
         if val:
             qp[key] = val
@@ -1137,6 +1146,8 @@ def snaptrade_name_accounts():
         if blocked:
             return blocked
         rows = get_snaptrade_accounts(current_user.id) or []
+        attempted = 0
+        saved = 0
         for r in rows:
             acct_id = r.get("snaptrade_account_id")
             if not acct_id:
@@ -1145,10 +1156,24 @@ def snaptrade_name_accounts():
             if field not in request.form:
                 continue
             nickname = (request.form.get(field) or "").strip()
-            if nickname:
-                update_snaptrade_account_nickname(
-                    current_user.id, acct_id, nickname)
-        flash("Got it — nicknames saved.", "success")
+            if not nickname:
+                continue
+            attempted += 1
+            if update_snaptrade_account_nickname(
+                current_user.id, acct_id, nickname,
+            ):
+                saved += 1
+        if attempted and saved == attempted:
+            flash("Got it — nicknames saved.", "success")
+        elif attempted and saved == 0:
+            flash("Couldn't save those nicknames. Try again.", "danger")
+            return redirect(request.url)
+        elif attempted:
+            flash(
+                "Some nicknames couldn't be saved. The ones that saved "
+                "are kept. You can finish the rest from Accounts.",
+                "warning",
+            )
         return redirect(continue_url)
 
     from app.routes import _snaptrade_accounts_needing_nickname

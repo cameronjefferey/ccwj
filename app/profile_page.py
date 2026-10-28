@@ -299,7 +299,11 @@ def profile():
                 flash("Pick Simple or Full.", "danger")
                 return redirect(url_for("profile", tab="preferences"))
             if not set_app_view(current_user.id, view, chosen=True):
-                flash("Could not save that view. Check server logs.", "danger")
+                app.logger.warning(
+                    "set_app_view failed user_id=%s view=%s",
+                    current_user.id, view,
+                )
+                flash("Couldn't save that view. Try again.", "danger")
                 return redirect(url_for("profile", tab="preferences"))
             flash("Simple view is on." if view == "simple" else "Full view is on.", "success")
             if view == "full" and (request.form.get("from") or "") == "offer":
@@ -321,7 +325,11 @@ def profile():
                     weekly_preview_email=weekly_preview_email,
                     product_update_email=product_update_email,
                 ):
-                    flash("Could not save notification settings. Check server logs.", "danger")
+                    app.logger.warning(
+                        "notification settings save failed user_id=%s",
+                        current_user.id,
+                    )
+                    flash("Couldn't save notification settings. Try again.", "danger")
                     return redirect(url_for("profile", tab="notifications"))
                 flash("Notification settings saved.", "success")
                 return redirect(url_for("profile", tab="notifications"))
@@ -346,7 +354,10 @@ def profile():
                 default_route=default_route,
                 compact_tables=compact_tables,
             ):
-                flash("Could not save profile (database migration may be pending). Check server logs.", "danger")
+                app.logger.warning(
+                    "profile save failed user_id=%s", current_user.id,
+                )
+                flash("Couldn't save that profile. Try again.", "danger")
                 return redirect(url_for("profile", tab="preferences"))
             flash("Profile saved.", "success")
             return redirect(url_for("profile", tab="preferences"))

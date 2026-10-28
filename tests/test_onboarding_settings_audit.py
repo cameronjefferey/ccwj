@@ -84,6 +84,10 @@ def test_sync_status_label_never_echoes_the_stored_error():
         "first_sync_completed": False,
     }) == "Waiting for the first sync"
     assert sync_status_label({
+        "first_sync_completed": False,
+        "holdings_last_successful_sync": "2026-10-27T21:00:00+00:00",
+    }) == "Trade history still arriving"
+    assert sync_status_label({
         "first_sync_completed": True,
     }) is None
     assert raw not in (sync_status_label({"last_sync_error": raw}) or "")
@@ -794,6 +798,8 @@ def test_settings_lists_a_csv_nickname_the_hero_already_counts(monkeypatch):
     overview = client.get("/profile").get_data(as_text=True)
     assert "Family CSV IRA" in overview
     assert "Uploaded CSV" in overview
+    assert "CSV on file" in overview
+    assert "Not connected" not in overview
     assert "Sync all accounts" not in overview
     account = client.get("/profile?tab=account").get_data(as_text=True)
     assert "Family CSV IRA" in account
@@ -836,6 +842,13 @@ def test_settings_keeps_a_csv_nickname_beside_a_live_broker(monkeypatch):
     assert "Old History Book" in html
     assert "Uploaded CSV" in html
     assert "Sync all accounts" in html
+    account = client.get("/profile?tab=account").get_data(as_text=True)
+    assert account.count("<strong>1</strong>") >= 2
+    assert "brokerage accounts" not in account
+    assert "uploaded CSV accounts" not in account
+    assert "plus" in account
+    assert "uploaded CSV account" in account
+    assert "5 years" not in account
 
 
 def _auth_users(monkeypatch):
