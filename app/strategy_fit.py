@@ -551,12 +551,14 @@ def render_strategy_fit_view():
     from app.sector_labels import apply_sector_labels as _apply_sector_labels
     summary_df = _apply_sector_labels(summary_df)
     from app.grouped_trades import (
-        attach_sectors, fetch_grouped_book, format_record_span, stamp_grouped_counts,
+        attach_sectors, fetch_grouped_book, format_record_span, retag_dividend_units,
+        stamp_grouped_counts,
     )
     book_units, book_fills = fetch_grouped_book(client, tenant_filter, tenant_ids)
     trades_grouped = bool(book_units)
     record_span = ""
     if book_units:
+        retag_dividend_units(book_units, summary_df)
         attach_sectors(book_units, summary_df)
         summary_df = stamp_grouped_counts(
             summary_df, book_units, ("tenant_id", "symbol", "strategy"),

@@ -163,6 +163,37 @@ WHERE strategy = @strategy
 
 
 STRATEGY_TYPE_BREAKDOWN_QUERY = """
+WITH matched AS (
+  SELECT
+    c.tenant_id AS tenant_id,
+    c.trade_group_type,
+    c.realized_pnl,
+    c.unrealized_pnl,
+    c.status,
+    c.total_fees
+  FROM `ccwj-dbt.analytics.int_strategy_classification` c
+  INNER JOIN `ccwj-dbt.analytics.positions_summary` p
+    ON (c.tenant_id IS NOT DISTINCT FROM p.tenant_id)
+   AND c.account = p.account
+   AND (c.user_id IS NOT DISTINCT FROM p.user_id)
+   AND c.symbol = p.symbol
+   AND (
+        c.strategy = p.strategy
+        OR (
+          p.strategy = 'Dividend'
+          AND c.strategy = 'Buy and Hold'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM `ccwj-dbt.analytics.positions_summary` held
+            WHERE (held.tenant_id IS NOT DISTINCT FROM c.tenant_id)
+              AND held.symbol = c.symbol
+              AND held.strategy = 'Buy and Hold'
+          )
+        )
+      )
+  WHERE p.strategy = @strategy
+    {tenant_filter}
+)
 SELECT
   tenant_id,
   trade_group_type,
@@ -175,9 +206,7 @@ SELECT
   -- Real broker fees (informational — already netted into realized_pnl
   -- above via net_cash_flow, NOT an additional deduction). Sep 2026.
   ROUND(SUM(IFNULL(total_fees, 0)), 2) AS fees_sum
-FROM `ccwj-dbt.analytics.int_strategy_classification`
-WHERE strategy = @strategy
-  {tenant_filter}
+FROM matched
 GROUP BY 1, 2
 """
 
@@ -748,6 +777,7 @@ def strategies():
         unique_symbols = None
         book_df = pd.DataFrame()
         trend_df = pd.DataFrame()
+        sym_df = pd.DataFrame()
         try:
             from app.routes import _bq_parallel
             side = _bq_parallel(client, {
@@ -771,10 +801,13 @@ def strategies():
             months_from_units,
             overlay_month_counts,
             overlay_breakdown_counts,
+            replace_month_pnl,
+            retag_dividend_units,
             stamp_grouped_counts,
             symbol_trade_counts,
         )
         book_units, book_fills = fetch_grouped_book(client, tenant_filter, tenant_ids)
+        dividend_moved = retag_dividend_units(book_units, sym_df) if book_units else 0
         grouped_names = grouped_strategies(book_units) if book_units else set()
         if book_units:
             df = stamp_grouped_counts(
@@ -883,6 +916,10 @@ def strategies():
         rolled_trend = roll_strategy_months(trend_df)
         if not grouped_months.empty:
             rolled_trend = overlay_month_counts(rolled_trend, grouped_months)
+        if dividend_moved:
+            rolled_trend = replace_month_pnl(
+                rolled_trend, grouped_months, ("Buy and Hold",),
+            )
         grouped_names_with_months = (
             set(grouped_months["strategy"].astype(str)) if not grouped_months.empty else set()
         )
@@ -1029,7 +1066,9 @@ def strategies():
                     )
                     bdf = cached_query_df(
                         client,
-                        STRATEGY_TYPE_BREAKDOWN_QUERY.format(tenant_filter=tenant_filter),
+                        STRATEGY_TYPE_BREAKDOWN_QUERY.format(
+                            tenant_filter=_tenant_sql_and(tenant_ids, col="p.tenant_id"),
+                        ),
                         job_config=strat_job,
                     )
                     bdf = _filter_df_by_tenant_ids(bdf, tenant_ids)
@@ -1110,6 +1149,10 @@ def strategies():
                             "num_trades": int(r.get("num_trades") or 0),
                             "win_rate": acct_wr,
                         })
+                    from app.book_totals import pin_rounded_column
+                    pin_rounded_column(
+                        acct_rows, "total_return", focus_rows[0]["total_return"], places=2,
+                    )
                     context["focus_accounts"] = acct_rows
 
                 # Per-symbol breakdown

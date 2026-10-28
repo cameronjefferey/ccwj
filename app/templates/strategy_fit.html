@@ -271,6 +271,12 @@
         font-variant-numeric: tabular-nums; min-width: 90px;
         cursor: default; transition: transform .08s ease, opacity .12s ease;
     }
+    @media (min-width: 900px) {
+        table.fit td.cell { min-width: 118px; font-size: 1rem; }
+        table.fit th, table.fit td { padding: .7rem .8rem; }
+        table.fit td.cell .cell-pnl,
+        table.fit td.total-cell .cell-pnl { font-size: 1.05rem; }
+    }
     @media (max-width: 720px) {
         table.fit td.cell { min-width: 72px; }
         table.fit tbody th.strategy { min-width: 108px; }
@@ -614,6 +620,7 @@
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="hideUnknown" checked>
                 <label class="form-check-label" for="hideUnknown">Hide unclassified</label>
+                <span class="text-muted small" id="fitHiddenNote">Totals below leave out that column. The headline still includes it.</span>
             </div>
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="dimLowN" checked>
@@ -860,7 +867,7 @@
                 <span class="badge">AI Insight</span>
                 <h2 class="section-header">What we noticed</h2>
                 {% if ai_generated_at %}
-                <span class="when">Updated <time class="ht-local-time" datetime="{{ ai_generated_at.isoformat() }}{% if ai_generated_at.tzinfo is none %}Z{% endif %}">{{ ai_generated_at.strftime('%b %d, %I:%M %p') }} UTC</time></span>
+                <span class="when">Updated <time class="ht-local-time" datetime="{{ ai_generated_at.isoformat() }}{% if ai_generated_at.tzinfo is none %}Z{% endif %}">{% if ai_generated_at.year != current_year() %}{{ ai_generated_at.strftime('%b %d, %Y, %I:%M %p') }}{% else %}{{ ai_generated_at.strftime('%b %d, %I:%M %p') }}{% endif %} UTC</time></span>
                 {% endif %}
             </div>
             <div class="ai-summary">{{ ai_summary }}</div>
@@ -934,6 +941,7 @@
             <div class="stat"><div class="lbl">Wins and losses</div><div class="val" id="panelWL">—</div></div>
             <div class="stat"><div class="lbl">{{ term('Realized') }}</div><div class="val" id="panelRealized">$0</div></div>
             <div class="stat"><div class="lbl">{{ term('Unrealized') }}</div><div class="val" id="panelUnrealized">$0</div></div>
+            <div class="stat" id="panelDividendStat" hidden><div class="lbl">Dividends</div><div class="val" id="panelDividend">$0</div></div>
         </div>
 
         <div class="panel-section-title" id="panelSymbolsTitle">Top symbols</div>
@@ -1072,6 +1080,7 @@ const FIT_COUNT_MANY = {{ count_nouns | tojson }};
     }
 
     function applyMetric(metric) {
+        activeMetric = metric;
         document.querySelectorAll('#metricToggle button').forEach(function (b) {
             b.classList.toggle('active', b.dataset.metric === metric);
         });
@@ -1173,6 +1182,17 @@ const FIT_COUNT_MANY = {{ count_nouns | tojson }};
         unrealEl.textContent = fmtMoney(unrealPnl);
         unrealEl.classList.toggle('pos', unrealPnl >= 0);
         unrealEl.classList.toggle('neg', unrealPnl < 0);
+        var dividend = totalPnl - realizedPnl - unrealPnl;
+        var dividendStat = document.getElementById('panelDividendStat');
+        var dividendEl = document.getElementById('panelDividend');
+        if (dividendStat && dividendEl && Math.abs(dividend) > 0.5) {
+            dividendStat.hidden = false;
+            dividendEl.textContent = fmtMoney(dividend);
+            dividendEl.classList.toggle('pos', dividend >= 0);
+            dividendEl.classList.toggle('neg', dividend < 0);
+        } else if (dividendStat) {
+            dividendStat.hidden = true;
+        }
 
         var symKey = strat + '||' + col;
         var symbols = CELL_SYMBOLS[symKey] || [];
@@ -1244,12 +1264,93 @@ const FIT_COUNT_MANY = {{ count_nouns | tojson }};
         if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
     });
 
+    var activeMetric = 'total_pnl';
     var hideUnknown = document.getElementById('hideUnknown');
     var dimLowN     = document.getElementById('dimLowN');
+    var hiddenNote  = document.getElementById('fitHiddenNote');
+
+    function rememberFullTotals() {
+        document.querySelectorAll('#fitTable [data-total-pnl]').forEach(function (el) {
+            if (el.dataset.fullReady) return;
+            el.dataset.fullTotalPnl = el.dataset.totalPnl;
+            el.dataset.fullNumTrades = el.dataset.numTrades || '0';
+            el.dataset.fullWinRate = el.dataset.winRate || '0';
+            el.dataset.fullNumClosed = el.dataset.numClosed || '0';
+            var meta = el.querySelector('.cell-meta');
+            if (meta) el.dataset.fullMeta = meta.textContent;
+            el.dataset.fullReady = '1';
+        });
+    }
+
+    function restoreFullTotal(el) {
+        if (!el || !el.dataset.fullReady) return;
+        el.dataset.totalPnl = el.dataset.fullTotalPnl;
+        el.dataset.numTrades = el.dataset.fullNumTrades;
+        el.dataset.winRate = el.dataset.fullWinRate;
+        el.dataset.numClosed = el.dataset.fullNumClosed;
+        var meta = el.querySelector('.cell-meta');
+        if (meta && el.dataset.fullMeta) meta.textContent = el.dataset.fullMeta;
+    }
+
+    function sumVisibleCells(cells) {
+        var pnl = 0, trades = 0, winners = 0, losers = 0;
+        cells.forEach(function (td) {
+            pnl += parseFloat(td.dataset.totalPnl) || 0;
+            trades += parseInt(td.dataset.numTrades, 10) || 0;
+            winners += parseInt(td.dataset.numWinners, 10) || 0;
+            losers += parseInt(td.dataset.numLosers, 10) || 0;
+        });
+        return { pnl: pnl, trades: trades, winners: winners, losers: losers };
+    }
+
+    function writeVisibleTotal(el, sum) {
+        var closed = sum.winners + sum.losers;
+        el.dataset.totalPnl = String(sum.pnl);
+        el.dataset.numTrades = String(sum.trades);
+        el.dataset.numClosed = String(closed);
+        el.dataset.winRate = closed ? String(sum.winners / closed) : '0';
+        var meta = el.querySelector('.cell-meta');
+        if (meta) {
+            var noun = sum.trades === 1 ? FIT_COUNT_ONE : FIT_COUNT_MANY;
+            var wr = closed ? ' · ' + Math.round(sum.winners / closed * 100) + '%' : '';
+            meta.textContent = sum.trades + ' ' + noun + wr;
+        }
+    }
+
+    function applyHiddenColumnTotals(hidden) {
+        rememberFullTotals();
+        document.querySelectorAll('#fitTable tbody tr').forEach(function (tr) {
+            if (tr.classList.contains('totals-row')) return;
+            var totalCell = tr.querySelector('td.total-cell[data-total-pnl]');
+            if (!totalCell) return;
+            if (!hidden) {
+                restoreFullTotal(totalCell);
+                return;
+            }
+            writeVisibleTotal(totalCell, sumVisibleCells(
+                tr.querySelectorAll('td.cell.has-data:not(.col-unknown)')
+            ));
+        });
+        var grand = document.querySelector('#fitTable td.total-cell.grand');
+        if (grand) {
+            if (!hidden) {
+                restoreFullTotal(grand);
+            } else {
+                writeVisibleTotal(grand, sumVisibleCells(
+                    document.querySelectorAll('#fitTable tbody tr:not(.totals-row) td.cell.has-data:not(.col-unknown)')
+                ));
+            }
+        }
+        if (hiddenNote) hiddenNote.hidden = !hidden;
+    }
+
     if (hideUnknown) {
         hideUnknown.addEventListener('change', function () {
             fitCard.classList.toggle('hide-unknown', hideUnknown.checked);
+            applyHiddenColumnTotals(hideUnknown.checked);
+            applyMetric(activeMetric);
         });
+        applyHiddenColumnTotals(hideUnknown.checked);
     }
     if (dimLowN) {
         dimLowN.addEventListener('change', function () {
