@@ -2748,6 +2748,24 @@ class TestSplitDayFills:
         assert out["trades"][0]["cash_amount"] == 60
         assert out["trades"][0]["successful"] is True
 
+    def test_mismatched_roll_quantities_stay_as_two_fills(self):
+        closed = self._jpm(
+            "option_buy_to_close", "JPM   260821C00300000", -240,
+        )
+        closed["quantity"] = 2
+        opened = self._jpm(
+            "option_sell_to_open", "JPM   260828C00305000", 180,
+        )
+        opened["quantity"] = 1
+
+        out = _split_day_fills(pd.DataFrame([closed, opened]))
+
+        assert out["fill_count"] == 2
+        assert out["count"] == 2
+        assert out["roll_count"] == 0
+        assert [row["quantity"] for row in out["trades"]] == [2.0, 1.0]
+        assert all(not row.get("is_roll") for row in out["trades"])
+
     def test_sto_and_same_day_expiry_is_one_row(self):
         sto = self._row(
             action="option_sell_to_open",
@@ -2775,6 +2793,28 @@ class TestSplitDayFills:
         assert t["quantity"] == 8.0
         assert t["amount"] == 266.65
         assert out["net_gl"] == 266.65
+
+    def test_mismatched_open_and_expiry_stay_two_rows(self):
+        sto = self._row(
+            action="option_sell_to_open",
+            trade_symbol="ASTS  260828C00061000",
+            underlying_symbol="ASTS", quantity=2, price=0.34,
+            amount=68.0, instrument_type="Call",
+            trade_date=date(2026, 8, 28),
+        )
+        expired = self._row(
+            action="option_expired",
+            trade_symbol="ASTS  260828C00061000",
+            underlying_symbol="ASTS", quantity=1, price=None,
+            amount=0.0, realized_pnl=34.0, instrument_type="Call",
+            trade_date=date(2026, 8, 28),
+            option_expiry=date(2026, 8, 28),
+        )
+        out = _split_day_fills(pd.DataFrame([sto, expired]))
+        assert out["count"] == 2
+        assert len(out["trades"]) == 2
+        assert [row["quantity"] for row in out["trades"]] == [2.0, 1.0]
+        assert [row["verb"] for row in out["trades"]] == ["Sold to open", "Expired"]
 
     def test_expiry_then_sto_still_groups(self):
         sto = self._row(

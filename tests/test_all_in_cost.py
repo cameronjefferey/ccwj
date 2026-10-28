@@ -113,6 +113,122 @@ def test_ddog_roll_then_assignment_is_266_68():
     assert result["open_options"] is False
 
 
+def test_mismatched_roll_stays_out_of_the_assigned_put():
+    """A 2-lot buyback beside a 1-lot sale is not that put's roll.
+
+    These dollars are made up. Walking the 2-lot into the assigned
+    contract would credit its $300 net against 100 shares.
+    """
+    fills = [
+        _fill(
+            trade_date="2026-10-02",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=45,
+            option_expiry="2026-10-09",
+            quantity=2,
+            price=2.00,
+        ),
+        _fill(
+            trade_date="2026-10-09",
+            action="option_buy_to_close",
+            option_type="put",
+            option_strike=45,
+            option_expiry="2026-10-09",
+            quantity=2,
+            price=0.50,
+        ),
+        _fill(
+            trade_date="2026-10-09",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=50,
+            option_expiry="2026-10-16",
+            quantity=1,
+            price=1.50,
+        ),
+        _fill(
+            trade_date="2026-10-16",
+            action="option_assigned",
+            option_type="put",
+            option_strike=50,
+            option_expiry="2026-10-16",
+            quantity=1,
+            price=0,
+        ),
+        _fill(
+            trade_date="2026-10-16",
+            action="equity_buy",
+            quantity=100,
+            price=50,
+        ),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=5000, symbol="DDOG")
+    assert result["net_premium"] == 150.00
+    assert result["all_in_per_share"] == 48.50
+    assert result["equity_per_share"] == 50.00
+
+
+def test_mismatched_put_sizes_are_not_labeled_a_spread():
+    fills = [
+        _fill(
+            trade_date="2026-10-01",
+            action="equity_buy",
+            quantity=100,
+            price=40,
+        ),
+        _fill(
+            trade_date="2026-10-02",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=35,
+            option_expiry="2026-10-16",
+            quantity=2,
+            price=1.00,
+        ),
+        _fill(
+            trade_date="2026-10-02",
+            action="option_buy_to_open",
+            option_type="put",
+            option_strike=30,
+            option_expiry="2026-10-16",
+            quantity=1,
+            price=0.40,
+        ),
+    ]
+    result = all_in_cost(fills, shares=100, cost_basis=4000, symbol="DDOG")
+    assert result["all_in_per_share"] == 38.40
+    assert result["net_premium"] == 160.00
+    assert result["buckets"]["put_spreads"] == 0
+    assert result["buckets"]["other"] == 160.00
+
+
+def test_cash_dividend_does_not_change_all_in():
+    base = [
+        _fill(
+            trade_date="2026-10-01",
+            action="equity_buy",
+            quantity=100,
+            price=40,
+        ),
+    ]
+    with_dividend = base + [
+        _fill(
+            trade_date="2026-10-08",
+            action="dividend",
+            quantity=100,
+            price=0,
+            amount=125,
+        ),
+    ]
+    without = all_in_cost(base, shares=100, cost_basis=4000, symbol="DDOG")
+    with_cash = all_in_cost(
+        with_dividend, shares=100, cost_basis=4000, symbol="DDOG",
+    )
+    assert without["all_in_per_share"] == with_cash["all_in_per_share"] == 40.00
+    assert without["net_premium"] == with_cash["net_premium"] == 0
+
+
 def test_ddog_covered_call_lowers_all_in_and_stays_open():
     fills = _ddog_puts() + [
         _fill(

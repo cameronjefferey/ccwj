@@ -5088,6 +5088,18 @@ def _close_is_settlement_not_trade(row) -> bool:
     return False
 
 
+def _same_abs_qty(left, right):
+    """True when two fill quantities are the same contract or share count."""
+    try:
+        left_qty = abs(float(left))
+        right_qty = abs(float(right))
+    except (TypeError, ValueError):
+        return False
+    if left_qty != left_qty or right_qty != right_qty:
+        return False
+    return abs(left_qty - right_qty) <= 1e-6
+
+
 def _group_day_rolls(trade_rows):
     """Collapse same-day close+open of the same option type into one roll.
 
@@ -5151,6 +5163,11 @@ def _group_day_rolls(trade_rows):
                 continue
             o_occ = _parse_occ(cand.get("trade_symbol"))
             if not o_occ or o_occ["option_type"] != occ["option_type"]:
+                continue
+            if not _same_abs_qty(row.get("quantity"), cand.get("quantity")):
+                # A partial reduction or increase cannot be one row: its
+                # cash and quantity would describe different contract
+                # counts. Keep both fills until partial rolls are modeled.
                 continue
             if o_occ["strike"] == occ["strike"] and o_occ["expiry"] == occ["expiry"]:
                 continue
@@ -5281,6 +5298,9 @@ def _group_day_open_and_settle(trade_rows):
             if cand.get("action") not in want:
                 continue
             if _same_day_contract_key(cand) != key:
+                continue
+            if not _same_abs_qty(row.get("quantity"), cand.get("quantity")):
+                # Opening 2 and expiring 1 is not one finished contract.
                 continue
             match_idx = j
             break
