@@ -5117,70 +5117,80 @@ def _group_day_rolls(trade_rows):
         "option_sell_to_close": ("option_buy_to_open", False),
     }
     open_close = {v[0]: (k, v[1]) for k, v in close_open.items()}
+
+    def _pair_info(row, cand):
+        action = row.get("action")
+        if action in close_open:
+            pair_action, short_side = close_open[action]
+            if cand.get("action") != pair_action:
+                return None
+            closing = row
+        elif action in open_close:
+            pair_action, short_side = open_close[action]
+            if cand.get("action") != pair_action:
+                return None
+            closing = cand
+        else:
+            return None
+        if _close_is_settlement_not_trade(closing):
+            return None
+        if (cand.get("symbol") or "").upper() != (row.get("symbol") or "").upper():
+            return None
+        ta = str(row.get("tenant_id") or "").strip()
+        tb = str(cand.get("tenant_id") or "").strip()
+        if ta and tb:
+            if ta != tb:
+                return None
+        elif (cand.get("account") or "") != (row.get("account") or ""):
+            return None
+        occ = _parse_occ(row.get("trade_symbol"))
+        other_occ = _parse_occ(cand.get("trade_symbol"))
+        if not occ or not other_occ or other_occ["option_type"] != occ["option_type"]:
+            return None
+        if not _same_abs_qty(row.get("quantity"), cand.get("quantity")):
+            return None
+        if other_occ["strike"] == occ["strike"] and other_occ["expiry"] == occ["expiry"]:
+            return None
+        return short_side
+
+    # The source has a session date, not a reliable order id. If several
+    # closes can pair with several opens, choosing the first row fabricates
+    # strike transitions and per-roll cash. Only reciprocal one-to-one
+    # candidates are safe to collapse.
+    candidates = {i: set() for i in range(len(trade_rows))}
+    for i, row in enumerate(trade_rows):
+        for j in range(i + 1, len(trade_rows)):
+            if _pair_info(row, trade_rows[j]) is None:
+                continue
+            candidates[i].add(j)
+            candidates[j].add(i)
+
     used = set()
     out = []
     for i, row in enumerate(trade_rows):
         if i in used:
             continue
         action = row.get("action")
-        if action in close_open:
-            if _close_is_settlement_not_trade(row):
-                out.append(row)
-                continue
-            pair_action, short_side = close_open[action]
-            close_row, seek_open = row, True
-        elif action in open_close:
-            pair_action, short_side = open_close[action]
-            close_row, seek_open = None, False
-        else:
+        if action not in close_open and action not in open_close:
             out.append(row)
             continue
-        occ = _parse_occ(row.get("trade_symbol"))
-        if not occ:
+        matches = candidates.get(i) or set()
+        if len(matches) != 1:
             out.append(row)
             continue
-        match_idx = None
-        for j in range(i + 1, len(trade_rows)):
-            if j in used:
-                continue
-            cand = trade_rows[j]
-            if cand.get("action") != pair_action:
-                continue
-            # The match is the close when we started from the open.
-            closing = row if seek_open else cand
-            if _close_is_settlement_not_trade(closing):
-                continue
-            if (cand.get("symbol") or "").upper() != (row.get("symbol") or "").upper():
-                continue
-            # tenant_id is the grain — colliding "Schwab Account" labels
-            # must not pair a close in one account with an open in another.
-            ta = str(row.get("tenant_id") or "").strip()
-            tb = str(cand.get("tenant_id") or "").strip()
-            if ta and tb:
-                if ta != tb:
-                    continue
-            elif (cand.get("account") or "") != (row.get("account") or ""):
-                continue
-            o_occ = _parse_occ(cand.get("trade_symbol"))
-            if not o_occ or o_occ["option_type"] != occ["option_type"]:
-                continue
-            if not _same_abs_qty(row.get("quantity"), cand.get("quantity")):
-                # A partial reduction or increase cannot be one row: its
-                # cash and quantity would describe different contract
-                # counts. Keep both fills until partial rolls are modeled.
-                continue
-            if o_occ["strike"] == occ["strike"] and o_occ["expiry"] == occ["expiry"]:
-                continue
-            match_idx = j
-            break
-        if match_idx is None:
+        match_idx = next(iter(matches))
+        if match_idx in used or candidates.get(match_idx) != {i}:
             out.append(row)
             continue
         other = trade_rows[match_idx]
+        short_side = _pair_info(row, other)
+        if short_side is None:
+            out.append(row)
+            continue
         used.add(match_idx)
-        if seek_open:
+        if action in close_open:
             opened = other
-            closed = close_row
+            closed = row
         else:
             opened = row
             closed = other
@@ -7700,11 +7710,17 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     The dollar column is realized G/L (sale vs cost), not fill cash.
     Opens and unmatched closes render as ``None`` (em dash).
 
-    Returns ``{trades, cash, count, net_cash, net_gl, symbols, has_any}``.
+    ``net_gl`` is always the sum of known rows. ``gl_complete`` is true
+    only when every close matched, so callers never present that subtotal
+    as a complete session result.
+
+    Returns ``{trades, cash, count, net_cash, net_gl, gl_complete,
+    symbols, has_any}``.
     """
     empty = {
         "trades": [], "cash": [], "count": 0, "fill_count": 0, "roll_count": 0,
         "net_cash": 0.0, "net_gl": 0.0, "has_gl": False,
+        "gl_complete": False, "has_unmatched_gl": False,
         "symbols": [], "has_any": False,
     }
     if trades_df is None or trades_df.empty:
@@ -7719,6 +7735,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     # fill row.  Keep every fill for the activity count, but credit the
     # contract result only once per account/contract/day.
     seen_option_close_gl = set()
+    has_unmatched_gl = False
     net_cash = 0.0
     for _, r in trades_df.iterrows():
         if _is_drip_fill(r):
@@ -7742,6 +7759,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         tenant_id = str(r.get("tenant_id") or "").strip()
         trade_symbol = str(r.get("trade_symbol") or "").strip()
         trade_date = _coerce_date(r.get("trade_date"))
+        realized_deduped = False
         if (
             realized is not None
             and action in ("option_buy_to_close", "option_sell_to_close")
@@ -7755,8 +7773,19 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
             )
             if option_close_key in seen_option_close_gl:
                 realized = None
+                realized_deduped = True
             else:
                 seen_option_close_gl.add(option_close_key)
+        # Opens legitimately have no realized result. A close with no
+        # matching warehouse result is different: its em dash means any
+        # aggregate would be only a partial subtotal. Duplicate partial
+        # option fills are already represented by the first contract row.
+        if (
+            action in (_CLOSE_ACTIONS - {"equity_sell_short"})
+            and realized is None
+            and not realized_deduped
+        ):
+            has_unmatched_gl = True
         direction = ""
         if "direction" in r.index:
             raw_dir = r.get("direction")
@@ -7818,6 +7847,8 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         "net_cash": round(net_cash, 2),
         "net_gl": round(net_gl, 2),
         "has_gl": has_gl,
+        "gl_complete": has_gl and not has_unmatched_gl,
+        "has_unmatched_gl": has_unmatched_gl,
         "symbols": symbols,
         "has_any": bool(trade_rows or cash_rows),
     }
@@ -7972,6 +8003,7 @@ def day_detail(day_str):
         net_cash=fills.get("net_cash") or 0,
         net_gl=fills.get("net_gl") or 0,
         has_gl=bool(fills.get("has_gl")),
+        gl_complete=bool(fills.get("gl_complete")),
         option_rows=option_rows,
         dividend_rows=dividend_rows,
         market_rows=market_rows,

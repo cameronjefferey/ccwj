@@ -485,74 +485,87 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         consumed = set()
 
         def _detect_rolls(closes, opens, short_side):
+            def _compatible(c, o):
+                if id(c) in consumed or id(o) in consumed:
+                    return False
+                if not c["occ"] or not o["occ"] or _fill_is_settlement(c):
+                    return False
+                if o["occ"]["option_type"] != c["occ"]["option_type"]:
+                    return False
+                if abs(abs(o["quantity"]) - abs(c["quantity"])) > 1e-6:
+                    return False
+                return not (
+                    o["occ"]["strike"] == c["occ"]["strike"]
+                    and o["occ"]["expiry"] == c["occ"]["expiry"]
+                )
+
+            # The fill tape has dates but no reliable intraday order or
+            # brokerage order id. With two compatible closes and two opens,
+            # first-match pairing invents which strike rolled where and can
+            # fabricate each roll's debit/credit. Collapse only reciprocal,
+            # one-to-one matches; ambiguous fills stay explicit.
+            candidates = {
+                id(c): [o for o in opens if _compatible(c, o)]
+                for c in closes
+            }
+            open_hits = {}
+            for matches in candidates.values():
+                for o in matches:
+                    open_hits[id(o)] = open_hits.get(id(o), 0) + 1
+
             for c in closes:
-                if id(c) in consumed or not c["occ"]:
+                matches = candidates.get(id(c)) or []
+                if len(matches) != 1:
                     continue
-                if _fill_is_settlement(c):
+                o = matches[0]
+                if open_hits.get(id(o)) != 1:
                     continue
-                for o in opens:
-                    if id(o) in consumed or not o["occ"]:
-                        continue
-                    if o["occ"]["option_type"] != c["occ"]["option_type"]:
-                        continue
-                    # A reduced or enlarged position is not one whole-fill
-                    # roll. Collapsing mismatched quantities combines the
-                    # cash from every closed contract with only the smaller
-                    # open quantity, and also removes the close from the
-                    # contract win/loss record. Keep both fills explicit
-                    # until partial-roll allocation is modeled.
-                    if abs(abs(o["quantity"]) - abs(c["quantity"])) > 1e-6:
-                        continue
-                    if (o["occ"]["strike"] == c["occ"]["strike"]
-                            and o["occ"]["expiry"] == c["occ"]["expiry"]):
-                        continue  # same contract both ways isn't a roll
-                    consumed.add(id(c))
-                    consumed.add(id(o))
-                    sentence, roll_tip = _phrase_roll(c, o, short_side)
-                    sentences.append(_tag(sentence, account))
-                    if roll_tip:
-                        tips.append(_stamp(roll_tip))
-                    note = _note_for(c)
-                    if note:
-                        sentences.append(_tag(note, account))
-                    kinds.append("sell" if short_side else "buy")
-                    stats["rolls"] += 1
-                    stats["roll_credit"] += c["amount"] + o["amount"]
-                    # The roll's open leg is still premium collected — keep
-                    # the gross-credit stat consistent with fills-level
-                    # rollups (the /story eras sum STO credits directly).
-                    if short_side:
-                        stats["premium_collected"] += max(o["amount"], 0.0)
-                        occ_o = o.get("occ") or {}
-                        n_open = abs(o["quantity"])
-                        if occ_o.get("option_type") == "put":
-                            stats["puts_sold"] += 1
-                        elif occ_o.get("option_type") == "call":
-                            if st.shares + 0.0001 >= 100 * n_open:
-                                stats["covered_calls"] += 1
-                                stats["cc_rent"] += max(o["amount"], 0.0)
-                            else:
-                                stats["short_calls"] += 1
-                    else:
-                        closed = st.opt(c["trade_symbol"])
-                        if closed.get("opened_long"):
-                            close_net = closed["net"] - abs(c["quantity"])
-                            if abs(close_net) < 0.0001:
-                                _record_long_outcome(
-                                    stats, closed["cash"] + c["amount"],
-                                )
-                    # State: apply both fills.
-                    for f in (c, o):
-                        rec = st.opt(f["trade_symbol"])
-                        sign = 1 if f["action"] in ("option_buy_to_open", "option_buy_to_close") else -1
-                        rec["net"] += sign * abs(f["quantity"])
-                        rec["cash"] += f["amount"]
-                        if f["action"] == "option_buy_to_open":
-                            rec["opened_long"] = True
-                    if short_side and st.wheel_active:
-                        net_credit = c["amount"] + o["amount"]
-                        st.wheel_premium += max(net_credit, 0.0)
-                    break
+                consumed.add(id(c))
+                consumed.add(id(o))
+                sentence, roll_tip = _phrase_roll(c, o, short_side)
+                sentences.append(_tag(sentence, account))
+                if roll_tip:
+                    tips.append(_stamp(roll_tip))
+                note = _note_for(c)
+                if note:
+                    sentences.append(_tag(note, account))
+                kinds.append("sell" if short_side else "buy")
+                stats["rolls"] += 1
+                stats["roll_credit"] += c["amount"] + o["amount"]
+                # The roll's open leg is still premium collected — keep
+                # the gross-credit stat consistent with fills-level
+                # rollups (the /story eras sum STO credits directly).
+                if short_side:
+                    stats["premium_collected"] += max(o["amount"], 0.0)
+                    occ_o = o.get("occ") or {}
+                    n_open = abs(o["quantity"])
+                    if occ_o.get("option_type") == "put":
+                        stats["puts_sold"] += 1
+                    elif occ_o.get("option_type") == "call":
+                        if st.shares + 0.0001 >= 100 * n_open:
+                            stats["covered_calls"] += 1
+                            stats["cc_rent"] += max(o["amount"], 0.0)
+                        else:
+                            stats["short_calls"] += 1
+                else:
+                    closed = st.opt(c["trade_symbol"])
+                    if closed.get("opened_long"):
+                        close_net = closed["net"] - abs(c["quantity"])
+                        if abs(close_net) < 0.0001:
+                            _record_long_outcome(
+                                stats, closed["cash"] + c["amount"],
+                            )
+                # State: apply both fills.
+                for f in (c, o):
+                    rec = st.opt(f["trade_symbol"])
+                    sign = 1 if f["action"] in ("option_buy_to_open", "option_buy_to_close") else -1
+                    rec["net"] += sign * abs(f["quantity"])
+                    rec["cash"] += f["amount"]
+                    if f["action"] == "option_buy_to_open":
+                        rec["opened_long"] = True
+                if short_side and st.wheel_active:
+                    net_credit = c["amount"] + o["amount"]
+                    st.wheel_premium += max(net_credit, 0.0)
 
         _detect_rolls(closes_short, opens_short, short_side=True)
         _detect_rolls(closes_long, opens_long, short_side=False)

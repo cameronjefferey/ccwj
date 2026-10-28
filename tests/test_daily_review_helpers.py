@@ -2766,6 +2766,24 @@ class TestSplitDayFills:
         assert [row["quantity"] for row in out["trades"]] == [2.0, 1.0]
         assert all(not row.get("is_roll") for row in out["trades"])
 
+    def test_multiple_same_day_rolls_stay_separate_when_pairing_is_ambiguous(self):
+        df = pd.DataFrame([
+            self._jpm("option_buy_to_close", "JPM   260821C00100000", -600),
+            self._jpm("option_buy_to_close", "JPM   260821C00200000", -100),
+            self._jpm("option_sell_to_open", "JPM   260828C00205000", 700),
+            self._jpm("option_sell_to_open", "JPM   260828C00105000", 100),
+        ])
+
+        out = _split_day_fills(df)
+
+        assert out["fill_count"] == 4
+        assert out["count"] == 4
+        assert out["roll_count"] == 0
+        assert [row["cash_amount"] for row in out["trades"]] == [
+            -600.0, -100.0, 700.0, 100.0,
+        ]
+        assert all(not row.get("is_roll") for row in out["trades"])
+
     def test_sto_and_same_day_expiry_is_one_row(self):
         sto = self._row(
             action="option_sell_to_open",
@@ -3247,6 +3265,8 @@ class TestSplitDayFills:
         assert len(out["trades"]) == 2
         assert [r["amount"] for r in out["trades"]] == [2100.0, None]
         assert out["net_gl"] == 2100.0
+        assert out["has_unmatched_gl"] is False
+        assert out["gl_complete"] is True
 
     def test_same_contract_in_two_tenants_keeps_each_realized_result(self):
         contract = "MRVL  260904C00242500"

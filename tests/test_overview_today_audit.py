@@ -222,6 +222,7 @@ def _fill(**kw):
 def test_session_fills_keep_a_zero_realized_total():
     opened = _split_day_fills(pd.DataFrame([_fill()]))
     assert opened["has_gl"] is False
+    assert opened["gl_complete"] is False
     assert opened["net_gl"] == 0.0
 
     flat = _split_day_fills(pd.DataFrame([
@@ -229,13 +230,39 @@ def test_session_fills_keep_a_zero_realized_total():
         _fill(action="equity_sell", amount=-10.25, realized_pnl=-10.25),
     ]))
     assert flat["has_gl"] is True
+    assert flat["gl_complete"] is True
     assert flat["net_gl"] == 0.0
 
     zero = _split_day_fills(pd.DataFrame([
         _fill(action="equity_sell", amount=0.0, realized_pnl=0.0),
     ]))
     assert zero["has_gl"] is True
+    assert zero["gl_complete"] is True
     assert zero["net_gl"] == 0.0
+
+
+def test_session_fills_do_not_total_mixed_matched_and_unmatched_closes():
+    fills = _split_day_fills(pd.DataFrame([
+        _fill(
+            trade_symbol="KNOWN",
+            underlying_symbol="KNOWN",
+            action="equity_sell",
+            amount=125.0,
+            realized_pnl=25.0,
+        ),
+        _fill(
+            trade_symbol="PENDING",
+            underlying_symbol="PENDING",
+            action="equity_sell",
+            amount=90.0,
+            realized_pnl=None,
+        ),
+    ]))
+
+    assert fills["has_gl"] is True
+    assert fills["has_unmatched_gl"] is True
+    assert fills["gl_complete"] is False
+    assert fills["net_gl"] == 25.0
 
 
 def test_calendar_and_radar_name_a_year_that_is_not_the_anchor_year():
@@ -268,7 +295,7 @@ def test_templates_show_matching_totals_and_keep_owner_layout():
 
     for src in (overview, today, day):
         assert 'class="tt-total"' in src or "tr.tt-total" in src
-        assert "has_gl or" in src
+        assert "gl_complete" in src
         assert "money(" in src
     assert "today_movers.combined_impact is not none" in overview
     assert "mover_parts" in overview and "mover_parts" in today
@@ -439,6 +466,7 @@ def test_rendered_account_tables_match_the_header():
                 "fill_count": 1,
                 "net_gl": 0.0,
                 "has_gl": True,
+                "gl_complete": True,
                 "symbols": ["EX"],
                 "has_any": True,
             },
