@@ -901,7 +901,12 @@ compose when both independently clear. Numbers are never invented;
 "naked call" only when `positions_summary` has an open Naked Call and
 no covered-call label. Last week
 reports fills/rolls/premium vs the median completed week and whether that
-looked like them. Those two sit in the one Right now card. The lifetime
+looked like them. A last-week roll is a same-day close and open of the
+same contract size; a 20-lot close beside a 10-lot open stays two trades.
+The week label includes the year when that week is not in the current
+year. Performance by style has a total row of the displayed whole-dollar
+P&L. Year-by-year premium and long-option cost use those same whole
+dollars when the raw year sum is the income or directional book. Those two sit in the one Right now card. The lifetime
 books, execution review, notable positions, style scoreboard, and
 year-by-year rows are the disclosures under it. Details in
 "App-shell UX layer" under Code Organization.
@@ -1140,7 +1145,11 @@ Exit timing by strategy and recent closes share one disclosure. The
 write-up (generate, regenerate, model) and Ask AI stay on the page; a
 saved narration starts closed. Links into a position stay on the recent
 closes. "Realized" is the close result. "Given back" is the gap to the
-peak, not a second P&amp;L.
+peak, not a second P&amp;L. The headline dollar includes strategies with
+fewer than 3 scored closes, in an Other strategies row; the percent
+still weights only the named rows. Displayed strategy dollars add up
+to that headline. The recent-closes table totals those visible closes
+only, and a close from another year shows the year.
 
 Users pick a model from the dropdown: **Included** (Flash, Haiku) vs
 **HappyTrader AI** (Gemini Pro, Sonnet, Opus — `tier="paid"` in
@@ -2051,7 +2060,11 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   the narrated book. The header symbol count is every symbol on
   Positions, including names with no fills to narrate.
   Profile "Kept at expiry" reuses Execution Review's
-  `kept_at_expiry` realized-P&L total when that card is on the page.
+  `kept_at_expiry` realized-P&L total when that card is on the page
+  (two or more contracts; the fact stays even when the profile already
+  has six other facts, and it is removed when the card omits the row).
+  Long exits, short buybacks, and the roll net add up to the execution
+  headline. A single early close in a bucket is Other early closes.
   CONSISTENCY INVARIANT: yearly premium sums STO
   credits from fills, so the fingerprint's `premium_collected` must
   count a roll's open leg too (recorded in the roll branch; pinned by

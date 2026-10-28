@@ -63,11 +63,30 @@ def week_bounds(today):
     return this_start, last_start, last_end
 
 
-def _week_label(start, end=None):
+def _week_label(start, end=None, today=None):
+    """``Oct 19–25`` in the anchor year, ``Dec 29, 2025–Jan 4`` across years.
+
+    A week that sits entirely in another year keeps one year at the end
+    (``Dec 22–28, 2025``). A side that leaves the anchor year carries
+    its own year.
+    """
     end = end or (start + timedelta(days=4))  # Friday
-    if start.month == end.month:
-        return f"{start.strftime('%b %-d')}–{end.strftime('%-d')}"
-    return f"{start.strftime('%b %-d')}–{end.strftime('%b %-d')}"
+    anchor = today or date.today()
+    anchor_year = anchor.year
+
+    def _with_year(day, text):
+        if day.year != anchor_year:
+            return f"{text}, {day.year}"
+        return text
+
+    if start.year == end.year and start.month == end.month:
+        label = f"{start.strftime('%b %-d')}–{end.strftime('%-d')}"
+        if start.year != anchor_year:
+            return f"{label}, {start.year}"
+        return label
+    left = _with_year(start, start.strftime("%b %-d"))
+    right = _with_year(end, end.strftime("%b %-d"))
+    return f"{left}–{right}"
 
 
 def _as_date(val):
@@ -98,11 +117,46 @@ def _in_range(series, start, end):
     return (series >= start) & (series <= end)
 
 
-def _count_rolls(week_df):
-    """Same-day close + open on one tenant+symbol ≈ a roll.
+def _sizes(frame, actions):
+    """Absolute share counts on the named actions. Missing sizes are skipped."""
+    if frame is None or frame.empty or "quantity" not in frame.columns:
+        return []
+    qty = pd.to_numeric(frame["quantity"], errors="coerce")
+    out = []
+    for action, size in zip(frame["_action"], qty):
+        if action not in actions:
+            continue
+        try:
+            if size != size:
+                continue
+            mag = abs(float(size))
+        except (TypeError, ValueError):
+            continue
+        if mag > 1e-6:
+            out.append(mag)
+    return out
 
-    Matches the Daily Review idea without importing that page's pairing
-    (order-independent BTC/STC + STO/BTO, different contract).
+
+def _matched_roll_size(frame, closes, opens):
+    """True when some close and some open share the same contract size.
+
+    A 20-lot close and a 10-lot open are two trades. A missing quantity
+    is not treated as a match.
+    """
+    close_sizes = _sizes(frame, closes)
+    open_sizes = _sizes(frame, opens)
+    for close_size in close_sizes:
+        if any(abs(close_size - open_size) <= 1e-6 for open_size in open_sizes):
+            return True
+    return False
+
+
+def _count_rolls(week_df):
+    """Same-day close + open of the same size on one tenant+symbol.
+
+    Matches the profile's last-week counter. Position Detail and Overview
+    pair rolls in their own detectors; this count only requires one close
+    and one open with the same absolute quantity and a different contract.
     """
     if week_df is None or week_df.empty:
         return 0
@@ -114,10 +168,13 @@ def _count_rolls(week_df):
     rolls = 0
     for _, g in week_df.groupby(keys, dropna=False):
         acts = set(g["_action"])
-        if acts & closes and acts & opens:
-            tsyms = g["trade_symbol"].astype(str).nunique()
-            if tsyms >= 2:
-                rolls += 1
+        if not (acts & closes and acts & opens):
+            continue
+        tsyms = g["trade_symbol"].astype(str).nunique()
+        if tsyms < 2:
+            continue
+        if _matched_roll_size(g, closes, opens):
+            rolls += 1
     return rolls
 
 
@@ -1175,7 +1232,7 @@ def build_last_week(trades_df, exec_df=None, today=None):
     return {
         "headline": headline,
         "tone": tone,
-        "label": _week_label(last_start, last_end),
+        "label": _week_label(last_start, last_end, today=today),
         "facts": facts[:6],
         "unlike": flags,
         "activity": last,

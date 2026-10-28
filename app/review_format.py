@@ -198,3 +198,30 @@ def sum_ints(values):
         total += int(value)
         seen = True
     return total if seen else None
+
+
+def allocate_rounded(raw_values, target=None):
+    """Whole dollars that add up to ``whole_dollars(target)``.
+
+    Each value is rounded on its own. The leftover dollar is parked on
+    the largest absolute raw value. An earlier index wins a tie. None
+    counts as zero. An empty list stays empty.
+    """
+    raws = []
+    shown = []
+    for value in raw_values:
+        number = _as_float(value)
+        if number is None:
+            number = 0.0
+        raws.append(number)
+        shown.append(whole_dollars(number) or 0)
+    if not shown:
+        return []
+    goal = whole_dollars(target) if target is not None else sum(shown)
+    if goal is None:
+        goal = sum(shown)
+    drift = goal - sum(shown)
+    if drift:
+        index = max(range(len(raws)), key=lambda i: (abs(raws[i]), -i))
+        shown[index] += drift
+    return shown

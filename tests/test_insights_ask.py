@@ -188,7 +188,7 @@ def test_coaching_brief_collapses_covered_call_across_accounts(monkeypatch):
         )
 
     signals = data["signals"]
-    assert [s["strategy"] for s in signals] == ["Covered Call"]
+    assert [s["strategy"] for s in signals] == ["Covered Call", "Other strategies"]
     assert signals[0]["strategy_label"] == "Covered Call"
     assert "·" not in signals[0]["strategy_label"]
     assert signals[0]["account_count"] == 2
@@ -196,7 +196,13 @@ def test_coaching_brief_collapses_covered_call_across_accounts(monkeypatch):
     assert signals[0]["total_closed"] == 178
     assert signals[0]["pnl_given_back"] == 5441 + 4379
     assert round(signals[0]["giveback_pct"], 1) == round(380 / 13, 1)
-    # The 2-contract Long Call stays off the card list but in coverage.
+    # The 2-contract Long Call is not its own card. Its dollars sit in
+    # Other strategies, and the percent still weights only Covered Call.
+    assert signals[1]["trades"] == 2
+    assert signals[1]["pnl_given_back"] == 13766
+    assert data["exit_timing"]["display_total"] == 9820 + 13766
+    assert sum(s["display_given_back"] for s in signals) == 9820 + 13766
+    assert round(data["exit_timing"]["avg_giveback"], 1) == round(380 / 13, 1)
     assert data["reliable_contracts"] == 15
     assert data["total_closed"] == 218
     assert data["exit_timing"]["reliable_contracts"] == 15
@@ -205,6 +211,8 @@ def test_coaching_brief_collapses_covered_call_across_accounts(monkeypatch):
     assert "Covered Call ·" not in brief
     assert "2 accounts combined" in brief
     assert "Long Call" not in brief
+    assert "Other strategies:" in brief
+    assert "$23,586" in brief
 
     from jinja2 import Environment
     from pathlib import Path
@@ -217,11 +225,14 @@ def test_coaching_brief_collapses_covered_call_across_accounts(monkeypatch):
     env = Environment()
     env.globals["money"] = fmt_money
     html = env.from_string(src[start:end]).render(coaching=data)
-    assert html.count('class="strat-name"') == 1
+    assert html.count('class="strat-name"') == 2
     assert "Covered Call" in html
+    assert "Other strategies" in html
+    assert "Long Call" not in html
     assert "Covered Call ·" not in html
     assert "13 of 178" in html
     assert "$9,820" in html
+    assert "$13,766" in html
     assert "2 accounts" in html
 
 

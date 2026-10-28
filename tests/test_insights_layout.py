@@ -61,6 +61,11 @@ def test_phone_rows_keep_money_on_one_line():
     assert "nth-child(2)" in PAGE
     assert "white-space: nowrap" in PAGE
     assert "table-layout: fixed" in PAGE
+    assert "table-layout: auto" in PAGE
+    assert "@media (min-width: 900px)" in PAGE
+    assert "<tfoot>" in PAGE
+    assert "close_label" in PAGE
+    assert "This total is these closes, not the headline." in PAGE
     assert "overflow-x: clip" in PAGE
     assert "text-overflow: ellipsis" not in PAGE
     assert "overflow-wrap: anywhere" not in PAGE

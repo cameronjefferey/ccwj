@@ -161,7 +161,7 @@
     .ts-swing-cap { display: block; color: var(--ht-muted); font-size: .75rem; margin-top: .05rem; }
     .ts-scale-note { color: var(--ht-muted); font-size: .8rem; margin: .75rem 0 0; }
 
-    .ts-standouts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .7rem; }
+    .ts-standouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .7rem; }
     a.ts-standout {
         display: flex; flex-direction: column; min-width: 0; min-height: 100%;
         border-radius: 12px; padding: .85rem .9rem;
@@ -232,8 +232,12 @@
     .ts-era-note { color: var(--ht-muted); font-size: .84rem; margin: 0 0 .5rem; line-height: 1.45; }
     .ts-epilogue { color: var(--ht-muted); font-size: .92rem; }
 
-    @media (max-width: 1100px) {
-        .ts-standouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (min-width: 900px) {
+        .ts-style-bar { max-width: none; }
+        .ts-style-head { font-size: .8rem; }
+        .ts-finding { grid-template-columns: minmax(8rem, 12rem) auto minmax(0, 1fr); }
+        a.ts-swing { grid-template-columns: 7rem minmax(0, 1fr) auto; }
+        .ts-standout-hook { font-size: .9rem; }
     }
     @media (max-width: 760px) {
         .ts-now-grid, .ts-books, .ts-exec-grid, .ts-exec-tiles { grid-template-columns: 1fr; }
@@ -486,6 +490,7 @@
             <div class="ts-exec-block">
                 <div class="ts-exec-label">{{ f.label }}</div>
                 <div class="ts-exec-num neutral">{{ f.value }}</div>
+                {% if f.net_text %}<div class="ts-exec-num {{ f.net_tone or 'neutral' }}">{{ f.net_text }}</div>{% endif %}
                 {% if f.dots_total is defined and f.dots_total <= 16 %}
                 <div class="ts-dots">
                     {% for i in range(f.dots_total) %}
@@ -507,6 +512,18 @@
         </div>
         {% endif %}
     </div>
+    {% endif %}
+    {% set other_exits = novel.execution.findings | selectattr('label', 'equalto', 'Other early closes') | list %}
+    {% if other_exits %}
+    {% set f = other_exits[0] %}
+    <div class="ts-exec-pane" style="margin-top:.8rem;">
+        <div class="ts-exec-label">{{ f.label }}</div>
+        <div class="ts-exec-num {{ f.tone }}">{{ f.value }}</div>
+        <div class="ts-exec-detail">{{ f.detail }}</div>
+    </div>
+    {% endif %}
+    {% if novel.execution.adds_up %}
+    <p class="ts-era-note">{{ novel.execution.adds_up }}</p>
     {% endif %}
     {% set tiles = namespace(rows=[]) %}
     {% for f in novel.execution.findings %}
@@ -610,6 +627,25 @@
         </div>
     </div>
     {% endfor %}
+    {% if novel.scoreboard_total %}
+    {% set t = novel.scoreboard_total %}
+    {% set win_pct = ((t.green * 100 / t.symbols)|round|int) if t.symbols else 0 %}
+    <div class="ts-style-row total">
+        <div class="ts-style-name-cell">
+            <div class="ts-style-name">Total</div>
+            <div class="ts-style-phone-meta">{{ t.symbols }} symbol{{ 's' if t.symbols != 1 else '' }}</div>
+        </div>
+        <div class="ts-style-n" data-label="Symbols">{{ t.symbols }}</div>
+        <div data-label="Ahead">
+            <div><span class="ts-style-win">{{ t.green }} of {{ t.symbols }}</span><span class="ts-style-pct">{{ win_pct }}%</span></div>
+        </div>
+        <div class="ts-style-pnl {{ 'pos' if t.display_pnl >= 0 else 'neg' }}" data-label="Total return">{{ t.pnl_text }}</div>
+        <div class="ts-style-best"></div>
+    </div>
+    {% if novel.hero_counts.stories != t.symbols %}
+    <p class="ts-era-note">These rows are names with a day-by-day history. The header also counts names that are only on Positions.</p>
+    {% endif %}
+    {% endif %}
     </div>
 </details>
 {% endif %}

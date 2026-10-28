@@ -64,6 +64,13 @@ def test_phone_rows_stack_on_word_boundaries():
     assert "word-break: anywhere" not in PAGE
     assert "overflow-wrap: break-word" in PAGE
     assert "word-break: normal" in PAGE
+    assert "minmax(220px, 1fr)" in PAGE
+    assert "max-width: 1100px" not in PAGE
+    assert "@media (max-width: 760px)" in PAGE
+    assert "@media (min-width: 900px)" in PAGE
+    assert 'class="ts-style-name">Total</div>' in PAGE
+    assert "only on Positions" in PAGE
+    assert "net_text" in PAGE
 
 
 def test_account_picker_stays_in_the_page_header():

@@ -504,8 +504,52 @@ def _build_eras(trades_df, book=None):
             bits.append(f"{_money(p['risk'])} placed on long options")
         if p["top_symbol"]:
             bits.append(f"most-traded: {p['top_symbol']}")
-        eras.append({"year": y, "title": title, "line": " · ".join(bits)})
+        eras.append({
+            "year": y,
+            "title": title,
+            "line": " · ".join(bits),
+            "premium": p["premium"],
+            "risk": p["risk"],
+        })
     return eras
+
+
+def _drop_phrase(line, phrase):
+    for chunk in (f" · {phrase}", f"{phrase} · ", phrase):
+        if chunk in line:
+            return line.replace(chunk, "", 1).strip(" ·")
+    return line
+
+
+def _align_era_phrases(eras, key, noun, fingerprint):
+    """Make the year figures add up when they are the same money as the book.
+
+    A year line only prints a dollar above $1. Those visible dollars are
+    allocated to the book when the raw year sum matches it, and to their
+    own sum when the raw tape and the book are different money.
+    """
+    from app.review_format import allocate_rounded
+
+    if not eras:
+        return
+    visible = [era for era in eras if float(era.get(key) or 0) > 1]
+    if not visible:
+        return
+    all_raw = sum(float(era.get(key) or 0) for era in eras)
+    visible_raw = [float(era.get(key) or 0) for era in visible]
+    try:
+        book = float(fingerprint or 0)
+    except (TypeError, ValueError):
+        book = 0.0
+    target = book if abs(all_raw - book) <= 0.5 else sum(visible_raw)
+    shown = allocate_rounded(visible_raw, target)
+    for era, dollars in zip(visible, shown):
+        old = f"{_money(era[key])} {noun}"
+        new = f"{_money(dollars)} {noun}" if dollars else ""
+        line = era.get("line") or ""
+        if old in line:
+            era["line"] = line.replace(old, new, 1) if new else _drop_phrase(line, old)
+        era[f"display_{key}"] = dollars
 
 
 def _hook_for(sym, entry):
@@ -591,11 +635,38 @@ def _build_scoreboard(book):
         if row["best_pnl"] is None or entry["pnl"] > row["best_pnl"]:
             row["best_symbol"], row["best_pnl"] = sym, entry["pnl"]
     out = sorted(rows.values(), key=lambda r: r["pnl"], reverse=True)
-    for r in out:
-        r["pnl_text"] = ("+" if r["pnl"] >= 0 else "\u2212") + _money(r["pnl"])
+    from app.review_format import allocate_rounded
+
+    shown = allocate_rounded([r["pnl"] for r in out], sum(r["pnl"] for r in out))
+    for r, dollars in zip(out, shown):
+        r["display_pnl"] = dollars
+        r["pnl_text"] = _signed_profile_money(dollars)
         if r["best_pnl"] is not None:
             r["best_text"] = ("+" if r["best_pnl"] >= 0 else "\u2212") + _money(r["best_pnl"])
     return out
+
+
+def _signed_profile_money(dollars):
+    if dollars > 0:
+        return "+" + _money(dollars)
+    if dollars < 0:
+        return "\u2212" + _money(dollars)
+    return "$0"
+
+
+def scoreboard_total(rows):
+    """Symbols, ahead count, and the P&L the style rows already display."""
+    if not rows:
+        return None
+    symbols = sum(int(r.get("symbols") or 0) for r in rows)
+    green = sum(int(r.get("green") or 0) for r in rows)
+    dollars = sum(int(r.get("display_pnl") or 0) for r in rows)
+    return {
+        "symbols": symbols,
+        "green": green,
+        "display_pnl": dollars,
+        "pnl_text": _signed_profile_money(dollars),
+    }
 
 
 def _busiest_day(trades_df):
@@ -644,21 +715,59 @@ def _profile_symbol_count(summary_df, fallback=0):
         return 0
 
 
+def _kept_fact(dollars, contracts):
+    return {
+        "label": "Kept at expiry",
+        "value": _money(dollars),
+        "tone": "pos",
+        "detail": (
+            f"{contracts} short contracts rode to "
+            f"worthless expiry. You kept every dollar."
+        ),
+    }
+
+
+def _upsert_kept(facts, fact):
+    facts = list(facts or [])
+    for i, row in enumerate(facts):
+        if row.get("label") == "Kept at expiry":
+            facts[i] = fact
+            return facts
+    for i, row in enumerate(facts):
+        if row.get("label") == "Closed option trades":
+            facts.insert(i + 1, fact)
+            return facts
+    facts.append(fact)
+    return facts
+
+
+def _strip_kept(facts):
+    return [row for row in (facts or []) if row.get("label") != "Kept at expiry"]
+
+
 def align_kept_at_expiry(profile_or_novel, execution):
     """Make "Kept at expiry" match the execution-review ledger.
 
     A dataframe is the contract list (profile fact is updated from
     ``held_to_expiry_kept``). A summary dict is the already-graded
     execution card (``kept_at_expiry`` dollars and count).
-    """
-    from app.position_story import _money
 
+    A missing ledger (None, or an empty frame) leaves a fingerprint
+    dollar in place. A card that is on the page and omits the row
+    removes that dollar. Two or more short contracts that expired
+    worthless are enough for both surfaces; the fact is not dropped
+    to keep the list at six.
+    """
     if isinstance(execution, dict):
         novel = profile_or_novel
         if not novel:
             return novel
+        profile = novel.get("profile") or {}
+        facts = list(profile.get("facts") or [])
         kept = execution.get("kept_at_expiry")
         if not kept:
+            profile["facts"] = _strip_kept(facts)
+            novel["profile"] = profile
             return novel
         try:
             dollars = float(kept.get("dollars") or 0)
@@ -666,47 +775,26 @@ def align_kept_at_expiry(profile_or_novel, execution):
         except (TypeError, ValueError):
             return novel
         if contracts < 2 or dollars <= 0:
-            return novel
-        facts = (novel.get("profile") or {}).get("facts") or []
-        row = {
-            "label": "Kept at expiry",
-            "value": _money(dollars),
-            "tone": "pos",
-            "detail": (
-                f"{contracts} short contracts rode to worthless expiry. "
-                f"You kept every dollar."
-            ),
-        }
-        for i, fact in enumerate(facts):
-            if fact.get("label") == "Kept at expiry":
-                facts[i] = row
-                break
+            profile["facts"] = _strip_kept(facts)
+        else:
+            profile["facts"] = _upsert_kept(facts, _kept_fact(dollars, contracts))
+        novel["profile"] = profile
         return novel
 
     profile = profile_or_novel
-    if not profile:
+    if not profile or execution is None or not hasattr(execution, "columns"):
+        return profile
+    needed = {"close_type", "realized_pnl", "direction"}
+    if getattr(execution, "empty", True) or not needed.issubset(set(execution.columns)):
         return profile
     from app.execution_quality import held_to_expiry_kept
 
     n, kept = held_to_expiry_kept(execution)
-    if n < 2:
-        return profile
-    fact = {
-        "label": "Kept at expiry",
-        "value": _money(kept),
-        "tone": "pos",
-        "detail": (f"{n} short contracts rode to "
-                   f"worthless expiry. You kept every dollar."),
-    }
     facts = list(profile.get("facts") or [])
-    for i, row in enumerate(facts):
-        if row.get("label") == "Kept at expiry":
-            facts[i] = fact
-            profile["facts"] = facts
-            return profile
-    if n >= 3:
-        facts.append(fact)
-        profile["facts"] = facts[:6]
+    if n < 2 or not kept or kept <= 0:
+        profile["facts"] = _strip_kept(facts)
+        return profile
+    profile["facts"] = _upsert_kept(facts, _kept_fact(kept, n))
     return profile
 
 
@@ -744,6 +832,12 @@ def compose_novel(book, trades_df):
     first_day = min(firsts) if firsts else None
     open_stories = sum(1 for e in book.values() if e["open"])
 
+    eras = _build_eras(trades_df, book)
+    _align_era_phrases(
+        eras, "premium", "premium received", totals.get("premium_collected", 0))
+    _align_era_phrases(
+        eras, "risk", "placed on long options", totals.get("long_risk", 0))
+    board = _build_scoreboard(book)
     return {
         "hero_counts": {
             "stories": len(book),
@@ -756,9 +850,10 @@ def compose_novel(book, trades_df):
             _busiest_day(trades_df),
             option_record=option_record_from_fills(trades_df),
         ),
-        "eras": _build_eras(trades_df, book),
+        "eras": eras,
         "standouts": _build_standouts(book),
-        "scoreboard": _build_scoreboard(book),
+        "scoreboard": board,
+        "scoreboard_total": scoreboard_total(board),
         "open_stories": open_stories,
     }
 
