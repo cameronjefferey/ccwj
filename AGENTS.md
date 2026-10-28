@@ -1021,7 +1021,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 ### Connected accounts (`/snaptrade/accounts`) and Settings (`/profile`)
 **Status: One story each. Linking, rename, sync, and billing posts are unchanged.**
 
-Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. Skip and Save keep `connecting`, `first`, and `paper` on the processing URL, so a paper connect still opens Practice. Blank nicknames do not flash that names were saved. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. A CSV-only account is on the same Connected accounts list, with its nickname and an Uploaded CSV label, and it has no SnapTrade sync button. The hero account count already included it. Hide account names on screen (`user_profiles.privacy_mode`) is an admin recording control in the Admin menu and masks names as Account N only for that admin. A non-admin's stored flag is ignored and cleared at startup. That control is separate from Private from HappyTrader admins.
+Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. Skip and Save keep `connecting`, `first`, and `paper` on the processing URL. A paper-first connect shows the same survey as a first real brokerage, then opens Practice. A later real brokerage still shows that survey if it was never saved or skipped. Blank nicknames do not flash that names were saved. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. A CSV-only account is on the same Connected accounts list, with its nickname and an Uploaded CSV label, and it has no SnapTrade sync button. The hero account count already included it. Hide account names on screen (`user_profiles.privacy_mode`) is an admin recording control in the Admin menu and masks names as Account N only for that admin. A non-admin's stored flag is ignored and cleared at startup. That control is separate from Private from HappyTrader admins.
 
 Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
@@ -1275,19 +1275,25 @@ The SnapTrade Connection Portal callback **starts the first pull in the
 background** (`_kick_post_connect_sync`). A brand-new user (no saved
 survey, no prior account, no earlier tenant) still lands on
 `/sync/processing?connecting=1&first=1` and sees the survey. Someone
-who already finished or skipped that survey, or who already had any
-connected account or uploaded book, goes back to Settings or Connected
+who already finished or skipped that survey, or who already had a real
+brokerage or an uploaded book, goes back to Settings or Connected
 accounts when they started there, otherwise Overview, with a toast
-`"<Broker> connected, syncing now"`. The quiz decision uses the
+`"<Broker> connected, syncing now"`. Alpaca Paper is not that book.
+A paper-only first connect (including the Practice portal) still lands
+on the survey, with `paper=1`, and Practice is the page after Save or
+Skip. Adding a real brokerage later shows the survey again if they
+never saved or skipped it. The quiz decision uses the
 accounts and tenants that existed *before* this portal return was
 saved (`app/onboarding_gate.py`). Every question on that survey is
 multiple-select. The weekly-email toggle and the free-text line stay
 as they are. A background pull stamps `last_sync_at` and
 `holdings_last_successful_sync` before history is ready; those stamps
-must not hide the survey. Only `first_sync_completed` means the new
-account is already onboarded. An account created more than 12 hours
-ago, or any account that already existed before this connect, still
-skips the quiz when `first_sync_completed` was never set. `?first=1`
+must not hide the survey. Only `first_sync_completed` on a real
+account means that account is already onboarded. A paper row never
+does, even after its first sync. A real account created more than 12
+hours ago, or any real account that already existed before this
+connect, still skips the quiz when `first_sync_completed` was never
+set. `?first=1`
 on a later visit is re-checked the same way, so a bookmarked
 processing URL cannot reopen the survey. "I'll do this later" (`/overview?later=1`) is unchanged.
 The processing redirect and one-time `data_ready` email wait until **every**

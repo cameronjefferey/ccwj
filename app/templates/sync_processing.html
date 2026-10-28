@@ -406,7 +406,7 @@
     </div>
     {% if show_onboarding %}
     <a class="secondary-link text-decoration-none"
-       href="{{ url_for('weekly_review', from_sync=1) }}">Open Overview →</a>
+       href="{% if paper %}{{ url_for('paper_practice') }}{% else %}{{ url_for('weekly_review', from_sync=1) }}{% endif %}">{% if paper %}Practice a trade →{% else %}Open Overview →{% endif %}</a>
     {% endif %}
 </div>
 {% endblock %}

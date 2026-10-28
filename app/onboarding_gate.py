@@ -1,10 +1,13 @@
 """Whether the first-connect survey should appear.
 
 The survey is first-time onboarding. It is not a step when the person
-has already saved answers, skipped the survey, or already had a linked
-brokerage or uploaded book before this connect. How many accounts exist
-*after* the new connection is saved is not the signal: a first connect
-and a second connect both leave rows on the profile.
+has already saved answers, skipped the survey, or already had a real
+brokerage or uploaded book before this connect. Alpaca Paper does not
+count as that book: a paper-only first connect still shows the survey,
+and a later real brokerage shows it too until they save or skip.
+How many accounts exist *after* the new connection is saved is not the
+signal: a first connect and a second connect both leave rows on the
+profile.
 """
 from __future__ import annotations
 
@@ -70,6 +73,22 @@ def account_predates_this_connect(row, *, now=None) -> bool:
     return current - created > _PRIOR_ACCOUNT_GRACE
 
 
+def account_is_paper(row) -> bool:
+    """True for an Alpaca Paper SnapTrade row. A live Alpaca account is not.
+
+    Paper is practice money. It must not count as "already onboarded"
+    for the survey. ``broker_slug`` is included because some rows store
+    the brokerage there and not in ``account_name``.
+    """
+    if not row:
+        return False
+    from app.paper_accounts import is_paper_row
+    if is_paper_row(row):
+        return True
+    slug = str(row.get("broker_slug") or "").casefold()
+    return "alpaca paper" in slug or "alpaca-paper" in slug
+
+
 def _saved_onboarding(user_id) -> bool:
     """True when a survey row exists, including a stored skip."""
     if not user_id:
@@ -82,21 +101,31 @@ def _saved_onboarding(user_id) -> bool:
 
 
 def first_connect_needs_quiz(user_id, prior_accounts, prior_tenant_ids=None) -> bool:
-    """True only for a first brokerage connect that has not been onboarded.
+    """True when this connect still needs the first-time survey.
 
     ``prior_accounts`` and ``prior_tenant_ids`` are the rows that existed
-    *before* this portal return wrote the new connection. A saved survey,
-    any of those accounts, or any earlier tenant (including a CSV upload)
-    means onboarding already happened.
+    *before* this portal return wrote the new connection. A saved survey
+    (including a skip), a real brokerage, or a CSV upload means
+    onboarding already happened. Alpaca Paper accounts do not: the
+    survey still shows on that first paper connect, and again when a
+    real brokerage is added later, until they save or skip.
     """
     if not user_id:
         return False
     if _saved_onboarding(user_id):
         return False
-    if prior_accounts:
+    prior = list(prior_accounts or [])
+    if any(not account_is_paper(row) for row in prior):
         return False
-    prior_tenants = [t for t in (prior_tenant_ids or []) if t]
-    if prior_tenants:
+    paper_ids = {
+        str(row.get("tenant_id") or "")
+        for row in prior
+        if row.get("tenant_id") and account_is_paper(row)
+    }
+    prior_tenants = [str(t) for t in (prior_tenant_ids or []) if t]
+    # A tenant that is not one of those paper rows is a real book
+    # (CSV, or a brokerage that is not in the SnapTrade list).
+    if any(tid not in paper_ids for tid in prior_tenants):
         return False
     return True
 
@@ -104,11 +133,12 @@ def first_connect_needs_quiz(user_id, prior_accounts, prior_tenant_ids=None) -> 
 def onboarding_quiz_still_pending(user_id) -> bool:
     """Re-check at page render, so a stale ``?first=1`` cannot reopen it.
 
-    A just-added account (first history sync not finished, created
+    A just-added real account (first history sync not finished, created
     inside the grace window) does not count as "already onboarded",
-    even after the background pull stamps a sync time. An older
-    account, a finished first sync, a saved survey, or a tenant that
-    is not one of those new SnapTrade rows does.
+    even after the background pull stamps a sync time. An older real
+    account, a finished first sync on a real account, a saved survey,
+    or a tenant that is not one of the SnapTrade rows does. Alpaca
+    Paper never counts: a finished paper sync is not the survey.
     """
     if not user_id:
         return False
@@ -122,7 +152,11 @@ def onboarding_quiz_still_pending(user_id) -> bool:
         # Fail closed against re-showing the survey. A first connect
         # with a healthy read still returns True below.
         return False
-    if any(account_is_established(row) or account_predates_this_connect(row) for row in accounts):
+    real_accounts = [row for row in accounts if not account_is_paper(row)]
+    if any(
+        account_is_established(row) or account_predates_this_connect(row)
+        for row in real_accounts
+    ):
         return False
     snap_ids = {
         str(row.get("tenant_id") or "")

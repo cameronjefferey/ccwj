@@ -1059,16 +1059,18 @@ def snaptrade_callback():
             paper_saved=paper_saved,
         )
         _kick_post_connect_sync(user_id)
-        if practice_return:
-            flash("Paper account connected. Pick a call or a put.", "success")
-            return redirect(url_for("paper_practice"))
         from app.onboarding_gate import first_connect_needs_quiz
         # Survey only when onboarding is still genuinely not done.
         # A new account's first_sync_completed flag is false for every
         # additional broker; that used to set ?first=1 and reopen the quiz.
+        # Paper does not count as already onboarded. A practice-portal
+        # return still shows the survey on a first paper connect.
         needs_quiz = first_connect_needs_quiz(
             user_id, prior_accounts, prior_tenant_ids,
         )
+        if practice_return and not needs_quiz:
+            flash("Paper account connected. Pick a call or a put.", "success")
+            return redirect(url_for("paper_practice"))
         # Already onboarded, and this was a new brokerage (not a
         # reconnect or a recovery of an account we already had).
         # Go back to Settings/accounts, or Overview, with a toast.
@@ -1081,8 +1083,10 @@ def snaptrade_callback():
         if needs_quiz:
             qp["first"] = 1
         # A new paper account has no trades. Don't send it through the
-        # history-and-Overview waiting room.
-        if newly_saved and paper_saved == newly_saved:
+        # history-and-Overview waiting room. The survey still shows
+        # (``first=1``); Practice is where they go after Save or Skip.
+        paper_only = bool(newly_saved and paper_saved == newly_saved)
+        if paper_only or (practice_return and needs_quiz and newly_saved):
             qp["paper"] = 1
         if reconnect_label:
             flash(
@@ -1090,6 +1094,8 @@ def snaptrade_callback():
                 "data now.",
                 "success",
             )
+        elif paper_only or (practice_return and needs_quiz and newly_saved):
+            flash("Paper account connected.", "success")
         elif recovery_existing:
             flash(
                 "Broker connection refreshed. We're pulling the latest "
