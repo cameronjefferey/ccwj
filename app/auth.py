@@ -346,6 +346,23 @@ def _signup_subhead(route: str) -> str:
     )
 
 
+def _practice_signup_next(raw) -> str | None:
+    """A lesson's /practice URL, or None. Other targets stay on get-started."""
+    from urllib.parse import parse_qs, urlparse
+
+    target = safe_internal_next(raw)
+    if not target:
+        return None
+    parsed = urlparse(target)
+    if parsed.path.rstrip("/") != "/practice":
+        return None
+    allowed = {"symbol", "side", "tenor", "distance", "voice"}
+    query = parse_qs(parsed.query, keep_blank_values=False)
+    if any(key not in allowed for key in query):
+        return None
+    return target
+
+
 def _render_signup_form(
     invite_required,
     *,
@@ -353,6 +370,7 @@ def _render_signup_form(
     email="",
     invite="",
     route="",
+    next_path="",
 ):
     """Re-render signup without reflecting submitted credentials.
 
@@ -369,6 +387,7 @@ def _render_signup_form(
         form_email=email,
         form_invite=invite,
         form_route=chosen,
+        form_next=next_path or "",
         signup_headline=_signup_headline(chosen),
         signup_subhead=_signup_subhead(chosen),
         turnstile_site_key=site_key,
@@ -393,6 +412,7 @@ def signup():
         email_raw = request.form.get("email", "")
 
         route = _signup_route(request.form.get("route"))
+        practice_next = _practice_signup_next(request.form.get("next"))
 
         def _retry(message, category="danger"):
             flash(message, category)
@@ -402,6 +422,7 @@ def signup():
                 email=(email_raw or "").strip(),
                 invite=invite,
                 route=route,
+                next_path=practice_next or "",
             )
 
         # Closed-beta gate: when SIGNUP_INVITE_CODE is set in the env, the
@@ -479,7 +500,9 @@ def signup():
         # New accounts have no brokerage yet. /get-started is the
         # broker-first connect screen (CSV is a quiet secondary there).
         accounts = get_accounts_for_user(user.id)
-        if not accounts and route == "learn":
+        if not accounts and practice_next:
+            next_page = practice_next
+        elif not accounts and route == "learn":
             next_page = url_for("learn_index")
         elif not accounts:
             next_page = url_for("get_started")
@@ -491,6 +514,7 @@ def signup():
     return _render_signup_form(
         invite_required,
         route=_signup_route(request.args.get("route")),
+        next_path=_practice_signup_next(request.args.get("next")) or "",
     )
 
 

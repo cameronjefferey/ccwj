@@ -1256,7 +1256,9 @@ def positions():
         known_symbols = []
         if "symbol" in df.columns:
             known_symbols = [str(symbol) for symbol in df["symbol"].dropna().unique()]
-        paper_fills = paper_fill_notices(current_user.id, known_symbols)
+        paper_fills = paper_fill_notices(
+            current_user.id, known_symbols, scope_ids=tenant_ids,
+        )
     except Exception as exc:
         app.logger.warning("paper fill notices failed: %s", exc)
         paper_fills = []

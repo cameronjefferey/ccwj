@@ -491,6 +491,7 @@ def test_pick_page_uses_lesson_words(monkeypatch):
     })
     monkeypatch.setattr(practice, "market_today", lambda now=None: date(2026, 9, 29))
     monkeypatch.setattr(practice, "_session_open", lambda now=None: True)
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: False)
 
     client = app.test_client()
     with client.session_transaction() as sess:
@@ -520,7 +521,7 @@ def test_pick_page_uses_lesson_words(monkeypatch):
     assert 'data-soon="Daily · Tue Sep 29"' in html
     assert ">Daily · Tue Sep 29<" in html
     assert 'data-contract="SPX pays cash. One contract is $100 per point, not 100 shares."' in html
-    assert 'href="/positions"' in html
+    assert 'href="/positions?tenant=snaptrade:learner"' in html
     assert 'href="/snaptrade/connect"' in html
     assert "Your 30-day trial starts when you connect a real brokerage." in html
     assert 'class="col-12"' in html
@@ -1028,4 +1029,175 @@ def test_logged_out_practice_explains_the_next_step():
     assert 'href="/login?next=/practice"' in html
     assert ">Sign in<" in html
     assert ">Create a free account<" in html
+    assert 'href="/signup"' in html
     assert "Review this paper trade" not in html
+
+    lesson = app.test_client().get(
+        "/practice?symbol=SPY&side=put&tenor=soon&distance=at"
+    ).get_data(as_text=True)
+    assert "next=" in lesson
+    assert "symbol" in lesson and "put" in lesson
+    assert "/signup?next=" in lesson
+
+
+def test_lesson_ticket_survives_until_the_paper_account_can_show_it(monkeypatch):
+    from app import app
+    from app.models import User
+    from app import paper_practice as practice
+
+    class _SessionUser:
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "ada"
+
+        @property
+        def is_authenticated(self):
+            return True
+
+        def get_id(self):
+            return "7"
+
+    user = _SessionUser()
+    monkeypatch.setattr(
+        User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "7" else None),
+    )
+    monkeypatch.setattr(practice, "latest_spots", lambda: {"SPY": 500.0, "QQQ": 400.0, "SPX": 5000.0})
+    monkeypatch.setattr(practice, "snaptrade_enabled", lambda: True)
+    monkeypatch.setattr(practice, "alpaca_paper_trade_account", lambda user_id: {
+        "snaptrade_account_id": "learner-acct",
+        "tenant_id": "snaptrade:learner",
+        "account_name": "Practice",
+        "row": {},
+    })
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: False)
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "7"
+        sess["_fresh"] = True
+        sess[practice.PREFILL_KEY] = {
+            "symbol": "SPY",
+            "side": "put",
+            "tenor": "weekly",
+            "distance": "above",
+            "voice": "intermediate",
+        }
+    bounced = client.get("/practice")
+    assert bounced.status_code == 302
+    assert "side=put" in (bounced.location or "")
+    assert "voice=intermediate" in (bounced.location or "")
+    html = client.get(bounced.location).get_data(as_text=True)
+    assert 'name="side" value="put" checked' in html
+    assert 'name="voice" value="intermediate" checked' in html
+    assert "Filled in from the lesson" in html
+    again = client.get("/practice")
+    assert again.status_code == 200
+    assert 'name="side" value="put" checked' not in again.get_data(as_text=True)
+
+
+def test_real_brokerage_practice_does_not_restart_the_trial(monkeypatch):
+    from app import app
+    from app.models import User
+    from app import paper_practice as practice
+
+    class _SessionUser:
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "ada"
+
+        @property
+        def is_authenticated(self):
+            return True
+
+        def get_id(self):
+            return "7"
+
+    user = _SessionUser()
+    monkeypatch.setattr(
+        User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "7" else None),
+    )
+    monkeypatch.setattr(practice, "latest_spots", lambda: {"SPY": 500.0, "QQQ": 400.0, "SPX": 5000.0})
+    monkeypatch.setattr(practice, "snaptrade_enabled", lambda: True)
+    monkeypatch.setattr(practice, "alpaca_paper_trade_account", lambda user_id: None)
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: True)
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "7"
+        sess["_fresh"] = True
+    html = client.get(
+        "/practice?symbol=QQQ&side=call&tenor=weekly&distance=at"
+    ).get_data(as_text=True)
+    assert "separate from your real brokerage" in html
+    assert "Your 30-day trial starts when you connect a real brokerage." not in html
+    assert "The lesson picked a QQQ call" in html
+    monkeypatch.setattr(practice, "alpaca_paper_trade_account", lambda user_id: {
+        "snaptrade_account_id": "learner-acct",
+        "tenant_id": "snaptrade:learner",
+        "account_name": "Practice",
+        "row": {},
+    })
+    with_account = client.get("/practice", follow_redirects=True).get_data(as_text=True)
+    assert "separate from your real brokerage" in with_account
+    assert "Your 30-day trial starts when you connect a real brokerage." not in with_account
+    assert 'href="/positions?tenant=snaptrade:learner"' in with_account
+    assert "Filled in from the lesson" in with_account
+
+
+def test_signup_from_a_lesson_returns_to_that_practice_ticket(monkeypatch):
+    from urllib.parse import urlparse, parse_qs
+
+    from app import app
+    from app.auth import _practice_signup_next
+
+    assert _practice_signup_next("https://evil.example/practice") is None
+    assert _practice_signup_next("/practice/place") is None
+    assert _practice_signup_next("/practice?symbol=SPY&next=https://evil.example") is None
+    kept = _practice_signup_next("/practice?symbol=SPY&side=put&tenor=soon&distance=at")
+    assert kept.startswith("/practice?")
+    assert "side=put" in kept
+
+    monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", False)
+    monkeypatch.setitem(app.config, "SIGNUP_ENABLED", True)
+    monkeypatch.setitem(app.config, "SIGNUP_INVITE_CODE", "")
+    created = {}
+
+    class _User:
+        id = 5150
+        username = "lessonuser"
+
+    monkeypatch.setattr(
+        "app.auth.User.create",
+        staticmethod(lambda username, password, email=None: created.setdefault("user", _User())),
+    )
+    monkeypatch.setattr("app.auth.User.get_by_email", staticmethod(lambda email: None))
+    monkeypatch.setattr(
+        "app.auth.User.get_by_username",
+        staticmethod(lambda name: created.get("user")),
+    )
+    monkeypatch.setattr("app.auth.login_user", lambda *a, **k: None)
+    monkeypatch.setattr("app.auth._username_taken_ignoring_case", lambda name: False)
+    monkeypatch.setattr("app.auth.get_accounts_for_user", lambda uid: [])
+    monkeypatch.setattr("app.auth._send_welcome_verification", lambda user: None)
+    monkeypatch.setattr("app.funnel.on_signup", lambda uid: None)
+    monkeypatch.setattr("app.campaign.stamp_signup", lambda uid: None)
+    monkeypatch.setattr("app.ops_notify.notify_event", lambda *a, **k: None)
+
+    client = app.test_client()
+    ticket = "/practice?symbol=SPY&side=put&tenor=soon&distance=at"
+    page = client.get("/signup", query_string={"next": ticket}).get_data(as_text=True)
+    assert 'name="next"' in page
+    assert "side=put" in page
+    resp = client.post("/signup", data={
+        "username": "lessonuser",
+        "email": "lessonuser@example.com",
+        "password": "Secret1pass",
+        "confirm": "Secret1pass",
+        "next": ticket,
+    }, follow_redirects=False)
+    assert resp.status_code in (302, 303)
+    landed = urlparse(resp.headers["Location"])
+    assert landed.path == "/practice"
+    query = parse_qs(landed.query)
+    assert query["side"] == ["put"]
+    assert query["symbol"] == ["SPY"]

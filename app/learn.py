@@ -116,6 +116,35 @@ def _fallback_thumb():
     return url_for("static", filename=_FALLBACK_THUMB, _external=True)
 
 
+def _learner_links():
+    """Positions link and whether this person already has a real brokerage.
+
+    Learn does not call SnapTrade. Both lookups are Postgres and fail
+    closed to the plain Positions link and the trial sentence.
+    """
+    positions = url_for("positions")
+    if not getattr(current_user, "is_authenticated", False):
+        return {"has_real_brokerage": False, "paper_positions_url": positions}
+    has_real = None
+    try:
+        from app.plan import user_has_real_brokerage
+        has_real = user_has_real_brokerage(current_user.id)
+    except Exception:
+        logger.warning("learn brokerage lookup failed", exc_info=True)
+        has_real = None
+    try:
+        from app.paper_practice import _paper_tenant_ids, positions_url_for_tenant
+        ids = _paper_tenant_ids(current_user.id)
+        if len(ids) == 1:
+            positions = positions_url_for_tenant(ids[0])
+    except Exception:
+        logger.warning("learn paper account lookup failed", exc_info=True)
+    return {
+        "has_real_brokerage": has_real is True,
+        "paper_positions_url": positions,
+    }
+
+
 @app.route("/learn/")
 @app.route("/learn")
 def learn_index():
@@ -134,6 +163,7 @@ def learn_index():
         replays=learn_replay.replays(),
         shorts=[_view_short(short) for short in catalog.series_shorts()],
         first_episode=first,
+        **_learner_links(),
     )
 
 
@@ -231,4 +261,5 @@ def learn_episode(slug):
         deeper=learn_try.deeper_for_lesson(slug) if episode["published"] else None,
         video_ld=_video_ld(episode, page_url, og_image),
         robots="noindex" if not episode["published"] else None,
+        **_learner_links(),
     )

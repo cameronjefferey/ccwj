@@ -5,9 +5,8 @@ Alpaca Paper order through SnapTrade, then the existing sync reads it
 back. This module does not keep a paper ledger and does not talk to
 Alpaca directly.
 
-Learn (a separate branch) can link to ``paper_practice`` later. Selling
-a covered call is a later ticket, only once the paper account holds at
-least 100 shares.
+Lessons link here with the radios already set. Selling a covered call
+is a later ticket, only once the paper account holds at least 100 shares.
 """
 from __future__ import annotations
 
@@ -54,6 +53,8 @@ SENT_KEY = "paper_practice_sent"
 ORDERS_KEY = "paper_practice_orders"
 LOOK_KEY = "paper_practice_look"
 VOICE_KEY = "paper_practice_voice"
+PREFILL_KEY = "paper_practice_prefill"
+_TENANT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_-]{0,79}$")
 VOICES = ("beginner", "intermediate", "brokerage")
 
 SYMBOLS = ("SPY", "QQQ", "SPX")
@@ -1225,12 +1226,58 @@ def practice_prefill(args) -> dict | None:
         or distance not in DISTANCES
     ):
         return None
-    return {
+    prefill = {
         "symbol": symbol,
         "side": side,
         "tenor": tenor,
         "distance": distance,
     }
+    voice = (args.get("voice") or "").strip().lower()
+    if voice in VOICES and voice != "beginner":
+        prefill["voice"] = voice
+    return prefill
+
+
+def _stash_lesson_prefill(prefill) -> None:
+    """Keep the lesson ticket across the paper-account sign-in.
+
+    The Connection Portal and the onboarding quiz return to bare
+    ``/practice``. The query string is the ticket; this session copy
+    puts it back on that return.
+    """
+    if not prefill:
+        return
+    session[PREFILL_KEY] = dict(prefill)
+
+
+def _stored_lesson_prefill():
+    stored = session.get(PREFILL_KEY)
+    if not isinstance(stored, dict):
+        return None
+    return practice_prefill(stored)
+
+
+def practice_return_path() -> str:
+    """This practice URL, including a lesson query, for sign-in."""
+    path = request.path or "/practice"
+    raw = request.query_string.decode("utf-8") if request.query_string else ""
+    if not raw:
+        return path
+    return f"{path}?{raw}"
+
+
+def safe_tenant_id(raw) -> str:
+    text = str(raw or "").strip()
+    if _TENANT_ID.fullmatch(text):
+        return text
+    return ""
+
+
+def positions_url_for_tenant(tenant_id) -> str:
+    tid = safe_tenant_id(tenant_id)
+    if tid:
+        return url_for("positions", tenant=tid)
+    return url_for("positions")
 
 
 def _selection_from_form():
@@ -2116,34 +2163,53 @@ def order_public(order) -> dict:
     }
 
 
-def paper_fill_notices(user_id, known_symbols) -> list[dict]:
-    """Filled paper orders whose symbol is not in Positions yet.
+def paper_fill_notices(user_id, known_symbols, scope_ids=None) -> list[dict]:
+    """Filled paper orders that are not already listed in this scope.
 
     The row is a sentence plus a link. It does not invent P&L. The
     account read runs once per order so the warehouse can catch up
     without the nightly sync.
+
+    A symbol on the real book is not this fill. Skip it only when this
+    page's scope already includes the paper tenant (or the caller did
+    not pass a scope). The link names that tenant so a mixed book opens
+    the paper position.
     """
     known = {position_link_symbol(symbol) for symbol in (known_symbols or [])}
+    scope = None if scope_ids is None else {str(tid) for tid in scope_ids if tid}
     notices = []
     rows = None
     for order in _session_orders():
         if str(order.get("status") or "") != "filled":
             continue
         symbol = position_link_symbol(order.get("link_symbol") or order.get("symbol"))
-        if not symbol or not re.fullmatch(r"[A-Z0-9.]{1,12}", symbol) or symbol in known:
+        if not symbol or not re.fullmatch(r"[A-Z0-9.]{1,12}", symbol):
             continue
         account_id = str(order.get("snaptrade_account_id") or "")
+        tenant_id = safe_tenant_id(order.get("tenant_id"))
+        row = None
         if account_id:
             if rows is None:
                 rows = _local_account_rows(user_id)
             row = rows.get(account_id)
-            if row:
-                maybe_sync_filled_order(
-                    user_id, {"row": row}, order.get("brokerage_order_id"),
-                )
+            if not tenant_id and row:
+                tenant_id = safe_tenant_id(row.get("tenant_id"))
+        if symbol in known and (
+            scope is None or not tenant_id or tenant_id in scope
+        ):
+            continue
+        syncing = False
+        if row:
+            syncing = maybe_sync_filled_order(
+                user_id, {"row": row}, order.get("brokerage_order_id"),
+            )
+        sentence = f"{symbol} filled on the paper account."
+        if syncing:
+            sentence += " Syncing that account now."
         notices.append({
             "symbol": symbol,
-            "sentence": f"{symbol} filled on the paper account. Syncing that account now.",
+            "tenant_id": tenant_id,
+            "sentence": sentence,
         })
     return notices
 
@@ -2277,7 +2343,11 @@ def spots_for_practice_page() -> dict:
 @app.route("/practice", methods=["GET"])
 def paper_practice():
     """The ticket Learn can link to. Prices are today's closes, not a sketch."""
+    return_path = practice_return_path()
     if not getattr(current_user, "is_authenticated", False):
+        lesson = practice_prefill(request.args)
+        if lesson:
+            _stash_lesson_prefill(lesson)
         return render_template(
             "paper_practice.html",
             title="Practice a trade",
@@ -2297,12 +2367,24 @@ def paper_practice():
             buying_power_label=None,
             broker_pending=False,
             session_note=None,
-            prefill=None,
+            prefill=lesson,
+            login_next=return_path,
+            signup_next=return_path if lesson else None,
+            has_real_brokerage=None,
+            paper_positions_url=url_for("positions"),
         )
     session.pop(LOOK_KEY, None)
     look = False
     placed = (request.args.get("placed") or "") == "1"
     confirming = (request.args.get("confirm") or "") == "1"
+    lesson = None if confirming or placed else practice_prefill(request.args)
+    if lesson:
+        _stash_lesson_prefill(lesson)
+    elif not confirming and not placed:
+        stored = _stored_lesson_prefill()
+        if stored:
+            return redirect(url_for("paper_practice", **stored))
+        session.pop(PREFILL_KEY, None)
     sent = session.get(SENT_KEY) if placed else None
     ticket = session.get(TICKET_KEY) if confirming and not placed else None
     if ticket and ticket.get("look"):
@@ -2381,6 +2463,15 @@ def paper_practice():
         session_note = ticket["session_note"]
     elif not regular_session_open():
         session_note = session_wait_note()
+    if account and lesson:
+        session.pop(PREFILL_KEY, None)
+    has_real = None
+    try:
+        from app.plan import user_has_real_brokerage
+        has_real = user_has_real_brokerage(current_user.id)
+    except Exception as exc:
+        _log.warning("practice real-brokerage lookup failed: %s", exc)
+        has_real = None
     return render_template(
         "paper_practice.html",
         title="Practice a trade",
@@ -2399,8 +2490,12 @@ def paper_practice():
         buying_power_label=buying_power_label,
         broker_pending=broker_pending,
         session_note=session_note,
-        prefill=None if confirming or placed else practice_prefill(request.args),
+        prefill=lesson,
         logged_out=False,
+        login_next=return_path,
+        signup_next=None,
+        has_real_brokerage=has_real is True,
+        paper_positions_url=positions_url_for_tenant((account or {}).get("tenant_id")),
     )
 
 
@@ -2497,6 +2592,7 @@ def paper_practice_chain():
 @app.route("/practice/review", methods=["POST"])
 @login_required
 def paper_practice_review():
+    session.pop(PREFILL_KEY, None)
     blocked = _write_blocked("reviewing a paper trade")
     if blocked:
         return blocked
@@ -2529,6 +2625,7 @@ def paper_practice_review():
 @login_required
 def paper_practice_place():
     """Send the confirmed ticket. A missing confirm never places an order."""
+    session.pop(PREFILL_KEY, None)
     blocked = _write_blocked("placing a paper trade")
     if blocked:
         return blocked

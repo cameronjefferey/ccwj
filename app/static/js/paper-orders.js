@@ -250,5 +250,7 @@
         if (connect) connect.classList.remove("d-none");
     }).catch(function () {
         pending.textContent = "We couldn't reach the paper account. Refresh to try again.";
+        var connect = document.getElementById("pp-connect");
+        if (connect) connect.classList.remove("d-none");
     });
 })();

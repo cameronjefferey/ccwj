@@ -562,3 +562,59 @@ def _assert_public_copy(html):
     assert "Full access · No credit card" not in html
     assert "For learning only · not investment advice." in html
     assert 'href="/signup"' in html
+
+
+def test_later_lessons_stay_at_least_as_hard_as_the_strike_lesson():
+    from app import learn_try
+
+    for slug in ("what-is-an-option", "calls-and-puts"):
+        ticket = learn_try.for_lesson(slug)
+        assert "tenor=soon" in ticket["href"]
+        assert "voice=" not in ticket["href"]
+    strike = learn_try.for_lesson("strike-expiration-premium")
+    assert "tenor=weekly" in strike["href"]
+    assert "voice=" not in strike["href"]
+
+    selling = learn_try.for_lesson("buying-and-selling")
+    assert "tenor=weekly" in selling["href"]
+    assert "voice=intermediate" in selling["href"]
+    assert "This ticket buys a call" in selling["sentence"]
+    wheel = learn_try.for_lesson("the-wheel")
+    assert "tenor=multi" in wheel["href"]
+    assert "voice=intermediate" in wheel["href"]
+    assert "This ticket buys a put" in wheel["sentence"]
+    risk = learn_try.for_lesson("options-risk")
+    assert "tenor=multi" in risk["href"]
+    assert "voice=intermediate" in risk["href"]
+    reading = learn_try.for_lesson("reading-a-position")
+    assert "tenor=soon" not in reading["href"]
+    assert "voice=intermediate" in reading["href"]
+
+    page = _html("/learn/buying-and-selling")
+    assert "This ticket buys a call" in page
+    assert "voice=intermediate" in page
+    assert "tenor=weekly" in page
+    covered = learn_try.for_replay("covered-call")
+    assert "tenor=weekly" in covered["href"]
+    assert "voice=intermediate" in covered["href"]
+
+
+def test_signed_in_learner_with_a_real_broker_is_not_told_to_start_a_trial(monkeypatch):
+    user = _SessionUser("alice")
+
+    def get_by_id(user_id):
+        return user if str(user_id) == "1" else None
+
+    monkeypatch.setattr(User, "get_by_id", staticmethod(get_by_id))
+    monkeypatch.setattr("app.paper_accounts.viewer_flags", lambda user_id: (False, False))
+    monkeypatch.setattr("app.paper_accounts.full_view_offer_open", lambda user_id: False)
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: True)
+    monkeypatch.setattr("app.paper_practice._paper_tenant_ids", lambda user_id: ["snaptrade:paper"])
+    client = _client()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "1"
+        sess["_fresh"] = True
+    html = client.get("/learn/calls-and-puts").get_data(as_text=True)
+    assert "separate from your real brokerage" in html
+    assert "Your 30-day trial starts when you connect a real brokerage." not in html
+    assert "tenant=snaptrade:paper" in html or "tenant=snaptrade%3Apaper" in html

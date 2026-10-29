@@ -141,8 +141,12 @@
             <p>Sign in to open a practice account, place one call or one put, and see that trade on Positions. Nothing is placed until you confirm.</p>
             <p class="pp-note">New to the words on the ticket? <a href="{{ url_for('learn_index') }}">Learn Options 101</a> first, then come back here.</p>
             <div class="d-flex flex-wrap gap-2 mt-3">
-                <a class="btn btn-primary" href="{{ url_for('login', next='/practice') }}">Sign in</a>
+                <a class="btn btn-primary" href="{{ url_for('login', next=login_next or '/practice') }}">Sign in</a>
+                {% if signup_next %}
+                <a class="btn btn-outline-secondary" href="{{ url_for('signup', next=signup_next) }}">Create a free account</a>
+                {% else %}
                 <a class="btn btn-outline-secondary" href="{{ url_for('signup') }}">Create a free account</a>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -192,7 +196,7 @@
                     <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Practice another</a>
                     <a class="btn btn-primary" href="{{ url_for('position_detail', symbol=sent.link_symbol or sent.symbol, tenants=sent.tenant_id) if sent.tenant_id else url_for('position_detail', symbol=sent.link_symbol or sent.symbol) }}">See {{ sent.link_symbol or sent.symbol }}</a>
                 </div>
-                <p class="pp-note mt-3 mb-0">Open <a href="{{ url_for('positions') }}">Positions</a> to see the trade. <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.</p>
+                {% include "_paper_followup.html" %}
             {% elif ticket %}
                 {% if ticket.session_note %}
                 <p class="pp-note">{{ ticket.session_note }}</p>
@@ -213,7 +217,7 @@
                     <button class="btn btn-primary" type="submit">Place this trade</button>
                     <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Change it</a>
                 </form>
-                <p class="pp-note mt-3 mb-0">Open <a href="{{ url_for('positions') }}">Positions</a> to see the trade. <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.</p>
+                {% include "_paper_followup.html" %}
             {% elif not account and not look and not broker_pending %}
                 <p>
                     Connect a paper account to practice. The buying power is whatever that
@@ -221,6 +225,12 @@
                     before it is sent. The same mirror that tracks a real account will show
                     this trade afterward.
                 </p>
+                {% if has_real_brokerage %}
+                <p class="pp-note">This paper account is separate from your real brokerage. It does not change that account.</p>
+                {% endif %}
+                {% if prefill %}
+                <p class="pp-note">The lesson picked a {{ prefill.symbol }} {{ prefill.side }}. It will be on the ticket after this account connects. Nothing is placed until you confirm.</p>
+                {% endif %}
                 <p class="pp-note">
                     New to the words on the ticket?
                     <a href="/learn">Learn Options 101</a>
@@ -246,6 +256,12 @@
                         this trade afterward.
                     </p>
                     <p class="pp-note">Opening the account is one sign-in. After that, you place the trade on this page.</p>
+                    {% if has_real_brokerage %}
+                    <p class="pp-note">This paper account is separate from your real brokerage. It does not change that account.</p>
+                    {% endif %}
+                    {% if prefill %}
+                    <p class="pp-note">The lesson picked a {{ prefill.symbol }} {{ prefill.side }}. It will be on the ticket after this account connects. Nothing is placed until you confirm.</p>
+                    {% endif %}
                     {% if snaptrade_ready %}
                     <form method="POST" action="{{ url_for('paper_practice_connect') }}" data-submit-once class="mt-3">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -521,7 +537,7 @@
                         sync();
                     })();
                 </script>
-                <p class="pp-note mt-3 mb-0">Open <a href="{{ url_for('positions') }}">Positions</a> to see the trade. <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.</p>
+                {% include "_paper_followup.html" %}
                 </div>
             {% endif %}
             {% if recent_orders %}

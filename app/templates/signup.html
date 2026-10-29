@@ -49,6 +49,9 @@
                 {% if form_route %}
                 <input type="hidden" name="route" value="{{ form_route }}">
                 {% endif %}
+                {% if form_next %}
+                <input type="hidden" name="next" value="{{ form_next }}">
+                {% endif %}
                 {% if invite_required %}
                 <div class="mb-3">
                     <label for="invite_code" class="form-label fw-semibold small">Invite Code</label>

@@ -33,19 +33,24 @@ def _ticket(side, tenor, sentence):
         "button": f"Try a SPY {side}",
         "sentence": sentence,
         "href": practice_href("SPY", side, tenor, "at"),
+        "voice": "beginner",
     }
 
 
-def practice_href(symbol, side, tenor, distance) -> str:
-    return "/practice?" + urlencode({
+def practice_href(symbol, side, tenor, distance, voice="beginner") -> str:
+    params = {
         "symbol": symbol,
         "side": side,
         "tenor": tenor,
         "distance": distance,
-    })
+    }
+    # Beginner is the page default. Later lessons name the step they use.
+    if voice in ("intermediate", "brokerage"):
+        params["voice"] = voice
+    return "/practice?" + urlencode(params)
 
 
-def _buy(side, tenor, extra=""):
+def _buy(side, tenor, extra="", voice="beginner"):
     when = _TENORS[tenor]
     sentence = (
         f"Buy one SPY {side} on the paper account, at the price, {when}. "
@@ -53,10 +58,19 @@ def _buy(side, tenor, extra=""):
     )
     if extra:
         sentence = extra + " " + sentence
-    return _ticket(side, tenor, sentence)
+    ticket = _ticket(side, tenor, sentence)
+    ticket["href"] = practice_href("SPY", side, tenor, "at", voice)
+    ticket["voice"] = voice
+    return ticket
 
 
 # One paper trade per lesson. ``also`` is a second ticket on the same card.
+# The first three lessons stay on the nearest expiration, in beginner
+# words. From buying and selling on, the ticket stays at least a week
+# out and uses the intermediate labels, so the page does not get simpler
+# after the strike lesson. Selling and multi-leg trades are still one
+# long option: the paper ticket cannot sell until the account holds the
+# shares, and the sentence says so.
 _LESSONS = {
     "what-is-an-option": _buy("call", "soon"),
     "calls-and-puts": {
@@ -64,29 +78,38 @@ _LESSONS = {
         "also": _buy("put", "soon"),
     },
     "strike-expiration-premium": _buy("call", "weekly"),
-    "buying-and-selling": _buy("call", "soon"),
+    "buying-and-selling": _buy(
+        "call",
+        "weekly",
+        "Buying is the long side. This ticket buys a call.",
+        "intermediate",
+    ),
     "covered-calls": _buy(
         "call",
-        "soon",
+        "weekly",
         "A covered call is a call sold against shares you hold. This ticket buys a call.",
+        "intermediate",
     ),
     "cash-secured-puts": _buy(
         "put",
-        "soon",
+        "weekly",
         "A cash-secured put is a put you sell. This ticket buys a put.",
+        "intermediate",
     ),
     "the-wheel": _buy(
         "put",
-        "soon",
+        "multi",
         "The wheel often starts with a short put. This ticket buys a put.",
+        "intermediate",
     ),
     "spreads": _buy(
         "call",
-        "soon",
+        "weekly",
         "A spread is two contracts. This ticket is one long call.",
+        "intermediate",
     ),
-    "options-risk": _buy("call", "soon"),
-    "reading-a-position": _buy("call", "soon"),
+    "options-risk": _buy("call", "multi", voice="intermediate"),
+    "reading-a-position": _buy("call", "weekly", voice="intermediate"),
 }
 
 _REPLAYS = {
@@ -94,8 +117,9 @@ _REPLAYS = {
     "long-put": _buy("put", "soon"),
     "covered-call": _buy(
         "call",
-        "soon",
+        "weekly",
         "A covered call is a call sold against shares you hold. This ticket buys a call.",
+        "intermediate",
     ),
 }
 
