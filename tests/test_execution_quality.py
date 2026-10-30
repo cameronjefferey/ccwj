@@ -405,6 +405,71 @@ def test_overview_graded_verdicts_include_every_past_expiry():
     assert "2026" not in pending["items"][0]["expiry_label"]
 
 
+def test_overview_normalizes_legacy_share_quantity_before_the_facts():
+    """A 100-share quantity must become one contract before both the
+    verdict dollar and the closed-at / worth-at-expiry lines.
+
+    The page query has to carry the close fill price. Without it the
+    audit is a no-op and the warehouse settlement (intrinsic × 100 × 100)
+    is what the card prints.
+    """
+    from app.execution_quality import EXECUTION_REVIEW_QUERY, POSITION_EXECUTION_QUERY
+
+    legacy = _row(
+        symbol="MU",
+        trade_symbol="MU    261002C01000000",
+        option_strike=1000.0,
+        direction="Bought",
+        contracts=100.0,
+        cost_to_close=0.0,
+        proceeds_from_close=3267.0,
+        close_price=32.67,
+        underlying_close_at_expiry=1074.89,
+        intrinsic_at_expiry=74.89,
+        expiry_settlement_value=748900.0,
+        expired_worthless=False,
+        early_close_vs_expiry_delta=-745633.0,
+        option_expiry=_TODAY - timedelta(days=2),
+    )
+    landed, total = overview_graded_verdicts(pd.DataFrame([legacy]), _TODAY)
+    assert len(landed) == 1
+    assert landed[0]["closed_label"] == "Received $3,267 to close"
+    assert landed[0]["worth_label"] == "Worth $7,489 at expiry"
+    assert landed[0]["outcome_label"] == "Cost $4,222"
+    assert landed[0]["delta"] == -4222.0
+    assert total["delta"] == -4222.0
+    summary = summarize_execution(pd.DataFrame([legacy]), min_graded=1, today=_TODAY)
+    assert summary["headline"]["value"] == "\u2212$4,222"
+    for sql in (EXECUTION_REVIEW_QUERY, POSITION_EXECUTION_QUERY):
+        assert "stg_history" in sql
+        assert "c.close_price" in sql
+        assert "option_buy_to_close" in sql
+
+
+def test_overview_normalizes_double_scaled_closing_cash_in_facts():
+    legacy = _row(
+        symbol="XYZ",
+        trade_symbol="XYZ   261002C01100000",
+        direction="Bought",
+        contracts=1.0,
+        cost_to_close=0.0,
+        proceeds_from_close=24171.0,
+        close_price=2.4171,
+        intrinsic_at_expiry=0.0,
+        expiry_settlement_value=0.0,
+        expired_worthless=True,
+        early_close_vs_expiry_delta=24171.0,
+        option_expiry=_TODAY - timedelta(days=1),
+        underlying_close_at_expiry=1000.0,
+        option_strike=1100.0,
+    )
+    landed, total = overview_graded_verdicts(pd.DataFrame([legacy]), _TODAY)
+    assert landed[0]["closed_label"] == "Received $241.71 to close"
+    assert landed[0]["worth_label"] == "Worth $0 at expiry"
+    assert landed[0]["outcome_label"] == "Saved $241.71"
+    assert total["delta"] == 241.71
+
+
 def test_graded_spread_is_one_verdict_with_net_cash():
     df = pd.DataFrame([
         _row(symbol="VICR", trade_symbol="VICR  260821P00210000",
@@ -501,6 +566,10 @@ def test_execution_card_renders_the_graded_list_and_hides_when_empty():
             overview_daily_in_fragment=False,
         )
     assert html.count("ov-verdict-row") == 2
+    paid = html.index("Paid $180 to close")
+    total_at = html.index("Closing early saved $775 across 2 verdicts")
+    waiting = html.index("Waiting on expiry")
+    assert paid < total_at < waiting
     assert "Paid $180 to close" in html
     assert "Worth $1,000 at expiry" in html
     assert "Saved $820" in html

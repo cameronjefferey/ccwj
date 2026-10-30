@@ -38,36 +38,72 @@ from app.review_format import allocate_rounded
 # Both queries are tenant-scoped in SQL AND project tenant_id so the
 # fail-closed DataFrame filter works (pinned by
 # tests/test_tenant_filtered_queries_carry_tenant_id.py).
+# Close price is the per-share premium on the buy-to-close / sell-to-close
+# fill. The verdict dollar is recomputed from that price so a legacy
+# 100-share quantity, or cash that already multiplied by 100 twice, does
+# not inflate Overview, the profile, or the position page. The weekly
+# email uses the same join (_VERDICTS_SQL). Both CTEs are tenant-scoped;
+# the outer select still projects tenant_id.
+_EXECUTION_CLOSE_PRICE_CTE = """
+    closes AS (
+        SELECT
+            tenant_id,
+            trade_symbol,
+            SAFE_DIVIDE(
+                SUM(ABS(price) * ABS(quantity)),
+                NULLIF(SUM(ABS(quantity)), 0)
+            ) AS close_price
+        FROM `ccwj-dbt.analytics.stg_history`
+        WHERE action IN ('option_buy_to_close', 'option_sell_to_close')
+        {tenant_filter}
+        GROUP BY tenant_id, trade_symbol
+    )
+"""
+
+_EXECUTION_COLUMNS = """
+        q.tenant_id, q.account, q.symbol, q.trade_symbol, q.option_type,
+        q.option_strike, q.option_expiry, q.direction, q.open_date,
+        q.close_date, q.close_type, q.days_held, q.dte_at_close, q.contracts,
+        q.premium_received, q.cost_to_close, q.proceeds_from_close,
+        q.realized_pnl, q.underlying_close_at_expiry, q.intrinsic_at_expiry,
+        q.expiry_settlement_value, q.expired_worthless,
+        q.gradeable_early_close, q.early_close_vs_expiry_delta,
+        q.was_rolled, q.roll_new_strike, q.roll_new_expiry,
+        q.net_roll_credit, q.peak_unrealized_pnl, q.snapshot_count,
+        q.snapshot_density, q.data_reliable, q.pnl_given_back,
+        q.giveback_pct, c.close_price
+"""
+
 EXECUTION_REVIEW_QUERY = """
+    WITH quality AS (
+        SELECT *
+        FROM `ccwj-dbt.analytics.int_option_exit_quality`
+        WHERE 1=1
+        {tenant_filter}
+    ),
+""" + _EXECUTION_CLOSE_PRICE_CTE + """
     SELECT
-        tenant_id, account, symbol, trade_symbol, option_type, option_strike,
-        option_expiry, direction, open_date, close_date, close_type,
-        days_held, dte_at_close, contracts,
-        premium_received, cost_to_close, proceeds_from_close, realized_pnl,
-        underlying_close_at_expiry, intrinsic_at_expiry, expiry_settlement_value,
-        expired_worthless, gradeable_early_close, early_close_vs_expiry_delta,
-        was_rolled, roll_new_strike, roll_new_expiry, net_roll_credit,
-        peak_unrealized_pnl, snapshot_count, snapshot_density, data_reliable,
-        pnl_given_back, giveback_pct
-    FROM `ccwj-dbt.analytics.int_option_exit_quality`
-    WHERE 1=1
-    {tenant_filter}
+""" + _EXECUTION_COLUMNS + """
+    FROM quality q
+    LEFT JOIN closes c
+      ON q.tenant_id = c.tenant_id
+     AND q.trade_symbol = c.trade_symbol
 """
 
 POSITION_EXECUTION_QUERY = """
+    WITH quality AS (
+        SELECT *
+        FROM `ccwj-dbt.analytics.int_option_exit_quality`
+        WHERE symbol = '{symbol}'
+        {tenant_filter}
+    ),
+""" + _EXECUTION_CLOSE_PRICE_CTE + """
     SELECT
-        tenant_id, account, symbol, trade_symbol, option_type, option_strike,
-        option_expiry, direction, open_date, close_date, close_type,
-        days_held, dte_at_close, contracts,
-        premium_received, cost_to_close, proceeds_from_close, realized_pnl,
-        underlying_close_at_expiry, intrinsic_at_expiry, expiry_settlement_value,
-        expired_worthless, gradeable_early_close, early_close_vs_expiry_delta,
-        was_rolled, roll_new_strike, roll_new_expiry, net_roll_credit,
-        peak_unrealized_pnl, snapshot_count, snapshot_density, data_reliable,
-        pnl_given_back, giveback_pct
-    FROM `ccwj-dbt.analytics.int_option_exit_quality`
-    WHERE symbol = '{symbol}'
-    {tenant_filter}
+""" + _EXECUTION_COLUMNS + """
+    FROM quality q
+    LEFT JOIN closes c
+      ON q.tenant_id = c.tenant_id
+     AND q.trade_symbol = c.trade_symbol
 """
 
 # Live open-option record for the Daily Review "right now" block. Reads
@@ -201,6 +237,7 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
     clock; tests pin it.
     """
     df = _prep(df)
+    df = audit_verdict_frame(df)
     if df.empty or "gradeable_early_close" not in df.columns:
         return None
     graded = df[df["gradeable_early_close"]
@@ -583,7 +620,11 @@ def _verdict_money(v) -> str:
 def _close_on(row) -> str:
     closed = row.get("close_date")
     try:
-        return f" on {pd.Timestamp(closed).strftime('%b %-d')}"
+        ts = pd.Timestamp(closed)
+        label = ts.strftime("%b %-d")
+        if int(ts.year) != date.today().year:
+            label = f"{label}, {int(ts.year)}"
+        return f" on {label}"
     except (TypeError, ValueError):
         return ""
 
@@ -993,28 +1034,58 @@ def _date_label(d, today):
     return ts.strftime("%a %b %-d")
 
 
+def _leg_fill_price(row):
+    price = _num(row.get("close_price"))
+    if price is None:
+        price = _num(row.get("fill_price"))
+    return price
+
+
 def _leg_close_cash(row):
-    """Signed cash of the closing fills. Negative means paid to close."""
+    """Signed cash of the closing fills. Negative means paid to close.
+
+    When the per-share close price is present, a second ×100 on that
+    cash (or a share-count quantity) is removed before the page prints
+    "Paid $X to close". Rows with no close price keep the warehouse cash.
+    """
     cost = _num(row.get("cost_to_close"))
     proceeds = _num(row.get("proceeds_from_close"))
     if cost is None and proceeds is None:
         return None
-    return (cost or 0.0) + (proceeds or 0.0)
+    cash = (cost or 0.0) + (proceeds or 0.0)
+    _qty, normalized = normalize_option_multiplier(
+        row.get("contracts"), _leg_fill_price(row), cash,
+    )
+    return normalized
 
 
 def _leg_expiry_cash(row):
     """Signed cash holding to expiry would have paid the trader.
 
-    ``expiry_settlement_value`` is the option's intrinsic, unsigned.
-    A short pays that intrinsic; a long receives it. Worthless is $0.
+    Recompute from per-share intrinsic and the audited contract count
+    when the close fill price is present. ``expiry_settlement_value``
+    was calculated with the warehouse quantity, which can be 100× high
+    when one contract was stored as 100 shares. A short pays that
+    value; a long receives it. Worthless is $0.
     """
-    settlement = _num(row.get("expiry_settlement_value"))
-    if settlement is None:
-        intrinsic = _num(row.get("intrinsic_at_expiry"))
-        qty = _num(row.get("contracts"))
-        if intrinsic is None or qty is None:
-            return None
+    intrinsic = _num(row.get("intrinsic_at_expiry"))
+    price = _leg_fill_price(row)
+    cash = (_num(row.get("cost_to_close")) or 0.0) + (
+        _num(row.get("proceeds_from_close")) or 0.0
+    )
+    qty = _num(row.get("contracts"))
+    if price is not None and qty is not None:
+        qty, _normalized = normalize_option_multiplier(
+            row.get("contracts"), price, cash,
+        )
+    if price is not None and intrinsic is not None and qty is not None:
         settlement = intrinsic * 100.0 * abs(qty)
+    else:
+        settlement = _num(row.get("expiry_settlement_value"))
+        if settlement is None:
+            if intrinsic is None or qty is None:
+                return None
+            settlement = intrinsic * 100.0 * abs(qty)
     direction = str(row.get("direction") or "")
     if direction == "Sold":
         return -abs(settlement)
@@ -1296,6 +1367,7 @@ def open_option_record(df, today):
 def _graded_early_closes(df, min_graded):
     """Graded early closes, or None when the symbol gate is not met."""
     df = _prep(df)
+    df = audit_verdict_frame(df)
     if df.empty or "gradeable_early_close" not in df.columns:
         return None
     graded = df[df["gradeable_early_close"]
@@ -1469,6 +1541,7 @@ def exit_notes(df):
     account display label only for legacy rows without a tenant id.
     """
     df = _prep(df)
+    df = audit_verdict_frame(df)
     if df.empty or "gradeable_early_close" not in df.columns:
         return {}
     notes = {}
