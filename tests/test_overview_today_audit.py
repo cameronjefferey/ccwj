@@ -82,6 +82,33 @@ def _snap(value, day_delta, has_data=True):
     }
 
 
+def test_live_placeholder_stays_out_of_a_close_total():
+    from app.weekly_review import _separate_live_placeholders
+
+    close = _snap(1000.0, 10.0)
+    close["account"] = "Schwab"
+    close["today_is_live"] = False
+    live = _snap(25000.0, None, has_data=False)
+    live["account"] = "New brokerage"
+    live["tenant_id"] = "snaptrade:new"
+    live["today_is_live"] = True
+    live["live_value"] = None
+    rows = _separate_live_placeholders([close, live])
+    assert rows[1]["today_value"] is None
+    assert rows[1]["live_value"] == 25000.0
+    total = _today_totals(rows)
+    assert total["today_value"] == 1000.0
+    assert total["display_value"] == 1000
+    assert total["accounts_count"] == 1
+
+    cold = _snap(25000.0, None, has_data=False)
+    cold["today_is_live"] = True
+    cold["live_value"] = None
+    only_live = _separate_live_placeholders([cold])
+    assert only_live[0]["today_value"] == 25000.0
+    assert only_live[0]["live_value"] is None
+
+
 def test_snapshot_total_is_the_sum_of_rounded_account_cells():
     snaps = [_snap(100.6, 1.6), _snap(100.6, 1.6)]
     total = _today_totals(snaps)
@@ -311,6 +338,10 @@ def test_templates_show_matching_totals_and_keep_owner_layout():
     assert "@media (max-width: 480px)" in styles
     assert "@media (min-width: 900px)" in styles
     assert "grid-template-columns: max-content repeat(5, minmax(0, 1fr))" in styles
+    assert "not in this close" in overview
+    assert 'c.date|session_date' in (ROOT / "_overview_daily.html").read_text()
+    review = (ROOT.parent / "weekly_review.py").read_text()
+    assert '_session_date_label(ed_date, "dow", today)' in review
 
     privacy = base.index("Hide account names on screen")
     admin = base.rfind("{% if is_admin_user %}", 0, privacy)
