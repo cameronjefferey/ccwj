@@ -60,7 +60,7 @@
                                     account=selected_account or None,
                                     tenant=selected_tenant,
                                     tenants=selected_tenants, _anchor='day-review') }}"
-                   title="What happened {{ c.month_short }} {{ c.day }}?">
+                   title="What happened {{ c.date|session_date('dow', today) }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
                     <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>

@@ -400,10 +400,16 @@ def main():
             frames = res.get("frames")
             # Append if there's ANYTHING to push. The intraday poll returns a
             # history-only entry (current_df=None) so a snapshot-free trade push
-            # still lands; a no-new-fills intraday run returns neither → skipped.
+            # still lands. A holdings-unavailable account can return only an
+            # authoritative account balance; that row is enough for onboarding
+            # and must reach the batch writer too. A no-new-fills intraday run
+            # returns none of the three frames and is skipped.
+            balances_df = frames.get("balances_df") if frames else None
+            has_balances = balances_df is not None and len(balances_df) > 0
             if frames and (
                 frames.get("current_df") is not None
                 or frames.get("history_df") is not None
+                or has_balances
             ):
                 batch_entries.append(frames)
                 batch_account_ids.append((user_id, snaptrade_account_id))
