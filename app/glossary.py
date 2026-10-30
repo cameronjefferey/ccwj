@@ -175,9 +175,9 @@ _ENTRIES = (
         "definition": (
             "All-in cost per share is the equity cost per share minus net option premium "
             "during the current holding cycle; premium on an option that is still open "
-            "counts at the cash collected so far and is not final. With no shares and an "
-            "open cash-secured put, All-in is the if-assigned price, strike minus premium, "
-            "which is not a cost of shares held."
+            "counts at the cash collected so far and is not final. With no shares and exactly "
+            "one open cash-secured put chain, All-in is the if-assigned price, strike minus "
+            "premium; multiple independent puts leave that single-price figure unavailable."
         ),
     },
     {

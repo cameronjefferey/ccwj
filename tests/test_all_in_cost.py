@@ -515,6 +515,118 @@ def test_open_put_spread_is_not_an_if_assigned_cost():
     assert all_in_cost(fills, shares=0, symbol="DDOG") is None
 
 
+def test_multiple_open_csps_do_not_choose_one_assignment_price():
+    """One symbol-level number cannot describe two independent deliveries."""
+    fills = [
+        _fill(
+            trade_date="2026-10-01",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-10-16",
+            quantity=1,
+            price=2.00,
+        ),
+        _fill(
+            trade_date="2026-10-02",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=200,
+            option_expiry="2026-11-20",
+            quantity=1,
+            price=3.00,
+        ),
+    ]
+
+    # The previous first-contract selection displayed either $98 or $197
+    # while silently omitting the other potential 100-share assignment.
+    assert all_in_cost(fills, shares=0, symbol="DDOG") is None
+    assert all_in_cost(list(reversed(fills)), shares=0, symbol="DDOG") is None
+
+
+def test_if_assigned_keeps_all_fills_and_partial_close_cash():
+    """Scale-ins and partial reductions belong to the one open CSP episode."""
+    fills = [
+        _fill(
+            trade_date="2026-10-01",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-11-20",
+            quantity=1,
+            price=2.00,
+        ),
+        _fill(
+            trade_date="2026-10-02",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-11-20",
+            quantity=1,
+            price=3.00,
+        ),
+        _fill(
+            trade_date="2026-10-09",
+            action="option_buy_to_close",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-11-20",
+            quantity=0.5,
+            price=1.00,
+        ),
+    ]
+
+    result = all_in_cost(fills, shares=0, symbol="DDOG")
+    assert result["assigned_shares"] == 150
+    assert result["net_premium"] == 450
+    assert result["net_premium_per_share"] == 3
+    assert result["all_in_per_share"] == 97
+
+
+def test_snapshot_reopen_excludes_a_closed_tape_episode():
+    """A live snapshot is newer than its 1970 unknown-date sentinel."""
+    fills = [
+        _fill(
+            trade_date="2026-09-01",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-11-20",
+            quantity=1,
+            price=2.00,
+        ),
+        _fill(
+            trade_date="2026-09-15",
+            action="option_buy_to_close",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-11-20",
+            quantity=1,
+            price=1.00,
+        ),
+    ]
+    snapshot = [{
+        "tenant_id": "snaptrade:ddog",
+        "symbol": "DDOG",
+        "instrument_type": "Put",
+        "quantity": -1,
+        "cost_basis": 300,
+        "option_strike": 100,
+        "option_expiry": "2026-11-20",
+    }]
+
+    result = all_in_cost(
+        fills,
+        shares=0,
+        snapshot_options=snapshot,
+        tenant_id="snaptrade:ddog",
+        symbol="DDOG",
+    )
+    assert result["assigned_shares"] == 100
+    assert result["net_premium"] == 300
+    assert result["all_in_per_share"] == 97
+
+
 def test_covered_and_partially_covered_use_the_shares_held():
     """150 shares and two short calls: one covered, one only partly covered.
 
@@ -810,6 +922,52 @@ def test_open_call_sold_before_this_lot_still_counts():
     assert result["open_options"] is True
     assert result["show_all_in"] is True
     assert result["net_premium"] == 200.00
+
+
+def test_option_opened_after_same_day_flat_counts_on_the_next_lot():
+    """A sell-to-zero and STO share one date, then shares return later."""
+    fills = [
+        _fill(
+            symbol="QQQ",
+            tenant_id="snaptrade:qqq",
+            trade_date="2026-10-05",
+            action="equity_sell",
+            quantity=100,
+            price=110,
+        ),
+        _fill(
+            symbol="QQQ",
+            tenant_id="snaptrade:qqq",
+            trade_date="2026-10-05",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-11-20",
+            quantity=1,
+            price=2.00,
+        ),
+        _fill(
+            symbol="QQQ",
+            tenant_id="snaptrade:qqq",
+            trade_date="2026-10-07",
+            action="equity_buy",
+            quantity=100,
+            price=95,
+        ),
+    ]
+
+    result = all_in_cost(
+        fills,
+        shares=100,
+        cost_basis=9500,
+        opening_shares=100,
+        symbol="QQQ",
+        tenant_id="snaptrade:qqq",
+    )
+    assert result["equity_per_share"] == 95
+    assert result["net_premium"] == 200
+    assert result["all_in_per_share"] == 93
+    assert result["show_all_in"] is True
 
 
 def test_closed_tape_call_does_not_hide_or_double_the_snapshot_open():
