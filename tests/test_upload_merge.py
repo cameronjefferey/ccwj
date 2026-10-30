@@ -1740,8 +1740,7 @@ def _cur_df(symbol, qty, price, *, sectype="Equity", desc=""):
 
 
 def test_unavailable_supplemental_feeds_preserve_only_owned_rows(monkeypatch):
-    """Optional-feed timeouts keep prior options and bonds while classic
-    equity rows still refresh and another tenant remains untouched."""
+    """Optional-feed timeouts keep options and every positions/all-only row."""
     account = "Schwab Account"
     other_tenant = "snaptrade:other"
     existing = pd.concat([
@@ -1761,6 +1760,27 @@ def test_unavailable_supplemental_feeds_preserve_only_owned_rows(monkeypatch):
         ),
         _upload._prepare_seed_df(
             _cur_df("912810TM0", 10, 980, sectype="Bond"),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("ESZ6", 1, 6100, sectype="Future"),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("EURUSD", 2, 1.2, sectype="CFD"),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("ALT-1", 3, 25, sectype="Future API Kind"),
             account,
             CURRENT_SEED_COLUMNS,
             user_id=9,
@@ -1789,13 +1809,17 @@ def test_unavailable_supplemental_feeds_preserve_only_owned_rows(monkeypatch):
         CURRENT_SEED_COLUMNS,
         tenant_id=TENANT_SCHWAB_5989,
         existing_content=existing,
-        preserve_current_security_types=("Option", "Bond"),
+        preserve_current_security_types=(
+            "Option",
+            _upload.PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,
+        ),
     )
     preserved = _parse(preserved_csv)
     owned = preserved[preserved["tenant_id"] == TENANT_SCHWAB_5989]
     other = preserved[preserved["tenant_id"] == other_tenant]
     assert set(owned["Symbol"]) == {
         "AAPL", "AAPL261120C00200000", "912810TM0",
+        "ESZ6", "EURUSD", "ALT-1",
     }
     assert float(owned.loc[owned["Symbol"] == "AAPL", "Quantity"].iloc[0]) == 11
     assert set(other["Symbol"]) == {"912810ZZ9"}
@@ -2070,12 +2094,13 @@ def test_batch_push_preserves_every_tenant(monkeypatch):
     assert set(cur["Symbol"]) == {"AAPL", "MSFT", "TSLA"}
 
 
-def test_batch_push_carries_supplemental_bond_preservation(monkeypatch):
+def test_batch_push_carries_positions_all_preservation(monkeypatch):
     store = _FakeSeedStore()
     _install_store(monkeypatch, store)
     initial = pd.concat([
         _cur_df("AAPL", 10, 100),
         _cur_df("912810TM0", 10, 980, sectype="Bond"),
+        _cur_df("ESZ6", 1, 6100, sectype="Future"),
     ], ignore_index=True)
     ok, err, *_ = _upload.merge_and_push_seeds(
         "Schwab Account",
@@ -2096,14 +2121,16 @@ def test_batch_push_carries_supplemental_bond_preservation(monkeypatch):
         "current_df": _cur_df("AAPL", 11, 101),
         "balances_df": None,
         "skip_history": True,
-        "preserve_current_security_types": ("Bond",),
+        "preserve_current_security_types": (
+            _upload.PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,
+        ),
     }
     ok, err, *_ = _upload.merge_and_push_seeds_batch(
         [entry], commit_message="positions/all temporarily unavailable",
     )
     assert ok, err
     current = _parse(store.files[_upload.CURRENT_PATH])
-    assert set(current["Symbol"]) == {"AAPL", "912810TM0"}
+    assert set(current["Symbol"]) == {"AAPL", "912810TM0", "ESZ6"}
 
 
 def test_batch_push_skips_entries_missing_tenant_id(monkeypatch):
