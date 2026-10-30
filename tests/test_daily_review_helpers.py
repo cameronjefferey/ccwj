@@ -2049,13 +2049,24 @@ class TestTodayHeadline:
 class TestFormatTradeContract:
     def test_parses_osi_call(self):
         # Real shape from stg_history: "ASTS  260605C00102000".
-        assert _format_trade_contract("ASTS  260605C00102000", "ASTS") == "ASTS Jun 5 $102 Call"
+        anchor = date(2026, 6, 1)
+        assert _format_trade_contract("ASTS  260605C00102000", "ASTS", anchor) == "ASTS Jun 5 $102 Call"
 
     def test_parses_osi_put(self):
-        assert _format_trade_contract("BE    260605P00285000", "BE") == "BE Jun 5 $285 Put"
+        assert _format_trade_contract("BE    260605P00285000", "BE", date(2026, 6, 1)) == "BE Jun 5 $285 Put"
+
+    def test_expiry_outside_the_anchor_year_keeps_the_year(self):
+        assert _format_trade_contract(
+            "ASTS  270605C00102000", "ASTS", date(2026, 10, 30),
+        ) == "ASTS Jun 5, 2027 $102 Call"
+        assert _format_trade_contract(
+            "ASTS  251219C00102000", "ASTS", date(2026, 10, 30),
+        ) == "ASTS Dec 19, 2025 $102 Call"
 
     def test_fractional_strike(self):
-        assert _format_trade_contract("GOOG  260529C00382500", "GOOG") == "GOOG May 29 $382.5 Call"
+        assert _format_trade_contract(
+            "GOOG  260529C00382500", "GOOG", date(2026, 5, 1),
+        ) == "GOOG May 29 $382.5 Call"
 
     def test_equity_session_falls_back_to_symbol(self):
         assert _format_trade_contract("COHR_session_1", "COHR") == "COHR"
@@ -2123,7 +2134,9 @@ class TestBuildTradesThisWeek:
     def test_single_symbol_one_contract(self):
         df = pd.DataFrame([self._row()])
         out = _build_trades_this_week(
-            df, self.WEEK_START, self.WEEK_END, label_map={"snaptrade:abc": "Sara Investment"}
+            df, self.WEEK_START, self.WEEK_END,
+            label_map={"snaptrade:abc": "Sara Investment"},
+            anchor=self.WEEK_START,
         )
         assert out["count"] == 1
         assert out["closed_count"] == 1

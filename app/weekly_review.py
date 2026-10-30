@@ -1764,6 +1764,32 @@ def _period_display_delta(snaps, key):
     return _sum_ints(values)
 
 
+def _separate_live_placeholders(snaps):
+    """Keep a live-only balance out of a close total.
+
+    A freshly connected account has no daily snapshot yet. Its broker
+    balance is a placeholder (``today_is_live``). When other accounts
+    already have this close, that live dollar is not part of the close:
+    it moves to ``live_value`` and ``today_value`` is cleared so the
+    Total and the hero stay on the close. When nothing has a close yet,
+    the live balance is the only number and stays in ``today_value`` so
+    the hero and the row still match.
+    """
+    snaps = list(snaps or [])
+    has_close = any(
+        s.get("today_value") is not None and not s.get("today_is_live")
+        for s in snaps
+    )
+    if not has_close:
+        return snaps
+    for snap in snaps:
+        if snap.get("today_is_live") and snap.get("today_value") is not None:
+            snap["live_value"] = snap["today_value"]
+            snap["today_value"] = None
+            snap["display_value"] = None
+    return snaps
+
+
 def _today_totals(today_snapshots_by_account):
     """Aggregate per-account snapshot rows into one consolidated "All Accounts" row.
 
@@ -5009,13 +5035,14 @@ def _build_upcoming_dividends(div_df, today=None, calendar_df=None):
 _OSI_RE = __import__("re").compile(r"^(?P<root>[A-Z]+)\s+(?P<y>\d{2})(?P<m>\d{2})(?P<d>\d{2})(?P<cp>[CP])(?P<strike>\d{8})$")
 
 
-def _format_trade_contract(trade_symbol, symbol):
+def _format_trade_contract(trade_symbol, symbol, anchor=None):
     """Human label for a trade group's ``trade_symbol``.
 
     Option contracts arrive as OSI-ish strings ("ASTS  260605C00102000")
-    → "ASTS Jun 5 $102 Call". Equity sessions arrive as "<SYM>_session_N"
-    → just the underlying symbol. Anything we can't parse falls back to
-    the raw trade_symbol so we never render an empty cell.
+    → "ASTS Jun 5 $102 Call". An expiry outside ``anchor``'s year keeps
+    the year ("ASTS Jun 5, 2027 $102 Call"). Equity sessions arrive as
+    "<SYM>_session_N" → just the underlying symbol. Anything we can't
+    parse falls back to the raw trade_symbol so we never render an empty cell.
     """
     ts = (str(trade_symbol or "")).strip()
     if not ts:
@@ -5026,7 +5053,7 @@ def _format_trade_contract(trade_symbol, symbol):
         import datetime as _dt
         try:
             exp = _dt.date(2000 + int(m.group("y")), int(m.group("m")), int(m.group("d")))
-            exp_s = exp.strftime("%b %-d")
+            exp_s = _session_date_label(exp, "short", anchor)
         except ValueError:
             exp_s = ""
         strike = int(m.group("strike")) / 1000.0
@@ -5552,7 +5579,7 @@ def _group_day_spreads(trade_rows):
 
 
 def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
-                            tag_rows=None):
+                            tag_rows=None, anchor=None):
     """Build ONE unified list of trade groups touched this week for the
     Daily Review "Trades this week" section.
 
@@ -5679,7 +5706,9 @@ def _build_trades_this_week(trades_df, week_start, week_end, label_map=None,
         strat = str(r.get("strategy") or "").strip()
         if strat:
             g["strategies"].add(strat)
-        g["contracts"].append(_format_trade_contract(r.get("trade_symbol"), r.get("symbol")))
+        g["contracts"].append(_format_trade_contract(
+            r.get("trade_symbol"), r.get("symbol"), anchor,
+        ))
         if od is not None:
             g["open_dates"].append(od)
         if opened_this_week:
@@ -6079,7 +6108,10 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
                     "sector": str(row.get("sector") or "") if row.get("sector") not in (None, "Unknown") else "",
                     "subsector": str(row.get("subsector") or "") if row.get("subsector") not in (None, "Unknown") else "",
                     "earnings_date": ed_date.strftime("%Y-%m-%d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
-                    "earnings_date_display": ed_date.strftime("%a %b %-d") if hasattr(ed_date, "strftime") else str(ed_date)[:10],
+                    "earnings_date_display": (
+                        _session_date_label(ed_date, "dow", today)
+                        if hasattr(ed_date, "strftime") else str(ed_date)[:10]
+                    ),
                     "days_until": days_until,
                 }
                 if days_until is not None and days_until <= 7:
@@ -6121,6 +6153,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
             wt_df, tw_start, tw_start + timedelta(days=6),
             label_map=label_map,
             tag_rows=_wk_tag_rows,
+            anchor=today,
         )
     except Exception as e:
         app.logger.warning("Trades-this-week processing failed: %s", e)
@@ -6596,6 +6629,7 @@ def weekly_review():
                         "tenant_id": tid,
                         "today_date_label": _format_session_date(today_date),
                         "today_value": today_value,
+                        "live_value": None,
                         "today_date": today_date,
                         "today_is_live": False,
                         "comparisons": comps,
@@ -6631,6 +6665,7 @@ def weekly_review():
                     "account": label,
                     "tenant_id": label_to_tid.get(label),
                     "today_value": live_val,
+                    "live_value": None,
                     "today_date": None,
                     "today_is_live": live_val is not None,
                     "comparisons": {
@@ -6751,6 +6786,8 @@ def weekly_review():
         context["market_session"] = _us_market_session()
         context["market_open_today"] = context["market_session"]["state"] == "open"
 
+    context["today_snapshots_by_account"] = _separate_live_placeholders(
+        context.get("today_snapshots_by_account") or [])
     context["today_pulse"] = _today_pulse(context.get("today_snapshots_by_account", []))
     context["today_snapshots_total"] = _today_totals(context.get("today_snapshots_by_account", []))
 
