@@ -555,6 +555,15 @@ window.applyOverviewPerformanceState();
                 <a class="acct-rename" href="{{ account_rename_urls[snap.tenant_id] }}">rename</a>
                 {% endif %}
                 </div>
+                {% if snap.today_is_live %}
+                <div class="acct-meta">
+                    {% if snap.live_value is defined and snap.live_value is not none %}
+                    {% if privacy_mode %}Live ••••, not in this close{% else %}Live {{ snap.live_value|plain_whole }}, not in this close{% endif %}
+                    {% else %}
+                    Live balance, waiting on the first close
+                    {% endif %}
+                </div>
+                {% endif %}
                 {% if snap.today_value is not none and _share_total %}
                 {% set share = (snap.today_value / _share_total * 100) %}
                 <div class="acct-share-phone">

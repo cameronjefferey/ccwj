@@ -42,6 +42,13 @@ def test_execution_card_lists_every_verdict_and_hides_when_empty():
     assert "for v in exit_verdicts_landed" in body
     assert "exit_verdicts_pending['items']" in body
     assert "exit_verdicts_total.label" in body
+    # Verdict rows lead. The total sits under them, and pending names
+    # come after that total.
+    assert body.index("for v in exit_verdicts_landed") < body.index("exit_verdicts_total.label")
+    assert body.index("exit_verdicts_total.label") < body.index("Waiting on expiry")
+    assert "week_bits.realized and week_bits.unrealized" not in BELOW
+    assert "opt.expiry|session_date('short', today)" in BELOW
+    assert "d.projected_date|session_date('short', today)" in BELOW
     assert "v.closed_label" in body and "v.worth_label" in body
     assert "v.outcome_label" in body
     assert "Next:" not in body

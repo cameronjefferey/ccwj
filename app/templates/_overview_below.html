@@ -125,7 +125,7 @@
                             {% endif %}
                         {% endif %}
                     </div>
-                    <div class="watch-meta">{{ opt.quantity }} {{ opt.option_type or '' }} ${{ '{:,.2f}'.format(opt.strike) }} exp {{ opt.expiry }}</div>
+                    <div class="watch-meta">{{ opt.quantity }} {{ opt.option_type or '' }} ${{ '{:,.2f}'.format(opt.strike) }} exp {{ opt.expiry|session_date('short', today) }}</div>
                 </div>
                 <div class="watch-aux {% if opt.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
                     {{ "+" if opt.unrealized_pnl >= 0 else "-" }}${{ "{:,.0f}".format(opt.unrealized_pnl|abs) }}
@@ -160,7 +160,7 @@
                     </div>
                 </div>
                 <div class="watch-aux">
-                    <div>{{ d.projected_date }}</div>
+                    <div>{{ d.projected_date|session_date('short', today) }}</div>
                     {# Estimated income: last declared per-share amount × shares
                        currently held. A projection off the most recent payout,
                        not a promise — issuers can change it — so it's labeled
@@ -204,7 +204,6 @@
     <div class="disclosure-body">
     <p class="ov-note">Your closes, graded against what happened at expiry. Spread legs are one verdict.</p>
     {% if exit_verdicts_landed %}
-    <p class="ov-verdict-total {{ 'up' if exit_verdicts_total.delta >= 0 else 'down' }}">{{ exit_verdicts_total.label }}</p>
     <div class="ov-verdict-list">
         {% for v in exit_verdicts_landed %}
         <a class="ov-verdict-row {{ 'up' if v.delta >= 0 else 'down' }}" href="{{ scoped_url('position_detail', symbol=v.symbol) }}">
@@ -218,6 +217,9 @@
         </a>
         {% endfor %}
     </div>
+    {% if exit_verdicts_total %}
+    <p class="ov-verdict-total {{ 'up' if exit_verdicts_total.delta >= 0 else 'down' }}">{{ exit_verdicts_total.label }}</p>
+    {% endif %}
     {% endif %}
     {% if exit_verdicts_pending %}
     <p class="ov-grp">Waiting on expiry</p>
@@ -328,11 +330,9 @@
             {{ week_bits.unrealized|signed_whole }} unrealized
         </span>
         {% endif %}
-        {% if week_bits.realized and week_bits.unrealized %}
         <span class="trades-pnl {% if week_bits.result > 0 %}text-positive{% elif week_bits.result < 0 %}text-negative{% endif %}">
             {{ week_bits.result|signed_whole }} total
         </span>
-        {% endif %}
         </span>
     </summary>
     <div class="disclosure-body">
