@@ -525,6 +525,8 @@ def test_open_orders_panel_and_poll_script(monkeypatch):
     assert "visibilityState" in script
     assert 'data-order-status="open"' in script
     assert "if (hasOpen()) schedule(15000)" in script
+    assert 'getElementById("pp-connect")' in script
+    assert 'connect.classList.remove("d-none")' in script
 
 
 def test_paper_fill_notice_skips_symbols_already_listed(monkeypatch):
@@ -610,3 +612,35 @@ def test_positions_names_a_filled_paper_trade_without_a_pnl_row():
         html = render_template("positions.html", **ctx)
     assert "SPY filled on the paper account. Syncing that account now." in html
     assert 'href="/position/SPY"' in html
+    ctx["paper_fills"] = [{
+        "symbol": "SPY",
+        "tenant_id": "snaptrade:paper",
+        "sentence": "SPY filled on the paper account.",
+    }]
+    with app.test_request_context("/positions"):
+        linked = render_template("positions.html", **ctx)
+    assert 'href="/position/SPY?tenant=snaptrade:paper"' in linked
+
+
+def test_paper_fill_on_the_real_book_links_to_the_paper_tenant():
+    from flask import session
+
+    from app import app
+    from app.paper_practice import ORDERS_KEY, paper_fill_notices
+
+    with app.test_request_context("/positions"):
+        session[ORDERS_KEY] = [{
+            "status": "filled",
+            "symbol": "SPY",
+            "link_symbol": "SPY",
+            "tenant_id": "snaptrade:paper",
+            "brokerage_order_id": "ord-f",
+        }]
+        on_real = paper_fill_notices(7, ["SPY"], scope_ids=["snaptrade:real"])
+        on_paper = paper_fill_notices(7, ["SPY"], scope_ids=["snaptrade:paper"])
+    assert on_real == [{
+        "symbol": "SPY",
+        "tenant_id": "snaptrade:paper",
+        "sentence": "SPY filled on the paper account.",
+    }]
+    assert on_paper == []

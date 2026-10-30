@@ -6802,7 +6802,9 @@ def weekly_review():
     context["paper_fills"] = []
     try:
         from app.paper_practice import paper_fill_notices
-        context["paper_fills"] = paper_fill_notices(current_user.id, paper_known)
+        context["paper_fills"] = paper_fill_notices(
+            current_user.id, paper_known, scope_ids=tenant_ids,
+        )
     except Exception as exc:
         app.logger.warning("overview paper fill notices failed: %s", exc)
     try:

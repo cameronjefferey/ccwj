@@ -145,6 +145,13 @@ def test_replay_page_loads_the_price_chart():
     assert "chart.js" not in _html("/learn/calls-and-puts")
 
 
+def test_replay_choices_stack_on_a_phone():
+    html = _html("/learn/replay/covered-call")
+    phone = html.split("@media (max-width: 576px)", 1)[1].split("@media", 1)[0]
+    assert ".replay-choices { grid-template-columns: 1fr; }" in phone
+    assert "min-height: 44px" in phone
+
+
 def test_desktop_learn_uses_the_page_width():
     html = _html("/learn/replay/covered-call")
     assert ".learn-replay-page { max-width: 40rem;" in html

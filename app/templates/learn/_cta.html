@@ -2,7 +2,13 @@
 <aside class="learn-cta">
     <h2>Practice a trade</h2>
     <a class="btn btn-primary" href="{{ url_for('paper_practice') }}">Practice</a>
-    <p>Paper money. One call or one put. Then <a href="{{ url_for('positions') }}">open Positions</a>. <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.</p>
+    <p>Paper money. One call or one put. Then <a href="{{ paper_positions_url or url_for('positions') }}">open Positions</a>.
+    {% if has_real_brokerage %}
+    That paper account is separate from your real brokerage.
+    {% else %}
+    <a href="{{ url_for('snaptrade_connect') }}">Connect a brokerage</a> when you want the same pages on a real account. Your 30-day trial starts when you connect a real brokerage.
+    {% endif %}
+    </p>
 </aside>
 {% else %}
 <aside class="learn-cta">
