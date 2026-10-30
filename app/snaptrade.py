@@ -3593,12 +3593,15 @@ def _run_sync(user_id, client, *, snap, acc_row, lookback_days, defer_push=False
     all_positions = _fetch_all_positions(client, snap_user_id, snap_secret, snaptrade_account_id)
     all_positions_available = all_positions is not None
     # A failed supplemental read is unknown, not an empty book. Preserve
-    # the last option or bond rows. An authoritative empty list does not.
+    # the last option rows and every positions/all-only instrument. An
+    # authoritative empty list does not. Enumerating today's bond label
+    # would drop a future, CFD, or a kind the API adds later.
+    from app.upload import PRESERVE_SUPPLEMENTAL_SECURITY_TYPES
     preserve_current_security_types = tuple(
         security_type
         for available, security_type in (
             (option_holdings_available, "Option"),
-            (all_positions_available, "Bond"),
+            (all_positions_available, PRESERVE_SUPPLEMENTAL_SECURITY_TYPES),
         )
         if not available
     )

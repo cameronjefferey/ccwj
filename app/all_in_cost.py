@@ -22,10 +22,12 @@ predates the fill tape, or the tape's copy of that contract is
 already closed) counts at the snapshot premium, and that closed
 tape copy is not added again.
 
-With no shares and an open cash-secured put (not the short leg of an
-open spread), the figure is an if-assigned price: strike minus net
-premium on that put's roll chain, per share the assignment would
-deliver. That is not a cost of shares held.
+With no shares and exactly one open cash-secured put chain (not the
+short leg of an open spread), the figure is an if-assigned price:
+strike minus net premium on that put's roll chain, per share the
+assignment would deliver. That is not a cost of shares held. Multiple
+independent open puts have different possible assignment prices, so
+the single-price figure stays unavailable rather than choosing one.
 
 Spreads and rolls are one grouped trade. Each fill's cash is counted once.
 """
@@ -200,8 +202,9 @@ def all_in_cost(
     episode is still the pre-history lot, or when there are no fills.
     A partial sale reduces that basis in proportion. A lot that went
     flat and was bought again does not keep the old estimate. With no
-    shares and an open cash-secured put, returns an if-assigned price
-    instead of None.
+    shares and exactly one open cash-secured put chain, returns an
+    if-assigned price instead of None; multiple independent puts leave
+    the single-price figure unavailable.
     """
     held = _num(shares)
     parsed = _parse_fills(fills, splits=splits, tenant_id=tenant_id, symbol=symbol)
@@ -677,12 +680,31 @@ def _tape_has_contract(parsed, side, row, remaining):
 
 
 def _if_assigned_result(parsed, tenant_id=None, symbol=None):
-    """Effective share price if the open cash-secured put is assigned."""
+    """Effective share price when exactly one open CSP chain may assign."""
     remaining = _contract_remaining(parsed)
     opened = _primary_open_csp(parsed, remaining)
     if opened is None or opened.strike is None:
         return None
-    chain_ids = _assignment_chain(parsed, opened.contract, None)
+    current_ids = _current_open_contract_cash_ids(parsed, opened.contract)
+    chain_ids = (
+        set()
+        if opened.from_snapshot
+        else _assignment_chain(parsed, opened.contract, None)
+    )
+    # Replace the roll walker's one representative STO for the current
+    # contract with the complete currently-open episode. Snapshot-only
+    # positions have unknown dates and cannot safely inherit an older
+    # tape chain for the same OCC.
+    chain_ids = {
+        fill_id
+        for fill_id in chain_ids
+        if _contract_of(parsed, fill_id) != opened.contract
+    }
+    # A contract can be built in several fills and partially reduced.
+    # The roll walker identifies the chain, but historically kept only
+    # its latest STO fill and dropped earlier credits plus partial-close
+    # debits. Include every cash fill in the currently-open episode.
+    chain_ids.update(current_ids)
     chain_fills = [
         fill for fill in parsed
         if fill.id in chain_ids and fill.action in _CASH_ACTIONS and not fill.synthetic
@@ -758,12 +780,58 @@ def _primary_open_csp(parsed, remaining):
         prev = by_contract.get(fill.contract)
         if prev is None or (fill.date, fill.id) >= (prev.date, prev.id):
             by_contract[fill.contract] = fill
-    if not by_contract:
+    # The surface has one "If assigned" number. Selecting the first of
+    # several independent open puts makes that number depend on expiry
+    # and strike ordering and ignores the other possible share deliveries.
+    # A roll chain has one remaining open contract, so it still qualifies.
+    if len(by_contract) != 1:
         return None
-    return sorted(
-        by_contract.values(),
-        key=lambda fill: (fill.expiry or date.max, fill.strike or 0, fill.id),
-    )[0]
+    contract = next(iter(by_contract))
+    active_ids = _current_open_contract_cash_ids(parsed, contract)
+    active_opens = [
+        fill
+        for fill in parsed
+        if fill.id in active_ids and fill.action == "option_sell_to_open"
+    ]
+    if active_opens:
+        return max(
+            active_opens,
+            key=lambda fill: (bool(fill.from_snapshot), fill.date, fill.id),
+        )
+    return by_contract[contract]
+
+
+def _current_open_contract_cash_ids(fills, contract):
+    """Cash fills in the latest still-open episode of one contract."""
+    qty = 0.0
+    active_ids = set()
+    # Snapshot-only contracts use 1970 as an unknown-date sentinel, but
+    # they describe the live position and therefore occur after the tape.
+    # Sorting that sentinel first would blend a prior closed episode of
+    # the same OCC into the newly-open snapshot position.
+    ordered = sorted(
+        fills,
+        key=lambda fill: (bool(fill.from_snapshot), fill.date, fill.id),
+    )
+    for fill in ordered:
+        if fill.contract != contract:
+            continue
+        amount = abs(fill.raw_qty)
+        if fill.action == "option_sell_to_open":
+            if qty <= _EPS:
+                active_ids = set()
+            qty += amount
+            active_ids.add(fill.id)
+            continue
+        if fill.action not in _CLOSE_QTY or qty <= _EPS:
+            continue
+        if fill.action in _CASH_ACTIONS:
+            active_ids.add(fill.id)
+        qty -= amount
+        if qty <= _EPS:
+            qty = 0.0
+            active_ids = set()
+    return active_ids if qty > _EPS else set()
 
 
 def _open_long_put_sibling(puts, short, remaining):
@@ -998,10 +1066,26 @@ def _opened_while_flat(parsed, events, opening_shares):
     qty = _num(opening_shares)
     opened_flat = set()
     for day in sorted(set(events_by_day) | set(opens_by_day)):
+        # Share events have dates but no reliable intraday timestamp.
+        # Use the same deterministic convention as _replay_shares:
+        # reductions happen before additions. Put that day's option opens
+        # at the flat boundary between them, so a sell-to-zero followed by
+        # an STO can carry into shares established on a later day.
+        reductions = [
+            event for event in events_by_day[day] if event.delta < -_EPS
+        ]
+        additions = [
+            event for event in events_by_day[day] if event.delta >= -_EPS
+        ]
+        for event in reductions:
+            qty += event.delta
+            if qty <= _EPS:
+                qty = 0.0
+                opened_flat.clear()
         if qty <= _EPS:
             for fill in opens_by_day[day]:
                 opened_flat.add(fill.contract)
-        for event in events_by_day[day]:
+        for event in additions:
             qty += event.delta
             if qty <= _EPS:
                 qty = 0.0

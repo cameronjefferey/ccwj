@@ -19,6 +19,7 @@ from app import models as _models
 from app import plan as _plan
 from app import snaptrade as _snap
 from app.snaptrade import _bulk_sync_lookback_days
+from app.upload import PRESERVE_SUPPLEMENTAL_SECURITY_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -1485,15 +1486,15 @@ def test_run_sync_distinguishes_unavailable_from_empty_option_holdings(
 @pytest.mark.parametrize(
     ("all_positions", "expected_preserve"),
     [
-        (None, ("Bond",)),
+        (None, (PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,)),
         ([], ()),
     ],
 )
 def test_run_sync_distinguishes_unavailable_from_empty_all_positions(
     monkeypatch, all_positions, expected_preserve,
 ):
-    """A failed supplemental read preserves old bonds; an authoritative
-    empty list removes them on the next current-position snapshot."""
+    """A failed positions/all read preserves every non-classic kind; an
+    authoritative empty list removes them on the next snapshot."""
     fresh = date.today().strftime("%Y-%m-%dT12:00:00Z")
     _patch_run_sync_fetches(
         monkeypatch,
