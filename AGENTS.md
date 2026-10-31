@@ -1994,7 +1994,9 @@ width, wrap the rendered HTML in a 390px iframe and screenshot that.
   the position, not a transaction-log rehash. A per-account state machine
   detects and names maneuvers — rolls (same-day close+open of the same
   type and size, strike/expiry direction, net credit; a 2-lot close and
-  a 1-lot open stay two fills), defined-risk structures whose opens span
+  a 1-lot open stay two fills; a replacement short plus a new wing is
+  narrated as the roll and the wing, not applied again as a spread),
+  defined-risk structures whose opens span
   ≤7 days and whose earlier wings are still open when the last wing lands
   (iron condor / vertical / strangle of one size, named from matching
   opens on the last wing so a condor short put is not a wheel; a contract
