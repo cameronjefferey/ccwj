@@ -1265,6 +1265,9 @@ empty state rather than the dense profile. Already connected, with
 warehouse rows: the former `/first-look` profile (`render_first_look_view`
 in `app/first_look.py`) says "Your data is in" with a primary
 Go to Overview, plus a prominent Connect another account.
+Its win rate, average win/loss, profit factor, and busiest month use the
+same `group_book_trades` units as Strategies and Trader Profile, so two
+same-day, same-expiry spreads remain two results rather than netting together.
 Connected but still waiting on data: manage accounts, with Connect
 another account first. `/first-look` 301s here. New signups land here.
 Cancelling the SnapTrade portal returns to `/snaptrade/accounts` with

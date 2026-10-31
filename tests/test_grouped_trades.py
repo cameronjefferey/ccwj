@@ -86,6 +86,45 @@ def test_two_same_day_verticals_at_different_strikes_stay_two_trades():
     assert winners == 1 and losers == 1
 
 
+def test_mismatched_vertical_sizes_stay_separate():
+    units = group_book_trades([
+        leg(strategy="Call Spread", direction="Sold", quantity=20,
+            trade_symbol=occ("AMD", "250117", "C", 100), total_pnl=800),
+        leg(strategy="Call Spread", direction="Bought", quantity=10,
+            trade_symbol=occ("AMD", "250117", "C", 105), total_pnl=-200),
+    ])
+    counted, winners, losers = _counted(units)
+    assert len(counted) == 2
+    assert sorted(unit["pnl"] for unit in counted) == [-200, 800]
+    assert winners == 1 and losers == 1
+
+
+def test_fill_sizes_keep_mismatched_classification_legs_separate():
+    short_symbol = occ("AMD", "250117", "C", 100)
+    long_symbol = occ("AMD", "250117", "C", 105)
+    rows = [
+        leg(strategy="Call Spread", direction="Sold",
+            trade_symbol=short_symbol, total_pnl=800),
+        leg(strategy="Call Spread", direction="Bought",
+            trade_symbol=long_symbol, total_pnl=-200),
+    ]
+    for row in rows:
+        row.pop("quantity")
+    fills = [
+        {"tenant_id": "snaptrade:1", "trade_symbol": short_symbol,
+         "action": "option_sell_to_open", "quantity": 20, "price": 1,
+         "amount": 2000, "trade_date": "2025-01-02"},
+        {"tenant_id": "snaptrade:1", "trade_symbol": long_symbol,
+         "action": "option_buy_to_open", "quantity": 10, "price": 0.5,
+         "amount": -500, "trade_date": "2025-01-02"},
+    ]
+
+    units = group_book_trades(rows, fills)
+    counted, winners, losers = _counted(units)
+    assert len(counted) == 2
+    assert winners == 1 and losers == 1
+
+
 def test_iron_condor_is_one_trade_with_the_net_of_all_four_legs():
     units = group_book_trades([
         leg(strategy="Iron Condor", direction="Sold", symbol="SPX",
@@ -107,6 +146,23 @@ def test_iron_condor_is_one_trade_with_the_net_of_all_four_legs():
     assert int(months.iloc[0]["num_winners"]) == 1
 
 
+def test_uneven_iron_condor_stays_two_spreads():
+    units = group_book_trades([
+        leg(strategy="Iron Condor", direction="Sold", symbol="SPX", quantity=2,
+            trade_symbol=occ("SPXW", "250117", "P", 5900), total_pnl=180),
+        leg(strategy="Iron Condor", direction="Bought", symbol="SPX", quantity=2,
+            trade_symbol=occ("SPXW", "250117", "P", 5890), total_pnl=-30),
+        leg(strategy="Iron Condor", direction="Sold", symbol="SPX", quantity=1,
+            trade_symbol=occ("SPXW", "250117", "C", 6000), total_pnl=200),
+        leg(strategy="Iron Condor", direction="Bought", symbol="SPX", quantity=1,
+            trade_symbol=occ("SPXW", "250117", "C", 6010), total_pnl=-40),
+    ])
+    counted, winners, losers = _counted(units)
+    assert len(counted) == 2
+    assert sorted(unit["pnl"] for unit in counted) == [150, 160]
+    assert winners == 2 and losers == 0
+
+
 def test_strangle_pairs_the_call_and_the_put():
     units = group_book_trades([
         leg(strategy="Strangle", direction="Sold",
@@ -119,6 +175,18 @@ def test_strangle_pairs_the_call_and_the_put():
     assert counted[0]["strategy"] == "Strangle"
     assert counted[0]["pnl"] == 160
     assert winners == 1
+
+
+def test_mismatched_strangle_sizes_stay_separate():
+    units = group_book_trades([
+        leg(strategy="Strangle", direction="Sold", quantity=2,
+            trade_symbol=occ("AMD", "250117", "C", 110), total_pnl=90),
+        leg(strategy="Strangle", direction="Sold", quantity=1,
+            trade_symbol=occ("AMD", "250117", "P", 90), total_pnl=-70),
+    ])
+    counted, winners, losers = _counted(units)
+    assert len(counted) == 2
+    assert winners == 1 and losers == 1
 
 
 def test_diagonal_pairs_only_rows_already_labeled_diagonal():
@@ -144,6 +212,19 @@ def test_diagonal_pairs_only_rows_already_labeled_diagonal():
     ])
     names = sorted(unit["strategy"] for unit in separate if unit["counts_as_trade"])
     assert names == ["Diagonal Call Spread", "Long Call"]
+
+
+def test_mismatched_diagonal_sizes_stay_separate():
+    units = group_book_trades([
+        leg(strategy="Diagonal Call Spread", direction="Sold", quantity=2,
+            trade_symbol=occ("AMD", "250117", "C", 100), total_pnl=120),
+        leg(strategy="Diagonal Call Spread", direction="Bought", quantity=1,
+            trade_symbol=occ("AMD", "250221", "C", 95), total_pnl=-80,
+            option_expiry="2025-02-21"),
+    ])
+    counted, winners, losers = _counted(units)
+    assert len(counted) == 2
+    assert winners == 1 and losers == 1
 
 
 def test_equity_session_is_one_lot_even_when_the_row_counts_fills():
