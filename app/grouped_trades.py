@@ -236,6 +236,23 @@ def _prepare_option(row) -> dict:
     return item
 
 
+def _opening_quantity_from_fills(row) -> float:
+    """Contract size when classification has no quantity column."""
+    direction = str(row.get("direction") or "")
+    open_action = (
+        "option_sell_to_open" if direction == "Sold"
+        else "option_buy_to_open" if direction == "Bought"
+        else ""
+    )
+    if not open_action:
+        return 0.0
+    return sum(
+        abs(_num(fill.get("quantity")))
+        for fill in (row.get("raw_trades") or [])
+        if str(fill.get("action") or "") == open_action
+    )
+
+
 def _apply_slice_status(row) -> dict:
     close = str(row.get("close_type") or "")
     source = str(row.get("_source_status") or row.get("status") or "")
@@ -262,6 +279,10 @@ def _with_residual(slices, parent_pnl) -> list[dict]:
 
 def _expand_lots(row) -> list[dict]:
     prepared = _prepare_option(row)
+    if _num(prepared.get("quantity")) <= 0:
+        opened = _opening_quantity_from_fills(prepared)
+        if opened > 0:
+            prepared["quantity"] = opened
     if prepared["_source_status"] == "Settlement pending":
         return [prepared]
     parent_pnl = prepared["pnl"]
@@ -397,6 +418,14 @@ def _cluster_key(row) -> tuple:
     )
 
 
+def _same_contract_count(left, right) -> bool:
+    """Whether two structure legs carry the same known (or unknown) size."""
+    return abs(
+        _num(_anchor_value(left, "quantity"))
+        - _num(_anchor_value(right, "quantity"))
+    ) < 1e-6
+
+
 def _pair_call_put(rows, *, same_direction: bool) -> list:
     """Pair a call structure with a put structure. Leftovers stay separate."""
     used_puts = set()
@@ -407,6 +436,8 @@ def _pair_call_put(rows, *, same_direction: bool) -> list:
         match = None
         for index, put in enumerate(puts):
             if index in used_puts:
+                continue
+            if not _same_contract_count(call, put):
                 continue
             gap = _day_gap(
                 _anchor_value(call, "open_date"),
@@ -420,18 +451,13 @@ def _pair_call_put(rows, *, same_direction: bool) -> list:
             if match is None:
                 match = index
                 continue
-            # Prefer the same contract count, then the nearer open.
+            # Contract count already agrees; prefer the nearer open.
             def _rank(idx, _call=call):
-                try:
-                    qty = abs(float(_anchor_value(puts[idx], "quantity") or 0))
-                    want = abs(float(_anchor_value(_call, "quantity") or 0))
-                except (TypeError, ValueError):
-                    qty = want = 0.0
                 gap_now = _day_gap(
                     _anchor_value(_call, "open_date"),
                     _anchor_value(puts[idx], "open_date"),
                 )
-                return (0 if abs(qty - want) < 1e-6 else 1, gap_now if gap_now is not None else 99, idx)
+                return (gap_now if gap_now is not None else 99, idx)
 
             if _rank(index) < _rank(match):
                 match = index
@@ -458,6 +484,8 @@ def _pair_diagonals(rows) -> list:
         match = None
         for index, long in enumerate(longs):
             if index in used_longs or _cp(short) != _cp(long):
+                continue
+            if not _same_contract_count(short, long):
                 continue
             if _expiry(long) <= _expiry(short):
                 continue
