@@ -44,6 +44,7 @@ from app.upload import (
     CRYPTO_SYMBOLS,
     CURRENT_SEED_COLUMNS,
     HISTORY_SEED_COLUMNS,
+    POSITIONS_ALL_SOURCE,
     canonicalize_crypto_pair_symbol,
     symbol_defaults_to_crypto,
 )
@@ -1996,6 +1997,9 @@ def position_holding_key(pos: Mapping) -> str:
     return _fallback_identifier(shaped, symbol_obj)
 
 
+_POSITION_SOURCE_KEY = "_happytrader_position_source"
+
+
 def merge_holdings_with_all_positions(holdings, all_positions) -> list:
     """Classic positions and option holdings win. New keys are appended.
 
@@ -2020,7 +2024,9 @@ def merge_holdings_with_all_positions(holdings, all_positions) -> list:
         if not key or key in seen:
             continue
         seen.add(key)
-        merged.append(_normalize_position_shape(pos))
+        supplemental = dict(_normalize_position_shape(pos))
+        supplemental[_POSITION_SOURCE_KEY] = POSITIONS_ALL_SOURCE
+        merged.append(supplemental)
     return merged
 
 
@@ -2307,6 +2313,11 @@ def positions_to_current_df(
             "gain_or_loss_dollat": gl_dollar,
             "gain_or_loss_percent": gl_percent,
             "security_type": security_type,
+            "position_source": (
+                POSITIONS_ALL_SOURCE
+                if pos.get(_POSITION_SOURCE_KEY) == POSITIONS_ALL_SOURCE
+                else "classic"
+            ),
         })
 
     df = pd.DataFrame(rows)

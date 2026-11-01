@@ -2193,8 +2193,9 @@ def test_positions_all_option_cost_basis_is_per_contract():
         "price": "1.00",
         "cost_basis": "200",
     }
-    row = _current([pos]).iloc[0]
+    row = _current(merge_holdings_with_all_positions([], [pos])).iloc[0]
     assert row["security_type"] == "Option"
+    assert row["position_source"] == "positions_all"
     assert float(row["Quantity"]) == 10
     assert abs(float(row["market_value"]) - 1000.0) < 0.01
     assert abs(float(row["cost_bases"]) - 2000.0) < 0.01
@@ -2273,8 +2274,10 @@ def test_merge_keeps_classic_equity_and_appends_only_a_new_bond():
     assert float(jepi["Quantity"]) == 100
     lite = df[df["Symbol"] == "LITE  261120C01100000"].iloc[0]
     assert lite["security_type"] == "Option"
+    assert lite["position_source"] == "classic"
     assert float(lite["Price"]) == 180.85
     assert abs(float(lite["market_value"]) - 18085.0) < 0.01
     bond = df[df["Symbol"] == "912810TM0"].iloc[0]
     assert bond["security_type"] == "Bond"
+    assert bond["position_source"] == "positions_all"
     assert abs(float(bond["market_value"]) - 9800) < 0.01

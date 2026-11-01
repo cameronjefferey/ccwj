@@ -1731,11 +1731,11 @@ def test_commit_git_paths_write_failure_fails_closed(monkeypatch):
 CURRENT_SEED_COLUMNS = _upload.CURRENT_SEED_COLUMNS
 
 
-def _cur_df(symbol, qty, price, *, sectype="Equity", desc=""):
+def _cur_df(symbol, qty, price, *, sectype="Equity", desc="", source=""):
     return pd.DataFrame([{
         "Symbol": symbol, "Description": desc or symbol,
         "Quantity": float(qty), "Price": float(price),
-        "security_type": sectype,
+        "security_type": sectype, "position_source": source,
     }])
 
 
@@ -1842,6 +1842,144 @@ def test_unavailable_supplemental_feeds_preserve_only_owned_rows(monkeypatch):
     assert set(
         cleared.loc[cleared["tenant_id"] == other_tenant, "Symbol"]
     ) == {"912810ZZ9"}
+
+
+def test_positions_all_failure_preserves_classic_shaped_rows_by_source():
+    """An all-only option survives without retaining closed classic options."""
+    account = "Schwab Account"
+    existing = pd.concat([
+        _upload._prepare_seed_df(
+            _cur_df("AAPL", 10, 100),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df(
+                "ESZ6P06000000", 1, 4,
+                sectype="Option", source=_upload.POSITIONS_ALL_SOURCE,
+            ),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df(
+                "AAPL261120C00200000", 1, 3,
+                sectype="Option", source="classic",
+            ),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+    ], ignore_index=True).to_csv(index=False)
+    fresh = _upload._prepare_seed_df(
+        _cur_df("AAPL", 11, 101),
+        account,
+        CURRENT_SEED_COLUMNS,
+        user_id=9,
+        tenant_id=TENANT_SCHWAB_5989,
+    )
+
+    merged_csv = _upload._merge_seed_with_existing(
+        _upload.CURRENT_PATH,
+        account,
+        fresh,
+        CURRENT_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_5989,
+        existing_content=existing,
+        preserve_current_security_types=(
+            _upload.PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,
+        ),
+    )
+    merged = _parse(merged_csv)
+    assert set(merged["Symbol"]) == {"AAPL", "ESZ6P06000000"}
+    assert (
+        merged.loc[
+            merged["Symbol"] == "ESZ6P06000000", "position_source"
+        ].iloc[0]
+        == _upload.POSITIONS_ALL_SOURCE
+    )
+
+    # The inverse mixed failure: option holdings are unavailable, but
+    # positions/all succeeds and reports the all-only option gone. Keep the
+    # classic option while removing the positions/all-origin row.
+    option_failed_csv = _upload._merge_seed_with_existing(
+        _upload.CURRENT_PATH,
+        account,
+        fresh,
+        CURRENT_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_5989,
+        existing_content=existing,
+        preserve_current_security_types=("Option",),
+    )
+    option_failed = _parse(option_failed_csv)
+    assert set(option_failed["Symbol"]) == {
+        "AAPL", "AAPL261120C00200000",
+    }
+
+
+def test_first_positions_all_failure_preserves_unstamped_legacy_rows():
+    """Pre-deploy rows survive until a successful sync stamps provenance."""
+    account = "Schwab Account"
+    existing = pd.concat([
+        _upload._prepare_seed_df(
+            _cur_df("AAPL", 10, 100),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("LEGACY-OPTION", 1, 4, sectype="Option"),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+        _upload._prepare_seed_df(
+            _cur_df("LEGACY-EQUITY", 5, 20),
+            account,
+            CURRENT_SEED_COLUMNS,
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+        ),
+    ], ignore_index=True).to_csv(index=False)
+    fresh = _upload._prepare_seed_df(
+        _cur_df("AAPL", 11, 101, source="classic"),
+        account,
+        CURRENT_SEED_COLUMNS,
+        user_id=9,
+        tenant_id=TENANT_SCHWAB_5989,
+    )
+
+    failed_csv = _upload._merge_seed_with_existing(
+        _upload.CURRENT_PATH,
+        account,
+        fresh,
+        CURRENT_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_5989,
+        existing_content=existing,
+        preserve_current_security_types=(
+            _upload.PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,
+        ),
+    )
+    assert set(_parse(failed_csv)["Symbol"]) == {
+        "AAPL", "LEGACY-OPTION", "LEGACY-EQUITY",
+    }
+
+    recovered_csv = _upload._merge_seed_with_existing(
+        _upload.CURRENT_PATH,
+        account,
+        fresh,
+        CURRENT_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_5989,
+        existing_content=failed_csv,
+    )
+    assert set(_parse(recovered_csv)["Symbol"]) == {"AAPL"}
 
 
 class _FakeSeedStore:

@@ -165,7 +165,7 @@ CURRENT_SEED_COLUMNS = [
     "expiration_date", "cost_per_share", "last_earnings_date",
     "dividend_yield", "last_dividend", "ex_dividend_date", "pe_ratio",
     "annual_week_low", "annual_week_high", "volume", "intrinsic_value",
-    "in_the_money", "security_type", "margin_requirement",
+    "in_the_money", "security_type", "margin_requirement", "position_source",
 ]
 
 # Seed paths inside the repo (same layout as dbt/)
@@ -1592,11 +1592,13 @@ def _dedup_history_rows(df, seed_columns):
 # multi-account commits that fold accounts in-memory without re-fetching.
 _FETCH_FROM_GITHUB = object()
 
-# Sentinel used by SnapTrade when ``positions/all`` was unavailable. Those
-# rows can carry any non-classic instrument kind (Bond, Future, CFD, Other,
-# or a future API kind), so enumerating today's labels would silently delete
-# tomorrow's. The merge interprets this as "preserve every non-classic type."
+# Sentinel used by SnapTrade when ``positions/all`` was unavailable. Rows
+# written from that endpoint carry ``position_source=positions_all`` because
+# their normalized security type may still be Option, Equity, or Crypto.
+# Blank-source rows predate that provenance marker, so the first failed read
+# preserves them conservatively; legacy non-classic rows are also retained.
 PRESERVE_SUPPLEMENTAL_SECURITY_TYPES = "__positions_all__"
+POSITIONS_ALL_SOURCE = "positions_all"
 _CLASSIC_CURRENT_SECURITY_TYPES = frozenset({
     "equity",
     "option",
@@ -1634,8 +1636,9 @@ def _merge_seed_with_existing(
 
     ``preserve_current_security_types`` is a fail-safe for supplemental
     holdings feeds. Explicit labels preserve that type. The
-    ``PRESERVE_SUPPLEMENTAL_SECURITY_TYPES`` sentinel preserves every
-    non-classic type returned only by ``positions/all``. A later successful
+    ``PRESERVE_SUPPLEMENTAL_SECURITY_TYPES`` sentinel preserves rows stamped
+    as originating from ``positions/all```, plus blank-source and non-classic
+    rows from before that provenance marker existed. A later successful
     authoritative empty response passes neither and removes stale rows.
 
     Raises ``SeedFetchError`` if the existing seed cannot be fetched
@@ -1832,6 +1835,10 @@ def _merge_seed_with_existing(
                 (c for c in seed_columns if str(c).lower() == "symbol"),
                 None,
             )
+            source_col = next(
+                (c for c in seed_columns if str(c).lower() == "position_source"),
+                None,
+            )
             if security_col is not None:
                 normalized_security = (
                     existing_account_df[security_col]
@@ -1839,8 +1846,35 @@ def _merge_seed_with_existing(
                     .str.strip()
                     .str.casefold()
                 )
-                preserve_mask = normalized_security.isin(preserve_types)
+                normalized_source = (
+                    existing_account_df[source_col]
+                    .astype(str)
+                    .str.strip()
+                    .str.casefold()
+                    if source_col is not None
+                    else pd.Series("", index=existing_account_df.index)
+                )
+                # An available positions/all response is authoritative for
+                # its own prior rows. A simultaneous option-feed failure may
+                # preserve classic options, but must not retain an all-only
+                # option that positions/all just reported as gone.
+                preserve_mask = (
+                    normalized_security.isin(preserve_types)
+                    & normalized_source.ne(POSITIONS_ALL_SOURCE)
+                )
                 if preserve_supplemental:
+                    if source_col is not None:
+                        preserve_mask |= normalized_source.eq(
+                            POSITIONS_ALL_SOURCE
+                        )
+                        # The first sync after this column ships may hit a
+                        # positions/all failure before existing rows have been
+                        # stamped. Their source is unknowable, so preserve
+                        # blank-source rows until one successful full snapshot
+                        # replaces them with explicit provenance.
+                        preserve_mask |= normalized_source.eq("")
+                    # Backward compatibility for rows stored before
+                    # ``position_source`` shipped.
                     preserve_mask |= (
                         normalized_security.ne("")
                         & ~normalized_security.isin(
