@@ -583,6 +583,177 @@ def test_if_assigned_keeps_all_fills_and_partial_close_cash():
     assert result["all_in_per_share"] == 97
 
 
+def test_scaled_in_put_keeps_the_roll_chain_before_and_after_assignment():
+    """A later STO on the rolled contract must not hide the prior put."""
+    fills = [
+        _fill(
+            trade_date="2026-10-01",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=95,
+            option_expiry="2026-10-09",
+            quantity=2,
+            price=2.00,
+        ),
+        _fill(
+            trade_date="2026-10-09",
+            action="option_buy_to_close",
+            option_type="put",
+            option_strike=95,
+            option_expiry="2026-10-09",
+            quantity=2,
+            price=1.00,
+        ),
+        _fill(
+            trade_date="2026-10-09",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-10-30",
+            quantity=2,
+            price=3.00,
+        ),
+        _fill(
+            trade_date="2026-10-15",
+            action="option_sell_to_open",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-10-30",
+            quantity=1,
+            price=1.00,
+        ),
+    ]
+
+    open_result = all_in_cost(fills, shares=0, symbol="DDOG")
+    assert open_result["assigned_shares"] == 300
+    assert open_result["net_premium"] == 900
+    assert open_result["all_in_per_share"] == 97
+
+    assigned = fills + [
+        _fill(
+            trade_date="2026-10-30",
+            action="option_assigned",
+            option_type="put",
+            option_strike=100,
+            option_expiry="2026-10-30",
+            quantity=3,
+            price=0,
+        ),
+        _fill(
+            trade_date="2026-10-30",
+            action="equity_buy",
+            quantity=300,
+            price=100,
+        ),
+    ]
+    held_result = all_in_cost(
+        assigned, shares=300, cost_basis=30000, symbol="DDOG",
+    )
+    assert held_result["net_premium"] == 900
+    assert held_result["all_in_per_share"] == 97
+    assert held_result["cycle_start"] == "2026-10-01"
+
+
+def test_same_day_scale_in_does_not_make_one_predecessor_ambiguous():
+    fills = [
+        _fill(
+            trade_date="2026-10-01", action="option_sell_to_open",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=2.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=1.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=100, option_expiry="2026-10-30",
+            quantity=1, price=3.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=100, option_expiry="2026-10-30",
+            quantity=1, price=4.00,
+        ),
+    ]
+
+    result = all_in_cost(fills, shares=0, symbol="DDOG")
+    assert result["assigned_shares"] == 200
+    assert result["net_premium"] == 800
+    assert result["all_in_per_share"] == 96
+
+
+def test_ambiguous_same_day_put_closes_are_not_invented_as_a_roll():
+    fills = [
+        _fill(
+            trade_date="2026-10-01", action="option_sell_to_open",
+            option_type="put", option_strike=90, option_expiry="2026-10-09",
+            quantity=1, price=2.00,
+        ),
+        _fill(
+            trade_date="2026-10-02", action="option_sell_to_open",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=3.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=90, option_expiry="2026-10-09",
+            quantity=1, price=1.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=1.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=100, option_expiry="2026-10-30",
+            quantity=1, price=5.00,
+        ),
+    ]
+
+    result = all_in_cost(fills, shares=0, symbol="DDOG")
+    assert result["net_premium"] == 500
+    assert result["all_in_per_share"] == 95
+
+
+def test_roll_uses_the_predecessor_episode_that_owns_the_close():
+    fills = [
+        _fill(
+            trade_date="2026-10-01", action="option_sell_to_open",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=2.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=1.00,
+        ),
+        # A new, unrelated episode reuses the predecessor contract later
+        # that day. It must not be spliced into the roll chain.
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=4.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=100, option_expiry="2026-10-30",
+            quantity=1, price=5.00,
+        ),
+        _fill(
+            trade_date="2026-10-10", action="option_buy_to_close",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=4.00,
+        ),
+    ]
+
+    result = all_in_cost(fills, shares=0, symbol="DDOG")
+    assert result["net_premium"] == 600
+    assert result["all_in_per_share"] == 94
+
+
 def test_snapshot_reopen_excludes_a_closed_tape_episode():
     """A live snapshot is newer than its 1970 unknown-date sentinel."""
     fills = [
