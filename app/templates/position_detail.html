@@ -1591,7 +1591,7 @@
                             <tbody>
                                 {% for t in o.raw_trades %}
                                 <tr>
-                                    <td class="text-nowrap">{{ t.trade_date }}</td>
+                                    <td class="text-nowrap">{{ t.trade_date|compact_date }}</td>
                                     <td>{{ trade_action(t) }}</td>
                                     <td>
                                         {% if t.quantity is number and (t.quantity % 1) != 0 %}
@@ -2180,7 +2180,8 @@
 <div class="pd-fold" id="pd-raw">
     <div class="pd-fold-head">
         <h2 class="pd-h">Raw Transaction Log</h2>
-        <p class="pd-fold-note">{{ trades|length }} fills</p>
+        {% set trade_cash = trades | sum(attribute='amount') %}
+        <p class="pd-fold-note">{{ trades|length }} fills · {{ money(trade_cash) }}</p>
     </div>
     <div class="pd-fold-body">
         <input type="text" id="tradeSearch" class="form-control form-control-sm mb-2"
@@ -2204,7 +2205,7 @@
                     {% for t in trades %}
                     <tr class="pd-openable">
                         <td class="text-nowrap" data-label="Date" data-val="{{ t.trade_date }}">
-                            {{ t.trade_date }}
+                            {{ t.trade_date|compact_date }}
                             <details class="pd-more" data-no-row-nav>
                                 <summary>More</summary>
                                 <dl>
@@ -2235,6 +2236,19 @@
                     </tr>
                     {% endfor %}
                 </tbody>
+                <tfoot>
+                    <tr class="fw-semibold">
+                        <td data-label="Date">Total</td>
+                        <td class="pd-extra"></td>
+                        <td></td>
+                        <td class="pd-extra"></td>
+                        <td class="pd-extra"></td>
+                        <td></td>
+                        <td class="pd-extra"></td>
+                        <td class="pd-extra"></td>
+                        <td data-label="Amount" class="{{ 'text-positive' if trade_cash >= 0 else 'text-negative' }}">{{ money(trade_cash) }}</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
     </div>

@@ -29,8 +29,8 @@
     cash steps. This model is what makes that promise visible.
 
     OUTPUT GRAIN: one row per (account, user_id, symbol, trade_symbol,
-    date) for every day of the contract's open lifetime PLUS one row on
-    close_date for closed contracts. Pre-snapshot days within the open
+    date, is_realized_close) for every day of the contract's open lifetime
+    PLUS one realized row on each distinct close date. Pre-snapshot days within the open
     lifetime are EMITTED with mtm=0 — they contribute nothing but their
     presence keeps the date spine dense for downstream aggregation.
 
@@ -69,6 +69,9 @@ with contracts as (
         close_date,
         status,
         net_cash_flow,
+        contracts_sold_to_open,
+        contracts_bought_to_open,
+        contracts_closed,
         -- Realized P&L of the CLOSED portion + the date to attribute it.
         -- For a fully-closed contract realized_pnl == net_cash_flow and
         -- realized_close_date == close_date (unchanged behavior). For a
@@ -379,8 +382,10 @@ open_mtm as (
     from contract_daily_mtm
 ),
 
--- Realized credit: one row per contract with a realized close, on the
--- realization date.
+-- Realized credit. Most contracts have one close date and retain the
+-- contract-level row. A contract reduced on several dates needs one
+-- INCREMENTAL row per date; putting its cumulative realized_pnl on only the
+-- latest date erases the earlier result and overstates the latest session.
 --
 -- Uses ``realized_pnl`` (from int_option_contracts). For a fully-closed
 -- contract this equals net_cash_flow (OTM expiry → premium; BTC → premium
@@ -396,6 +401,174 @@ open_mtm as (
 --
 -- For fully-OPEN contracts (never closed anything) realized_close_date is
 -- NULL, so no row is emitted — MTM only, deferring any credit to close.
+--
+-- stg_history amount is already net cash. Opening cash is allocated to each
+-- close by the cumulative average basis available on that date; this prevents
+-- a later scale-in from rewriting an earlier close. The latest row absorbs
+-- any small difference versus int_option_contracts.realized_pnl (broker basis,
+-- fees, or rounding), so the per-date rows still reconcile exactly to the
+-- contract headline.
+option_open_events as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        trade_date as open_event_date,
+        sum(abs(quantity)) as opened_qty,
+        sum(amount) as opening_cash
+    from {{ ref('stg_history') }}
+    where instrument_type in ('Call', 'Put')
+      and action in ('option_sell_to_open', 'option_buy_to_open')
+    group by 1, 2, 3, 4, 5
+),
+
+history_close_events as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        least(trade_date, coalesce(option_expiry, trade_date)) as close_event_date,
+        sum(abs(quantity)) as closed_qty,
+        sum(amount) as closing_cash
+    from {{ ref('stg_history') }}
+    where instrument_type in ('Call', 'Put')
+      and action in (
+          'option_buy_to_close', 'option_sell_to_close',
+          'option_expired', 'option_assigned', 'option_exercised'
+      )
+    group by 1, 2, 3, 4, 5
+),
+
+contract_terminal_events as (
+    -- Calendar/snapshot settlement can close a remainder without a broker
+    -- history row. Once int_option_contracts dates that terminal event, add
+    -- the still-open quantity here so the residual lands on that date.
+    select
+        c.tenant_id,
+        c.account,
+        c.user_id,
+        c.trade_symbol,
+        c.realized_close_date as close_event_date,
+        greatest(
+            coalesce(c.contracts_sold_to_open, 0)
+            + coalesce(c.contracts_bought_to_open, 0)
+            - coalesce(c.contracts_closed, 0),
+            0
+        ) as closed_qty,
+        0.0 as closing_cash
+    from contracts c
+    where c.realized_close_date is not null
+      and not exists (
+          select 1
+          from history_close_events h
+          where (h.tenant_id is not distinct from c.tenant_id)
+            and h.account = c.account
+            and (h.user_id is not distinct from c.user_id)
+            and h.trade_symbol = c.trade_symbol
+            and h.close_event_date = c.realized_close_date
+      )
+),
+
+option_close_events as (
+    select * from history_close_events
+    union all
+    select * from contract_terminal_events
+),
+
+close_state as (
+    select
+        ce.tenant_id,
+        ce.account,
+        ce.user_id,
+        ce.trade_symbol,
+        ce.close_event_date,
+        ce.closed_qty,
+        ce.closing_cash,
+        count(*) over (
+            partition by ce.tenant_id, ce.account, ce.user_id, ce.trade_symbol
+        ) as close_date_count,
+        sum(ce.closed_qty) over (
+            partition by ce.tenant_id, ce.account, ce.user_id, ce.trade_symbol
+            order by ce.close_event_date
+            rows between unbounded preceding and current row
+        ) as cumulative_closed_qty,
+        coalesce(sum(oe.opened_qty), 0) as opened_qty_to_date,
+        coalesce(sum(oe.opening_cash), 0) as opening_cash_to_date
+    from option_close_events ce
+    left join option_open_events oe
+      on (ce.tenant_id is not distinct from oe.tenant_id)
+     and ce.account = oe.account
+     and (ce.user_id is not distinct from oe.user_id)
+     and ce.trade_symbol = oe.trade_symbol
+     and oe.open_event_date <= ce.close_event_date
+    group by 1, 2, 3, 4, 5, 6, 7
+),
+
+close_allocated as (
+    select
+        *,
+        opening_cash_to_date * least(
+            coalesce(safe_divide(cumulative_closed_qty, opened_qty_to_date), 0),
+            1.0
+        ) as cumulative_allocated_opening_cash
+    from close_state
+),
+
+multi_close_raw as (
+    select
+        ca.*,
+        ca.closing_cash
+        + ca.cumulative_allocated_opening_cash
+        - coalesce(
+            lag(ca.cumulative_allocated_opening_cash) over (
+                partition by ca.tenant_id, ca.account, ca.user_id, ca.trade_symbol
+                order by ca.close_event_date
+            ),
+            0
+        ) as raw_increment
+    from close_allocated ca
+    where ca.close_date_count > 1
+      and ca.opened_qty_to_date > 0
+),
+
+multi_close_reconciled as (
+    select
+        r.*,
+        sum(r.raw_increment) over (
+            partition by r.tenant_id, r.account, r.user_id, r.trade_symbol
+        ) as raw_total,
+        max(r.close_event_date) over (
+            partition by r.tenant_id, r.account, r.user_id, r.trade_symbol
+        ) as latest_close_event_date
+    from multi_close_raw r
+),
+
+multi_close_realized as (
+    select
+        c.tenant_id,
+        c.account,
+        c.user_id,
+        c.symbol,
+        c.trade_symbol,
+        r.close_event_date as date,
+        r.raw_increment
+        + case
+            when r.close_event_date = r.latest_close_event_date
+            then c.realized_pnl - r.raw_total
+            else 0
+          end as pnl_today,
+        true as is_realized_close
+    from multi_close_reconciled r
+    join contracts c
+      on (r.tenant_id is not distinct from c.tenant_id)
+     and r.account = c.account
+     and (r.user_id is not distinct from c.user_id)
+     and r.trade_symbol = c.trade_symbol
+    where c.realized_close_date is not null
+),
+
 realized_close as (
     select
         c.tenant_id,
@@ -408,6 +581,16 @@ realized_close as (
         true as is_realized_close
     from contracts c
     where c.realized_close_date is not null
+      and not exists (
+          select 1
+          from close_state s
+          where (s.tenant_id is not distinct from c.tenant_id)
+            and s.account = c.account
+            and (s.user_id is not distinct from c.user_id)
+            and s.trade_symbol = c.trade_symbol
+            and s.close_date_count > 1
+            and s.opened_qty_to_date > 0
+      )
 ),
 
 -- v2 tenant_id is carried natively from staging through the contract grain.
@@ -415,6 +598,8 @@ all_rows as (
     select * from open_mtm
     union all
     select * from realized_close
+    union all
+    select * from multi_close_realized
 )
 
 select * from all_rows

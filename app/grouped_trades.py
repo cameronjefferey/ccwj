@@ -236,6 +236,23 @@ def _prepare_option(row) -> dict:
     return item
 
 
+def _opening_quantity_from_fills(row) -> float:
+    """Contract size when classification has no quantity column."""
+    direction = str(row.get("direction") or "")
+    open_action = (
+        "option_sell_to_open" if direction == "Sold"
+        else "option_buy_to_open" if direction == "Bought"
+        else ""
+    )
+    if not open_action:
+        return 0.0
+    return sum(
+        abs(_num(fill.get("quantity")))
+        for fill in (row.get("raw_trades") or [])
+        if str(fill.get("action") or "") == open_action
+    )
+
+
 def _apply_slice_status(row) -> dict:
     close = str(row.get("close_type") or "")
     source = str(row.get("_source_status") or row.get("status") or "")
@@ -262,6 +279,10 @@ def _with_residual(slices, parent_pnl) -> list[dict]:
 
 def _expand_lots(row) -> list[dict]:
     prepared = _prepare_option(row)
+    if _num(prepared.get("quantity")) <= 0:
+        opened = _opening_quantity_from_fills(prepared)
+        if opened > 0:
+            prepared["quantity"] = opened
     if prepared["_source_status"] == "Settlement pending":
         return [prepared]
     parent_pnl = prepared["pnl"]
@@ -397,6 +418,14 @@ def _cluster_key(row) -> tuple:
     )
 
 
+def _same_contract_count(left, right) -> bool:
+    """Whether two structure legs carry the same known (or unknown) size."""
+    return abs(
+        _num(_anchor_value(left, "quantity"))
+        - _num(_anchor_value(right, "quantity"))
+    ) < 1e-6
+
+
 def _pair_call_put(rows, *, same_direction: bool) -> list:
     """Pair a call structure with a put structure. Leftovers stay separate."""
     used_puts = set()
@@ -407,6 +436,8 @@ def _pair_call_put(rows, *, same_direction: bool) -> list:
         match = None
         for index, put in enumerate(puts):
             if index in used_puts:
+                continue
+            if not _same_contract_count(call, put):
                 continue
             gap = _day_gap(
                 _anchor_value(call, "open_date"),
@@ -420,18 +451,13 @@ def _pair_call_put(rows, *, same_direction: bool) -> list:
             if match is None:
                 match = index
                 continue
-            # Prefer the same contract count, then the nearer open.
+            # Contract count already agrees; prefer the nearer open.
             def _rank(idx, _call=call):
-                try:
-                    qty = abs(float(_anchor_value(puts[idx], "quantity") or 0))
-                    want = abs(float(_anchor_value(_call, "quantity") or 0))
-                except (TypeError, ValueError):
-                    qty = want = 0.0
                 gap_now = _day_gap(
                     _anchor_value(_call, "open_date"),
                     _anchor_value(puts[idx], "open_date"),
                 )
-                return (0 if abs(qty - want) < 1e-6 else 1, gap_now if gap_now is not None else 99, idx)
+                return (gap_now if gap_now is not None else 99, idx)
 
             if _rank(index) < _rank(match):
                 match = index
@@ -458,6 +484,8 @@ def _pair_diagonals(rows) -> list:
         match = None
         for index, long in enumerate(longs):
             if index in used_longs or _cp(short) != _cp(long):
+                continue
+            if not _same_contract_count(short, long):
                 continue
             if _expiry(long) <= _expiry(short):
                 continue
@@ -684,11 +712,13 @@ def retag_dividend_units(units, display_rows) -> int:
 def replace_month_pnl(mart_months, grouped_months, strategies) -> pd.DataFrame:
     """Replace mart month dollars for strategies whose units were retagged.
 
-    Grouped-unit pnl is the price result of the trades that still carry
-    that strategy. Buy and Hold uses this after Dividend names move off
-    it, so the sparkline does not keep the relabeled book's dollars.
-    A month with no remaining grouped close goes to $0. Other strategies
-    keep mart dollars: a spread's legs can close in different months.
+    Grouped-unit P&L and counts describe the trades that still carry that
+    strategy. Buy and Hold uses this after Dividend names move off it, so
+    the sparkline does not keep the relabeled book's dollars or trades.
+    A month with no remaining grouped close goes to $0. A retagged
+    strategy that has no mart row (Dividend) gets its grouped month added
+    instead of disappearing from the chart. Other strategies keep mart
+    dollars: a spread's legs can close in different months.
     """
     names = {str(name) for name in (strategies or [])}
     if mart_months is None or getattr(mart_months, "empty", True) or not names:
@@ -698,24 +728,77 @@ def replace_month_pnl(mart_months, grouped_months, strategies) -> pd.DataFrame:
     out = mart_months.copy()
     out["_month"] = pd.to_datetime(out["month_start"], errors="coerce").dt.strftime("%Y-%m")
     lookup = {}
+    grouped_rows = []
     if grouped_months is not None and not getattr(grouped_months, "empty", True) and "strategy" in grouped_months.columns:
         grouped = grouped_months.copy()
         grouped["_month"] = pd.to_datetime(grouped["month_start"], errors="coerce").dt.strftime("%Y-%m")
         for row in grouped.to_dict("records"):
             strategy = str(row.get("strategy") or "")
             if strategy in names:
-                lookup[(strategy, row.get("_month"))] = _num(row.get("total_pnl"))
+                lookup[(strategy, row.get("_month"))] = row
+                grouped_rows.append(row)
     avg_col = "avg_pnl" if "avg_pnl" in out.columns else None
     for idx, row in out.iterrows():
         strategy = str(row.get("strategy") or "")
         if strategy not in names:
             continue
-        pnl = lookup.get((strategy, row.get("_month")), 0.0)
+        hit = lookup.get((strategy, row.get("_month")))
+        pnl = _num(hit.get("total_pnl")) if hit is not None else 0.0
         out.at[idx, "total_pnl"] = round(pnl, 2)
+        trades = int(hit.get("trades_closed") or 0) if hit is not None else 0
+        winners = int(hit.get("num_winners") or 0) if hit is not None else 0
+        losers = int(hit.get("num_losers") or 0) if hit is not None else 0
+        if "trades_closed" in out.columns:
+            out.at[idx, "trades_closed"] = trades
+        if "num_winners" in out.columns:
+            out.at[idx, "num_winners"] = winners
+        if "num_losers" in out.columns:
+            out.at[idx, "num_losers"] = losers
+        if "win_rate_pct" in out.columns:
+            decided = winners + losers
+            out.at[idx, "win_rate_pct"] = (
+                winners / decided * 100 if decided else pd.NA
+            )
         if avg_col:
-            trades = _num(row.get("trades_closed"))
             out.at[idx, avg_col] = (pnl / trades) if trades else pd.NA
-    return out.drop(columns=["_month"])
+    existing = {
+        (str(row.get("strategy") or ""), row.get("_month"))
+        for row in out.to_dict("records")
+    }
+    additions = []
+    for row in grouped_rows:
+        key = (str(row.get("strategy") or ""), row.get("_month"))
+        if key in existing:
+            continue
+        item = {column: pd.NA for column in out.columns}
+        item.update({
+            "strategy": key[0],
+            "month_start": row.get("month_start"),
+            "_month": key[1],
+            "trades_closed": int(row.get("trades_closed") or 0),
+            "num_winners": int(row.get("num_winners") or 0),
+            "num_losers": int(row.get("num_losers") or 0),
+            "total_pnl": round(_num(row.get("total_pnl")), 2),
+        })
+        decided = item["num_winners"] + item["num_losers"]
+        if "win_rate_pct" in item:
+            item["win_rate_pct"] = (
+                item["num_winners"] / decided * 100 if decided else pd.NA
+            )
+        avg_name = "avg_pnl" if "avg_pnl" in item else (
+            "avg_pnl_per_trade" if "avg_pnl_per_trade" in item else None
+        )
+        if avg_name:
+            item[avg_name] = (
+                item["total_pnl"] / item["trades_closed"]
+                if item["trades_closed"] else pd.NA
+            )
+        additions.append(item)
+        existing.add(key)
+    if additions:
+        out = pd.concat([out, pd.DataFrame(additions)], ignore_index=True)
+    out = out.drop(columns=["_month"])
+    return out.sort_values(["strategy", "month_start"]).reset_index(drop=True)
 
 
 def stamp_grouped_counts(df, units, keys, trade_col="num_individual_trades"):

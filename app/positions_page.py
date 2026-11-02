@@ -584,6 +584,25 @@ POSITIONS_TAG_STRAT_QUERY = """
 """
 
 
+def reconcile_position_rows(symbol_rows, strategy_rows, kpis) -> None:
+    """Make symbol and strategy rows add to the whole-dollar hero.
+
+    Realized, unrealized, and dividends each sum to the hero component.
+    A row's shown total is those three figures, so it still adds across
+    and the column total matches the headline.
+    """
+    from app.book_totals import reconcile_component_rows
+
+    components = ("realized_pnl", "unrealized_pnl", "total_dividend_income")
+    targets = {
+        "realized_pnl": (kpis or {}).get("realized_pnl") or 0,
+        "unrealized_pnl": (kpis or {}).get("unrealized_pnl") or 0,
+        "total_dividend_income": (kpis or {}).get("dividend_income") or 0,
+    }
+    reconcile_component_rows(symbol_rows or [], components, targets)
+    reconcile_component_rows(strategy_rows or [], components, targets)
+
+
 def strategy_rollup_frame(filtered):
     """Account × strategy rows for the Positions strategy table.
 
@@ -1237,6 +1256,11 @@ def positions():
         all_in_open_note = ""
     _blank_missing_win_rates(all_rows)
     _blank_missing_win_rates(symbol_rows)
+    # Whole-dollar columns that add down to the hero and across each row.
+    # The symbol table lists every row; the strategy table is the same
+    # book paginated, so both sets are reconciled to the hero, not to
+    # the page on screen.
+    reconcile_position_rows(symbol_rows, all_rows, kpis)
     all_rows, sort_key, sort_dir = sort_strategy_detail_rows(all_rows, sort_key, sort_dir)
     sort_next = strategy_sort_next_dirs(sort_key, sort_dir)
     start_idx = (page - 1) * per_page

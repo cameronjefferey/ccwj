@@ -34,6 +34,73 @@ def test_strategy_table_weights_average_pnl_by_closed_trades():
     assert float(fallback.iloc[0]["avg_pnl_per_trade"]) == 100
 
 
+def test_raw_trade_log_keeps_the_year_and_totals_its_cash():
+    """Dates outside this year stay readable, and the cash total is the rows."""
+    detail = (ROOT / "app/templates/position_detail.html").read_text()
+    raw = detail.split('id="pd-raw"', 1)[1].split("htShareModal", 1)[0]
+    assert "t.trade_date|compact_date" in raw
+    assert "trade_cash" in raw
+    assert ">Total</td>" in raw
+    positions = (ROOT / "app/templates/positions.html").read_text()
+    table = positions.split('id="symbolTable"', 1)[1].split("positionsTable", 1)[0]
+    assert "shown_total" in table
+    assert ">Total</td>" in table
+    assert "kpis.total_return" in table
+
+
+def test_symbol_and_strategy_rows_add_to_the_hero():
+    """Whole-dollar rows add down to the headline and across each row."""
+    from app.book_totals import hero_book
+    from app.positions_page import reconcile_position_rows
+
+    frame = pd.DataFrame([
+        {
+            "realized_pnl": 10.4, "unrealized_pnl": 0.4, "total_dividend_income": 0.4,
+            "total_pnl": 11.2,
+        },
+        {
+            "realized_pnl": 0.4, "unrealized_pnl": -0.2, "total_dividend_income": 0.2,
+            "total_pnl": 0.4,
+        },
+    ])
+    book = hero_book(frame)
+    symbols = [
+        {
+            "symbol": "AAA",
+            "realized_pnl": 10.4, "unrealized_pnl": 0.4, "total_dividend_income": 0.4,
+        },
+        {
+            "symbol": "BBB",
+            "realized_pnl": 0.4, "unrealized_pnl": -0.2, "total_dividend_income": 0.2,
+        },
+    ]
+    strategies = [
+        {
+            "strategy": "Covered Call",
+            "realized_pnl": 10.8, "unrealized_pnl": 0.2, "total_dividend_income": 0.6,
+        },
+    ]
+    kpis = {
+        "realized_pnl": book["realized"],
+        "unrealized_pnl": book["unrealized"],
+        "dividend_income": book["dividends"],
+        "total_return": book["total"],
+    }
+    reconcile_position_rows(symbols, strategies, kpis)
+
+    assert sum(row["shown_total"] for row in symbols) == book["total"]
+    assert sum(row["shown_realized_pnl"] for row in symbols) == book["realized"]
+    assert sum(row["shown_unrealized_pnl"] for row in symbols) == book["unrealized"]
+    assert sum(row["shown_total_dividend_income"] for row in symbols) == book["dividends"]
+    for row in symbols:
+        assert (
+            row["shown_realized_pnl"]
+            + row["shown_unrealized_pnl"]
+            + row["shown_total_dividend_income"]
+        ) == row["shown_total"]
+    assert sum(row["shown_total"] for row in strategies) == book["total"]
+
+
 def test_tag_rollup_counts_a_spread_as_one_outcome():
     from app.positions_page import _rollup_classification_rows
 

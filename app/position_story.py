@@ -353,6 +353,61 @@ class _AccountState:
         return self.options.setdefault(tsym, {"net": 0.0, "cash": 0.0})
 
 
+def _match_roll_pairs(closes, opens, consumed=None):
+    """Reciprocal one-to-one roll pairs from one account and one day."""
+    consumed = consumed or set()
+
+    def _compatible(close, opened):
+        if id(close) in consumed or id(opened) in consumed:
+            return False
+        if not close["occ"] or not opened["occ"] or _fill_is_settlement(close):
+            return False
+        if opened["occ"]["option_type"] != close["occ"]["option_type"]:
+            return False
+        if abs(abs(opened["quantity"]) - abs(close["quantity"])) > 1e-6:
+            return False
+        return not (
+            opened["occ"]["strike"] == close["occ"]["strike"]
+            and opened["occ"]["expiry"] == close["occ"]["expiry"]
+        )
+
+    candidates = {
+        id(close): [opened for opened in opens if _compatible(close, opened)]
+        for close in closes
+    }
+    open_hits = {}
+    for matches in candidates.values():
+        for opened in matches:
+            open_hits[id(opened)] = open_hits.get(id(opened), 0) + 1
+    pairs = []
+    for close in closes:
+        matches = candidates.get(id(close)) or []
+        if len(matches) == 1 and open_hits.get(id(matches[0])) == 1:
+            pairs.append((close, matches[0]))
+    return pairs
+
+
+def _roll_open_uids(fills):
+    """Opening fills already owned by an unambiguous same-day roll."""
+    grouped = {}
+    for fill in fills or []:
+        grouped.setdefault((fill.get("date"), fill.get("state_key")), []).append(fill)
+    out = set()
+    for day_fills in grouped.values():
+        pairs = (
+            _match_roll_pairs(
+                [f for f in day_fills if f["action"] == "option_buy_to_close"],
+                [f for f in day_fills if f["action"] == "option_sell_to_open"],
+            )
+            + _match_roll_pairs(
+                [f for f in day_fills if f["action"] == "option_sell_to_close"],
+                [f for f in day_fills if f["action"] == "option_buy_to_open"],
+            )
+        )
+        out.update(opened.get("uid") for _close, opened in pairs)
+    return out
+
+
 def _day_headline(day_fills, state_by_account, multi_account, stats,
                   exit_notes=None, label_map=None, structure_plan=None):
     """Compose the plain-English sentences for one day's fills.
@@ -485,41 +540,12 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         consumed = set()
 
         def _detect_rolls(closes, opens, short_side):
-            def _compatible(c, o):
-                if id(c) in consumed or id(o) in consumed:
-                    return False
-                if not c["occ"] or not o["occ"] or _fill_is_settlement(c):
-                    return False
-                if o["occ"]["option_type"] != c["occ"]["option_type"]:
-                    return False
-                if abs(abs(o["quantity"]) - abs(c["quantity"])) > 1e-6:
-                    return False
-                return not (
-                    o["occ"]["strike"] == c["occ"]["strike"]
-                    and o["occ"]["expiry"] == c["occ"]["expiry"]
-                )
-
             # The fill tape has dates but no reliable intraday order or
             # brokerage order id. With two compatible closes and two opens,
             # first-match pairing invents which strike rolled where and can
             # fabricate each roll's debit/credit. Collapse only reciprocal,
             # one-to-one matches; ambiguous fills stay explicit.
-            candidates = {
-                id(c): [o for o in opens if _compatible(c, o)]
-                for c in closes
-            }
-            open_hits = {}
-            for matches in candidates.values():
-                for o in matches:
-                    open_hits[id(o)] = open_hits.get(id(o), 0) + 1
-
-            for c in closes:
-                matches = candidates.get(id(c)) or []
-                if len(matches) != 1:
-                    continue
-                o = matches[0]
-                if open_hits.get(id(o)) != 1:
-                    continue
+            for c, o in _match_roll_pairs(closes, opens, consumed):
                 consumed.add(id(c))
                 consumed.add(id(o))
                 sentence, roll_tip = _phrase_roll(c, o, short_side)
@@ -574,13 +600,30 @@ def _day_headline(day_fills, state_by_account, multi_account, stats,
         # on the LAST open date; earlier days apply state without a
         # directional one-liner so a condor short put is never a wheel.
         planned_uids = _all_planned_uids(structure_plan)
+        # A replacement option can also look like one leg of a new spread
+        # (roll the short, then buy a wing). The roll above already applied
+        # that fill to state and premium. Do not apply it again as a
+        # structure or print a second cash total that overlaps the roll.
+        # Leave the other wing unconsumed so it is narrated once below.
+        consumed_uids = {
+            f.get("uid") for f in opt_fills if id(f) in consumed
+        }
+        blocked_structure_uids = set()
+        if consumed_uids:
+            for hits in (structure_plan or {}).values():
+                for _sentence, uids, _kind, _tip in hits:
+                    if consumed_uids.intersection(uids):
+                        blocked_structure_uids.update(uids)
+        active_planned_uids = planned_uids - blocked_structure_uids
         day_date = fills[0]["date"] if fills else None
         completions = (structure_plan or {}).get((day_date, state_key), [])
         for f in opt_fills:
-            if f.get("uid") in planned_uids:
+            if f.get("uid") in active_planned_uids:
                 consumed.add(id(f))
                 _apply_option_open_state(f, st, stats)
-        for sentence, _uids, kind, tip in completions:
+        for sentence, uids, kind, tip in completions:
+            if blocked_structure_uids.intersection(uids):
+                continue
             sentences.append(_tag(sentence, account))
             if tip:
                 tips.append(_stamp(tip))
@@ -928,6 +971,7 @@ def _plan_open_structures(all_fills):
     so the review names the structure when the last wing lands. Earlier
     wings must still be open that day, and every leg must be the same size.
     """
+    roll_opens = _roll_open_uids(all_fills)
     by = {}
     contract_fills = {}
     for f in all_fills or []:
@@ -935,6 +979,10 @@ def _plan_open_structures(all_fills):
             contract_fills.setdefault(
                 (f["state_key"], f["trade_symbol"]), []).append(f)
         if f["action"] not in ("option_sell_to_open", "option_buy_to_open"):
+            continue
+        # The replacement leg belongs to the roll. Pairing it again with
+        # a wing doubles its premium/state and overlaps the roll's cash tip.
+        if f.get("uid") in roll_opens:
             continue
         if not f.get("occ"):
             continue

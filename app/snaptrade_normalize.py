@@ -44,6 +44,7 @@ from app.upload import (
     CRYPTO_SYMBOLS,
     CURRENT_SEED_COLUMNS,
     HISTORY_SEED_COLUMNS,
+    POSITIONS_ALL_SOURCE,
     canonicalize_crypto_pair_symbol,
     symbol_defaults_to_crypto,
 )
@@ -543,8 +544,40 @@ def _quoted_market_value(pos: Mapping, symbol_obj: Mapping) -> float:
     if _number_missing(price):
         return 0.0
     units = _position_quantity(pos)
-    mult = 100.0 if _is_option(symbol_obj) else 1.0
+    mult = _option_position_multiplier(pos, symbol_obj)
     return units * _safe_float(price, 0.0) * mult
+
+
+def _option_position_multiplier(pos: Mapping, symbol_obj: Mapping) -> float:
+    """Underlying units represented by one option contract.
+
+    V2 positions/all publishes ``instrument.multiplier``. Classic option
+    holdings publish ``is_mini_option`` instead; minis represent 10 shares.
+    """
+    if not _is_option(symbol_obj):
+        return 1.0
+    instrument = pos.get("instrument")
+    if isinstance(instrument, Mapping):
+        mult = _safe_float(instrument.get("multiplier"), 0.0)
+        if mult > 0:
+            return mult
+    candidates = [
+        pos.get("option_symbol"),
+        symbol_obj.get("option_symbol") if isinstance(symbol_obj, Mapping) else None,
+    ]
+    inner = symbol_obj.get("symbol") if isinstance(symbol_obj, Mapping) else None
+    if isinstance(inner, Mapping):
+        candidates.append(inner.get("option_symbol"))
+    for option_symbol in candidates:
+        if not isinstance(option_symbol, Mapping):
+            continue
+        mult = _safe_float(option_symbol.get("multiplier"), 0.0)
+        if mult > 0:
+            return mult
+        mini = option_symbol.get("is_mini_option")
+        if mini is True or str(mini or "").strip().lower() in {"true", "1", "yes"}:
+            return 10.0
+    return 100.0
 
 
 def _reported_cash_and_total(balances, account_summary) -> tuple[float, float | None]:
@@ -1996,6 +2029,9 @@ def position_holding_key(pos: Mapping) -> str:
     return _fallback_identifier(shaped, symbol_obj)
 
 
+_POSITION_SOURCE_KEY = "_happytrader_position_source"
+
+
 def merge_holdings_with_all_positions(holdings, all_positions) -> list:
     """Classic positions and option holdings win. New keys are appended.
 
@@ -2020,7 +2056,9 @@ def merge_holdings_with_all_positions(holdings, all_positions) -> list:
         if not key or key in seen:
             continue
         seen.add(key)
-        merged.append(_normalize_position_shape(pos))
+        supplemental = dict(_normalize_position_shape(pos))
+        supplemental[_POSITION_SOURCE_KEY] = POSITIONS_ALL_SOURCE
+        merged.append(supplemental)
     return merged
 
 
@@ -2133,23 +2171,22 @@ def positions_to_current_df(
         price_missing = _number_missing(raw_price)
         price = 0.0 if price_missing else _safe_float(raw_price, 0.0)
 
-        # Option contracts represent 100 shares of the underlying, but the
-        # two SnapTrade per-unit fields on ``OptionsPosition`` are in
-        # DIFFERENT units (verified against the SDK schema, options_position.py):
-        #   * ``price``                 = market price PER SHARE
-        #   * ``average_purchase_price``= cost basis  PER CONTRACT
-        #     ("divide by shares per contract (usually 100) to get per share")
-        # SnapTrade ships NO market_value / cost_basis for option holdings,
-        # so both are derived — but the 100x multiplier applies ONLY to the
-        # per-share ``price``:
-        #   market_value = |units| * price * 100          (per-share → total)
-        #   cost_basis   = |units| * average_purchase_price (already per-contract)
-        # Applying ×100 to cost_basis too double-counts the multiplier and
-        # snapshots the option at 100× its real cost (2026-07-13 SEI bug:
-        # 10× $70C real cost $9,206.63 stored as $920,663 → -$913,563 phantom
-        # unrealized loss). ``contract_mult`` is therefore used for
-        # market_value ONLY; cost_basis below intentionally omits it.
-        contract_mult = 100.0 if is_option else 1.0
+        # Classic ``OptionsPosition`` and v2 ``positions/all`` use different
+        # cost fields:
+        #
+        # * Classic ``average_purchase_price`` is per CONTRACT. Its option
+        #   market ``price`` is per share, so only market value gets the
+        #   contract multiplier (100 standard, 10 mini).
+        # * V2 ``cost_basis`` is a book price PER SHARE (the endpoint schema
+        #   says this explicitly). Both price and basis therefore get the
+        #   instrument's multiplier. Do not hard-code 100: mini options use 10.
+        #
+        # Mixing the contracts is a 100× P&L error. Ten standard contracts
+        # marked at $1 with a $2 basis are worth $1,000 against $2,000 of
+        # basis, not $1,000 against $20.
+        instrument = pos.get("instrument")
+        v2_position = isinstance(instrument, Mapping)
+        contract_mult = _option_position_multiplier(pos, symbol_obj)
 
         # market_value: SnapTrade does NOT ship this at the position
         # level. The actual response keys (Alpaca via SnapTrade, May
@@ -2190,28 +2227,22 @@ def positions_to_current_df(
             market_value = units * price * _BOND_PERCENT_OF_FACE
         quote_missing = price_missing and mv_missing
 
-        # cost_basis: prefer broker-supplied total, else derive from
-        # average_purchase_price * units. No `cost_basis` field on Alpaca
-        # (or Schwab option holdings) via SnapTrade, so we usually derive.
-        # Options: ``average_purchase_price`` is PER CONTRACT (see the
-        # contract_mult comment above), so total cost basis = avg * |units|
-        # with NO extra ×100. abs(units) yields a POSITIVE magnitude so the
-        # short-aware unrealized formula in stg_current
-        # (market_value + cost_basis) nets correctly for both long and
-        # short legs. Equities: average_purchase_price is per share.
+        # cost_basis: v2 positions/all supplies a per-unit book price;
+        # classic holdings either supply a total ``cost_basis`` or the
+        # endpoint-specific ``average_purchase_price`` fallback. Classic
+        # option average_purchase_price is PER CONTRACT, so total basis is
+        # avg * |units| with NO extra ×100. abs(units) yields a POSITIVE
+        # option magnitude so the short-aware unrealized formula in
+        # stg_current (market_value + cost_basis) nets correctly for both
+        # long and short legs. Equity average_purchase_price is per share.
         cost_basis = _safe_float(pos.get("cost_basis"), 0.0)
-        if (
-            cost_basis
-            and is_option
-            and isinstance(pos.get("instrument"), Mapping)
-        ):
-            # AccountPosition from positions/all calls this field the option's
-            # book price PER CONTRACT. The classic option-holdings endpoint
-            # normally omits ``cost_basis`` and uses
-            # ``average_purchase_price`` below, while older classic fixtures
-            # that do carry a top-level cost_basis already use a total. The
-            # instrument block identifies the v2 per-contract shape.
-            cost_basis *= abs(units)
+        if cost_basis and v2_position:
+            # AccountPosition.cost_basis is a per-unit book price. Options
+            # additionally apply the instrument multiplier; ordinary v2
+            # positions multiply by their units. Classic top-level cost_basis
+            # remains a total for backward compatibility with holdings.
+            basis_units = abs(units) if is_option else units
+            cost_basis *= basis_units * contract_mult
         if not cost_basis:
             avg_purchase = _safe_float(pos.get("average_purchase_price"), 0.0)
             if avg_purchase and units:
@@ -2307,6 +2338,11 @@ def positions_to_current_df(
             "gain_or_loss_dollat": gl_dollar,
             "gain_or_loss_percent": gl_percent,
             "security_type": security_type,
+            "position_source": (
+                POSITIONS_ALL_SOURCE
+                if pos.get(_POSITION_SOURCE_KEY) == POSITIONS_ALL_SOURCE
+                else "classic"
+            ),
         })
 
     df = pd.DataFrame(rows)

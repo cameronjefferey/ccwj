@@ -1,17 +1,22 @@
 """
 First Look — the "Here's what we found" page shown after first upload.
 
-Queries positions_summary and int_strategy_classification to build a
-narrative profile of the trader. Designed to deliver at least one
-genuine insight on day one.
+Queries positions_summary plus the canonical grouped-trade inputs to build
+a narrative profile of the trader. Designed to deliver at least one genuine
+insight on day one.
 """
 from flask import render_template, redirect, request, url_for
 from flask_login import current_user, login_required
 from app import app
 from app.bigquery_client import get_bigquery_client
+from app.grouped_trades import (
+    CLASSIFICATION_GROUPS_QUERY,
+    OPTION_FILLS_QUERY,
+    group_book_trades,
+)
 from app.money import fmt_money
-from app.outcome_units import SPREAD_STRATEGIES
 from app.routes import (
+    _filter_df_by_tenant_ids,
     _tenants_for_scope,
     _tenant_sql_filter,
     _tenant_sql_and,
@@ -81,91 +86,6 @@ SYMBOL_QUERY = """
     -- silently killed this page for months (the old route swallowed it).
     ORDER BY total_return DESC
 """
-
-def _spread_list_sql():
-    """Same spread labels as positions_summary outcome units."""
-    return ", ".join(f"'{name}'" for name in sorted(SPREAD_STRATEGIES))
-
-
-# One row per closed result. A same-day spread is one unit, matching
-# positions_summary, so the average win is not a single leg of a spread
-# next to a grouped win rate.
-WIN_LOSS_QUERY = """
-    WITH keyed AS (
-        SELECT
-            tenant_id,
-            account,
-            user_id,
-            symbol,
-            strategy,
-            status,
-            total_pnl,
-            CASE
-                WHEN strategy IN ({spread_list})
-                THEN CONCAT(
-                    COALESCE(CAST(open_date AS STRING), ''),
-                    '|',
-                    COALESCE(CAST(option_expiry AS STRING), '')
-                )
-                ELSE COALESCE(trade_symbol, '')
-            END AS unit_key
-        FROM `ccwj-dbt.analytics.int_strategy_classification`
-        {where}
-    ),
-    units AS (
-        SELECT
-            unit_key,
-            LOGICAL_AND(status = 'Closed') AS unit_closed,
-            SUM(total_pnl) AS unit_pnl
-        FROM keyed
-        GROUP BY unit_key, tenant_id, account, user_id, symbol, strategy
-    )
-    SELECT
-        AVG(IF(unit_closed AND ROUND(unit_pnl, 2) > 0, unit_pnl, NULL)) AS avg_win,
-        AVG(IF(unit_closed AND ROUND(unit_pnl, 2) < 0, unit_pnl, NULL)) AS avg_loss,
-        SUM(IF(unit_closed AND ROUND(unit_pnl, 2) > 0, unit_pnl, 0)) AS gross_wins,
-        SUM(IF(unit_closed AND ROUND(unit_pnl, 2) < 0, unit_pnl, 0)) AS gross_losses
-    FROM units
-"""
-
-BUSIEST_MONTH_QUERY = """
-    WITH keyed AS (
-        SELECT
-            open_date,
-            tenant_id,
-            account,
-            user_id,
-            symbol,
-            strategy,
-            CASE
-                WHEN strategy IN ({spread_list})
-                THEN CONCAT(
-                    COALESCE(CAST(open_date AS STRING), ''),
-                    '|',
-                    COALESCE(CAST(option_expiry AS STRING), '')
-                )
-                ELSE COALESCE(trade_symbol, '')
-            END AS unit_key
-        FROM `ccwj-dbt.analytics.int_strategy_classification`
-        WHERE open_date IS NOT NULL {tenant_filter}
-    ),
-    units AS (
-        SELECT MIN(open_date) AS open_date
-        FROM keyed
-        GROUP BY unit_key, tenant_id, account, user_id, symbol, strategy
-    )
-    SELECT
-        -- Single %: this string goes through str.format() (which ignores %),
-        -- NOT %-formatting. %% here would render a literal "%Y-%m" on the page.
-        FORMAT_DATE('%B %Y', open_date) AS month,
-        COUNT(*) AS trades_opened
-    FROM units
-    GROUP BY 1
-    ORDER BY trades_opened DESC
-    LIMIT 1
-"""
-
-
 def _safe_float(val, default=0.0):
     try:
         f = float(val)
@@ -181,7 +101,58 @@ def _safe_int(val, default=0):
         return default
 
 
-def _build_profile(client, where, tenant_and):
+def _grouped_result_metrics(units):
+    """Canonical grouped-trade counts and dollars for First Look."""
+    counted = [unit for unit in (units or []) if unit.get("counts_as_trade")]
+    closed = [
+        unit for unit in counted
+        if str(unit.get("status") or "") == "Closed"
+        and abs(round(_safe_float(unit.get("pnl")), 2)) >= 0.01
+    ]
+    wins = [_safe_float(unit.get("pnl")) for unit in closed
+            if round(_safe_float(unit.get("pnl")), 2) > 0]
+    losses = [_safe_float(unit.get("pnl")) for unit in closed
+              if round(_safe_float(unit.get("pnl")), 2) < 0]
+
+    by_strategy = {}
+    months = {}
+    for unit in counted:
+        strategy = str(unit.get("strategy") or "")
+        slot = by_strategy.setdefault(
+            strategy, {"num_trades": 0, "num_winners": 0, "num_losers": 0},
+        )
+        slot["num_trades"] += 1
+        if str(unit.get("status") or "") == "Closed":
+            pnl = round(_safe_float(unit.get("pnl")), 2)
+            slot["num_winners"] += int(pnl > 0)
+            slot["num_losers"] += int(pnl < 0)
+        opened = str(unit.get("open_date") or "")[:7]
+        if len(opened) == 7:
+            months[opened] = months.get(opened, 0) + 1
+
+    busiest_month = None
+    busiest_count = 0
+    if months:
+        month, busiest_count = min(months.items(), key=lambda item: (-item[1], item[0]))
+        try:
+            busiest_month = pd.Timestamp(f"{month}-01").strftime("%B %Y")
+        except (TypeError, ValueError):
+            busiest_month = month
+
+    return {
+        "total_winners": len(wins),
+        "total_losers": len(losses),
+        "avg_win": (sum(wins) / len(wins)) if wins else 0.0,
+        "avg_loss": (sum(losses) / len(losses)) if losses else 0.0,
+        "gross_wins": sum(wins),
+        "gross_losses": sum(losses),
+        "busiest_month": busiest_month,
+        "busiest_month_trades": busiest_count,
+        "by_strategy": by_strategy,
+    }
+
+
+def _build_profile(client, where, tenant_and, tenant_ids):
     """Build the trader profile dict from BigQuery data."""
     from app.routes import _bq_parallel
 
@@ -194,13 +165,26 @@ def _build_profile(client, where, tenant_and):
         "fl_profile": PROFILE_QUERY.format(where=where),
         "fl_strategies": STRATEGY_QUERY.format(where=where),
         "fl_symbols": SYMBOL_QUERY.format(where=where),
-        "fl_win_loss": WIN_LOSS_QUERY.format(
-            where=where, spread_list=_spread_list_sql(),
+        "fl_trade_groups": CLASSIFICATION_GROUPS_QUERY.format(
+            tenant_filter=tenant_and,
         ),
-        "fl_busiest_month": BUSIEST_MONTH_QUERY.format(
-            tenant_filter=tenant_and, spread_list=_spread_list_sql(),
+        "fl_trade_fills": OPTION_FILLS_QUERY.format(
+            tenant_filter=tenant_and,
         ),
     })
+
+    group_df = _filter_df_by_tenant_ids(
+        batch.get("fl_trade_groups", pd.DataFrame()), tenant_ids,
+    )
+    fill_df = _filter_df_by_tenant_ids(
+        batch.get("fl_trade_fills", pd.DataFrame()), tenant_ids,
+    )
+    grouped_metrics = None
+    if group_df is not None and not group_df.empty:
+        fills = [] if fill_df is None or fill_df.empty else fill_df.to_dict("records")
+        grouped_metrics = _grouped_result_metrics(
+            group_book_trades(group_df.to_dict("records"), fills),
+        )
 
     # Overall stats
     df = batch.get("fl_profile", pd.DataFrame())
@@ -209,6 +193,9 @@ def _build_profile(client, where, tenant_and):
     r = df.iloc[0]
     total_winners = _safe_int(r.get("total_winners"))
     total_losers = _safe_int(r.get("total_losers"))
+    if grouped_metrics is not None:
+        total_winners = grouped_metrics["total_winners"]
+        total_losers = grouped_metrics["total_losers"]
     total_closed = total_winners + total_losers
     profile["num_symbols"] = _safe_int(r.get("num_symbols"))
     profile["num_strategies"] = _safe_int(r.get("num_strategies"))
@@ -244,13 +231,20 @@ def _build_profile(client, where, tenant_and):
         for col in ["total_return", "winners", "losers", "num_symbols", "total_trades", "avg_days"]:
             strat_df[col] = pd.to_numeric(strat_df[col], errors="coerce").fillna(0)
         for _, sr in strat_df.iterrows():
-            closed = int(sr["winners"] + sr["losers"])
+            winners = int(sr["winners"])
+            losers = int(sr["losers"])
+            if grouped_metrics is not None:
+                grouped = grouped_metrics["by_strategy"].get(str(sr["strategy"]))
+                if grouped is not None:
+                    winners = grouped["num_winners"]
+                    losers = grouped["num_losers"]
+            closed = winners + losers
             strategies.append({
                 "strategy": sr["strategy"],
                 "total_return": float(sr["total_return"]),
-                "win_rate": float(sr["winners"]) / closed if closed else 0,
-                "winners": int(sr["winners"]),
-                "losers": int(sr["losers"]),
+                "win_rate": winners / closed if closed else 0,
+                "winners": winners,
+                "losers": losers,
                 "num_symbols": int(sr["num_symbols"]),
                 "total_trades": int(sr["total_trades"]),
                 "avg_days": float(sr["avg_days"]),
@@ -290,13 +284,14 @@ def _build_profile(client, where, tenant_and):
         profile["top3_concentration"] = 0
         profile["top3_symbols"] = []
 
-    # Win/loss asymmetry — the core insight
-    wl_df = batch.get("fl_win_loss", pd.DataFrame())
-    if not wl_df.empty:
-        avg_win = _safe_float(wl_df.iloc[0].get("avg_win"))
-        avg_loss = _safe_float(wl_df.iloc[0].get("avg_loss"))
-        gross_wins = _safe_float(wl_df.iloc[0].get("gross_wins"))
-        gross_losses = _safe_float(wl_df.iloc[0].get("gross_losses"))
+    # Win/loss asymmetry — the core insight. The same canonical grouping
+    # powers Strategies and Trader Profile, including independent spreads
+    # opened on the same date and expiry.
+    if grouped_metrics is not None:
+        avg_win = grouped_metrics["avg_win"]
+        avg_loss = grouped_metrics["avg_loss"]
+        gross_wins = grouped_metrics["gross_wins"]
+        gross_losses = grouped_metrics["gross_losses"]
         profile["avg_win"] = avg_win
         profile["avg_loss"] = avg_loss
         profile["gross_wins"] = gross_wins
@@ -315,16 +310,13 @@ def _build_profile(client, where, tenant_and):
         profile["gross_losses"] = 0
         profile["profit_factor"] = None
 
-    # Busiest month
-    try:
-        bm_df = batch.get("fl_busiest_month", pd.DataFrame())
-        if not bm_df.empty:
-            profile["busiest_month"] = str(bm_df.iloc[0]["month"])
-            profile["busiest_month_trades"] = int(bm_df.iloc[0]["trades_opened"])
-        else:
-            profile["busiest_month"] = None
-    except Exception:
-        profile["busiest_month"] = None
+    # Busiest month uses those same grouped opens; a spread counts once.
+    profile["busiest_month"] = (
+        grouped_metrics["busiest_month"] if grouped_metrics is not None else None
+    )
+    profile["busiest_month_trades"] = (
+        grouped_metrics["busiest_month_trades"] if grouped_metrics is not None else 0
+    )
 
     # Build the "one thing to think about" — pick the most interesting insight
     profile["key_insight"] = _pick_key_insight(profile)
@@ -464,7 +456,7 @@ def render_first_look_view():
         tenant_ids = _tenants_for_scope()
         where = _tenant_sql_filter(tenant_ids)
         tenant_and = _tenant_sql_and(tenant_ids)
-        profile = _build_profile(client, where, tenant_and)
+        profile = _build_profile(client, where, tenant_and, tenant_ids)
         if not profile:
             return None
         from app.early_broker import early_broker_notice_for_user

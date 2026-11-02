@@ -387,11 +387,12 @@ def _vertical_meta(row):
 
 
 def _pair_nearest(shorts, longs, metas, rows):
-    """Nearest strike, and the same contract count when several lots share it.
+    """Nearest strike among legs with the same contract count.
 
     Two 7730/7735 trades (20 closed, 10 left to expire) are four legs at
     two strikes. Pairing by strike alone can match the 20-lot short with
-    the 10-lot long. Quantity agrees first, then strike, then order.
+    the 10-lot long. Mismatched sizes stay separate until partial-spread
+    allocation is modeled.
     """
     unused = set(longs)
     pairs = []
@@ -400,12 +401,18 @@ def _pair_nearest(shorts, longs, metas, rows):
             break
         short_k = metas[short_i]["strike"]
         short_q = _abs_num((rows[short_i] or {}).get("quantity"))
-
-        def _key(j, _short_k=short_k, _short_q=short_q):
-            qty_gap = 0 if abs(_abs_num((rows[j] or {}).get("quantity")) - _short_q) < 1e-6 else 1
-            return (qty_gap, abs(metas[j]["strike"] - _short_k), j)
-
-        match = min(unused, key=_key)
+        same_size = [
+            j for j in unused
+            if abs(_abs_num((rows[j] or {}).get("quantity")) - short_q) < 1e-6
+        ]
+        if not same_size:
+            continue
+        match = min(
+            same_size,
+            key=lambda j, _short_k=short_k: (
+                abs(metas[j]["strike"] - _short_k), j,
+            ),
+        )
         unused.remove(match)
         pairs.append((short_i, match))
     return pairs

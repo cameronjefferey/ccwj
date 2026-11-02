@@ -1,12 +1,15 @@
 """Regression tests for the first-data onboarding profile."""
 
+import pandas as pd
+
 from app import first_look
 from app.first_look import (
-    BUSIEST_MONTH_QUERY,
     PROFILE_QUERY,
     STRATEGY_QUERY,
-    WIN_LOSS_QUERY,
+    _build_profile,
+    _grouped_result_metrics,
 )
+from app.grouped_trades import group_book_trades
 
 
 def test_strategy_query_orders_by_aggregate_alias():
@@ -23,17 +26,111 @@ def test_holding_days_are_weighted_by_fills():
     assert "AVG(avg_days_in_trade)" not in sql
 
 
-def test_closed_record_groups_spreads_and_drops_a_zero():
-    sql = WIN_LOSS_QUERY
-    assert "int_strategy_classification" in sql
-    assert "ABS(unit_pnl)" not in sql or "ROUND(unit_pnl, 2)" in sql
-    assert "ROUND(unit_pnl, 2) > 0" in sql
-    assert "ROUND(unit_pnl, 2) < 0" in sql
-    assert "positions_summary" not in sql
-    busiest = BUSIEST_MONTH_QUERY
-    assert "int_strategy_classification" in busiest
-    assert "positions_summary" not in busiest
-    assert "FORMAT_DATE('%B %Y'" in busiest
+def test_closed_record_keeps_independent_same_day_spreads():
+    def leg(strike, direction, pnl):
+        return {
+            "tenant_id": "snaptrade:one",
+            "account": "Broker Account",
+            "symbol": "AMD",
+            "strategy": "Call Spread",
+            "status": "Closed",
+            "trade_group_type": "option_contract",
+            "trade_symbol": f"AMD   250117C{strike * 1000:08d}",
+            "direction": direction,
+            "open_date": "2025-01-02",
+            "close_date": "2025-01-10",
+            "option_expiry": "2025-01-17",
+            "option_type": "Call",
+            "total_pnl": pnl,
+            "realized_pnl": pnl,
+            "unrealized_pnl": 0,
+            "days_in_trade": 8,
+        }
+
+    units = group_book_trades([
+        leg(100, "Sold", 12_000),
+        leg(105, "Bought", -2_000),
+        leg(110, "Sold", -10_000),
+        leg(115, "Bought", 1_000),
+    ])
+    metrics = _grouped_result_metrics(units)
+
+    assert sorted(unit["pnl"] for unit in units) == [-9_000, 10_000]
+    assert metrics["total_winners"] == 1
+    assert metrics["total_losers"] == 1
+    assert metrics["avg_win"] == 10_000
+    assert metrics["avg_loss"] == -9_000
+    assert metrics["gross_wins"] == 10_000
+    assert metrics["gross_losses"] == -9_000
+    assert metrics["busiest_month"] == "January 2025"
+    assert metrics["busiest_month_trades"] == 2
+    assert metrics["by_strategy"]["Call Spread"] == {
+        "num_trades": 2,
+        "num_winners": 1,
+        "num_losers": 1,
+    }
+
+
+def test_profile_uses_fill_lots_and_tenant_filtered_grouped_results(monkeypatch):
+    tenant = "snaptrade:one"
+    contract = "MU    250117C00120000"
+    frames = {
+        "fl_profile": pd.DataFrame([{
+            "num_symbols": 1, "num_strategies": 1, "total_trades": 4,
+            "total_return": 150, "realized_pnl": 150, "unrealized_pnl": 0,
+            "premium_collected": 500, "dividend_income": 0,
+            # The old contract-grain row incorrectly looked like one win.
+            "total_winners": 1, "total_losers": 0,
+            "first_trade": "2025-01-02", "last_trade": "2025-01-09",
+            "avg_holding_days": 7,
+        }]),
+        "fl_strategies": pd.DataFrame([{
+            "strategy": "Naked Call", "total_return": 150,
+            "winners": 1, "losers": 0, "num_symbols": 1,
+            "total_trades": 4, "avg_days": 7,
+        }]),
+        "fl_symbols": pd.DataFrame([{
+            "symbol": "MU", "total_return": 150, "strategies": "Naked Call",
+        }]),
+        "fl_trade_groups": pd.DataFrame([{
+            "tenant_id": tenant, "account": "Broker Account", "symbol": "MU",
+            "strategy": "Naked Call", "status": "Closed",
+            "trade_group_type": "option_contract", "trade_symbol": contract,
+            "direction": "Sold", "open_date": "2025-01-02",
+            "close_date": "2025-01-09", "option_expiry": "2025-01-17",
+            "option_type": "Call", "total_pnl": 150, "realized_pnl": 150,
+            "unrealized_pnl": 0, "days_in_trade": 7,
+        }]),
+        "fl_trade_fills": pd.DataFrame([
+            {"tenant_id": tenant, "account": "Broker Account",
+             "trade_symbol": contract, "action": "option_sell_to_open",
+             "quantity": 1, "price": 3.0, "amount": 300,
+             "trade_date": "2025-01-02"},
+            {"tenant_id": tenant, "account": "Broker Account",
+             "trade_symbol": contract, "action": "option_sell_to_open",
+             "quantity": 1, "price": 2.0, "amount": 200,
+             "trade_date": "2025-01-03"},
+            {"tenant_id": tenant, "account": "Broker Account",
+             "trade_symbol": contract, "action": "option_buy_to_close",
+             "quantity": 1, "price": 2.0, "amount": -200,
+             "trade_date": "2025-01-08"},
+            {"tenant_id": tenant, "account": "Broker Account",
+             "trade_symbol": contract, "action": "option_buy_to_close",
+             "quantity": 1, "price": 1.5, "amount": -150,
+             "trade_date": "2025-01-09"},
+        ]),
+    }
+    monkeypatch.setattr("app.routes._bq_parallel", lambda _client, _queries: frames)
+
+    profile = _build_profile(None, "WHERE tenant_id = 'x'", "AND tenant_id = 'x'", [tenant])
+
+    assert profile["total_winners"] == 2
+    assert profile["total_losers"] == 0
+    assert profile["avg_win"] == 75
+    assert profile["gross_wins"] == 150
+    assert profile["strategies"][0]["winners"] == 2
+    assert profile["busiest_month"] == "January 2025"
+    assert profile["busiest_month_trades"] == 2
 
 
 def test_key_insight_uses_the_sum_of_wins_not_the_average_ratio():
