@@ -1046,22 +1046,22 @@
                                 <span class="badge badge-mixed">Mixed</span>
                             {% endif %}
                         </td>
-                        <td data-label="Total return" data-val="{{ row.shown_total }}"
-                            class="pos-money {{ 'text-positive' if row.shown_total >= 0 else 'text-negative' }} fw-bold">
-                            {{ money(row.shown_total, 0, true) }}
+                        <td data-label="Total return" data-val="{{ row.total_pnl }}"
+                            class="pos-money {{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-bold">
+                            {{ money(row.total_pnl) }}
                         </td>
-                        <td data-label="Realized" data-val="{{ row.shown_realized_pnl }}"
-                            class="pos-money {{ 'text-positive' if row.shown_realized_pnl >= 0 else 'text-negative' }}">
-                            {{ money(row.shown_realized_pnl, 0, true) }}
+                        <td data-label="Realized" data-val="{{ row.realized_pnl }}"
+                            class="pos-money {{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
+                            {{ money(row.realized_pnl) }}
                         </td>
-                        <td data-label="Unrealized" data-val="{{ row.shown_unrealized_pnl }}"
-                            class="pos-money {{ 'text-positive' if row.shown_unrealized_pnl >= 0 else 'text-negative' }}">
-                            {{ money(row.shown_unrealized_pnl, 0, true) }}
+                        <td data-label="Unrealized" data-val="{{ row.unrealized_pnl }}"
+                            class="pos-money {{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
+                            {{ money(row.unrealized_pnl) }}
                         </td>
-                        <td data-label="Dividends" data-val="{{ row.shown_total_dividend_income }}"
-                            class="pos-money {% if (row.shown_total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
-                            {% if (row.shown_total_dividend_income or 0) != 0 %}
-                            {{ money(row.shown_total_dividend_income, 0, true) }}
+                        <td data-label="Dividends" data-val="{{ row.total_dividend_income }}"
+                            class="pos-money {% if (row.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                            {% if (row.total_dividend_income or 0) != 0 %}
+                            {{ money(row.total_dividend_income) }}
                             {% else %}
                             &mdash;
                             {% endif %}
@@ -1089,9 +1089,9 @@
                                 <dl>
                                     <dt>Account</dt><dd>{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</dd>
                                     <dt>Status</dt><dd>{{ row.status }}</dd>
-                                    <dt>Realized</dt><dd>{{ money(row.shown_realized_pnl, 0, true) }}</dd>
-                                    <dt>Unrealized</dt><dd>{{ money(row.shown_unrealized_pnl, 0, true) }}</dd>
-                                    <dt>Dividends</dt><dd>{% if (row.shown_total_dividend_income or 0) != 0 %}{{ money(row.shown_total_dividend_income, 0, true) }}{% else %}—{% endif %}</dd>
+                                    <dt>Realized</dt><dd>{{ money(row.realized_pnl) }}</dd>
+                                    <dt>Unrealized</dt><dd>{{ money(row.unrealized_pnl) }}</dd>
+                                    <dt>Dividends</dt><dd>{% if (row.total_dividend_income or 0) != 0 %}{{ money(row.total_dividend_income) }}{% else %}—{% endif %}</dd>
                                     <dt>W/L</dt><dd>{{ row.num_winners | int }} / {{ row.num_losers | int }}</dd>
                                     <dt>Avg P&amp;L</dt><dd>{{ money(row.avg_pnl_per_trade) }}</dd>
                                     <dt>Avg days</dt><dd>{% if (row.num_individual_trades or 0)|int == 0 %}—{% elif row.avg_days_in_trade is not none %}{{ "{:,.0f}".format(row.avg_days_in_trade) }}{% else %}—{% endif %}</dd>
