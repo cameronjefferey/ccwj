@@ -1602,10 +1602,11 @@ plots options P&L over time MUST follow this rule:
    snapshotted** — defer the credit to `close_date` rather than
    crediting STO premium on STO date. This applies to contracts opened
    before snapshot infrastructure existed for that user.
-4. **Full realized P&L on `close_date`** — when the contract closes
-   (BTC, STC, expiry, assignment, exercise) credit the full
-   `net_cash_flow` (sum of all explicit fills) on the close date and
-   keep that value forever.
+4. **Realized P&L on each close date** — a one-shot close (BTC, STC,
+   expiry, assignment, exercise) credits the full `net_cash_flow` on
+   that date. If the same contract is reduced on several dates, each
+   date gets only its incremental realized result; the final cumulative
+   result still reconciles to `int_option_contracts.realized_pnl`.
 
 **The mart shape:**
 
@@ -1635,7 +1636,9 @@ P&L was earned on day 1 when in reality it was at risk for 7 days and
 crystallized on day 7. For BTC closes the chart drew a $3,000 spike up
 on STO date and an offsetting $3,800 spike down on BTC date — same net,
 totally wrong shape. Realize-on-close fixes this by attributing the
-single net realized P&L to the actual realization moment.
+realized P&L to the actual realization moment. Multi-day partial closes
+remain separate increments; never move all prior realized P&L onto the
+latest reduction date.
 
 **Schwab's snapshot lags actual expiry by 1-2 trading days.** The
 `status` and `close_date` columns in `int_option_contracts` realize

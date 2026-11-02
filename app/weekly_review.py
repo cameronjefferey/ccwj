@@ -7373,33 +7373,31 @@ equity_gl AS (
       AND description = 'Equity Sold'
       {tenant_filter}
 ),
+option_realized_day AS (
+    -- Incremental realized result for this session. A contract reduced on
+    -- several dates has one daily row per date; int_option_contracts holds
+    -- only the cumulative result and latest close date.
+    SELECT
+        tenant_id, account, user_id, trade_symbol,
+        SUM(pnl_today) AS realized_pnl
+    FROM `ccwj-dbt.analytics.int_option_contract_daily_pnl`
+    WHERE date = @day
+      AND is_realized_close
+      {tenant_filter}
+    GROUP BY 1, 2, 3, 4
+),
 option_gl AS (
     -- Active closes (BTC/STC) only. Expiry/assignment/exercise come
-    -- from the settlements UNION so they date to realized_close_date.
-    -- One row per OCC and direction. Same rank as
-    -- ``_select_contract_realized``: a 0 placeholder
-    -- (opened_before_history) must not beat a real loss, and a long
-    -- plus a short on one OCC both stay. The fill join picks the side.
-    SELECT tenant_id, account, user_id, trade_symbol, direction, realized_pnl
-    FROM (
-        SELECT
-            tenant_id,
-            account,
-            user_id,
-            trade_symbol,
-            direction,
-            realized_pnl,
-            ROW_NUMBER() OVER (
-                PARTITION BY tenant_id, account, user_id, trade_symbol, direction
-                ORDER BY
-                    IF(COALESCE(opened_before_history, FALSE), 1, 0),
-                    ABS(COALESCE(realized_pnl, 0)) DESC
-            ) AS rn
-        FROM `ccwj-dbt.analytics.int_option_contracts`
-        WHERE realized_close_date = @day
-          {tenant_filter}
-    )
-    WHERE rn = 1
+    -- from the settlements UNION. The fill join picks the direction.
+    SELECT
+        d.tenant_id, d.account, d.user_id, d.trade_symbol,
+        c.direction, d.realized_pnl
+    FROM option_realized_day d
+    JOIN `ccwj-dbt.analytics.int_option_contracts` c
+      ON (d.tenant_id IS NOT DISTINCT FROM c.tenant_id)
+     AND d.account = c.account
+     AND (d.user_id IS NOT DISTINCT FROM c.user_id)
+     AND d.trade_symbol = c.trade_symbol
 ),
 history_rows AS (
     SELECT
@@ -7444,48 +7442,52 @@ settlements AS (
     -- inference and calendar-close before the Monday broker line).
     -- close_type 'Closed' is a BTC/STC — already in history_rows.
     SELECT
-        tenant_id,
-        account,
-        user_id,
-        realized_close_date AS trade_date,
+        c.tenant_id,
+        c.account,
+        c.user_id,
+        c.realized_close_date AS trade_date,
         CASE
-            WHEN close_type = 'Assigned' THEN 'option_assigned'
-            WHEN close_type = 'Exercised' THEN 'option_exercised'
-            WHEN close_type = 'Settled at expiry (est.)' THEN 'option_settled_est'
+            WHEN c.close_type = 'Assigned' THEN 'option_assigned'
+            WHEN c.close_type = 'Exercised' THEN 'option_exercised'
+            WHEN c.close_type = 'Settled at expiry (est.)' THEN 'option_settled_est'
             ELSE 'option_expired'
         END AS action,
-        trade_symbol,
-        underlying_symbol,
+        c.trade_symbol,
+        c.underlying_symbol,
         CAST(NULL AS STRING) AS description,
         COALESCE(
-            NULLIF(contracts_closed, 0),
-            contracts_sold_to_open,
-            contracts_bought_to_open
+            NULLIF(c.contracts_closed, 0),
+            c.contracts_sold_to_open,
+            c.contracts_bought_to_open
         ) AS quantity,
         CAST(NULL AS FLOAT64) AS price,
         CAST(0 AS FLOAT64) AS amount,
         CAST(0 AS FLOAT64) AS fees,
         CASE
-            WHEN UPPER(CAST(option_type AS STRING)) IN ('P', 'PUT')
+            WHEN UPPER(CAST(c.option_type AS STRING)) IN ('P', 'PUT')
                 THEN 'Put'
             ELSE 'Call'
         END AS instrument_type,
-        option_expiry,
-        realized_pnl,
-        direction
-    FROM `ccwj-dbt.analytics.int_option_contracts`
-    WHERE realized_close_date = @day
-      AND status = 'Closed'
+        c.option_expiry,
+        d.realized_pnl,
+        c.direction
+    FROM `ccwj-dbt.analytics.int_option_contracts` c
+    JOIN option_realized_day d
+      ON (c.tenant_id IS NOT DISTINCT FROM d.tenant_id)
+     AND c.account = d.account
+     AND (c.user_id IS NOT DISTINCT FROM d.user_id)
+     AND c.trade_symbol = d.trade_symbol
+    WHERE c.realized_close_date = @day
+      AND c.status = 'Closed'
       AND (
-            close_type IN (
+            c.close_type IN (
                 'Expired', 'ExpiredOTM', 'Assigned', 'Exercised',
                 'Settled at expiry (est.)')
             OR (
-                close_type IS NULL
-                AND option_expiry = realized_close_date
+                c.close_type IS NULL
+                AND c.option_expiry = c.realized_close_date
             )
           )
-      {tenant_filter}
 ),
 combined AS (
     SELECT * FROM history_rows
@@ -7768,11 +7770,10 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
     trade_rows, cash_rows = [], []
     symbols = []
     seen_sym = set()
-    # DAY_TRADES_QUERY joins option G/L from int_option_contracts, whose
-    # grain is one row per contract.  A contract closed in several broker
-    # fills therefore carries the same full-contract realized_pnl on every
-    # fill row.  Keep every fill for the activity count, but credit the
-    # contract result only once per account/contract/day.
+    # DAY_TRADES_QUERY joins the contract's incremental daily option G/L.
+    # A contract closed in several broker fills that day therefore carries
+    # the same session result on every fill row. Keep every fill for the
+    # activity count, but credit the result once per account/contract/day.
     seen_option_close_gl = set()
     has_unmatched_gl = False
     net_cash = 0.0

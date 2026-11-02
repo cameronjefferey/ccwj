@@ -863,15 +863,14 @@ class TestBuildTodayMovers:
     def test_day_trades_query_carries_fees_for_mover_lots(self):
         assert "f.fees" in DAY_TRADES_QUERY
         assert "c.fees" in DAY_TRADES_QUERY
-        # Contract realized P&L joins on the fill's account and user.
+        # Incremental contract realized P&L joins on the fill's account/user.
         # Tenant + OCC alone repeats each fill once per contract row.
         assert "f.account = o.account" in DAY_TRADES_QUERY
         assert "f.user_id IS NOT DISTINCT FROM o.user_id" in DAY_TRADES_QUERY
-        # One row per OCC and direction. A 0 placeholder must not win,
-        # and a long plus a short on the same OCC both stay.
-        assert "MAX(realized_pnl)" not in DAY_TRADES_QUERY
-        assert "opened_before_history" in DAY_TRADES_QUERY
-        assert "PARTITION BY tenant_id, account, user_id, trade_symbol, direction" in DAY_TRADES_QUERY
+        assert "int_option_contract_daily_pnl" in DAY_TRADES_QUERY
+        assert "SUM(pnl_today) AS realized_pnl" in DAY_TRADES_QUERY
+        assert "date = @day" in DAY_TRADES_QUERY
+        assert "is_realized_close" in DAY_TRADES_QUERY
         assert "o.direction = 'Sold'" in DAY_TRADES_QUERY
         assert "o.direction = 'Bought'" in DAY_TRADES_QUERY
         # Opens posted the day after a same-day expiry still belong here.
@@ -3251,9 +3250,9 @@ class TestSplitDayFills:
         assert out["net_gl"] == 2100.0
 
     def test_split_option_close_credits_contract_realized_once(self):
-        # DAY_TRADES_QUERY joins contract-grain realized_pnl to fill-grain
+        # DAY_TRADES_QUERY joins daily contract realized P&L to fill-grain
         # history. A close split into two broker fills must not report the
-        # full contract result twice.
+        # session result twice.
         contract = "MRVL  260904C00242500"
         df = pd.DataFrame([
             self._row(
@@ -4145,7 +4144,8 @@ class TestDayTradesSettlementQuery:
     def test_unions_contracts_on_realized_close_date(self):
         sql = DAY_TRADES_QUERY
         assert "int_option_contracts" in sql
-        assert "realized_close_date = @day" in sql
+        assert "int_option_contract_daily_pnl" in sql
+        assert "c.realized_close_date = @day" in sql
         assert "ExpiredOTM" in sql
         assert "UNION ALL" in sql
         assert "option_expiry" in sql
@@ -4164,7 +4164,7 @@ class TestDayTradesSettlementQuery:
         assert "THEN 'Bought'" in sql
         # Settlements pass the contract side through. History and the
         # UNION arm must both end on direction or the columns drift.
-        assert "realized_pnl,\n        direction" in sql
+        assert "d.realized_pnl,\n        c.direction" in sql
 
 
 class TestCoveredCallsWithoutShort:
