@@ -305,6 +305,25 @@ def roll_strategy_months(trend_df: pd.DataFrame) -> pd.DataFrame:
     return grouped
 
 
+def reconcile_grouped_strategy_months(
+    rolled_trend: pd.DataFrame,
+    grouped_months: pd.DataFrame,
+    *,
+    dividend_moved: bool,
+) -> pd.DataFrame:
+    """Align mart months with grouped trades and display strategy names."""
+    from app.grouped_trades import overlay_month_counts, replace_month_pnl
+
+    out = rolled_trend
+    if grouped_months is not None and not grouped_months.empty:
+        out = overlay_month_counts(out, grouped_months)
+    if dividend_moved:
+        out = replace_month_pnl(
+            out, grouped_months, ("Buy and Hold", "Dividend"),
+        )
+    return out
+
+
 def dte_breakdown(df: pd.DataFrame, fills=None) -> list:
     """Win rate by days-to-expiration bucket.
 
@@ -799,9 +818,7 @@ def strategies():
             format_record_span,
             grouped_strategies,
             months_from_units,
-            overlay_month_counts,
             overlay_breakdown_counts,
-            replace_month_pnl,
             retag_dividend_units,
             stamp_grouped_counts,
             symbol_trade_counts,
@@ -914,12 +931,9 @@ def strategies():
         recent_wr_3m = {}
         grouped_months = months_from_units(book_units) if book_units else pd.DataFrame()
         rolled_trend = roll_strategy_months(trend_df)
-        if not grouped_months.empty:
-            rolled_trend = overlay_month_counts(rolled_trend, grouped_months)
-        if dividend_moved:
-            rolled_trend = replace_month_pnl(
-                rolled_trend, grouped_months, ("Buy and Hold",),
-            )
+        rolled_trend = reconcile_grouped_strategy_months(
+            rolled_trend, grouped_months, dividend_moved=bool(dividend_moved),
+        )
         grouped_names_with_months = (
             set(grouped_months["strategy"].astype(str)) if not grouped_months.empty else set()
         )
