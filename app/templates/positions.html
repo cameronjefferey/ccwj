@@ -835,22 +835,22 @@
                             </span>
                             {% endfor %}
                         </td>
-                        <td data-label="Total return" data-val="{{ row.total_pnl }}"
-                            class="pos-money {{ 'text-positive' if row.total_pnl >= 0 else 'text-negative' }} fw-bold">
-                            {{ money(row.total_pnl) }}
+                        <td data-label="Total return" data-val="{{ row.shown_total }}"
+                            class="pos-money {{ 'text-positive' if row.shown_total >= 0 else 'text-negative' }} fw-bold">
+                            {{ money(row.shown_total, 0, true) }}
                         </td>
-                        <td data-label="Realized" data-val="{{ row.realized_pnl }}"
-                            class="pos-money {{ 'text-positive' if row.realized_pnl >= 0 else 'text-negative' }}">
-                            {{ money(row.realized_pnl) }}
+                        <td data-label="Realized" data-val="{{ row.shown_realized_pnl }}"
+                            class="pos-money {{ 'text-positive' if row.shown_realized_pnl >= 0 else 'text-negative' }}">
+                            {{ money(row.shown_realized_pnl, 0, true) }}
                         </td>
-                        <td data-label="Unrealized" data-val="{{ row.unrealized_pnl }}"
-                            class="pos-money {{ 'text-positive' if row.unrealized_pnl >= 0 else 'text-negative' }}">
-                            {{ money(row.unrealized_pnl) }}
+                        <td data-label="Unrealized" data-val="{{ row.shown_unrealized_pnl }}"
+                            class="pos-money {{ 'text-positive' if row.shown_unrealized_pnl >= 0 else 'text-negative' }}">
+                            {{ money(row.shown_unrealized_pnl, 0, true) }}
                         </td>
-                        <td data-label="Dividends" data-val="{{ row.total_dividend_income }}"
-                            class="pos-money {% if (row.total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
-                            {% if (row.total_dividend_income or 0) != 0 %}
-                            {{ money(row.total_dividend_income) }}
+                        <td data-label="Dividends" data-val="{{ row.shown_total_dividend_income }}"
+                            class="pos-money {% if (row.shown_total_dividend_income or 0) > 0 %}text-positive{% else %}text-muted{% endif %}">
+                            {% if (row.shown_total_dividend_income or 0) != 0 %}
+                            {{ money(row.shown_total_dividend_income, 0, true) }}
                             {% else %}
                             &mdash;
                             {% endif %}
@@ -925,9 +925,9 @@
                                     <dt>Account</dt><dd>{{ (row.account_display or row.account) | account_label(row.tenant_id) }}</dd>
                                     <dt>Subsector</dt><dd>{% if row.subsector and row.subsector not in ('Unknown', 'Unclassified', 'Other') %}{{ row.subsector }}{% else %}—{% endif %}</dd>
                                     <dt>Strategies</dt><dd>{{ row.strategies }}</dd>
-                                    <dt>Realized</dt><dd>{{ money(row.realized_pnl) }}</dd>
-                                    <dt>Unrealized</dt><dd>{{ money(row.unrealized_pnl) }}</dd>
-                                    <dt>Dividends</dt><dd>{% if (row.total_dividend_income or 0) != 0 %}{{ money(row.total_dividend_income) }}{% else %}—{% endif %}</dd>
+                                    <dt>Realized</dt><dd>{{ money(row.shown_realized_pnl, 0, true) }}</dd>
+                                    <dt>Unrealized</dt><dd>{{ money(row.shown_unrealized_pnl, 0, true) }}</dd>
+                                    <dt>Dividends</dt><dd>{% if (row.shown_total_dividend_income or 0) != 0 %}{{ money(row.shown_total_dividend_income, 0, true) }}{% else %}—{% endif %}</dd>
                                     <dt>W/L</dt><dd>{{ row.num_winners | int }} / {{ row.num_losers | int }}</dd>
                                     <dt>Collected</dt><dd>{% if (row.total_premium_received or 0) != 0 %}{{ money(row.total_premium_received) }}{% else %}—{% endif %}</dd>
                                     <dt>Cost/share</dt><dd>{% if row.equity_per_share is defined and row.equity_per_share is not none %}{{ money(row.equity_per_share) }}{% else %}—{% endif %}</dd>
@@ -938,6 +938,24 @@
                     </tr>
                     {% endfor %}
                 </tbody>
+                <tfoot>
+                    <tr class="fw-semibold">
+                        <td data-label="Account"></td>
+                        <td data-label="Symbol">Total</td>
+                        <td></td>
+                        <td></td>
+                        <td data-label="Total return" class="pos-money {{ 'text-positive' if kpis.total_return >= 0 else 'text-negative' }}">{{ money(kpis.total_return, 0, true) }}</td>
+                        <td data-label="Realized" class="pos-money {{ 'text-positive' if kpis.realized_pnl >= 0 else 'text-negative' }}">{{ money(kpis.realized_pnl, 0, true) }}</td>
+                        <td data-label="Unrealized" class="pos-money {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">{{ money(kpis.unrealized_pnl, 0, true) }}</td>
+                        <td data-label="Dividends" class="pos-money {% if kpis.dividend_income %}text-positive{% else %}text-muted{% endif %}">{% if kpis.dividend_income %}{{ money(kpis.dividend_income, 0, true) }}{% else %}—{% endif %}</td>
+                        <td></td>
+                        <td data-label="Fills">{{ "{:,}".format(kpis.total_trades) }}</td>
+                        <td data-label="W/L"><span class="pos-wl-pair"><span class="text-positive">{{ kpis.num_winners | int }}</span> / <span class="text-negative">{{ kpis.num_losers | int }}</span></span></td>
+                        <td data-label="Collected" class="pos-money text-positive">{{ money(kpis.premium_collected) }}</td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
         {% if all_in_open_note is defined and all_in_open_note %}
@@ -1084,6 +1102,23 @@
                     </tr>
                     {% endfor %}
                 </tbody>
+                <tfoot>
+                    <tr class="fw-semibold">
+                        <td data-label="Account"></td>
+                        <td data-label="Strategy">Total</td>
+                        <td></td>
+                        <td data-label="Total return" class="pos-money {{ 'text-positive' if kpis.total_return >= 0 else 'text-negative' }}">{{ money(kpis.total_return, 0, true) }}</td>
+                        <td data-label="Realized" class="pos-money {{ 'text-positive' if kpis.realized_pnl >= 0 else 'text-negative' }}">{{ money(kpis.realized_pnl, 0, true) }}</td>
+                        <td data-label="Unrealized" class="pos-money {{ 'text-positive' if kpis.unrealized_pnl >= 0 else 'text-negative' }}">{{ money(kpis.unrealized_pnl, 0, true) }}</td>
+                        <td data-label="Dividends" class="pos-money {% if kpis.dividend_income %}text-positive{% else %}text-muted{% endif %}">{% if kpis.dividend_income %}{{ money(kpis.dividend_income, 0, true) }}{% else %}—{% endif %}</td>
+                        <td></td>
+                        <td data-label="Fills">{{ "{:,}".format(kpis.total_trades) }}</td>
+                        <td data-label="W/L"><span class="pos-wl-pair"><span class="text-positive">{{ kpis.num_winners | int }}</span> / <span class="text-negative">{{ kpis.num_losers | int }}</span></span></td>
+                        <td></td>
+                        <td></td>
+                        <td data-label="Collected" class="pos-money text-positive">{{ money(kpis.premium_collected) }}</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
         <p id="strategySearchEmpty" class="ht-search-empty text-muted text-center py-4 mb-0 d-none" role="status">

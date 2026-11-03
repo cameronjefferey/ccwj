@@ -291,6 +291,50 @@ def test_buy_and_hold_month_dollars_follow_the_names_that_stayed():
     assert float(covered["total_pnl"]) == pytest.approx(80)
 
 
+def test_dividend_retag_adds_months_missing_from_the_mart():
+    from app.grouped_trades import months_from_units
+    from app.strategies import (
+        reconcile_grouped_strategy_months,
+        roll_strategy_months,
+    )
+
+    mart = pd.DataFrame([
+        {
+            "strategy": "Buy and Hold", "month_start": "2024-03-01",
+            "trades_closed": 2, "num_winners": 2, "num_losers": 0,
+            "total_pnl": 90, "win_rate_pct": 100, "avg_pnl_per_trade": 45,
+        },
+        {
+            "strategy": "Buy and Hold", "month_start": "2024-04-01",
+            "trades_closed": 1, "num_winners": 0, "num_losers": 1,
+            "total_pnl": -15, "win_rate_pct": 0, "avg_pnl_per_trade": -15,
+        },
+    ])
+    units = [
+        _trade("Dividend", "JEPI", pnl=50, close="2024-03-20"),
+        _trade("Dividend", "JEPI", pnl=-15, close="2024-04-18"),
+        _trade("Buy and Hold", "AAPL", pnl=40, close="2024-03-21"),
+    ]
+
+    replaced = reconcile_grouped_strategy_months(
+        roll_strategy_months(mart),
+        months_from_units(units),
+        dividend_moved=True,
+    )
+
+    dividend = replaced[replaced["strategy"] == "Dividend"]
+    assert dividend["month_start"].dt.strftime("%Y-%m").tolist() == [
+        "2024-03", "2024-04",
+    ]
+    assert dividend["total_pnl"].tolist() == pytest.approx([50, -15])
+    assert dividend["trades_closed"].tolist() == [1, 1]
+    hold = replaced[replaced["strategy"] == "Buy and Hold"]
+    assert hold["total_pnl"].tolist() == pytest.approx([40, 0])
+    assert hold["trades_closed"].tolist() == [1, 0]
+    assert hold["num_winners"].tolist() == [1, 0]
+    assert pd.isna(hold.iloc[1]["win_rate_pct"])
+
+
 def test_sector_shown_rows_add_to_the_header():
     df = pd.DataFrame([
         _position("Technology", "NVDA", "Covered Call", "Ira", 0.0, 1, 0),
