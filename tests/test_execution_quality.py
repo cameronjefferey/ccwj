@@ -172,6 +172,32 @@ def test_profile_summary_buckets_and_copy():
     assert ", 2025" in dated["examples"][0]["desc"]
 
 
+def test_rolls_that_all_finished_in_the_money_do_not_say_the_rest():
+    rows = [
+        _row(trade_symbol=f"SOFI{i}", early_close_vs_expiry_delta=-10.0)
+        for i in range(3)
+    ]
+    rows.append(_row(
+        trade_symbol="R1", was_rolled=True, expired_worthless=False,
+        early_close_vs_expiry_delta=100.0,
+    ))
+    rows.append(_row(
+        trade_symbol="R2", was_rolled=True, expired_worthless=False,
+        early_close_vs_expiry_delta=50.0,
+    ))
+    out = summarize_execution(pd.DataFrame(rows), today=date(2026, 10, 27))
+    rolls = next(f for f in out["findings"] if f["label"] == "Rolls never tested")
+    assert rolls["value"] == "0 of 2"
+    assert rolls["detail"].startswith("Both finished in the money")
+    assert "The rest" not in rolls["detail"]
+    assert "$150" in rolls["detail"]
+    from app.insights import format_execution_brief
+    brief = format_execution_brief(out)
+    assert "net " in brief
+    assert rolls["net_text"] in brief
+    assert "add up to the headline" in brief
+
+
 def test_singleton_early_close_stays_in_the_headline_as_other():
     rows = [_row(early_close_vs_expiry_delta=100.0) for _ in range(4)]
     rows.append(_row(

@@ -230,7 +230,7 @@ def test_coaching_brief_collapses_covered_call_across_accounts(monkeypatch):
     assert "Other strategies" in html
     assert "Long Call" not in html
     assert "Covered Call ·" not in html
-    assert "13 of 178" in html
+    assert "13 scored of 178 closed" in html
     assert "$9,820" in html
     assert "$13,766" in html
     assert "2 accounts" in html
@@ -248,6 +248,106 @@ def test_stale_analysis_coverage_disagrees_with_live_cards():
     assert insights.analysis_coverage_conflict(text, 4, 391) is None
     # A single example ("2 of 3 contracts") is not a coverage claim.
     assert insights.analysis_coverage_conflict("2 of 3 contracts", 15, 410) is None
+
+
+def test_percent_is_the_book_when_no_strategy_clears_three_closes():
+    """A 0% headline next to a real giveback dollar is not the book."""
+    small = [{
+        "strategy": "Long Call",
+        "pnl_given_back": 80.4,
+        "trades": 2,
+        "total_closed": 4,
+        "giveback_pct": 40.0,
+        "days_past_peak": 6.0,
+    }]
+    _rows, headlines = insights._assemble_exit_timing(
+        [], small, 80.4, reliable=2, eligible=4,
+    )
+    assert headlines["percent_includes_small"] is True
+    assert round(headlines["avg_giveback"]) == 40
+    assert round(headlines["avg_days"]) == 6
+    brief = insights._format_exit_timing_brief(headlines, _rows)
+    assert "not in the percent" not in brief
+    assert "and the percent" in brief
+
+
+def test_unscored_closes_stay_in_the_headline_slash(monkeypatch):
+    """Closed contracts with no scored close still count in the slash."""
+    signals = pd.DataFrame([
+        _signal_row(
+            account="Schwab Account", tenant_id="snaptrade:aaaaaaaa",
+            reliable_contracts=10, total_closed=100,
+            total_pnl_given_back=500.0, avg_giveback_pct=25,
+            avg_days_held_past_peak=4,
+        ),
+        _signal_row(
+            strategy="Long Call", account="Schwab Account",
+            tenant_id="snaptrade:aaaaaaaa",
+            reliable_contracts=2, total_closed=40,
+            total_pnl_given_back=80.0, avg_giveback_pct=10,
+            avg_days_held_past_peak=1,
+        ),
+    ])
+    coverage = pd.DataFrame([
+        {"tenant_id": "snaptrade:aaaaaaaa", "strategy": "Covered Call",
+         "eligible_closed": 18, "reliable_contracts": 10, "total_closed": 100},
+        {"tenant_id": "snaptrade:aaaaaaaa", "strategy": "Long Call",
+         "eligible_closed": 4, "reliable_contracts": 2, "total_closed": 40},
+        {"tenant_id": "snaptrade:aaaaaaaa", "strategy": "Naked Call",
+         "eligible_closed": 7, "reliable_contracts": 0, "total_closed": 20},
+    ])
+
+    def fake_parallel(client, specs):
+        return {"coach_signals": signals, "coach_coverage": coverage}
+
+    monkeypatch.setattr("app.routes._bq_parallel", fake_parallel)
+    from app import app as flask_app
+    with flask_app.app_context():
+        _brief, data = insights._build_coaching_brief(
+            None, ["snaptrade:aaaaaaaa"],
+        )
+    rows = data["signals"]
+    assert sum(r["trades"] for r in rows) == data["reliable_contracts"] == 12
+    assert sum(r["total_closed"] for r in rows) == data["eligible_closed"] == 29
+    other = next(r for r in rows if r.get("is_other"))
+    assert other["trades"] == 2
+    assert other["total_closed"] == 11
+    named = next(r for r in rows if r["strategy"] == "Covered Call")
+    assert named["trades"] == 10
+    assert named["total_closed"] == 18
+
+
+def test_recent_gaps_are_not_cut_to_ten(monkeypatch):
+    rows = []
+    for i in range(12):
+        rows.append({
+            "tenant_id": "snaptrade:aaaaaaaa",
+            "underlying_symbol": f"S{i}",
+            "strategy": "Covered Call",
+            "actual_pnl": 10 + i,
+            "peak_unrealized_pnl": 40 + i,
+            "pnl_given_back": 20 + i,
+            "days_held_past_peak": 2,
+            "close_date": "2024-12-29",
+            "pct_of_premium_captured": 10,
+        })
+
+    def fake_parallel(client, specs):
+        return {"coach_exits": pd.DataFrame(rows)}
+
+    monkeypatch.setattr("app.routes._bq_parallel", fake_parallel)
+    from app import app as flask_app
+    with flask_app.app_context():
+        _brief, data = insights._build_coaching_brief(
+            None, ["snaptrade:aaaaaaaa"],
+        )
+    assert len(data["recent_exits"]) == 12
+    assert data["exits_capped"] is False
+    assert "2024" in data["recent_exits"][0]["close_label"]
+    visible = [r for r in data["recent_exits"] if r["given_back"] > 10]
+    assert data["exit_totals"]["given_back"] == sum(
+        r["display_given_back"] for r in visible
+    )
 
 
 def test_ask_markdown_hash_heading_is_a_compact_label():

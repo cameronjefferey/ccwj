@@ -900,6 +900,10 @@ sentence plus symbols, trade days, currently held, and since. The main
 card is the recurring **On the clock / Last week** loop (`app/story_loop.py`)
 in one card, so the profile is worth opening again: on the clock lists
 open options inside 14d (spreads grouped) with the live mark (`+$450 · 3d`).
+The headline counts the rows on the card. When some of those expiries
+sit outside the usual roll or close window, it says how many of the
+listed options are inside it. When more than eight are inside 14 days,
+it says how many of that book are shown.
 Profile summary, execution review (with the early-exit swings), notable
 positions, performance by style, and year by year are closed disclosures.
 **Collected** on the income book is premium received. Hero "currently held" is unique
@@ -914,7 +918,9 @@ compose when both independently clear. Numbers are never invented;
 "naked call" only when `positions_summary` has an open Naked Call and
 no covered-call label. Last week
 reports fills/rolls/premium vs the median completed week and whether that
-looked like them. A last-week roll is a same-day close and open of the
+looked like them. Last week's fill count uses the same placed-trade
+filter as the year rows and busiest day: dividend reinvestments,
+dividends, and cash transfers are not fills. A last-week roll is a same-day close and open of the
 same contract size; a 20-lot close beside a 10-lot open stays two trades.
 The week label includes the year when that week is not in the current
 year. Performance by style has a total row of the displayed whole-dollar
@@ -1159,10 +1165,17 @@ write-up (generate, regenerate, model) and Ask AI stay on the page; a
 saved narration starts closed. Links into a position stay on the recent
 closes. "Realized" is the close result. "Given back" is the gap to the
 peak, not a second P&amp;L. The headline dollar includes strategies with
-fewer than 3 scored closes, in an Other strategies row; the percent
-still weights only the named rows. Displayed strategy dollars add up
-to that headline. The recent-closes table totals those visible closes
-only, and a close from another year shows the year.
+fewer than 3 scored closes, in an Other strategies row. The percent
+weights only the named rows, unless no strategy has 3 scored closes —
+then the percent is the whole book, not 0%. Each row is "N scored of M
+closed", and those counts add up to the headline slash (scored closes
+over closed contracts). A strategy with closed contracts and zero
+scored closes stays in that closed count, on Other strategies.
+Displayed strategy dollars add up to that headline. The recent-closes
+table lists every loaded gap over $10 (the query keeps the 20 largest)
+and totals those visible closes only. A close from another year shows
+the year. Ask AI's execution block includes the roll net, the same
+dollar the profile card adds into the headline.
 
 Users pick a model from the dropdown: **Included** (Flash, Haiku) vs
 **HappyTrader AI** (Gemini Pro, Sonnet, Opus — `tier="paid"` in

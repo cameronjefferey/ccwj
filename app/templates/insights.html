@@ -152,21 +152,19 @@
         .ins-ask-form .btn { align-self: flex-start; min-height: 44px; }
     }
     @media (min-width: 768px) {
-        #insExits { table-layout: fixed; width: 100%; }
-        #insExits th, #insExits td {
-            white-space: normal;
-            overflow: visible;
-            overflow-wrap: break-word;
-            word-break: normal;
-            vertical-align: top;
-        }
-        #insExits td.ins-money { white-space: nowrap; overflow-wrap: normal; }
-    }
-    @media (min-width: 900px) {
-        #insExits { table-layout: auto; }
+        /* Phone rules stop at 767px. From here the table uses its own
+           column widths and scrolls inside .table-responsive instead of
+           wrapping every cell into a tall, sparse grid. */
+        #insExits { table-layout: auto; width: auto; min-width: 100%; }
         #insExits th, #insExits td {
             white-space: nowrap;
             overflow-wrap: normal;
+            vertical-align: middle;
+        }
+        #insExits td.ins-money { white-space: nowrap; }
+    }
+    @media (min-width: 900px) {
+        #insExits th, #insExits td {
             font-size: 1rem;
             padding: .55rem .75rem;
         }
@@ -210,10 +208,10 @@
             </div>
             <div>
                 <div class="ov-k">Scored closes</div>
-                <div class="ov-pct ov-invest">{{ coaching.reliable_contracts }}<span class="ov-quiet"> / {{ coaching.eligible_closed or coaching.total_closed }}</span></div>
+                <div class="ov-pct ov-invest">{{ coaching.reliable_contracts }}<span class="ov-quiet"> / {{ coaching.eligible_closed }}</span></div>
             </div>
         </div>
-        <p class="ov-line">Given back is the gap from the best value while the option was open to the close. Opens are not included. The percent weights the named strategy rows. A strategy with fewer than 3 scored closes stays in the count and in Other strategies, and out of the percent.</p>
+        <p class="ov-line">Given back is the gap from the best value while the option was open to the close. Opens are not included. The first number is scored closes. The second is closed contracts.{% if et.percent_includes_small %} The percent includes every scored close. No strategy has 3 scored closes, so none is left out of the percent.{% else %} The percent weights the named strategy rows. A strategy with fewer than 3 scored closes stays in the count and in Other strategies, and out of the percent.{% endif %}</p>
         {% if paper_only %}<p class="ov-line">These figures are the paper account.</p>{% endif %}
         {% else %}
         <p class="ov-line">How your closes line up: by weekday, by symbol, by how long you held, and by the trade after a loss.</p>
@@ -233,7 +231,7 @@
             <h2 class="section-header">Exit timing</h2>
             <p class="ins-lead">{% if coaching.signals %}By strategy{% if exit_rows %}, then the largest recent gaps{% endif %}.{% else %}Recent closes.{% endif %}</p>
             {% if coaching.signals %}
-            <p class="ins-note">These rows add up to the headline. They are not a second result.</p>
+            <p class="ins-note">The dollars add up to the headline. Scored and closed add up to the slash above. They are not a second result.</p>
             {% endif %}
             {% if coaching.signals %}
             {% for s in coaching.signals %}
@@ -241,7 +239,7 @@
                 <div>
                     <div class="strat-name">{{ s.strategy_label or s.strategy }}</div>
                     <div class="strat-stats">
-                        {{ s.trades }} of {{ s.total_closed }} scored closes
+                        {{ s.trades }} scored of {{ s.total_closed }} closed
                         {% if not s.is_other %}
                         &middot; {{ "{:.0f}".format(s.days_past_peak) }} days after the high
                         {% endif %}
@@ -262,6 +260,7 @@
             <div class="strat-row">
                 <div>
                     <div class="strat-name">Total</div>
+                    <div class="strat-stats">{{ coaching.reliable_contracts }} scored of {{ coaching.eligible_closed }} closed</div>
                 </div>
                 <div class="strat-giveback text-negative">
                     <span class="lbl">Given back</span>
@@ -272,7 +271,7 @@
             {% endif %}
 
             {% if exit_rows %}
-            <p class="ins-note">Each row is one contract. The best value is stored per contract, so a spread is not combined here. Closed date is the day the contract ended. These are the largest gaps in the last 90 days. This total is these closes, not the headline.</p>
+            <p class="ins-note">Each row is one contract. The best value is stored per contract, so a spread is not combined here. Closed date is the day the contract ended. These are the gaps over $10 in the last 90 days{% if coaching.exits_capped %}, the 20 largest{% endif %}. This total is these closes, not the headline.</p>
             <div class="table-responsive" style="margin-top:1rem;">
                 <table class="table table-sm align-middle mb-0" id="insExits">
                     <thead>

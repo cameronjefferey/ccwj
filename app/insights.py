@@ -820,19 +820,111 @@ def _assemble_exit_timing(named, small, full_dollars, reliable, eligible):
     if headlines is None:
         eligible_n = int(eligible or 0)
         reliable_n = int(reliable or 0)
+        weight = sum(int(s.get("trades") or 0) for s in small) or 1
+        # No strategy cleared the row minimum. A 0% headline next to a
+        # real giveback dollar reads as "nothing was given back."
         headlines = {
             "total_given_back": float(full_dollars or 0),
-            "avg_giveback": 0.0,
-            "avg_days": 0.0,
+            "avg_giveback": float(sum(
+                float(s.get("giveback_pct") or 0) * int(s.get("trades") or 0)
+                for s in small
+            ) / weight),
+            "avg_days": float(sum(
+                float(s.get("days_past_peak") or 0) * int(s.get("trades") or 0)
+                for s in small
+            ) / weight),
             "reliable_contracts": reliable_n,
             "total_closed": eligible_n,
             "pct_reliable": (
                 round(reliable_n / eligible_n * 100, 0) if eligible_n else 0
             ),
+            "percent_includes_small": True,
         }
+    else:
+        headlines["percent_includes_small"] = False
     headlines["total_given_back"] = float(full_dollars or 0)
     headlines["display_total"] = sum(shown)
     return displayed, headlines
+
+
+def _window_closed(window_by_strategy, strategy):
+    """Marks-window closed count for one strategy name.
+
+    A null strategy is labeled Other Option on the card and may be
+    blank on the coverage query. Lifetime closed is not a substitute.
+    """
+    key = str(strategy or "")
+    if key in window_by_strategy:
+        return window_by_strategy[key]
+    if key == "Other Option":
+        for alias in ("", "None", "nan"):
+            if alias in window_by_strategy:
+                return window_by_strategy[alias]
+    return None
+
+
+def align_exit_counts(rows, reliable, eligible):
+    """Make strategy counts add up to the headline scored/closed pair.
+
+    ``trades`` is scored closes. ``total_closed`` is closed contracts
+    (the marks window when that frame is loaded). A strategy with
+    closed contracts and zero scored closes still belongs in the
+    closed count, on Other strategies.
+    """
+    if not rows:
+        return rows
+    reliable = int(reliable or 0)
+    eligible = int(eligible or 0)
+
+    def _scored():
+        return sum(int(r.get("trades") or 0) for r in rows)
+
+    def _closed():
+        return sum(int(r.get("total_closed") or 0) for r in rows)
+
+    gap_scored = reliable - _scored()
+    gap_closed = eligible - _closed()
+    other = next((r for r in rows if r.get("is_other")), None)
+    if (gap_scored > 0 or gap_closed > 0) and other is None:
+        other = {
+            "strategy": "Other strategies",
+            "strategy_label": "Other strategies",
+            "is_other": True,
+            "pnl_given_back": 0.0,
+            "display_given_back": 0,
+            "trades": 0,
+            "total_closed": 0,
+            "giveback_pct": 0.0,
+            "days_past_peak": 0.0,
+            "pct_premium_captured": 0.0,
+            "account_count": 0,
+        }
+        rows.append(other)
+    if other is not None and (gap_scored > 0 or gap_closed > 0):
+        if gap_scored > 0:
+            other["trades"] = int(other.get("trades") or 0) + gap_scored
+        if gap_closed > 0:
+            other["total_closed"] = int(other.get("total_closed") or 0) + gap_closed
+        if int(other.get("trades") or 0) > int(other.get("total_closed") or 0):
+            other["total_closed"] = int(other["trades"])
+
+    excess = _closed() - eligible
+    if excess > 0:
+        donors = sorted(
+            rows,
+            key=lambda r: int(r.get("total_closed") or 0) - int(r.get("trades") or 0),
+            reverse=True,
+        )
+        for row in donors:
+            if excess <= 0:
+                break
+            room = int(row.get("total_closed") or 0) - int(row.get("trades") or 0)
+            if room <= 0:
+                continue
+            cut = min(room, excess)
+            row["total_closed"] = int(row["total_closed"]) - cut
+            excess -= cut
+    return rows
 
 
 def stamp_recent_exits(rows, anchor=None):
@@ -951,12 +1043,22 @@ def _format_exit_timing_brief(headlines, rows):
     for s in rows:
         dollars = _display_dollars(s)
         label = s.get("strategy_label") or s["strategy"]
+        count = (
+            f"{s['trades']} scored of {int(s.get('total_closed') or 0)} closed"
+        )
         if s.get("is_other"):
+            if headlines.get("percent_includes_small"):
+                percent_note = (
+                    "These closes are in the headline dollar, the scored-close "
+                    "count, and the percent."
+                )
+            else:
+                percent_note = (
+                    "These closes are in the headline dollar and the scored-close "
+                    "count. They are not in the percent."
+                )
             lines.append(
-                f"- {label}: ${dollars:,.0f} given back, "
-                f"{s['trades']} of {int(s.get('total_closed') or 0)} scored closes. "
-                "These closes are in the headline dollar and the scored-close "
-                "count. They are not in the percent."
+                f"- {label}: ${dollars:,.0f} given back, {count}. {percent_note}"
             )
             continue
         accounts = ""
@@ -966,7 +1068,7 @@ def _format_exit_timing_brief(headlines, rows):
             f"- {label}: ${dollars:,.0f} given back, "
             f"{s['giveback_pct']:.0f}% of the best value, "
             f"{s['days_past_peak']:.0f} days after the high, "
-            f"{s['trades']} of {int(s.get('total_closed') or 0)} scored closes"
+            f"{count}"
             f"{accounts}."
         )
     return "\n".join(lines)
@@ -1108,6 +1210,7 @@ def _build_coaching_brief(client, tenant_ids):
         "reliable_contracts": 0,
         "pct_reliable": 0,
         "exit_timing": None,
+        "exits_capped": False,
     }
 
     disco_cards = []
@@ -1184,15 +1287,22 @@ def _build_coaching_brief(client, tenant_ids):
             if eligible_by_key:
                 window_by_strategy = {}
                 for (_tid, strategy), n in eligible_by_key.items():
-                    window_by_strategy[strategy] = window_by_strategy.get(strategy, 0) + n
+                    window_by_strategy[strategy] = (
+                        window_by_strategy.get(strategy, 0) + n
+                    )
                 for s in all_rows:
-                    window = window_by_strategy.get(str(s.get("strategy") or ""))
-                    if window is None:
-                        continue
-                    s["total_closed"] = window
                     trades = int(s.get("trades") or 0)
+                    window = _window_closed(window_by_strategy, s.get("strategy"))
+                    if window is None:
+                        # A lifetime total beside a window headline
+                        # cannot be reconciled. Keep the scored count
+                        # until the leftover closed contracts land on Other.
+                        s["total_closed"] = trades
+                    else:
+                        s["total_closed"] = max(int(window), trades)
                     s["pct_reliable"] = (
-                        round(trades / window * 100, 0) if window else 0
+                        round(trades / s["total_closed"] * 100, 0)
+                        if s["total_closed"] else 0
                     )
             named = [
                 s for s in all_rows
@@ -1205,8 +1315,9 @@ def _build_coaching_brief(client, tenant_ids):
             full_given_back = float(signals_df["total_pnl_given_back"].sum())
             strat_rows, headlines = _assemble_exit_timing(
                 named, small, full_given_back, reliable_contracts,
-                eligible_closed or coaching_data["total_closed"],
+                eligible_closed,
             )
+            align_exit_counts(strat_rows, reliable_contracts, eligible_closed)
             coaching_data["signals"] = strat_rows
             coaching_data["exit_timing"] = headlines
             if headlines:
@@ -1226,7 +1337,13 @@ def _build_coaching_brief(client, tenant_ids):
         exits_df = _filter_df_by_tenant_ids(
             batch.get("coach_exits", pd.DataFrame()), tenant_ids)
         if exits_df is not None and not exits_df.empty:
-            for _, r in exits_df.head(10).iterrows():
+            # The query already keeps the 20 largest gaps. Slicing to 10
+            # dropped closes the total then could not include.
+            last_gap = float(exits_df.iloc[-1].get("pnl_given_back") or 0)
+            coaching_data["exits_capped"] = (
+                len(exits_df) >= 20 and last_gap > 10
+            )
+            for _, r in exits_df.iterrows():
                 coaching_data["recent_exits"].append({
                     "symbol": r.get("underlying_symbol", ""),
                     "strategy": r.get("strategy", ""),
@@ -1682,6 +1799,34 @@ def _call_coach_question(brief_text, question, model_key=None,
     )
 
 
+def format_execution_brief(summary):
+    """Ask AI copy of the Trader Profile execution card.
+
+    Rolls print a count and a net. The net is the dollar that adds into
+    the headline. Leaving it off the brief makes the rows miss the headline.
+    """
+    if not summary:
+        return None
+    lines = ["EXECUTION REVIEW"]
+    headline = summary.get("headline") or {}
+    if headline.get("value"):
+        lines.append(
+            f"- {headline.get('value')} {headline.get('text') or ''}. "
+            f"{headline.get('sub') or ''}".strip()
+        )
+    for row in summary.get("findings") or []:
+        value = row.get("value")
+        net = row.get("net_text")
+        if net:
+            value = f"{value}, net {net}"
+        lines.append(
+            f"- {row.get('label')}: {value} — {row.get('detail')}"
+        )
+    if summary.get("adds_up"):
+        lines.append(f"- {summary['adds_up']}")
+    return "\n".join(lines) if len(lines) > 1 else None
+
+
 def _execution_brief_text(client, tenant_ids):
     """Plain-text rollup of the execution-review card, or None."""
     from app.execution_quality import EXECUTION_REVIEW_QUERY, summarize_execution
@@ -1696,20 +1841,7 @@ def _execution_brief_text(client, tenant_ids):
     except Exception as exc:
         app.logger.warning("insights: execution brief failed: %s", exc)
         return None
-    if not summary:
-        return None
-    lines = ["EXECUTION REVIEW"]
-    headline = summary.get("headline") or {}
-    if headline.get("value"):
-        lines.append(
-            f"- {headline.get('value')} {headline.get('text') or ''}. "
-            f"{headline.get('sub') or ''}".strip()
-        )
-    for row in summary.get("findings") or []:
-        lines.append(
-            f"- {row.get('label')}: {row.get('value')} — {row.get('detail')}"
-        )
-    return "\n".join(lines) if len(lines) > 1 else None
+    return format_execution_brief(summary)
 
 
 def _prior_analysis_brief(user_id):
@@ -1935,6 +2067,7 @@ def insights():
         "reliable_contracts": 0,
         "pct_reliable": 0,
         "exit_timing": None,
+        "exits_capped": False,
     }
     client = None
     try:

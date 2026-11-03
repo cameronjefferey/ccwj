@@ -309,10 +309,27 @@ def summarize_execution(df, min_graded=MIN_GRADED_PROFILE, today=None):
         sidestepped = float(rolls.loc[
             rolls["early_close_vs_expiry_delta"] > 0,
             "early_close_vs_expiry_delta"].sum())
-        detail = "The old strike expired worthless — insurance, not rescue."
-        if sidestepped > 1:
-            detail = (f"The rest finished in the money — rolling sidestepped "
-                      f"{_money(sidestepped)}.")
+        n_rolls = len(rolls)
+        if n_rolls == 1:
+            all_of = "It"
+        elif n_rolls == 2:
+            all_of = "Both"
+        else:
+            all_of = f"All {n_rolls}"
+        if untested <= 0:
+            detail = f"{all_of} finished in the money."
+            if sidestepped > 1:
+                detail = (
+                    f"{all_of} finished in the money — rolling sidestepped "
+                    f"{_money(sidestepped)}."
+                )
+        elif sidestepped > 1:
+            detail = (
+                f"The rest finished in the money — rolling sidestepped "
+                f"{_money(sidestepped)}."
+            )
+        else:
+            detail = "The old strike expired worthless — insurance, not rescue."
         findings.append({
             "label": "Rolls never tested",
             "value": f"{untested} of {len(rolls)}",
