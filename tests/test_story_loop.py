@@ -488,6 +488,53 @@ def _history_with_last_week(*, last_fills, typical_fills=6, weeks=6):
     return pd.DataFrame(rows)
 
 
+def test_clock_headline_counts_rows_outside_the_usual_window():
+    exec_df = pd.DataFrame([
+        _exec(symbol=f"S{i}", was_rolled=True, dte_at_close=3,
+              gradeable_early_close=True)
+        for i in range(8)
+    ])
+    open_df = pd.DataFrame([
+        _open(symbol="NEAR", trade_symbol="NEAR  260827P00210000",
+              option_expiry=_TODAY + timedelta(days=2)),
+        _open(symbol="FAR", trade_symbol="FAR   260906P00210000",
+              option_expiry=_TODAY + timedelta(days=12)),
+    ])
+    out = build_this_week(open_df, exec_df, today=_TODAY)
+    assert len(out["watches"]) == 2
+    assert out["headline"] == (
+        "1 of 2 open options is inside your usual roll window."
+    )
+
+
+def test_clock_headline_names_options_past_the_cap():
+    rows = [
+        _open(symbol=f"S{i}", trade_symbol=f"S{i}   260828P00210000",
+              option_expiry=_TODAY + timedelta(days=i + 1))
+        for i in range(9)
+    ]
+    out = build_this_week(pd.DataFrame(rows), None, today=_TODAY)
+    assert len(out["watches"]) == 8
+    assert out["headline"] == (
+        "8 of 9 open options expiring in the next 14 days."
+    )
+
+
+def test_last_week_ignores_reinvested_dividends():
+    trades = _history_with_last_week(last_fills=2, typical_fills=6, weeks=6)
+    drips = pd.DataFrame([
+        _trade(_LAST_MON + timedelta(days=d), symbol="JEPI",
+               action="dividend_reinvest", amount=-6.0, tsym="JEPI")
+        for d in range(4)
+    ])
+    mixed = pd.concat([trades, drips], ignore_index=True)
+    out = build_last_week(mixed, today=_TODAY)
+    fills = next(f for f in out["facts"] if f["label"] == "Fills")
+    assert fills["value"] == "2"
+    quiet = build_last_week(drips, today=_TODAY)
+    assert quiet["activity"]["fills"] == 0
+
+
 def test_last_week_quiet_is_unlike_when_they_usually_trade():
     assert MIN_BASELINE_WEEKS <= 6
     trades = _history_with_last_week(last_fills=0, typical_fills=6, weeks=6)

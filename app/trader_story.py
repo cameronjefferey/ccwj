@@ -32,7 +32,11 @@ from app.execution_quality import (
     OPEN_OPTION_RECORD_QUERY,
     summarize_execution,
 )
-from app.story_loop import compose_story_loop, today_for_user
+from app.story_loop import (
+    NOT_PLACED_TRADE_ACTIONS,
+    compose_story_loop,
+    today_for_user,
+)
 from app.position_story import (
     _behavior_candidates,
     _money,
@@ -388,10 +392,8 @@ def _compose_profile(totals, busiest, option_record=None):
 
 
 # Fills the trader placed. DRIPs still narrate on Position Detail; they
-# must not inflate profile fill counts or "busiest day".
-_NOT_PLACED_TRADE_ACTIONS = frozenset({
-    "dividend_reinvest", "dividend", "cash_transfer",
-})
+# must not inflate profile fill counts, busiest day, or last week.
+_NOT_PLACED_TRADE_ACTIONS = NOT_PLACED_TRADE_ACTIONS
 
 
 def _placed_trades_df(trades_df):

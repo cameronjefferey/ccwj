@@ -30,6 +30,11 @@ WATCH_HORIZON_DAYS = 14
 # that window plus a small cushion.
 USUAL_WINDOW_PAD = 2
 THIS_WEEK_CAP = 8
+# Same placed-trade filter as the profile year rows and busiest day.
+# story_loop cannot import trader_story (that module imports this one).
+NOT_PLACED_TRADE_ACTIONS = frozenset({
+    "dividend_reinvest", "dividend", "cash_transfer",
+})
 # Leftover-vs-expiry claim at a DTE needs a real sample (same bar as
 # the Execution Review card). Below this we only show live P&L.
 MIN_LEFTOVER_SAMPLE = 5
@@ -110,7 +115,11 @@ def _prep_trades(df):
     out["_sym"] = out["symbol"].astype(str).str.strip().str.upper()
     out["_amt"] = pd.to_numeric(out.get("amount"), errors="coerce").fillna(0.0)
     out["_action"] = out["action"].astype(str)
-    return out.dropna(subset=["_d"])
+    out = out.dropna(subset=["_d"])
+    # Dividend reinvestments are not fills. The year rows and busiest
+    # day already drop them; counting them here made last week louder
+    # than the rest of the profile.
+    return out[~out["_action"].isin(NOT_PLACED_TRADE_ACTIONS)]
 
 
 def _in_range(series, start, end):
@@ -1075,6 +1084,50 @@ def _watch_item(members, habit, typical_dte, leftover=None, hold=None,
     }
 
 
+def _clock_headline(items, n_all, habit):
+    """Count the rows on the card, and say when the list is a slice.
+
+    "2 positions inside your usual roll window" over a list of 5 reads
+    as if two rows were missing. When every shown row is inside the
+    window, the shorter sentence stays.
+    """
+    n = len(items)
+    usual_n = sum(1 for item in items if item.get("in_usual_window"))
+    window = "roll" if habit == "roll" else "close"
+    if n < n_all:
+        base = (
+            f"{n} of {n_all} open options expiring "
+            f"in the next {WATCH_HORIZON_DAYS} days"
+        )
+        if 0 < usual_n < n:
+            verb = "is" if usual_n == 1 else "are"
+            return (
+                f"{base}. {usual_n} of these {n} {verb} inside "
+                f"your usual {window} window."
+            )
+        if usual_n == n and usual_n:
+            # The hidden rows are past the cap. Do not call them outside
+            # the window — only the rows on the card were checked.
+            return (
+                f"{base}. These {n} are inside your usual {window} window."
+            )
+        return base + "."
+    if usual_n and usual_n < n:
+        verb = "is" if usual_n == 1 else "are"
+        return (
+            f"{usual_n} of {n} open options {verb} inside "
+            f"your usual {window} window."
+        )
+    if habit == "roll" and usual_n:
+        return (f"{usual_n} position{'s' if usual_n != 1 else ''} inside "
+                f"your usual roll window.")
+    if usual_n:
+        return (f"{usual_n} position{'s' if usual_n != 1 else ''} inside "
+                f"your usual close window.")
+    return (f"{n} open option{'s' if n != 1 else ''} expiring "
+            f"in the next {WATCH_HORIZON_DAYS} days.")
+
+
 def build_this_week(open_df, exec_df=None, today=None, strategies_df=None):
     """Forward-looking watch: expiries in the next 14 days, questioned
     against the trader's own record — leftover, hold, habit, symbol."""
@@ -1096,18 +1149,9 @@ def build_this_week(open_df, exec_df=None, today=None, strategies_df=None):
             members, habit, typical_dte,
             strategies_df=strategies_df, exec_df=exec_df))
     items.sort(key=lambda x: (not x["in_usual_window"], x["days_left"], x["symbol"]))
+    n_all = len(items)
     items = items[:THIS_WEEK_CAP]
-    n = len(items)
-    usual_n = sum(1 for i in items if i["in_usual_window"])
-    if habit == "roll" and usual_n:
-        headline = (f"{usual_n} position{'s' if usual_n != 1 else ''} inside "
-                    f"your usual roll window.")
-    elif usual_n:
-        headline = (f"{usual_n} position{'s' if usual_n != 1 else ''} inside "
-                    f"your usual close window.")
-    else:
-        headline = (f"{n} open option{'s' if n != 1 else ''} expiring "
-                    f"in the next {WATCH_HORIZON_DAYS} days.")
+    headline = _clock_headline(items, n_all, habit)
     sub = "Every early close also removed risk — this is the record, not a recommendation."
     if typical_dte is not None and not any(i.get("leftover") for i in items):
         sub = (f"You typically close shorts around {typical_dte} DTE. " + sub)
