@@ -1121,36 +1121,69 @@ def _assignment_chain(fills, contract, as_of):
     Walks backward from the assigned contract: a sell-to-open that shares
     a day with a buy-to-close of another put is a roll. The long leg of a
     put spread opened that same day is included so the credit is the net.
+    Every cash fill in the final episode of each short contract is retained,
+    so scaling into the rolled contract cannot hide the preceding roll.
     """
     puts = [fill for fill in fills if fill.option_type == "put" and not fill.synthetic]
     included = set()
     cursor = contract
+    cursor_as_of = as_of
+    anchor_close_id = None
     seen = set()
     while cursor and cursor not in seen:
         seen.add(cursor)
+        episode_ids = (
+            _short_contract_episode_cash_ids_at_fill(
+                puts, cursor, anchor_close_id,
+            )
+            if anchor_close_id is not None
+            else _latest_short_contract_cash_ids(
+                puts, cursor, cursor_as_of,
+            )
+        )
         opens = [
             fill for fill in puts
             if fill.contract == cursor
             and fill.action == "option_sell_to_open"
-            and (as_of is None or fill.date <= as_of)
+            and fill.id in episode_ids
         ]
         if not opens:
             break
-        opened = max(opens, key=lambda fill: (fill.date, fill.id))
-        included.add(opened.id)
-        closes = [
-            fill for fill in puts
-            if fill.action == "option_buy_to_close"
-            and fill.date == opened.date
-            and fill.contract != cursor
-            and fill.contract not in seen
-            and _same_fill_qty(fill, opened)
-        ]
-        if not closes:
+        included.update(episode_ids)
+        roll_candidates = []
+        for opened in sorted(opens, key=lambda fill: (fill.date, fill.id)):
+            closes = [
+                fill for fill in puts
+                if fill.action == "option_buy_to_close"
+                and fill.date == opened.date
+                and fill.contract != cursor
+                and fill.contract not in seen
+                and _same_fill_qty(fill, opened)
+            ]
+            if not closes:
+                continue
+            roll_candidates.extend((opened, closed) for closed in closes)
+        # Several scale-in STOs on the roll date may all match one predecessor
+        # close; that predecessor is still unambiguous. More than one distinct
+        # close is not — do not invent which earlier put became this one.
+        closes_by_id = {
+            closed.id: closed for _opened, closed in roll_candidates
+        }
+        if len(closes_by_id) != 1:
             break
-        closes.sort(key=lambda fill: (abs((fill.strike or 0) - (opened.strike or 0)), fill.id))
-        included.add(closes[0].id)
-        cursor = closes[0].contract
+        closed = next(iter(closes_by_id.values()))
+        opened = min(
+            (
+                candidate_open
+                for candidate_open, candidate_close in roll_candidates
+                if candidate_close.id == closed.id
+            ),
+            key=lambda fill: (fill.date, fill.id),
+        )
+        included.add(closed.id)
+        cursor = closed.contract
+        cursor_as_of = opened.date
+        anchor_close_id = closed.id
 
     sto_fills = [fill for fill in puts if fill.id in included and fill.action == "option_sell_to_open"]
     for opened in sto_fills:
@@ -1163,6 +1196,62 @@ def _assignment_chain(fills, contract, as_of):
                 continue
             included.add(fill.id)
     return included
+
+
+def _latest_short_contract_cash_ids(fills, contract, as_of):
+    """Cash fills in the latest short episode of ``contract`` by ``as_of``.
+
+    Unlike ``_current_open_contract_cash_ids``, retain the final episode
+    after assignment or expiry closes it. Assigned-share All-in still needs
+    the credits and partial-close debits that produced those shares.
+    """
+    qty = 0.0
+    episode_ids = set()
+    latest_ids = set()
+    ordered = sorted(fills, key=lambda fill: (fill.date, fill.id))
+    for fill in ordered:
+        if fill.contract != contract:
+            continue
+        if as_of is not None and fill.date > as_of:
+            continue
+        amount = abs(fill.raw_qty)
+        if fill.action == "option_sell_to_open":
+            if qty <= _EPS:
+                episode_ids = set()
+            qty += amount
+            episode_ids.add(fill.id)
+            latest_ids = set(episode_ids)
+            continue
+        if fill.action not in _CLOSE_QTY or qty <= _EPS:
+            continue
+        if fill.action in _CASH_ACTIONS:
+            episode_ids.add(fill.id)
+        qty = max(0.0, qty - amount)
+        latest_ids = set(episode_ids)
+    return latest_ids
+
+
+def _short_contract_episode_cash_ids_at_fill(fills, contract, anchor_id):
+    """Cash fills in the short episode containing ``anchor_id``."""
+    qty = 0.0
+    episode_ids = set()
+    ordered = sorted(fills, key=lambda fill: (fill.date, fill.id))
+    for fill in ordered:
+        if fill.contract != contract:
+            continue
+        amount = abs(fill.raw_qty)
+        if fill.action == "option_sell_to_open":
+            if qty <= _EPS:
+                episode_ids = set()
+            qty += amount
+            episode_ids.add(fill.id)
+        elif fill.action in _CLOSE_QTY and qty > _EPS:
+            if fill.action in _CASH_ACTIONS:
+                episode_ids.add(fill.id)
+            qty = max(0.0, qty - amount)
+        if fill.id == anchor_id:
+            return set(episode_ids)
+    return set()
 
 
 def _group_fills(fills, chain_ids):

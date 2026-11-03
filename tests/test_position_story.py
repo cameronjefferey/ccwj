@@ -93,6 +93,66 @@ def test_roll_up_and_out_detected():
     assert len(roll_day["events"]) == 2  # raw fills still listed underneath
 
 
+def test_roll_into_spread_does_not_apply_replacement_short_twice():
+    """The replacement short is both a roll leg and a possible spread leg.
+
+    Its credit and state belong to the roll once. The long wing remains a
+    separate fill because the tape has no order id proving one combined order.
+    """
+    df = _trades([
+        (date(2024, 11, 1), "option_sell_to_open", "Call",
+         "RKLB 241115C00011000", 1, 1.00, 100.0),
+        (date(2024, 11, 12), "option_buy_to_close", "Call",
+         "RKLB 241115C00011000", 1, 1.50, -150.0),
+        (date(2024, 11, 12), "option_sell_to_open", "Call",
+         "RKLB 241220C00013000", 1, 3.00, 300.0),
+        (date(2024, 11, 12), "option_buy_to_open", "Call",
+         "RKLB 241220C00015000", 1, 1.00, -100.0),
+    ])
+
+    items, markers, stats = build_position_story(df, None)
+    text = _headlines(items)
+    roll_day = next(marker for marker in markers if marker["d"] == "2024-11-12")
+
+    assert stats["rolls"] == 1
+    assert stats["premium_collected"] == 400.0
+    assert stats["long_risk"] == 100.0
+    assert "Rolled the short $11 call up and out" in text
+    assert "Bought 1 contract of the $15 call" in text
+    assert "Opened a call spread" not in text
+    assert [tip["amt"] for tip in roll_day["tips"]] == ["+$150", "−$100"]
+    assert not any("spread" in tip["label"].lower() for tip in roll_day["tips"])
+
+
+def test_legged_wing_before_roll_keeps_its_own_cash_and_narrative():
+    """A wing bought first must not disappear into the later roll."""
+    df = _trades([
+        (date(2024, 11, 1), "option_sell_to_open", "Call",
+         "RKLB 241115C00011000", 1, 1.00, 100.0),
+        (date(2024, 11, 11), "option_buy_to_open", "Call",
+         "RKLB 241220C00015000", 1, 1.00, -100.0),
+        (date(2024, 11, 12), "option_buy_to_close", "Call",
+         "RKLB 241115C00011000", 1, 1.50, -150.0),
+        (date(2024, 11, 12), "option_sell_to_open", "Call",
+         "RKLB 241220C00013000", 1, 3.00, 300.0),
+    ])
+
+    items, markers, stats = build_position_story(df, None)
+    text = _headlines(items)
+    tips_by_day = {
+        marker["d"]: marker["tips"]
+        for marker in markers
+    }
+
+    assert stats["premium_collected"] == 400.0
+    assert stats["long_risk"] == 100.0
+    assert "Bought 1 contract of the $15 call" in text
+    assert "Rolled the short $11 call up and out" in text
+    assert "Opened a call spread" not in text
+    assert [tip["amt"] for tip in tips_by_day["2024-11-11"]] == ["−$100"]
+    assert [tip["amt"] for tip in tips_by_day["2024-11-12"]] == ["+$150"]
+
+
 def test_wheel_full_cycle_narrated():
     df = _trades([
         # No shares -> short put = wheel opening.
