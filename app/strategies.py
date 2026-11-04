@@ -316,10 +316,15 @@ def reconcile_grouped_strategy_months(
 
     out = rolled_trend
     if grouped_months is not None and not grouped_months.empty:
-        out = overlay_month_counts(out, grouped_months)
+        out = overlay_month_counts(
+            out,
+            grouped_months,
+            preserve_missing=("Dividend",) if dividend_moved else (),
+        )
     if dividend_moved:
         out = replace_month_pnl(
             out, grouped_months, ("Buy and Hold", "Dividend"),
+            preserve_missing=("Dividend",),
         )
     return out
 
