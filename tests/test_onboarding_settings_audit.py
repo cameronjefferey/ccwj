@@ -158,6 +158,53 @@ def test_onboarding_warehouse_ready_accepts_a_balance_only_tenant(monkeypatch):
     assert onboarding_warehouse_ready(["snaptrade:cash"]) is False
 
 
+def _stub_connected_with_rows(monkeypatch):
+    monkeypatch.setattr(
+        "app.marketing.get_tenant_ids_for_user",
+        lambda uid: ["snaptrade:cash"],
+    )
+    monkeypatch.setattr("app.snaptrade.snaptrade_enabled", lambda: True)
+    monkeypatch.setattr(
+        "app.models.get_snaptrade_accounts",
+        lambda uid: [{"snaptrade_account_id": "cash-1"}],
+    )
+    monkeypatch.setattr(
+        "app.cache_ops.warehouse_tenants_present",
+        lambda ids: {"snaptrade:cash"},
+    )
+
+
+def test_post_sync_landing_leads_with_overview_and_skips_the_profile(monkeypatch):
+    """After the survey, Get started must say the data is in. The long
+    first-look profile is a later visit, not this arrival."""
+    _stub_connected_with_rows(monkeypatch)
+
+    def _profile():
+        raise AssertionError("first-look profile must not render on from_sync")
+
+    monkeypatch.setattr("app.first_look.render_first_look_view", _profile)
+    client = app.test_client()
+    _login(client, monkeypatch)
+    html = client.get("/get-started?from_sync=1").get_data(as_text=True)
+    assert "Your data is in" in html
+    assert "Go to Overview" in html
+    assert "Here's what we found." not in html
+    assert html.index("Go to Overview") < html.index("Connect another account")
+    assert 'class="btn btn-primary btn-lg"' in html
+
+
+def test_later_get_started_still_opens_the_profile(monkeypatch):
+    _stub_connected_with_rows(monkeypatch)
+    monkeypatch.setattr(
+        "app.first_look.render_first_look_view",
+        lambda: "PROFILE",
+    )
+    client = app.test_client()
+    _login(client, monkeypatch)
+    html = client.get("/get-started").get_data(as_text=True)
+    assert html == "PROFILE"
+
+
 def test_cash_only_account_leaves_the_still_syncing_screen(monkeypatch):
     monkeypatch.setattr(
         "app.marketing.get_tenant_ids_for_user",
@@ -205,6 +252,9 @@ def test_connected_account_without_rows_stays_on_the_syncing_screen(monkeypatch)
     assert "The first sync is still running." in html
     assert "Refresh status" in html
     assert "Your data is in" not in html
+    waiting = client.get("/get-started?from_sync=1").get_data(as_text=True)
+    assert "from_sync=1" in waiting
+    assert "Your data is in" not in waiting
 
 
 def test_nickname_for_another_login_does_not_claim_success(monkeypatch):

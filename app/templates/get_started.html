@@ -71,9 +71,32 @@
         {% include "_early_broker_note.html" %}
 
         {% if snaptrade_connected %}
-        {# Already linked. Profile (first_look) renders before this when
-           warehouse rows exist. This branch is the manage path while
-           data is still landing, or if that profile can't be built. #}
+        {# Already linked. A later visit with warehouse rows renders the
+           first-look profile before this template. The arrival right
+           after the survey or a first CSV skips that profile and uses
+           the has_data hero below. This branch is also the manage path
+           while data is still landing, or if that profile can't be built. #}
+        {% if has_data %}
+        <div class="gs-hero">
+            <h1>Your data is in</h1>
+            <p>The brokerage sync landed. Open Overview to see this account.</p>
+            <div class="cta-row mt-3">
+                <a class="btn btn-primary btn-lg" href="{{ url_for('weekly_review') }}">Go to Overview</a>
+            </div>
+        </div>
+        <div class="gs-path mb-3">
+            <div class="gs-label">Add another</div>
+            <h6>Connect another account</h6>
+            <p class="pitch mb-2">
+                Schwab, Fidelity, Vanguard, Robinhood, IBKR, and others via SnapTrade.
+                Read-only &mdash; HappyTrader never stores your broker password.
+            </p>
+            <div class="cta-row d-flex flex-wrap gap-2">
+                <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_connect', return_to=url_for('get_started')) }}">Connect another account</a>
+                <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_accounts_page') }}">Manage accounts</a>
+            </div>
+        </div>
+        {% else %}
         <div class="gs-hero">
             <h1>Your brokerages</h1>
             <p>
@@ -95,22 +118,18 @@
                 <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_accounts_page') }}">Manage accounts</a>
             </div>
         </div>
-
-        {% if has_data %}
-        <h2 class="section-header mb-2">Your data is in</h2>
-        <p class="mb-3">The brokerage sync landed. Open Overview to see this account.</p>
-        <a class="btn btn-primary btn-lg" href="{{ url_for('weekly_review') }}">Go to Overview</a>
-        {% elif has_uploaded %}
+        {% if has_uploaded %}
         <p class="text-muted small mb-3">
             The first sync is still running. Positions usually show up within minutes.
             Trade history can take a few hours, then building your profile usually takes 15–40 minutes.
             Refresh this page, or wait for the email that Overview is ready.
         </p>
-        <a class="btn btn-outline-secondary" href="{{ url_for('get_started') }}">Refresh status</a>
+            <a class="btn btn-outline-secondary" href="{{ url_for('get_started', from_sync=1 if request.args.get('from_sync') == '1' else none, from_upload=1 if request.args.get('from_upload') == '1' else none) }}">Refresh status</a>
         {% else %}
         <p class="text-muted small mb-3">
             No account data has arrived yet. {% include "_broker_sync_timing.html" %}
         </p>
+        {% endif %}
         {% endif %}
 
         <details class="disclosure mt-4">
