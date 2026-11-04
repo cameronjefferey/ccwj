@@ -335,6 +335,48 @@ def test_dividend_retag_adds_months_missing_from_the_mart():
     assert pd.isna(hold.iloc[1]["win_rate_pct"])
 
 
+def test_dividend_retag_keeps_unrelated_native_dividend_months():
+    """Retagging one B&H unit must not erase existing Dividend history."""
+    from app.grouped_trades import months_from_units
+    from app.strategies import (
+        reconcile_grouped_strategy_months,
+        roll_strategy_months,
+    )
+
+    mart = pd.DataFrame([
+        {
+            "strategy": "Buy and Hold", "month_start": "2024-03-01",
+            "trades_closed": 2, "num_winners": 2, "num_losers": 0,
+            "total_pnl": 90, "win_rate_pct": 100, "avg_pnl_per_trade": 45,
+        },
+        {
+            "strategy": "Dividend", "month_start": "2024-02-01",
+            "trades_closed": 3, "num_winners": 2, "num_losers": 1,
+            "total_pnl": 125, "win_rate_pct": 66.7,
+            "avg_pnl_per_trade": 125 / 3,
+        },
+    ])
+    units = [
+        _trade("Dividend", "JEPI", pnl=50, close="2024-03-20"),
+        _trade("Buy and Hold", "AAPL", pnl=40, close="2024-03-21"),
+    ]
+
+    replaced = reconcile_grouped_strategy_months(
+        roll_strategy_months(mart),
+        months_from_units(units),
+        dividend_moved=True,
+    )
+
+    dividend = replaced[replaced["strategy"] == "Dividend"].set_index(
+        replaced.loc[
+            replaced["strategy"] == "Dividend", "month_start"
+        ].dt.strftime("%Y-%m")
+    )
+    assert float(dividend.loc["2024-02", "total_pnl"]) == pytest.approx(125)
+    assert int(dividend.loc["2024-02", "trades_closed"]) == 3
+    assert float(dividend.loc["2024-03", "total_pnl"]) == pytest.approx(50)
+
+
 def test_sector_shown_rows_add_to_the_header():
     df = pd.DataFrame([
         _position("Technology", "NVDA", "Covered Call", "Ira", 0.0, 1, 0),
