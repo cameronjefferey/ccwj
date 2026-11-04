@@ -47,6 +47,9 @@ def test_display_name_prefers_friendly_label():
     assert display_name("robinhood") == "Robinhood"
     assert display_name("IBKR") == "Interactive Brokers"
     assert display_name("Some New Broker") == "Some New Broker"
+    assert display_name("Alpaca") == "Alpaca"
+    assert display_name("Alpaca Paper") == "Alpaca Paper"
+    assert display_name("ALPACA-PAPER") == "Alpaca Paper"
 
 
 def test_notice_none_without_cohort_flag():

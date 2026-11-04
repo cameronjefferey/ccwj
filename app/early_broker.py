@@ -62,10 +62,15 @@ def is_modeled_broker(raw) -> bool:
 
 
 def display_name(raw) -> str:
+    label = (raw or "").strip()
+    folded = label.casefold().replace("_", " ").replace("-", " ")
+    # Paper shares the Alpaca cohort key, but the banner must name the
+    # brokerage they actually connected.
+    if "alpaca paper" in folded:
+        return "Alpaca Paper"
     key = broker_key(raw)
     if key in _DISPLAY:
         return _DISPLAY[key]
-    label = (raw or "").strip()
     return label or "your broker"
 
 
