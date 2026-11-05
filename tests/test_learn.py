@@ -502,7 +502,17 @@ def test_lesson_ends_with_a_try_it_and_a_check():
     assert "Did that make sense?" in calls
     assert 'id="learn-mark-done"' in calls
     assert ">Mark as done<" in calls
-    assert ">Go deeper<" in calls
+    actions = calls.split('class="learn-check-actions"', 1)[1].split('id="learn-marked"', 1)[0]
+    assert 'href="/learn/replay/long-call"' in actions
+    assert ">Replay · A long call</a>" in actions
+    assert 'href="/learn/replay/long-put"' in actions
+    assert ">Replay · A long put</a>" in actions
+    assert ">Go deeper<" not in actions
+    assert [link["label"] for link in learn_try.checkpoint_links("calls-and-puts")] == [
+        "Replay · A long call",
+        "Replay · A long put",
+    ]
+    assert learn_try.checkpoint_links("covered-calls")[0]["label"] == "Go deeper"
     assert 'href="/learn/replay/long-call"' in calls
 
     covered = _html("/learn/covered-calls")

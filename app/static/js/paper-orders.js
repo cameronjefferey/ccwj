@@ -238,6 +238,8 @@
         if (data && data.connected) {
             if (connect) connect.classList.add("d-none");
             if (ticket) ticket.classList.remove("d-none");
+            var ordersRoot = document.getElementById("pp-open-orders");
+            if (ordersRoot) ordersRoot.hidden = false;
             var power = document.getElementById("pp-buying-power");
             if (power && data.buying_power_label) {
                 power.textContent = "Buying power on this paper account: " + data.buying_power_label + ". Buying power is what a new trade can use. Account value is the balance on Overview.";
@@ -250,7 +252,5 @@
         if (connect) connect.classList.remove("d-none");
     }).catch(function () {
         pending.textContent = "We couldn't reach the paper account. Refresh to try again.";
-        var connect = document.getElementById("pp-connect");
-        if (connect) connect.classList.remove("d-none");
     });
 })();

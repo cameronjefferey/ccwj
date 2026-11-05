@@ -142,7 +142,8 @@ def test_expiries_match_what_each_symbol_lists():
 
 def test_sentence_is_the_trade_they_picked():
     text = practice_sentence("SPY", "call", 760, "at", date(2026, 10, 2))
-    assert text.startswith("Buy 1 SPY call at $760, about the latest close.")
+    assert text.startswith("Buy 1 SPY call, strike $760, about the latest close.")
+    assert "at $760" not in text
     assert "One contract is 100 shares." in text
     assert "right to buy the shares" in text
     assert "recommendation" not in text.lower()
@@ -209,6 +210,9 @@ def test_beginner_readout_says_where_the_stock_had_to_go():
         "finish_price": 766.44,
         "net_cash_flow": -18,
     })
+    assert "strike $770" in text
+    assert "paid $18" in text
+    assert "at $770" not in text
     assert "You made money if SPY finished above $770.18" in text
     assert "SPY finished at $766.44" in text
     assert "Therefore the call expired, and the $18 is gone" in text
@@ -266,7 +270,7 @@ def test_beginner_readout_says_where_the_stock_had_to_go():
         "net_cash_flow": 90,
     }
     spread = beginner_spread_sentence(long_leg, short_leg)
-    assert "1 SPY call spread, $770 and $775" in spread
+    assert "1 SPY call spread, strikes $770 and $775" in spread
     assert "Expires: Fri Oct 16" in spread
     assert "You paid $100" in spread
     assert "You made money if SPY finished above $771" in spread
@@ -1201,3 +1205,146 @@ def test_signup_from_a_lesson_returns_to_that_practice_ticket(monkeypatch):
     query = parse_qs(landed.query)
     assert query["side"] == ["put"]
     assert query["symbol"] == ["SPY"]
+
+
+def _login_ada(monkeypatch, client):
+    from app.models import User
+
+    class _SessionUser:
+        is_active = True
+        is_anonymous = False
+        id = 7
+        username = "ada"
+
+        @property
+        def is_authenticated(self):
+            return True
+
+        def get_id(self):
+            return "7"
+
+    user = _SessionUser()
+    monkeypatch.setattr(
+        User, "get_by_id", staticmethod(lambda user_id: user if str(user_id) == "7" else None),
+    )
+    with client.session_transaction() as sess:
+        sess["_user_id"] = "7"
+        sess["_fresh"] = True
+    return user
+
+
+def test_missing_lesson_price_does_not_claim_the_ticket_was_filled(monkeypatch):
+    from app import app
+    from app import paper_practice as practice
+
+    monkeypatch.setattr(practice, "latest_spots", lambda: {"QQQ": 400.0, "SPX": 5000.0})
+    monkeypatch.setattr(practice, "snaptrade_enabled", lambda: True)
+    monkeypatch.setattr(practice, "alpaca_paper_trade_account", lambda user_id: {
+        "snaptrade_account_id": "learner-acct",
+        "tenant_id": "snaptrade:learner",
+        "account_name": "Practice",
+        "row": {},
+    })
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: False)
+    client = app.test_client()
+    _login_ada(monkeypatch, client)
+    html = client.get(
+        "/practice?symbol=SPY&side=put&tenor=soon&distance=at"
+    ).get_data(as_text=True)
+    assert "Filled in from the lesson" not in html
+    assert "don't have its price yet" in html
+    assert 'id="pp-review" disabled' in html
+    assert "SPY · price unavailable" in html
+    assert 'name="symbol" value="QQQ"' in html
+    assert "review.disabled = !(selected && !selected.disabled)" in html
+
+
+def test_change_it_keeps_the_reviewed_ticket(monkeypatch):
+    from app import app
+    from app import paper_practice as practice
+
+    monkeypatch.setattr(practice, "latest_spots", lambda: {"SPY": 500.0, "QQQ": 400.0, "SPX": 5000.0})
+    monkeypatch.setattr(practice, "snaptrade_enabled", lambda: False)
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: False)
+    client = app.test_client()
+    _login_ada(monkeypatch, client)
+    with client.session_transaction() as sess:
+        sess[practice.VOICE_KEY] = "intermediate"
+        sess[practice.TICKET_KEY] = {
+            "nonce": "n",
+            "symbol": "SPY",
+            "side": "put",
+            "tenor": "weekly",
+            "distance": "above",
+            "voice": "intermediate",
+            "sentence": "Buy 1 SPY put, strike $510, a bit above the latest close.",
+            "look": False,
+        }
+    html = client.get("/practice?confirm=1").get_data(as_text=True)
+    assert "Change it" in html
+    assert "symbol=SPY" in html
+    assert "side=put" in html
+    assert "tenor=weekly" in html
+    assert "distance=above" in html
+    assert "voice=intermediate" in html
+
+
+def test_pending_check_does_not_say_there_are_no_orders(monkeypatch):
+    from app import app
+    from app import paper_practice as practice
+
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(practice, "snaptrade_enabled", lambda: True)
+    monkeypatch.setattr(practice, "latest_spots", lambda: {"SPY": 500.0, "QQQ": 400.0, "SPX": 5000.0})
+    monkeypatch.setattr(practice, "practice_broker_snapshot", lambda user_id, fetch: None)
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: False)
+    client = app.test_client()
+    _login_ada(monkeypatch, client)
+    html = client.get("/practice").get_data(as_text=True)
+    assert "Checking the paper account" in html
+    assert "No open orders" not in html
+    assert "JavaScript is off" in html
+    script = open("app/static/js/paper-orders.js", encoding="utf-8").read()
+    catch = script.split('pending.textContent = "We couldn\'t reach the paper account.', 1)[1]
+    catch = catch.split("})();", 1)[0]
+    assert "pp-connect" not in catch
+    assert 'ordersRoot.hidden = false' in script
+
+
+def test_broker_check_releases_the_lesson_only_when_connected(monkeypatch):
+    from app import app
+    from app import paper_practice as practice
+
+    client = app.test_client()
+    _login_ada(monkeypatch, client)
+    monkeypatch.setattr(practice, "snaptrade_enabled", lambda: False)
+    monkeypatch.setattr(practice, "latest_spots", lambda: {"SPY": 500.0, "QQQ": 400.0, "SPX": 5000.0})
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda user_id: False)
+    monkeypatch.setattr(practice, "practice_broker_snapshot", lambda user_id, fetch: {
+        "account": None,
+        "power": None,
+        "orders": [],
+        "error": None,
+    })
+    with client.session_transaction() as sess:
+        sess[practice.PREFILL_KEY] = {
+            "symbol": "SPY", "side": "put", "tenor": "soon", "distance": "at",
+        }
+    missed = client.get("/practice/broker")
+    assert missed.status_code == 200
+    assert missed.get_json()["connected"] is False
+    with client.session_transaction() as sess:
+        assert sess[practice.PREFILL_KEY]["side"] == "put"
+
+    monkeypatch.setattr(practice, "practice_broker_snapshot", lambda user_id, fetch: {
+        "account": {"snaptrade_account_id": "acct", "tenant_id": "snaptrade:learner"},
+        "power": 1000,
+        "orders": [],
+        "error": None,
+    })
+    found = client.get("/practice/broker")
+    assert found.get_json()["connected"] is True
+    with client.session_transaction() as sess:
+        assert practice.PREFILL_KEY not in sess
+    again = client.get("/practice")
+    assert again.status_code == 200

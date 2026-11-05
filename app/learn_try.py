@@ -65,12 +65,12 @@ def _buy(side, tenor, extra="", voice="beginner"):
 
 
 # One paper trade per lesson. ``also`` is a second ticket on the same card.
-# The first three lessons stay on the nearest expiration, in beginner
-# words. From buying and selling on, the ticket stays at least a week
-# out and uses the intermediate labels, so the page does not get simpler
-# after the strike lesson. Selling and multi-leg trades are still one
-# long option: the paper ticket cannot sell until the account holds the
-# shares, and the sentence says so.
+# The first two lessons stay on the nearest expiration, in beginner
+# words. The strike lesson names a weekly expiration and stays on
+# beginner words. From buying and selling on, the ticket stays at least
+# a week out and uses the intermediate labels. The wheel and the risk
+# lesson use a multi-week expiration. Selling and multi-leg trades are
+# still one long option: the paper ticket buys, and the sentence says so.
 _LESSONS = {
     "what-is-an-option": _buy("call", "soon"),
     "calls-and-puts": {
@@ -332,7 +332,7 @@ def checks_for_lesson(slug):
 
 
 def deeper_for_lesson(slug):
-    """Replay for this lesson, otherwise the next episode, otherwise the series."""
+    """One next step: the lesson's replay, the next episode, or the series."""
     replays = learn_replay.replays_for_lesson(slug)
     if replays:
         return {"href": f"/learn/replay/{replays[0]['slug']}", "label": "Go deeper"}
@@ -340,3 +340,19 @@ def deeper_for_lesson(slug):
     if nxt:
         return {"href": f"/learn/{nxt['slug']}", "label": "Go deeper"}
     return {"href": "/learn#replays", "label": "Go deeper"}
+
+
+def checkpoint_links(slug):
+    """Links under the checkpoint.
+
+    A lesson with two replays names both. One "Go deeper" link would open
+    only the first, and the put replay would sit above the quiz instead
+    of at the step the learner just finished.
+    """
+    rows = learn_replay.replays_for_lesson(slug)
+    if len(rows) > 1:
+        return [
+            {"href": f"/learn/replay/{replay['slug']}", "label": f"Replay · {replay['title']}"}
+            for replay in rows
+        ]
+    return [deeper_for_lesson(slug)]
