@@ -5,8 +5,8 @@ Alpaca Paper order through SnapTrade, then the existing sync reads it
 back. This module does not keep a paper ledger and does not talk to
 Alpaca directly.
 
-Lessons link here with the radios already set. Selling a covered call
-is a later ticket, only once the paper account holds at least 100 shares.
+Lessons link here with the radios already set. The ticket buys one
+call or one put. A lesson about selling says so and still buys.
 """
 from __future__ import annotations
 
@@ -556,6 +556,17 @@ def beginner_trade_sentence(row) -> str | None:
     where = "below" if side == "put" else "above"
     n = _count_phrase(contracts)
     when = _expiry_phrase(row.get("option_expiry"))
+
+    def _position(still_open):
+        """Strike and premium stay separate. "Bought at $770" read as the price paid."""
+        made = "make" if still_open else "made"
+        finishes = "finishes" if still_open else "finished"
+        return (
+            f"You bought {n} {symbol} {side}, strike {money_spot(strike)}, "
+            f"and paid {money_spot(paid)}.{when} "
+            f"You {made} money if {symbol} {finishes} {where} {money_spot(line)}."
+        )
+
     closed = str(row.get("status") or "").casefold() == "closed"
     finish_n = _finite_decimal(row.get("finish_price"))
     if finish_n is not None and finish_n <= 0:
@@ -563,15 +574,10 @@ def beginner_trade_sentence(row) -> str | None:
     if finish_n is None:
         if closed:
             return (
-                f"You bought {n} {symbol} {side} at {money_spot(strike)}.{when} "
-                f"You made money if {symbol} finished {where} {money_spot(line)}. "
+                f"{_position(False)} "
                 f"We don't have where {symbol} finished."
             )
-        return (
-            f"You bought {n} {symbol} {side} at {money_spot(strike)}.{when} "
-            f"You make money if {symbol} finishes {where} {money_spot(line)}. "
-            "Therefore this trade is still open."
-        )
+        return f"{_position(True)} Therefore this trade is still open."
     went = f"{symbol} finished at {money_spot(finish_n)}."
     made_it = finish_n < line if side == "put" else finish_n > line
     net = _finite_decimal(row.get("net_cash_flow")) or Decimal(0)
@@ -588,11 +594,7 @@ def beginner_trade_sentence(row) -> str | None:
         therefore = _result_clause(
             net, expired_worthless=expired_worthless, side=side, paid=paid,
         )
-    bought = (
-        f"You bought {n} {symbol} {side} at {money_spot(strike)}.{when} "
-        f"You made money if {symbol} finished {where} {money_spot(line)}."
-    )
-    return f"{bought} {went} {therefore}"
+    return f"{_position(False)} {went} {therefore}"
 
 
 def beginner_spread_sentence(long_row, short_row) -> str | None:
@@ -645,7 +647,7 @@ def beginner_spread_sentence(long_row, short_row) -> str | None:
         and str(short_row.get("status") or "").casefold() == "closed"
     )
     opener = (
-        f"You {verb} {n} {symbol} {side} spread, {money_spot(low)} and {money_spot(high)}."
+        f"You {verb} {n} {symbol} {side} spread, strikes {money_spot(low)} and {money_spot(high)}."
         f"{when} You {cash_word} {money_spot(amount)}."
     )
     if not both_closed:
@@ -899,7 +901,7 @@ def practice_sentence(symbol, side, strike, distance, expiry: date, as_of_label=
         right = "buy the shares" if side == "call" else "sell the shares"
         cover = f"One contract is {CONTRACT_SHARES} shares."
     return (
-        f"Buy 1 {symbol} {side_word} at {money_strike(strike)}, {where}. "
+        f"Buy 1 {symbol} {side_word}, strike {money_strike(strike)}, {where}. "
         f"Expires: {_when_label(expiry)}. {cover} "
         f"You are paying for the right to {right}, and you can let it expire."
     )
@@ -2372,6 +2374,7 @@ def paper_practice():
             signup_next=return_path if lesson else None,
             has_real_brokerage=None,
             paper_positions_url=url_for("positions"),
+            prefill_ready=False,
         )
     session.pop(LOOK_KEY, None)
     look = False
@@ -2496,6 +2499,7 @@ def paper_practice():
         signup_next=None,
         has_real_brokerage=has_real is True,
         paper_positions_url=positions_url_for_tenant((account or {}).get("tenant_id")),
+        prefill_ready=bool(lesson and spots.get(lesson["symbol"])),
     )
 
 
@@ -2505,6 +2509,11 @@ def paper_practice_broker():
     """Account, buying power, and orders. The page loads this after paint."""
     bundle = practice_broker_snapshot(current_user.id, fetch=True) or {}
     account = bundle.get("account")
+    # The lesson radios are already on this page. Drop the session copy
+    # once the account is real, so the next Practice visit is a fresh ticket.
+    # A miss keeps it: the paper sign-in returns to a bare /practice.
+    if account and session.get(PREFILL_KEY):
+        session.pop(PREFILL_KEY, None)
     orders = bundle.get("orders") or []
     public = [order_public(order) for order in orders if isinstance(order, dict)]
     power = bundle.get("power")

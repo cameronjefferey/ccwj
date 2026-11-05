@@ -654,6 +654,10 @@
     }
     .learn-check-actions .btn,
     .learn-check-actions .replay-deeper { width: 100%; margin: 0; }
+    .learn-check-actions .replay-deeper:last-child:nth-child(odd),
+    .replay-checkpoint-actions .replay-deeper:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
     @media (max-width: 576px) {
         .replay-choices { grid-template-columns: 1fr; }
         .replay-choice,

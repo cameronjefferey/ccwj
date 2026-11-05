@@ -111,6 +111,17 @@ def test_replay_pages_render_the_decision_and_the_checkpoint():
     assert "side=call" in html
     assert ">Watch the lesson</a>" in html
     assert 'href="/learn/calls-and-puts"' in html
+    assert "Next · A long put" in html
+    assert 'href="/learn/replay/long-call/next"' in html
+    nxt = _client().get("/learn/replay/long-call/next", follow_redirects=False)
+    assert nxt.status_code == 302
+    assert nxt.headers["Location"].endswith("/learn/replay/long-put")
+    put = _html("/learn/replay/long-put")
+    assert "Next episode" in put
+    assert 'href="/learn/replay/long-put/next"' in put
+    step = _client().get("/learn/replay/long-put/next", follow_redirects=False)
+    assert step.status_code == 302
+    assert step.headers["Location"].endswith("/learn/strike-expiration-premium")
     assert "For learning only · not investment advice." in html
     assert "Illustrative prices" in html
     assert "not a market quote" in html
@@ -135,6 +146,11 @@ def test_replay_pages_render_the_decision_and_the_checkpoint():
     assert "+$760.00" in covered
     assert "not a quote" in covered
     assert 'href="/learn/covered-calls"' in covered
+    assert "The solid line is the option only" in covered
+    assert "also include the shares" in covered
+    assert "The solid line is the option only" not in _article("/learn/replay/long-call")
+    assert "Next episode" in covered
+    assert 'href="/learn/replay/covered-call/next"' in covered
 
 
 def test_replay_page_loads_the_price_chart():
@@ -165,6 +181,8 @@ def test_desktop_learn_uses_the_page_width():
 def test_replay_routes_and_links():
     missing = _client().get("/learn/replay/not-a-replay")
     assert missing.status_code == 404
+    missing_next = _client().get("/learn/replay/not-a-replay/next")
+    assert missing_next.status_code == 404
     index = _client().get("/learn/replay", follow_redirects=False)
     assert index.status_code == 302
     assert index.headers["Location"].endswith("/learn#replays")
