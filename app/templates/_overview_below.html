@@ -127,8 +127,9 @@
                     </div>
                     <div class="watch-meta">{{ opt.quantity }} {{ opt.option_type or '' }} ${{ '{:,.2f}'.format(opt.strike) }} exp {{ opt.expiry|session_date('short', today) }}</div>
                 </div>
-                <div class="watch-aux {% if opt.unrealized_pnl >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ "+" if opt.unrealized_pnl >= 0 else "-" }}${{ "{:,.0f}".format(opt.unrealized_pnl|abs) }}
+                {% set opt_pnl = opt.unrealized_pnl|signed_whole %}
+                <div class="watch-aux {% if opt_pnl.startswith('+') %}text-positive{% elif opt_pnl.startswith('−') %}text-negative{% endif %}">
+                    {{ opt_pnl }}
                 </div>
             </a>
             {% endfor %}
@@ -243,30 +244,34 @@
             {% for s in open_option_record.shorts[:8] %}
             <a href="{{ scoped_url('position_detail', symbol=s.symbol) }}" class="watch-item exec">
                 <div>
-                    <div class="watch-days {% if s.captured_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ s.captured_pct }}%</div>
+                    {% set cap_pct = s.captured_pct|signed_pct(0) %}
+                    <div class="watch-days {% if cap_pct.startswith('+') %}text-positive{% elif cap_pct.startswith('−') %}text-negative{% endif %}">{{ cap_pct }}</div>
                     <div class="watch-days-label">captured</div>
                 </div>
                 <div>
                     <div class="watch-sym">{{ s.symbol }}</div>
                     <div class="watch-meta">{{ s.label }} · collected ${{ "{:,.0f}".format(s.premium) }} · {{ s.days_left }}d left</div>
                 </div>
-                <div class="watch-aux {% if s.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ "+" if s.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(s.unrealized|abs) }}
+                {% set short_pnl = s.unrealized|signed_whole %}
+                <div class="watch-aux {% if short_pnl.startswith('+') %}text-positive{% elif short_pnl.startswith('−') %}text-negative{% endif %}">
+                    {{ short_pnl }}
                 </div>
             </a>
             {% endfor %}
             {% for l in open_option_record.longs[:8] %}
             <a href="{{ scoped_url('position_detail', symbol=l.symbol) }}" class="watch-item exec">
                 <div>
-                    <div class="watch-days {% if l.change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if l.change_pct >= 0 }}{{ l.change_pct }}%</div>
+                    {% set long_pct = l.change_pct|signed_pct(0) %}
+                <div class="watch-days {% if long_pct.startswith('+') %}text-positive{% elif long_pct.startswith('−') %}text-negative{% endif %}">{{ long_pct }}</div>
                     <div class="watch-days-label">vs paid</div>
                 </div>
                 <div>
                     <div class="watch-sym">{{ l.symbol }}</div>
                     <div class="watch-meta">{{ l.label }} · paid ${{ "{:,.0f}".format(l.paid) }} → ${{ "{:,.0f}".format(l.mark) }} · {{ l.days_left }}d left</div>
                 </div>
-                <div class="watch-aux {% if l.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                    {{ "+" if l.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(l.unrealized|abs) }}
+                {% set long_pnl = l.unrealized|signed_whole %}
+                <div class="watch-aux {% if long_pnl.startswith('+') %}text-positive{% elif long_pnl.startswith('−') %}text-negative{% endif %}">
+                    {{ long_pnl }}
                 </div>
             </a>
             {% endfor %}
@@ -299,9 +304,9 @@
    live on /positions and /strategies — they're not a daily/weekly signal.
    ════════════════════════════════════ #}
 {% macro net_cell(val) %}
-<td class="{% if val > 0 %}text-positive{% elif val < 0 %}text-negative{% endif %}">
-    {% if val == 0 %}<span class="text-muted">$0</span>
-    {% else %}{{ "+" if val > 0 else "-" }}${{ "{:,.0f}".format(val|abs) }}{% endif %}
+{% set label = val|signed_whole %}
+<td class="{% if label.startswith('+') %}text-positive{% elif label.startswith('−') %}text-negative{% endif %}">
+    {% if label == '$0' %}<span class="text-muted">$0</span>{% else %}{{ label }}{% endif %}
 </td>
 {% endmacro %}
 {% if trades_this_week and trades_this_week.has_any %}

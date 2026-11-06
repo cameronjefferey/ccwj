@@ -327,30 +327,34 @@
         {% for s in open_option_record.shorts[:12] %}
         <a href="{{ scoped_url('position_detail', symbol=s.symbol) }}" class="watch-item exec" data-peek-symbol="{{ s.symbol }}" data-peek-impact="{{ s.unrealized }}">
             <div>
-                <div class="watch-days {% if s.captured_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ s.captured_pct }}%</div>
+                {% set cap_pct = s.captured_pct|signed_pct(0) %}
+                <div class="watch-days {% if cap_pct.startswith('+') %}text-positive{% elif cap_pct.startswith('−') %}text-negative{% endif %}">{{ cap_pct }}</div>
                 <div class="watch-days-label">captured</div>
             </div>
             <div>
                 <div class="watch-sym">{{ s.symbol }}</div>
                 <div class="watch-meta">{{ s.label }} · collected ${{ "{:,.0f}".format(s.premium) }} · {{ s.days_left }}d left</div>
             </div>
-            <div class="watch-aux {% if s.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if s.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(s.unrealized|abs) }}
+            {% set short_pnl = s.unrealized|signed_whole %}
+            <div class="watch-aux {% if short_pnl.startswith('+') %}text-positive{% elif short_pnl.startswith('−') %}text-negative{% endif %}">
+                {{ short_pnl }}
             </div>
         </a>
         {% endfor %}
         {% for l in open_option_record.longs[:12] %}
         <a href="{{ scoped_url('position_detail', symbol=l.symbol) }}" class="watch-item exec" data-peek-symbol="{{ l.symbol }}" data-peek-impact="{{ l.unrealized }}">
             <div>
-                <div class="watch-days {% if l.change_pct >= 0 %}text-positive{% else %}text-negative{% endif %}">{{ "+" if l.change_pct >= 0 }}{{ l.change_pct }}%</div>
+                {% set long_pct = l.change_pct|signed_pct(0) %}
+                <div class="watch-days {% if long_pct.startswith('+') %}text-positive{% elif long_pct.startswith('−') %}text-negative{% endif %}">{{ long_pct }}</div>
                 <div class="watch-days-label">vs paid</div>
             </div>
             <div>
                 <div class="watch-sym">{{ l.symbol }}</div>
                 <div class="watch-meta">{{ l.label }} · paid ${{ "{:,.0f}".format(l.paid) }} → ${{ "{:,.0f}".format(l.mark) }} · {{ l.days_left }}d left</div>
             </div>
-            <div class="watch-aux {% if l.unrealized >= 0 %}text-positive{% else %}text-negative{% endif %}">
-                {{ "+" if l.unrealized >= 0 else "-" }}${{ "{:,.0f}".format(l.unrealized|abs) }}
+            {% set long_pnl = l.unrealized|signed_whole %}
+            <div class="watch-aux {% if long_pnl.startswith('+') %}text-positive{% elif long_pnl.startswith('−') %}text-negative{% endif %}">
+                {{ long_pnl }}
             </div>
         </a>
         {% endfor %}
