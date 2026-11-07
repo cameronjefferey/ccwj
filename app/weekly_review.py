@@ -7386,6 +7386,31 @@ option_realized_day AS (
       {tenant_filter}
     GROUP BY 1, 2, 3, 4
 ),
+contract_rows AS (
+    -- int_option_contracts can emit more than one row for an OCC/direction
+    -- (for example, a real contract beside an opened-before-history
+    -- placeholder). Joining all of them repeats every close fill and
+    -- settlement. Keep the same winner used by
+    -- ``_select_contract_realized`` while retaining both directions when
+    -- a genuine long and short share one OCC.
+    SELECT * EXCEPT (rn)
+    FROM (
+        SELECT
+            c.*,
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    c.tenant_id, c.account, c.user_id,
+                    c.trade_symbol, c.direction
+                ORDER BY
+                    IF(COALESCE(c.opened_before_history, FALSE), 1, 0),
+                    ABS(COALESCE(c.realized_pnl, 0)) DESC
+            ) AS rn
+        FROM `ccwj-dbt.analytics.int_option_contracts` c
+        WHERE TRUE
+          {tenant_filter}
+    )
+    WHERE rn = 1
+),
 option_gl AS (
     -- Active closes (BTC/STC) only. Expiry/assignment/exercise come
     -- from the settlements UNION. The fill join picks the direction.
@@ -7393,7 +7418,7 @@ option_gl AS (
         d.tenant_id, d.account, d.user_id, d.trade_symbol,
         c.direction, d.realized_pnl
     FROM option_realized_day d
-    JOIN `ccwj-dbt.analytics.int_option_contracts` c
+    JOIN contract_rows c
       ON (d.tenant_id IS NOT DISTINCT FROM c.tenant_id)
      AND d.account = c.account
      AND (d.user_id IS NOT DISTINCT FROM c.user_id)
@@ -7471,7 +7496,7 @@ settlements AS (
         c.option_expiry,
         d.realized_pnl,
         c.direction
-    FROM `ccwj-dbt.analytics.int_option_contracts` c
+    FROM contract_rows c
     JOIN option_realized_day d
       ON (c.tenant_id IS NOT DISTINCT FROM d.tenant_id)
      AND c.account = d.account
