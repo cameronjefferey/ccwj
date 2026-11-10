@@ -12,7 +12,8 @@ function __ghaSafeRedirect(url, label) {
         return;
     }
     if (label) {
-        label.textContent = "Ready when you are — finish your answer or open Overview.";
+        var next = window.__onboardingHoldNext || "Overview";
+        label.textContent = "Ready when you are — finish your answer or open " + next + ".";
     }
     var iv = setInterval(function () {
         if (!window.__onboardingHoldRedirect) {

@@ -218,6 +218,10 @@ def test_paper_processing_page_shows_the_quiz_until_it_is_saved(monkeypatch):
     assert 'id="onboardingForm"' in html
     assert "Your paper account is connected" in html
     assert "Practice a trade" in html
+    assert "Practice is next" in html
+    assert "shape your first Overview" not in html
+    assert 'window.__onboardingHoldNext = paperLanding ? "Practice"' in html
+    assert "if (paper || (d && d.ready))" in html
     assert '"/practice"' in html or "/practice" in html
 
     monkeypatch.setattr(
