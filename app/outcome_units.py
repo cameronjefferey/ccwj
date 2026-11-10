@@ -387,12 +387,13 @@ def _vertical_meta(row):
 
 
 def _pair_nearest(shorts, longs, metas, rows):
-    """Nearest strike among legs with the same contract count.
+    """Same completion state, then nearest strike, at one contract count.
 
     Two 7730/7735 trades (20 closed, 10 left to expire) are four legs at
     two strikes. Pairing by strike alone can match the 20-lot short with
     the 10-lot long. Mismatched sizes stay separate until partial-spread
-    allocation is modeled.
+    allocation is modeled. An incomplete placeholder must not steal a
+    completed leg when another completed match exists.
     """
     unused = set(longs)
     pairs = []
@@ -407,9 +408,11 @@ def _pair_nearest(shorts, longs, metas, rows):
         ]
         if not same_size:
             continue
+        short_incomplete = _record_unit_incomplete(rows[short_i] or {})
         match = min(
             same_size,
             key=lambda j, _short_k=short_k: (
+                _record_unit_incomplete(rows[j] or {}) != short_incomplete,
                 abs(metas[j]["strike"] - _short_k), j,
             ),
         )
