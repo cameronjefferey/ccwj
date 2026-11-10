@@ -709,7 +709,13 @@ def retag_dividend_units(units, display_rows) -> int:
     return moved
 
 
-def replace_month_pnl(mart_months, grouped_months, strategies) -> pd.DataFrame:
+def replace_month_pnl(
+    mart_months,
+    grouped_months,
+    strategies,
+    *,
+    preserve_missing=(),
+) -> pd.DataFrame:
     """Replace mart month dollars for strategies whose units were retagged.
 
     Grouped-unit P&L and counts describe the trades that still carry that
@@ -717,10 +723,15 @@ def replace_month_pnl(mart_months, grouped_months, strategies) -> pd.DataFrame:
     the sparkline does not keep the relabeled book's dollars or trades.
     A month with no remaining grouped close goes to $0. A retagged
     strategy that has no mart row (Dividend) gets its grouped month added
-    instead of disappearing from the chart. Other strategies keep mart
-    dollars: a spread's legs can close in different months.
+    instead of disappearing from the chart. ``preserve_missing`` keeps
+    existing mart rows when grouped trades have no replacement for that
+    month. Dividend uses this because the mart can already contain native
+    Dividend history unrelated to the Buy-and-Hold units being retagged.
+    Other strategies keep mart dollars: a spread's legs can close in
+    different months.
     """
     names = {str(name) for name in (strategies or [])}
+    keep_without_group = {str(name) for name in (preserve_missing or [])}
     if mart_months is None or getattr(mart_months, "empty", True) or not names:
         return mart_months
     if "strategy" not in mart_months.columns or "total_pnl" not in mart_months.columns:
@@ -743,6 +754,8 @@ def replace_month_pnl(mart_months, grouped_months, strategies) -> pd.DataFrame:
         if strategy not in names:
             continue
         hit = lookup.get((strategy, row.get("_month")))
+        if hit is None and strategy in keep_without_group:
+            continue
         pnl = _num(hit.get("total_pnl")) if hit is not None else 0.0
         out.at[idx, "total_pnl"] = round(pnl, 2)
         trades = int(hit.get("trades_closed") or 0) if hit is not None else 0
@@ -840,12 +853,19 @@ def stamp_grouped_counts(df, units, keys, trade_col="num_individual_trades"):
     return out
 
 
-def overlay_month_counts(mart_months, grouped_months) -> pd.DataFrame:
+def overlay_month_counts(
+    mart_months,
+    grouped_months,
+    *,
+    preserve_missing=(),
+) -> pd.DataFrame:
     """Keep each month's dollars. Replace the trade counts with grouped trades.
 
     A spread's legs can close in different months. The mart books each
     leg's dollars on that leg's close month. Grouped trades book one
     count on the structure's final close. Counts follow the structure.
+    ``preserve_missing`` leaves a mart row alone when that strategy has
+    grouped data in other months but no replacement for this month.
     Dollars stay on the month the mart already used. Call this on a
     frame that is already one row per strategy and month — stamping a
     pooled count onto every account row would multiply it.
@@ -860,6 +880,7 @@ def overlay_month_counts(mart_months, grouped_months) -> pd.DataFrame:
     out["_month"] = pd.to_datetime(out["month_start"], errors="coerce").dt.strftime("%Y-%m")
     grouped = grouped_months.copy()
     grouped["_month"] = pd.to_datetime(grouped["month_start"], errors="coerce").dt.strftime("%Y-%m")
+    keep_without_group = {str(name) for name in (preserve_missing or [])}
     lookup = {}
     signals = {}
     for row in grouped.to_dict("records"):
@@ -873,6 +894,8 @@ def overlay_month_counts(mart_months, grouped_months) -> pd.DataFrame:
         if strategy not in signals and strategy not in {key[0] for key in lookup}:
             continue
         hit = lookup.get((strategy, row.get("_month")))
+        if hit is None and strategy in keep_without_group:
+            continue
         trades = int(hit["trades_closed"]) if hit is not None else 0
         winners = int(hit["num_winners"]) if hit is not None else 0
         losers = int(hit["num_losers"]) if hit is not None else 0
