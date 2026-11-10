@@ -28,13 +28,13 @@
     </div>
     <div class="learn-check-actions">
         <button type="button" class="btn btn-primary" id="learn-mark-done">Mark as done</button>
-        {% if deeper %}
-        <a class="replay-deeper" href="{{ deeper.href }}">Go deeper</a>
-        {% endif %}
+        {% for link in checkpoint_links %}
+        <a class="replay-deeper" href="{{ link.href }}">{{ link.label }}</a>
+        {% endfor %}
     </div>
     <p class="learn-marked" id="learn-marked" hidden>Marked done. It shows a check on Options 101.</p>
-    {% elif deeper %}
-    <p class="learn-playlist"><a href="{{ deeper.href }}">Go deeper</a></p>
+    {% elif checkpoint_links %}
+    <p class="learn-playlist">{% for link in checkpoint_links %}<a href="{{ link.href }}">{{ link.label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
     {% endif %}
 </section>
 {% endif %}

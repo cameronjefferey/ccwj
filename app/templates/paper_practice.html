@@ -176,13 +176,16 @@
             {% if account or open_orders or sent or broker_pending %}
             <div class="pp-orders pp-open-orders" id="pp-open-orders"
                  data-poll-url="{{ url_for('paper_practice_order_status') }}"
-                 data-cancel-url="{{ url_for('paper_practice_cancel') }}">
+                 data-cancel-url="{{ url_for('paper_practice_cancel') }}"
+                 {% if broker_pending and not account and not open_orders %}hidden{% endif %}>
                 <div class="pp-kicker">Open orders</div>
                 <div id="pp-open-list">
                     {% for order in open_orders %}
                     {% include "_paper_order_row.html" %}
                     {% else %}
+                    {% if account or not broker_pending %}
                     <p class="pp-note mb-0" data-empty>No open orders.</p>
+                    {% endif %}
                     {% endfor %}
                 </div>
                 <p class="pp-note mt-2 mb-0 {% if not orders_error %}d-none{% endif %}" id="pp-status-error" role="status">{{ orders_error or "" }}</p>
@@ -215,7 +218,11 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="nonce" value="{{ ticket.nonce }}">
                     <button class="btn btn-primary" type="submit">Place this trade</button>
+                    {% if ticket.symbol and ticket.side and ticket.tenor and ticket.distance %}
+                    <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice', symbol=ticket.symbol, side=ticket.side, tenor=ticket.tenor, distance=ticket.distance, voice=ticket.voice or 'beginner') }}">Change it</a>
+                    {% else %}
                     <a class="btn btn-outline-secondary" href="{{ url_for('paper_practice') }}">Change it</a>
+                    {% endif %}
                 </form>
                 {% include "_paper_followup.html" %}
             {% elif not account and not look and not broker_pending %}
@@ -230,6 +237,9 @@
                 {% endif %}
                 {% if prefill %}
                 <p class="pp-note">The lesson picked a {{ prefill.symbol }} {{ prefill.side }}. It will be on the ticket after this account connects. Nothing is placed until you confirm.</p>
+                {% if not prefill_ready %}
+                <p class="pp-note">We don't have a price for {{ prefill.symbol }} yet, so Review stays off until that price is back.</p>
+                {% endif %}
                 {% endif %}
                 <p class="pp-note">
                     New to the words on the ticket?
@@ -248,6 +258,7 @@
             {% else %}
                 {% if broker_pending %}
                 <p class="pp-note" id="pp-broker-pending" data-broker-url="{{ url_for('paper_practice_broker') }}">Checking the paper account…</p>
+                <noscript><p class="pp-note">JavaScript is off, so this page cannot check the paper account or show the ticket. Turn it on and refresh.</p></noscript>
                 <div id="pp-connect" class="d-none">
                     <p>
                         Connect a paper account to practice. The buying power is whatever that
@@ -261,6 +272,9 @@
                     {% endif %}
                     {% if prefill %}
                     <p class="pp-note">The lesson picked a {{ prefill.symbol }} {{ prefill.side }}. It will be on the ticket after this account connects. Nothing is placed until you confirm.</p>
+                    {% if not prefill_ready %}
+                    <p class="pp-note">We don't have a price for {{ prefill.symbol }} yet, so Review stays off until that price is back.</p>
+                    {% endif %}
                     {% endif %}
                     {% if snaptrade_ready %}
                     <form method="POST" action="{{ url_for('paper_practice_connect') }}" data-submit-once class="mt-3">
@@ -283,7 +297,11 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="strike" id="pp-strike" value="">
                     {% if prefill %}
+                    {% if prefill_ready %}
                     <p class="pp-note">Filled in from the lesson. Review it before anything is placed.</p>
+                    {% else %}
+                    <p class="pp-note">The lesson picked {{ prefill.symbol }}, and we don't have its price yet. Pick another name, or wait until that price is back. Nothing is placed until you confirm.</p>
+                    {% endif %}
                     {% endif %}
 
                     <div class="pp-kicker">Show this as</div>
@@ -335,6 +353,9 @@
                     </div>
                     <div id="pp-chain" class="pp-chain-wrap" aria-live="polite"></div>
                     <p class="pp-note"><span id="pp-contract">{{ ns.blurb }}</span> <span id="pp-next">The next step shows the price per share, then places the trade when you confirm.</span></p>
+                    {% if not ns.picked and not prefill %}
+                    <p class="pp-note">We don't have a share price yet, so Review stays off.</p>
+                    {% endif %}
                     <button class="btn btn-primary mt-2" type="submit" id="pp-review" {% if not ns.picked %}disabled{% endif %}>Review this paper trade</button>
                 </form>
                 <script>
@@ -502,6 +523,8 @@
                             document.getElementById("pp-next").textContent = voice.next;
                             document.cookie = "pp_voice=" + voiceNow() + ";path=/;max-age=2592000;samesite=lax";
                             var selected = document.querySelector('input[name="symbol"]:checked');
+                            var review = document.getElementById("pp-review");
+                            if (review) review.disabled = !(selected && !selected.disabled);
                             var label = selected && selected.closest("label");
                             if (!label) return;
                             ["below", "at", "above"].forEach(function (key) {

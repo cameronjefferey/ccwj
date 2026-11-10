@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml
 
-from app.learn_catalog import episode_by_slug
+from app.learn_catalog import episode_by_slug, neighbors
 from app.money import fmt_money
 
 _DIR = Path(__file__).resolve().parent / "learn_replays"
@@ -49,6 +49,35 @@ def replay_by_slug(slug):
 
 def replays_for_lesson(slug):
     return [replay for replay in _REPLAYS if replay["lesson_slug"] == slug]
+
+
+def replay_forward(slug):
+    """The other replay of this lesson, or the next episode.
+
+    The long-call replay used to send the learner back to the same lesson.
+    The put replay of that lesson never came next.
+    """
+    current = replay_by_slug(slug)
+    if current is None:
+        return None
+    later = [
+        replay for replay in _REPLAYS
+        if replay["lesson_slug"] == current["lesson_slug"]
+        and replay["number"] > current["number"]
+    ]
+    if later:
+        nxt = later[0]
+        return {"href": f"/learn/replay/{nxt['slug']}", "label": f"Next · {nxt['title']}"}
+    _previous, nxt_episode = neighbors(current["lesson_slug"])
+    if nxt_episode:
+        # The visible label stays "Next episode". The next lesson's title
+        # can be "Strike, expiration, premium", and a long-option replay
+        # must not say premium.
+        return {
+            "href": f"/learn/{nxt_episode['slug']}",
+            "label": "Next episode",
+        }
+    return {"href": "/learn#replays", "label": "Back to Options 101"}
 
 
 def sitemap_paths():

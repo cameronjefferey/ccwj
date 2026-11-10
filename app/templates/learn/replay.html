@@ -40,6 +40,9 @@
         </div>
         <p class="replay-caption">One contract is 100 shares.</p>
         <p class="replay-caption">Solid line: option result. Dashed line: stock price.</p>
+        {% if replay.show_shares %}
+        <p class="replay-caption">The totals below also include the shares. The solid line is the option only.</p>
+        {% endif %}
         <div class="replay-chart">
             <canvas id="replay-chart" role="img" aria-label="{{ replay.chart_label }}"></canvas>
         </div>
@@ -133,8 +136,11 @@
             <h2>Did that make sense?</h2>
             <div class="replay-checkpoint-actions">
                 <button type="button" class="btn btn-primary" id="replay-yes">Yes</button>
+                {% if forward %}
+                <a class="replay-deeper" href="{{ url_for('learn_replay_next', slug=replay.slug) }}">{{ forward.label }}</a>
+                {% endif %}
                 <a class="replay-deeper" id="replay-deeper" href="{{ replay.deeper_href }}" title="{{ replay.lesson_title }}">Watch the lesson</a>
-            </div>
+            </div
             <p class="replay-saved" id="replay-saved" hidden>Marked done. It shows a check on Options 101.</p>
         </section>
     </div>

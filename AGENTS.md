@@ -742,10 +742,13 @@ watched” once a lesson is done. A lesson is done when the video reaches
 is clicked. Finished cards show a check, not only the word Watched.
 Signing in from `/learn` returns there (`next=`). Each lesson ends with
 a Try it link into `/practice` with the radios already set (a calls
-lesson opens a SPY call). The first three lessons use the nearest
-expiration and beginner labels. From buying and selling on, the ticket
-stays at least a week out and uses the intermediate labels. It still
-buys one option; a lesson about selling says so. Nothing is placed until
+lesson opens a SPY call). The first two lessons use the nearest
+expiration and beginner labels. The strike lesson stays on beginner
+labels and uses a weekly expiration. From buying and selling on, the
+ticket stays at least a week out and uses the intermediate labels. The
+wheel and options-risk lessons use a multi-week expiration. It still
+buys one option; a lesson about selling says so. The calls-and-puts
+checkpoint names both replays. Nothing is placed until
 the learner confirms. A logged-out visit to `/practice` explains paper
 money and links to sign in (`next=/practice`, and the lesson query stays
 on that link) and create a free account; placing an order stays behind
@@ -753,8 +756,16 @@ login. That lesson query is kept through the paper-account sign-in and
 the onboarding quiz. A paper fill's "See" link opens that paper tenant.
 Someone who already has a real brokerage is not told the trial starts
 when they connect one. Practice dates include the weekday (`Expires: Fri Oct 2`). On
-Positions, a paper vertical is one sentence covering both legs, and a
+Positions, a paper buy names the strike and the premium paid. A paper
+vertical is one sentence covering both legs, and a
 partial fill says Partially filled even after the close.
+The beginner ticket says "strike", not "bought at" the strike. A lesson
+link stays until `/practice/broker` confirms the paper account, then the
+next Practice visit is a fresh ticket. Change it keeps that symbol, side,
+expiration, and strike distance. If the lesson's symbol has no price,
+the page says so and does not say the ticket was filled in. While the
+account check is still running, the page does not say there are no open
+orders. A failed check says to refresh and does not offer paper sign-in.
 Signed-in accounts other than the shared demo user also keep that blob
 in `learn_progress` so it follows them after signup (`/learn/progress`,
 GET and POST are limited separately so a save is not crowded out by
@@ -766,7 +777,11 @@ parameter alone does not.
 Replays (`/learn/replay/<slug>`, loader `app/learn_replay.py`, YAML in
 `app/learn_replays/`) walk one path day by day and pause on a decision.
 The starter set is a long call, a long put, and a covered call, linked
-from `/learn` and from the matching episode. Prices are labeled
+from `/learn` and from the matching episode. After a replay, Next is the
+other replay of that lesson, or the next episode. The link redirects, so
+a long-option replay does not print the next lesson's slug. The covered-call chart
+says the solid line is the option only; the total also includes the
+shares. Prices are labeled
 illustrative: `stg_daily_prices` holds public closes, but option marks
 are tenant-scoped and are not copied onto this public page. "Premium"
 is only the money a short option collected. Yes on the checkpoint stores

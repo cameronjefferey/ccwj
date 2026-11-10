@@ -204,6 +204,19 @@ def learn_replay_index():
     return redirect(url_for("learn_index") + "#replays")
 
 
+@app.route("/learn/replay/<slug>/next")
+def learn_replay_next(slug):
+    """Leave a replay without putting the next lesson's slug on this page.
+
+    The strike lesson's slug contains "premium". A long-option replay must
+    not say that word, so the visible link stays on this replay and redirects.
+    """
+    target = learn_replay.replay_forward(slug)
+    if target is None:
+        abort(404)
+    return redirect(target["href"])
+
+
 @app.route("/learn/replay/<slug>")
 def learn_replay_page(slug):
     replay = learn_replay.replay_by_slug(slug)
@@ -227,6 +240,7 @@ def learn_replay_page(slug):
         replay=replay,
         start_step=step,
         try_it=learn_try.for_replay(slug),
+        forward=learn_replay.replay_forward(slug),
     )
 
 
@@ -258,7 +272,9 @@ def learn_episode(slug):
         lesson_replays=learn_replay.replays_for_lesson(slug),
         try_it=learn_try.for_lesson(slug) if episode["published"] else None,
         checks=learn_try.checks_for_lesson(slug) if episode["published"] else [],
-        deeper=learn_try.deeper_for_lesson(slug) if episode["published"] else None,
+        checkpoint_links=(
+            learn_try.checkpoint_links(slug) if episode["published"] else []
+        ),
         video_ld=_video_ld(episode, page_url, og_image),
         robots="noindex" if not episode["published"] else None,
         **_learner_links(),
