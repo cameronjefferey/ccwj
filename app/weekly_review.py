@@ -31,8 +31,10 @@ from app.query_cache import bind_user_query_epoch, cached_query_df
 from app.skeleton import skeleton_page
 from app.privacy import shown_account as _privacy_account_label
 from app.review_format import (
+    allocate_rounded as _allocate_rounded,
     display_parts as _display_parts,
     session_date as _session_date_label,
+    signed_whole as _signed_whole,
     stamp_snapshot as _stamp_snapshot,
     sum_ints as _sum_ints,
     whole_dollars as _whole_dollars,
@@ -1348,9 +1350,11 @@ GROUP BY tenant_id
 #   NULL delta, and Monday's delta is against the previous Friday's close
 #   (never against Sat/Sun, which would always read $0).
 #
-# Multi-account scope: we SUM delta_1d across all accounts in the user's
-# filter (mirrors mart_account_equity_daily which is per-account). For a
-# single-account filter this collapses to the trivial pass-through.
+# Multi-account scope: one row per account. The cell is the sum of each
+# account's whole-dollar delta, the same total the day review prints.
+# Rounding the SQL SUM first can disagree with that total by a dollar
+# per account (two +$0.60 moves are +$1 rounded together and +$2 as
+# two rounded cells).
 #
 # Caveats — surface but don't filter out (matches product intent):
 #   1) DEPOSITS / WITHDRAWALS land in account_value, so a paycheck transfer
@@ -1377,24 +1381,16 @@ GROUP BY tenant_id
 #     deposits, journal transfers into one number every day. We just
 #     report the day-over-day change of that number.
 DAILY_CALENDAR_QUERY = """
-WITH daily AS (
-    SELECT
-        date,
-        -- SUM across accounts so multi-account scopes net correctly.
-        -- Single-account scope is a trivial pass-through.
-        SUM(account_value)             AS account_value,
-        SUM(COALESCE(delta_1d, 0))     AS delta_1d
-    FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
-    WHERE date >= @start_date
-      AND date <= @end_date
-      {tenant_filter}
-    GROUP BY date
-)
 SELECT
     date,
-    account_value,
-    ROUND(delta_1d, 2) AS daily_change
-FROM daily
+    tenant_id,
+    account,
+    user_id,
+    ROUND(COALESCE(delta_1d, 0), 2) AS daily_change
+FROM `ccwj-dbt.analytics.mart_account_snapshots_enriched`
+WHERE date >= @start_date
+  AND date <= @end_date
+  {tenant_filter}
 ORDER BY date
 """
 
@@ -2610,8 +2606,10 @@ def _overview_radar(start, earnings, options, dividends, pending, n_days=15):
         elif opt.get("itm") and opt.get("distance") is not None:
             bits.append(f"ITM ${abs(float(opt['distance'])):.2f}")
         if opt.get("unrealized_pnl") is not None:
-            pnl = float(opt["unrealized_pnl"])
-            bits.append(("+" if pnl >= 0 else "−") + f"${abs(pnl):,.0f}")
+            pnl_label = _signed_whole(opt.get("unrealized_pnl"))
+            # A mark that rounds to $0 is not a gain or a loss.
+            if pnl_label and pnl_label not in ("$0", "—"):
+                bits.append(pnl_label)
         strike_txt = ""
         try:
             strike_txt = f"${float(opt.get('strike')):g} "
@@ -2902,6 +2900,42 @@ def _build_calendar_grid(
             "is_extra": idx < extra_weeks,
         })
     return rows
+
+
+def _calendar_display_changes(df, snap_cutoff=None):
+    """Whole-dollar account-value change per date.
+
+    Each account row is rounded on its own. The cell is the sum of
+    those dollars, which is the total the day review prints for that
+    date. A day still after the settled close is left out. An empty
+    frame is an empty map.
+    """
+    if df is None or getattr(df, "empty", True) or "date" not in getattr(df, "columns", []):
+        return {}
+    totals = {}
+    for _, row in df.iterrows():
+        raw = row.get("date")
+        try:
+            if pd.isna(raw):
+                continue
+        except (TypeError, ValueError):
+            pass
+        day = _coerce_date(raw)
+        if day is None:
+            continue
+        if snap_cutoff is not None and day > snap_cutoff:
+            continue
+        change = row.get("daily_change")
+        try:
+            if pd.isna(change):
+                change = None
+        except (TypeError, ValueError):
+            pass
+        shown = _whole_dollars(0 if change is None else change)
+        if shown is None:
+            continue
+        totals[day] = totals.get(day, 0) + shown
+    return totals
 
 
 def _aggregate_weekly_rows(rows):
@@ -3550,26 +3584,27 @@ def split_option_day(open_today, prev_open, realized):
     return round(live - prev, 2), round(booked, 2)
 
 
-def option_mover_caption(open_impact, closed_impact):
+def option_mover_caption(open_impact, closed_impact, target=None):
     """Plain label for one option mover row.
 
     ``+$X open``, ``−$Y closed``, or both joined with a middle dot.
-    Contract size stays on the line above this caption.
+    The named dollars are whole dollars that add up to the tile
+    (``target``, or the sum of the two parts). A part that rounds into
+    the other one is left off, so the caption cannot say ``−$0`` or
+    two figures that miss the tile by a dollar. Contract size stays
+    on the line above this caption.
     """
     open_v = _option_num(open_impact)
     closed_v = _option_num(closed_impact)
-    has_open = abs(open_v) >= 0.5
-    has_closed = abs(closed_v) >= 0.5
-    if has_open and has_closed:
-        return (
-            f"{_signed_option_dollars(open_v)} open · "
-            f"{_signed_option_dollars(closed_v)} closed"
-        )
-    if has_closed:
-        return f"{_signed_option_dollars(closed_v)} closed"
-    if has_open:
-        return f"{_signed_option_dollars(open_v)} open"
-    return ""
+    if target is None:
+        target = open_v + closed_v
+    shown = _allocate_rounded([open_v, closed_v], target)
+    bits = []
+    if shown[0]:
+        bits.append(f"{_signed_whole(shown[0])} open")
+    if shown[1]:
+        bits.append(f"{_signed_whole(shown[1])} closed")
+    return " · ".join(bits)
 
 
 def _lot_status_caption(status, pnl):
@@ -3579,14 +3614,10 @@ def _lot_status_caption(status, pnl):
         "Assigned": "assigned",
         "Exercised": "exercised",
     }.get(str(status or ""), "closed")
-    return f"{_signed_option_dollars(pnl)} {word}"
-
-
-def _signed_option_dollars(value):
-    n = int(round(abs(float(value))))
-    if float(value) < 0:
-        return f"−${n:,}"
-    return f"+${n:,}"
+    label = _signed_whole(pnl)
+    if not label or label == "—":
+        return ""
+    return f"{label} {word}"
 
 
 def _option_cp(value):
@@ -3942,7 +3973,7 @@ def _rollup_option_moves(df):
             "closed_impact": closed_i if slot["split"] else None,
             "contract_detail": option_contract_detail(slot["rows"]),
             "option_caption": (
-                option_mover_caption(open_i, closed_i) if slot["split"] else ""
+                option_mover_caption(open_i, closed_i, dollar) if slot["split"] else ""
             ),
             "_iso": slot["_iso"],
         })
@@ -5127,7 +5158,7 @@ def _same_abs_qty(left, right):
     return abs(left_qty - right_qty) <= 1e-6
 
 
-def _group_day_rolls(trade_rows):
+def _group_day_rolls(trade_rows, anchor=None):
     """Collapse same-day close+open of the same option type into one roll.
 
     Income traders (the Daily Review audience) read a BTC + STO of JPM
@@ -5267,8 +5298,12 @@ def _group_day_rolls(trade_rows):
             "is_option": True,
             "short_side": short_side,
             "option_type": occ["option_type"],
-            "close_label": _format_trade_contract(row.get("trade_symbol"), row.get("symbol")),
-            "open_label": _format_trade_contract(opened.get("trade_symbol"), opened.get("symbol")),
+            "close_label": _format_trade_contract(
+                row.get("trade_symbol"), row.get("symbol"), anchor,
+            ),
+            "open_label": _format_trade_contract(
+                opened.get("trade_symbol"), opened.get("symbol"), anchor,
+            ),
             "strike_dir": strike_dir,
             "expiry_dir": expiry_dir,
             "successful": bool(success_bits) if short_side else None,
@@ -6179,16 +6214,7 @@ def _apply_overview_below(context, batch, *, today, this_week, market_today,
     try:
         cal_df = batch.get("calendar", pd.DataFrame())
         if cal_df is not None and not cal_df.empty:
-            for col in ["account_value", "daily_change"]:
-                if col in cal_df.columns:
-                    cal_df[col] = pd.to_numeric(cal_df[col], errors="coerce").fillna(0)
-            if "date" in cal_df.columns:
-                cal_df["date"] = pd.to_datetime(cal_df["date"]).dt.date
-            for _, row in cal_df.iterrows():
-                d = row["date"]
-                if snap_cutoff is not None and d > snap_cutoff:
-                    continue
-                daily_changes_map[d] = round(float(row.get("daily_change") or 0), 2)
+            daily_changes_map = _calendar_display_changes(cal_df, snap_cutoff)
             context["daily_calendar_no_query_rows"] = False
         else:
             context["daily_calendar_no_query_rows"] = True
@@ -6733,6 +6759,7 @@ def weekly_review():
                 batch.get("today_trades", pd.DataFrame()),
                 label_map=label_map,
                 tag_rows=_wk_tag_rows,
+                anchor=today,
             )
             context["trades_today"] = fills
         except Exception as e:
@@ -7013,6 +7040,7 @@ def overview_below():
             batch.get("today_trades", pd.DataFrame()),
             label_map=_tenant_label_map_for_user(current_user.id),
             tag_rows=context.get("_wk_tag_rows") or [],
+            anchor=today,
         )
         today_syms = {s.upper() for s in (fills.get("symbols") or []) if s}
         for row in (context.get("trades_this_week") or {}).get("trades") or []:
@@ -7150,7 +7178,7 @@ def today_view():
             current_user.id, tenant_ids)
         context["trades_today"] = _split_day_fills(
             batch.get("today_trades", pd.DataFrame()),
-            label_map=label_map, tag_rows=_tag_rows)
+            label_map=label_map, tag_rows=_tag_rows, anchor=today)
         if live:
             context["covered_call_unwritten"] = _covered_calls_without_short(
                 batch.get("cc_unwritten", pd.DataFrame()), label_map)
@@ -7766,7 +7794,7 @@ def _attach_fill_tags(trades, tag_rows):
             symbol=row.get("symbol"))
 
 
-def _split_day_fills(trades_df, label_map=None, tag_rows=None):
+def _split_day_fills(trades_df, label_map=None, tag_rows=None, anchor=None):
     """Turn a ``DAY_TRADES_QUERY`` frame into fill rows.
 
     Shared by Daily Review (today) and the time-machine day page. Trade
@@ -7892,7 +7920,7 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         else:
             cash_rows.append(row)
     grouped = _group_day_spreads(
-        _group_day_open_and_settle(_group_day_rolls(trade_rows))
+        _group_day_open_and_settle(_group_day_rolls(trade_rows, anchor=anchor))
     )
     _attach_fill_tags(grouped, tag_rows)
     net_gl = 0.0
@@ -7917,6 +7945,42 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None):
         "symbols": symbols,
         "has_any": bool(trade_rows or cash_rows),
     }
+
+
+def _day_option_rows(options_df, fills_df, day):
+    """Option mover tiles for one past session, in Overview's units.
+
+    Same lot split and open/closed caption as the Overview movers card.
+    ``display_impact`` is the whole-dollar tile. ``total`` is the sum of
+    those tiles, so a total row matches the cells and the header.
+    """
+    rolled = []
+    if options_df is not None and not getattr(options_df, "empty", True):
+        rolled, _opt_as_of = _rollup_option_moves(options_df)
+    iso = day.isoformat()
+    opts = []
+    for row in rolled:
+        if row.get("_iso") != iso:
+            continue
+        item = dict(row)
+        item.pop("_iso", None)
+        opts.append(item)
+    adjusted, _impact, _as_of = _apply_same_day_option_lots(opts, fills_df, day)
+    rows = []
+    for tile in adjusted or []:
+        shown = _whole_dollars(tile.get("dollar_impact"))
+        # Same floor as the mover card: a tile that rounds to $0 is noise.
+        if not shown:
+            continue
+        rows.append({
+            "symbol": tile.get("symbol") or "",
+            "impact": tile.get("dollar_impact"),
+            "display_impact": shown,
+            "detail": tile.get("contract_detail") or "",
+            "caption": tile.get("option_caption") or "",
+        })
+    total = sum(row["display_impact"] for row in rows) if rows else None
+    return rows, total
 
 
 def _adjacent_weekday(d, step):
@@ -8003,32 +8067,27 @@ def day_detail(day_str):
 
     # ── Fills that day ────────────────────────────────────────────────
     trades_df = _filter_df_by_tenant_ids(batch["trades"], tenant_ids)
-    fills = _split_day_fills(trades_df, label_map)
+    fills = _split_day_fills(trades_df, label_map, anchor=today)
     trade_rows = fills["trades"]
     cash_rows = fills["cash"]
 
     # ── Option day moves / dividends ──────────────────────────────────
-    # Contract grain, same settlement as Overview movers. SQL is already
-    # tenant-scoped; the frame filter is the second layer.
+    # Same lot split and open/closed caption as Overview movers. SQL is
+    # already tenant-scoped; the frame filter is the second layer.
+    # Dividends are a symbol aggregate (no tenant_id to filter again);
+    # {tenant_filter} in DAY_DIVIDENDS_QUERY is the scope.
     options_df = _filter_df_by_tenant_ids(batch["options"], tenant_ids)
-    option_rows = []
-    if options_df is not None and not options_df.empty:
-        rolled, _opt_as_of = _rollup_option_moves(options_df)
-        option_rows = [
-            {
-                "symbol": o["symbol"],
-                "impact": o["dollar_impact"],
-                "detail": o.get("contract_detail") or "",
-            }
-            for o in rolled
-            if o.get("_iso") == day.isoformat()
-        ]
+    option_rows, option_total = _day_option_rows(options_df, trades_df, day)
 
     dividends_df = batch["dividends"]
     dividend_rows = [
         {"symbol": str(r.get("symbol") or ""), "amount": float(r.get("amount") or 0)}
         for _, r in dividends_df.iterrows()
-    ] if not dividends_df.empty else []
+    ] if dividends_df is not None and not dividends_df.empty else []
+    dividend_total = (
+        round(sum(row["amount"] for row in dividend_rows), 2)
+        if dividend_rows else None
+    )
 
     market_rows = []
     market_df = batch["market"]
@@ -8070,7 +8129,9 @@ def day_detail(day_str):
         has_gl=bool(fills.get("has_gl")),
         gl_complete=bool(fills.get("gl_complete")),
         option_rows=option_rows,
+        option_total=option_total,
         dividend_rows=dividend_rows,
+        dividend_total=dividend_total,
         market_rows=market_rows,
         has_any=has_any,
     )

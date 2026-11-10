@@ -63,14 +63,14 @@
                    title="What happened {{ c.date|session_date('dow', today) }}?">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data %}
-                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
+                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ c.daily_change|signed_whole }}{% endif %}</div>
                     {% endif %}
                 </a>
                 {% else %}
                 <div class="cal-day {{ 'today' if c.is_today }}{{ extra_cls }}" style="background:{{ bg }}; color:{{ fg }};">
                     <div class="cal-day-num">{{ c.day }}</div>
                     {% if c.has_data and not c.is_future %}
-                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ money(c.daily_change, 0, true) }}{% endif %}</div>
+                    <div class="cal-day-pnl">{% if privacy_mode %}••••{% else %}{{ c.daily_change|signed_whole }}{% endif %}</div>
                     {% endif %}
                 </div>
                 {% endif %}
