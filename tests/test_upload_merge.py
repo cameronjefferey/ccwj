@@ -1923,7 +1923,7 @@ def test_positions_all_failure_preserves_classic_shaped_rows_by_source():
 
 
 def test_first_positions_all_failure_preserves_unstamped_legacy_rows():
-    """Pre-deploy rows survive until a successful sync stamps provenance."""
+    """Pre-deploy rows get one grace sync, not indefinite phantom holdings."""
     account = "Schwab Account"
     existing = pd.concat([
         _upload._prepare_seed_df(
@@ -1967,9 +1967,28 @@ def test_first_positions_all_failure_preserves_unstamped_legacy_rows():
             _upload.PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,
         ),
     )
-    assert set(_parse(failed_csv)["Symbol"]) == {
+    failed = _parse(failed_csv)
+    assert set(failed["Symbol"]) == {
         "AAPL", "LEGACY-OPTION", "LEGACY-EQUITY",
     }
+    assert set(
+        failed.loc[
+            failed["Symbol"].str.startswith("LEGACY-"), "position_source"
+        ]
+    ) == {_upload.LEGACY_UNKNOWN_POSITION_SOURCE}
+
+    repeated_failure_csv = _upload._merge_seed_with_existing(
+        _upload.CURRENT_PATH,
+        account,
+        fresh,
+        CURRENT_SEED_COLUMNS,
+        tenant_id=TENANT_SCHWAB_5989,
+        existing_content=failed_csv,
+        preserve_current_security_types=(
+            _upload.PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,
+        ),
+    )
+    assert set(_parse(repeated_failure_csv)["Symbol"]) == {"AAPL"}
 
     recovered_csv = _upload._merge_seed_with_existing(
         _upload.CURRENT_PATH,
@@ -1977,7 +1996,7 @@ def test_first_positions_all_failure_preserves_unstamped_legacy_rows():
         fresh,
         CURRENT_SEED_COLUMNS,
         tenant_id=TENANT_SCHWAB_5989,
-        existing_content=failed_csv,
+        existing_content=repeated_failure_csv,
     )
     assert set(_parse(recovered_csv)["Symbol"]) == {"AAPL"}
 

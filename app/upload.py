@@ -1595,10 +1595,14 @@ _FETCH_FROM_GITHUB = object()
 # Sentinel used by SnapTrade when ``positions/all`` was unavailable. Rows
 # written from that endpoint carry ``position_source=positions_all`` because
 # their normalized security type may still be Option, Equity, or Crypto.
-# Blank-source rows predate that provenance marker, so the first failed read
-# preserves them conservatively; legacy non-classic rows are also retained.
+# Blank-source rows predate that provenance marker, so one failed read
+# preserves them conservatively and stamps them as legacy-unknown. A repeated
+# failure may then discard classic-shaped unknowns that an authoritative
+# classic feed no longer reports instead of retaining closed positions
+# forever. Legacy non-classic rows are still retained.
 PRESERVE_SUPPLEMENTAL_SECURITY_TYPES = "__positions_all__"
 POSITIONS_ALL_SOURCE = "positions_all"
+LEGACY_UNKNOWN_POSITION_SOURCE = "legacy_unknown"
 _CLASSIC_CURRENT_SECURITY_TYPES = frozenset({
     "equity",
     "option",
@@ -1637,9 +1641,11 @@ def _merge_seed_with_existing(
     ``preserve_current_security_types`` is a fail-safe for supplemental
     holdings feeds. Explicit labels preserve that type. The
     ``PRESERVE_SUPPLEMENTAL_SECURITY_TYPES`` sentinel preserves rows stamped
-    as originating from ``positions/all```, plus blank-source and non-classic
-    rows from before that provenance marker existed. A later successful
-    authoritative empty response passes neither and removes stale rows.
+    as originating from ``positions/all```, plus blank-source rows for one
+    failed read and non-classic rows from before that provenance marker
+    existed. A later failed read removes classic-shaped legacy unknowns; a
+    successful authoritative empty response passes neither and removes every
+    stale row.
 
     Raises ``SeedFetchError`` if the existing seed cannot be fetched
     for any reason other than HTTP 404 — see commit ``3f4aecb`` for
@@ -1902,6 +1908,16 @@ def _merge_seed_with_existing(
                     )
                 preserved = existing_account_df.loc[preserve_mask].copy()
                 if not preserved.empty:
+                    if source_col is not None:
+                        blank_source = (
+                            preserved[source_col]
+                            .astype(str)
+                            .str.strip()
+                            .eq("")
+                        )
+                        preserved.loc[
+                            blank_source, source_col
+                        ] = LEGACY_UNKNOWN_POSITION_SOURCE
                     output_account_col = next(
                         c for c in seed_columns
                         if str(c).strip().lower() == "account"
