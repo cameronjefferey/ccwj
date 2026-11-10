@@ -477,7 +477,7 @@ option_close_events as (
     select * from contract_terminal_events
 ),
 
-close_state as (
+close_running as (
     select
         ce.tenant_id,
         ce.account,
@@ -493,17 +493,61 @@ close_state as (
             partition by ce.tenant_id, ce.account, ce.user_id, ce.trade_symbol
             order by ce.close_event_date
             rows between unbounded preceding and current row
-        ) as cumulative_closed_qty,
-        coalesce(sum(oe.opened_qty), 0) as opened_qty_to_date,
-        coalesce(sum(oe.opening_cash), 0) as opening_cash_to_date
+        ) as cumulative_closed_qty
     from option_close_events ce
+),
+
+open_state_at_close as (
+    select
+        cr.*,
+        coalesce(sum(
+            case when oe.open_event_date < cr.close_event_date
+                 then oe.opened_qty else 0 end
+        ), 0) as prior_opened_qty,
+        coalesce(sum(
+            case when oe.open_event_date < cr.close_event_date
+                 then oe.opening_cash else 0 end
+        ), 0) as prior_opening_cash,
+        coalesce(sum(
+            case when oe.open_event_date = cr.close_event_date
+                 then oe.opened_qty else 0 end
+        ), 0) as same_day_opened_qty,
+        coalesce(sum(
+            case when oe.open_event_date = cr.close_event_date
+                 then oe.opening_cash else 0 end
+        ), 0) as same_day_opening_cash
+    from close_running cr
     left join option_open_events oe
-      on (ce.tenant_id is not distinct from oe.tenant_id)
-     and ce.account = oe.account
-     and (ce.user_id is not distinct from oe.user_id)
-     and ce.trade_symbol = oe.trade_symbol
-     and oe.open_event_date <= ce.close_event_date
-    group by 1, 2, 3, 4, 5, 6, 7
+      on (cr.tenant_id is not distinct from oe.tenant_id)
+     and cr.account = oe.account
+     and (cr.user_id is not distinct from oe.user_id)
+     and cr.trade_symbol = oe.trade_symbol
+     and oe.open_event_date <= cr.close_event_date
+    group by 1, 2, 3, 4, 5, 6, 7, 8, 9
+),
+
+close_state as (
+    select
+        *,
+        -- stg_history has a date but no reliable intraday fill order. At an
+        -- exact flat boundary, a same-day open is the next episode (close,
+        -- then reopen), not basis for the episode that just closed. This is
+        -- the FIFO interpretation and prevents the reopen premium from being
+        -- shifted onto the earlier close. A first-day round trip still needs
+        -- its same-day open because cumulative closes exceed prior opens.
+        case
+            when same_day_opened_qty > 0
+             and abs(cumulative_closed_qty - prior_opened_qty) <= 1e-9
+            then prior_opened_qty
+            else prior_opened_qty + same_day_opened_qty
+        end as opened_qty_to_date,
+        case
+            when same_day_opened_qty > 0
+             and abs(cumulative_closed_qty - prior_opened_qty) <= 1e-9
+            then prior_opening_cash
+            else prior_opening_cash + same_day_opening_cash
+        end as opening_cash_to_date
+    from open_state_at_close
 ),
 
 close_allocated as (

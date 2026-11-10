@@ -20,6 +20,10 @@
     (4) MULTI-DATE CLOSES STAY MULTI-DATE: every distinct close date in
         stg_history has a realized row. Otherwise a later reduction can
         silently move all prior realized P&L onto the latest session.
+    (5) SAME-DAY REOPENS START THE NEXT EPISODE: when a close flattens all
+        quantity opened before that date and the same OCC contract reopens
+        that day, the new opening cash must not rewrite the completed
+        episode's realized P&L.
 
     Returns offending rows (test fails if non-zero).
 #}
@@ -177,6 +181,112 @@ missing_realized_date as (
         and e.date = d.date
         and d.is_realized_close = true
     where d.trade_symbol is null
+),
+
+history_day_events as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        least(trade_date, coalesce(option_expiry, trade_date)) as date,
+        sum(case
+            when action in ('option_sell_to_open', 'option_buy_to_open')
+            then abs(quantity) else 0 end
+        ) as opened_qty,
+        sum(case
+            when action in ('option_sell_to_open', 'option_buy_to_open')
+            then amount else 0 end
+        ) as opening_cash,
+        sum(case
+            when action in (
+                'option_buy_to_close', 'option_sell_to_close',
+                'option_expired', 'option_assigned', 'option_exercised'
+            )
+            then abs(quantity) else 0 end
+        ) as closed_qty,
+        sum(case
+            when action in (
+                'option_buy_to_close', 'option_sell_to_close',
+                'option_expired', 'option_assigned', 'option_exercised'
+            )
+            then amount else 0 end
+        ) as closing_cash
+    from {{ ref('stg_history') }}
+    where instrument_type in ('Call', 'Put')
+    group by 1, 2, 3, 4, 5
+),
+
+history_running as (
+    select
+        *,
+        coalesce(sum(opened_qty) over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by date
+            rows between unbounded preceding and 1 preceding
+        ), 0) as prior_opened_qty,
+        coalesce(sum(opening_cash) over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by date
+            rows between unbounded preceding and 1 preceding
+        ), 0) as prior_opening_cash,
+        sum(closed_qty) over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by date
+            rows between unbounded preceding and current row
+        ) as cumulative_closed_qty,
+        sum(closing_cash) over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by date
+            rows between unbounded preceding and current row
+        ) as cumulative_closing_cash,
+        countif(closed_qty > 0) over (
+            partition by tenant_id, account, user_id, trade_symbol
+        ) as close_date_count
+    from history_day_events
+),
+
+same_day_reopen_boundaries as (
+    select *
+    from history_running
+    where opened_qty > 0
+      and closed_qty > 0
+      and prior_opened_qty > 0
+      and abs(cumulative_closed_qty - prior_opened_qty) < 1e-9
+      and close_date_count > 1
+),
+
+same_day_reopen_basis_leak as (
+    select
+        b.tenant_id,
+        b.account,
+        b.user_id,
+        b.trade_symbol,
+        b.date,
+        cast(true as bool) as is_realized_close,
+        cast(null as int64) as n,
+        'same_day_reopen_basis_leak' as failure_kind
+    from same_day_reopen_boundaries b
+    join contracts c
+        on (b.tenant_id is not distinct from c.tenant_id)
+        and b.account = c.account
+        and (b.user_id is not distinct from c.user_id)
+        and b.trade_symbol = c.trade_symbol
+        and c.realized_close_date is not null
+        and b.date < c.realized_close_date
+    left join daily d
+        on (b.tenant_id is not distinct from d.tenant_id)
+        and b.account = d.account
+        and (b.user_id is not distinct from d.user_id)
+        and b.trade_symbol = d.trade_symbol
+        and d.is_realized_close = true
+        and d.date <= b.date
+    group by 1, 2, 3, 4, 5, 6, 7, 8,
+             b.prior_opening_cash, b.cumulative_closing_cash
+    having abs(
+        coalesce(sum(d.pnl_today), 0)
+        - (b.prior_opening_cash + b.cumulative_closing_cash)
+    ) > 0.01
 )
 
 select * from double_emission
@@ -186,3 +296,5 @@ union all
 select * from realized_mismatch
 union all
 select * from missing_realized_date
+union all
+select * from same_day_reopen_basis_leak
