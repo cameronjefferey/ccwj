@@ -313,7 +313,11 @@
         <section class="ob-section" data-step="4">
             <h2 class="ob-section-title">What would you love this to tell you?</h2>
             <p class="ob-section-sub">
+                {% if paper %}
+                Last few. Practice is next. These answers stay on your account.
+                {% else %}
                 Last few. We'll lean on these to shape your first Overview.
+                {% endif %}
             </p>
 
             <div class="ob-question" data-multi="1">
@@ -431,6 +435,8 @@
 
     var current = 1;
     var preview = {{ onboarding_preview|default(false)|tojson }};
+    var paperLanding = {{ paper|default(false)|tojson }};
+    window.__onboardingHoldNext = paperLanding ? "Practice" : "Overview";
 
     // Hold auto-redirect for the whole time the survey is on screen.
     // Waiting for first focus/change used to yank people out while they
@@ -662,14 +668,16 @@
             .then(function (res) {
                 if (res.body && res.body.ok) {
                     window.__onboardingHoldRedirect = false;
+                    var thanksSub = {{ (
+                        "Your paper account is connected. Practice is next."
+                        if paper else
+                        "We'll use this to shape your first Overview. Hang tight, we're almost done crunching your data."
+                    )|tojson }};
                     card.innerHTML =
                         '<div class="ob-thanks">' +
                         '<div class="ob-thanks-emoji" aria-hidden="true">✨</div>' +
                         '<div class="ob-thanks-title">Thanks — got it.</div>' +
-                        '<div class="ob-thanks-sub">' +
-                        'We\'ll use this to shape your first Overview. ' +
-                        'Hang tight, we\'re almost done crunching your data.' +
-                        '</div></div>';
+                        '<div class="ob-thanks-sub">' + thanksSub + '</div></div>';
                     var sync = document.getElementById("syncCard");
                     if (sync) sync.classList.remove("is-secondary");
                 } else {
@@ -739,7 +747,9 @@
         fetch(statusEndpoint, { credentials: "same-origin" })
             .then(function (r) { return r.json(); })
             .then(function (d) {
-                if (d && d.ready) {
+                // A new paper account has nothing to import. Waiting on
+                // warehouse rows left people on this page after the survey.
+                if (paper || (d && d.ready)) {
                     if (label && !window.__onboardingHoldRedirect) {
                         label.textContent = paper
                             ? "All set — bringing you to practice…"

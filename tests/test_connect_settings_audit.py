@@ -15,6 +15,105 @@ from tests.test_onboarding_settings_audit import _flashes, _login
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_paper_grant_is_paper_when_the_account_name_is_only_alpaca():
+    """The authorization is Alpaca Paper. The account institution has
+    come back as Alpaca. That is still the paper path."""
+    from app.snaptrade import _account_is_alpaca_paper
+
+    assert _account_is_alpaca_paper({
+        "institution_name": "Alpaca",
+        "connection_broker": "Alpaca Paper",
+    }) is True
+    assert _account_is_alpaca_paper({
+        "institution_name": "Alpaca",
+        "connection_broker": "ALPACA-PAPER",
+    }) is True
+    assert _account_is_alpaca_paper({
+        "institution_name": "Alpaca",
+        "connection_broker": "Alpaca",
+    }) is False
+
+
+def test_paper_authorization_name_keeps_the_practice_path(monkeypatch):
+    import types
+    from app import snaptrade as snap
+
+    monkeypatch.setattr(snap, "current_user", types.SimpleNamespace(id=7))
+    monkeypatch.setattr(
+        snap, "get_snaptrade_user",
+        lambda uid: {"snaptrade_user_id": "u", "snaptrade_secret": "s"},
+    )
+    monkeypatch.setattr(snap, "_get_snaptrade_client", lambda: object())
+    monkeypatch.setattr(
+        snap, "_list_snaptrade_accounts",
+        lambda client, creds: ([{
+            "id": "paper-acc",
+            "institution_name": "Alpaca",
+            "connection_broker": "Alpaca Paper",
+            "number": "1111",
+            "brokerage_authorization": "auth-paper",
+        }], True),
+    )
+
+    def _accounts(uid):
+        if not _accounts.calls:
+            _accounts.calls += 1
+            return []
+        _accounts.calls += 1
+        return [{
+            "snaptrade_account_id": "paper-acc",
+            "tenant_id": "snaptrade:paper-acc",
+            "first_sync_completed": False,
+            "account_name": "Alpaca Paper Account",
+            "broker_slug": "Alpaca Paper",
+            "display_nickname": None,
+        }]
+
+    _accounts.calls = 0
+    monkeypatch.setattr(snap, "get_snaptrade_accounts", _accounts)
+    monkeypatch.setattr(
+        snap, "_ensure_snaptrade_tenant_id",
+        lambda **kwargs: "snaptrade:paper-acc",
+    )
+    monkeypatch.setattr(
+        snap, "get_broker_tenant",
+        lambda tid: {
+            "account_name": "Alpaca Paper Account",
+            "display_nickname": None,
+        },
+    )
+    monkeypatch.setattr(snap, "upsert_snaptrade_account", lambda *a, **k: None)
+    monkeypatch.setattr(snap, "clear_snaptrade_connection_broken", lambda *a, **k: None)
+    monkeypatch.setattr(snap, "add_account_for_user", lambda *a, **k: None)
+    monkeypatch.setattr(
+        snap, "set_snaptrade_brokerage_authorization_id", lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "app.early_broker.maybe_stamp_early_broker_cohort", lambda *a, **k: None,
+    )
+    monkeypatch.setattr("app.models.get_onboarding_response", lambda uid: None)
+    monkeypatch.setattr("app.models.get_tenant_ids_for_user", lambda uid: [])
+    monkeypatch.setattr("app.plan.user_has_real_brokerage", lambda uid: False)
+    monkeypatch.setattr(
+        "app.paper_accounts.note_connect_view", lambda *a, **k: None,
+    )
+    monkeypatch.setattr(snap, "_kick_post_connect_sync", lambda uid: None)
+
+    with app.test_request_context("/snaptrade/callback"):
+        from flask import session
+        session["snaptrade_callback_user_id"] = 7
+        resp = snap.snaptrade_callback.__wrapped__()
+        flashes = session.get("_flashes") or []
+
+    location = resp.location or ""
+    assert resp.status_code == 302
+    assert "paper=1" in location
+    assert "first=1" in location
+    messages = " ".join(str(item) for item in flashes)
+    assert "Paper account connected" in messages
+    assert "pulling your trade history" not in messages.lower()
+
+
 def test_paper_connect_keeps_practice_through_the_nickname_step(monkeypatch):
     import types
     from app import snaptrade as snap

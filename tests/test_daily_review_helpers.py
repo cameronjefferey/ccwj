@@ -871,6 +871,15 @@ class TestBuildTodayMovers:
         assert "SUM(pnl_today) AS realized_pnl" in DAY_TRADES_QUERY
         assert "date = @day" in DAY_TRADES_QUERY
         assert "is_realized_close" in DAY_TRADES_QUERY
+        # int_option_contracts has a known duplicate grain for some OCCs.
+        # Rank it before either the fill or settlement join so one daily
+        # result cannot fan out into duplicate rows.
+        assert "contract_rows AS (" in DAY_TRADES_QUERY
+        assert "PARTITION BY\n                    c.tenant_id, c.account, c.user_id" in DAY_TRADES_QUERY
+        assert "c.trade_symbol, c.direction" in DAY_TRADES_QUERY
+        assert "c.opened_before_history" in DAY_TRADES_QUERY
+        assert "JOIN contract_rows c" in DAY_TRADES_QUERY
+        assert "FROM contract_rows c" in DAY_TRADES_QUERY
         assert "o.direction = 'Sold'" in DAY_TRADES_QUERY
         assert "o.direction = 'Bought'" in DAY_TRADES_QUERY
         # Opens posted the day after a same-day expiry still belong here.

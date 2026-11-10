@@ -1050,7 +1050,7 @@ The fit matrix scrolls inside `.fit-table-wrap` (visible scrollbar, ~72vh). Stra
 ### Connected accounts (`/snaptrade/accounts`) and Settings (`/profile`)
 **Status: One story each. Linking, rename, sync, and billing posts are unchanged.**
 
-Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. Skip and Save keep `connecting`, `first`, and `paper` on the processing URL. A paper-first connect shows the same survey as a first real brokerage, then opens Practice. A later real brokerage still shows that survey if it was never saved or skipped. Blank nicknames do not flash that names were saved. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. A CSV-only account is on the same Connected accounts list, with its nickname and an Uploaded CSV label, and it has no SnapTrade sync button. The hero account count already included it. Hide account names on screen (`user_profiles.privacy_mode`) is an admin recording control in the Admin menu and masks names as Account N only for that admin. A non-admin's stored flag is ignored and cleared at startup. That control is separate from Private from HappyTrader admins.
+Connected accounts opens with the count and a **Connect an account** button, then the account list (nickname, sync, disconnect). How sync works, and each account's older-history note, stay closed. The one-time rename step (`/snaptrade/accounts/name-now`) is the same card: names, then **Save and continue**. Skip and Save keep `connecting`, `first`, and `paper` on the processing URL. A paper-first connect shows the same survey as a first real brokerage, then opens Practice. The survey thank-you names Practice, and the processing page goes there even when the paper account has no warehouse rows yet. A paper grant is recognized from the authorization brokerage when the account institution name is only Alpaca. A later real brokerage still shows that survey if it was never saved or skipped. Blank nicknames do not flash that names were saved. A connect or sync must not replace a nickname the user already saved (`display_nickname` on the SnapTrade row and on `broker_tenants`). Settings shows that nickname. A CSV-only account is on the same Connected accounts list, with its nickname and an Uploaded CSV label, and it has no SnapTrade sync button. The hero account count already included it. Hide account names on screen (`user_profiles.privacy_mode`) is an admin recording control in the Admin menu and masks names as Account N only for that admin. A non-admin's stored flag is ignored and cleared at startup. That control is separate from Private from HappyTrader admins.
 
 Settings (`/profile`) opens with the person and the account / upload / broker counts, then the tab. Overview leads with connected accounts and the connect button. Accounts & data leads with sync and connect; groups, labels, and uploads stay closed (`#account-groups` still opens the groups disclosure). Plan & billing leads with plan status and the subscribe or portal button. Trial copy is **30-day free trial, no credit card**, and before a real brokerage is connected it says learning and paper trading are free and the 30-day trial starts when a real brokerage connects. Login & security keeps email and password open; delete account stays closed. The account picker is not on these pages.
 
@@ -1289,10 +1289,13 @@ CSV is a quiet link for older history. The skip opens Overview with
 `?later=1` and a session flag so Positions and the next Overview visit
 do not bounce back to Get started. The empty Overview then says no
 brokerage is connected yet. A CSV-only user still sees that
-empty state rather than the dense profile. Already connected, with
-warehouse rows: the former `/first-look` profile (`render_first_look_view`
-in `app/first_look.py`) says "Your data is in" with a primary
-Go to Overview, plus a prominent Connect another account.
+empty state rather than the dense profile. The page opened right
+after the first-connect survey (`/get-started?from_sync=1`) or a first
+CSV (`?from_upload=1`) says "Your data is in" and the primary button
+is Go to Overview. Connect another account sits under that. It does
+not open the long first-look profile. A later visit to Get started,
+with warehouse rows, still opens that profile (`render_first_look_view`
+in `app/first_look.py`), and that profile keeps Go to Overview.
 Its win rate, average win/loss, profit factor, and busiest month use the
 same `group_book_trades` units as Strategies and Trader Profile, so two
 same-day, same-expiry spreads remain two results rather than netting together.

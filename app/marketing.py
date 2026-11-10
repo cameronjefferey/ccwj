@@ -794,10 +794,15 @@ def get_started():
             current_user.id, exc,
         )
 
-    # A connected user with warehouse rows still gets the trading profile.
+    # A later visit with warehouse rows still gets the trading profile.
+    # The page the survey (or a first CSV) just opened is not that
+    # profile: it has to say the data is in and offer Overview.
     # No brokerage yet — including CSV-only — stays on the broker-first
     # empty state instead of that dense profile.
-    if snaptrade_connected and has_data:
+    from_pipeline = (request.args.get("from_sync") or "").strip() == "1" or (
+        (request.args.get("from_upload") or "").strip() == "1"
+    )
+    if snaptrade_connected and has_data and not from_pipeline:
         from app.first_look import render_first_look_view
         rendered = render_first_look_view()
         if rendered is not None:

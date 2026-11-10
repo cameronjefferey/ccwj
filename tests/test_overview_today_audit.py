@@ -339,7 +339,17 @@ def test_templates_show_matching_totals_and_keep_owner_layout():
     assert "@media (min-width: 900px)" in styles
     assert "grid-template-columns: max-content repeat(5, minmax(0, 1fr))" in styles
     assert "not in this close" in overview
-    assert 'c.date|session_date' in (ROOT / "_overview_daily.html").read_text()
+    daily_src = (ROOT / "_overview_daily.html").read_text()
+    assert "c.date|session_date" in daily_src
+    assert "c.daily_change|signed_whole" in daily_src
+    assert "money(c.daily_change" not in daily_src
+    assert "opt.unrealized_pnl|signed_whole" in below
+    assert "s.unrealized|signed_whole" in below
+    assert "l.unrealized|signed_whole" in today
+    assert "option_total|signed_whole" in day
+    assert "dividend_total" in day
+    assert 'else "-" }}' not in below
+    assert 'else "-" }}' not in today
     review = (ROOT.parent / "weekly_review.py").read_text()
     assert '_session_date_label(ed_date, "dow", today)' in review
 
@@ -541,3 +551,245 @@ def test_rendered_account_tables_match_the_header():
         "_overview_performance.html",
     ):
         app.jinja_env.get_template(name)
+
+
+def test_calendar_cell_is_the_sum_of_rounded_account_deltas():
+    """Two +$0.60 account moves are +$2, the day-review total, not +$1."""
+    from app.weekly_review import DAILY_CALENDAR_QUERY, _calendar_display_changes
+
+    day = date(2026, 6, 10)
+    later = date(2026, 6, 11)
+    changes = _calendar_display_changes(pd.DataFrame([
+        {"date": day, "tenant_id": "snaptrade:north", "account": "North", "daily_change": 0.6},
+        {"date": day, "tenant_id": "snaptrade:south", "account": "South", "daily_change": 0.6},
+        {"date": later, "tenant_id": "snaptrade:north", "account": "North", "daily_change": 1.6},
+    ]), snap_cutoff=day)
+    assert changes == {day: 2}
+    assert whole_dollars(1.2) == 1
+    sql = " ".join(DAILY_CALENDAR_QUERY.lower().split())
+    assert "tenant_id" in sql
+    assert "sum(" not in sql
+
+
+def test_open_and_closed_caption_adds_up_to_the_tile():
+    from app.weekly_review import _build_today_movers, option_mover_caption
+
+    assert option_mover_caption(-0.4, 0) == ""
+    assert option_mover_caption(-40, 0) == f"{MINUS}$40 open"
+    opt = pd.DataFrame([{
+        "symbol": "EX",
+        "trade_symbol": "EX    261016C00050000",
+        "today_date": date(2026, 10, 1),
+        "tenant_id": "t1",
+        "option_strike": 50,
+        "option_type": "C",
+        "option_expiry": date(2026, 10, 16),
+        "direction": "Bought",
+        "quantity": 1,
+        "open_mtm": 10.6,
+        "prev_open_mtm": 0,
+        "realized_today": 10.6,
+    }])
+    result = _build_today_movers(None, options_moves_df=opt)
+    row = (result["winners"] + result["losers"])[0]
+    assert row["dollar_impact"] == 21.2
+    assert whole_dollars(row["dollar_impact"]) == 21
+    assert row["option_caption"] == "+$10 open · +$11 closed"
+
+
+def test_day_option_and_roll_labels_match_the_rows():
+    from app.weekly_review import _day_option_rows, _split_day_fills
+
+    day = date(2026, 10, 1)
+    options = pd.DataFrame([
+        {
+            "symbol": "EX",
+            "trade_symbol": "EX    261016C00050000",
+            "today_date": day,
+            "tenant_id": "snaptrade:north",
+            "option_strike": 50,
+            "option_type": "C",
+            "option_expiry": date(2026, 10, 16),
+            "direction": "Bought",
+            "quantity": 1,
+            "open_mtm": 10.6,
+            "prev_open_mtm": 0,
+            "realized_today": 10.6,
+        },
+        {
+            "symbol": "EX2",
+            "trade_symbol": "EX2   261016C00060000",
+            "today_date": day,
+            "tenant_id": "snaptrade:north",
+            "option_strike": 60,
+            "option_type": "C",
+            "option_expiry": date(2026, 10, 16),
+            "direction": "Sold",
+            "quantity": 1,
+            "open_mtm": -0.4,
+            "prev_open_mtm": 0,
+            "realized_today": 0,
+        },
+    ])
+    rows, total = _day_option_rows(options, None, day)
+    assert [row["display_impact"] for row in rows] == [21]
+    assert total == 21
+    assert rows[0]["caption"] == "+$10 open · +$11 closed"
+
+    closed = _fill(
+        action="option_buy_to_close",
+        trade_date=date(2025, 12, 1),
+        trade_symbol="EX    251219C00050000",
+        underlying_symbol="EX",
+        quantity=1,
+        amount=-20,
+        realized_pnl=15,
+        instrument_type="Call",
+    )
+    opened = _fill(
+        action="option_sell_to_open",
+        trade_date=date(2025, 12, 1),
+        trade_symbol="EX    260116C00055000",
+        underlying_symbol="EX",
+        quantity=1,
+        amount=25,
+        realized_pnl=None,
+        instrument_type="Call",
+    )
+    roll = _split_day_fills(
+        pd.DataFrame([closed, opened]), anchor=date(2026, 6, 10),
+    )["trades"][0]
+    assert roll["is_roll"] is True
+    assert "Dec 19, 2025" in roll["close_label"]
+    assert "2026" not in roll["open_label"]
+
+
+def test_open_pnl_caption_renders_a_rounded_zero_without_a_sign():
+    from app import app
+
+    with app.test_request_context("/today"):
+        html = app.jinja_env.get_template("today.html").render(
+            current_user=__import__("types").SimpleNamespace(is_authenticated=False),
+            title="Today",
+            scope_account_choices=[],
+            account_groups=[],
+            user_timezone="UTC",
+            today=date(2026, 6, 10),
+            session_is_live=True,
+            accounts=[],
+            selected_account="",
+            selected_tenant=None,
+            selected_tenants=None,
+            error=None,
+            trades_today={"trades": [], "count": 0, "has_any": False, "gl_complete": False},
+            today_movers=None,
+            market_session={"state": "open", "label": "Open"},
+            delay={"shared": "These numbers can lag your broker."},
+            last_close_date=date(2026, 6, 9),
+            open_option_record={
+                "shorts": [{
+                    "symbol": "EX",
+                    "label": "EX $50 call",
+                    "days_left": 4,
+                    "unrealized": -0.4,
+                    "premium": 2.4,
+                    "captured_pct": 0,
+                }],
+                "longs": [{
+                    "symbol": "EX2",
+                    "label": "EX2 $60 call",
+                    "days_left": 4,
+                    "unrealized": 0.4,
+                    "paid": 3.2,
+                    "mark": 3.6,
+                    "change_pct": -0.4,
+                }],
+            },
+            covered_call_unwritten=None,
+            since_last_looked=None,
+            all_user_tags=[],
+        )
+        day = app.jinja_env.get_template("day_detail.html").render(
+            current_user=__import__("types").SimpleNamespace(is_authenticated=False),
+            title="Day",
+            day=date(2026, 6, 10),
+            today=date(2026, 6, 12),
+            day_label="Wednesday, June 10, 2026",
+            is_weekend=False,
+            prev_day=date(2026, 6, 9),
+            next_day=date(2026, 6, 11),
+            selected_account="",
+            selected_tenant=None,
+            selected_tenants=None,
+            user_accounts=[],
+            account_rows=[{
+                "tenant_id": "snaptrade:north",
+                "label": "North",
+                "value": 100.6,
+                "delta": 0.6,
+                "display_value": 101,
+                "display_delta": 1,
+                "delta_pct": 0.6,
+            }, {
+                "tenant_id": "snaptrade:south",
+                "label": "South",
+                "value": 100.6,
+                "delta": 0.6,
+                "display_value": 101,
+                "display_delta": 1,
+                "delta_pct": 0.6,
+            }],
+            total_value=201.2,
+            total_delta=1.2,
+            display_total_value=202,
+            display_total_delta=2,
+            total_delta_pct=0.6,
+            trade_rows=[{
+                "verb": "Sold to open",
+                "action": "option_sell_to_open",
+                "symbol": "EX",
+                "trade_symbol": "EX    251219C00050000",
+                "is_roll": False,
+                "is_spread": False,
+                "is_option": True,
+                "quantity": 1,
+                "price": 1.2,
+                "amount": None,
+                "tenant_id": "snaptrade:north",
+                "account": "North",
+            }],
+            cash_rows=[],
+            net_gl=0,
+            gl_complete=False,
+            option_rows=[{
+                "symbol": "EX",
+                "impact": 21.2,
+                "display_impact": 21,
+                "detail": "1× EX 50C",
+                "caption": "+$10 open · +$11 closed",
+            }],
+            option_total=21,
+            dividend_rows=[
+                {"symbol": "JEPI", "amount": 1.25},
+                {"symbol": "JEPQ", "amount": 1.25},
+            ],
+            dividend_total=2.5,
+            market_rows=[{"symbol": "SPY", "close": 500, "pct": -0.42}],
+            has_any=True,
+            privacy_mode=False,
+        )
+
+    assert html.count("$0") >= 2
+    assert "-$0" not in html
+    assert f"{MINUS}$0" not in html
+    assert "0%" in html
+    assert "+0%" not in html
+    assert "Dec 19 &#39;25" in day
+    assert "North" in day
+    assert "$202" in day
+    assert "$201" not in day
+    assert "+$10 open · +$11 closed" in day
+    assert day.count("+$21") >= 2
+    assert day.count("+$2.50") == 2
+    assert "SPY" in day
+    assert f"{MINUS}0.42%" in day

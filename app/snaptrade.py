@@ -1342,14 +1342,25 @@ def _list_snaptrade_accounts(client, snap):
 
 
 def _account_is_alpaca_paper(acc) -> bool:
-    """True when this SnapTrade account record is Alpaca Paper."""
+    """True when this SnapTrade account record is Alpaca Paper.
+
+    The authorization name (``connection_broker``) is the grant the
+    person just finished. The account's own ``institution_name`` has
+    come back as plain ``Alpaca`` on that same paper grant. Checking
+    only the account field sent a first paper connect through the
+    real-brokerage waiting room.
+    """
     if not isinstance(acc, dict):
         return False
-    name = (acc.get("institution_name") or "").strip().casefold()
-    if name in ("alpaca paper", "alpaca-paper"):
-        return True
-    slug = _institution_slug_from(acc).casefold().replace("_", " ")
-    return slug in ("alpaca paper", "alpaca-paper")
+    parts = (
+        acc.get("institution_name"),
+        acc.get("connection_broker"),
+        acc.get("broker_slug"),
+        _institution_slug_from(acc),
+    )
+    blob = " ".join(str(part or "") for part in parts)
+    folded = blob.casefold().replace("_", " ").replace("-", " ")
+    return "alpaca paper" in folded
 
 
 def _institution_slug_from(acc) -> str:
