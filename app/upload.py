@@ -1595,11 +1595,11 @@ _FETCH_FROM_GITHUB = object()
 # Sentinel used by SnapTrade when ``positions/all`` was unavailable. Rows
 # written from that endpoint carry ``position_source=positions_all`` because
 # their normalized security type may still be Option, Equity, or Crypto.
-# Blank-source rows predate that provenance marker, so one failed read
-# preserves them conservatively and stamps them as legacy-unknown. A repeated
-# failure may then discard classic-shaped unknowns that an authoritative
-# classic feed no longer reports instead of retaining closed positions
-# forever. Legacy non-classic rows are still retained.
+# Blank-source rows predate that provenance marker. A failed read preserves
+# them conservatively and stamps them as legacy-unknown; later failures must
+# keep preserving them because another outage does not make the supplemental
+# feed authoritative. A successful response passes no sentinel and removes
+# stale rows normally. Legacy non-classic rows are also retained.
 PRESERVE_SUPPLEMENTAL_SECURITY_TYPES = "__positions_all__"
 POSITIONS_ALL_SOURCE = "positions_all"
 LEGACY_UNKNOWN_POSITION_SOURCE = "legacy_unknown"
@@ -1641,11 +1641,10 @@ def _merge_seed_with_existing(
     ``preserve_current_security_types`` is a fail-safe for supplemental
     holdings feeds. Explicit labels preserve that type. The
     ``PRESERVE_SUPPLEMENTAL_SECURITY_TYPES`` sentinel preserves rows stamped
-    as originating from ``positions/all```, plus blank-source rows for one
-    failed read and non-classic rows from before that provenance marker
-    existed. A later failed read removes classic-shaped legacy unknowns; a
-    successful authoritative empty response passes neither and removes every
-    stale row.
+    as originating from ``positions/all```, plus blank-source/legacy-unknown
+    rows and non-classic rows from before that provenance marker existed.
+    Only a successful authoritative response passes no sentinel and removes
+    stale supplemental rows.
 
     Raises ``SeedFetchError`` if the existing seed cannot be fetched
     for any reason other than HTTP 404 — see commit ``3f4aecb`` for
@@ -1870,8 +1869,11 @@ def _merge_seed_with_existing(
                 )
                 if preserve_supplemental:
                     if source_col is not None:
-                        preserve_mask |= normalized_source.eq(
-                            POSITIONS_ALL_SOURCE
+                        preserve_mask |= normalized_source.isin(
+                            (
+                                POSITIONS_ALL_SOURCE,
+                                LEGACY_UNKNOWN_POSITION_SOURCE,
+                            )
                         )
                         # The first sync after this column ships may hit a
                         # positions/all failure before existing rows have been
