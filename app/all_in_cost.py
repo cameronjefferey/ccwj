@@ -809,9 +809,12 @@ def _current_open_contract_cash_ids(fills, contract):
     # they describe the live position and therefore occur after the tape.
     # Sorting that sentinel first would blend a prior closed episode of
     # the same OCC into the newly-open snapshot position.
-    ordered = sorted(
-        fills,
-        key=lambda fill: (bool(fill.from_snapshot), fill.date, fill.id),
+    # ``_parse_fills`` already resolved same-day close/reopen boundaries.
+    # Keep that order; only move the appended unknown-date snapshot rows
+    # behind the real tape.
+    ordered = (
+        [fill for fill in fills if not fill.from_snapshot]
+        + [fill for fill in fills if fill.from_snapshot]
     )
     for fill in ordered:
         if fill.contract != contract:
@@ -936,8 +939,65 @@ def _parse_fills(fills, splits=None, tenant_id=None, symbol=None):
             synthetic=False,
         )
         parsed.append(fill)
-    parsed.sort(key=lambda fill: (fill.date, fill.id))
-    return parsed
+    return _episode_ordered_fills(parsed)
+
+
+def _episode_ordered_fills(fills):
+    """Deterministic option episode order when fills have only a date.
+
+    BigQuery does not promise row order without an ``ORDER BY``, and the
+    broker tape has no reliable intraday timestamp.  If a contract was
+    already open before a day and that day's closes can flatten only that
+    carried quantity, process those closes before same-day opens: this is a
+    close/reopen boundary.  With no carried quantity (a 0DTE round trip), or
+    when the close needs same-day opens, process opens first.
+    """
+    by_day = defaultdict(list)
+    for fill in fills:
+        by_day[(fill.date, fill.contract)].append(fill)
+
+    carried = defaultdict(float)
+    ordered = []
+    for day, contract in sorted(by_day, key=lambda key: (key[0], str(key[1]))):
+        rows = by_day[(day, contract)]
+        opens = sorted(
+            [
+                fill for fill in rows
+                if fill.action in {"option_sell_to_open", "option_buy_to_open"}
+            ],
+            key=lambda fill: fill.id,
+        )
+        closes = sorted(
+            [
+                fill for fill in rows
+                if fill.action in {
+                    "option_buy_to_close", "option_sell_to_close",
+                    "option_assigned", "option_exercised", "option_expired",
+                }
+            ],
+            key=lambda fill: fill.id,
+        )
+        others = sorted(
+            [fill for fill in rows if fill not in opens and fill not in closes],
+            key=lambda fill: fill.id,
+        )
+        close_qty = sum(abs(fill.raw_qty) for fill in closes)
+        closes_first = (
+            carried[contract] > _EPS
+            and close_qty <= carried[contract] + _EPS
+        )
+        day_rows = (
+            closes + opens + others if closes_first
+            else opens + closes + others
+        )
+        ordered.extend(day_rows)
+        for fill in day_rows:
+            amount = abs(fill.raw_qty)
+            if fill.action in {"option_sell_to_open", "option_buy_to_open"}:
+                carried[contract] += amount
+            elif fill.action in _CLOSE_QTY:
+                carried[contract] = max(0.0, carried[contract] - amount)
+    return ordered
 
 
 def _replay_shares(fills, opening_shares):
@@ -1208,7 +1268,8 @@ def _latest_short_contract_cash_ids(fills, contract, as_of):
     qty = 0.0
     episode_ids = set()
     latest_ids = set()
-    ordered = sorted(fills, key=lambda fill: (fill.date, fill.id))
+    # Preserve ``_parse_fills``' deterministic close/reopen ordering.
+    ordered = fills
     for fill in ordered:
         if fill.contract != contract:
             continue
@@ -1235,7 +1296,8 @@ def _short_contract_episode_cash_ids_at_fill(fills, contract, anchor_id):
     """Cash fills in the short episode containing ``anchor_id``."""
     qty = 0.0
     episode_ids = set()
-    ordered = sorted(fills, key=lambda fill: (fill.date, fill.id))
+    # Preserve ``_parse_fills``' deterministic close/reopen ordering.
+    ordered = fills
     for fill in ordered:
         if fill.contract != contract:
             continue
@@ -1466,7 +1528,8 @@ def _hover(equity, all_in, lines, note):
 
 def _contract_remaining(fills):
     qty = defaultdict(float)
-    ordered = sorted(fills, key=lambda fill: (fill.date, fill.id))
+    # Preserve ``_parse_fills``' deterministic close/reopen ordering.
+    ordered = fills
     for fill in ordered:
         if not fill.contract or fill.option_type is None:
             continue
