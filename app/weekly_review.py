@@ -7414,6 +7414,20 @@ option_realized_day AS (
       {tenant_filter}
     GROUP BY 1, 2, 3, 4
 ),
+active_option_closed AS (
+    -- Lifetime BTC/STC quantity.  A contract can be partially closed and
+    -- have only the remainder expire or settle on @day; contracts_closed
+    -- includes both kinds and would label the entire opening quantity as
+    -- Expired without subtracting these active closes.
+    SELECT
+        tenant_id, account, user_id, trade_symbol,
+        SUM(ABS(COALESCE(quantity, 0))) AS active_closed_qty
+    FROM `ccwj-dbt.analytics.stg_history`
+    WHERE action IN ('option_buy_to_close', 'option_sell_to_close')
+      AND trade_date <= @day
+      {tenant_filter}
+    GROUP BY 1, 2, 3, 4
+),
 contract_rows AS (
     -- int_option_contracts can emit more than one row for an OCC/direction
     -- (for example, a real contract beside an opened-before-history
@@ -7508,10 +7522,20 @@ settlements AS (
         c.trade_symbol,
         c.underlying_symbol,
         CAST(NULL AS STRING) AS description,
-        COALESCE(
-            NULLIF(c.contracts_closed, 0),
-            c.contracts_sold_to_open,
-            c.contracts_bought_to_open
+        GREATEST(
+            COALESCE(
+                NULLIF(
+                    CASE
+                        WHEN c.direction = 'Sold'
+                            THEN c.contracts_sold_to_open
+                        ELSE c.contracts_bought_to_open
+                    END,
+                    0
+                ),
+                NULLIF(c.contracts_closed, 0),
+                0
+            ) - COALESCE(a.active_closed_qty, 0),
+            0
         ) AS quantity,
         CAST(NULL AS FLOAT64) AS price,
         CAST(0 AS FLOAT64) AS amount,
@@ -7530,6 +7554,11 @@ settlements AS (
      AND c.account = d.account
      AND (c.user_id IS NOT DISTINCT FROM d.user_id)
      AND c.trade_symbol = d.trade_symbol
+    LEFT JOIN active_option_closed a
+      ON (c.tenant_id IS NOT DISTINCT FROM a.tenant_id)
+     AND c.account = a.account
+     AND (c.user_id IS NOT DISTINCT FROM a.user_id)
+     AND c.trade_symbol = a.trade_symbol
     WHERE c.realized_close_date = @day
       AND c.status = 'Closed'
       AND (
@@ -7692,6 +7721,49 @@ _SETTLEMENT_ACTIONS = frozenset({
     "option_expired", "option_assigned", "option_exercised",
     "option_settled_est",
 })
+_OPTION_RESULT_ACTIONS = frozenset({
+    "option_buy_to_close", "option_sell_to_close",
+}) | _SETTLEMENT_ACTIONS
+
+
+def _option_close_result_key(row):
+    action = str(row.get("action") or "")
+    trade_symbol = str(row.get("trade_symbol") or "").strip().upper()
+    if action not in _OPTION_RESULT_ACTIONS or not trade_symbol:
+        return None
+    return (
+        str(row.get("tenant_id") or "").strip(),
+        str(row.get("account") or ""),
+        trade_symbol,
+        _coerce_date(row.get("trade_date")),
+    )
+
+
+def _option_close_result_owners(trades_df):
+    """One display owner for a contract's daily realized result.
+
+    The mart's result is contract/day grain, while the activity table can
+    contain several partial fills plus an expiry/assignment row.  Prefer the
+    settlement row, then the first active close, independent of query order.
+    """
+    owners = {}
+    represented = set()
+    if trades_df is None or getattr(trades_df, "empty", True):
+        return owners, represented
+    ranks = {}
+    for ordinal, (_, row) in enumerate(trades_df.iterrows()):
+        if _is_late_option_settlement(row):
+            continue
+        key = _option_close_result_key(row)
+        if key is None or _finite_or_none(row.get("realized_pnl")) is None:
+            continue
+        represented.add(key)
+        action = str(row.get("action") or "")
+        rank = (0 if action in _SETTLEMENT_ACTIONS else 1, ordinal)
+        if key not in ranks or rank < ranks[key]:
+            ranks[key] = rank
+            owners[key] = ordinal
+    return owners, represented
 
 
 def _is_drip_fill(row):
@@ -7823,14 +7895,17 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None, anchor=None):
     trade_rows, cash_rows = [], []
     symbols = []
     seen_sym = set()
-    # DAY_TRADES_QUERY joins the contract's incremental daily option G/L.
-    # A contract closed in several broker fills that day therefore carries
-    # the same session result on every fill row. Keep every fill for the
-    # activity count, but credit the result once per account/contract/day.
-    seen_option_close_gl = set()
+    # DAY_TRADES_QUERY joins one incremental daily option result to every
+    # close row for that contract.  Keep every activity row, but assign the
+    # result once.  When a partial BTC/STC and the residual settlement share
+    # the day, the lifecycle row owns the result: it is the event that
+    # completes realize-on-close for the contract.
+    option_result_owners, represented_option_results = (
+        _option_close_result_owners(trades_df)
+    )
     has_unmatched_gl = False
     net_cash = 0.0
-    for _, r in trades_df.iterrows():
+    for row_ordinal, (_, r) in enumerate(trades_df.iterrows()):
         if _is_drip_fill(r):
             continue
         if _is_late_option_settlement(r):
@@ -7853,22 +7928,16 @@ def _split_day_fills(trades_df, label_map=None, tag_rows=None, anchor=None):
         trade_symbol = str(r.get("trade_symbol") or "").strip()
         trade_date = _coerce_date(r.get("trade_date"))
         realized_deduped = False
-        if (
-            realized is not None
-            and action in ("option_buy_to_close", "option_sell_to_close")
-            and trade_symbol
-        ):
-            option_close_key = (
-                tenant_id,
-                str(r.get("account") or ""),
-                trade_symbol.upper(),
-                trade_date,
-            )
-            if option_close_key in seen_option_close_gl:
+        option_close_key = _option_close_result_key(r)
+        if option_close_key is not None:
+            owner = option_result_owners.get(option_close_key)
+            if owner is not None and owner != row_ordinal:
                 realized = None
                 realized_deduped = True
-            else:
-                seen_option_close_gl.add(option_close_key)
+            elif realized is None and option_close_key in represented_option_results:
+                # This row's result is deliberately shown on another close
+                # row for the same contract/day, not missing from the mart.
+                realized_deduped = True
         # Opens legitimately have no realized result. A close with no
         # matching warehouse result is different: its em dash means any
         # aggregate would be only a partial subtotal. Duplicate partial
