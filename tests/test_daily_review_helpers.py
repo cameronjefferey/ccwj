@@ -880,6 +880,10 @@ class TestBuildTodayMovers:
         assert "c.opened_before_history" in DAY_TRADES_QUERY
         assert "JOIN contract_rows c" in DAY_TRADES_QUERY
         assert "FROM contract_rows c" in DAY_TRADES_QUERY
+        assert "active_option_closed AS (" in DAY_TRADES_QUERY
+        assert "c.contracts_sold_to_open" in DAY_TRADES_QUERY
+        assert "c.contracts_bought_to_open" in DAY_TRADES_QUERY
+        assert "COALESCE(a.active_closed_qty, 0)" in DAY_TRADES_QUERY
         assert "o.direction = 'Sold'" in DAY_TRADES_QUERY
         assert "o.direction = 'Bought'" in DAY_TRADES_QUERY
         # Opens posted the day after a same-day expiry still belong here.
@@ -3290,6 +3294,37 @@ class TestSplitDayFills:
         assert len(out["trades"]) == 2
         assert [r["amount"] for r in out["trades"]] == [2100.0, None]
         assert out["net_gl"] == 2100.0
+        assert out["has_unmatched_gl"] is False
+        assert out["gl_complete"] is True
+
+    def test_partial_close_and_residual_expiry_credit_daily_result_once(self):
+        """The contract/day result belongs to settlement, not both rows."""
+        contract = "DDOG  261120P00095000"
+        day = date(2026, 11, 20)
+        df = pd.DataFrame([
+            self._row(
+                action="option_buy_to_close",
+                trade_symbol=contract,
+                underlying_symbol="DDOG", quantity=5, price=1.00,
+                amount=-500.0, realized_pnl=1500.0,
+                instrument_type="Put", option_expiry=day, trade_date=day,
+            ),
+            self._row(
+                action="option_expired",
+                trade_symbol=contract,
+                underlying_symbol="DDOG", quantity=5, price=None,
+                amount=0.0, realized_pnl=1500.0,
+                instrument_type="Put", option_expiry=day, trade_date=day,
+            ),
+        ])
+
+        out = _split_day_fills(df)
+        by_action = {row["action"]: row for row in out["trades"]}
+
+        assert by_action["option_buy_to_close"]["amount"] is None
+        assert by_action["option_expired"]["amount"] == 1500.0
+        assert by_action["option_expired"]["quantity"] == 5.0
+        assert out["net_gl"] == 1500.0
         assert out["has_unmatched_gl"] is False
         assert out["gl_complete"] is True
 
