@@ -70,7 +70,27 @@
 
         {% include "_early_broker_note.html" %}
 
-        {% if snaptrade_connected %}
+        {% if has_data and from_upload and not snaptrade_connected %}
+        <div class="gs-hero">
+            <h1>Your data is in</h1>
+            <p>The CSV upload landed. Open Overview to see this account.</p>
+            <div class="cta-row mt-3">
+                <a class="btn btn-primary btn-lg" href="{{ url_for('weekly_review') }}">Go to Overview</a>
+            </div>
+        </div>
+        {% if snaptrade_enabled %}
+        <div class="gs-path mb-3">
+            <div class="gs-label">Keep it current</div>
+            <h6>Connect a brokerage</h6>
+            <p class="pitch mb-2">
+                Add read-only sync through SnapTrade. HappyTrader never stores your broker password.
+            </p>
+            <div class="cta-row">
+                <a class="btn btn-outline-primary" href="{{ url_for('snaptrade_connect', return_to=url_for('get_started')) }}">Connect a brokerage</a>
+            </div>
+        </div>
+        {% endif %}
+        {% elif snaptrade_connected %}
         {# Already linked. A later visit with warehouse rows renders the
            first-look profile before this template. The arrival right
            after the survey or a first CSV skips that profile and uses
@@ -79,7 +99,10 @@
         {% if has_data %}
         <div class="gs-hero">
             <h1>Your data is in</h1>
-            <p>The brokerage sync landed. Open Overview to see this account.</p>
+            <p>
+                {% if from_upload %}The CSV upload landed.{% else %}The brokerage sync landed.{% endif %}
+                Open Overview to see this account.
+            </p>
             <div class="cta-row mt-3">
                 <a class="btn btn-primary btn-lg" href="{{ url_for('weekly_review') }}">Go to Overview</a>
             </div>
