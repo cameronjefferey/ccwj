@@ -193,6 +193,38 @@ def test_post_sync_landing_leads_with_overview_and_skips_the_profile(monkeypatch
     assert 'class="btn btn-primary btn-lg"' in html
 
 
+def test_first_csv_landing_leads_with_overview_without_a_brokerage(monkeypatch):
+    monkeypatch.setattr(
+        "app.marketing.get_tenant_ids_for_user",
+        lambda uid: ["manual:manual:7:csv"],
+    )
+    monkeypatch.setattr("app.snaptrade.snaptrade_enabled", lambda: True)
+    monkeypatch.setattr("app.models.get_snaptrade_accounts", lambda uid: [])
+    monkeypatch.setattr(
+        "app.cache_ops.warehouse_tenants_present",
+        lambda ids: {"manual:manual:7:csv"},
+    )
+
+    client = app.test_client()
+    _login(client, monkeypatch)
+    html = client.get("/get-started?from_upload=1").get_data(as_text=True)
+    assert "Your data is in" in html
+    assert "The CSV upload landed" in html
+    assert "Go to Overview" in html
+    assert "Where do you want to start?" not in html
+
+
+def test_first_csv_landing_names_the_upload_for_a_connected_user(monkeypatch):
+    _stub_connected_with_rows(monkeypatch)
+    client = app.test_client()
+    _login(client, monkeypatch)
+    html = client.get("/get-started?from_upload=1").get_data(as_text=True)
+    assert "Your data is in" in html
+    assert "The CSV upload landed" in html
+    assert "The brokerage sync landed" not in html
+    assert "Go to Overview" in html
+
+
 def test_later_get_started_still_opens_the_profile(monkeypatch):
     _stub_connected_with_rows(monkeypatch)
     monkeypatch.setattr(
