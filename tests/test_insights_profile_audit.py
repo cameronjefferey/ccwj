@@ -346,6 +346,48 @@ def test_incomplete_nearer_leg_does_not_steal_completed_spread():
     }
 
 
+def test_contract_record_pairing_is_independent_of_fill_row_order():
+    day = date(2026, 9, 28)
+    expiry = date(2026, 10, 16)
+    legs = [
+        [
+            _fill(day, "SPX", "option_sell_to_open",
+                  _occ("SPX", "261016", "C", 5000), 1, 100),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5000), 1, 0),
+        ],
+        [
+            _fill(day, "SPX", "option_sell_to_open",
+                  _occ("SPX", "261016", "C", 5010), 1, 60),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5010), 1, 0),
+        ],
+        [
+            _fill(day, "SPX", "option_buy_to_open",
+                  _occ("SPX", "261016", "C", 5005), 1, -90),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5005), 1, 0),
+        ],
+        [
+            _fill(day, "SPX", "option_buy_to_open",
+                  _occ("SPX", "261016", "C", 5015), 1, -50),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5015), 1, 0),
+        ],
+    ]
+
+    ordered = option_record_from_fills([fill for leg in legs for fill in leg])
+    reordered = option_record_from_fills(
+        [fill for leg in (legs[1], legs[0], legs[3], legs[2]) for fill in leg]
+    )
+    assert ordered == reordered == {
+        "winners": 2,
+        "losers": 0,
+        "zeros": 0,
+        "decided": 2,
+    }
+
+
 def test_profile_contract_record_comes_from_fills_not_per_leg_fingerprint():
     from tests.test_trader_story import _BOOK_SUMMARY, _BOOK_TRADES, _book
     novel = compose_novel(_book(), _BOOK_TRADES)
