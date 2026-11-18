@@ -1,0 +1,74 @@
+version: 2
+
+unit_tests:
+  - name: option_realized_pnl_carries_remaining_basis_through_scale_ins
+    description: >
+      After a partial close and a later scale-in, each subsequent close uses
+      the average basis that remained immediately before that close. A later
+      opening must not shift realized P&L between close dates.
+    model: int_option_contract_daily_pnl
+    given:
+      - input: ref('int_option_contracts')
+        rows:
+          - tenant_id: tenant:test
+            account: Test
+            user_id: 1
+            underlying_symbol: LONG
+            trade_symbol: LONG260116C00100000
+            open_date: '2026-01-01'
+            close_date: '2026-01-05'
+            status: Closed
+            net_cash_flow: 180
+            contracts_sold_to_open: 0
+            contracts_bought_to_open: 4
+            contracts_closed: 4
+            realized_pnl: 180
+            realized_close_date: '2026-01-05'
+          - tenant_id: tenant:test
+            account: Test
+            user_id: 1
+            underlying_symbol: SHORT
+            trade_symbol: SHORT260116C00100000
+            open_date: '2026-01-01'
+            close_date: '2026-01-05'
+            status: Closed
+            net_cash_flow: -180
+            contracts_sold_to_open: 4
+            contracts_bought_to_open: 0
+            contracts_closed: 4
+            realized_pnl: -180
+            realized_close_date: '2026-01-05'
+      - input: ref('stg_history')
+        rows:
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: LONG260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 2, amount: -200, instrument_type: Call, action: option_buy_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: LONG260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: 160, instrument_type: Call, action: option_sell_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: LONG260116C00100000, trade_date: '2026-01-03', option_expiry: '2026-01-16', quantity: 2, amount: -500, instrument_type: Call, action: option_buy_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: LONG260116C00100000, trade_date: '2026-01-04', option_expiry: '2026-01-16', quantity: 1, amount: 240, instrument_type: Call, action: option_sell_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: LONG260116C00100000, trade_date: '2026-01-05', option_expiry: '2026-01-16', quantity: 2, amount: 480, instrument_type: Call, action: option_sell_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: SHORT260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 2, amount: 200, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: SHORT260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: -160, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: SHORT260116C00100000, trade_date: '2026-01-03', option_expiry: '2026-01-16', quantity: 2, amount: 500, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: SHORT260116C00100000, trade_date: '2026-01-04', option_expiry: '2026-01-16', quantity: 1, amount: -240, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: SHORT260116C00100000, trade_date: '2026-01-05', option_expiry: '2026-01-16', quantity: 2, amount: -480, instrument_type: Call, action: option_buy_to_close}
+      - input: ref('stg_current')
+        rows:
+          - {tenant_id: tenant:unused, account: Unused, user_id: 999, underlying_symbol: UNUSED, trade_symbol: UNUSED, snapshot_date: '2026-01-01', quantity: 1, market_value: 0, cost_basis: 0, instrument_type: Equity}
+      - input: ref('int_option_marks_daily')
+        rows:
+          - {tenant_id: tenant:unused, account: Unused, user_id: 999, underlying_symbol: UNUSED, trade_symbol: UNUSED, date: '2099-01-01', mtm_unrealized_pnl: 0}
+    expect:
+      rows:
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: LONG, trade_symbol: LONG260116C00100000, date: '2026-01-01', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: LONG, trade_symbol: LONG260116C00100000, date: '2026-01-02', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: LONG, trade_symbol: LONG260116C00100000, date: '2026-01-02', pnl_today: 60, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: LONG, trade_symbol: LONG260116C00100000, date: '2026-01-03', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: LONG, trade_symbol: LONG260116C00100000, date: '2026-01-04', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: LONG, trade_symbol: LONG260116C00100000, date: '2026-01-04', pnl_today: 40, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: LONG, trade_symbol: LONG260116C00100000, date: '2026-01-05', pnl_today: 80, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: SHORT, trade_symbol: SHORT260116C00100000, date: '2026-01-01', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: SHORT, trade_symbol: SHORT260116C00100000, date: '2026-01-02', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: SHORT, trade_symbol: SHORT260116C00100000, date: '2026-01-02', pnl_today: -60, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: SHORT, trade_symbol: SHORT260116C00100000, date: '2026-01-03', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: SHORT, trade_symbol: SHORT260116C00100000, date: '2026-01-04', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: SHORT, trade_symbol: SHORT260116C00100000, date: '2026-01-04', pnl_today: -40, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: SHORT, trade_symbol: SHORT260116C00100000, date: '2026-01-05', pnl_today: -80, is_realized_close: true}
