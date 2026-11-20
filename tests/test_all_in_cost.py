@@ -754,6 +754,43 @@ def test_roll_uses_the_predecessor_episode_that_owns_the_close():
     assert result["all_in_per_share"] == 94
 
 
+def test_roll_episode_is_independent_of_same_day_query_order():
+    """A same-OCC reopen cannot move into the predecessor roll at random."""
+    fills = [
+        _fill(
+            trade_date="2026-10-01", action="option_sell_to_open",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=2.00,
+        ),
+        # BigQuery may return this reopen before the same-day close.
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=4.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=1.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=100, option_expiry="2026-10-30",
+            quantity=1, price=5.00,
+        ),
+        _fill(
+            trade_date="2026-10-10", action="option_buy_to_close",
+            option_type="put", option_strike=95, option_expiry="2026-10-09",
+            quantity=1, price=4.00,
+        ),
+    ]
+
+    result = all_in_cost(fills, shares=0, symbol="DDOG")
+
+    assert result["net_premium"] == 600
+    assert result["all_in_per_share"] == 94
+
+
 def test_snapshot_reopen_excludes_a_closed_tape_episode():
     """A live snapshot is newer than its 1970 unknown-date sentinel."""
     fills = [
