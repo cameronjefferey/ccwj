@@ -58,7 +58,7 @@
     triple-count.
 */
 
-with contracts as (
+with recursive contracts as (
     select
         tenant_id,
         account,
@@ -402,12 +402,13 @@ open_mtm as (
 -- For fully-OPEN contracts (never closed anything) realized_close_date is
 -- NULL, so no row is emitted — MTM only, deferring any credit to close.
 --
--- stg_history amount is already net cash. Opening cash is allocated to each
--- close by the cumulative average basis available on that date; this prevents
--- a later scale-in from rewriting an earlier close. The latest row absorbs
--- any small difference versus int_option_contracts.realized_pnl (broker basis,
--- fees, or rounding), so the per-date rows still reconcile exactly to the
--- contract headline.
+-- stg_history amount is already net cash. Each close takes its share of the
+-- still-open average basis carried forward from earlier reductions, so a
+-- later scale-in cannot rewrite an earlier close. A same-day reopen that
+-- lands exactly when prior quantity is flat starts the next episode and is
+-- not basis for that close. The latest row absorbs any small difference
+-- versus int_option_contracts.realized_pnl (broker basis, fees, or rounding),
+-- so the per-date rows still reconcile exactly to the contract headline.
 option_open_events as (
     select
         tenant_id,
@@ -523,7 +524,19 @@ open_state_at_close as (
      and (cr.user_id is not distinct from oe.user_id)
      and cr.trade_symbol = oe.trade_symbol
      and oe.open_event_date <= cr.close_event_date
-    group by 1, 2, 3, 4, 5, 6, 7, 8, 9
+    -- Name every close_running column. cr.* turns each window result
+    -- into a group-by member, and an ordinal list drops whichever
+    -- column lands past the last number.
+    group by
+        cr.tenant_id,
+        cr.account,
+        cr.user_id,
+        cr.trade_symbol,
+        cr.close_event_date,
+        cr.closed_qty,
+        cr.closing_cash,
+        cr.close_date_count,
+        cr.cumulative_closed_qty
 ),
 
 close_state as (
@@ -550,31 +563,119 @@ close_state as (
     from open_state_at_close
 ),
 
-close_allocated as (
+allocatable_close_state as (
+    -- A broker window can begin with a close whose opening fill is absent.
+    -- Skip those basis-less rows, but number the later allocatable closes
+    -- contiguously so they can still seed and advance the stateful walk.
     select
         *,
-        opening_cash_to_date * least(
-            coalesce(safe_divide(cumulative_closed_qty, opened_qty_to_date), 0),
-            1.0
-        ) as cumulative_allocated_opening_cash
+        row_number() over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by close_event_date
+        ) as basis_event_num
     from close_state
+    where opened_qty_to_date > 0
+),
+
+close_basis_walk as (
+    -- Average option basis is stateful when a contract is reduced, scaled
+    -- back in, and reduced again. Carry the unclosed quantity and signed
+    -- opening cash forward so a later open cannot rewrite an earlier close.
+    select
+        cs.*,
+        cs.opened_qty_to_date as opened_qty_seen,
+        cs.opening_cash_to_date as opening_cash_seen,
+        greatest(cs.opened_qty_to_date - cs.closed_qty, 0.0)
+            as remaining_open_qty,
+        cs.opening_cash_to_date * (
+            1.0 - least(
+                coalesce(
+                    safe_divide(cs.closed_qty, cs.opened_qty_to_date),
+                    0
+                ),
+                1.0
+            )
+        ) as remaining_opening_cash,
+        cs.opening_cash_to_date * least(
+            coalesce(
+                safe_divide(cs.closed_qty, cs.opened_qty_to_date),
+                0
+            ),
+            1.0
+        ) as allocated_opening_cash
+    from allocatable_close_state cs
+    where cs.basis_event_num = 1
+
+    union all
+
+    select
+        cs.*,
+        cs.opened_qty_to_date as opened_qty_seen,
+        cs.opening_cash_to_date as opening_cash_seen,
+        greatest(
+            greatest(
+                walk.remaining_open_qty
+                + cs.opened_qty_to_date
+                - walk.opened_qty_seen,
+                0.0
+            ) - cs.closed_qty,
+            0.0
+        ) as remaining_open_qty,
+        (
+            walk.remaining_opening_cash
+            + cs.opening_cash_to_date
+            - walk.opening_cash_seen
+        ) * (
+            1.0 - least(
+                coalesce(
+                    safe_divide(
+                        cs.closed_qty,
+                        greatest(
+                            walk.remaining_open_qty
+                            + cs.opened_qty_to_date
+                            - walk.opened_qty_seen,
+                            0.0
+                        )
+                    ),
+                    0
+                ),
+                1.0
+            )
+        ) as remaining_opening_cash,
+        (
+            walk.remaining_opening_cash
+            + cs.opening_cash_to_date
+            - walk.opening_cash_seen
+        ) * least(
+            coalesce(
+                safe_divide(
+                    cs.closed_qty,
+                    greatest(
+                        walk.remaining_open_qty
+                        + cs.opened_qty_to_date
+                        - walk.opened_qty_seen,
+                        0.0
+                    )
+                ),
+                0
+            ),
+            1.0
+        ) as allocated_opening_cash
+    from close_basis_walk walk
+    join allocatable_close_state cs
+      on (walk.tenant_id is not distinct from cs.tenant_id)
+     and walk.account = cs.account
+     and (walk.user_id is not distinct from cs.user_id)
+     and walk.trade_symbol = cs.trade_symbol
+     and cs.basis_event_num = walk.basis_event_num + 1
 ),
 
 multi_close_raw as (
     select
-        ca.*,
-        ca.closing_cash
-        + ca.cumulative_allocated_opening_cash
-        - coalesce(
-            lag(ca.cumulative_allocated_opening_cash) over (
-                partition by ca.tenant_id, ca.account, ca.user_id, ca.trade_symbol
-                order by ca.close_event_date
-            ),
-            0
-        ) as raw_increment
-    from close_allocated ca
-    where ca.close_date_count > 1
-      and ca.opened_qty_to_date > 0
+        walk.*,
+        walk.closing_cash + walk.allocated_opening_cash as raw_increment
+    from close_basis_walk walk
+    where walk.close_date_count > 1
 ),
 
 multi_close_reconciled as (

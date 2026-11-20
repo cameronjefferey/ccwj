@@ -1672,7 +1672,9 @@ on STO date and an offsetting $3,800 spike down on BTC date — same net,
 totally wrong shape. Realize-on-close fixes this by attributing the
 realized P&L to the actual realization moment. Multi-day partial closes
 remain separate increments; never move all prior realized P&L onto the
-latest reduction date.
+latest reduction date. If a contract is scaled back in between reductions,
+carry only the still-open average basis into the next close; the new opening
+cash must not retroactively change an earlier close.
 
 **Schwab's snapshot lags actual expiry by 1-2 trading days.** The
 `status` and `close_date` columns in `int_option_contracts` realize
