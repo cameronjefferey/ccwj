@@ -1,0 +1,87 @@
+version: 2
+
+unit_tests:
+  - name: option_realized_pnl_keeps_same_day_reopens_out_of_prior_episode
+    description: >
+      A full close followed by a same-day reopen starts a new episode,
+      while a partial close after a same-day scale-in still uses all
+      available basis and a first-day round trip keeps its opening basis.
+    model: int_option_contract_daily_pnl
+    given:
+      - input: ref('int_option_contracts')
+        rows:
+          - tenant_id: tenant:test
+            account: Test
+            user_id: 1
+            underlying_symbol: AAA
+            trade_symbol: AAA260116C00100000
+            open_date: '2026-01-01'
+            close_date: '2026-01-03'
+            status: Closed
+            net_cash_flow: 100
+            contracts_sold_to_open: 2
+            contracts_bought_to_open: 0
+            contracts_closed: 2
+            realized_pnl: 100
+            realized_close_date: '2026-01-03'
+          - tenant_id: tenant:test
+            account: Test
+            user_id: 1
+            underlying_symbol: BBB
+            trade_symbol: BBB260116C00100000
+            open_date: '2026-01-01'
+            close_date: '2026-01-03'
+            status: Closed
+            net_cash_flow: 250
+            contracts_sold_to_open: 4
+            contracts_bought_to_open: 0
+            contracts_closed: 4
+            realized_pnl: 250
+            realized_close_date: '2026-01-03'
+          - tenant_id: tenant:test
+            account: Test
+            user_id: 1
+            underlying_symbol: CCC
+            trade_symbol: CCC260116C00100000
+            open_date: '2026-01-01'
+            close_date: '2026-01-02'
+            status: Closed
+            net_cash_flow: 100
+            contracts_sold_to_open: 2
+            contracts_bought_to_open: 0
+            contracts_closed: 2
+            realized_pnl: 100
+            realized_close_date: '2026-01-02'
+      - input: ref('stg_history')
+        rows:
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: AAA260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 1, amount: 100, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: AAA260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: -50, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: AAA260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: 200, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: AAA260116C00100000, trade_date: '2026-01-03', option_expiry: '2026-01-16', quantity: 1, amount: -150, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: BBB260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 2, amount: 200, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: BBB260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 2, amount: 600, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: BBB260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: -50, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: BBB260116C00100000, trade_date: '2026-01-03', option_expiry: '2026-01-16', quantity: 3, amount: -500, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: CCC260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 1, amount: 100, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: CCC260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 1, amount: -50, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: CCC260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: 200, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: CCC260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: -150, instrument_type: Call, action: option_buy_to_close}
+      - input: ref('stg_current')
+        rows:
+          - {tenant_id: tenant:unused, account: Unused, user_id: 999, underlying_symbol: UNUSED, trade_symbol: UNUSED, snapshot_date: '2026-01-01', quantity: 1, market_value: 0, cost_basis: 0, instrument_type: Equity}
+      - input: ref('int_option_marks_daily')
+        rows:
+          - {tenant_id: tenant:unused, account: Unused, user_id: 999, underlying_symbol: UNUSED, trade_symbol: UNUSED, date: '2099-01-01', mtm_unrealized_pnl: 0}
+    expect:
+      rows:
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: AAA, trade_symbol: AAA260116C00100000, date: '2026-01-01', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: AAA, trade_symbol: AAA260116C00100000, date: '2026-01-02', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: AAA, trade_symbol: AAA260116C00100000, date: '2026-01-02', pnl_today: 50, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: AAA, trade_symbol: AAA260116C00100000, date: '2026-01-03', pnl_today: 50, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: BBB, trade_symbol: BBB260116C00100000, date: '2026-01-01', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: BBB, trade_symbol: BBB260116C00100000, date: '2026-01-02', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: BBB, trade_symbol: BBB260116C00100000, date: '2026-01-02', pnl_today: 150, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: BBB, trade_symbol: BBB260116C00100000, date: '2026-01-03', pnl_today: 100, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: CCC, trade_symbol: CCC260116C00100000, date: '2026-01-01', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: CCC, trade_symbol: CCC260116C00100000, date: '2026-01-01', pnl_today: 50, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: CCC, trade_symbol: CCC260116C00100000, date: '2026-01-02', pnl_today: 50, is_realized_close: true}

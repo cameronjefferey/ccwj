@@ -799,9 +799,9 @@ def get_started():
     # profile: it has to say the data is in and offer Overview.
     # No brokerage yet — including CSV-only — stays on the broker-first
     # empty state instead of that dense profile.
-    from_pipeline = (request.args.get("from_sync") or "").strip() == "1" or (
-        (request.args.get("from_upload") or "").strip() == "1"
-    )
+    from_sync = (request.args.get("from_sync") or "").strip() == "1"
+    from_upload = (request.args.get("from_upload") or "").strip() == "1"
+    from_pipeline = from_sync or from_upload
     if snaptrade_connected and has_data and not from_pipeline:
         from app.first_look import render_first_look_view
         rendered = render_first_look_view()
@@ -819,6 +819,7 @@ def get_started():
         has_data=has_data,
         snaptrade_enabled=snaptrade_enabled,
         snaptrade_connected=snaptrade_connected,
+        from_upload=from_upload,
         show_start_choice=show_start_choice,
         snaptrade_full_history_days=snaptrade_full_history_days,
         snaptrade_routine_days=snaptrade_routine_days,
