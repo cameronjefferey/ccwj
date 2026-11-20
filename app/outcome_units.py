@@ -7,6 +7,8 @@ the gross premium on the short leg alone.
 
 from __future__ import annotations
 
+from datetime import date
+
 from app.option_formatting import parse_occ
 
 SPREAD_STRATEGIES = frozenset({
@@ -397,7 +399,11 @@ def _pair_nearest(shorts, longs, metas, rows):
     """
     unused = set(longs)
     pairs = []
-    for short_i in shorts:
+    ordered_shorts = sorted(
+        shorts,
+        key=lambda index: _vertical_pair_sort_key(index, metas, rows),
+    )
+    for short_i in ordered_shorts:
         if not unused:
             break
         short_k = metas[short_i]["strike"]
@@ -413,12 +419,30 @@ def _pair_nearest(shorts, longs, metas, rows):
             same_size,
             key=lambda j, _short_k=short_k: (
                 _record_unit_incomplete(rows[j] or {}) != short_incomplete,
-                abs(metas[j]["strike"] - _short_k), j,
+                abs(metas[j]["strike"] - _short_k),
+                _vertical_pair_sort_key(j, metas, rows),
             ),
         )
         unused.remove(match)
         pairs.append((short_i, match))
     return pairs
+
+
+def _vertical_pair_sort_key(index, metas, rows):
+    """Canonical leg order for order-independent nearest-strike matching."""
+    row = rows[index] or {}
+    return (
+        metas[index]["strike"],
+        str(row.get("trade_symbol") or ""),
+        str(row.get("lot_id") or ""),
+        str(row.get("open_date") or ""),
+        str(row.get("close_date") or ""),
+        str(row.get("close_type") or ""),
+        str(row.get("status") or ""),
+        str(row.get("quantity") or ""),
+        str(row.get("pnl") or row.get("total_pnl") or ""),
+        index,
+    )
 
 
 def _spread_label(short_meta, long_meta) -> str:
@@ -582,6 +606,83 @@ def _fill_price(trade) -> float:
 def _fill_date(trade) -> str:
     raw = _fill_text(trade, "trade_date", "Date", "date")
     return raw[:10]
+
+
+def _option_fill_episodes(fills) -> list[list[dict]]:
+    """Split one OCC tape whenever its running quantity becomes flat.
+
+    The same OCC can be closed and opened again before expiry.  Treating
+    every fill for that symbol as one lifetime makes the earlier completed
+    result look partial whenever the newest lifetime remains open.
+
+    BigQuery guarantees date order but not row order within one date. If a
+    contract was already open, closes are applied before new opens so a
+    same-day close/reopen becomes two episodes. A flat-start day applies
+    opens first so an ordinary same-day round trip remains one episode.
+    """
+    valid_fills = [trade for trade in (fills or []) if isinstance(trade, dict)]
+    dated: dict[int, list[dict]] = {}
+    for trade in valid_fills:
+        day = _fill_date(trade)
+        try:
+            day_key = date.fromisoformat(day).toordinal()
+        except (TypeError, ValueError):
+            # Without a trustworthy boundary, omit this OCC rather than
+            # attach a close to a different lifetime and invent a result.
+            return []
+        dated.setdefault(day_key, []).append(trade)
+
+    episodes = []
+    current = []
+    running = 0.0
+    def apply_fill(trade):
+        nonlocal current, running
+        action = str(trade.get("action") or "")
+        qty = _fill_qty(trade)
+        if action in OPEN_OPTION_ACTIONS:
+            current.append(trade)
+            running += qty
+        elif action in CLOSE_OPTION_ACTIONS and current:
+            current.append(trade)
+            running -= qty
+            if running <= 1e-6:
+                episodes.append(current)
+                current = []
+                running = 0.0
+
+    for day_key in sorted(dated):
+        day_fills = dated[day_key]
+        starts_open = bool(current and running > 1e-6)
+        opens = [
+            trade for trade in day_fills
+            if str(trade.get("action") or "") in OPEN_OPTION_ACTIONS
+        ]
+        closes = [
+            trade for trade in day_fills
+            if str(trade.get("action") or "") in CLOSE_OPTION_ACTIONS
+        ]
+        if starts_open:
+            # First close the position carried into the day. If more closes
+            # remain, they can only belong after a same-day reopen.
+            close_index = 0
+            while close_index < len(closes) and current:
+                if _fill_qty(closes[close_index]) > running + 1e-6:
+                    # This fill closes shares/contracts added later today.
+                    break
+                apply_fill(closes[close_index])
+                close_index += 1
+            for trade in opens:
+                apply_fill(trade)
+            for trade in closes[close_index:]:
+                apply_fill(trade)
+        else:
+            for trade in opens:
+                apply_fill(trade)
+            for trade in closes:
+                apply_fill(trade)
+    if current:
+        episodes.append(current)
+    return episodes
 
 
 def _qty_display(qty) -> str:
@@ -1012,8 +1113,19 @@ def _combine_structures(left, right) -> dict:
 def _record_unit_incomplete(row) -> bool:
     if row.get("_record_incomplete"):
         return True
+    explicit_states = {
+        str(row.get(name) or "").strip().lower()
+        for name in ("status", "close_type", "outcome")
+    }
+    explicit_states.discard("")
+    if explicit_states & {"open", "settlement pending"}:
+        return True
+    if not explicit_states:
+        source_status = str(row.get("_source_status") or "").strip().lower()
+        if source_status in {"open", "settlement pending"}:
+            return True
     return any(
-        isinstance(leg, dict) and leg.get("_record_incomplete")
+        isinstance(leg, dict) and _record_unit_incomplete(leg)
         for leg in (row.get("legs") or [])
     )
 
@@ -1053,73 +1165,74 @@ def option_record_from_fills(trades, tenant_ids=None) -> dict:
 
     built = []
     incomplete = []
-    for (tenant, account, symbol), fills in grouped.items():
-        opened_qty = 0.0
-        closed_qty = 0.0
-        sto_qty = 0.0
-        bto_qty = 0.0
-        pnl = 0.0
-        open_date = ""
-        saw_open = False
-        saw_close = False
-        for trade in fills:
-            action = str(trade.get("action") or "")
-            qty = _fill_qty(trade)
-            pnl += _fill_amount(trade)
-            if action in OPEN_OPTION_ACTIONS:
-                saw_open = True
-                opened_qty += qty
-                if action == "option_sell_to_open":
-                    sto_qty += qty
-                else:
-                    bto_qty += qty
-                opened = _fill_date(trade)
-                if opened and (not open_date or opened < open_date):
-                    open_date = opened
-            elif action in CLOSE_OPTION_ACTIONS:
-                saw_close = True
-                closed_qty += qty
-        parsed = parse_occ(symbol)
-        if saw_close and not saw_open:
-            continue
-        if not saw_open:
-            continue
-        if abs(opened_qty - closed_qty) > 1e-6:
-            # Keep an open placeholder in structure matching so only its
-            # likely spread or condor is suppressed. Tainting the whole
-            # cluster also deleted independent completed structures that
-            # share this account, root, open date, and expiry.
-            incomplete.append({
+    for (tenant, account, symbol), contract_fills in grouped.items():
+        for fills in _option_fill_episodes(contract_fills):
+            opened_qty = 0.0
+            closed_qty = 0.0
+            sto_qty = 0.0
+            bto_qty = 0.0
+            pnl = 0.0
+            open_date = ""
+            saw_open = False
+            saw_close = False
+            for trade in fills:
+                action = str(trade.get("action") or "")
+                qty = _fill_qty(trade)
+                pnl += _fill_amount(trade)
+                if action in OPEN_OPTION_ACTIONS:
+                    saw_open = True
+                    opened_qty += qty
+                    if action == "option_sell_to_open":
+                        sto_qty += qty
+                    else:
+                        bto_qty += qty
+                    opened = _fill_date(trade)
+                    if opened and (not open_date or opened < open_date):
+                        open_date = opened
+                elif action in CLOSE_OPTION_ACTIONS:
+                    saw_close = True
+                    closed_qty += qty
+            parsed = parse_occ(symbol)
+            if saw_close and not saw_open:
+                continue
+            if not saw_open:
+                continue
+            if abs(opened_qty - closed_qty) > 1e-6:
+                # Keep an open placeholder in structure matching so only its
+                # likely spread or condor is suppressed. Tainting the whole
+                # cluster also deleted independent completed structures that
+                # share this account, root, open date, and expiry.
+                incomplete.append({
+                    "type": "option",
+                    "strategy": "Call Spread" if parsed["cp"] == "C" else "Put Spread",
+                    "direction": "Sold" if sto_qty >= bto_qty and sto_qty > 0 else "Bought",
+                    "trade_symbol": symbol,
+                    "tenant_id": tenant,
+                    "account": account,
+                    "open_date": open_date,
+                    "quantity": opened_qty,
+                    "pnl": 0.0,
+                    "status": "Open",
+                    "close_type": "Open",
+                    "raw_trades": [],
+                    "_record_incomplete": True,
+                })
+                continue
+            direction = "Sold" if sto_qty >= bto_qty and sto_qty > 0 else "Bought"
+            built.append({
                 "type": "option",
                 "strategy": "Call Spread" if parsed["cp"] == "C" else "Put Spread",
-                "direction": "Sold" if sto_qty >= bto_qty and sto_qty > 0 else "Bought",
+                "direction": direction,
                 "trade_symbol": symbol,
                 "tenant_id": tenant,
                 "account": account,
                 "open_date": open_date,
-                "quantity": opened_qty,
-                "pnl": 0.0,
-                "status": "Open",
-                "close_type": "Open",
-                "raw_trades": [],
-                "_record_incomplete": True,
+                "quantity": max(sto_qty, bto_qty),
+                "pnl": round(pnl, 2),
+                "status": "Closed",
+                "close_type": "Closed",
+                "raw_trades": fills,
             })
-            continue
-        direction = "Sold" if sto_qty >= bto_qty and sto_qty > 0 else "Bought"
-        built.append({
-            "type": "option",
-            "strategy": "Call Spread" if parsed["cp"] == "C" else "Put Spread",
-            "direction": direction,
-            "trade_symbol": symbol,
-            "tenant_id": tenant,
-            "account": account,
-            "open_date": open_date,
-            "quantity": max(sto_qty, bto_qty),
-            "pnl": round(pnl, 2),
-            "status": "Closed",
-            "close_type": "Closed",
-            "raw_trades": fills,
-        })
 
     # Match every completed structure before incomplete placeholders so
     # an unrelated open contract cannot steal a completed leg.

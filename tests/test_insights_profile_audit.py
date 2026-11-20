@@ -257,9 +257,9 @@ def test_option_record_from_fills_groups_and_drops_edge_cases():
     assert record["decided"] == 6
 
     losers = [
-        _fill(day, "BE", "option_buy_to_open", loser, 1, -100),
+        _fill(date(2026, 9, 1), "BE", "option_buy_to_open", loser, 1, -100),
         _fill(date(2026, 9, 18), "BE", "option_sell_to_close", loser, 1, 20),
-        _fill(day, "BE", "option_buy_to_open", loser2, 1, -80),
+        _fill(date(2026, 9, 1), "BE", "option_buy_to_open", loser2, 1, -80),
         _fill(date(2026, 9, 25), "BE", "option_expired", loser2, 1, 0),
     ]
     all_lose = option_record_from_fills(losers)
@@ -275,11 +275,11 @@ def test_option_record_from_fills_groups_and_drops_edge_cases():
     assert _contract_record_fact(option_record_from_fills([])) is None
 
     paper_win = [
-        _fill(day, "AMD", "option_sell_to_open", rolled_old, 1, 999,
+        _fill(date(2026, 9, 1), "AMD", "option_sell_to_open", rolled_old, 1, 999,
               tenant="snaptrade:paper", account="Paper"),
         _fill(date(2026, 9, 18), "AMD", "option_expired", rolled_old, 1, 0,
               tenant="snaptrade:paper", account="Paper"),
-        _fill(day, "BE", "option_buy_to_open", loser, 1, -100),
+        _fill(date(2026, 9, 1), "BE", "option_buy_to_open", loser, 1, -100),
         _fill(date(2026, 9, 18), "BE", "option_sell_to_close", loser, 1, 20),
     ]
     scoped = option_record_from_fills(paper_win, tenant_ids=["snaptrade:real"])
@@ -317,6 +317,71 @@ def test_partial_contract_does_not_drop_independent_completed_spread():
     }
 
 
+def test_reopened_contract_keeps_the_completed_prior_episode():
+    """A new open OCC lifetime must not hide its already-closed result."""
+    contract = _occ("AMD", "261016", "C", 155)
+    fills = [
+        _fill(date(2026, 9, 1), "AMD", "option_sell_to_open", contract, 1, 300),
+        _fill(date(2026, 9, 18), "AMD", "option_buy_to_close", contract, 1, -80),
+        _fill(date(2026, 9, 29), "AMD", "option_sell_to_open", contract, 1, 250),
+    ]
+
+    assert option_record_from_fills(fills) == {
+        "winners": 1,
+        "losers": 0,
+        "zeros": 0,
+        "decided": 1,
+    }
+
+
+def test_same_day_reopen_keeps_both_completed_episodes():
+    contract = _occ("AMD", "261016", "C", 155)
+    fills = [
+        _fill(date(2026, 9, 1), "AMD", "option_sell_to_open", contract, 1, 300),
+        _fill(date(2026, 9, 18), "AMD", "option_buy_to_close", contract, 1, -80),
+        _fill(date(2026, 9, 18), "AMD", "option_sell_to_open", contract, 1, 250),
+        _fill(date(2026, 9, 18), "AMD", "option_buy_to_close", contract, 1, -50),
+    ]
+
+    assert option_record_from_fills(fills) == {
+        "winners": 2,
+        "losers": 0,
+        "zeros": 0,
+        "decided": 2,
+    }
+
+
+def test_same_day_add_before_one_full_close_stays_one_episode():
+    contract = _occ("AMD", "261016", "C", 155)
+    fills = [
+        _fill(date(2026, 9, 1), "AMD", "option_sell_to_open", contract, 1, 150),
+        _fill(date(2026, 9, 18), "AMD", "option_sell_to_open", contract, 1, 150),
+        _fill(date(2026, 9, 18), "AMD", "option_buy_to_close", contract, 2, -100),
+    ]
+
+    assert option_record_from_fills(fills) == {
+        "winners": 1,
+        "losers": 0,
+        "zeros": 0,
+        "decided": 1,
+    }
+
+
+def test_malformed_fill_date_does_not_invent_an_episode():
+    contract = _occ("AMD", "261016", "C", 155)
+    malformed_close = _fill(
+        date(2026, 9, 18), "AMD", "option_buy_to_close", contract, 1, -80,
+    )
+    malformed_close["trade_date"] = "not-a-date"
+    fills = [
+        _fill(date(2026, 9, 1), "AMD", "option_sell_to_open", contract, 1, 300),
+        malformed_close,
+        _fill(date(2026, 9, 29), "AMD", "option_sell_to_open", contract, 1, 250),
+    ]
+
+    assert option_record_from_fills(fills)["decided"] == 0
+
+
 def test_incomplete_nearer_leg_does_not_steal_completed_spread():
     day = date(2026, 9, 28)
     expiry = "261016"
@@ -343,6 +408,48 @@ def test_incomplete_nearer_leg_does_not_steal_completed_spread():
         "losers": 0,
         "zeros": 0,
         "decided": 1,
+    }
+
+
+def test_contract_record_pairing_is_independent_of_fill_row_order():
+    day = date(2026, 9, 28)
+    expiry = date(2026, 10, 16)
+    legs = [
+        [
+            _fill(day, "SPX", "option_sell_to_open",
+                  _occ("SPX", "261016", "C", 5000), 1, 100),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5000), 1, 0),
+        ],
+        [
+            _fill(day, "SPX", "option_sell_to_open",
+                  _occ("SPX", "261016", "C", 5010), 1, 60),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5010), 1, 0),
+        ],
+        [
+            _fill(day, "SPX", "option_buy_to_open",
+                  _occ("SPX", "261016", "C", 5005), 1, -90),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5005), 1, 0),
+        ],
+        [
+            _fill(day, "SPX", "option_buy_to_open",
+                  _occ("SPX", "261016", "C", 5015), 1, -50),
+            _fill(expiry, "SPX", "option_expired",
+                  _occ("SPX", "261016", "C", 5015), 1, 0),
+        ],
+    ]
+
+    ordered = option_record_from_fills([fill for leg in legs for fill in leg])
+    reordered = option_record_from_fills(
+        [fill for leg in (legs[1], legs[0], legs[3], legs[2]) for fill in leg]
+    )
+    assert ordered == reordered == {
+        "winners": 2,
+        "losers": 0,
+        "zeros": 0,
+        "decided": 2,
     }
 
 

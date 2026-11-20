@@ -1922,8 +1922,8 @@ def test_positions_all_failure_preserves_classic_shaped_rows_by_source():
     }
 
 
-def test_first_positions_all_failure_preserves_unstamped_legacy_rows():
-    """Pre-deploy rows get one grace sync, not indefinite phantom holdings."""
+def test_positions_all_failures_preserve_unstamped_legacy_rows_until_success():
+    """Repeated outages stay unknown; only a successful read may remove rows."""
     account = "Schwab Account"
     existing = pd.concat([
         _upload._prepare_seed_df(
@@ -1988,7 +1988,16 @@ def test_first_positions_all_failure_preserves_unstamped_legacy_rows():
             _upload.PRESERVE_SUPPLEMENTAL_SECURITY_TYPES,
         ),
     )
-    assert set(_parse(repeated_failure_csv)["Symbol"]) == {"AAPL"}
+    repeated_failure = _parse(repeated_failure_csv)
+    assert set(repeated_failure["Symbol"]) == {
+        "AAPL", "LEGACY-OPTION", "LEGACY-EQUITY",
+    }
+    assert set(
+        repeated_failure.loc[
+            repeated_failure["Symbol"].str.startswith("LEGACY-"),
+            "position_source",
+        ]
+    ) == {_upload.LEGACY_UNKNOWN_POSITION_SOURCE}
 
     recovered_csv = _upload._merge_seed_with_existing(
         _upload.CURRENT_PATH,
