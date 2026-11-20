@@ -402,12 +402,13 @@ open_mtm as (
 -- For fully-OPEN contracts (never closed anything) realized_close_date is
 -- NULL, so no row is emitted — MTM only, deferring any credit to close.
 --
--- stg_history amount is already net cash. Opening cash is allocated to each
--- close by the cumulative average basis available on that date; this prevents
--- a later scale-in from rewriting an earlier close. The latest row absorbs
--- any small difference versus int_option_contracts.realized_pnl (broker basis,
--- fees, or rounding), so the per-date rows still reconcile exactly to the
--- contract headline.
+-- stg_history amount is already net cash. Each close takes its share of the
+-- still-open average basis carried forward from earlier reductions, so a
+-- later scale-in cannot rewrite an earlier close. A same-day reopen that
+-- lands exactly when prior quantity is flat starts the next episode and is
+-- not basis for that close. The latest row absorbs any small difference
+-- versus int_option_contracts.realized_pnl (broker basis, fees, or rounding),
+-- so the per-date rows still reconcile exactly to the contract headline.
 option_open_events as (
     select
         tenant_id,
@@ -489,10 +490,6 @@ close_running as (
         count(*) over (
             partition by ce.tenant_id, ce.account, ce.user_id, ce.trade_symbol
         ) as close_date_count,
-        row_number() over (
-            partition by ce.tenant_id, ce.account, ce.user_id, ce.trade_symbol
-            order by ce.close_event_date
-        ) as close_event_num,
         sum(ce.closed_qty) over (
             partition by ce.tenant_id, ce.account, ce.user_id, ce.trade_symbol
             order by ce.close_event_date
@@ -527,7 +524,19 @@ open_state_at_close as (
      and (cr.user_id is not distinct from oe.user_id)
      and cr.trade_symbol = oe.trade_symbol
      and oe.open_event_date <= cr.close_event_date
-    group by 1, 2, 3, 4, 5, 6, 7, 8, 9
+    -- Name every close_running column. cr.* turns each window result
+    -- into a group-by member, and an ordinal list drops whichever
+    -- column lands past the last number.
+    group by
+        cr.tenant_id,
+        cr.account,
+        cr.user_id,
+        cr.trade_symbol,
+        cr.close_event_date,
+        cr.closed_qty,
+        cr.closing_cash,
+        cr.close_date_count,
+        cr.cumulative_closed_qty
 ),
 
 close_state as (
