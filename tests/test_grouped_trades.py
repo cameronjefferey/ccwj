@@ -86,6 +86,94 @@ def test_two_same_day_verticals_at_different_strikes_stay_two_trades():
     assert winners == 1 and losers == 1
 
 
+def test_open_leg_does_not_steal_a_completed_spread_leg():
+    rows = [
+        leg(strategy="Call Spread", direction="Sold",
+            trade_symbol=occ("SPX", "261016", "C", 5000), total_pnl=150),
+        leg(strategy="Call Spread", direction="Bought",
+            trade_symbol=occ("SPX", "261016", "C", 5010), total_pnl=-40),
+        leg(strategy="Call Spread", direction="Bought", status="Open",
+            close_date="",
+            trade_symbol=occ("SPX", "261016", "C", 5005), total_pnl=-20),
+    ]
+
+    units = group_book_trades(rows)
+    assert sorted(
+        (unit["status"], unit["pnl"], unit["num_winners"], unit["num_losers"])
+        for unit in units
+    ) == [
+        ("Closed", 110.0, 1, 0),
+        ("Open", -20.0, 0, 0),
+    ]
+
+
+def test_closed_slice_overrides_its_open_parent_when_pairing_spreads():
+    short = occ("SPX", "261016", "C", 5000)
+    closed_long = occ("SPX", "261016", "C", 5005)
+    open_long = occ("SPX", "261016", "C", 5010)
+    rows = [
+        leg(strategy="Call Spread", direction="Sold", status="Open",
+            close_date="", quantity=2, trade_symbol=short, total_pnl=400),
+        leg(strategy="Call Spread", direction="Bought",
+            trade_symbol=closed_long, total_pnl=-40),
+        leg(strategy="Call Spread", direction="Bought", status="Open",
+            close_date="", trade_symbol=open_long, total_pnl=-20),
+    ]
+    fills = [
+        {"tenant_id": "snaptrade:1", "trade_symbol": short,
+         "action": "option_sell_to_open", "quantity": 1, "price": 2,
+         "amount": 200, "trade_date": "2025-01-02"},
+        {"tenant_id": "snaptrade:1", "trade_symbol": short,
+         "action": "option_sell_to_open", "quantity": 1, "price": 3,
+         "amount": 300, "trade_date": "2025-01-02"},
+        {"tenant_id": "snaptrade:1", "trade_symbol": short,
+         "action": "option_buy_to_close", "quantity": 1, "price": 1,
+         "amount": -100, "trade_date": "2025-01-08"},
+        {"tenant_id": "snaptrade:1", "trade_symbol": closed_long,
+         "action": "option_buy_to_open", "quantity": 1, "price": 0.4,
+         "amount": -40, "trade_date": "2025-01-02"},
+        {"tenant_id": "snaptrade:1", "trade_symbol": closed_long,
+         "action": "option_expired", "quantity": 1, "price": 0,
+         "amount": 0, "trade_date": "2026-10-16"},
+        {"tenant_id": "snaptrade:1", "trade_symbol": open_long,
+         "action": "option_buy_to_open", "quantity": 1, "price": 0.2,
+         "amount": -20, "trade_date": "2025-01-02"},
+    ]
+
+    units = group_book_trades(rows, fills)
+    assert sorted(
+        (unit["status"], unit["pnl"], unit["num_winners"], unit["num_losers"])
+        for unit in units
+    ) == [
+        ("Closed", 60.0, 1, 0),
+        ("Open", 280.0, 0, 0),
+    ]
+
+
+def test_vertical_pairing_is_independent_of_warehouse_row_order():
+    rows = [
+        leg(strategy="Call Spread", direction="Sold",
+            trade_symbol=occ("SPX", "261016", "C", 5000), total_pnl=100),
+        leg(strategy="Call Spread", direction="Sold",
+            trade_symbol=occ("SPX", "261016", "C", 5010), total_pnl=60),
+        leg(strategy="Call Spread", direction="Bought",
+            trade_symbol=occ("SPX", "261016", "C", 5005), total_pnl=-90),
+        leg(strategy="Call Spread", direction="Bought",
+            trade_symbol=occ("SPX", "261016", "C", 5015), total_pnl=-50),
+    ]
+
+    expected = sorted(
+        (unit["pnl"], unit["num_winners"], unit["num_losers"])
+        for unit in group_book_trades(rows)
+    )
+    reordered = [rows[1], rows[0], rows[3], rows[2]]
+    assert sorted(
+        (unit["pnl"], unit["num_winners"], unit["num_losers"])
+        for unit in group_book_trades(reordered)
+    ) == expected
+    assert expected == [(10.0, 1, 0), (10.0, 1, 0)]
+
+
 def test_mismatched_vertical_sizes_stay_separate():
     units = group_book_trades([
         leg(strategy="Call Spread", direction="Sold", quantity=20,

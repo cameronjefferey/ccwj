@@ -397,7 +397,11 @@ def _pair_nearest(shorts, longs, metas, rows):
     """
     unused = set(longs)
     pairs = []
-    for short_i in shorts:
+    ordered_shorts = sorted(
+        shorts,
+        key=lambda index: _vertical_pair_sort_key(index, metas, rows),
+    )
+    for short_i in ordered_shorts:
         if not unused:
             break
         short_k = metas[short_i]["strike"]
@@ -413,12 +417,30 @@ def _pair_nearest(shorts, longs, metas, rows):
             same_size,
             key=lambda j, _short_k=short_k: (
                 _record_unit_incomplete(rows[j] or {}) != short_incomplete,
-                abs(metas[j]["strike"] - _short_k), j,
+                abs(metas[j]["strike"] - _short_k),
+                _vertical_pair_sort_key(j, metas, rows),
             ),
         )
         unused.remove(match)
         pairs.append((short_i, match))
     return pairs
+
+
+def _vertical_pair_sort_key(index, metas, rows):
+    """Canonical leg order for order-independent nearest-strike matching."""
+    row = rows[index] or {}
+    return (
+        metas[index]["strike"],
+        str(row.get("trade_symbol") or ""),
+        str(row.get("lot_id") or ""),
+        str(row.get("open_date") or ""),
+        str(row.get("close_date") or ""),
+        str(row.get("close_type") or ""),
+        str(row.get("status") or ""),
+        str(row.get("quantity") or ""),
+        str(row.get("pnl") or row.get("total_pnl") or ""),
+        index,
+    )
 
 
 def _spread_label(short_meta, long_meta) -> str:
@@ -1012,8 +1034,19 @@ def _combine_structures(left, right) -> dict:
 def _record_unit_incomplete(row) -> bool:
     if row.get("_record_incomplete"):
         return True
+    explicit_states = {
+        str(row.get(name) or "").strip().lower()
+        for name in ("status", "close_type", "outcome")
+    }
+    explicit_states.discard("")
+    if explicit_states & {"open", "settlement pending"}:
+        return True
+    if not explicit_states:
+        source_status = str(row.get("_source_status") or "").strip().lower()
+        if source_status in {"open", "settlement pending"}:
+            return True
     return any(
-        isinstance(leg, dict) and leg.get("_record_incomplete")
+        isinstance(leg, dict) and _record_unit_incomplete(leg)
         for leg in (row.get("legs") or [])
     )
 
