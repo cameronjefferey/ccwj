@@ -41,6 +41,12 @@ vars:
   # Set to '' to ship an empty demo (the mirror models then return no rows).
   demo_source_tenant_id: 'snaptrade:efbfc5b5-9256-456b-a759-08e8f9b5e0bd'
 
+  # Unrolled option-basis walk in int_option_contract_daily_pnl. BigQuery
+  # rejects WITH RECURSIVE inside dbt's parenthesized model SQL and unit
+  # tests. One step per close date on a single OCC contract. The depth
+  # test fails closed if any contract needs more.
+  option_close_basis_max_steps: 128
+
 
 # Configuring models
 # Full documentation: https://docs.getdbt.com/docs/configuring-models

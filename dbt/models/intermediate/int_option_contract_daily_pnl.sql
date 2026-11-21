@@ -58,7 +58,7 @@
     triple-count.
 */
 
-with recursive contracts as (
+with contracts as (
     select
         tenant_id,
         account,
@@ -577,98 +577,19 @@ allocatable_close_state as (
     where opened_qty_to_date > 0
 ),
 
-close_basis_walk as (
-    -- Average option basis is stateful when a contract is reduced, scaled
-    -- back in, and reduced again. Carry the unclosed quantity and signed
-    -- opening cash forward so a later open cannot rewrite an earlier close.
-    select
-        cs.*,
-        cs.opened_qty_to_date as opened_qty_seen,
-        cs.opening_cash_to_date as opening_cash_seen,
-        greatest(cs.opened_qty_to_date - cs.closed_qty, 0.0)
-            as remaining_open_qty,
-        cs.opening_cash_to_date * (
-            1.0 - least(
-                coalesce(
-                    safe_divide(cs.closed_qty, cs.opened_qty_to_date),
-                    0
-                ),
-                1.0
-            )
-        ) as remaining_opening_cash,
-        cs.opening_cash_to_date * least(
-            coalesce(
-                safe_divide(cs.closed_qty, cs.opened_qty_to_date),
-                0
-            ),
-            1.0
-        ) as allocated_opening_cash
-    from allocatable_close_state cs
-    where cs.basis_event_num = 1
-
-    union all
-
-    select
-        cs.*,
-        cs.opened_qty_to_date as opened_qty_seen,
-        cs.opening_cash_to_date as opening_cash_seen,
-        greatest(
-            greatest(
-                walk.remaining_open_qty
-                + cs.opened_qty_to_date
-                - walk.opened_qty_seen,
-                0.0
-            ) - cs.closed_qty,
-            0.0
-        ) as remaining_open_qty,
-        (
-            walk.remaining_opening_cash
-            + cs.opening_cash_to_date
-            - walk.opening_cash_seen
-        ) * (
-            1.0 - least(
-                coalesce(
-                    safe_divide(
-                        cs.closed_qty,
-                        greatest(
-                            walk.remaining_open_qty
-                            + cs.opened_qty_to_date
-                            - walk.opened_qty_seen,
-                            0.0
-                        )
-                    ),
-                    0
-                ),
-                1.0
-            )
-        ) as remaining_opening_cash,
-        (
-            walk.remaining_opening_cash
-            + cs.opening_cash_to_date
-            - walk.opening_cash_seen
-        ) * least(
-            coalesce(
-                safe_divide(
-                    cs.closed_qty,
-                    greatest(
-                        walk.remaining_open_qty
-                        + cs.opened_qty_to_date
-                        - walk.opened_qty_seen,
-                        0.0
-                    )
-                ),
-                0
-            ),
-            1.0
-        ) as allocated_opening_cash
-    from close_basis_walk walk
-    join allocatable_close_state cs
-      on (walk.tenant_id is not distinct from cs.tenant_id)
-     and walk.account = cs.account
-     and (walk.user_id is not distinct from cs.user_id)
-     and walk.trade_symbol = cs.trade_symbol
-     and cs.basis_event_num = walk.basis_event_num + 1
-),
+-- Average option basis is stateful when a contract is reduced, scaled
+-- back in, and reduced again. Carry the unclosed quantity and signed
+-- opening cash forward so a later open cannot rewrite an earlier close.
+--
+-- This is an unrolled walk, not a self-referential CTE. dbt builds the
+-- model as `CREATE TABLE AS ( <sql> )` and runs unit tests as
+-- `SELECT ... FROM ( <sql> )`. BigQuery only allows a self-referential
+-- WITH at the top level of those statements, so the unit test (and the
+-- parenthesized create) would fail. The step count is
+-- var('option_close_basis_max_steps'); the depth test fails the build
+-- if any contract has more close dates than that walk can carry.
+-- Arithmetic matches the previous self-referential term exactly.
+{{ option_close_basis_walk() }}
 
 multi_close_raw as (
     select
