@@ -58,7 +58,7 @@
     triple-count.
 */
 
-with recursive contracts as (
+with contracts as (
     select
         tenant_id,
         account,
@@ -409,6 +409,11 @@ open_mtm as (
 -- not basis for that close. The latest row absorbs any small difference
 -- versus int_option_contracts.realized_pnl (broker basis, fees, or rounding),
 -- so the per-date rows still reconcile exactly to the contract headline.
+--
+-- That carry is a window (close_basis_walk), not a self-referential CTE.
+-- dbt unit tests wrap this model in an outer query, and BigQuery rejects a
+-- recursive CTE anywhere except the top-level statement — the warehouse
+-- rebuild fails and every later test on this model is skipped.
 option_open_events as (
     select
         tenant_id,
@@ -566,7 +571,7 @@ close_state as (
 allocatable_close_state as (
     -- A broker window can begin with a close whose opening fill is absent.
     -- Skip those basis-less rows, but number the later allocatable closes
-    -- contiguously so they can still seed and advance the stateful walk.
+    -- contiguously so the basis window still walks them in close order.
     select
         *,
         row_number() over (
@@ -577,97 +582,176 @@ allocatable_close_state as (
     where opened_qty_to_date > 0
 ),
 
-close_basis_walk as (
-    -- Average option basis is stateful when a contract is reduced, scaled
-    -- back in, and reduced again. Carry the unclosed quantity and signed
-    -- opening cash forward so a later open cannot rewrite an earlier close.
+close_basis_deltas as (
+    -- opened_qty_to_date is nondecreasing across close dates: a same-day
+    -- reopen excluded at a flat boundary shows up as this delta on the
+    -- next close, which is the same quantity the old row-by-row step
+    -- added as opened_qty_to_date - opened_qty_seen.
     select
         cs.*,
-        cs.opened_qty_to_date as opened_qty_seen,
-        cs.opening_cash_to_date as opening_cash_seen,
-        greatest(cs.opened_qty_to_date - cs.closed_qty, 0.0)
-            as remaining_open_qty,
-        cs.opening_cash_to_date * (
-            1.0 - least(
-                coalesce(
-                    safe_divide(cs.closed_qty, cs.opened_qty_to_date),
-                    0
-                ),
-                1.0
-            )
-        ) as remaining_opening_cash,
-        cs.opening_cash_to_date * least(
-            coalesce(
-                safe_divide(cs.closed_qty, cs.opened_qty_to_date),
-                0
+        cs.opened_qty_to_date - coalesce(
+            lag(cs.opened_qty_to_date) over (
+                partition by cs.tenant_id, cs.account, cs.user_id, cs.trade_symbol
+                order by cs.basis_event_num
             ),
-            1.0
-        ) as allocated_opening_cash
+            0
+        ) as opened_qty_delta,
+        cs.opening_cash_to_date - coalesce(
+            lag(cs.opening_cash_to_date) over (
+                partition by cs.tenant_id, cs.account, cs.user_id, cs.trade_symbol
+                order by cs.basis_event_num
+            ),
+            0
+        ) as opening_cash_delta
     from allocatable_close_state cs
-    where cs.basis_event_num = 1
+),
 
-    union all
-
+close_basis_cum as (
     select
-        cs.*,
-        cs.opened_qty_to_date as opened_qty_seen,
-        cs.opening_cash_to_date as opening_cash_seen,
-        greatest(
-            greatest(
-                walk.remaining_open_qty
-                + cs.opened_qty_to_date
-                - walk.opened_qty_seen,
-                0.0
-            ) - cs.closed_qty,
-            0.0
-        ) as remaining_open_qty,
-        (
-            walk.remaining_opening_cash
-            + cs.opening_cash_to_date
-            - walk.opening_cash_seen
-        ) * (
-            1.0 - least(
-                coalesce(
-                    safe_divide(
-                        cs.closed_qty,
-                        greatest(
-                            walk.remaining_open_qty
-                            + cs.opened_qty_to_date
-                            - walk.opened_qty_seen,
-                            0.0
-                        )
-                    ),
-                    0
-                ),
-                1.0
+        d.*,
+        sum(d.opened_qty_delta - d.closed_qty) over (
+            partition by d.tenant_id, d.account, d.user_id, d.trade_symbol
+            order by d.basis_event_num
+            rows between unbounded preceding and current row
+        ) as qty_cum
+    from close_basis_deltas d
+),
+
+close_basis_remaining as (
+    -- Lift the cumulative (opens - closes) so it never stays negative.
+    -- An over-close clamps to flat; the next open is a new pile of
+    -- contracts, not a fill of a hole. That is
+    -- greatest(prior_remaining + new_opens - closed, 0).
+    select
+        c.*,
+        c.qty_cum - least(
+            0,
+            min(c.qty_cum) over (
+                partition by c.tenant_id, c.account, c.user_id, c.trade_symbol
+                order by c.basis_event_num
+                rows between unbounded preceding and current row
             )
-        ) as remaining_opening_cash,
-        (
-            walk.remaining_opening_cash
-            + cs.opening_cash_to_date
-            - walk.opening_cash_seen
-        ) * least(
+        ) as remaining_open_qty
+    from close_basis_cum c
+),
+
+close_basis_available as (
+    select
+        r.*,
+        greatest(
             coalesce(
-                safe_divide(
-                    cs.closed_qty,
-                    greatest(
-                        walk.remaining_open_qty
-                        + cs.opened_qty_to_date
-                        - walk.opened_qty_seen,
-                        0.0
-                    )
+                lag(r.remaining_open_qty) over (
+                    partition by r.tenant_id, r.account, r.user_id, r.trade_symbol
+                    order by r.basis_event_num
                 ),
                 0
-            ),
+            ) + r.opened_qty_delta,
+            0
+        ) as available_qty
+    from close_basis_remaining r
+),
+
+close_basis_ratios as (
+    select
+        a.*,
+        least(
+            coalesce(safe_divide(a.closed_qty, a.available_qty), 0),
             1.0
-        ) as allocated_opening_cash
-    from close_basis_walk walk
-    join allocatable_close_state cs
-      on (walk.tenant_id is not distinct from cs.tenant_id)
-     and walk.account = cs.account
-     and (walk.user_id is not distinct from cs.user_id)
-     and walk.trade_symbol = cs.trade_symbol
-     and cs.basis_event_num = walk.basis_event_num + 1
+        ) as close_fraction,
+        1.0 - least(
+            coalesce(safe_divide(a.closed_qty, a.available_qty), 0),
+            1.0
+        ) as retain_ratio
+    from close_basis_available a
+),
+
+close_basis_flags as (
+    -- A close that consumes every contract still open ends the episode.
+    -- The next close must not inherit that episode's basis. The first
+    -- close of a contract starts an episode too.
+    select
+        q.*,
+        case
+            when coalesce(
+                lag(q.close_fraction) over (
+                    partition by q.tenant_id, q.account, q.user_id, q.trade_symbol
+                    order by q.basis_event_num
+                ),
+                1
+            ) >= 1
+            then 1
+            else 0
+        end as starts_episode
+    from close_basis_ratios q
+),
+
+close_basis_episodes as (
+    select
+        f.*,
+        sum(f.starts_episode) over (
+            partition by f.tenant_id, f.account, f.user_id, f.trade_symbol
+            order by f.basis_event_num
+            rows between unbounded preceding and current row
+        ) as basis_episode
+    from close_basis_flags f
+),
+
+close_basis_logs as (
+    -- Inside an episode every prior retain ratio is in (0, 1]. The
+    -- running sum of ln(retain) is the log of the product that scales
+    -- older opening cash down to what is still open. The episode-ending
+    -- row has retain 0, so its ln is left null and is not part of any
+    -- later product (that row is the last one in the episode).
+    select
+        e.*,
+        coalesce(
+            sum(
+                case
+                    when e.retain_ratio > 0 then ln(e.retain_ratio)
+                    else null
+                end
+            ) over (
+                partition by
+                    e.tenant_id, e.account, e.user_id, e.trade_symbol, e.basis_episode
+                order by e.basis_event_num
+                rows between unbounded preceding and 1 preceding
+            ),
+            0
+        ) as log_retain_before
+    from close_basis_episodes e
+),
+
+close_basis_cash as (
+    -- available opening cash at this close =
+    --   sum_{j in episode, j <= i}(opening_cash_delta_j * product of retain
+    --   ratios from j through i-1).
+    -- The product is exp(log_retain_before_i - log_retain_before_j).
+    -- Factoring exp(log_retain_before_i) out of the sum leaves a plain
+    -- running sum. A new episode has log_retain_before 0, so it starts
+    -- from that close's own opening cash.
+    select
+        l.*,
+        exp(l.log_retain_before) * sum(
+            l.opening_cash_delta * exp(-l.log_retain_before)
+        ) over (
+            partition by
+                l.tenant_id, l.account, l.user_id, l.trade_symbol, l.basis_episode
+            order by l.basis_event_num
+            rows between unbounded preceding and current row
+        ) as available_opening_cash
+    from close_basis_logs l
+),
+
+close_basis_walk as (
+    select
+        c.*,
+        c.opened_qty_to_date as opened_qty_seen,
+        c.opening_cash_to_date as opening_cash_seen,
+        c.available_opening_cash * (1.0 - c.close_fraction)
+            as remaining_opening_cash,
+        c.available_opening_cash * c.close_fraction
+            as allocated_opening_cash
+    from close_basis_cash c
 ),
 
 multi_close_raw as (
