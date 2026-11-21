@@ -1674,7 +1674,11 @@ realized P&L to the actual realization moment. Multi-day partial closes
 remain separate increments; never move all prior realized P&L onto the
 latest reduction date. If a contract is scaled back in between reductions,
 carry only the still-open average basis into the next close; the new opening
-cash must not retroactively change an earlier close.
+cash must not retroactively change an earlier close. That walk is unrolled
+(`option_close_basis_walk`, `option_close_basis_max_steps`). BigQuery rejects
+a self-referential WITH inside dbt's parenthesized `CREATE TABLE` and unit-test
+wrapper, which failed warehouse run 44836506035. Do not put it back. The depth
+test fails the build if any contract has more close dates than the unroll.
 
 **Schwab's snapshot lags actual expiry by 1-2 trading days.** The
 `status` and `close_date` columns in `int_option_contracts` realize
