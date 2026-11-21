@@ -41,6 +41,10 @@
 #      (force_refresh=False, reads activities + orders): re-reads SnapTrade's
 #      cache as a safety net for missed webhooks AND lands the authoritative T+1
 #      activities detail overnight (which the intraday poll deliberately skips).
+#      One account's broker or seed-write failure does not fail the run or
+#      block the snapshot for the accounts that succeeded. The process exits
+#      1 only when nothing usable was published (every account failed, or
+#      the shared seed store could not be read).
 #      The snaptrade_sync_observations log showed real webhook misses under the
 #      old Daily plan (e.g. 2026-06-24/25 synced only via the cron); 23:00 UTC is
 #      a quiet off-hours slot.

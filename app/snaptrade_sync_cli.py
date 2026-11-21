@@ -66,20 +66,37 @@ flow; the cron does not need it. ``--intraday`` can also be enabled via
 ``--intraday`` takes precedence (a plain real-time read; never force-refreshes).
 
 Exit codes:
-  0  — at least one connection synced (or there were no connections to sync).
-       One account whose seed frames cannot be merged is recorded on that
-       account and does not fail the run when a sibling synced.
-  1  — there are connections in the DB but every one failed (auth errors,
-       network errors, sync exceptions), or the shared seed write failed.
-       Render flags the run red, so a system-wide problem is visible
-       without cross-referencing GitHub.
+  0  — at least one account was published (or was already current), or
+       there was nothing to sync. Nothing to sync includes an empty
+       connection list, frozen trials, and unconfirmed ``disabled`` flags.
+       One account whose broker read or seed write failed is logged under
+       a reason category and does not fail the run when a sibling was
+       published. A combined seed load that fails is retried on smaller
+       subsets so the accounts that load still publish and still dispatch
+       the warehouse rebuild.
+  1  — nothing usable was published. Every connection that was attempted
+       failed, or the shared seed store could not be read (fail closed:
+       a failed read must not publish a file built as if the store were
+       empty). Render flags that run red.
+
+Failure lines go to stderr as ``snaptrade sync failure category=<bucket>``
+plus a scrubbed traceback when an exception exists. They do not include
+account numbers, user ids, tokens, emails, balances, or position values.
+A per-account sync error used to print only the short code, and a
+combined seed-load failure used to print the raw error string.
 """
 import os
 import sys
-import traceback
 
-# Ensure we can import app
+# Ensure we can import app when this file is launched as a script.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.sync_log import (  # noqa: E402
+    log_sync_failure,
+    redact_sync_log,
+    safe_broker_slug,
+    sync_failure_category,
+)
 
 # Minimal Flask app context for DB access
 os.environ.setdefault("FLASK_APP", "app:app")
@@ -114,6 +131,119 @@ def _skipped_account_errors(skipped):
         pair = next(iter(pairs))
         errors[pair] = str(item.get("error") or "seed merge skipped")
     return errors
+
+
+def _is_shared_store_failure(err) -> bool:
+    """True when the seed store itself could not be read.
+
+    A failed read must fail the run. Retrying subsets would not help, and
+    treating the store as empty would overwrite every other tenant.
+    A load/parse failure is account-shaped: the caller retries subsets.
+    """
+    from app.upload import SeedFetchError
+
+    if isinstance(err, SeedFetchError):
+        return True
+    text = str(err or "").lower()
+    return "seedfetch" in text or "bigquery read" in text
+
+
+def _remember_skipped(entries, err, skipped):
+    """Record each entry as a seed-write miss. Ids stay off the log."""
+    safe = redact_sync_log(err)[:500] or "seed write failed"
+    for entry in entries or []:
+        skipped.append({
+            "user_id": entry.get("user_id"),
+            "snapshot_account_id": entry.get("snapshot_account_id"),
+            "tenant_id": entry.get("tenant_id"),
+            "account_name": entry.get("account_name"),
+            "error": safe,
+        })
+
+
+def _combine_publish(left, right):
+    """Merge two subset publish results. ``ok`` is True for both."""
+    _lok, _lerr, lsha, lnc, ln = left
+    _rok, _rerr, rsha, rnc, rn = right
+    ln = ln or 0
+    rn = rn or 0
+    wrote = (ln > 0 and not lnc) or (rn > 0 and not rnc)
+    n = ln + rn
+    if n == 0 or not wrote:
+        return True, None, None, True, 0
+    return True, None, rsha or lsha, False, n
+
+
+def _publish_batch(entries, *, commit_message, skipped, force_refresh, intraday):
+    """Write ``entries``. One bad account does not drop the others.
+
+    Returns ``(ok, err, sha, no_changes, n_pushed)``. ``ok`` is False only
+    for a shared seed-store read failure (nothing in this subset was
+    published). A single account that cannot be written is appended to
+    ``skipped`` and reported as an empty success so its siblings still
+    publish.
+    """
+    from app.upload import SeedFetchError, merge_and_push_seeds_batch
+
+    if not entries:
+        return True, None, None, True, 0
+    message = commit_message
+    if message is None:
+        message = _batch_commit_message(
+            entries, force_refresh=force_refresh, intraday=intraday,
+        )
+    broker = None
+    if len(entries) == 1:
+        broker = entries[0].get("broker_slug")
+    try:
+        ok, err, sha, no_changes, n_pushed = merge_and_push_seeds_batch(
+            entries, commit_message=message, skipped=skipped,
+        )
+    except SeedFetchError as exc:
+        log_sync_failure("seed_read", exc=exc, broker=broker)
+        return False, redact_sync_log(exc), None, False, 0
+    except Exception as exc:
+        ok, err, sha, no_changes, n_pushed = False, exc, None, False, 0
+    if ok:
+        return True, None, sha, no_changes, n_pushed or 0
+    if _is_shared_store_failure(err):
+        log_sync_failure("seed_read", detail=err, broker=broker)
+        return False, redact_sync_log(err), None, False, 0
+    if len(entries) <= 1:
+        category = sync_failure_category(err)
+        if category in ("broker_read", "unexpected"):
+            # This function only runs after the broker read succeeded.
+            category = "seed_write"
+        log_sync_failure(
+            category,
+            exc=err if isinstance(err, BaseException) else None,
+            detail=None if isinstance(err, BaseException) else err,
+            broker=broker,
+        )
+        _remember_skipped(entries, err, skipped)
+        return True, None, None, True, 0
+    print(
+        "snaptrade sync failure category=seed_write action=isolate",
+        file=sys.stderr,
+    )
+    mid = len(entries) // 2
+    left = _publish_batch(
+        entries[:mid], commit_message=None, skipped=skipped,
+        force_refresh=force_refresh, intraday=intraday,
+    )
+    right = _publish_batch(
+        entries[mid:], commit_message=None, skipped=skipped,
+        force_refresh=force_refresh, intraday=intraday,
+    )
+    if not left[0] and not right[0]:
+        return False, redact_sync_log(left[1] or right[1]), None, False, 0
+    if not left[0]:
+        _remember_skipped(entries[:mid], left[1], skipped)
+        return right
+    if not right[0]:
+        _remember_skipped(entries[mid:], right[1], skipped)
+        return left
+    return _combine_publish(left, right)
 
 
 def _notify_connection_dropped(user_id, snaptrade_account_id, row, *, seen=None):
@@ -184,12 +314,9 @@ def _notify_connection_dropped(user_id, snaptrade_account_id, row, *, seen=None)
             account_label=account_label,
             reconnect_url=reconnect_url,
         )
-        print(f"User {user_id} ({snaptrade_account_id}): sent reconnect email to {user.email}")
+        print("snaptrade sync sent reconnect email")
     except Exception as exc:  # pragma: no cover (defensive — email never blocks sync)
-        print(
-            f"User {user_id} ({snaptrade_account_id}): reconnect email failed: {exc}",
-            file=sys.stderr,
-        )
+        log_sync_failure("unexpected", exc=exc, broker=row.get("broker_slug"))
 
 
 def _force_refresh_enabled(argv=None):
@@ -245,14 +372,13 @@ def _force_refresh_all(rows):
             if ok_r:
                 refreshed += 1
             print(
-                f"User {user_id} ({row.get('account_name') or snaptrade_account_id}): "
-                f"force-refresh {'ok' if ok_r else 'skipped'} — {msg_r}"
+                "snaptrade force-refresh "
+                f"{'ok' if ok_r else 'skipped'} "
+                f"broker={safe_broker_slug(row.get('broker_slug')) or 'unknown'}"
             )
         except Exception as exc:
-            print(
-                f"User {user_id} ({snaptrade_account_id}): force-refresh raised "
-                f"(non-fatal): {exc}",
-                file=sys.stderr,
+            log_sync_failure(
+                "unexpected", exc=exc, broker=row.get("broker_slug"),
             )
 
     if refreshed:
@@ -266,6 +392,15 @@ def _force_refresh_all(rows):
 
 
 def main():
+    """Run the cron. An unexpected error is logged scrubbed and exits 1."""
+    try:
+        return _run_sync_cron()
+    except Exception as exc:
+        log_sync_failure("unexpected", exc=exc)
+        return 1
+
+
+def _run_sync_cron():
     from app.models import (
         init_db,
         list_all_snaptrade_accounts,
@@ -289,10 +424,7 @@ def main():
         snaptrade_enabled,
     )
     from app.snaptrade import _bulk_sync_lookback_days
-    from app.upload import (
-        _upload_github_config_ok,
-        merge_and_push_seeds_batch,
-    )
+    from app.upload import _upload_github_config_ok
 
     if not snaptrade_enabled():
         print("SnapTrade is not configured (missing env or SDK). Exiting.", file=sys.stderr)
@@ -348,8 +480,14 @@ def main():
     pending_first_sync_marks = []
 
     for row in rows:
-        user_id = row["user_id"]
-        snaptrade_account_id = row["snaptrade_account_id"]
+        broker = row.get("broker_slug") if isinstance(row, dict) else None
+        try:
+            user_id = row["user_id"]
+            snaptrade_account_id = row["snaptrade_account_id"]
+        except Exception as exc:
+            errors += 1
+            log_sync_failure("unexpected", exc=exc, broker=broker)
+            continue
         # Reverse-trial gate (efficiency skip — _sync_one_connection has the
         # mandatory chokepoint): don't hit SnapTrade at all for frozen users,
         # and don't count them as errors. Fails open.
@@ -357,8 +495,11 @@ def main():
             from app.plan import user_sync_allowed
             if not user_sync_allowed(user_id):
                 print(
-                    f"User {user_id} ({snaptrade_account_id}): skipped "
-                    "(trial lapsed, mirror frozen)"
+                    "snaptrade sync skipped category=plan_frozen"
+                    + (
+                        f" broker={safe_broker_slug(broker)}"
+                        if safe_broker_slug(broker) else ""
+                    )
                 )
                 continue
         except Exception:
@@ -368,13 +509,13 @@ def main():
         # row hasn't completed first sync yet (e.g. user connected but
         # never clicked Sync now in the UI), the per-row decision still
         # picks the full window so day-one history lands.
-        lookback = _bulk_sync_lookback_days(
-            first_done,
-            force_full_history=False,
-            routine_days=routine_days,
-            full_days=full_days,
-        )
         try:
+            lookback = _bulk_sync_lookback_days(
+                first_done,
+                force_full_history=False,
+                routine_days=routine_days,
+                full_days=full_days,
+            )
             res = _sync_one_connection(
                 user_id, row, lookback_days=lookback, defer_push=True,
                 # A brand-new account must land activities + snapshots before
@@ -385,19 +526,28 @@ def main():
             )
         except Exception as exc:
             errors += 1
-            print(
-                f"User {user_id} ({snaptrade_account_id}): unexpected sync error: {exc}",
-                file=sys.stderr,
+            log_sync_failure("unexpected", exc=exc, broker=broker)
+            continue
+
+        if not isinstance(res, dict) or "ok" not in res:
+            errors += 1
+            log_sync_failure(
+                "unexpected", detail="sync returned no result", broker=broker,
             )
             continue
 
         if res["ok"]:
             succeeded += 1
-            print(
-                f"User {user_id} ({row.get('account_name') or snaptrade_account_id}): "
-                f"{res['history_rows']} history, {res['current_rows']} positions"
+            broker_bit = (
+                f" broker={safe_broker_slug(broker)}"
+                if safe_broker_slug(broker) else ""
             )
-            frames = res.get("frames")
+            print(
+                "snaptrade sync ok "
+                f"history={res.get('history_rows', 0)} "
+                f"positions={res.get('current_rows', 0)}{broker_bit}"
+            )
+            frames = res.get("frames") if isinstance(res.get("frames"), dict) else None
             # Append if there's ANYTHING to push. The intraday poll returns a
             # history-only entry (current_df=None) so a snapshot-free trade push
             # still lands. A holdings-unavailable account can return only an
@@ -411,7 +561,12 @@ def main():
                 or frames.get("history_df") is not None
                 or has_balances
             ):
-                batch_entries.append(frames)
+                entry = dict(frames)
+                entry.setdefault("snapshot_account_id", snaptrade_account_id)
+                entry.setdefault("user_id", user_id)
+                if safe_broker_slug(broker):
+                    entry["broker_slug"] = safe_broker_slug(broker)
+                batch_entries.append(entry)
                 batch_account_ids.append((user_id, snaptrade_account_id))
                 # Positions and recent orders often arrive before SnapTrade
                 # finishes indexing activities on a new connection. Keep that
@@ -430,11 +585,7 @@ def main():
             err = res["error"] or "unknown"
             if err == "connection_broken":
                 broken += 1
-                print(
-                    f"User {user_id} ({snaptrade_account_id}): "
-                    "broker connection needs reconnect (flagged in app)",
-                    file=sys.stderr,
-                )
+                log_sync_failure("connection_broken", detail=err, broker=broker)
                 _notify_connection_dropped(
                     user_id, snaptrade_account_id, row,
                     seen=_notified_connections_this_run,
@@ -449,14 +600,16 @@ def main():
                 # would otherwise treat routine flapping as an outage).
                 pending += 1
                 print(
-                    f"User {user_id} ({snaptrade_account_id}): "
-                    "broker reported disabled once (pending — retrying next run)",
+                    "snaptrade sync pending category=connection_pending"
+                    + (
+                        f" broker={safe_broker_slug(broker)}"
+                        if safe_broker_slug(broker) else ""
+                    )
                 )
             else:
                 errors += 1
-                print(
-                    f"User {user_id} ({snaptrade_account_id}): sync failed: {err}",
-                    file=sys.stderr,
+                log_sync_failure(
+                    sync_failure_category(err), detail=err, broker=broker,
                 )
 
     # Single batched push for every account synced this run.
@@ -475,7 +628,10 @@ def main():
         ok_cfg, cfg_err = _upload_github_config_ok()
         if not ok_cfg:
             batch_failed = True
-            batch_error = cfg_err or "seed store not configured"
+            batch_error = redact_sync_log(
+                cfg_err or "seed store not configured"
+            )
+            log_sync_failure("seed_write", detail=batch_error)
             print(
                 f"WARNING: {len(batch_entries)} synced account(s) did not reach "
                 f"the seed store. Reason: {batch_error}",
@@ -483,28 +639,33 @@ def main():
             )
         else:
             n = len(batch_entries)
-            commit_message = _batch_commit_message(
-                batch_entries, force_refresh=force_refresh, intraday=intraday,
+            ok, err, _sha, no_changes, n_pushed = _publish_batch(
+                batch_entries,
+                commit_message=_batch_commit_message(
+                    batch_entries, force_refresh=force_refresh, intraday=intraday,
+                ),
+                skipped=skipped_accounts,
+                force_refresh=force_refresh,
+                intraday=intraday,
             )
-            try:
-                ok, err, _sha, no_changes, n_pushed = merge_and_push_seeds_batch(
-                    batch_entries, commit_message=commit_message,
-                    skipped=skipped_accounts,
-                )
-            except Exception as exc:
-                traceback.print_exc(file=sys.stderr)
-                ok, err, no_changes, n_pushed = False, str(exc), False, 0
-            if ok and not no_changes:
-                pushed_note = f", 1 batched push ({n_pushed} accounts) → GitHub"
-            elif ok and no_changes:
+            if ok and n_pushed and not no_changes:
+                pushed_note = f", 1 batched push ({n_pushed} accounts) → seed store"
+            elif ok and no_changes and not skipped_accounts:
                 pushed_note = f", no changes across {n} accounts (no push)"
+            elif ok and not n_pushed:
+                pushed_note = ", no accounts published"
+            elif ok:
+                pushed_note = f", batched push ({n_pushed} accounts) → seed store"
             else:
                 batch_failed = True
-                batch_error = str(err or "unknown batch write error")
-                # The summary line used to keep 160 characters. Render's
-                # cron log is the only place the full text survives; the
-                # account row still stores seed_write_failed:<msg> (capped
-                # at 500 by the recorder below).
+                batch_error = redact_sync_log(
+                    err or "unknown batch write error"
+                )
+                # Render's cron log is the only place this text survives.
+                # The account row stores seed_write_failed:<msg> (capped
+                # at 500 by the recorder below). A shared read failure is
+                # the only batch error that still fails the whole run:
+                # one account's load error is retried without that account.
                 pushed_note = f", batched push FAILED: {batch_error}"
                 print(
                     f"WARNING: batched seed push failed: {batch_error}",
@@ -545,14 +706,21 @@ def main():
                                 if pair[0] == entry_user_id
                                 and pair not in skipped_pairs
                             )
-                    elif (
-                        (entry_user_id, account_id) not in skipped_pairs
-                        and snaptrade_snapshot_generation_is_current(
-                            entry_user_id, account_id, generation,
-                        )
-                    ):
-                        pair = (entry_user_id, account_id)
-                        durable_batch_account_ids.add(pair)
+                    elif (entry_user_id, account_id) not in skipped_pairs:
+                        try:
+                            generation_current = (
+                                snaptrade_snapshot_generation_is_current(
+                                    entry_user_id, account_id, generation,
+                                )
+                            )
+                        except Exception as exc:
+                            # The seed write already landed. A bookkeeping
+                            # lookup must not turn that into a red cron.
+                            log_sync_failure("unexpected", exc=exc)
+                            generation_current = False
+                        if generation_current:
+                            pair = (entry_user_id, account_id)
+                            durable_batch_account_ids.add(pair)
                 # The broker read is not end-to-end successful until its
                 # deferred frames are durable. Start the reverse-trial clock
                 # here, not in _sync_one_connection, so a failed first batch
@@ -586,11 +754,7 @@ def main():
                     except Exception as exc:
                         # Safe failure mode: leave it pending so the next cron
                         # retries the full lookback instead of truncating it.
-                        print(
-                            "WARNING: could not mark first sync complete for "
-                            f"user {pending_user_id} ({pending_account_id}): {exc}",
-                            file=sys.stderr,
-                        )
+                        log_sync_failure("unexpected", exc=exc)
     if batch_failed:
         # _sync_one_connection records a successful broker read before the
         # deferred batch is attempted. Replace that false-green status with
@@ -606,11 +770,7 @@ def main():
                     ),
                 )
             except Exception as exc:
-                print(
-                    "WARNING: could not record deferred seed-write failure for "
-                    f"user {failed_user_id} ({failed_account_id}): {exc}",
-                    file=sys.stderr,
-                )
+                log_sync_failure("unexpected", exc=exc)
         succeeded = max(0, succeeded - len(batch_account_ids))
         errors += len(batch_account_ids)
     elif skipped_accounts:
@@ -631,15 +791,9 @@ def main():
                     ),
                 )
             except Exception as exc:
-                print(
-                    "WARNING: could not record per-account seed skip for "
-                    f"user {failed_user_id} ({failed_account_id}): {exc}",
-                    file=sys.stderr,
-                )
-            print(
-                f"User {failed_user_id} ({failed_account_id}): "
-                f"seed merge skipped: {detail}",
-                file=sys.stderr,
+                log_sync_failure("unexpected", exc=exc)
+            log_sync_failure(
+                sync_failure_category(detail), detail=detail,
             )
         succeeded = max(0, succeeded - len(skipped_pairs))
         errors += len(skipped_pairs)

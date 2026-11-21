@@ -165,7 +165,11 @@ verification — acceptable for local dev only.
       (`force_refresh=False`, unbilled, reads activities + orders). Safety
       net for missed webhooks AND lands the authoritative T+1 `activities`
       detail overnight. Timing isn't critical on the real-time plan; 23:00
-      UTC is a quiet off-hours slot.
+      UTC is a quiet off-hours slot. One account's broker or seed-write
+      failure does not fail the run: the cron retries smaller subsets and
+      still publishes the accounts that loaded. It exits 1 only when
+      nothing usable was published (every account failed, or the shared
+      seed store could not be read).
 
   > **REMOVED — `happytrader-snaptrade-refresh` (market-close force-refresh).**
   > It was built to "force a repoll so Schwab surfaces same-day trades," but
