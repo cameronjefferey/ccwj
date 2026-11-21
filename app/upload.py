@@ -28,6 +28,7 @@ from app.seed_store import (
     read_seed_csv as _seed_store_read,
     write_seed_csvs as _seed_store_write,
 )
+from app.sync_log import log_sync_failure, redact_sync_log
 
 
 # Every seed writer performs a read/merge/write against the same three raw
@@ -2585,9 +2586,12 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
     first (same contract as ``merge_and_push_seeds``).
 
     ``skipped`` — optional list. Account-shaped failures (a poison frame,
-    a non-numeric ``user_id``) are appended here and the rest of the batch
-    is still written. A shared seed read/parse failure (``SeedFetchError``)
-    still fails the whole call: that is the store, not one account.
+    a non-numeric ``user_id``, a merge that still fails after the bad
+    account is removed) are appended here and the rest of the batch is
+    still written. A shared seed read failure (``SeedFetchError``) still
+    fails the whole call: that is the store, not one account. A combined
+    load/parse failure returns ``ok=False`` without writing, so the cron
+    can retry smaller subsets and still publish the accounts that load.
     """
     valid = []
     from app.models import snaptrade_snapshot_generation_is_current
@@ -2656,17 +2660,18 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
         if key in failed_keys:
             return
         failed_keys.add(key)
-        app.logger.warning(
-            "SnapTrade seed merge skipped account=%s user_id=%s tenant=%s: %s",
-            entry.get("account_name"), entry.get("user_id"),
-            entry.get("tenant_id"), exc,
+        safe_error = redact_sync_log(exc)[:500]
+        log_sync_failure(
+            "seed_merge",
+            detail=safe_error,
+            broker=entry.get("broker_slug"),
         )
         skipped_out.append({
             "user_id": entry.get("user_id"),
             "snapshot_account_id": entry.get("snapshot_account_id"),
             "tenant_id": entry.get("tenant_id"),
             "account_name": entry.get("account_name"),
-            "error": str(exc),
+            "error": safe_error or "seed merge skipped",
         })
 
     prepared = []  # (entry, user_id_int, tenant_id_str, specs, history_rows, current_rows)
@@ -2732,30 +2737,30 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
             path_contents.append((path, content))
         return path_contents, newly_failed
 
-    path_contents, newly_failed = _fold(prepared)
-    if newly_failed:
+    # Drop accounts whose merge raises and fold again from the original
+    # seeds. A second failure used to return ok=False for the whole batch,
+    # which threw away every sibling and made the nightly cron exit 1
+    # with nothing published.
+    rows = prepared
+    while True:
+        path_contents, newly_failed = _fold(rows)
+        if not newly_failed:
+            break
         for entry, exc in newly_failed:
             _skip(entry, exc)
-        # A history merge can succeed before the positions merge throws.
-        # Rebuild from the original seeds without those accounts so the
-        # commit is not a half-written book.
-        kept = [row for row in prepared if _entry_key(row[0]) not in failed_keys]
+        kept = [row for row in rows if _entry_key(row[0]) not in failed_keys]
         if not kept:
             return True, None, None, True, 0
-        path_contents, again = _fold(kept)
-        if again:
-            for entry, exc in again:
-                _skip(entry, exc)
-            import traceback
-            traceback.print_exception(
-                type(again[0][1]), again[0][1], again[0][1].__traceback__,
-                file=sys.stderr,
-            )
-            return False, str(again[0][1]), None, False, 0
+        if len(kept) == len(rows):
+            exc = newly_failed[0][1]
+            safe_error = redact_sync_log(exc)[:500]
+            log_sync_failure("seed_merge", exc=exc)
+            return False, safe_error or "seed merge failed", None, False, 0
+        rows = kept
 
     prepared_counts = [
         (row[0], row[4], row[5])
-        for row in prepared
+        for row in rows
         if _entry_key(row[0]) not in failed_keys
     ]
     if not prepared_counts:
@@ -2764,15 +2769,17 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
     try:
         ok, err, head_sha, no_changes = _commit_git_paths(path_contents, commit_message)
         if not ok:
-            print(
-                f"WARNING: batched seed store write failed: {err}",
-                file=sys.stderr,
-            )
-            return False, err or "Seed store write failed.", None, False, 0
+            # Do not write a partial book. The cron retries smaller
+            # subsets so one unloadable account does not drop the rest.
+            safe_error = redact_sync_log(err)[:500] or "Seed store write failed."
+            log_sync_failure("seed_write", detail=safe_error)
+            return False, safe_error, None, False, 0
+    except SeedFetchError:
+        raise
     except Exception as exc:
-        import traceback
-        traceback.print_exc(file=sys.stderr)
-        return False, str(exc), None, False, 0
+        safe_error = redact_sync_log(exc)[:500]
+        log_sync_failure("seed_write", exc=exc)
+        return False, safe_error or "seed write failed", None, False, 0
 
     # Per-account bookkeeping (idempotent), matching the single-push path.
     # A bookkeeping miss on one account must not report the write — which
@@ -2792,11 +2799,7 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
         except Exception as exc:
             # The seed write already landed. A bookkeeping miss must not
             # look like the account's rows were dropped.
-            app.logger.exception(
-                "Seed bookkeeping failed after a successful write "
-                "account=%s user_id=%s: %s",
-                e.get("account_name"), uid, exc,
-            )
+            log_sync_failure("unexpected", exc=exc, broker=e.get("broker_slug"))
 
     return True, None, head_sha, no_changes, len(prepared_counts)
 

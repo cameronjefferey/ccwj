@@ -3007,11 +3007,9 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
         # heuristic catches any "401"/"403" substring, which is too broad
         # for Fidelity's first-sync handshake window where SnapTrade
         # sometimes returns 4xx for non-revocation reasons.
-        from app import app as _app
         orig = getattr(auth_exc, "original", auth_exc)
         endpoint = getattr(auth_exc, "endpoint", "unknown")
         broker_slug = acc_row.get("broker_slug") or "unknown"
-        first_done = bool(acc_row.get("first_sync_completed"))
 
         # DEBOUNCE the disabled-flag signal specifically (2026-09-04 incident:
         # SnapTrade's own `list_brokerage_authorizations.disabled` boolean was
@@ -3046,12 +3044,15 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             endpoint == _DISABLED_FLAG_ENDPOINT
             or _disabled_authorization_message(orig)
         )
+        from app.sync_log import log_sync_failure, redact_sync_log
         if not real_disable:
-            _app.logger.warning(
-                "SnapTrade sync error did not mark connection_broken for "
-                "user_id=%s account=%s broker=%s endpoint=%s exc_type=%s msg=%s",
-                user_id, snaptrade_account_id, broker_slug,
-                endpoint, type(orig).__name__, str(orig)[:500],
+            log_sync_failure(
+                "auth",
+                detail=(
+                    "endpoint=%s exc_type=%s msg=%s"
+                    % (endpoint, type(orig).__name__, redact_sync_log(orig))
+                ),
+                broker=broker_slug,
             )
             record_snaptrade_sync_attempt(
                 user_id, snaptrade_account_id,
@@ -3069,12 +3070,13 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             and not prior_pending
             and not already_broken
         ):
-            _app.logger.warning(
-                "SnapTrade disabled-flag seen ONCE for user_id=%s account=%s "
-                "broker=%s (pending confirmation next sync — no banner/email "
-                "yet) exc_type=%s msg=%s",
-                user_id, snaptrade_account_id, broker_slug,
-                type(orig).__name__, str(orig)[:500],
+            log_sync_failure(
+                "connection_pending",
+                detail=(
+                    "pending endpoint=%s exc_type=%s msg=%s"
+                    % (endpoint, type(orig).__name__, redact_sync_log(orig))
+                ),
+                broker=broker_slug,
             )
             record_snaptrade_sync_attempt(
                 user_id, snaptrade_account_id,
@@ -3088,11 +3090,13 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             out["error"] = "connection_broken_pending"
             return out
 
-        _app.logger.warning(
-            "SnapTrade sync flagged connection_broken for user_id=%s "
-            "account=%s broker=%s first_done=%s endpoint=%s exc_type=%s msg=%s",
-            user_id, snaptrade_account_id, broker_slug, first_done,
-            endpoint, type(orig).__name__, str(orig)[:500],
+        log_sync_failure(
+            "connection_broken",
+            detail=(
+                "endpoint=%s exc_type=%s msg=%s"
+                % (endpoint, type(orig).__name__, redact_sync_log(orig))
+            ),
+            broker=broker_slug,
         )
         mark_snaptrade_connection_broken(
             user_id, snaptrade_account_id,
@@ -3110,8 +3114,10 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
     except _SnapTradeStepError as step_exc:
         out["error"] = f"{step_exc.step}:{step_exc.status}"
         out["user_message"] = step_exc.user_message
+        from app.sync_log import redact_sync_log
         record_snaptrade_sync_attempt(
-            user_id, snaptrade_account_id, error=str(step_exc)[:500],
+            user_id, snaptrade_account_id,
+            error=redact_sync_log(step_exc)[:500],
             snapshot_generation=snapshot_generation,
         )
         record_snaptrade_sync_observation(
@@ -3119,13 +3125,16 @@ def _sync_one_connection(user_id, acc_row, *, lookback_days, force_refresh=False
             broker_slug=acc_row.get("broker_slug"), ok=False,
         )
     except Exception as exc:
-        from app import app as _app
-        _app.logger.exception(
-            "SnapTrade sync failed for user_id=%s account=%s: %s",
-            user_id, snaptrade_account_id, exc,
+        # Stderr, not logger.exception: the cron's Render log is the only
+        # place this survives, and the line must not carry account ids,
+        # user ids, or the raw exception text.
+        from app.sync_log import log_sync_failure, redact_sync_log
+        log_sync_failure(
+            "unexpected", exc=exc, broker=acc_row.get("broker_slug"),
         )
         record_snaptrade_sync_attempt(
-            user_id, snaptrade_account_id, error=str(exc)[:500],
+            user_id, snaptrade_account_id,
+            error=redact_sync_log(exc)[:500],
             snapshot_generation=snapshot_generation,
         )
         record_snaptrade_sync_observation(
@@ -3329,13 +3338,18 @@ def _snaptrade_http_status(exc) -> str:
     return "none"
 
 
-def _log_snaptrade_sync_error(step: str, endpoint: str, account_id, exc) -> str:
-    """One grep-able line: step, endpoint, and status. Returns the status."""
+def _log_snaptrade_sync_error(step: str, endpoint: str, _account_id, exc) -> str:
+    """One grep-able line: step, endpoint, and status. Returns the status.
+
+    The account id is not printed.
+    """
     status = _snaptrade_http_status(exc)
-    app.logger.warning(
-        "SnapTrade sync error step=%s endpoint=%s status=%s account=%s error=%s: %s",
-        step, endpoint, status, account_id, type(exc).__name__, str(exc)[:500],
+    from app.sync_log import log_sync_failure, redact_sync_log, sync_failure_category
+    detail = (
+        f"step={step} endpoint={endpoint} status={status} "
+        f"error={type(exc).__name__}: {redact_sync_log(exc)}"
     )
+    log_sync_failure(sync_failure_category(detail, exc), detail=detail)
     return status
 
 

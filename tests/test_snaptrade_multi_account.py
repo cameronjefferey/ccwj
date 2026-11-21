@@ -1992,10 +1992,9 @@ def test_fetch_all_positions_unwraps_results_and_drops_a_bare_wrapper():
     assert _snap._fetch_all_positions(_Client({"unexpected": 1}), "u", "s", "acc") is None
 
 
-def test_activities_timeout_logs_step_endpoint_and_status(caplog):
+def test_activities_timeout_logs_step_endpoint_and_status(capsys):
     """A long-history activities pull that times out must name the step,
-    the endpoint, and the status. The user-facing reason stays short."""
-    import logging
+    the endpoint, and the status. The account id stays out of the log."""
     from datetime import date
 
     class _Boom:
@@ -2004,23 +2003,23 @@ def test_activities_timeout_logs_step_endpoint_and_status(caplog):
             def get_account_activities(**_):
                 raise TimeoutError("The read operation timed out")
 
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(_snap._SnapTradeStepError) as exc_info:
-            _snap._fetch_activities(
-                _Boom, "u", "s", "48086b12-acct",
-                date(2024, 1, 1), date(2026, 10, 2),
-            )
+    with pytest.raises(_snap._SnapTradeStepError) as exc_info:
+        _snap._fetch_activities(
+            _Boom, "u", "s", "48086b12-acct",
+            date(2024, 1, 1), date(2026, 10, 2),
+        )
     err = exc_info.value
     assert err.step == "activities"
     assert err.endpoint == "get_account_activities"
     assert err.status == "timeout"
     assert "trade history" in err.user_message
     assert "48086b12" not in err.user_message
-    text = caplog.text
-    assert "SnapTrade sync error step=activities" in text
+    text = capsys.readouterr().err
+    assert "category=timeout" in text
+    assert "step=activities" in text
     assert "endpoint=get_account_activities" in text
     assert "status=timeout" in text
-    assert "account=48086b12-acct" in text
+    assert "48086b12" not in text
 
 
 def test_sync_flash_masks_the_account_and_shows_the_reason(monkeypatch):

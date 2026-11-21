@@ -7,6 +7,8 @@ pin: each account is synced deferred, exactly one batched push happens, broken
 connections are skipped (not batched) and notified, and the exit code contract
 holds.
 """
+from contextlib import contextmanager
+
 import pandas as pd
 import pytest
 
@@ -15,6 +17,10 @@ from app import models as _models
 from app import plan as _plan
 from app import snaptrade as _snap
 from app import upload as _upload
+
+# Captured before tests replace the batch writer. The load-failure test
+# calls the real writer against an in-memory store.
+_REAL_BATCH = _upload.merge_and_push_seeds_batch
 
 
 def _row(uid, acct_id, name, first_done=True):
@@ -180,7 +186,13 @@ def test_cron_batches_balance_only_holdings_unavailable_account(
 
     assert cli.main() == 0
     assert len(_wire["batch"]) == 1
-    assert _wire["batch"][0]["entries"] == [frames]
+    published = _wire["batch"][0]["entries"]
+    assert len(published) == 1
+    assert published[0]["balances_df"].equals(frames["balances_df"])
+    assert published[0]["snapshot_account_id"] == "vang"
+    assert published[0]["tenant_id"] == frames["tenant_id"]
+    assert published[0]["history_df"] is None
+    assert published[0]["current_df"] is None
     assert _wire["first_sync_marked"] == [(21, "vang")]
     assert _wire["trial_started"] == [21]
 
@@ -529,8 +541,8 @@ def test_failed_batch_leaves_first_sync_pending(_wire, monkeypatch):
 
 
 def test_batch_exception_is_logged_in_full_and_stamped(_wire, monkeypatch, capsys):
-    """A thrown batch write exits 1, prints the traceback, and stores
-    ``seed_write_failed:<msg>`` on the account."""
+    """A thrown batch write on the only account exits 1, prints the
+    traceback, and stores ``seed_write_failed:<msg>`` on that account."""
     rows = [_row(14, "new-account", "Fidelity Account", first_done=False)]
     monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
     monkeypatch.setattr(
@@ -550,11 +562,198 @@ def test_batch_exception_is_logged_in_full_and_stamped(_wire, monkeypatch, capsy
     captured = capsys.readouterr()
     assert "Traceback" in captured.err
     assert "synthetic-seed-write-boom" in captured.err
-    assert "batched push FAILED: synthetic-seed-write-boom" in captured.out
+    assert "category=seed_write" in captured.err
     uid, account_id, error = _wire["sync_attempts"][0]
     assert (uid, account_id) == (14, "new-account")
     assert error.startswith("seed_write_failed:")
     assert "synthetic-seed-write-boom" in error
+    assert _wire["trial_started"] == []
+
+
+def test_one_account_sync_error_publishes_the_rest(_wire, monkeypatch, capsys):
+    """One broker read exploding must not skip the snapshot for the others."""
+    secret = "token=user_secret_SHOULD_NOT_LEAK"
+    rows = [
+        _row(9, "private-account-id", "Schwab Account"),
+        _row(18, "a2", "Fidelity Account"),
+    ]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+
+    def _fake_sync(user_id, row, **kwargs):
+        if row["snaptrade_account_id"] == "private-account-id":
+            raise RuntimeError(
+                f"{secret} balance $99999.00 acct 9988776655 person@example.com"
+            )
+        return _ok(row["account_name"], user_id, "snaptrade:t-a2")
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
+
+    assert cli.main() == 0
+    assert len(_wire["batch"]) == 1
+    assert len(_wire["batch"][0]["entries"]) == 1
+    assert _wire["batch"][0]["entries"][0]["tenant_id"] == "snaptrade:t-a2"
+    assert _wire["trial_started"] == [18]
+    captured = capsys.readouterr()
+    log = captured.out + captured.err
+    assert "category=unexpected" in captured.err
+    assert "Traceback" in captured.err
+    assert "RuntimeError" in captured.err
+    for private in (
+        secret, "SHOULD_NOT_LEAK", "99999", "9988776655",
+        "person@example.com", "private-account-id",
+    ):
+        assert private not in log
+
+
+def test_all_accounts_raising_exits_nonzero_and_publishes_nothing(
+    _wire, monkeypatch, capsys,
+):
+    rows = [_row(9, "a1", "Schwab Account"), _row(18, "a2", "Fidelity Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+
+    def _boom(user_id, row, **kwargs):
+        raise RuntimeError("token=SHARED_SECRET balance $10.00")
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _boom)
+
+    assert cli.main() == 1
+    assert _wire["batch"] == []
+    captured = capsys.readouterr()
+    log = captured.out + captured.err
+    assert "category=unexpected" in captured.err
+    assert "Traceback" in captured.err
+    assert "SHARED_SECRET" not in log
+    assert "$10.00" not in log
+
+
+def test_shared_seed_read_failure_does_not_publish_a_partial(
+    _wire, monkeypatch, capsys,
+):
+    """A failed store read is not one account. Do not retry subsets."""
+    rows = [_row(9, "a1", "Schwab Account"), _row(18, "a2", "Fidelity Account")]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+    monkeypatch.setattr(
+        _snap, "_sync_one_connection",
+        lambda user_id, row, **kwargs: _ok(
+            row["account_name"], user_id, f"snaptrade:{row['snaptrade_account_id']}",
+        ),
+    )
+    calls = []
+
+    def _read_failed(entries, *, commit_message, skipped=None):
+        calls.append(list(entries))
+        return False, "BigQuery read of analytics_raw.trade_history failed", None, False, 0
+
+    monkeypatch.setattr(_upload, "merge_and_push_seeds_batch", _read_failed)
+
+    assert cli.main() == 1
+    assert len(calls) == 1
+    assert len(calls[0]) == 2
+    assert _wire["trial_started"] == []
+    captured = capsys.readouterr()
+    assert "category=seed_read" in captured.err
+    assert "batched push FAILED" in captured.out + captured.err
+
+
+def test_one_account_load_failure_still_publishes_the_rest(
+    _wire, monkeypatch, capsys,
+):
+    """The nightly failure mode: the combined seed load rejects one account.
+
+    Before the split, that returned ok=False for the whole batch, the cron
+    exited 1, and no raw snapshot was written. The accounts whose frames
+    load must still be published.
+    """
+    from app import db as _db
+
+    rows = [
+        _row(9, "good-a", "Schwab Account"),
+        _row(21, "poison-account", "Vanguard Account"),
+        _row(18, "good-b", "Fidelity Account"),
+    ]
+    monkeypatch.setattr(_models, "list_all_snaptrade_accounts", lambda: rows)
+
+    def _fake_sync(user_id, row, **kwargs):
+        symbol = "POISON" if row["snaptrade_account_id"] == "poison-account" else (
+            "AAPL" if row["snaptrade_account_id"] == "good-a" else "TSLA"
+        )
+        res = _ok(row["account_name"], user_id, f"snaptrade:{symbol}")
+        res["frames"]["history_df"] = pd.DataFrame([{
+            "Date": "01/02/2026",
+            "Action": "Buy",
+            "Symbol": symbol,
+            "Description": symbol,
+            "Quantity": 1,
+            "Price": 10,
+            "fees_and_comm": 0,
+            "Amount": -10,
+        }])
+        res["frames"]["current_df"] = pd.DataFrame([{
+            "Symbol": symbol,
+            "Description": symbol,
+            "Quantity": 1,
+            "Price": 10,
+            "security_type": "Equity",
+        }])
+        return res
+
+    monkeypatch.setattr(_snap, "_sync_one_connection", _fake_sync)
+
+    store = {}
+
+    def _get(path):
+        return store.get(path)
+
+    def _commit(path_contents, message):
+        blob = "\n".join(content or "" for _path, content in path_contents)
+        if "POISON" in blob:
+            return (
+                False,
+                "BigQuery load into trade_history failed: ArrowInvalid "
+                "token=SECRETVALUE balance $99999.00 acct 9988776655 "
+                "person@example.com",
+                None,
+                False,
+            )
+        for path, content in path_contents:
+            store[path] = content
+        return True, None, "dispatch:1", False
+
+    @contextmanager
+    def _lock(_key):
+        yield
+
+    _upload._seed_write_lock_state.depth = 0
+    monkeypatch.setattr(_db, "advisory_lock", _lock)
+    monkeypatch.setattr(_upload, "_get_file_content", _get)
+    monkeypatch.setattr(_upload, "_commit_git_paths", _commit)
+    monkeypatch.setattr(_upload, "add_account_for_user", lambda *a, **k: None)
+    monkeypatch.setattr(_upload, "record_upload", lambda *a, **k: None)
+    monkeypatch.setattr(
+        _upload, "merge_and_push_seeds_batch", _REAL_BATCH,
+    )
+
+    assert cli.main() == 0
+    published = "\n".join(store.values())
+    assert "AAPL" in published
+    assert "TSLA" in published
+    assert "POISON" not in published
+    failures = [row for row in _wire["sync_attempts"] if row[2]]
+    assert len(failures) == 1
+    assert failures[0][0] == 21
+    assert failures[0][1] == "poison-account"
+    assert str(failures[0][2]).startswith("seed_write_failed:")
+    assert 9 in _wire["trial_started"]
+    assert 18 in _wire["trial_started"]
+    assert 21 not in _wire["trial_started"]
+    captured = capsys.readouterr()
+    log = captured.out + captured.err
+    assert "category=seed_write" in captured.err
+    for private in (
+        "SECRETVALUE", "99999", "9988776655", "person@example.com",
+        "poison-account",
+    ):
+        assert private not in log, private
 
 
 def test_one_skipped_account_does_not_fail_the_cron(_wire, monkeypatch):
