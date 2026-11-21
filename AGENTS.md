@@ -1446,6 +1446,8 @@ Heavy logic belongs in dbt.
 
 If logic is found in Flask that belongs in dbt: flag it, move it, document it.
 
+**No `WITH RECURSIVE` in dbt models or macros.** BigQuery allows a recursive CTE only at the top level of a statement. dbt unit tests wrap model SQL in an outer query, so a recursive CTE errors the unit test, skips every later test on that model, and fails the warehouse rebuild (`bigquery_update.yml`) — including the nightly run. Running average-cost and other row-by-row state belong in window functions (reset an episode when quantity goes flat, then `exp(sum(ln(retain ratio)))` to scale older basis). Do not use scripting or a JS UDF for that walk. `tests/test_no_recursive_cte.py` fails CI if any `*.sql` file under `dbt/models` or `dbt/macros` contains `with recursive`.
+
 **Before pushing dbt changes** (avoids learning errors only in prod): with `~/.dbt/profiles.yml` and network, run
 `cd dbt && ../.venv/bin/dbt parse && ../.venv/bin/dbt build`, or `scripts/dbt-validate.sh` (same). `parse` is fast and offline; `build` must succeed against BigQuery. If a snapshot fails on the first `build` but succeeds on `dbt snapshot --select <name>`, re-run the full `build` once (rare BQ/dag race).
 
@@ -1674,7 +1676,16 @@ realized P&L to the actual realization moment. Multi-day partial closes
 remain separate increments; never move all prior realized P&L onto the
 latest reduction date. If a contract is scaled back in between reductions,
 carry only the still-open average basis into the next close; the new opening
-cash must not retroactively change an earlier close.
+cash must not retroactively change an earlier close. That carry lives in
+`int_option_contract_daily_pnl` as a window, not a recursive CTE: remaining
+quantity is cumulative opens-minus-closes lifted back to zero at each flat
+or over-close, and remaining basis is opening cash scaled by the product of
+the retain ratios inside the episode (`exp` of a running `ln`). A same-day
+reopen that lands exactly when prior quantity is flat starts the next
+episode. The latest close still absorbs the residual versus
+`int_option_contracts.realized_pnl`. See "No `WITH RECURSIVE`" under
+Architectural Principles — dbt's unit-test wrapper makes a recursive CTE
+fail the warehouse build.
 
 **Schwab's snapshot lags actual expiry by 1-2 trading days.** The
 `status` and `close_date` columns in `int_option_contracts` realize
