@@ -121,9 +121,6 @@ history_close_dates as (
             and o.trade_symbol = h.trade_symbol
             and o.instrument_type in ('Call', 'Put')
             and o.action in ('option_sell_to_open', 'option_buy_to_open')
-            and o.trade_date <= least(
-                h.trade_date, coalesce(h.option_expiry, h.trade_date)
-            )
       )
     group by 1, 2, 3, 4, 5
 ),

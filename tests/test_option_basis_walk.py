@@ -195,6 +195,7 @@ def test_window_basis_matches_unit_test_realized_pnl():
     assert by_symbol["CCC"] == [50.0, 50.0]
     assert by_symbol["LONG"] == [60.0, 40.0, 80.0]
     assert by_symbol["SHORT"] == [-60.0, -40.0, -80.0]
+    assert by_symbol["MISSING"] == [-50.0, -200.0]
 
     con = sqlite3.connect(":memory:")
     _register(con)
