@@ -1682,7 +1682,9 @@ quantity is cumulative opens-minus-closes lifted back to zero at each flat
 or over-close, and remaining basis is opening cash scaled by the product of
 the retain ratios inside the episode (`exp` of a running `ln`). A same-day
 reopen that lands exactly when prior quantity is flat starts the next
-episode. The latest close still absorbs the residual versus
+episode. When a close predates the broker's available opening history, its
+known closing cash stays on that close date (with no invented opening basis)
+instead of being shifted onto a later episode. The latest close still absorbs the residual versus
 `int_option_contracts.realized_pnl`. See "No `WITH RECURSIVE`" under
 Architectural Principles — dbt's unit-test wrapper makes a recursive CTE
 fail the warehouse build.

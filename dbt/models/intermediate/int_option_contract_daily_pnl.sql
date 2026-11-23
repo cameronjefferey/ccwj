@@ -570,8 +570,9 @@ close_state as (
 
 allocatable_close_state as (
     -- A broker window can begin with a close whose opening fill is absent.
-    -- Skip those basis-less rows, but number the later allocatable closes
-    -- contiguously so the basis window still walks them in close order.
+    -- The basis walk cannot allocate missing opening cash, so number only
+    -- the later allocatable closes contiguously.  The basis-less close cash
+    -- is still emitted below on its actual date.
     select
         *,
         row_number() over (
@@ -756,10 +757,31 @@ close_basis_walk as (
 
 multi_close_raw as (
     select
-        walk.*,
+        walk.tenant_id,
+        walk.account,
+        walk.user_id,
+        walk.trade_symbol,
+        walk.close_event_date,
         walk.closing_cash + walk.allocated_opening_cash as raw_increment
     from close_basis_walk walk
     where walk.close_date_count > 1
+
+    union all
+
+    -- A close can predate the broker's available opening history.  Its
+    -- opening basis is unknowable, but its closing cash is known.  Keep that
+    -- cash on the close session instead of moving it into a later episode's
+    -- final reconciliation row.
+    select
+        s.tenant_id,
+        s.account,
+        s.user_id,
+        s.trade_symbol,
+        s.close_event_date,
+        s.closing_cash as raw_increment
+    from close_state s
+    where s.close_date_count > 1
+      and s.opened_qty_to_date <= 0
 ),
 
 multi_close_reconciled as (
@@ -818,7 +840,6 @@ realized_close as (
             and (s.user_id is not distinct from c.user_id)
             and s.trade_symbol = c.trade_symbol
             and s.close_date_count > 1
-            and s.opened_qty_to_date > 0
       )
 ),
 
