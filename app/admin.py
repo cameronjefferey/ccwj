@@ -31,6 +31,7 @@ Everything here is gated by app.models.is_admin(). Non-admins get a 404
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
 from functools import wraps
 
 from flask import (
@@ -799,55 +800,65 @@ def admin_delete_user(user_id):
     purge_bq = (request.form.get("purge_bq") or "") == "1"
     bq_summary = ""
 
+    # A warehouse purge and the Postgres cascade are one deletion fence.
+    # Holding the seed-writer lock across both prevents a broker fetch that
+    # started earlier from restoring rows between those two operations.
     if purge_bq:
-        from app.upload import purge_user_id_from_seeds
-        ok, err, rows_removed, build_marker = purge_user_id_from_seeds(
-            target.id,
-            commit_message=(
-                f"admin: purge BigQuery seed rows for deleted user "
-                f"{target.username} (id={target.id})"
-            ),
-        )
-        if not ok:
+        from app.upload import seed_write_lock
+        delete_lock = seed_write_lock()
+    else:
+        delete_lock = nullcontext()
+
+    with delete_lock:
+        if purge_bq:
+            from app.upload import purge_user_id_from_seeds
+            ok, err, rows_removed, build_marker = purge_user_id_from_seeds(
+                target.id,
+                commit_message=(
+                    f"admin: purge BigQuery seed rows for deleted user "
+                    f"{target.username} (id={target.id})"
+                ),
+            )
+            if not ok:
+                flash(
+                    f"Could not rewrite the raw seed tables in BigQuery: {err}. "
+                    "User NOT deleted — fix the issue and retry, "
+                    "or untick the BigQuery purge box and delete just the "
+                    "Postgres user.",
+                    "danger",
+                )
+                return redirect(url_for("admin_users"))
+            total = sum(rows_removed.values())
+            if total:
+                per_file = ", ".join(
+                    f"{path.rsplit('/', 1)[-1]}: {n}"
+                    for path, n in rows_removed.items()
+                    if n
+                )
+                rebuild_tag = (
+                    " A warehouse rebuild was dispatched." if build_marker else ""
+                )
+                bq_summary = (
+                    f" Stripped {total} rows ({per_file}) from the raw seed "
+                    f"tables.{rebuild_tag} The next dbt build rebuilds BigQuery "
+                    "without them."
+                )
+            else:
+                bq_summary = (
+                    " No rows owned by that user's tenant_ids or legacy user_id "
+                    "were present in the raw seed tables (nothing to strip)."
+                )
+
+        from app.models import delete_user
+        if not delete_user(target.id):
             flash(
-                f"Could not rewrite the raw seed tables in BigQuery: {err}. "
-                "User NOT deleted — fix the issue and retry, "
-                "or untick the BigQuery purge box and delete just the "
-                "Postgres user.",
+                "Postgres delete failed (see Render logs). "
+                + ("Note: the raw seed tables in BigQuery were already rewritten "
+                   "and the cleanup takes effect on the next dbt build."
+                   if purge_bq else "No changes were made."),
                 "danger",
             )
             return redirect(url_for("admin_users"))
-        total = sum(rows_removed.values())
-        if total:
-            per_file = ", ".join(
-                f"{path.rsplit('/', 1)[-1]}: {n}"
-                for path, n in rows_removed.items()
-                if n
-            )
-            rebuild_tag = (
-                " A warehouse rebuild was dispatched." if build_marker else ""
-            )
-            bq_summary = (
-                f" Stripped {total} rows ({per_file}) from the raw seed "
-                f"tables.{rebuild_tag} The next dbt build rebuilds BigQuery "
-                "without them."
-            )
-        else:
-            bq_summary = (
-                " No rows owned by that user's tenant_ids or legacy user_id "
-                "were present in the raw seed tables (nothing to strip)."
-            )
-
-    from app.models import delete_user
-    if not delete_user(target.id):
-        flash(
-            "Postgres delete failed (see Render logs). "
-            + ("Note: the raw seed tables in BigQuery were already rewritten "
-               "and the cleanup takes effect on the next dbt build."
-               if purge_bq else "No changes were made."),
-            "danger",
-        )
-        return redirect(url_for("admin_users"))
 
     app.logger.warning(
         "ADMIN DELETE USER: %s deleted user %s (id=%s, purge_bq=%s)",

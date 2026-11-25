@@ -85,6 +85,21 @@ def _serialized_seed_write(func):
     return wrapped
 
 
+def _snaptrade_write_target_exists(user_id, snapshot_account_id):
+    """Whether a fetched SnapTrade account may still write raw seed rows.
+
+    Fetches happen outside ``seed_write_lock``. Account deletion holds that
+    lock across the raw-table purge and Postgres cascade, so this check runs
+    after either the old sync or the delete has won the race. A missing row
+    must discard history as well as snapshots; otherwise an in-flight fetch
+    can resurrect purged trades after the user is gone.
+    """
+    if not snapshot_account_id:
+        return True
+    from app.models import get_snaptrade_account
+    return get_snaptrade_account(user_id, snapshot_account_id) is not None
+
+
 # ------------------------------------------------------------------
 # Expected CSV column headers (lowercase for comparison)
 # The brokerage export uses "Fees & Comm" -- we normalize it to "fees_and_comm"
@@ -2485,6 +2500,16 @@ def merge_and_push_seeds(
     if user_id_int is None:
         return False, "user_id is required.", 0, 0, None, False
     tenant_id_str = str(tenant_id).strip()
+    if snapshot_account_id and not _snaptrade_write_target_exists(
+        user_id_int, snapshot_account_id,
+    ):
+        app.logger.info(
+            "Discarding fetched SnapTrade rows for removed account "
+            "user_id=%s account=%s; history and snapshots are no longer "
+            "authorized to write.",
+            user_id_int, snapshot_account_id,
+        )
+        return True, None, 0, 0, None, True
     snapshot_superseded = False
     has_balances = balances_df is not None and len(balances_df) > 0
     if (
@@ -2597,13 +2622,27 @@ def merge_and_push_seeds_batch(entries, *, commit_message, skipped=None):
             continue
         if e.get("tenant_id") is None or not str(e.get("tenant_id")).strip():
             continue
+        account_id = e.get("snapshot_account_id")
+        if account_id:
+            from app.demo_guard import numeric_user_id
+            snap_uid = numeric_user_id(e.get("user_id"))
+            if (
+                snap_uid is not None
+                and not _snaptrade_write_target_exists(snap_uid, account_id)
+            ):
+                app.logger.info(
+                    "Discarding deferred SnapTrade rows for removed account "
+                    "user_id=%s account=%s; history and snapshots are no "
+                    "longer authorized to write.",
+                    snap_uid, account_id,
+                )
+                continue
         balances_df = e.get("balances_df")
         has_balances = balances_df is not None and len(balances_df) > 0
         if (
             (e.get("current_df") is not None or has_balances)
             and e.get("snapshot_generation") is not None
         ):
-            account_id = e.get("snapshot_account_id")
             if not account_id:
                 continue
             from app.demo_guard import numeric_user_id
