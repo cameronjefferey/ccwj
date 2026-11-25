@@ -740,56 +740,81 @@ def delete_account():
         )
         return redirect(url_for("profile", tab="security"))
 
-    # 3. Warehouse purge — abort everything else if it fails.
-    from app.upload import purge_user_id_from_seeds
-    ok, err, rows_removed, _marker = purge_user_id_from_seeds(
-        uid,
-        commit_message=f"self-serve delete: purge seed rows for user {uname} (id={uid})",
-    )
-    if not ok:
-        app.logger.error("SELF-DELETE: warehouse purge failed for user_id=%s: %s", uid, err)
-        flash(
-            "We couldn't remove your trading data from our warehouse just now, "
-            "so your account was NOT deleted. Please try again in a few minutes "
-            "or contact support.",
-            "danger",
-        )
-        return redirect(url_for("profile", tab="security"))
-
-    # 4. SnapTrade deregistration (best-effort, before Postgres cascade
-    #    removes the snaptrade_users row we need for the call).
+    # Save the external id before the Postgres cascade. Deregistration remains
+    # best-effort and can happen after the local deletion fence is durable.
+    snap_user_id = None
     try:
         from app.models import get_snaptrade_user
         snap = get_snaptrade_user(uid)
         if snap and snap.get("snaptrade_user_id"):
-            from app.snaptrade import _get_snaptrade_client
-            client = _get_snaptrade_client()
-            client.authentication.delete_snap_trade_user(
-                user_id=snap["snaptrade_user_id"]
-            )
-            app.logger.info(
-                "SELF-DELETE: deregistered SnapTrade user %s for user_id=%s",
-                snap["snaptrade_user_id"], uid,
-            )
+            snap_user_id = snap["snaptrade_user_id"]
     except Exception as exc:
-        # Orphan registration is swept by the periodic orphan-cleanup
-        # script; don't block the user's deletion on an aggregator hiccup.
         app.logger.error(
-            "SELF-DELETE: SnapTrade deregistration failed for user_id=%s "
+            "SELF-DELETE: could not load SnapTrade id for user_id=%s "
             "(orphan will be swept later): %s", uid, exc,
         )
 
-    # 5. Postgres cascade delete.
+    # 3–4. Hold the same cluster-wide lock used by every seed writer from the
+    # raw-table purge through the Postgres cascade. Broker fetches run outside
+    # the lock; once a waiting fetch enters, its account-ownership check sees
+    # either the still-live account (sync won first) or no row (delete won)
+    # and cannot resurrect the purged history.
+    from app.upload import purge_user_id_from_seeds, seed_write_lock
     from app.models import delete_user
-    if not delete_user(uid):
-        app.logger.error("SELF-DELETE: Postgres delete failed for user_id=%s", uid)
-        flash(
-            "Something went wrong finishing the deletion — your trading data "
-            "was already removed from the warehouse, but the login still "
-            "exists. Please contact support.",
-            "danger",
+    with seed_write_lock():
+        ok, err, rows_removed, _marker = purge_user_id_from_seeds(
+            uid,
+            commit_message=(
+                f"self-serve delete: purge seed rows for user {uname} "
+                f"(id={uid})"
+            ),
         )
-        return redirect(url_for("profile", tab="security"))
+        if not ok:
+            app.logger.error(
+                "SELF-DELETE: warehouse purge failed for user_id=%s: %s",
+                uid, err,
+            )
+            flash(
+                "We couldn't remove your trading data from our warehouse just now, "
+                "so your account was NOT deleted. Please try again in a few minutes "
+                "or contact support.",
+                "danger",
+            )
+            return redirect(url_for("profile", tab="security"))
+
+        if not delete_user(uid):
+            app.logger.error(
+                "SELF-DELETE: Postgres delete failed for user_id=%s", uid,
+            )
+            flash(
+                "Something went wrong finishing the deletion — your trading data "
+                "was already removed from the warehouse, but the login still "
+                "exists. Please contact support.",
+                "danger",
+            )
+            return redirect(url_for("profile", tab="security"))
+
+    # 5. SnapTrade deregistration (best-effort). The id was captured before
+    # the cascade; keeping the network call outside the seed lock avoids
+    # blocking unrelated account syncs on the aggregator.
+    if snap_user_id:
+        try:
+            from app.snaptrade import _get_snaptrade_client
+            client = _get_snaptrade_client()
+            client.authentication.delete_snap_trade_user(
+                user_id=snap_user_id
+            )
+            app.logger.info(
+                "SELF-DELETE: deregistered SnapTrade user %s for user_id=%s",
+                snap_user_id, uid,
+            )
+        except Exception as exc:
+            # Orphan registration is swept by the periodic orphan-cleanup
+            # script; don't block the user's deletion on an aggregator hiccup.
+            app.logger.error(
+                "SELF-DELETE: SnapTrade deregistration failed for user_id=%s "
+                "(orphan will be swept later): %s", uid, exc,
+            )
 
     app.logger.warning(
         "SELF-DELETE: user %s (id=%s) deleted their own account "

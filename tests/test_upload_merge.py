@@ -2034,6 +2034,9 @@ def _install_store(monkeypatch, store):
                         lambda pc, msg: store.commit(pc, msg))
     monkeypatch.setattr(_upload, "add_account_for_user", lambda *a, **k: None)
     monkeypatch.setattr(_upload, "record_upload", lambda *a, **k: None)
+    monkeypatch.setattr(
+        _upload, "_snaptrade_write_target_exists", lambda *_args: True,
+    )
 
 
 def _sample_entries():
@@ -2110,6 +2113,75 @@ def test_seed_writers_share_one_reentrant_cluster_lock(monkeypatch):
         ("enter", _upload.SEED_WRITE_LOCK_KEY),
         ("exit", _upload.SEED_WRITE_LOCK_KEY),
     ]
+
+
+def test_removed_snaptrade_account_cannot_restore_purged_history(monkeypatch):
+    """A fetch waiting behind account deletion must discard every frame."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    monkeypatch.setattr(
+        _upload, "_snaptrade_write_target_exists", lambda *_args: False,
+    )
+    fetched_history = pd.DataFrame([
+        _row(
+            "Schwab Account", 9, "01/04/2025", "Buy", "MSFT",
+            1, 400.0, -400.0, tenant_id=TENANT_SCHWAB_5989,
+        ),
+    ])
+
+    ok, err, history_rows, current_rows, marker, no_changes = (
+        _upload.merge_and_push_seeds(
+            "Schwab Account",
+            fetched_history,
+            None,
+            commit_message="late sync after deletion",
+            user_id=9,
+            tenant_id=TENANT_SCHWAB_5989,
+            snapshot_account_id="acct-removed",
+            snapshot_generation=None,
+        )
+    )
+
+    assert ok, err
+    assert (history_rows, current_rows, marker, no_changes) == (
+        0, 0, None, True,
+    )
+    assert store.files == {}
+
+
+def test_deferred_removed_snaptrade_account_cannot_restore_history(monkeypatch):
+    """The nightly batch applies the same deletion fence to history-only rows."""
+    store = _FakeSeedStore()
+    _install_store(monkeypatch, store)
+    monkeypatch.setattr(
+        _upload, "_snaptrade_write_target_exists", lambda *_args: False,
+    )
+    entry = {
+        "account_name": "Schwab Account",
+        "user_id": 9,
+        "tenant_id": TENANT_SCHWAB_5989,
+        "skip_history": False,
+        "history_df": pd.DataFrame([
+            _row(
+                "Schwab Account", 9, "01/04/2025", "Buy", "MSFT",
+                1, 400.0, -400.0, tenant_id=TENANT_SCHWAB_5989,
+            ),
+        ]),
+        "current_df": None,
+        "balances_df": None,
+        "snapshot_account_id": "acct-removed",
+        "snapshot_generation": None,
+    }
+
+    ok, err, marker, no_changes, pushed = (
+        _upload.merge_and_push_seeds_batch(
+            [entry], commit_message="late batch after deletion",
+        )
+    )
+
+    assert ok, err
+    assert (marker, no_changes, pushed) == (None, True, 0)
+    assert store.files == {}
 
 
 def test_superseded_snapshot_cannot_replace_newer_positions_but_keeps_history(

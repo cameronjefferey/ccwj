@@ -9,8 +9,8 @@ failure-ordering contract:
   * admin accounts refused (can't lock everyone out of /admin)
   * warehouse purge failure ABORTS the whole delete (no half-deleted
     state where Postgres is gone but BQ rows live on)
-  * happy path: purge → SnapTrade deregister (best-effort) → Postgres
-    delete → session logged out
+  * happy path: one seed lock spans purge → Postgres delete, then SnapTrade
+    deregistration is best-effort and the session is logged out
 
 External effects (BQ purge, SnapTrade API) are monkeypatched — the
 route's contract is the ordering and the refusal branches, not the
@@ -18,6 +18,7 @@ side effects themselves (purge has its own tests in test_upload_merge).
 """
 import os
 import uuid
+from contextlib import contextmanager
 
 import pytest
 
@@ -60,7 +61,7 @@ def _login(client, username: str, password: str = "testpass123"):
 @pytest.fixture
 def patched_externals(monkeypatch):
     """Neutralize external effects; record whether they ran."""
-    calls = {"stripe": [], "purged": [], "snaptrade": []}
+    calls = {"stripe": [], "purged": [], "snaptrade": [], "order": []}
 
     def fake_cancel_subscription(user_id):
         calls["stripe"].append(user_id)
@@ -74,11 +75,31 @@ def patched_externals(monkeypatch):
     )
 
     def fake_purge(user_id, *, commit_message):
+        calls["order"].append("purge")
         calls["purged"].append(user_id)
         return True, None, {"seeds/trade_history.csv": 3}, "dispatch:123"
 
     import app.upload as upload_mod
     monkeypatch.setattr(upload_mod, "purge_user_id_from_seeds", fake_purge)
+
+    @contextmanager
+    def fake_seed_write_lock():
+        calls["order"].append("lock_enter")
+        try:
+            yield
+        finally:
+            calls["order"].append("lock_exit")
+
+    monkeypatch.setattr(upload_mod, "seed_write_lock", fake_seed_write_lock)
+
+    import app.models as models_mod
+    real_delete_user = models_mod.delete_user
+
+    def tracked_delete_user(user_id):
+        calls["order"].append("postgres_delete")
+        return real_delete_user(user_id)
+
+    monkeypatch.setattr(models_mod, "delete_user", tracked_delete_user)
 
     # No snaptrade_users row exists for these test users, so the route's
     # deregistration block is a no-op — but patch the client factory
@@ -178,6 +199,9 @@ class TestSelfServeDelete:
         assert not _user_exists(db_conn, uid)
         assert patched_externals["stripe"] == [uid]
         assert patched_externals["purged"] == [uid]
+        assert patched_externals["order"] == [
+            "lock_enter", "purge", "postgres_delete", "lock_exit",
+        ]
         # Session is gone: a login-required page must bounce to /login.
         follow = client.get("/daily-review", follow_redirects=False)
         assert follow.status_code in (301, 302)
