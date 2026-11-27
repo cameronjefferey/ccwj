@@ -6,6 +6,7 @@ each leg, and the labels that describe the resulting number.
 """
 
 from datetime import date
+from itertools import permutations
 
 import pandas as pd
 
@@ -387,11 +388,8 @@ def test_same_day_reopen_and_second_close_is_order_independent():
         contract, 1, -100,
     )
 
-    for fills in (
-        [opened, close_old, reopened, close_new],
-        [opened, close_new, reopened, close_old],
-    ):
-        assert option_record_from_fills(fills) == {
+    for ordered_day in permutations((close_old, reopened, close_new)):
+        assert option_record_from_fills([opened, *ordered_day]) == {
             "winners": 1,
             "losers": 1,
             "zeros": 0,
