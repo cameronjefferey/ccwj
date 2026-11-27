@@ -1682,7 +1682,14 @@ quantity is cumulative opens-minus-closes lifted back to zero at each flat
 or over-close, and remaining basis is opening cash scaled by the product of
 the retain ratios inside the episode (`exp` of a running `ln`). A same-day
 reopen that lands exactly when prior quantity is flat starts the next
-episode. The latest close still absorbs the residual versus
+episode. MTM starts a new valuation epoch on every quantity-changing fill:
+until a fresh EOD snapshot arrives, an old mark cannot describe the scaled
+or reopened quantity. A reused OCC therefore emits zero open-option MTM on
+proven-flat dates and after a reopen with no new mark, rather than carrying a
+prior episode's value on top of realized P&L. A tape whose first event date
+contains a close fails open to snapshot evidence rather than treating
+incomplete quantity history as proof of flatness. The latest
+close still absorbs the residual versus
 `int_option_contracts.realized_pnl`. See "No `WITH RECURSIVE`" under
 Architectural Principles — dbt's unit-test wrapper makes a recursive CTE
 fail the warehouse build.

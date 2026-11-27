@@ -1,0 +1,91 @@
+version: 2
+
+unit_tests:
+  - name: option_mtm_resets_while_reused_occ_is_flat
+    description: >
+      A later open of the same OCC must not turn its lifetimes into one
+      continuous marked position. Realized P&L remains on the first close,
+      the flat gap emits zero MTM, and the later episode starts from its own
+      mark.
+    model: int_option_contract_daily_pnl
+    given:
+      - input: ref('int_option_contracts')
+        rows:
+          - tenant_id: tenant:test
+            account: Test
+            user_id: 1
+            underlying_symbol: REUSE
+            trade_symbol: REUSE260116C00100000
+            open_date: '2026-01-01'
+            close_date: null
+            status: Open
+            net_cash_flow: 600
+            contracts_sold_to_open: 2
+            contracts_bought_to_open: 0
+            contracts_closed: 1
+            realized_pnl: 200
+            realized_close_date: '2026-01-03'
+      - input: ref('stg_history')
+        rows:
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: REUSE260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 1, amount: 400, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: REUSE260116C00100000, trade_date: '2026-01-03', option_expiry: '2026-01-16', quantity: 1, amount: -200, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: REUSE260116C00100000, trade_date: '2026-01-06', option_expiry: '2026-01-16', quantity: 1, amount: 400, instrument_type: Call, action: option_sell_to_open}
+      - input: ref('stg_current')
+        rows:
+          - {tenant_id: tenant:unused, account: Unused, user_id: 999, underlying_symbol: UNUSED, trade_symbol: UNUSED, snapshot_date: '2026-01-01', quantity: 1, market_value: 0, cost_basis: 0, instrument_type: Equity}
+      - input: ref('int_option_marks_daily')
+        rows:
+          - {tenant_id: tenant:test, account: Test, user_id: 1, underlying_symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-02', mtm_unrealized_pnl: 100}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, underlying_symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-07', mtm_unrealized_pnl: 50}
+    expect:
+      rows:
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-01', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-02', pnl_today: 100, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-03', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-03', pnl_today: 200, is_realized_close: true}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-04', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-05', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-06', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: REUSE, trade_symbol: REUSE260116C00100000, date: '2026-01-07', pnl_today: 50, is_realized_close: false}
+
+  - name: option_mtm_does_not_fail_closed_on_missing_open_fill
+    description: >
+      A tape that begins with a close has incomplete quantity history. Its
+      later live mark must remain visible even when the observed cumulative
+      quantity happens to return to zero.
+    model: int_option_contract_daily_pnl
+    given:
+      - input: ref('int_option_contracts')
+        rows:
+          - tenant_id: tenant:test
+            account: Test
+            user_id: 1
+            underlying_symbol: PREWINDOW
+            trade_symbol: PREWIN260116C00100000
+            open_date: '2026-01-01'
+            close_date: null
+            status: Open
+            net_cash_flow: 700
+            contracts_sold_to_open: 3
+            contracts_bought_to_open: 0
+            contracts_closed: 2
+            realized_pnl: 0
+            realized_close_date: null
+      - input: ref('stg_history')
+        rows:
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: PREWIN260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 1, amount: -100, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: PREWIN260116C00100000, trade_date: '2026-01-01', option_expiry: '2026-01-16', quantity: 2, amount: 800, instrument_type: Call, action: option_sell_to_open}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: PREWIN260116C00100000, trade_date: '2026-01-02', option_expiry: '2026-01-16', quantity: 1, amount: -100, instrument_type: Call, action: option_buy_to_close}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, trade_symbol: PREWIN260116C00100000, trade_date: '2026-01-03', option_expiry: '2026-01-16', quantity: 1, amount: 100, instrument_type: Call, action: option_sell_to_open}
+      - input: ref('stg_current')
+        rows:
+          - {tenant_id: tenant:unused, account: Unused, user_id: 999, underlying_symbol: UNUSED, trade_symbol: UNUSED, snapshot_date: '2026-01-01', quantity: 1, market_value: 0, cost_basis: 0, instrument_type: Equity}
+      - input: ref('int_option_marks_daily')
+        rows:
+          - {tenant_id: tenant:test, account: Test, user_id: 1, underlying_symbol: PREWINDOW, trade_symbol: PREWIN260116C00100000, date: '2026-01-02', mtm_unrealized_pnl: 40}
+          - {tenant_id: tenant:test, account: Test, user_id: 1, underlying_symbol: PREWINDOW, trade_symbol: PREWIN260116C00100000, date: '2026-01-03', mtm_unrealized_pnl: 50}
+    expect:
+      rows:
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: PREWINDOW, trade_symbol: PREWIN260116C00100000, date: '2026-01-01', pnl_today: 0, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: PREWINDOW, trade_symbol: PREWIN260116C00100000, date: '2026-01-02', pnl_today: 40, is_realized_close: false}
+        - {tenant_id: tenant:test, account: Test, user_id: 1, symbol: PREWINDOW, trade_symbol: PREWIN260116C00100000, date: '2026-01-03', pnl_today: 50, is_realized_close: false}

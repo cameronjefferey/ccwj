@@ -209,6 +209,91 @@ currently_owned as (
     where instrument_type in ('Call', 'Put')
 ),
 
+-- Daily opening/closing quantities serve two purposes: the realized-basis
+-- walk below and an end-of-day "is this OCC actually open?" mask for MTM.
+-- One OCC can be closed and later reused before expiry; int_option_contracts
+-- deliberately keeps one lifetime row, so the dense spine must independently
+-- zero carried marks while history says the quantity is flat.
+option_open_events as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        trade_date as open_event_date,
+        sum(abs(quantity)) as opened_qty,
+        sum(amount) as opening_cash
+    from {{ ref('stg_history') }}
+    where instrument_type in ('Call', 'Put')
+      and action in ('option_sell_to_open', 'option_buy_to_open')
+    group by 1, 2, 3, 4, 5
+),
+
+history_close_events as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        least(trade_date, coalesce(option_expiry, trade_date)) as close_event_date,
+        sum(abs(quantity)) as closed_qty,
+        sum(amount) as closing_cash
+    from {{ ref('stg_history') }}
+    where instrument_type in ('Call', 'Put')
+      and action in (
+          'option_buy_to_close', 'option_sell_to_close',
+          'option_expired', 'option_assigned', 'option_exercised'
+      )
+    group by 1, 2, 3, 4, 5
+),
+
+option_quantity_daily as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        trade_symbol,
+        date,
+        sum(opened_qty) as opened_qty,
+        sum(closed_qty) as closed_qty,
+        sum(opened_qty - closed_qty) as qty_delta
+    from (
+        select
+            tenant_id, account, user_id, trade_symbol,
+            open_event_date as date,
+            opened_qty,
+            0.0 as closed_qty
+        from option_open_events
+
+        union all
+
+        select
+            tenant_id, account, user_id, trade_symbol,
+            close_event_date as date,
+            0.0 as opened_qty,
+            closed_qty
+        from history_close_events
+    )
+    group by 1, 2, 3, 4, 5
+),
+
+option_quantity_state as (
+    select
+        *,
+        case
+            -- A close on the first observed quantity-event date may belong
+            -- to an opening fill outside the broker window. Daily netting
+            -- can hide that fact (close 1 + open 2 = +1), so retain it as an
+            -- explicit completeness flag for the flat-quantity mask.
+            when date = min(date) over (
+                partition by tenant_id, account, user_id, trade_symbol
+            )
+             and coalesce(closed_qty, 0) > 1e-9
+            then 1 else 0
+        end as history_starts_with_close
+    from option_quantity_daily
+),
+
 -- Dense date spine across the open lifetime of each contract:
 -- [open_date, close_date) for closed contracts (close_date itself is
 -- owned by the realized branch), or [open_date, last_snapshot_date]
@@ -315,6 +400,10 @@ spine_with_snapshots as (
         cl.trade_symbol,
         cl.date,
         cast(null as float64) as snap_mtm,
+        cast(null as float64) as qty_delta,
+        0 as mark_epoch_delta,
+        0 as history_starts_with_close,
+        2 as row_kind,
         true as in_lifetime
     from contract_lifetime cl
     union all
@@ -326,8 +415,65 @@ spine_with_snapshots as (
         s.trade_symbol,
         s.date,
         s.mtm_unrealized_pnl as snap_mtm,
+        cast(null as float64) as qty_delta,
+        0 as mark_epoch_delta,
+        0 as history_starts_with_close,
+        1 as row_kind,
         false as in_lifetime
     from snapshots s
+    union all
+    select
+        q.tenant_id,
+        q.account,
+        q.user_id,
+        c.symbol,
+        q.trade_symbol,
+        q.date,
+        cast(null as float64) as snap_mtm,
+        q.qty_delta,
+        case
+            -- A mark describes the quantity that existed when it was taken.
+            -- Any fill changes that quantity, so a new valuation epoch must
+            -- wait for its own snapshot instead of inheriting the old mark.
+            when coalesce(q.opened_qty, 0) > 1e-9
+              or coalesce(q.closed_qty, 0) > 1e-9
+            then 1 else 0
+        end as mark_epoch_delta,
+        q.history_starts_with_close,
+        0 as row_kind,
+        false as in_lifetime
+    from option_quantity_state q
+    join contracts c
+      on (q.tenant_id is not distinct from c.tenant_id)
+     and q.account = c.account
+     and (q.user_id is not distinct from c.user_id)
+     and q.trade_symbol = c.trade_symbol
+),
+spine_state as (
+    select
+        tenant_id,
+        account,
+        user_id,
+        symbol,
+        trade_symbol,
+        date,
+        snap_mtm,
+        in_lifetime,
+        row_kind,
+        sum(qty_delta) over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by date, row_kind  -- quantity event before EOD mark
+            rows between unbounded preceding and current row
+        ) as running_qty,
+        sum(mark_epoch_delta) over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by date, row_kind
+            rows between unbounded preceding and current row
+        ) as mark_epoch,
+        max(history_starts_with_close) over (
+            partition by tenant_id, account, user_id, trade_symbol
+        ) as history_starts_with_close
+    from spine_with_snapshots
 ),
 spine_filled as (
     select
@@ -338,12 +484,24 @@ spine_filled as (
         trade_symbol,
         date,
         in_lifetime,
+        row_kind,
         last_value(snap_mtm ignore nulls) over (
-            partition by tenant_id, account, user_id, trade_symbol
-            order by date, in_lifetime  -- snapshot row first when same date
+            partition by
+                tenant_id, account, user_id, trade_symbol, mark_epoch
+            order by date, row_kind
             rows between unbounded preceding and current row
-        ) as mtm_unrealized_pnl
-    from spine_with_snapshots
+        ) as mtm_unrealized_pnl,
+        running_qty,
+        history_starts_with_close,
+        min(running_qty) over (
+            partition by tenant_id, account, user_id, trade_symbol
+        ) as min_running_qty,
+        last_value(running_qty ignore nulls) over (
+            partition by tenant_id, account, user_id, trade_symbol
+            order by date, row_kind
+            rows between unbounded preceding and unbounded following
+        ) as final_running_qty
+    from spine_state
 ),
 -- Restrict back to lifetime-only dates. Multiple rows can exist per
 -- (contract, date) when both a lifetime row AND a snapshot row landed
@@ -356,7 +514,11 @@ contract_daily_mtm as (
         symbol,
         trade_symbol,
         date,
-        mtm_unrealized_pnl
+        mtm_unrealized_pnl,
+        running_qty,
+        min_running_qty,
+        history_starts_with_close,
+        final_running_qty
     from (
         select *,
                row_number() over (
@@ -371,15 +533,37 @@ contract_daily_mtm as (
 
 open_mtm as (
     select
-        tenant_id,
-        account,
-        user_id,
-        symbol,
-        trade_symbol,
-        date,
-        coalesce(mtm_unrealized_pnl, 0) as pnl_today,
+        d.tenant_id,
+        d.account,
+        d.user_id,
+        d.symbol,
+        d.trade_symbol,
+        d.date,
+        case
+            -- Only complete quantity history can prove a flat gap. A broker
+            -- window that starts with a close is explicitly flagged because
+            -- same-day netting may hide the missing opening quantity.
+            when d.min_running_qty is not null
+             and d.min_running_qty >= -1e-9
+             and coalesce(d.history_starts_with_close, 0) = 0
+             -- An Open contract whose observed tape nets to zero began
+             -- before the history window or has ambiguous same-day ordering.
+             -- Its live mark is evidence; do not fail closed on quantity.
+             and not (
+                 lower(trim(coalesce(c.status, ''))) = 'open'
+                 and abs(coalesce(d.final_running_qty, 0)) < 1e-9
+             )
+             and abs(coalesce(d.running_qty, 0)) < 1e-9
+            then 0.0
+            else coalesce(d.mtm_unrealized_pnl, 0)
+        end as pnl_today,
         false as is_realized_close
-    from contract_daily_mtm
+    from contract_daily_mtm d
+    join contracts c
+      on (d.tenant_id is not distinct from c.tenant_id)
+     and d.account = c.account
+     and (d.user_id is not distinct from c.user_id)
+     and d.trade_symbol = c.trade_symbol
 ),
 
 -- Realized credit. Most contracts have one close date and retain the
@@ -414,39 +598,6 @@ open_mtm as (
 -- dbt unit tests wrap this model in an outer query, and BigQuery rejects a
 -- recursive CTE anywhere except the top-level statement — the warehouse
 -- rebuild fails and every later test on this model is skipped.
-option_open_events as (
-    select
-        tenant_id,
-        account,
-        user_id,
-        trade_symbol,
-        trade_date as open_event_date,
-        sum(abs(quantity)) as opened_qty,
-        sum(amount) as opening_cash
-    from {{ ref('stg_history') }}
-    where instrument_type in ('Call', 'Put')
-      and action in ('option_sell_to_open', 'option_buy_to_open')
-    group by 1, 2, 3, 4, 5
-),
-
-history_close_events as (
-    select
-        tenant_id,
-        account,
-        user_id,
-        trade_symbol,
-        least(trade_date, coalesce(option_expiry, trade_date)) as close_event_date,
-        sum(abs(quantity)) as closed_qty,
-        sum(amount) as closing_cash
-    from {{ ref('stg_history') }}
-    where instrument_type in ('Call', 'Put')
-      and action in (
-          'option_buy_to_close', 'option_sell_to_close',
-          'option_expired', 'option_assigned', 'option_exercised'
-      )
-    group by 1, 2, 3, 4, 5
-),
-
 contract_terminal_events as (
     -- Calendar/snapshot settlement can close a remainder without a broker
     -- history row. Once int_option_contracts dates that terminal event, add
