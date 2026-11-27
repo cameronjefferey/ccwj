@@ -616,9 +616,10 @@ def _option_fill_episodes(fills) -> list[list[dict]]:
     result look partial whenever the newest lifetime remains open.
 
     BigQuery guarantees date order but not row order within one date. If a
-    contract was already open, closes are applied before new opens so a
-    same-day close/reopen becomes two episodes. A flat-start day applies
-    opens first so an ordinary same-day round trip remains one episode.
+    contract was already open, largest closes that fit the carried quantity
+    are applied before new opens so a same-day close/reopen becomes two
+    episodes. A close larger than the carried quantity needs the same-day
+    opens, and a flat-start day applies opens first.
     """
     valid_fills = [trade for trade in (fills or []) if isinstance(trade, dict)]
     dated: dict[int, list[dict]] = {}
@@ -662,18 +663,34 @@ def _option_fill_episodes(fills) -> list[list[dict]]:
             if str(trade.get("action") or "") in CLOSE_OPTION_ACTIONS
         ]
         if starts_open:
-            # First close the position carried into the day. If more closes
-            # remain, they can only belong after a same-day reopen.
-            close_index = 0
-            while close_index < len(closes) and current:
-                if _fill_qty(closes[close_index]) > running + 1e-6:
-                    # This fill closes shares/contracts added later today.
-                    break
-                apply_fill(closes[close_index])
-                close_index += 1
+            closes = sorted(
+                closes,
+                key=lambda trade: (
+                    -_fill_qty(trade),
+                    _fill_action(trade),
+                    _fill_price(trade),
+                    _fill_amount(trade),
+                    _fill_text(trade, "trade_symbol", "Symbol"),
+                ),
+            )
+            before_reopen = []
+            after_reopen = []
+            carried_remaining = running
+            for trade in closes:
+                qty = _fill_qty(trade)
+                if (
+                    carried_remaining > 1e-6
+                    and qty <= carried_remaining + 1e-6
+                ):
+                    before_reopen.append(trade)
+                    carried_remaining = max(0.0, carried_remaining - qty)
+                else:
+                    after_reopen.append(trade)
+            for trade in before_reopen:
+                apply_fill(trade)
             for trade in opens:
                 apply_fill(trade)
-            for trade in closes[close_index:]:
+            for trade in after_reopen:
                 apply_fill(trade)
         else:
             for trade in opens:
