@@ -947,10 +947,10 @@ def _episode_ordered_fills(fills):
 
     BigQuery does not promise row order without an ``ORDER BY``, and the
     broker tape has no reliable intraday timestamp.  If a contract was
-    already open before a day and that day's closes can flatten only that
-    carried quantity, process those closes before same-day opens: this is a
-    close/reopen boundary.  With no carried quantity (a 0DTE round trip), or
-    when the close needs same-day opens, process opens first.
+    already open before a day, largest closes that fit the carried quantity
+    run first; after that position flattens, same-day opens begin the next
+    episode and remaining closes belong there. A close larger than the
+    carried quantity needs the same-day opens, so those opens run first.
     """
     by_day = defaultdict(list)
     for fill in fills:
@@ -975,21 +975,22 @@ def _episode_ordered_fills(fills):
                     "option_assigned", "option_exercised", "option_expired",
                 }
             ],
-            key=lambda fill: fill.id,
+            key=lambda fill: (
+                -abs(fill.raw_qty),
+                str(fill.action or ""),
+                float(fill.price or 0),
+                float(fill.cash or 0),
+                str(fill.trade_symbol or ""),
+            ),
         )
         others = sorted(
             [fill for fill in rows if fill not in opens and fill not in closes],
             key=lambda fill: fill.id,
         )
-        close_qty = sum(abs(fill.raw_qty) for fill in closes)
-        closes_first = (
-            carried[contract] > _EPS
-            and close_qty <= carried[contract] + _EPS
+        before_reopen, after_reopen = _closes_around_reopen(
+            closes, carried[contract],
         )
-        day_rows = (
-            closes + opens + others if closes_first
-            else opens + closes + others
-        )
+        day_rows = before_reopen + opens + after_reopen + others
         ordered.extend(day_rows)
         for fill in day_rows:
             amount = abs(fill.raw_qty)
@@ -998,6 +999,26 @@ def _episode_ordered_fills(fills):
             elif fill.action in _CLOSE_QTY:
                 carried[contract] = max(0.0, carried[contract] - amount)
     return ordered
+
+
+def _closes_around_reopen(closes, carried_qty):
+    """Apply deterministic close-first episode semantics to date-only fills."""
+    if carried_qty <= _EPS:
+        return [], closes
+    before = []
+    after = []
+    remaining = float(carried_qty)
+    for fill in closes:
+        qty = abs(float(fill.raw_qty or 0))
+        if qty > remaining + _EPS:
+            after.append(fill)
+            continue
+        if remaining <= _EPS:
+            after.append(fill)
+            continue
+        before.append(fill)
+        remaining = max(0.0, remaining - qty)
+    return before, after
 
 
 def _replay_shares(fills, opening_shares):

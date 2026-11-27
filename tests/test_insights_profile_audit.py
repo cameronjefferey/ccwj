@@ -6,6 +6,7 @@ each leg, and the labels that describe the resulting number.
 """
 
 from datetime import date
+from itertools import permutations
 
 import pandas as pd
 
@@ -364,6 +365,65 @@ def test_same_day_add_before_one_full_close_stays_one_episode():
         "losers": 0,
         "zeros": 0,
         "decided": 1,
+    }
+
+
+def test_same_day_reopen_and_second_close_is_order_independent():
+    """Largest-fit close ordering keeps the two episodes deterministic."""
+    contract = _occ("AMD", "261016", "C", 155)
+    opened = _fill(
+        date(2026, 9, 1), "AMD", "option_sell_to_open",
+        contract, 2, 200,
+    )
+    close_old = _fill(
+        date(2026, 9, 18), "AMD", "option_buy_to_close",
+        contract, 2, -300,
+    )
+    reopened = _fill(
+        date(2026, 9, 18), "AMD", "option_sell_to_open",
+        contract, 1, 200,
+    )
+    close_new = _fill(
+        date(2026, 9, 18), "AMD", "option_buy_to_close",
+        contract, 1, -100,
+    )
+
+    for ordered_day in permutations((close_old, reopened, close_new)):
+        assert option_record_from_fills([opened, *ordered_day]) == {
+            "winners": 1,
+            "losers": 1,
+            "zeros": 0,
+            "decided": 2,
+        }
+
+
+def test_oversized_close_does_not_block_smaller_episode_boundary():
+    contract = _occ("AMD", "261016", "C", 155)
+    fills = [
+        _fill(
+            date(2026, 9, 1), "AMD", "option_sell_to_open",
+            contract, 1, 200,
+        ),
+        # The larger close sorts first but needs the same-day reopen.
+        _fill(
+            date(2026, 9, 18), "AMD", "option_buy_to_close",
+            contract, 2, -300,
+        ),
+        _fill(
+            date(2026, 9, 18), "AMD", "option_sell_to_open",
+            contract, 2, 100,
+        ),
+        _fill(
+            date(2026, 9, 18), "AMD", "option_buy_to_close",
+            contract, 1, -100,
+        ),
+    ]
+
+    assert option_record_from_fills(fills) == {
+        "winners": 1,
+        "losers": 1,
+        "zeros": 0,
+        "decided": 2,
     }
 
 

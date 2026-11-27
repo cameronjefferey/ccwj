@@ -56,9 +56,14 @@ def _register(con):
 
 def _basis_select_sql():
     text = _MODEL.read_text()
-    start = text.index("option_open_events as (")
+    event_ctes = [
+        _extract_cte(text, "option_open_events"),
+        _extract_cte(text, "history_close_events"),
+    ]
+    start = text.index("contract_terminal_events as (")
     end = text.index("\nrealized_close as (")
-    body = text[start:end].strip().rstrip(",").strip()
+    realized_body = text[start:end].strip().rstrip(",").strip()
+    body = ",\n".join(event_ctes + [realized_body])
     body = body.replace("{{ ref('stg_history') }}", "src_history")
     if "{{" in body:
         raise AssertionError("extracted basis SQL still contains jinja")
@@ -73,6 +78,21 @@ def _basis_select_sql():
             is_realized_close
         from multi_close_realized
     """
+
+
+def _extract_cte(text, name):
+    """Return one balanced ``name AS (...)`` block without its comma."""
+    start = text.index(f"{name} as (")
+    opening = text.index("(", start)
+    depth = 0
+    for index in range(opening, len(text)):
+        if text[index] == "(":
+            depth += 1
+        elif text[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1].strip()
+    raise AssertionError(f"unterminated CTE: {name}")
 
 
 def _cases():

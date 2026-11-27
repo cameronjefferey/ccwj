@@ -1,5 +1,6 @@
 """All-in cost per share: holding cycle, rolls, and spread grouping."""
 
+from itertools import permutations
 from pathlib import Path
 
 from app.all_in_cost import all_in_cost
@@ -789,6 +790,71 @@ def test_roll_episode_is_independent_of_same_day_query_order():
 
     assert result["net_premium"] == 600
     assert result["all_in_per_share"] == 94
+
+
+def test_same_day_reopen_partial_close_excludes_prior_episode_cash():
+    """Close ordering is deterministic when BigQuery returns rows differently."""
+    carried_open = _fill(
+        trade_date="2026-10-01", action="option_sell_to_open",
+        option_type="put", option_strike=100,
+        option_expiry="2026-11-20", quantity=1, price=2.00,
+    )
+    same_day = [
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=100,
+            option_expiry="2026-11-20", quantity=1, price=1.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=100,
+            option_expiry="2026-11-20", quantity=1, price=3.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=100,
+            option_expiry="2026-11-20", quantity=0.5, price=0.50,
+        ),
+    ]
+
+    for ordered_day in permutations(same_day):
+        result = all_in_cost(
+            [carried_open, *ordered_day], shares=0, symbol="DDOG",
+        )
+        assert result["assigned_shares"] == 50
+        assert result["net_premium"] == 275
+        assert result["net_premium_per_share"] == 5.5
+        assert result["all_in_per_share"] == 94.5
+
+
+def test_oversized_close_does_not_block_smaller_episode_boundary():
+    fills = [
+        _fill(
+            trade_date="2026-10-01", action="option_sell_to_open",
+            option_type="put", option_strike=100,
+            option_expiry="2026-11-20", quantity=1, price=4.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=100,
+            option_expiry="2026-11-20", quantity=1, price=0,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_sell_to_open",
+            option_type="put", option_strike=100,
+            option_expiry="2026-11-20", quantity=3, price=4.00,
+        ),
+        _fill(
+            trade_date="2026-10-09", action="option_buy_to_close",
+            option_type="put", option_strike=100,
+            option_expiry="2026-11-20", quantity=2, price=0,
+        ),
+    ]
+
+    result = all_in_cost(fills, shares=0, symbol="DDOG")
+    assert result["assigned_shares"] == 100
+    assert result["net_premium"] == 1200
+    assert result["all_in_per_share"] == 88
 
 
 def test_snapshot_reopen_excludes_a_closed_tape_episode():
